@@ -505,8 +505,13 @@ def identify_template(page_image, ocr_text: str, templates: list,
                 if _fallthrough_supplier_ok(_cand) and _vetoed_fallthrough_ok(_cand):
                     # C1: reject a type-refuse fall-through for a DIFFERENT supplier; C3: an
                     # identity-veto fall-through winner must clear the mark/branding bar.
+                    # veto_fallthrough tag (G1/G2 guards, Oracle 2026-07-26): additive key, set ONLY
+                    # on an identity-veto fall-through (NOT the af346d8 type-refuse path — that
+                    # shipped ON with its own validation). The engine's corroboration guards key on
+                    # it; every other consumer uses .get() → inert.
                     return {'template': _cand, 'confidence': 60,
-                            'method': 'keywords+slug_rescue', 'logo_phash': logo_phash}
+                            'method': 'keywords+slug_rescue', 'logo_phash': logo_phash,
+                            **({'veto_fallthrough': True} if _logo_vetoed else {})}
 
     # 2. Keyword fingerprint — fallback for docs without logos. Pass detected_slug so a same-fingerprint
     # sibling of the DETECTED type wins the tie (the logo-drift → keyword-fallback → wrong-sibling class).
@@ -521,6 +526,8 @@ def identify_template(page_image, ocr_text: str, templates: list,
             # fall-through winner must clear the mark/branding bar (else None, as today).
             if logo_phash:
                 kw_match['logo_phash'] = logo_phash
+            if _logo_vetoed:
+                kw_match['veto_fallthrough'] = True   # G1/G2 guard tag (identity-veto path only)
             return kw_match
 
     # LOGO_REFUSE_FALLTHROUGH re-emit (C1): the logo arm refused a wrong-type sibling and we fell through,

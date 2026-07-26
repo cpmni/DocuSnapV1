@@ -818,6 +818,84 @@ def _is_ref_field(key: str) -> bool:
     return k.endswith("_number") or k.endswith("_no") or "reference" in k
 
 
+# ── G1 veto-fallthrough corroboration predicates (pure — Oracle SIGN-OFF-W/COND 2026-07-26) ──
+# On a doc whose template match arrived via the identity-veto FALL-THROUGH, a critical-field
+# winner must be corroborated by (i) an independent-family rail read or (ii) boundary-guarded
+# presence in the full-page text — else the doc is note-held (G1, final assembly). Pure module
+# functions so the unit file tests them directly. See tests/test_veto_fallthrough_corrob.py.
+
+def _method_family(method) -> str:
+    """Coarse read-provenance family. Arm (i) requires the corroborating candidate to come from a
+    DIFFERENT family than the winner — same-source agreement (anchor_inline vs anchor_crop: same
+    pixels, same pass family) deliberately counts for NOTHING (Oracle S5: same-pixel agreement is
+    weak; do not 'improve' this by letting anchor corroborate anchor)."""
+    m = str(method or "")
+    if m.startswith("keyword"):
+        return "keyword"
+    if m.startswith("anchor"):
+        return "anchor"
+    if m.startswith("template"):
+        return "template"
+    if m.startswith("hint"):
+        return "hint"
+    return m or "other"
+
+
+def _page_presence_corroborated(value, ocr_text) -> bool:
+    """Arm (ii): the value's alnum core appears in the page text, separator-tolerant BUT boundary-
+    guarded — the (?<![A-Za-z0-9]) / (?![A-Za-z0-9]) lookarounds are LOAD-BEARING (Oracle C2): they
+    are what stops '4/10/2026' corroborating against a page printing '14/10/2026' (the interior '4'
+    fails the left lookaround). Bounds (Oracle C3): core length 4..48 (shorter = too ambiguous;
+    longer = uncorroborated → hold, fail-toward-review), each char re.escape'd, bounded {0,3}
+    separator join (never *), IGNORECASE, compiled per value (literal-anchored, no backtracking
+    blowup)."""
+    import re as _re
+    core = "".join(c for c in str(value or "") if c.isalnum())
+    if not (4 <= len(core) <= 48) or not ocr_text:
+        return False
+    pat = (r"(?<![A-Za-z0-9])" + r"[\W_]{0,3}".join(_re.escape(c) for c in core)
+           + r"(?![A-Za-z0-9])")
+    try:
+        return _re.search(pat, ocr_text, _re.IGNORECASE) is not None
+    except _re.error:
+        return False
+
+
+def _fallthrough_critical_corroborated(winner, cands, ocr_text, is_date) -> bool:
+    """G1 predicate: is this critical-field WINNER corroborated?
+      (i) some rail candidate of a DIFFERENT method family normalise-equal to it (dates: BOTH sides
+          must validator.parse_date — closes the documented _values_normalise_equal fail-open date
+          polarity at this call site), OR
+      (ii) the winner's value present in the full-page text (boundary-guarded); for DATES the RAW
+          own-family rail captures are also tried through the SAME matcher (Oracle C2 — Stage 4
+          rewrites '4/10/2026'→'04-10-2026', whose collapsed core would falsely fail against a
+          genuine page '4/10/2026'; a bare substring test is FORBIDDEN here).
+    NO authoritative exemption (Oracle Q2 ruling): an authoritative winner keeps its value/method/
+    confidence — G1 only withholds the SILENT file. Keyword winners pass (ii) by construction."""
+    wv = str((winner or {}).get("value") or "")
+    if not wv:
+        return False
+    wfam = _method_family((winner or {}).get("method"))
+    for c in (cands or []):
+        cv = str((c or {}).get("value") or "")
+        if not cv or _method_family((c or {}).get("method")) == wfam:
+            continue
+        if is_date and not (validator.parse_date(wv) and validator.parse_date(cv)):
+            continue
+        if _values_normalise_equal(cv, wv, is_date):
+            return True
+    if _page_presence_corroborated(wv, ocr_text):
+        return True
+    if is_date:
+        for c in (cands or []):
+            if _method_family((c or {}).get("method")) != wfam:
+                continue
+            rv = str((c or {}).get("value") or "")
+            if rv and rv != wv and _page_presence_corroborated(rv, ocr_text):
+                return True
+    return False
+
+
 # Field TYPE → credibility validation key. Only STRUCTURED / code types are mapped;
 # text/multiline_text are deliberately ABSENT so free-text fields stay unconstrained
 # (seeding "text" would flip on the degraded-text escalation for name/address reads).
@@ -989,7 +1067,9 @@ class ExtractionEngine:
         # field types in candidate_override_fields). See _resolve_candidates().
         self.candidate_override        = 'off'
         self.candidate_override_fields = set()
-        self._field_candidates   = {}    # per-run candidate ledger (built only when override on)
+        self._field_candidates   = {}    # per-run candidate ledger — ALWAYS built (see _remember_candidates);
+                                         # safety-load-bearing for the G1 veto-fallthrough corroboration arm (i):
+                                         # do NOT re-gate it behind candidate_override
         # Wordness gate (default OFF → byte-identical). When on, a free-text NAME read
         # that does not read like a name (document chrome, ref/code bleed, OCR garble)
         # is FLAGGED for review (note + conf cap); never rejected. See extraction/wordness.py.
@@ -2532,7 +2612,8 @@ class ExtractionEngine:
         self._trace     = trace
         self._slice_dir = slice_dir   # dev-only crop capture dir (set only with --trace)
         self._slice_n   = 0
-        self._field_candidates = {}   # Phase 3 ledger (built only when candidate_override on)
+        self._field_candidates = {}   # per-run candidate ledger — ALWAYS built (_remember_candidates is
+                                      # unconditional); safety-load-bearing for G1 arm (i), do not re-gate
         results      = {}
         field_keys   = [f["key"] for f in field_defs]
         # Seed field_patterns from each field's configured TYPE (+ the ref-role
@@ -2588,6 +2669,8 @@ class ExtractionEngine:
         # ── Stage 0: Template matching ────────────────────────────────────────
         self._type_ambiguous = False   # Fix A: set True below when the match is an ambiguous same-logo pick
         self._type_refused   = False   # C1: set True below when the trusted-title refuse discards a template
+        self._veto_fallthrough = False # G1/G2: set True below when the match arrived via the identity-veto
+                                       # fall-through (TEMPLATE_VETO_FALLTHROUGH) — arms the corroboration guards
         if templates:
             match = template_matcher.identify_template(
                 _id_img,
@@ -2638,6 +2721,11 @@ class ExtractionEngine:
                 # HOLD even if THIS engine call's own (raw-image) match resolved non-ambiguously — a
                 # raw-vs-processed split-brain must never let a pinned doc auto-file.
                 self._type_ambiguous = bool(match.get('ambiguous_type')) or (pinned_template_id is not None)
+                # G1/G2 guard arming: TRUE only when identify_template matched via the identity-veto
+                # fall-through (the additive tag). The known_id/pinned fallback dicts above never carry
+                # the key → guards stay dark on the reprocess-honour path (review-safe per the SEAM-1
+                # pin). OFF ⇒ the veto sites return None ⇒ the tag never exists ⇒ structurally dead.
+                self._veto_fallthrough = bool(match.get('veto_fallthrough'))
                 matched_tmpl = match['template']
                 # FIX B1 (suggest-only): process_docs resolved the ambiguous same-letterhead type from
                 # the doc's ref-prefix and PINNED the correct sibling's template. Force it as
@@ -3384,6 +3472,37 @@ class ExtractionEngine:
                                       and existing
                                       and existing.get("method") != "anchor_crop"
                                       and not _is_stage05_located(existing.get("method")))
+                # G2 (VETO-FALLTHROUGH corroboration guard — gary design + Oracle SIGN-OFF-W/COND
+                # 2026-07-26). is_taught_override has NO confidence comparison BY DESIGN (a fresh ~85
+                # taught anchor must correct a wrong 88-93 keyword hit) — but on a FALL-THROUGH-matched
+                # doc that doctrine's asymmetry vanishes: OFF-baseline these docs had no template ⇒ no
+                # anchors ⇒ the keyword stood, so a lower-confidence AUTO-tier crop displacing a
+                # higher-confidence keyword is a measured regression (#456: crop '4/10/2026'@85
+                # silently displaced the CORRECT keyword '14/10/2026'@93). Scope: fall-through docs
+                # ONLY (global G2 = doctrine inversion, ruled out); authoritative (⊕-taught) reads
+                # still displace (F8); keyword_override/Stage-0.5 already protected above. Mirror of
+                # the KEYWORD_ANCHOR_CORROB lift: agree → lift; disagree at inverted confidence → keep
+                # the keyword + note (review). C6 (agree-displace-degrade): an AGREEING crop at
+                # inverted confidence keeps the incumbent too — pure value/method/conf retention, NO
+                # note (else agreement produces a WORSE outcome than disagreement: conf 93→85 dropped
+                # a clean doc below the 88 critical floor). NEVER sets _needs_review here (mid-Stage-2
+                # `_` injection is the 2026-07-22 crash class); the persisted note alone holds.
+                if (is_taught_override
+                        and getattr(self, '_veto_fallthrough', False)
+                        and not data.get("authoritative")
+                        and existing.get("method") == "keyword"
+                        and (key in date_field_keys or _is_ref_field(key))
+                        and int(existing.get("confidence") or 0) >= int(data.get("confidence") or 0)
+                        and data.get("value") and existing.get("value")):
+                    if _values_normalise_equal(data.get("value"), existing.get("value"),
+                                               key in date_field_keys):
+                        continue                      # C6: identical value — keep the stronger incumbent
+                    _g2n = (f"Another read of this field disagreed ('{data.get('value')}' vs "
+                            f"'{existing.get('value')}') — please check it against the document "
+                            f"before filing.")
+                    _old = str(existing.get("validation_note") or "").strip()
+                    existing["validation_note"] = (_old + " " + _g2n) if _old else _g2n
+                    continue                          # keep the higher-confidence keyword read
                 if not existing or is_taught_override or data["confidence"] > existing["confidence"]:
                     results[key] = data
             self._trace_stage('2_anchor', anchor_results, _pre_s2, results)
@@ -4655,6 +4774,39 @@ class ExtractionEngine:
                 results, ref_field_key,
                 note=("The heading on this page names a document type that doesn't match this "
                       "supplier's saved layout — please check the document type is correct before filing."))
+
+        # G1 (VETO-FALLTHROUGH corroboration guard — gary design + Oracle SIGN-OFF-W/COND 2026-07-26).
+        # On a doc whose template match arrived via the identity-veto FALL-THROUGH, the anchor family
+        # newly activates on docs that previously ran anchor-less — and a LONE, page-absent critical
+        # read can ride the conformance boost into a silent wrong file (#472: lone anchor_inline
+        # 'PO-38093' @85→98 while the page prints 'PO-98093'; the exact #183 harvest-synthesis tell).
+        # Hold-only: each critical winner must be corroborated (_fallthrough_critical_corroborated) or
+        # it gains a validation_note — the note alone blocks auto-file via trust.js's flagged gate
+        # (the DB-side gate honours a persisted note, NOT a bare _needs_review). No value/confidence/
+        # method change; NO authoritative exemption (Oracle Q2 — the founding class is ⊕-taught);
+        # snap/hint winners get the uniform hold (Oracle Q4). Fields already noted are SKIPPED
+        # (one-note-per-field convention — a hold is already in force). Placement (C7): after the
+        # type-refuse guard, BEFORE the final trace (so the note is visible there) and BEFORE
+        # _build_candidate_emit. NOTE (Oracle C1): the candidate picker never arms on ref/date fields
+        # (_build_candidate_emit is name-like-only), so this note text is the operator's ONLY
+        # affordance — field-kind-aware and self-sufficient by design.
+        if getattr(self, '_veto_fallthrough', False):
+            _g1_crit = ({ref_field_key} if ref_field_key else set()) | set(date_field_keys or ())
+            for _ck in sorted(_g1_crit):
+                _cd = results.get(_ck)
+                if not (isinstance(_cd, dict) and str(_cd.get("value") or "").strip()):
+                    continue                                      # empty → other gates' concern
+                if str(_cd.get("validation_note") or "").strip():
+                    continue                                      # already held (skip, don't compose)
+                _is_d = _ck in date_field_keys
+                if _fallthrough_critical_corroborated(_cd, (self._field_candidates or {}).get(_ck) or [],
+                                                      ocr_text, _is_d):
+                    continue
+                _kind = "date" if _is_d else ("reference" if _ck == ref_field_key else "value")
+                _cd["validation_note"] = (f"This {_kind} couldn't be confirmed anywhere else on the "
+                                          f"page — please check it against the document before filing.")
+                results["_needs_review"] = True
+                self.log(f"  Veto-fallthrough hold: {_ck} '{_cd.get('value')}' uncorroborated — held for review")
 
         # Final resolved value per field — the inspector marks any earlier
         # candidate whose value differs from this as a superseded intermediate.
