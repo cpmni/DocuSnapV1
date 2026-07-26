@@ -21,6 +21,28 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
+## Current session state (2026-07-26 EVENING) — READ `HANDOVER_2026-07-26_EVENING.md` FIRST
+**2026-07-26 EVENING (Opus 4.8) — 3 commits AHEAD of origin, ALL UNPUSHED (`18d851a`→`ae12a0e`); last
+pushed `13e2af1`; tree clean; a dev `npm start` is RUNNING (owner live test).** Built the two planned
+targets, each gary→Oracle gated + kill-switched: **`18d851a` B′ TYPE-SCOPED taught-ownership label
+exemption — DEFAULT ON** (`keyword.label_is_own_discriminating_in_type` intersects the global label owners
+with the RESOLVED type's field keys → "Order Date" on a PO is own-label; fires only on an AUTHORITATIVE
+type `self._type_authoritative` = title_trusted AND not type-ambiguous/-refused; method-only; kill
+`TAUGHT_OWNERSHIP_TYPE_SCOPED_LABEL=0`. C1 live: the 13 Copperfield POs 69→98 VALUES-UNCHANGED; C2 corpus
+diff = 1 line, M/accuracy identical) · **`9119227` Fix A #183 inline-harvest absence hold**
+(`engine._inline_absence_should_hold` = a critical `anchor_inline` winner that
+`_fallthrough_critical_corroborated` can't confirm is HELD; Oracle C2 DROPPED the crop-box requirement
+[pure fn of the result, closes the label-less-anchor hole too]; corpus M 2→1 [#183 caught, #583 untouched],
+accuracy identical) · **`ae12a0e` Fix A → DARK** (owner live-test: over-flags a CORRECT VISIBLE ref on the
+systematically-skewed Northgate batch — the rigid crop read it too but rejected on the caption prefix, so
+its agreement is invisible to the winners-only ledger; refine before re-flip). ⭐ **NEXT: (1) owner
+reprocess Copperfield (B′ clears 69→98) + Northgate (Fix A dark clears the flags) in the dev app; (2) push
+decision (3 commits); (3) TYPE-FLIP — Northgate PO mis-typed Invoice, root traced: skew kills the heading →
+detect "Sales Order 65%" untrusted → same-logo fingerprint stamps Invoice (task #5, reggie/007→Oracle,
+BANNER_HEADING_REREAD lever); (4) Fix A refinement = crop-read corroboration (task #4).** Installer
+`r20260726-1018` predates all 3 commits. **The prior block's "NEXT" is now DONE (Copperfield = B′;
+#183 = Fix A) — its forensics remain valid history. ↓**
+
 ## Current session state (2026-07-26) — READ `HANDOVER_2026-07-26.md` FIRST
 **Wrapped 2026-07-26 (Fable 5). ALL PUSHED through `fff6cde` (origin `0 0`), tree clean, no background
 processes.** The day: logo-identity fix END-TO-END (iris forensics → A+C → corpus block → G1/G2 guards
