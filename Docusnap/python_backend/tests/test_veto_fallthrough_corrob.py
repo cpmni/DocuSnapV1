@@ -127,11 +127,12 @@ def main():
                                   detected_slug="delivery_note", title_trusted=False)
         fails += not check("tag: a normal (non-vetoed) accept carries NO tag",
                            bool(r2) and not r2.get("veto_fallthrough"))
-        # OFF pin: kill switch off ⇒ veto site returns None ⇒ the tag can never exist.
-        os.environ.pop("TEMPLATE_VETO_FALLTHROUGH", None)
+        # OFF pin: kill switch EXPLICITLY off (default flipped ON 2026-07-26) ⇒ veto site returns
+        # None ⇒ the tag can never exist ⇒ the guards are structurally dead.
+        os.environ["TEMPLATE_VETO_FALLTHROUGH"] = "0"
         r3 = tm.identify_template(Image.new("RGB", (64, 64), "white"), OCR, [WRONG, RIGHT],
                                   detected_slug="delivery_note", title_trusted=False)
-        fails += not check("OFF pin: switch off -> None (tag structurally impossible; guards dead)",
+        fails += not check("OFF pin: switch=0 -> None (tag structurally impossible; guards dead)",
                            r3 is None)
     finally:
         tm.compute_logo_hash = saved

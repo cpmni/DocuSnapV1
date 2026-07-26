@@ -66,8 +66,11 @@ def run(templates, envs=None, query_detail=None):
     old = {k: os.environ.get(k) for k in ENVS}
     saved_hash = tm.compute_logo_hash
     try:
-        for k in ENVS:
-            os.environ.pop(k, None)
+        # DEFAULTS flipped ON 2026-07-26: the OFF baseline must now be set EXPLICITLY ('0'), not by
+        # popping. LOGO_DETAIL_VETO keeps its own (unchanged) default-ON via pop.
+        os.environ["TEMPLATE_VETO_FALLTHROUGH"] = "0"
+        os.environ["LOGO_DETAIL_GLOBAL_RIVALS"] = "0"
+        os.environ.pop("LOGO_DETAIL_VETO", None)
         for k, v in (envs or {}).items():
             os.environ[k] = v
         tm.compute_logo_hash = lambda img: Q_PHASH

@@ -52,12 +52,10 @@ def check(label, cond):
 
 
 def run(env_on, cands=CANDS, best=PICK, q=Q_DETAIL, all_templates=ALL):
+    # DEFAULT flipped ON 2026-07-26 — OFF cases must now set '0' EXPLICITLY (popping = ON).
     old = os.environ.get("LOGO_DETAIL_GLOBAL_RIVALS")
     try:
-        if env_on:
-            os.environ["LOGO_DETAIL_GLOBAL_RIVALS"] = "1"
-        else:
-            os.environ.pop("LOGO_DETAIL_GLOBAL_RIVALS", None)
+        os.environ["LOGO_DETAIL_GLOBAL_RIVALS"] = "1" if env_on else "0"
         return tm._logo_detail_veto(cands, 4, best, q, all_templates=all_templates)
     finally:
         if old is None:

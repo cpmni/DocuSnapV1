@@ -171,7 +171,8 @@ def _logo_detail_veto(cands, base_dist, best_t, query_detail_hash, all_templates
         best_sup = (best_t.get('dominant_supplier') or '').strip().lower()
         pick_det = list(best_t.get('logo_detail_hashes') or [])
         other_det = {}
-        _global = bool(all_templates) and os.environ.get('LOGO_DETAIL_GLOBAL_RIVALS', '0') != '0'
+        # DEFAULT ON since 2026-07-26 (probe: 606 docs, 0 wrong, 0 false abstains; owner-flipped).
+        _global = bool(all_templates) and os.environ.get('LOGO_DETAIL_GLOBAL_RIVALS', '1') != '0'
         _src = [(t, None) for t in all_templates] if _global else cands
         for (t, d) in _src:
             sn = (t.get('dominant_supplier') or '').strip()
@@ -273,7 +274,9 @@ def identify_template(page_image, ocr_text: str, templates: list,
     # veto PROVED the locked supplier wrong, so binding C1 here would block exactly the correct rescue
     # (Oracle Seam-4). The two flags are never both set (the veto sites are guarded on
     # `_logo_refused is None`). If nothing resolves, the corner stays None — byte-identical to today.
-    _vf_on = os.environ.get('TEMPLATE_VETO_FALLTHROUGH', '0') != '0'
+    # DEFAULT ON since 2026-07-26 (revised-C8 gate PASSED with the G1/G2 guards; owner-flipped).
+    # TEMPLATE_VETO_FALLTHROUGH=0 restores the pre-fall-through behaviour (the veto sites return None).
+    _vf_on = os.environ.get('TEMPLATE_VETO_FALLTHROUGH', '1') != '0'
     _logo_vetoed = False
     _vetoed_supplier = None       # lower-cased dominant supplier of the refuted pick ('' = unnamed)
     _vetoed_tid = None            # row-id fallback exclusion when the pick has no dominant supplier
