@@ -22,8 +22,8 @@ touches that area — read the pointed-to doc BEFORE working in it:
   ➜AN there). Read the matching block before changing one of those files.
 
 ## Current session state (2026-07-26 EVENING) — READ `HANDOVER_2026-07-26_EVENING.md` FIRST
-**2026-07-26 EVENING (Opus 4.8) — 3 commits AHEAD of origin, ALL UNPUSHED (`18d851a`→`ae12a0e`); last
-pushed `13e2af1`; tree clean; a dev `npm start` is RUNNING (owner live test).** Built the two planned
+**2026-07-26 EVENING (Opus 4.8) — ALL PUSHED through `13b70a3` (origin `0 0`), tree clean; a dev
+`npm start` is RUNNING (owner live test).** Built the two planned
 targets, each gary→Oracle gated + kill-switched: **`18d851a` B′ TYPE-SCOPED taught-ownership label
 exemption — DEFAULT ON** (`keyword.label_is_own_discriminating_in_type` intersects the global label owners
 with the RESOLVED type's field keys → "Order Date" on a PO is own-label; fires only on an AUTHORITATIVE
@@ -36,10 +36,10 @@ diff = 1 line, M/accuracy identical) · **`9119227` Fix A #183 inline-harvest ab
 accuracy identical) · **`ae12a0e` Fix A → DARK** (owner live-test: over-flags a CORRECT VISIBLE ref on the
 systematically-skewed Northgate batch — the rigid crop read it too but rejected on the caption prefix, so
 its agreement is invisible to the winners-only ledger; refine before re-flip). ⭐ **NEXT: (1) owner
-reprocess Copperfield (B′ clears 69→98) + Northgate (Fix A dark clears the flags) in the dev app; (2) push
-decision (3 commits); (3) TYPE-FLIP — Northgate PO mis-typed Invoice, root traced: skew kills the heading →
-detect "Sales Order 65%" untrusted → same-logo fingerprint stamps Invoice (task #5, reggie/007→Oracle,
-BANNER_HEADING_REREAD lever); (4) Fix A refinement = crop-read corroboration (task #4).** Installer
+reprocess Copperfield (B′ clears 69→98) + Northgate (Fix A dark clears the flags) in the dev app; (2)
+TYPE-FLIP — Northgate PO mis-typed Invoice, root traced: skew kills the heading → detect "Sales Order 65%"
+untrusted → same-logo fingerprint stamps Invoice (task #5, reggie/007→Oracle, BANNER_HEADING_REREAD lever);
+(3) Fix A refinement = crop-read corroboration (task #4).** Installer
 `r20260726-1018` predates all 3 commits. **The prior block's "NEXT" is now DONE (Copperfield = B′;
 #183 = Fix A) — its forensics remain valid history. ↓**
 

@@ -1,8 +1,8 @@
 # HANDOVER 2026-07-26 EVENING (Opus 4.8 · max effort)
 
-Branch `feat/reprocess-throughput-autostraighten` · **last PUSHED `13e2af1`** · **3 commits AHEAD, ALL
-UNPUSHED** (`18d851a` → `ae12a0e`) · working tree CLEAN · installer `r20260726-1018-58533ea` predates all
-3 commits. ⚠ A dev **`npm start` is RUNNING** (the owner's live test app; background id b44da8h0v).
+Branch `feat/reprocess-throughput-autostraighten` · **ALL PUSHED through `13b70a3`** (origin `0 0`) ·
+working tree CLEAN · installer `r20260726-1018-58533ea` predates all this session's commits. ⚠ A dev
+**`npm start` is RUNNING** (the owner's live test app; background id b44da8h0v).
 
 ## TL;DR
 Built the two planned targets end-to-end, each gary→Oracle gated, kill-switched, unit+corpus proven.
@@ -15,7 +15,7 @@ root: **Northgate purchase orders mis-typed as Invoice** (skew kills the heading
 same-logo sibling fingerprint stamps the wrong sibling). Two follow-ups are tracked (tasks #4, #5), NOT
 built.
 
-## Committed this session (3, all UNPUSHED, origin `0 3`)
+## Committed this session (3 code + `13b70a3` this handover; ALL PUSHED, origin `0 0`)
 
 ### `18d851a` — B′ type-scoped taught-ownership label exemption — **DEFAULT ON**
 - **Root:** the taught-ownership guard (`engine._flag_taught_field_ownership`) capped a CORRECT plain-
@@ -77,10 +77,10 @@ built.
 1. **Owner: reprocess in the dev app** (`npm start`, which carries the source): reprocess the **Copperfield
    POs** → B′ (ON) clears them 69→98; reprocess the **Northgate batch** → Fix A now DARK, the "PO Number
    couldn't be confirmed" flags disappear. (Read-only replays already PROVED both outcomes.)
-2. **Push decision** — 3 commits local (`git push`; origin `0 3`). Owner's call (not done).
-3. **Type-flip fix (task #5)** — Northgate PO→Invoice. Root traced (below). reggie/007 (skew heading
+2. **Type-flip fix (task #5)** — Northgate PO→Invoice. Root traced (below). reggie/007 (skew heading
    recovery) → Oracle → build. System-wide (any multi-type-on-one-letterhead supplier).
-4. **Fix A refinement (task #4)** — crop-read corroboration → re-flip ON precisely.
+3. **Fix A refinement (task #4)** — crop-read corroboration → re-flip ON precisely.
+   (Push already done this session — origin `0 0` through `13b70a3`.)
 
 ## Deferred (designed/diagnosed, NOT built — with the load-bearing conditions)
 - **Type-flip (task #5), DIAGNOSED via trace (`scratchpad/northgate_trace.js`, ids 675 vs 670):** on
