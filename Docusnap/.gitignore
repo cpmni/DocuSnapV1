@@ -73,3 +73,4 @@ _archive/
 # attacker roadmap. See SECURITY_BACKLOG.md (the tracker) + SECURITY_AUDIT_*.md (full evidence).
 SECURITY_AUDIT_*.md
 SECURITY_BACKLOG.md
+build_python/
