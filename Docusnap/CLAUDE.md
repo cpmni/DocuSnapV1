@@ -21,7 +21,14 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-26 FINAL) — logo-identity fix COMPLETE (A+C+G1+G2), gate PASSED, DARK
+## Current session state (2026-07-26 FINAL) — logo-identity fix COMPLETE, FLIPPED ON + LIVE-VALIDATED
+**FLIP + LIVE VALIDATION (latest):** defaults flipped ON (`eeb257d` — `TEMPLATE_VETO_FALLTHROUGH` +
+`LOGO_DETAIL_GLOBAL_RIVALS` default '1', =0 restores; test OFF-cases now set '0' explicitly). Owner ran
+`npm start`, reprocessed the stuck Saltmarsh dockets: **"the docs filed fine"** — the full chain
+(collision-vetoed → fall-through match → boost → G1/G2 clean → FILED) is live-proven. ⚠ The PACKAGED
+app needs an installer REBUILD to carry it. **10 commits ahead of origin, ALL UNPUSHED** (through
+`3e0812c` — incl. `docs/ARCHITECTURE_SNAPSHOT_2026-07-26.md`, the C++-port planning report; MODULES.md
+verified badly stale there). Push decision = owner. **The earlier DARK note below is superseded. ↓**
 **LATER 2026-07-26: the corroboration-gated variant CLEARED the gate.** gary designed + Oracle signed
 (revised C8) the G1/G2 guards, BUILT `ba8bcea`, all green: **G1** (final assembly) — a fall-through
 doc's critical winner must be corroborated (independent-FAMILY rail read, or boundary-guarded page
