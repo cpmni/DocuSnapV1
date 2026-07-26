@@ -262,6 +262,72 @@ def identify_template(page_image, ocr_text: str, templates: list,
         ds = (cand.get('dominant_supplier') or '').strip().lower()
         return (not ds) or (ds == _refused_supplier)
 
+    # TEMPLATE_VETO_FALLTHROUGH (Slice C — Oracle SIGN-OFF-WITH-CONDITIONS C1-C5, 2026-07-26; default
+    # OFF ⇒ the three identity-veto sites below `return None` exactly as before ⇒ byte-identical).
+    # When an IDENTITY veto — the 256-bit mark veto or the distinctive-branding text gate — refuses the
+    # coarse logo pick, fall through to the text arms (same-type rescue + keyword fingerprint) instead
+    # of discarding the whole match: the arms hold the RIGHT answer whenever the true supplier's
+    # branding is on the page (measured 2026-07-26: 4 Saltmarsh dockets whose wrong Thornbury lock was
+    # gated to None scored their OWN template at keyword ratio 1.0, unreachable behind the return).
+    # DISTINCT from _logo_refused (type-refuse): C1's supplier guard binds ONLY there — an identity
+    # veto PROVED the locked supplier wrong, so binding C1 here would block exactly the correct rescue
+    # (Oracle Seam-4). The two flags are never both set (the veto sites are guarded on
+    # `_logo_refused is None`). If nothing resolves, the corner stays None — byte-identical to today.
+    _vf_on = os.environ.get('TEMPLATE_VETO_FALLTHROUGH', '0') != '0'
+    _logo_vetoed = False
+    _vetoed_supplier = None       # lower-cased dominant supplier of the refuted pick ('' = unnamed)
+    _vetoed_tid = None            # row-id fallback exclusion when the pick has no dominant supplier
+    _veto_mark_rivals = set()     # detail-veto flavour only: suppliers the MARK positively matched
+
+    def _veto_excluded(t):
+        # C2 (LOAD-BEARING, Oracle): exclude the refuted SUPPLIER's templates — ALL its siblings, not
+        # just the vetoed row — from the fall-through arms. _match_by_keywords scores the RAW
+        # fingerprint ratio (generic type words included, 0.75 bar), so a junk-heavy sibling
+        # fingerprint can clear it on a rival's page with zero distinctive presence; supplier-scoped
+        # exclusion closes that re-admission door. Strictly safe vs baseline: these docs got None.
+        if _vetoed_supplier:
+            return (t.get('dominant_supplier') or '').strip().lower() == _vetoed_supplier
+        return _vetoed_tid is not None and t.get('id') == _vetoed_tid
+
+    def _vetoed_fallthrough_ok(cand):
+        # C3 winner bar (Oracle): on an identity-veto fall-through, accept only a winner that either
+        # belongs to a supplier the MARK positively matched (detail-veto flavour — pixel + text
+        # agreement, the strongest class), or clears the distinctive branding PRESENCE bar on THIS
+        # page (an all-junk fingerprint has n==0 and can never clear it). Anything else returns None
+        # exactly as today — the cost vs baseline is zero, and a two-source contradiction
+        # (mark says R, text says S3) keeps its human checkpoint.
+        if not _logo_vetoed:
+            return True
+        sn = (cand.get('dominant_supplier') or '').strip().lower()
+        if sn and sn in _veto_mark_rivals:
+            return True
+        _o, _k = _distinctive_hit_ratio(cand, ocr_lower)
+        return _k > 0 and _o >= _BRANDING_PRESENT_RATIO
+
+    def _mark_rival_suppliers(exclude_sup):
+        # Detail-veto flavour of C3: suppliers whose enrolled Store-B mark set POSITIVELY matches the
+        # query mark (min-over-set ≤ the veto threshold). Fail-safe empty on any error → the winner
+        # bar falls back to the distinctive-presence arm alone (stricter, never looser).
+        out = set()
+        if not query_detail_hash:
+            return out
+        try:
+            import logo_detail
+            per = {}
+            for t in templates:
+                sn = (t.get('dominant_supplier') or '').strip().lower()
+                if not sn or sn == exclude_sup:
+                    continue
+                per.setdefault(sn, []).extend(t.get('logo_detail_hashes') or [])
+            thr = logo_detail._veto_dist()
+            for sn, hs in per.items():
+                m = logo_detail.min_over_set(query_detail_hash, hs)
+                if m is not None and m <= thr:
+                    out.add(sn)
+        except Exception:
+            pass
+        return out
+
     # 1. Logo hash — the most reliable SUPPLIER identifier, but NOT a doc-type one
     #    (same-letterhead siblings). Gather ALL close logo candidates; within the
     #    ambiguity margin, prefer the sibling whose DOC-TYPE matches the detected
@@ -315,7 +381,14 @@ def identify_template(page_image, ocr_text: str, templates: list,
                 # Slice-B detail hashes accrue). Ordered after the trusted-title refuse, before Fix A.
                 if _logo_refused is None and _logo_detail_veto(cands, cluster_dist, best_t,
                                                                query_detail_hash, all_templates=templates):
-                    return None
+                    if not _vf_on:
+                        return None
+                    # Slice C (detail-veto flavour): refuse the pick but keep matching — record the
+                    # refuted supplier (C2 exclusion) + the suppliers the mark POSITIVELY matched (C3).
+                    _logo_vetoed = True
+                    _vetoed_supplier = (best_t.get('dominant_supplier') or '').strip().lower()
+                    _vetoed_tid = best_t.get('id')
+                    _veto_mark_rivals = _mark_rival_suppliers(_vetoed_supplier)
                 # FIX A: is this an AMBIGUOUS same-letterhead pick? (Ordered AFTER the trusted-title
                 # refuse above.) If so the engine HOLDS the doc for review instead of auto-filing a
                 # popularity-coin-flip type. Computed over the WIDER jitter-immune band — see
@@ -358,18 +431,29 @@ def identify_template(page_image, ocr_text: str, templates: list,
                 #       own-absent, not own-present.
                 #   (c) its rival test (raw per-template fingerprint, exact, whole-page, flat
                 #       0.75) was structurally unreachable — see _rival_branding_present V2.
-                if (_logo_refused is None and ocr_lower and os.environ.get('TEMPLATE_LOGO_TEXT_GATE', '1') != '0'
+                if (_logo_refused is None and not _logo_vetoed and ocr_lower
+                        and os.environ.get('TEMPLATE_LOGO_TEXT_GATE', '1') != '0'
                         and (best_t.get('keyword_fingerprint') or [])):
                     if os.environ.get('TEMPLATE_GATE_DISTINCTIVE', '1') != '0':
                         _own, _n = _distinctive_hit_ratio(best_t, ocr_lower)
                         if (method in ('logo', 'logo+slug', 'logo+keywords')
                                 and (_n == 0 or _own < _BRANDING_PRESENT_RATIO)
                                 and _rival_branding_present(best_t, templates, ocr_lower)):
-                            return None
+                            if not _vf_on:
+                                return None
+                            # Slice C (distinctive-gate flavour): text evidence refuted the pick's
+                            # supplier — fall through; no mark-rival set (C3 bar = distinctive presence).
+                            _logo_vetoed = True
+                            _vetoed_supplier = (best_t.get('dominant_supplier') or '').strip().lower()
+                            _vetoed_tid = best_t.get('id')
                     elif (method == 'logo'
                             and _keyword_hit_ratio(best_t, ocr_lower) <= 0.0
                             and _rival_branding_present(best_t, templates, ocr_lower)):
-                        return None
+                        if not _vf_on:
+                            return None
+                        _logo_vetoed = True
+                        _vetoed_supplier = (best_t.get('dominant_supplier') or '').strip().lower()
+                        _vetoed_tid = best_t.get('id')
                 ambiguous_type = _type_ambiguity(cands, cluster_dist, detected_slug, title_trusted)
                 result = {'template': best_t, 'confidence': conf, 'method': method,
                           'logo_phash': logo_phash, 'ambiguous_type': ambiguous_type}
@@ -380,9 +464,10 @@ def identify_template(page_image, ocr_text: str, templates: list,
                     # non-ambiguous matches never carry them → every existing caller is unchanged.
                     result['ambiguous_siblings'] = _band_siblings(cands, cluster_dist)
                     result['cluster_supplier'] = best_t.get('dominant_supplier')
-                # Return the accepted logo match — UNLESS the logo arm refused a wrong-type sibling, in
-                # which case fall through to the same-type rescue / keyword arm (LOGO_REFUSE_FALLTHROUGH).
-                if _logo_refused is None:
+                # Return the accepted logo match — UNLESS the logo arm refused a wrong-type sibling
+                # (LOGO_REFUSE_FALLTHROUGH) or an identity veto refuted the pick (Slice C), in which
+                # case fall through to the same-type rescue / keyword arm.
+                if _logo_refused is None and not _logo_vetoed:
                     return result
 
     # 2b. TEXT-CORROBORATED, SAME-TYPE RESCUE (Phillip, 2026-07-10): the logo drifted OUT of the strict
@@ -395,9 +480,13 @@ def identify_template(page_image, ocr_text: str, templates: list,
     #     template is right there. Precision-gated (same-type + >=0.80 branding overlap + logo band):
     #     can ONLY turn "wrongly no template" into the CORRECT template, never a wrong one; any miss
     #     falls through to the existing logoless path / review-to-teach.
+    # Slice C2: on an identity-veto fall-through both text arms search a universe EXCLUDING the
+    # refuted supplier's templates (all siblings — see _veto_excluded). No veto ⇒ untouched list.
+    _arm_templates = [t for t in templates if not _veto_excluded(t)] if _logo_vetoed else templates
+
     if detected_slug and title_trusted:
         _same_type = sorted(
-            ((t, _keyword_hit_ratio(t, ocr_lower)) for t in templates
+            ((t, _keyword_hit_ratio(t, ocr_lower)) for t in _arm_templates
              if (t.get('document_type_slug') or '') == detected_slug),
             key=lambda x: -x[1])
         if _same_type and _same_type[0][1] >= RESCUE_KEYWORD_OVERLAP:
@@ -413,19 +502,23 @@ def identify_template(page_image, ocr_text: str, templates: list,
             # Kill switch RESCUE_ENFORCE_LOGO_BAND=1 restores the old band (byte-identical to before).
             _enforce_band = os.environ.get('RESCUE_ENFORCE_LOGO_BAND', '0') != '0'
             if logo_phash is None or not _enforce_band or _min_set_dist(_cand, logo_phash) <= RESCUE_LOGO_BAND:
-                if _fallthrough_supplier_ok(_cand):   # C1: reject a fall-through match for a DIFFERENT supplier
+                if _fallthrough_supplier_ok(_cand) and _vetoed_fallthrough_ok(_cand):
+                    # C1: reject a type-refuse fall-through for a DIFFERENT supplier; C3: an
+                    # identity-veto fall-through winner must clear the mark/branding bar.
                     return {'template': _cand, 'confidence': 60,
                             'method': 'keywords+slug_rescue', 'logo_phash': logo_phash}
 
     # 2. Keyword fingerprint — fallback for docs without logos. Pass detected_slug so a same-fingerprint
     # sibling of the DETECTED type wins the tie (the logo-drift → keyword-fallback → wrong-sibling class).
-    kw_match = _match_by_keywords(ocr_text, templates, detected_slug)
+    kw_match = _match_by_keywords(ocr_text, _arm_templates, detected_slug)
     if kw_match and kw_match['confidence'] >= int(KEYWORD_THRESHOLD * 100):
         # Same title-trust refuse on the logoless path.
         if title_trusted and detected_slug and \
            (kw_match['template'].get('document_type_slug') or '') != detected_slug:
             return _type_refuse(detected_slug, kw_match['template'].get('document_type_slug'))
-        if _fallthrough_supplier_ok(kw_match['template']):   # C1: reject a fall-through match for a DIFFERENT supplier
+        if _fallthrough_supplier_ok(kw_match['template']) and _vetoed_fallthrough_ok(kw_match['template']):
+            # C1: reject a type-refuse fall-through for a DIFFERENT supplier; C3: an identity-veto
+            # fall-through winner must clear the mark/branding bar (else None, as today).
             if logo_phash:
                 kw_match['logo_phash'] = logo_phash
             return kw_match
