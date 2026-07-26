@@ -189,8 +189,15 @@ TAUGHT_OWNERSHIP_TYPE_SCOPED_LABEL = os.environ.get('TAUGHT_OWNERSHIP_TYPE_SCOPE
 # accuracy BYTE-IDENTICAL (note-only), no doc newly enabled to file. would-auto-file 396->391: 5 held = #183
 # (the silent-wrong win) + 4 correct-per-GT reads on the same degraded-scan family (181/185/189 Larkspur,
 # 471 Thornbury) — the honest fail-toward-review cost, 0.6%, since a correct and a wrong page-absent inline
-# synthesis are indistinguishable at runtime. Kill: =0 (byte-identical off).
-INLINE_HARVEST_ABSENCE_HOLD = os.environ.get('INLINE_HARVEST_ABSENCE_HOLD', '1') != '0'
+# synthesis are indistinguishable at runtime.
+# FLIPPED BACK DARK 2026-07-26 (owner live-test): on a SYSTEMATICALLY-skewed supplier (Northgate Textiles)
+# the false-positive rate is far worse than the corpus 0.6% — the whole PO batch over-flags a CORRECT,
+# VISIBLE ref (e.g. 'PO-60892', printed "Order No. PO-60892") because the skew keeps it out of the flat
+# ocr_text while the rigid crop ALSO read it (rejected only on the caption prefix, so that agreement is
+# invisible to the corroboration ledger). REFINE before any re-flip: let the rigid crop's OWN (even
+# rejected) read corroborate the inline value — that keeps #183 held (its crop read GARBAGE, disagreed)
+# while clearing the agree-case. Force on with =1. Kill/default: =0 (byte-identical off).
+INLINE_HARVEST_ABSENCE_HOLD = os.environ.get('INLINE_HARVEST_ABSENCE_HOLD', '0') != '0'
 
 
 def _late_rescue_applicable(s2_supplier, supplier_name):
