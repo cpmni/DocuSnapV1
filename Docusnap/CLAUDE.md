@@ -22,8 +22,8 @@ touches that area — read the pointed-to doc BEFORE working in it:
   ➜AN there). Read the matching block before changing one of those files.
 
 ## Current session state (2026-07-26 EVENING) — READ `HANDOVER_2026-07-26_EVENING.md` FIRST
-**2026-07-26 EVENING (Opus 4.8) — ALL PUSHED through `13b70a3` (origin `0 0`), tree clean; a dev
-`npm start` is RUNNING (owner live test).** Built the two planned
+**2026-07-26 EVENING (Opus 4.8) — ALL PUSHED through `7cfcc5f` (origin `0 0`), tree clean; a dev
+`npm start` is RUNNING (owner live test). READ `HANDOVER_2026-07-26_EVENING.md` (its ⭐ LATEST block first).** Built the two planned
 targets, each gary→Oracle gated + kill-switched: **`18d851a` B′ TYPE-SCOPED taught-ownership label
 exemption — DEFAULT ON** (`keyword.label_is_own_discriminating_in_type` intersects the global label owners
 with the RESOLVED type's field keys → "Order Date" on a PO is own-label; fires only on an AUTHORITATIVE
@@ -35,13 +35,24 @@ diff = 1 line, M/accuracy identical) · **`9119227` Fix A #183 inline-harvest ab
 [pure fn of the result, closes the label-less-anchor hole too]; corpus M 2→1 [#183 caught, #583 untouched],
 accuracy identical) · **`ae12a0e` Fix A → DARK** (owner live-test: over-flags a CORRECT VISIBLE ref on the
 systematically-skewed Northgate batch — the rigid crop read it too but rejected on the caption prefix, so
-its agreement is invisible to the winners-only ledger; refine before re-flip). ⭐ **NEXT: (1) owner
-reprocess Copperfield (B′ clears 69→98) + Northgate (Fix A dark clears the flags) in the dev app; (2)
-TYPE-FLIP — Northgate PO mis-typed Invoice, root traced: skew kills the heading → detect "Sales Order 65%"
-untrusted → same-logo fingerprint stamps Invoice (task #5, reggie/007→Oracle, BANNER_HEADING_REREAD lever);
-(3) Fix A refinement = crop-read corroboration (task #4).** Installer
-`r20260726-1018` predates all 3 commits. **The prior block's "NEXT" is now DONE (Copperfield = B′;
-#183 = Fix A) — its forensics remain valid history. ↓**
+its agreement is invisible to the winners-only ledger; refine before re-flip, task #4). **THEN: the
+Northgate PO→Invoice TYPE-FLIP was root-caused by a NEW agent HERALD** (created + registered this session,
+`bd400e4`/`7cfcc5f`; `.claude/agents/herald.md`, skill `document-type-heading`, standing ref
+`docs/HERALD_TYPE_DETECTION_REFERENCE.md` = THE spec — read before building). Herald renders+OCRs the TITLE
+BAND before citing a score and CORRECTED the diagnosis: **axis-2 classification is SOUND** (correct title →
+PO 95/trusted); the mis-type is a **DETERMINISTIC generic-fingerprint** hole (the pure-letterhead Invoice
+template scores 1.0 on every page → wins; `_kw_type_ambiguity` blind = exact-tie-only), TEMPLATE-path not
+logo-only, NOT a coin-flip — a garbled PO with clean fields would silently auto-file Invoice. **The owner's
+REAL docs type correctly TODAY** (born-digital/logoless SuperStore + real-scanned City Office/"doc-solutions";
+`detect_document_type` scans every line = layout-agnostic) — Northgate is a DEMO-skew artefact. ⭐ **NEXT:
+(1) owner reprocess Copperfield (B′ clears 69→98) + Northgate (Fix A dark clears the flags) in the dev app;
+(2) TYPE-FLIP (task #5, HERALD owns it): Herald designs the GENERALISED fix — PRIMARY = fuzzy-to-CLOSED-
+VOCABULARY beside `_despaced_heading`'s exact test (skew-agnostic; drop the multi-word-only guard), + a
+TEMPLATE-PATH HOLD-on-generic-fingerprint + fp hygiene (strip Bluefin/Marine from PO id30) → Oracle → build;
+GATE = corpus type-outcome enumerator (false-hold + silent-misfile); (3) Fix A refinement = crop-read
+corroboration (task #4).** Installer `r20260726-1018` predates all commits; iris + herald are registered
+agents. **ALL PUSHED through `7cfcc5f`, origin `0 0`. The 2026-07-26 morning block's "NEXT" is DONE
+(Copperfield = B′; #183 = Fix A). ↓**
 
 ## Current session state (2026-07-26) — READ `HANDOVER_2026-07-26.md` FIRST
 **Wrapped 2026-07-26 (Fable 5). ALL PUSHED through `fff6cde` (origin `0 0`), tree clean, no background

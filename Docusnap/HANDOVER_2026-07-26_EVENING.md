@@ -1,8 +1,43 @@
 # HANDOVER 2026-07-26 EVENING (Opus 4.8 · max effort)
 
-Branch `feat/reprocess-throughput-autostraighten` · **ALL PUSHED through `13b70a3`** (origin `0 0`) ·
+Branch `feat/reprocess-throughput-autostraighten` · **ALL PUSHED through `7cfcc5f`** (origin `0 0`) ·
 working tree CLEAN · installer `r20260726-1018-58533ea` predates all this session's commits. ⚠ A dev
 **`npm start` is RUNNING** (the owner's live test app; background id b44da8h0v).
+
+## ⭐ LATEST (read FIRST — post-handover developments, supersede the type-flip section below)
+After the owner live-tested (`npm start`): Fix A over-flagged CORRECT visible refs on the exaggerated-skew
+Northgate batch → **reverted to DARK (`ae12a0e`)** (refine later, task #4). The Northgate PO→Invoice
+**type-flip was then root-caused by a NEW specialist agent, HERALD**, created this session
+(`bd400e4`/`7cfcc5f`): `.claude/agents/herald.md` (registers as subagent_type `herald`), skill
+`.claude/skills/document-type-heading/`, standing reference **`docs/HERALD_TYPE_DETECTION_REFERENCE.md`**
+(THE spec — read it before building). Herald renders + OCRs the TITLE BAND before citing a score; he
+**corrected the earlier diagnosis**:
+- **Axis-2 (classification) is SOUND (proven):** given the correct title text the classifier types PO
+  95/trusted, 3/3. The title simply isn't READ — not "body keywords outvote the title".
+- **Axis-3 is a DETERMINISTIC silent-misfile hole, not a coin-flip:** the Invoice template's fingerprint is
+  6 words of PURE LETTERHEAD → scores 1.0 on every Northgate page → wins outright; `_kw_type_ambiguity` is
+  blind (needs an EXACT tie). A garbled PO with clean fields would AUTO-FILE as Invoice with no guard. This
+  is TEMPLATE-path (not logo-only) — `_match_by_keywords` matches a logoless doc too.
+- **The owner's REAL docs already type correctly TODAY:** born-digital/logoless (SuperStore + varied 2026
+  suppliers) AND real scanned (City Office NI, the "doc-solutions"-style vendor — the "fhfhghh@@" filename
+  garble is FILENAME-only; the title OCRs fine at minimal skew) all type Invoice/trusted with NO
+  logo/template (`detect_document_type` scans every line → layout-agnostic). **Northgate's failure is a
+  DEMO-skew artefact × the generic-fingerprint hole.**
+- **Durable GENERALISED fix (Herald §7, NOT deskew-first), 4 levers each with a "does NOT cover":** (1)
+  PRIMARY input-agnostic **fuzzy-to-CLOSED-VOCABULARY** beside `_despaced_heading`'s exact test (recovers a
+  garble however it arose + DROP the multi-word-only guard for "I N V O I C E"; tight edit threshold;
+  top-band + name/alias scoped; out-of-vocab → HOLD); (2) scanned-support layout-agnostic geometry title
+  re-read (numpy deskew first, NOT tuned to ±2°, skips born-digital, never assumes a logo); (3)
+  TEMPLATE-PATH-scoped HOLD when the winning fingerprint carries no type-distinctive content (not exact-tie)
+  + fingerprint hygiene (strip customer words Bluefin/Marine from PO template id30) + buyer-issued polarity;
+  (4) no-logo/born-digital: keep the type call logo-independent, HOLD-as-unknown vs the incidental body winner.
+
+**REVISED FIRST ACTIONS (supersede the numbered list below):** (1) owner reprocess Copperfield (B′ clears
+69→98) + Northgate (Fix A dark clears the flags) in the dev app; (2) **HERALD designs the concrete fix —
+lever 1 (fuzzy-to-vocabulary) as the primary, then lever 3 to close the silent-misfile hole → Oracle →
+build; GATE = a corpus type-outcome enumerator (false-hold + silent-misfile rates)** (task #5, Herald owns
+it; his two standing harnesses are assigned in the skill); (3) Fix A refinement = crop-read corroboration
+(task #4). Herald + iris are registered agents now. **Everything pushed through `7cfcc5f`, origin `0 0`.**
 
 ## TL;DR
 Built the two planned targets end-to-end, each gary→Oracle gated, kill-switched, unit+corpus proven.
