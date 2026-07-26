@@ -2614,6 +2614,14 @@ class ExtractionEngine:
             # logo/keyword score that dipped below threshold for this scan). Only
             # used as a fallback when live matching fails, so it never overrides
             # a positive live match with a stale link.
+            # ⚠ SEAM-1 PIN (Oracle 2026-07-26, load-bearing invariant): this fallback RE-IMPOSES a
+            # STORED template id whenever live identification returns None — including a None produced
+            # by the detail veto / distinctive gate refusing a wrong pick. That is review-safe TODAY
+            # only because reprocess forces needs_review and _maybeAutoFile has EXACTLY ONE call site
+            # (the import file_done path). If a second auto-file call site is ever added, a stored
+            # WRONG template re-imposed here becomes a silent re-poisoning vector. Do not add one
+            # without re-vetting this seam (memory: project_slice1d_donothing "the known-id fallback
+            # re-imposes the poison").
             if not match and (known_template_id is not None or pinned_template_id is not None):
                 # A B1 PIN also acts as this fallback (Oracle C2, match=None corner): if this engine
                 # call's own match failed, still honour the pinned sibling so Stage 0 runs against it

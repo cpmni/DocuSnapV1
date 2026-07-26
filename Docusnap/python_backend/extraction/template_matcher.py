@@ -142,17 +142,28 @@ def _type_ambiguity(cands, base_dist, detected_slug, title_trusted) -> bool:
     return len(slugs) >= 2 and not title_resolves
 
 
-def _logo_detail_veto(cands, base_dist, best_t, query_detail_hash) -> bool:
+def _logo_detail_veto(cands, base_dist, best_t, query_detail_hash, all_templates=None) -> bool:
     """SLICE C predicate (pure — Oracle/Phillip/oscar 2026-07-14). True → ABSTAIN the coarse logo pick:
-    the cluster spans ≥2 DISTINCT SUPPLIERS (a look-alike monogram collision is possible) AND the
-    scanned mark's 256-bit DETAIL hash disagrees per logo_detail.veto_by_detail — the refined
+    the scanned mark's 256-bit DETAIL hash disagrees per logo_detail.veto_by_detail — the refined
     POSITIVE-RIVAL semantic (the query must positively match a RIVAL's enrolled set), NOT the bare
     far-from-pick should_veto_logo (which trips on isolation garble; docstring corrected 2026-07-23 —
     the JS templates recheck DELIBERATELY uses the bare semantic instead, see
-    database/modules/logoDetail.js for why the two diverge). FALSE (keep, byte-identical) on: kill
-    switch off; a missing query hash (isolate-fail); a single-supplier cluster; or an empty stored
-    set (Slice-B not yet accrued). So it can only turn a cross-supplier logo COLLISION into review,
-    never drop a real single-supplier match. Guarded by tests/test_logo_detail_veto.py."""
+    database/modules/logoDetail.js for why the two diverge; since 2026-07-26 the two ALSO differ in
+    rival UNIVERSE when LOGO_DETAIL_GLOBAL_RIVALS is on — the JS twin stays cluster-scoped). FALSE
+    (keep, byte-identical) on: kill switch off; a missing query hash (isolate-fail); no rival within
+    reach; or an empty stored set (Slice-B not yet accrued). So it can only turn a cross-supplier
+    logo COLLISION into review, never drop a real single-supplier match.
+
+    LOGO_DETAIL_GLOBAL_RIVALS (default OFF; Oracle A1 2026-07-26): veto_by_detail's own docstring case
+    (doc-193 — the TRUE supplier's coarse phash drifted OUT of the cands band) is structurally
+    unreachable when the rival universe is built from `cands`, because cands is cut at LOGO_THRESHOLD
+    on the very 64-bit hash whose failure the veto polices (measured live 2026-07-26: 8/16 Saltmarsh
+    dockets coarse-lock a WRONG supplier at ≤6 while every Saltmarsh template sits ≥14 — the true
+    rival was invisible to the veto on all 4 incident docs). When armed AND `all_templates` is given,
+    build BOTH sides (pick set + rivals) from ALL templates so neither side is scoped by the broken
+    coarse hash. The positive-rival semantic, threshold, and the pm-None KEEP (logo_detail.py pin)
+    are unchanged — only the search space widens. Guarded by tests/test_logo_detail_veto.py +
+    tests/test_logo_detail_global_rivals.py."""
     if not query_detail_hash or os.environ.get('LOGO_DETAIL_VETO', '1') == '0':
         return False
     try:
@@ -160,7 +171,9 @@ def _logo_detail_veto(cands, base_dist, best_t, query_detail_hash) -> bool:
         best_sup = (best_t.get('dominant_supplier') or '').strip().lower()
         pick_det = list(best_t.get('logo_detail_hashes') or [])
         other_det = {}
-        for (t, d) in cands:
+        _global = bool(all_templates) and os.environ.get('LOGO_DETAIL_GLOBAL_RIVALS', '0') != '0'
+        _src = [(t, None) for t in all_templates] if _global else cands
+        for (t, d) in _src:
             sn = (t.get('dominant_supplier') or '').strip()
             if not sn:
                 continue
@@ -300,7 +313,8 @@ def identify_template(page_image, ocr_text: str, templates: list,
                 # DISAGREES with the scan is a look-alike collision → ABSTAIN (fall to keyword + branding
                 # net + review). See _logo_detail_veto (scoped, fail-safe, kill-switched, inert until
                 # Slice-B detail hashes accrue). Ordered after the trusted-title refuse, before Fix A.
-                if _logo_refused is None and _logo_detail_veto(cands, cluster_dist, best_t, query_detail_hash):
+                if _logo_refused is None and _logo_detail_veto(cands, cluster_dist, best_t,
+                                                               query_detail_hash, all_templates=templates):
                     return None
                 # FIX A: is this an AMBIGUOUS same-letterhead pick? (Ordered AFTER the trusted-title
                 # refuse above.) If so the engine HOLDS the doc for review instead of auto-filing a

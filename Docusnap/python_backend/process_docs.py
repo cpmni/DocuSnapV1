@@ -699,6 +699,13 @@ def main():
             _pinned_tid = None   # FIX B1: id of the ref-prefix-resolved sibling template, pinned into extract() below
             if (not _ks or _ks_overridden) and templates and page_images:
                 try:
+                    # NOTE (Oracle A2, 2026-07-26): this pre-extract call carries NO query_detail_hash
+                    # (the 256-bit mark hash is computed inside engine.extract), so with
+                    # LOGO_DETAIL_GLOBAL_RIVALS on, the ENGINE's identify can detail-veto a wrong pick
+                    # this call accepted. The divergence is REVIEW-BOUND by construction: a B1 pin from
+                    # an ambiguous pick forces the ambiguous-HOLD in the engine (C2, engine.py — a
+                    # pinned doc never auto-files), and the engine's own match is the authoritative one
+                    # persisted. Documented in lieu of threading the hash here (lower blast radius).
                     tmatch = template_matcher.identify_template(
                         page_images[0], ocr_text, templates,
                         detected_slug=detected_slug, title_trusted=title_trusted)
