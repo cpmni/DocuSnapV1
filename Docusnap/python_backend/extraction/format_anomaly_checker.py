@@ -692,6 +692,34 @@ def propose_sep_fix(value: str, format_entry: dict) -> "str | None":
 
 # ── Index builder ─────────────────────────────────────────────────────────────
 
+def _derive_charset(values) -> dict | None:
+    """Character-class summary of a scope's confirmed values, by UNANIMITY (ANCHOR_CHARSET_DEBRIS):
+    {has_letter, has_digit, has_space, literals:set}. has_letter True means SOME confirmed value
+    carried a letter — so a letter can never be treated as impossible junk for this scope. Returns
+    None when no non-empty values (⇒ no descriptor ⇒ the debris arm abstains)."""
+    has_letter = has_digit = has_space = False
+    literals: set = set()
+    n = 0
+    for v in values:
+        s = str(v or '')
+        if not s:
+            continue
+        n += 1
+        for c in s:
+            if c.isalpha():
+                has_letter = True
+            elif c.isdigit():
+                has_digit = True
+            elif c.isspace():
+                has_space = True
+            else:
+                literals.add(c)
+    if not n:
+        return None
+    return {'has_letter': has_letter, 'has_digit': has_digit,
+            'has_space': has_space, 'literals': literals}
+
+
 def build_format_class_index(formats_data: list) -> dict:
     """
     Build a lookup dict keyed by (supplier_lower, doc_type_lower, field_key).
@@ -781,6 +809,16 @@ def build_format_class_index(formats_data: list) -> dict:
         if not _support and vcounts:
             _support = sum(int(n or 0) for n in vcounts.values())
         fmt = {**fmt, 'support': int(_support) if _support else len(samples)}
+        # Learned CHARSET descriptor (ANCHOR_CHARSET_DEBRIS, Oracle C2 2026-07-27) — derived by
+        # UNANIMITY over ALL raw distinct confirmed values (value_counts keys ∪ samples), NOT the
+        # ratio-accepted shapes: one lettered confirm anywhere ⇒ has_letter True ⇒ the debris arm
+        # permanently refuses letter-stripping for the scope (fail-safe: a poisoned confirm can
+        # only DISABLE the arm, never widen it; a Learning-Repair purge re-enables with no code
+        # change). Additive key — non-freetext entries only; no existing consumer reads it.
+        if fmt.get('class') != FREETEXT:
+            _cs = _derive_charset(set((vcounts or {}).keys()) | set(samples))
+            if _cs:
+                fmt = {**fmt, 'charset': _cs}
         index[(supplier, doc_type, field_key)] = fmt
 
     return index

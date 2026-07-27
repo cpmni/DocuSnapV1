@@ -184,16 +184,79 @@ _MAX_DEBRIS_TOKEN_LEN = 2      # a clipped label tail / stray separator is 1-2 c
 _MAX_DEBRIS_CHARS     = 3      # total non-space debris chars tolerated
 
 
-def _recover_clean_token(value, val_type, validation_patterns, label=None):
+_CHARSET_DEBRIS_MIN_SUPPORT = 10   # mirrors the noise-profile 10+ (learning.js) + trust W=10
+
+
+def _charset_excludes(token, charset) -> bool:
+    """True when EVERY character of `token` is impossible under the scope's learned charset —
+    letters need has_letter False, digits need has_digit False, anything else must be absent
+    from the learned literals. One in-charset char ⇒ False (could be a split-off value piece)."""
+    for c in token:
+        if c.isalpha():
+            if charset.get('has_letter'):
+                return False
+        elif c.isdigit():
+            if charset.get('has_digit'):
+                return False
+        elif c in (charset.get('literals') or ()):
+            return False
+    return True
+
+
+def _alnum_debris_admissible(token, side, field_key, format_lookup, edge_contact) -> bool:
+    """ANCHOR_CHARSET_DEBRIS (Oracle SIGN-OFF-W/COND 2026-07-27): may this bare-ALNUM ≤2-char
+    token be treated as clip-debris? ALL of (fail toward refuse → today's reject → review):
+      * kill switch on;
+      * the scope's learned-format entry exists with support ≥ 10 confirms and a charset
+        descriptor derived from ALL raw distinct confirmed values (UNANIMITY — one lettered
+        confirm anywhere puts letters in-charset and permanently refuses letter debris for the
+        scope; Oracle ruling over dominance: a real "F-14266"-style prefix must never be
+        stripped, the abstain cost is only the status-quo review);
+      * has_space False (a space-bearing history makes token-level recovery unsafe);
+      * every char of the token outside the charset (a mixed "F3" on a digit scope has an
+        in-charset char → refuse the WHOLE recovery — it could be a split-off value piece);
+      * EDGE-CONTACT on the token's side (iris/Oracle C3): clipped-glyph debris abuts the crop
+        boundary by physical necessity; an INTERIOR letter token is real page content (format
+        drift) and must keep refusing. No edge metadata ⇒ refuse."""
+    if os.environ.get("ANCHOR_CHARSET_DEBRIS", "0") == "0":
+        return False
+    if format_lookup is None or not field_key:
+        return False
+    try:
+        entry = format_lookup(field_key) or {}
+    except Exception:
+        return False
+    if int(entry.get('support') or 0) < _CHARSET_DEBRIS_MIN_SUPPORT:
+        return False
+    charset = entry.get('charset')
+    if not charset or charset.get('has_space'):
+        return False
+    if not _charset_excludes(token, charset):
+        return False
+    if not edge_contact:
+        return False
+    return bool(edge_contact[0] if side == 'left' else edge_contact[1])
+
+
+def _recover_clean_token(value, val_type, validation_patterns, label=None,
+                         field_key=None, format_lookup=None, edge_contact=None,
+                         allow_alnum_debris=False, debris_out=None):
     """Recover the clean value from an anchor read that FAILED the credibility/coverage gate only
-    because it is ONE clean pattern-matching token wrapped in SHORT punctuation clip-debris
-    (". = 317437" / "-R 317437"). Regex-only (no learned history → works on document #1).
+    because it is ONE clean pattern-matching token wrapped in SHORT clip-debris
+    (". = 317437" / "-R 317437"). Regex-only base arm (no learned history → works on document #1).
     PRECISION-FIRST: returns the token ONLY when EXACTLY ONE whitespace-token fully matches the
-    field pattern AND every other token is clip-debris (len<=2 AND carries a non-alphanumeric char).
-    A bare-alnum fragment (the leading "2" in "2 317437", a lone "R") is REFUSED — it could be a
-    space-split part of the real value, so it is routed to review rather than guessed. A multi-value
-    read ("Total 250.00 317437", a real drift) is refused (not exactly one value token). The caller
-    commits the recovered value FLAGGED + conf-capped, mirroring _slipfix_to_shape — never silently.
+    field pattern AND every other token is clip-debris: len<=2 AND EITHER carries a non-alphanumeric
+    char (the original arm) OR — ANCHOR_CHARSET_DEBRIS, Oracle-signed 2026-07-27 — is a bare-ALNUM
+    token the scope's confirmed history proves impossible (see _alnum_debris_admissible: charset
+    unanimity, support ≥10, edge-contact, rigid site only via allow_alnum_debris). That arm exists
+    because a caption glyph clipped by the crop pad OCRs as a LETTER ("#" → "F 33504" — the
+    SuperStore 61-doc class) which the original refusal routed to a permanent 69-cap hold. A
+    bare-alnum fragment WITHOUT that evidence (the leading "2" in "2 317437", a lone "R") is still
+    REFUSED — it could be a space-split part of the real value. A multi-value read ("Total 250.00
+    317437", a real drift) is refused (not exactly one value token). Charset-stripped tokens are
+    reported via debris_out['alnum'] = [(token, side)] so the caller can run the vector-refutation
+    check (Oracle C4). The caller commits the recovered value FLAGGED + conf-capped (or the
+    Oracle-gated confident tiers), mirroring _slipfix_to_shape — never silently.
     reggie-designed; guarded by tests/test_recover_clean_token.py."""
     if not value or val_type not in _RECOVERABLE_TOKEN_TYPES:
         return None
@@ -203,20 +266,33 @@ def _recover_clean_token(value, val_type, validation_patterns, label=None):
     tokens = str(value).split()
     if len(tokens) < 2:                                   # single token already judged by credibility
         return None
-    value_tokens, debris_chars = [], 0
-    for t in tokens:
-        if any(re.fullmatch(p, t, re.IGNORECASE) for p in pats):
-            value_tokens.append(t)                        # coverage 1.0 for this token
+    matches = [any(re.fullmatch(p, t, re.IGNORECASE) for p in pats) for t in tokens]
+    value_idxs = [i for i, m in enumerate(matches) if m]
+    if len(value_idxs) != 1:                              # zero or ambiguous → refuse
+        return None
+    vi = value_idxs[0]
+    debris_chars, alnum_debris = 0, []
+    for i, t in enumerate(tokens):
+        if i == vi:
             continue
-        if len(t) > _MAX_DEBRIS_TOKEN_LEN or not any(not c.isalnum() for c in t):
-            return None                                   # a real word, OR a bare-alnum fragment → refuse
+        if len(t) > _MAX_DEBRIS_TOKEN_LEN:
+            return None                                   # a real word → refuse
+        if not any(not c.isalnum() for c in t):
+            # bare-alnum fragment: refuse UNLESS the learned-charset arm admits it
+            side = 'left' if i < vi else 'right'
+            if not (allow_alnum_debris
+                    and _alnum_debris_admissible(t, side, field_key, format_lookup, edge_contact)):
+                return None
+            alnum_debris.append((t, side))
         debris_chars += len(t)
         if debris_chars > _MAX_DEBRIS_CHARS:
             return None
-    if len(value_tokens) != 1:                            # zero or ambiguous → refuse
+    token = tokens[vi]
+    if not _crop_is_credible(token, val_type, validation_patterns, label):
         return None
-    token = value_tokens[0]
-    return token if _crop_is_credible(token, val_type, validation_patterns, label) else None
+    if debris_out is not None and alnum_debris:
+        debris_out['alnum'] = alnum_debris
+    return token
 
 
 def _matches_learned_shape(value, field_key, format_lookup) -> bool:
@@ -285,6 +361,48 @@ def _exact_text_corroborates(value, anchor, y_norm, page_text_lines) -> bool:
             continue
         if pat.search(ln.get("text", "") or ""):
             return True
+    return False
+
+
+def _vector_refutes_strip(value, alnum_debris, anchor, y_norm, page_text_lines) -> bool:
+    """Vector-REFUTATION of a charset-debris strip (Oracle C4, 2026-07-27). The born-digital text
+    layer corroborates that the REMAINDER is printed at the taught row — but it can also positively
+    prove the stripped token was REAL INK: when the printed alnum run adjacent to the matched value
+    on the stripped side equals the stripped debris (case-insensitive, ≤2 non-alnum separator chars
+    tolerated — covers "F 14266" and "F-14266"), the strip destroyed genuine content. The caller
+    then caps ≤70 + the verify note (never noteless, never tier 3). For the target class the
+    adjacent ink is "#" (non-alnum) ≠ "F" → no refutation. Same row-band frame as
+    _exact_text_corroborates; None/scanned page_text_lines ⇒ False (tier 3 can't fire there anyway)."""
+    if not page_text_lines or not alnum_debris:
+        return False
+    cv = str(value or "").strip()
+    if not cv:
+        return False
+    try:
+        pat = re.compile(r'(?<![0-9A-Za-z])' + re.escape(cv) + r'(?![0-9A-Za-z])')
+    except re.error:
+        return False
+    h  = float(anchor.get("h_norm") or 0.0) or 0.02
+    y0 = float(y_norm or 0.0) + h / 2.0
+    band = max(h * 1.5, 0.03)
+    for ln in page_text_lines:
+        try:
+            lcy = float(ln.get("y_norm", 0.0)) + float(ln.get("h_norm", 0.0)) / 2.0
+        except Exception:
+            continue
+        if abs(lcy - y0) > band:
+            continue
+        text = ln.get("text", "") or ""
+        for m in pat.finditer(text):
+            for tok, side in alnum_debris:
+                if side == 'left':
+                    seg = re.sub(r'[^0-9A-Za-z]{0,2}$', '', text[:m.start()])
+                    run = re.search(r'[0-9A-Za-z]{1,2}$', seg)
+                else:
+                    seg = re.sub(r'^[^0-9A-Za-z]{0,2}', '', text[m.end():])
+                    run = re.match(r'[0-9A-Za-z]{1,2}', seg)
+                if run and run.group(0).casefold() == str(tok).casefold():
+                    return True
     return False
 
 
@@ -440,10 +558,18 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                 else:
                     # DEBRIS RECOVERY: a clean single token wrapped in short clip-debris
                     # (". = 317437" → "317437") — recover-and-flag, else reject to review.
-                    _rec = _recover_clean_token(crop_value, val_type, validation_patterns, label)
+                    # The RIGID site additionally arms the learned-charset bare-alnum arm
+                    # (ANCHOR_CHARSET_DEBRIS — the clipped-"#"-reads-as-"F" class); the
+                    # registration fallback site keeps the original refusal (Oracle C3).
+                    _rec_meta = {}
+                    _rec = _recover_clean_token(crop_value, val_type, validation_patterns, label,
+                                                field_key=field_key, format_lookup=format_lookup,
+                                                edge_contact=_m.get('edge_contact'),
+                                                allow_alnum_debris=True, debris_out=_rec_meta)
                     if _rec:
                         value, method = _rec, "anchor_crop_recovered"
                         ocr_conf, ocr_min = _m.get('conf'), _m.get('min_conf')
+                        _rec_alnum_debris = _rec_meta.get('alnum') or []
                     elif on_reject:
                         on_reject(field_key, "anchor_crop", crop_value, "not_credible")
             elif crop_value:
@@ -492,6 +618,7 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                                         # marks the result for engine.NAME_GUARD_KEYWORD_CLEAR
         _caption_bleed = False   # fix #2: the relocate read the field's OWN caption (landed on the label)
         _read_box = None         # picker: the winning read's VALUE box (top-left norm) for name candidates
+        _rec_alnum_debris = []   # charset-debris strips from THIS anchor's rigid recovery (Oracle C4 refutation)
         if value and val_type in (None, "text", "multiline_text", "currency") \
                 and (anchor.get("anchor_label") or "").strip() \
                 and anchor.get("offset_dy_norm") is not None and page0 is not None:
@@ -1307,18 +1434,27 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                     continue
             # Confident recovery (oscar's confident-clean, Oracle-gated): a debris-recovered read
             # whose clean token is LOCATED at the taught position AND matches the field's learned
-            # shape is trustworthy — _recover_clean_token only ever stripped NON-alphanumeric edge
-            # debris, so it cannot have force-fit a glyph (the Oracle's glyph-preservation condition,
-            # satisfied by construction). Three tiers: an UNLOCATED / OFF-shape recovery is capped +
-            # flagged (fail toward review); a LOCATED + shape-matched one drops the flag but stays
-            # BELOW the auto-file floor (a one-glance human confirm) UNLESS it is also independently
-            # corroborated by the born-digital vector text at the taught row, which lifts it to
-            # auto-file-eligible (Oracle condition #4). Harness M=0 is the safety gate.
+            # shape is trustworthy. GLYPH SAFETY (revised 2026-07-27, Oracle C5 — the old "only ever
+            # stripped NON-alphanumeric debris, satisfied by construction" is STALE since the
+            # ANCHOR_CHARSET_DEBRIS arm): stripping never substitutes a glyph, and a stripped
+            # bare-ALNUM token is admitted only on (a) the scope's UNANIMOUS confirmed-history
+            # charset at support ≥10, (b) crop-boundary edge-contact (clipped-glyph physics), and
+            # (c) the vector-REFUTATION below — when the born-digital text layer proves the stripped
+            # token was real ink adjacent to the value ("F 14266" printed), the recovery is demoted
+            # to capped+flagged, never noteless, never tier 3. Three tiers: an UNLOCATED / OFF-shape
+            # / REFUTED recovery is capped + flagged (fail toward review); a LOCATED + shape-matched
+            # one drops the flag but stays BELOW the auto-file floor (a one-glance human confirm)
+            # UNLESS it is also independently corroborated by the born-digital vector text at the
+            # taught row, which lifts it to auto-file-eligible (Oracle condition #4). Harness M=0 +
+            # the 61-doc live replay are the safety gates.
             _rec_confident = False
             if method == "anchor_crop_recovered":
-                _rec_confident = bool(located_ok) and _matches_learned_shape(value, field_key, format_lookup)
+                _rec_refuted = bool(_rec_alnum_debris) and _vector_refutes_strip(
+                    value, _rec_alnum_debris, anchor, y_norm, page_text_lines)
+                _rec_confident = (not _rec_refuted) and bool(located_ok) \
+                    and _matches_learned_shape(value, field_key, format_lookup)
                 if not _rec_confident:
-                    conf = min(70, conf)   # unlocated / off-shape → capped + flagged (route to review)
+                    conf = min(70, conf)   # unlocated / off-shape / vector-refuted → capped + flagged
                 elif _exact_text_corroborates(value, anchor, y_norm, page_text_lines):
                     # BORN-DIGITAL + independent exact-text agreement on the value's OWN taught row
                     # (Oracle condition #4): the debris-recovered token is confirmed by a fully
@@ -3199,6 +3335,12 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
         if capture:
             try: capture(crop)
             except Exception: pass   # dev-only slice capture; never disrupt OCR
+        # ANCHOR_CHARSET_DEBRIS edge-contact metadata (iris/Oracle C3): does ink touch the crop's
+        # left/right boundary? A clipped neighbouring glyph ("#" cut by the ±20px pad, OCR'd "F")
+        # abuts the boundary by physical necessity; a genuinely separated interior token does not.
+        # Metadata-only (read by the charset-debris arm); computed only when the arm is armed.
+        if meta is not None and os.environ.get("ANCHOR_CHARSET_DEBRIS", "0") != "0":
+            meta['edge_contact'] = _crop_edge_contact(crop)
         # The value's TIGHT normalised box (from the stored centre+dims) lets the
         # ladder's free-text preview fast-path re-crop with its own headroom at the
         # preview scale. Only when real dims are stored (not the 200×60 default).
@@ -3216,6 +3358,21 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
         return _v
     except Exception:
         return None
+
+
+def _crop_edge_contact(crop):
+    """(left, right) — True when INK (dark pixels) touches within 2px of that crop boundary.
+    Cheap PIL-only: binarize + getbbox. Any failure ⇒ (False, False) ⇒ the charset-debris arm
+    refuses (fail toward review)."""
+    try:
+        g = crop.convert("L").point(lambda p: 255 if p < 128 else 0)
+        bbox = g.getbbox()
+        if not bbox:
+            return (False, False)
+        l, _t, r, _b = bbox
+        return (l <= 2, r >= crop.size[0] - 2)
+    except Exception:
+        return (False, False)
 
 
 def _auth_rank(anchor: dict) -> int:
