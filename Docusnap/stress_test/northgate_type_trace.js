@@ -89,17 +89,20 @@ const TYPE_GUARD = m => {
     fs.copyFileSync(src, path.join(RR, fname));
     const m = await runOne(RR, fname, args);
     const got = m ? (m._document_slug || nameToSlug[m.document_type] || m.document_type || null) : null;
+    const _pe = m && m.extractions ? (m.extractions.po_number || m.extractions.reference_number) : null;
     rows.push({ id, status: d.status, supplier: d.supplier_name, gt: d.gt_slug, file: d.original_filename,
-                got, conf: m ? m.overall_confidence : null, guard: TYPE_GUARD(m), ok: got === d.gt_slug });
+                got, conf: m ? m.overall_confidence : null, guard: TYPE_GUARD(m), ok: got === d.gt_slug,
+                ref: _pe ? (_pe.value ?? null) : null, refmethod: _pe ? (_pe.method || '') : '',
+                refflag: _pe && _pe.validation_note ? 'FLAG' : '' });
   }
   fs.rmSync(RR, { recursive: true, force: true });
   db.close();
   const sw = `FUZZY=${process.env.HEADING_FUZZY_VOCAB || '1'} NONDISTINCT=${process.env.KW_TYPE_NONDISTINCTIVE_HOLD || '1'}`;
   console.log(`# Northgate type trace (${sw})  DB=${path.basename(LIVE_DB)}`);
-  console.log('| id | status | GT | resolved | conf | guard | ok? | file |');
-  console.log('|---|---|---|---|---|---|---|---|');
+  console.log('| id | status | GT | resolved | conf | guard | ref(po/ref) | method | flag | file |');
+  console.log('|---|---|---|---|---|---|---|---|---|---|');
   for (const r of rows) {
-    if (r.err) { console.log(`| ${r.id} | — | — | ${r.err} | | | | |`); continue; }
-    console.log(`| ${r.id} | ${r.status} | ${r.gt} | ${r.got} | ${r.conf} | ${r.guard || ''} | ${r.ok ? '✓' : '✗'} | ${r.file} |`);
+    if (r.err) { console.log(`| ${r.id} | — | — | ${r.err} | | | | | | |`); continue; }
+    console.log(`| ${r.id} | ${r.status} | ${r.gt} | ${r.got} | ${r.conf} | ${r.guard || ''} | ${r.ref} | ${r.refmethod} | ${r.refflag} | ${r.file} |`);
   }
 })();

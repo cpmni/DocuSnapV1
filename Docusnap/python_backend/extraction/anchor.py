@@ -839,6 +839,40 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                 # the SAME credibility + learned-format gates as a crop read, so it
                 # can never commit something a crop read would have rejected.
                 iv = located.get("inline_value")
+                # 007-A (ANCHOR_INLINE_FULLRES_REREAD, default ON — owner+007 2026-07-27): inline_value is
+                # harvested from the label-LOCATE pass, which _prep_for_lines downscales to ~120 DPI for
+                # locate SPEED (_MAX=1100). At that resolution a printed digit can flip (measured 9->0 on a
+                # good, mildly-skewed scan: PO-78399 -> PO-78309, committed silently). The KNOWN inline_box is
+                # in page coords, so re-read it at FULL render resolution with the SAME crop ladder the DRAW
+                # TOOL / _crop_and_ocr use (resolution-adaptive: full-res for codes, preview-scale for degraded
+                # free-text — the owner's "the draw box seldom fails OCR" recipe). Prefer the full-res read
+                # ONLY when it is itself CREDIBLE, so a garbled re-read never displaces a correct harvest
+                # (non-monotonicity guard — downscale can incidentally rescue a noisy glyph; Oracle Q2). No
+                # inline_box / OFF => the low-res harvest stands (byte-identical). Value-only: position + gates
+                # below are unchanged.
+                # ⚠ DARK (default '0') — the corpus A/B REGRESSED: re-cropping full-res at the inline_box
+                # (which is derived from the LOW-RES locate pass, so its edges are ~120-DPI coarse) and
+                # re-OCRing corrupted many reads (ref 97.6->86.8%, date 95.5->90.0%, silentAutoFile 3->27
+                # 2026-07-27) — the non-monotonic re-OCR Oracle warned of (Q2), at scale. The box-precision
+                # problem must be solved (re-locate the value at full res, not re-crop the coarse box)
+                # before this can re-enable. reggie's independent Stage-1 reader (PO_ORDER_NO_LABELS) makes
+                # the target case fail-toward-review meanwhile. =1 to experiment.
+                if (iv and page0 is not None and located.get("inline_box")
+                        and os.environ.get('ANCHOR_INLINE_FULLRES_REREAD', '0') != '0'):
+                    try:
+                        _ib0 = located["inline_box"]
+                        _W0, _H0 = page0.size[0], page0.size[1]
+                        _fcrop = page0.crop((int(_ib0["x_norm"] * _W0), int(_ib0["y_norm"] * _H0),
+                                             int((_ib0["x_norm"] + _ib0["w_norm"]) * _W0),
+                                             int((_ib0["y_norm"] + _ib0["h_norm"]) * _H0)))
+                        _frv = _ocr_crop_laddered(_fcrop, val_type, meta={}, page=page0,
+                                                  box=(_ib0["x_norm"], _ib0["y_norm"], _ib0["w_norm"], _ib0["h_norm"]))
+                        if _frv and _frv.strip():
+                            _frc = _clean_text_fallback(_frv, val_type, validation_patterns) or clean_crop_segment(_frv, val_type)
+                            if _frc and _crop_is_credible(_frc, val_type, validation_patterns, label):
+                                iv = _frv.strip()   # credible full-res re-read replaces the low-res harvest
+                    except Exception:
+                        pass   # any failure -> keep the low-res harvest (byte-identical fallback)
                 if iv:
                     hv = _clean_text_fallback(iv, val_type, validation_patterns) or clean_crop_segment(iv, val_type)
                     # A code-like value column ("2602-0768-1 Work Address …") is a

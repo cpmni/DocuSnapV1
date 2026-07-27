@@ -845,6 +845,14 @@ def extract_fields(ocr_text: str, field_keys: list[str],
 
         fp      = field_patterns[pk]
         labels  = fp.get("labels", [])
+        # PO_ORDER_NO_LABELS (reggie/Oracle 2026-07-27, default on): give po_number the bare
+        # "Order No."/"Order Number" reader it lacks — measured, without it po_number has NO Stage-1
+        # reader and depends solely on the skew-fragile anchor (007's 669 misread). Appended AFTER the
+        # shipped labels so the explicit "Purchase Order No" is tried first; the _qualified_order_caption
+        # guard in _search_for_label keeps a "Sales/Delivery/… Order No" from landing here. Injected in
+        # code (config unchanged) so OFF ⇒ byte-identical.
+        if pk == 'po_number' and os.environ.get('PO_ORDER_NO_LABELS', '1') != '0':
+            labels = labels + ["Order No.", "Order Number", "Order No"]
         dirs    = fp.get("directions", ["right"])
         base_conf = fp.get("base_confidence", 75)
         role_caption = fp.get("role_caption")   # 'ref' on a seeded custom-ref field (RC1/RC5)
@@ -1100,6 +1108,25 @@ def _is_caption_fragment(text: str) -> bool:
     return bool(ws) and len(ws) <= 3 and ws[-1] in _CAPTION_NOUN_TAIL
 
 
+# reggie/Oracle 2026-07-27 (PO_ORDER_NO_LABELS): a bare "Order …" caption ("Order No.") is stolen by a
+# QUALIFIED one ("Sales Order No. SO-…", "Delivery Order No", "Your Order No") — so a bare-"order" label
+# is rejected when the word immediately BEFORE it names a different KIND/PARTY of order. Mirrors
+# _ref_caption_party_conflict / _total_role_collision. "our" is deliberately EXCLUDED (Oracle) — "Our
+# Order No." is a legitimate own-ref. Bidirectional: also stops sales_order_number's pre-existing bare
+# "Order No" from grabbing a "Purchase Order No. PO-…" (a latent cross-grab).
+_ORDER_QUALIFIER_STOP = frozenset({
+    "sales", "purchase", "customer", "your", "client", "delivery",
+    "works", "work", "back", "change", "standing",
+})
+
+
+def _qualified_order_caption(line: str, start: int) -> bool:
+    """True when a bare 'Order …' caption starting at `start` is a QUALIFIED order caption — the word
+    immediately BEFORE it names a different KIND/PARTY of order. Pure; mirrors _ref_caption_party_conflict."""
+    prec = re.search(r'([a-z]+)\W*$', line[:start].lower())
+    return bool(prec and prec.group(1) in _ORDER_QUALIFIER_STOP)
+
+
 def _search_for_label(lines: list[str], label: str,
                       directions: list[str],
                       role_caption: str | None = None,
@@ -1122,6 +1149,8 @@ def _search_for_label(lines: list[str], label: str,
         return None
 
     _is_bare_total = label.strip().lower() == 'total'
+    _is_bare_order = (os.environ.get('PO_ORDER_NO_LABELS', '1') != '0'
+                      and label.strip().lower().split()[:1] == ['order'])
     _is_identity_caption = label.strip().lower() in _IDENTITY_CAPTION_LABELS
     for i, line in enumerate(lines):
         line_lower = line.lower()
@@ -1131,6 +1160,10 @@ def _search_for_label(lines: list[str], label: str,
         # The generic "Total" must not poach a "Sub Total" (subtotal) or "Total VAT" (tax) line —
         # skip to the real grand-total line below. See _total_role_collision.
         if _is_bare_total and _total_role_collision(line, m.start(), m.end()):
+            continue
+        # A bare "Order No"/"Order Number" (PO_ORDER_NO_LABELS) must not poach a QUALIFIED order caption
+        # ("Sales/Delivery/Purchase/Your Order No") — skip so the qualified caption's own field reads it.
+        if _is_bare_order and _qualified_order_caption(line, m.start()):
             continue
         # A bare "Supplier"/"Vendor"/"Seller" must not read a "Supplier Ref/No/Account" reference
         # caption as the issuer name — skip; a real "Supplier: Acme" still matches. See above.
