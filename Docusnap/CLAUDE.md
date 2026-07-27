@@ -21,6 +21,29 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
+## Current session state (2026-07-27 PM) — hidden-field SCORING built + live-gated
+**2026-07-27 PM (Fable 5). PUSHED through `6a7a447` (origin `0 0`).** Owner: "Northgate worksheets stuck
+at 72%, nothing flagged, won't auto-file." Root (math-exact): worksheet type has 6 schema fields, layout
+lacks item/serial_no → `overall_confidence` zero-scores the two empties → cap ~74 < graduated floor 95
+FOREVER; the owner's mig-54 field-HIDING was display-only (engine blind). **`59c4032` HIDDEN_FIELD_SCORING
+(kill, default ON; =0 byte-identical)** — gary→Oracle SIGN-OFF-W/COND: `templates.getAll` rides
+`hidden_fields` to Python; `template_matcher.hidden_fields_for_scope` = byte-mirror of the JS display
+resolver (name exact/containment + group_id union, NO branding arm — fail toward held);
+`overall_confidence(exclude_keys=)` **EMPTY-ONLY** (Oracle C1 LOAD-BEARING: a VALUED hidden field keeps
+its drag — at 100 the structural docTrustGate is opt-in-OFF, so dropping the drag would file+learn a
+ghost gate-free; never widen to key_fields filtering); engine strips identity+current-ref/date-role keys
+(`date_field_key` newly threaded); fc_delta/needs_review untouched. JS↔Python parity pinned via SHARED
+vectors `python_backend/tests/data/vis_norm_vectors.json` read by BOTH new suites. **Gates: #714-717
+replay 71-73→100 values-identical + all 4 pixel-page-checked; corpus A/B (710-doc snapshot) 36 diffs ALL
+confined to the two hidden-config worksheet scopes (Saltmarsh id23, Northgate id33), +28 correct
+would-auto-file, 0 genuine new M.** The gate CAUGHT `6a7a447` **#557 GT POISON** (worksheet_15 confirmed
+with sibling #558's values; page pixel-proves WS-18541/22-02-2026/Corvus; -DUPLICATE filename = the
+collision receipt) → gt_overrides "557". ⚠ Residuals (accepted, pinned): branding-only-resolvable scope
+still holds at ~72 (display hides, scoring doesn't exclude); containment false-inherit mirrored from
+display. NEEDS OWNER: reprocess the 4 held Northgate worksheets (they'll now file at 100); Learning
+Repair → send `SaltmarshSeafoods_worksheet_15` back → re-confirm with the page's real values (WS-18541 /
+22-02-2026). Memory [[project_hidden_field_scoring_20260727]]. **Morning block ↓**
+
 ## Current session state (2026-07-27) — READ `HANDOVER_2026-07-27.md` FIRST
 **2026-07-27 (Opus 4.8) — long owner-driven live-testing day. ALL PUSHED through `c0f9434` (origin `0 0`),
 tree clean, no running processes.** 9 commits, each kill-switched + advisor→Oracle gated (realdoc is BLIND to
