@@ -21,6 +21,29 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
+## Current session state (2026-07-27) — READ `HANDOVER_2026-07-27.md` FIRST
+**2026-07-27 (Opus 4.8) — long owner-driven live-testing day. ALL PUSHED through `c0f9434` (origin `0 0`),
+tree clean, no running processes.** 9 commits, each kill-switched + advisor→Oracle gated (realdoc is BLIND to
+the JS/renderer paths → several used live-DB replays). Shipped: type-flip `e0b5c04` + hardening `c617230`
+(overnight, pushed a.m.), then 4 live-found fixes — **`93b766c` SO-template phash-collision refuse**
+(`LOGO_REFUSE_SUPPLIER_CORROB`: the 64-bit phash can't separate suppliers → a foreign wrong-type template →
+the trusted-title refuse blocks the correct same-supplier rescue; fix = two-factor the guard + a winner-side
+distinctive-presence gate; 10/20 roulette→0) · **`8be9ac5` field-hiding UNION**
+(`getHiddenFieldsForSupplierType` resolves hidden fields across DUPLICATE templates by (name,type), EVEN when
+matched; display-only) · **`9164c28` po_number "Order No." reader** (`PO_ORDER_NO_LABELS`: inject the missing
+label + a qualified-caption guard + close a latent sales_order_number-grabs-PO leak. **007-A full-res inline
+re-read BUILT but DARK** — corpus regressed because the `inline_box` is LOW-RES-derived; 007 pixel-proved doc
+669's `PO-78399`→`PO-78309` is a ~120-DPI DOWNSCALE in the label-locate pass, owner rule "look at the SLICES")
+· **`1f0a021`+`c0f9434` template DEDUP** (`TEMPLATE_REUSE_BY_NAME`: `templates.reuseByEstablishedName` — exact
+`establishedIdentity`+slug, NEVER containment, richest canonical — wired FIRST in `_upsertTemplate` +
+`graduationTemplate` to PREVENT new dups; + group_id activation + owner-run reversible backfill
+`scripts/template-group-backfill.js --apply` to COLLAPSE existing; Phillip-measured; live replay 0
+cross-identity) · **`522749a` juncture 6** (verify system STATE at the source, never from a UI/indirect
+signal). ⚠ OPEN: 669 ref still shows the wrong value (the taught anchor's low-res misread wins over reggie's
+correct keyword read — needs a full-res re-LOCATE, not the coarse re-crop that regressed); deferred Python
+matcher tie-break + IDF (Oracle C5). NEEDS OWNER: restart app (main-process changes) + reprocess; run the
+backfill `--apply`; rebuild the installer + smoke hardening. **Prior block ↓**
+
 ## Current session state (2026-07-26 NIGHT, autonomous) — READ `HANDOVER_2026-07-26_NIGHT.md` FIRST
 **2026-07-26 NIGHT (Opus 4.8, autonomous; owner asleep). ALL PUSHED through `c617230` (origin `0 0`), tree
 clean.** Two atomic kill-switched commits. **`e0b5c04` TASK #5 Northgate PO→Invoice TYPE-FLIP FIXED** —
