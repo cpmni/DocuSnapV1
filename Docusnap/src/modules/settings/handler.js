@@ -579,8 +579,14 @@ function register(ctx) {
     if (!curFp) return { allowed: true };             // no licensing config (dev) — don't block
     if (backupFp === curFp) return { allowed: true }; // same machine
     try {
-      const tok = require('../../../database/modules/licensing').getActiveToken(getDb(), curFp);
-      if (tok && tok.kind === 'seat' && tok.state !== 'revoked') return { allowed: true };  // paid migration
+      // SECURITY (Stage 4 — M5): the seat must be a SIGNATURE-VERIFIED active paid token, not merely a
+      // license_tokens ROW whose convenience columns say kind='seat'/state='active'. Reading those raw
+      // columns let a hand-inserted row defeat this anti-trial-stacking gate; route through the
+      // JWS-verifying evaluator instead (evaluateCachedAccess → token.evaluate: alg/kid-pinned,
+      // fp-bound, verify-before-claims). `decision==='allow'` requires a valid signature for THIS
+      // machine's fingerprint; the claims' kind must be 'seat' (a verified TRIAL must not unlock import).
+      const ev = require('../licensing/handler').evaluateCachedAccess(getDb());
+      if (ev && ev.decision === 'allow' && ev.claims && ev.claims.kind === 'seat') return { allowed: true };
     } catch { /* fall through to deny */ }
     return { allowed: false, error: 'This backup was made on a different computer. Restoring it here needs an activated licence on this computer — a free trial can only restore a backup created on the same machine.' };
   }
