@@ -218,7 +218,7 @@ def _alnum_debris_admissible(token, side, field_key, format_lookup, edge_contact
       * EDGE-CONTACT on the token's side (iris/Oracle C3): clipped-glyph debris abuts the crop
         boundary by physical necessity; an INTERIOR letter token is real page content (format
         drift) and must keep refusing. No edge metadata ⇒ refuse."""
-    if os.environ.get("ANCHOR_CHARSET_DEBRIS", "0") == "0":
+    if os.environ.get("ANCHOR_CHARSET_DEBRIS", "1") == "0":
         return False
     if format_lookup is None or not field_key:
         return False
@@ -3339,7 +3339,7 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
         # left/right boundary? A clipped neighbouring glyph ("#" cut by the ±20px pad, OCR'd "F")
         # abuts the boundary by physical necessity; a genuinely separated interior token does not.
         # Metadata-only (read by the charset-debris arm); computed only when the arm is armed.
-        if meta is not None and os.environ.get("ANCHOR_CHARSET_DEBRIS", "0") != "0":
+        if meta is not None and os.environ.get("ANCHOR_CHARSET_DEBRIS", "1") != "0":
             meta['edge_contact'] = _crop_edge_contact(crop)
         # The value's TIGHT normalised box (from the stored centre+dims) lets the
         # ladder's free-text preview fast-path re-crop with its own headroom at the

@@ -88,7 +88,7 @@ function runOne(folder, fname, args) {
   }
   fs.rmSync(RR, { recursive: true, force: true });
   db.close();
-  console.log(`# SuperStore charset trace (ANCHOR_CHARSET_DEBRIS=${process.env.ANCHOR_CHARSET_DEBRIS || '0(default)'})  DB=${path.basename(LIVE_DB)}`);
+  console.log(`# SuperStore charset trace (ANCHOR_CHARSET_DEBRIS=${process.env.ANCHOR_CHARSET_DEBRIS ?? '1 (default)'})  DB=${path.basename(LIVE_DB)}`);
   console.log('| id | overall | field | value | conf | method | note | file |');
   console.log('|---|---|---|---|---|---|---|---|');
   for (const r of rows) {
