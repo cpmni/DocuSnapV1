@@ -12,6 +12,12 @@ const diaglog = require('../diaglog');
 const { buildSegmentArgs, buildSplitPlan } = require('./split_plan');
 const { clampSlipCount, nextSlipRange, slipPackName } = require('./slip_pack');
 
+// SECURITY (Stage 2 — M11): call Windows system binaries by ABSOLUTE path. A bare image name is
+// resolved by CreateProcess from the CALLING process's directory FIRST — user-writable under a
+// per-user install — so a planted taskkill.exe there would execute in-app. %SystemRoot%\System32 is
+// not user-writable.
+const TASKKILL_EXE = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'taskkill.exe');
+
 // ── Generic Document fallback (docs/designs/GENERIC_DOCTYPE_2026-07-18.md §3) ──────────
 // Map a NO-MATCH import (detection returned None ⇒ msg.document_type null) to the
 // "General Document" type — ONLY when the switch is on AND the preset exists+enabled.
@@ -578,7 +584,7 @@ function register(ctx) {
     diaglog.write(msg);
   };
 
-  const { requireRole, getCurrentUser, logAudit } = require('../auth/handler');
+  const { requireRole, requireLogin, getCurrentUser, logAudit } = require('../auth/handler');
 
   // ── Folder picker ───────────────────────────────────────────────────────────
   const { dialog, shell } = require('electron');
@@ -731,7 +737,7 @@ function register(ctx) {
       for (const proc of _currentBatchProcs) {
         try {
           require('child_process').spawnSync(
-            'taskkill', ['/F', '/T', '/PID', String(proc.pid)],
+            TASKKILL_EXE, ['/F', '/T', '/PID', String(proc.pid)],
             { windowsHide: true, stdio: 'ignore' }
           );
         } catch {}
@@ -1137,26 +1143,24 @@ function register(ctx) {
   });
 
   // ── Stuck (failed) documents — the launchpad "couldn't be read" surface ──────
-  // Ungated reads (a count/list is not sensitive); the "Try again" action reuses
-  // the role-gated reprocess-document IPC below.
-  // CPU info for the Settings "Documents processed at once" control — lets the renderer
-  // size the picker to this machine's cores and explain the choice. Read-only.
-  // Current import/watch activity — so a Review window opened DURING a running batch can sync
-  // its "documents are being imported" bar immediately (the broadcast only fires on transitions).
-  ipcMain.handle('get-processing-activity', () => _activity
+  // SECURITY (Stage 2 — M13): require a signed-in session. get-stuck-docs returns document ROWS
+  // (filenames, which routinely carry supplier + reference numbers), so it was an unauthenticated
+  // metadata-disclosure surface; gate all four launchpad reads to any logged-in user. The "Try
+  // again" action reuses the role-gated reprocess-document IPC below.
+  ipcMain.handle('get-processing-activity', () => { requireLogin(); return _activity
     ? { active: true, source: _activity.source, done: _activity.done, total: _activity.total }
-    : { active: false });
+    : { active: false }; });
 
-  ipcMain.handle('get-concurrency-info', () => ({
+  ipcMain.handle('get-concurrency-info', () => { requireLogin(); return {
     cores: os.cpus().length || 1,
     maxConcurrency: maxConcurrency(),
     recommended: defaultConcurrency(),
-  }));
+  }; });
 
-  ipcMain.handle('get-stuck-count', () =>
-    require('../../../database/modules/documents').getStuckCount(getDb()));
-  ipcMain.handle('get-stuck-docs', () =>
-    require('../../../database/modules/documents').getStuckQueue(getDb()));
+  ipcMain.handle('get-stuck-count', () => { requireLogin();
+    return require('../../../database/modules/documents').getStuckCount(getDb()); });
+  ipcMain.handle('get-stuck-docs', () => { requireLogin();
+    return require('../../../database/modules/documents').getStuckQueue(getDb()); });
 
   // ── Reprocess single document ───────────────────────────────────────────────
   // Merge a fresh reprocess result into a document's stored extractions + identity,
@@ -1524,7 +1528,7 @@ function register(ctx) {
         logger?.err(`Reprocess timed out: ${filename}`);
         try {
           require('child_process').spawnSync(
-            'taskkill', ['/F', '/T', '/PID', String(proc.pid)],
+            TASKKILL_EXE, ['/F', '/T', '/PID', String(proc.pid)],
             { windowsHide: true, stdio: 'ignore' }
           );
         } catch {}
@@ -1727,7 +1731,7 @@ function register(ctx) {
       const fin = () => { if (settled) return; settled = true; if (watchdog) clearTimeout(watchdog); resolve(); };
       watchdog = setTimeout(() => {
         logger?.err('reprocess-batch shard timed out');
-        try { require('child_process').spawnSync('taskkill', ['/F', '/T', '/PID', String(proc.pid)], { windowsHide: true, stdio: 'ignore' }); } catch {}
+        try { require('child_process').spawnSync(TASKKILL_EXE, ['/F', '/T', '/PID', String(proc.pid)], { windowsHide: true, stdio: 'ignore' }); } catch {}
         try { proc.kill(); } catch {}
         fin();   // settle directly — a kill that fails to fire proc.on('close') must not hang Promise.all
       }, 30 * 60 * 1000);
@@ -2790,7 +2794,7 @@ function killAll() {
   for (const proc of _currentBatchProcs) {
     try {
       require('child_process').spawnSync(
-        'taskkill', ['/F', '/T', '/PID', String(proc.pid)],
+        TASKKILL_EXE, ['/F', '/T', '/PID', String(proc.pid)],
         { windowsHide: true, stdio: 'ignore' });
     } catch {}
     try { proc.kill(); } catch {}

@@ -159,7 +159,10 @@ function stopForQuit() {
   for (const proc of _liveProcs) {
     try {
       require('child_process').spawnSync(
-        'taskkill', ['/F', '/T', '/PID', String(proc.pid)],
+        // SECURITY (Stage 2 — M11): absolute path — a bare 'taskkill' resolves from the (user-writable)
+        // app dir first, so a planted taskkill.exe would run in-app.
+        require('path').join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'taskkill.exe'),
+        ['/F', '/T', '/PID', String(proc.pid)],
         { windowsHide: true, stdio: 'ignore' });
     } catch {}
     try { proc.kill(); } catch {}

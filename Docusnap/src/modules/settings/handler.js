@@ -22,6 +22,38 @@ function register(ctx) {
     'name_wordness_flag', 'auto_separate_enabled', 'multiline_enabled',
     'auto_rotate_enabled', 'dashboard_hidden_cards', 'telemetry_enabled',
   ]);
+  // SECURITY (Stage 2 — M1): refuse ENTITLEMENT / LICENSING / update keys over this generic admin
+  // set-setting IPC (self-grant of the paid add-on / update-URL repoint). The predicate is shared with
+  // backupService (Oracle C1) via src/lib/protectedSettings so the two write-doors can't drift.
+  const { isProtectedSettingKey: _isProtectedSettingKey } = require('../../lib/protectedSettings');
+  // Keys the PRE-LOGIN windows legitimately read before a session exists — only 'theme', applied
+  // before first paint by shared/theme.js in the login/license/splash windows. Everything else needs
+  // a signed-in session (Stage 2 — L1).
+  const _PREAUTH_READABLE_SETTINGS = new Set(['theme']);
+  // SECURITY (Stage 2 — M7): reject an UNSAFE output_folder at WRITE time. A bare drive root (C:\)
+  // would widen _allowedOpenRoots (processing/handler.js) to the WHOLE drive, and a system directory
+  // is never a legitimate filing destination (integrity). Normal local folders AND UNC network shares
+  // are ALLOWED — network filing is a legitimate business workflow. (Silent repoint to a network share
+  // under a compromised renderer is a residual best closed by config-integrity signing in Stage 7; a
+  // direct DB edit — threat T2 — is closed by the Stage-6 DB encryption. Both are out of this layer.)
+  const _outputFolderSafe = (v) => {
+    const s = String(v == null ? '' : v).trim();
+    if (!s) return false;
+    // Reject the extended-length / device namespaces (`\\?\…`, `\\.\…`) — they survive path.resolve
+    // UNCHANGED and would let `\\?\C:\Windows\System32` slip past the system-dir prefix check below
+    // (Oracle C3). Legit UNC (`\\server\share`) is NOT this shape (3rd char is the host, not . or ?).
+    if (/^[\\/][\\/][.?][\\/]/.test(s)) return false;
+    let r; try { r = require('path').resolve(s); } catch { return false; }
+    if (/^[\\/][\\/][.?][\\/]/.test(r)) return false;
+    if (/(^|[\\/])[A-Za-z0-9]{1,6}~\d/.test(r)) return false;        // 8.3 short-name segment (PROGRA~1)
+    if (/^[a-z]:[\\/]?$/i.test(r)) return false;                     // a bare drive root — too broad
+    const lower = r.toLowerCase(), sep = require('path').sep;
+    const win = (process.env.SystemRoot || 'C:\\Windows').toLowerCase();
+    for (const f of [win, 'c:\\program files', 'c:\\program files (x86)']) {
+      if (lower === f || lower.startsWith(f + sep)) return false;    // never file INTO a system dir
+    }
+    return true;
+  };
 
   // ── Document types ──────────────────────────────────────────────────────────
   // get-all-doc-types is shared with Review (Admin/Edit) and Search (every
@@ -475,10 +507,23 @@ function register(ctx) {
   // no per-key write path outside the Admin-gated Settings window, where
   // set-setting below is the actual enforcement boundary for "access all
   // settings".
-  ipcMain.handle('get-setting', (_e, key)      => learning.getSetting(getDb(), key));
+  ipcMain.handle('get-setting', (_e, key)      => {
+    if (!_PREAUTH_READABLE_SETTINGS.has(key)) requireLogin();   // Stage 2 — L1
+    return learning.getSetting(getDb(), key);
+  });
   ipcMain.handle('set-setting', (_e, key, val) => {
     requireRole('admin');
     const db = getDb();
+    if (_isProtectedSettingKey(key)) {   // Stage 2 — M1
+      logAudit(db, { action: 'setting_write_refused', action_category: 'settings', target_type: 'setting',
+        target_id: key, outcome: 'denied', metadata: { key } });
+      throw Object.assign(new Error('This setting is managed by the system and cannot be changed here.'), { code: 'PROTECTED_SETTING' });
+    }
+    if (key === 'output_folder' && !_outputFolderSafe(val)) {   // Stage 2 — M7
+      logAudit(db, { action: 'setting_write_refused', action_category: 'settings', target_type: 'setting',
+        target_id: key, outcome: 'denied', metadata: { key, reason: 'unsafe_output_folder' } });
+      throw Object.assign(new Error('That output folder is not allowed (system folders and drive roots are blocked).'), { code: 'UNSAFE_OUTPUT_FOLDER' });
+    }
     learning.setSetting(db, key, val);
     // Mirror the output/documents folder into the registry the moment it changes so the
     // uninstaller's data-wipe guard always has the current path (see lib/outputPathRegistry).
@@ -488,7 +533,10 @@ function register(ctx) {
     if (key === 'telemetry_enabled') { try { ctx.telemetry?.refreshConsent(); } catch {} }
     logAudit(db, { action: 'setting_changed', action_category: 'settings', target_type: 'setting',
       target_id: key, outcome: 'success',
-      metadata: { key, value: _SAFE_SETTING_VALUE.has(key) ? String(val).slice(0, 120) : '[set]' } });
+      metadata: { key, value: _SAFE_SETTING_VALUE.has(key) ? String(val).slice(0, 120) : '[set]',
+        // Oracle C4 (Q1 residual made detectable): flag a filing repoint to a NETWORK share so an
+        // admin / the Stage-7 integrity check can SEE it, without recording the path itself.
+        ...(key === 'output_folder' ? { network: /^[\\/]{2}/.test(String(val || '')) } : {}) } });
     return true;
   });
 

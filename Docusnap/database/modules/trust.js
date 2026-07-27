@@ -65,6 +65,14 @@ const UNTRUSTED_FLOOR        = 100;  // ungraduated scopes keep today's full-con
 //   extra margin at the cost of more review, or set 0 to disable.
 const CRITICAL_FIELD_FLOOR   = 88;
 
+// SECURITY (Stage 2 — M6): parse a percent-valued SETTING and coerce anything outside [min,100]
+// (negative, non-numeric, >100) back to the safe default. Closes the `parseInt(...) || N` trap
+// where a stored '-1' set an auto-file floor below 0 and silently auto-filed every document.
+function _settingPct(raw, dflt, min) {
+  const n = parseInt(raw, 10);
+  return (Number.isFinite(n) && n >= min && n <= 100) ? n : dflt;
+}
+
 // Types whose validation pattern genuinely CONSTRAINS the value, so a clean read (no
 // validation_note) is trustworthy on the type alone. Deliberately EXCLUDES 'alphanumeric'
 // (too loose — matches a dictionary word like "Information") and free text, which must fall
@@ -524,7 +532,12 @@ function isAutoFileEligible(db, doc, opts = {}) {
   if (!doc || !doc.id || !doc.document_type_id)
     return { eligible: false, floor: UNTRUSTED_FLOOR, reason: 'no-type' };
   const learning = require('./learning');
-  const userThr = parseInt(learning.getSetting(db, 'auto_file_threshold', '100'), 10) || 100;
+  // SECURITY (Stage 2 — M6): coerce an out-of-range / garbage settings value back to the safe
+  // default. The old `parseInt(...) || N` let a NEGATIVE through (`-1 || 100` is -1), which set the
+  // auto-file floor to -1 so `overall_confidence < -1` was never true and EVERY doc auto-filed
+  // unreviewed. A valid threshold is 1..100; anything else (negative, 0, >100, non-numeric) falls
+  // back to 100 (the "only perfect docs auto-file" default the `|| 100` intended but only gave for 0).
+  const userThr = _settingPct(learning.getSetting(db, 'auto_file_threshold', '100'), 100, 1);
   // SELECT * (not named role columns) so this is resilient to a minimal test fixture whose
   // document_types omits ref_field_key/date_field_key — absent → undefined → the critical-field
   // floor below simply finds no keys and is a no-op.
@@ -563,7 +576,7 @@ function isAutoFileEligible(db, doc, opts = {}) {
   // at EVERY floor (incl. 100). Empty/absent critical fields are the concern of other gates + Review,
   // not this one. Data source: opts.extractions (batch/harness) else the DB row.
   const critFloor = (opts.criticalFieldFloor !== undefined) ? opts.criticalFieldFloor
-    : (parseInt(learning.getSetting(db, 'critical_field_conf_floor', String(CRITICAL_FIELD_FLOOR)), 10) || 0);
+    : _settingPct(learning.getSetting(db, 'critical_field_conf_floor', String(CRITICAL_FIELD_FLOOR)), CRITICAL_FIELD_FLOOR, 0);
   if (critFloor > 0 && dtRow) {
     const critKeys = [dtRow.ref_field_key, dtRow.date_field_key].filter(Boolean);
     if (critKeys.length) {

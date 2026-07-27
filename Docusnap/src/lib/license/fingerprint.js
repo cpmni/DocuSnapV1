@@ -25,12 +25,18 @@
 
 const crypto = require('crypto');
 const os = require('os');
+const path = require('path');
 const { execFileSync } = require('child_process');
+
+// SECURITY (Stage 2 — M11): absolute path to reg.exe. A bare 'reg' resolves from the (user-writable)
+// app directory first, so a planted reg.exe could feed a SPOOFED MachineGuid into the licence device
+// fingerprint. %SystemRoot%\System32 is not user-writable.
+const REG_EXE = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'reg.exe');
 
 function readMachineGuid() {
   try {
     const out = execFileSync(
-      'reg',
+      REG_EXE,
       ['query', 'HKLM\\SOFTWARE\\Microsoft\\Cryptography', '/v', 'MachineGuid'],
       { encoding: 'utf8', windowsHide: true, timeout: 4000 }
     );

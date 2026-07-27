@@ -6,12 +6,12 @@ const { contextBridge, ipcRenderer } = require('electron');
 // file://<dropped>, which would load a page that keeps this preload (privileged IPC) but
 // loses the per-page <meta> CSP. No window accepts drag-drop, so swallow both events for
 // every window uniformly (the preload shares the page DOM). Pairs with the main-process
-// will-navigate guard. Kill switch: NAV_GUARD_DISABLED=1.
+// will-navigate guard. SECURITY (Stage 2 — M9): ALWAYS on — a security boundary must not
+// carry an environment kill switch (the old NAV_GUARD_DISABLED=1 could be set by a local
+// attacker to re-open the drop-a-local-HTML → privileged-preload-with-no-CSP path).
 try {
-  if (process.env.NAV_GUARD_DISABLED !== '1') {
-    window.addEventListener('dragover', (e) => e.preventDefault(), false);
-    window.addEventListener('drop', (e) => e.preventDefault(), false);
-  }
+  window.addEventListener('dragover', (e) => e.preventDefault(), false);
+  window.addEventListener('drop', (e) => e.preventDefault(), false);
 } catch { /* window unavailable in an odd context — the main-process guard still applies */ }
 
 contextBridge.exposeInMainWorld('docusnap', {

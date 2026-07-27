@@ -40,9 +40,13 @@ const TABLES = [
   'field_anchors', 'supplier_hints', 'corrections', 'logo_fingerprints',
 ];
 
-// Settings keys NEVER backed up or restored — licensing/device-bound state.
+// Settings keys NEVER backed up or restored — licensing/device-bound + entitlement state.
+// SECURITY (Stage 2 — Oracle C1): use the SAME protected-key predicate set-setting refuses, so a
+// crafted/ restored backup can't write `detached_*_seats` / `update_info` (self-granting the paid
+// add-on) through this door — the seam that re-opened M1. Keep the legacy 'licens' substring too.
 function _settingExcluded(key) {
-  return String(key || '').toLowerCase().includes('licens');
+  const s = String(key || '').toLowerCase();
+  return s.includes('licens') || require('../lib/protectedSettings').isProtectedSettingKey(s);
 }
 
 // ── Crypto ──────────────────────────────────────────────────────────────────────

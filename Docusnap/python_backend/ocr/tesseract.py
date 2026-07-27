@@ -267,13 +267,42 @@ def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3", dpi
     return "\n".join(lines)
 
 
+# SECURITY (Stage 2 — F6/L5): crafted-document DoS caps ahead of pdfium. Extraction parses an
+# attacker-supplied PDF in-process, today bounded only by the per-file watchdog. These caps bound the
+# THREE cheap vectors: an oversized file, a huge page count, and a decompression/pixel bomb (a tiny
+# page declaring enormous dimensions that renders to a giant bitmap). All three are set FAR above any
+# real business document (the corpus max is 2 pages, A4 at 300 DPI is ~3500 px) so they are INERT on
+# real docs — the render scale below is min(dpi/72, …) which equals dpi/72 for every normal page, so
+# extraction output is byte-identical. Env-overridable. An over-cap doc RAISES → the process_docs
+# per-file handler surfaces it as status=error (drained to Errors/, visible), never a silent truncation.
+_MAX_PAGES        = int(os.environ.get("OCR_MAX_PAGES", "300") or "300")
+_MAX_RENDER_DIM   = int(os.environ.get("OCR_MAX_RENDER_DIM", "10000") or "10000")   # px per axis
+_MAX_FILE_BYTES   = int(os.environ.get("OCR_MAX_FILE_MB", "500") or "500") * 1024 * 1024
+
+
 def pdf_to_images(filepath: Path, dpi: int = 300) -> list[Image.Image]:
-    """Convert each PDF page to a PIL Image using pypdfium2."""
+    """Convert each PDF page to a PIL Image using pypdfium2. DoS-capped (see _MAX_* above)."""
+    try:
+        _sz = os.path.getsize(str(filepath))
+        if _sz > _MAX_FILE_BYTES:
+            raise ValueError(f"PDF is {_sz // (1024 * 1024)} MB, over the {_MAX_FILE_BYTES // (1024 * 1024)} MB safety cap")
+    except OSError:
+        pass
     doc    = pdfium.PdfDocument(str(filepath))
     images = []
     try:
+        _n = len(doc)
+        if _n > _MAX_PAGES:
+            raise ValueError(f"PDF has {_n} pages, over the {_MAX_PAGES}-page safety cap")
         for page in doc:
-            bitmap = page.render(scale=dpi / 72)
+            scale = dpi / 72
+            try:
+                _w, _h = page.get_size()                       # points; clamp so a bomb page can't render huge
+                if _w > 0 and _h > 0:
+                    scale = min(scale, _MAX_RENDER_DIM / _w, _MAX_RENDER_DIM / _h)
+            except Exception:
+                pass
+            bitmap = page.render(scale=scale)
             images.append(bitmap.to_pil())
             try: page.close()
             except Exception: pass

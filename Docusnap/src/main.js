@@ -861,22 +861,24 @@ app.whenReady().then(() => {
   // shell.openExternal/openPath and the Help window's inter-page links.)
   const _appWindowsRoot = (path.join(__dirname, 'windows') + path.sep).toLowerCase();
   const _isInAppWindow = (targetUrl) => require('./lib/navGuard').isInAppWindow(targetUrl, _appWindowsRoot);
-  if (process.env.NAV_GUARD_DISABLED !== '1') {
-    app.on('web-contents-created', (_e, contents) => {
-      // No renderer opens a new window (external links go via the open-external IPC →
-      // shell.openExternal). Still hand a genuine http(s) URL to the OS browser so a
-      // future <a target="_blank"> keeps working; deny the in-app new window either way.
-      contents.setWindowOpenHandler(({ url }) => {
-        try { const u = new URL(url); if (u.protocol === 'https:' || u.protocol === 'http:') shell.openExternal(u.href); } catch { /* noop */ }
-        return { action: 'deny' };
-      });
-      // The initial loadFile is NOT a "navigation" and never reaches here; only
-      // page/user-driven navigations (links, location=, a dropped file) do.
-      contents.on('will-navigate', (e, url) => { if (!_isInAppWindow(url)) e.preventDefault(); });
-      contents.on('will-redirect', (e, url) => { if (!_isInAppWindow(url)) e.preventDefault(); });
-      contents.on('will-attach-webview', (e) => e.preventDefault());   // no <webview> anywhere
+  // SECURITY (Stage 2 — M9): the navigation lockdown is ALWAYS on — a security boundary must not
+  // have an environment kill switch (the old NAV_GUARD_DISABLED=1 let a local attacker who can edit
+  // the shortcut / set a user env var disable the whole guard, and — since the CSP is meta-only —
+  // re-open the drop-a-local-HTML → privileged-preload-with-no-CSP path).
+  app.on('web-contents-created', (_e, contents) => {
+    // No renderer opens a new window (external links go via the open-external IPC →
+    // shell.openExternal). Still hand a genuine http(s) URL to the OS browser so a
+    // future <a target="_blank"> keeps working; deny the in-app new window either way.
+    contents.setWindowOpenHandler(({ url }) => {
+      try { const u = new URL(url); if (u.protocol === 'https:' || u.protocol === 'http:') shell.openExternal(u.href); } catch { /* noop */ }
+      return { action: 'deny' };
     });
-  }
+    // The initial loadFile is NOT a "navigation" and never reaches here; only
+    // page/user-driven navigations (links, location=, a dropped file) do.
+    contents.on('will-navigate', (e, url) => { if (!_isInAppWindow(url)) e.preventDefault(); });
+    contents.on('will-redirect', (e, url) => { if (!_isInAppWindow(url)) e.preventDefault(); });
+    contents.on('will-attach-webview', (e) => e.preventDefault());   // no <webview> anywhere
+  });
 
   // window added later. Re-fires on every show so restore-from-minimise re-focuses.
   app.on('browser-window-created', (_e, win) => {
@@ -1066,12 +1068,25 @@ app.whenReady().then(() => {
   // The login window owns these transitions but has no window-management
   // powers of its own (by design — preload only exposes auth IPC there);
   // it just signals "I'm done" and main.js performs the swap.
-  ipcMain.on('auth-enter-app',   () => enterMainApp());
+  // SECURITY (Stage 2 — M2): only the LOGIN window, with a live session, may swap into the main
+  // shell. Without this a compromised pre-auth renderer could send 'auth-enter-app' and land in the
+  // main shell unauthenticated (the data IPCs would still refuse individually, but "login is the
+  // door" would be defeated). Sender-scoped like legal-accept (fromLegalWindow, below).
+  ipcMain.on('auth-enter-app',   (e) => {
+    if (BrowserWindow.fromWebContents(e.sender) !== windows['login']) return;
+    if (!authModule.getCurrentUser()) return;
+    enterMainApp();
+  });
   ipcMain.on('auth-show-login',  () => showLoginScreen());
   // Licensing gate signal (Phase 2): the renderer can only REQUEST entry; the
   // main process re-runs decideAccess() and refuses unless the state allows.
-  // The renderer can never self-grant access into the main shell.
-  ipcMain.on('license-enter-app', () => enterMainApp());
+  // The renderer can never self-grant access into the main shell. Sender+session
+  // scoped (Stage 2 — M2): only the LICENCE window (shown post-login) may signal.
+  ipcMain.on('license-enter-app', (e) => {
+    if (BrowserWindow.fromWebContents(e.sender) !== windows['license']) return;
+    if (!authModule.getCurrentUser()) return;
+    enterMainApp();
+  });
 
   // Manual "re-check licence now" (Settings → Licensing "Refresh"). Runs the SAME
   // authoritative gate as startup/periodic, so a server-side revoke or expiry takes effect
@@ -1248,6 +1263,11 @@ app.whenReady().then(() => {
   // --trace and the process-trace route in processing/handler.js. Opens NO window
   // — the console is just a hidden panel inside the existing Review window.
   ipcMain.handle('review-trace-set', (_e, on, password) => {
+    // SECURITY (Stage 2 — L2): role-gate as well as the SFDEV password. The password ships in the
+    // asar (not a secret under the local threat model); the trace it arms dumps cropped document
+    // imagery to a temp dir, so keep it behind the same admin/edit boundary as the rest of the dev
+    // surface (dev-inspector-running / dev-get-slice above).
+    if (!(authModule.hasRole && authModule.hasRole('admin', 'edit'))) return false;
     if (on) {
       if (password !== 'SFDEV') return false;
       ctx.reviewTraceActive = true;
@@ -1347,7 +1367,10 @@ app.whenReady().then(() => {
   // ── First-run setup wizard ───────────────────────────────────────────────────
   // The wizard writes individual settings through the existing set-setting path;
   // these signals only own the FLAG + the window/shell swap (main is the decider).
-  ipcMain.on('onboarding-complete', () => {
+  ipcMain.on('onboarding-complete', (e) => {
+    // SECURITY (Stage 2 — M2): only the onboarding window may retire first-run setup and open the
+    // main shell. Without this any renderer could permanently set first_run_completed + openMainShell.
+    if (BrowserWindow.fromWebContents(e.sender) !== windows['onboarding']) return;
     try {
       const learning = require('../database/modules/learning');
       learning.setSetting(getDb(), 'first_run_completed', 'true');
@@ -1401,7 +1424,10 @@ app.whenReady().then(() => {
   // accepts it — otherwise onboarding "finishes" into a path nothing can file to.
   // Creates the folder if missing (so the suggested default works one-click), then
   // round-trips a probe file to prove writability.
-  ipcMain.handle('onboarding-validate-folder', (_e, folder) => {
+  ipcMain.handle('onboarding-validate-folder', (e, folder) => {
+    // SECURITY (Stage 2 — E-5): only the onboarding window may drive this mkdir + probe-write.
+    // Otherwise any renderer could create arbitrary directories on disk pre-auth.
+    if (BrowserWindow.fromWebContents(e.sender) !== windows['onboarding']) return { ok: false, reason: 'forbidden' };
     try {
       if (!folder || !String(folder).trim()) return { ok: false, reason: 'empty' };
       fs.mkdirSync(folder, { recursive: true });
