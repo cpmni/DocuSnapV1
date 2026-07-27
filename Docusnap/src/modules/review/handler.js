@@ -1126,6 +1126,21 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
     templateId = null;
     supplierDetached = true;
   }
+  // NAME-PRIMARY REUSE (Lever 1, TEMPLATE_REUSE_BY_NAME default ON, Phillip/Oracle SIGN-OFF-WITH-CONDITIONS
+  // 2026-07-27): the CONFIRMED ISSUER is the one clean reuse signal — the 64-bit logo phash can't separate
+  // suppliers (it folds a FOREIGN nearest template) and branding overlap is polluted by per-doc OCR-garble /
+  // recipient tokens, so BOTH the logo + branding arms below can MISS the true same-supplier sibling and mint
+  // a DUPLICATE (the measured id33/id34 birth). Reuse a same-TYPE template whose established (dominant
+  // confirmed) identity EXACTLY matches this doc's confirmed issuer, BEFORE the unreliable logo/branding arms.
+  // Part-E-again (below) re-validates the acquisition (establishedIdentity == confirmedIssuer ⇒ non-disjoint ⇒
+  // kept). Reversible LINK; OFF ⇒ byte-identical (arm skipped). Precision (Oracle C1) lives in
+  // templates.reuseByEstablishedName: establishedIdentity not the cosmetic name, EXACT _normNameForVis
+  // equality (never containment), same slug, plausible + len>=3, canonical = richest sibling.
+  // TODO (same lever, follow-up): mirror this arm before graduationTemplate's create (a separate birth path).
+  if (!templateId && process.env.TEMPLATE_REUSE_BY_NAME !== '0' && confirmedIssuer && document_type_slug) {
+    const _nmReuse = templates.reuseByEstablishedName(db, confirmedIssuer, document_type_slug, document_id);
+    if (_nmReuse) { templateId = _nmReuse; supplierDetached = true; }   // supplierDetached => relink the doc to the reused canonical
+  }
   if (!templateId && logo_phash) {
     // TYPE-SCOPED reuse: a template is per (supplier, TYPE), and a supplier issuing several types on
     // one letterhead has same-logo siblings — so reusing the nearest logo BLINDLY would fold e.g. an

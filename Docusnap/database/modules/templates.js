@@ -732,6 +732,35 @@ function getHiddenFieldsForSupplierType(db, { supplier_name, document_type_slug,
   return [...out].sort();
 }
 
+// NAME-PRIMARY REUSE (TEMPLATE_REUSE_BY_NAME, Phillip/Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-27): the id
+// of the SAME-SLUG template whose ESTABLISHED (dominant confirmed) identity EXACTLY equals `confirmedIssuer`
+// (_normNameForVis; NEVER containment — "northgate services" contains "gate services"), preferring the
+// RICHEST (most confirmed docs). Keys on establishedIdentity, NOT the cosmetic `name` (first-confirm luck /
+// OCR garble). Both names must be a plausible supplier shape + normalised length >= 3. null ⇒ no exact
+// same-identity same-type sibling ⇒ caller mints standalone (today's behaviour). Cross-supplier reuse is
+// structurally impossible (exact identity + slug). ACCEPTED residual (Oracle, pinned): two DIFFERENT real
+// companies whose confirmed issuer normalises identically + same slug DO fold — but that identical-name
+// collision already merges supplier-scoped hints/anchors/corrections, so it adds no NEW class, and the
+// operator sees the values at teach time. The CALLER links + Part-E re-validates the acquisition.
+function reuseByEstablishedName(db, confirmedIssuer, document_type_slug, excludeDocId = null) {
+  if (!document_type_slug) return null;
+  const q = _normNameForVis(confirmedIssuer);
+  if (q.length < 3) return null;
+  const { isPlausibleSupplierNameBase } = require('./learning');   // lazy — avoids a load-order knot
+  if (!safe(() => isPlausibleSupplierNameBase(confirmedIssuer), false)) return null;
+  const rows = safe(() => db.prepare(
+    "SELECT id FROM templates WHERE LOWER(COALESCE(document_type_slug, '')) = LOWER(?)").all(document_type_slug), []);
+  let best = null, bestCount = -1;
+  for (const t of rows) {
+    const ident = safe(() => establishedIdentity(db, t.id, excludeDocId), null);   // dominant confirmed issuer, self-excluded (empty sibling ⇒ null ⇒ skipped)
+    if (!ident || _normNameForVis(ident) !== q) continue;         // EXACT normalised identity, NEVER containment
+    if (!safe(() => isPlausibleSupplierNameBase(ident), false)) continue;
+    const cc = safe(() => confirmedDocCount(db, t.id), 0) || 0;   // canonical = richest confirmed sibling (never the empty duplicate)
+    if (cc > bestCount) { bestCount = cc; best = t.id; }
+  }
+  return best;
+}
+
 // Lightweight current-template recheck — given a document's already-stored
 // logo_phash/ocr_text (no page image, no OCR, no extraction pipeline), tries
 // the same logo-then-keyword identification order and accept thresholds as
@@ -1311,7 +1340,7 @@ module.exports = {
   stabiliseFingerprint, chooseLogoPhash,
   getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
   recordMappingTest, setSampleDocument, reassignDocuments, mergeInto, setFieldFixedValue,
-  getHiddenFields, getHiddenFieldsForSupplierType, isFieldHideable, setHiddenField, getTypeFieldsForHiding,
+  getHiddenFields, getHiddenFieldsForSupplierType, reuseByEstablishedName, isFieldHideable, setHiddenField, getTypeFieldsForHiding,
   setOcrAutoParams, setOcrAutoEnabled,
   getLandmarks, setLandmarks, clearLandmarks, hasManualLandmarks, hasCrossSampleLandmarks,
   replaceSampleWords, countSampleDocs, getSampleWordsByDoc,
