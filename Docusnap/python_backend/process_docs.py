@@ -764,9 +764,12 @@ def main():
             # instead of accepting it as free text. Never touches a date/currency
             # field; reusable for every custom doc type.
             _ref_key = None   # hoisted (Oracle C2): threaded to extract() below even when this block is skipped
+            _date_key = None  # the type's date ROLE — threaded so hidden-field scoring can never exclude it
             if doc_slug and doc_types:
                 _ref_key = next((dt.get("ref_field_key") for dt in doc_types
                                  if dt.get("slug") == doc_slug), None)
+                _date_key = next((dt.get("date_field_key") for dt in doc_types
+                                  if dt.get("slug") == doc_slug), None)
                 if _ref_key and active_fields:
                     for _f in active_fields:
                         if _f.get("key") == _ref_key and (_f.get("type") or "text") in ("text", "", None):
@@ -786,6 +789,7 @@ def main():
                 detected_slug = detected_slug,
                 title_trusted = title_trusted,
                 ref_field_key = _ref_key,
+                date_field_key = _date_key,
                 supplier_name = None,
                 pinned_supplier = _known_supplier,   # operator Resolve pin (Part B); per-doc via doc_overrides, None on import
                 known_template_id = _kt,

@@ -633,13 +633,22 @@ def validate_and_adjust(extractions: dict,
 
 def overall_confidence(extractions: dict,
                        field_defs: list[dict] | None = None,
-                       key_fields: list[str] | None = None) -> int:
+                       key_fields: list[str] | None = None,
+                       exclude_keys: set | None = None) -> int:
     """
     Calculate weighted average confidence across the fields that matter most
     for this document type. "What matters" comes from the type's own schema
     (required fields) — not a hardcoded list of field-key names that only
     covers the three built-in document types and silently ignores any custom
     type's fields entirely.
+
+    exclude_keys (HIDDEN_FIELD_SCORING, Oracle-signed 2026-07-27): operator-declared
+    "this layout lacks this field" keys (template_hidden_fields, resolved per
+    (supplier, type) by template_matcher.hidden_fields_for_scope). EMPTY-ONLY
+    exclusion: an excluded key suppresses ONLY the expected-but-missing 0 below —
+    a VALUED excluded field still counts exactly as today (its drag is what keeps a
+    ghost read out of the gate-free at-100 auto-file arm; do NOT widen this to
+    filtering key_fields). None ⇒ byte-identical.
     """
     # When the key fields come from the type's SCHEMA, an expected field that is EMPTY is
     # a real failure to extract — it must count as 0, not be skipped. Otherwise a doc with
@@ -662,6 +671,8 @@ def overall_confidence(extractions: dict,
         if isinstance(data, dict) and data.get("value"):
             scores.append(data.get("confidence", 0))
         elif from_schema:
+            if exclude_keys and k in exclude_keys:
+                continue       # operator declared this layout lacks the field — not an expected miss
             scores.append(0)   # an expected (required/schema) field with no value → 0
     return int(sum(scores) / len(scores)) if scores else 0
 

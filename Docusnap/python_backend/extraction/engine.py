@@ -2672,7 +2672,8 @@ class ExtractionEngine:
                 identity_shadow: bool = False,
                 raw_page0 = None,
                 page0_geometry: dict | None = None,
-                cached_text: str | None = None) -> dict:
+                cached_text: str | None = None,
+                date_field_key: str | None = None) -> dict:
         """
         Run extraction pipeline according to current mode.
         Returns dict with field values + metadata keys prefixed with _.
@@ -4619,7 +4620,34 @@ class ExtractionEngine:
         # this cap would then hold a value that WAS trustworthy — re-scope the marker there first.
 
         # ── Metadata ──────────────────────────────────────────────────────────
-        overall_conf  = validator.overall_confidence(results, field_defs)
+        # HIDDEN_FIELD_SCORING (Oracle-signed 2026-07-27): the operator's per-(supplier,type)
+        # "this layout lacks this field" declarations (template_hidden_fields, riding the
+        # templates JSON as hidden_fields) stop a declared-absent EMPTY field counting as an
+        # expected-but-missing 0 in the document score — the "held at 72% with nothing flagged"
+        # cap. EMPTY-ONLY: a valued hidden field scores exactly as before (its drag keeps a
+        # ghost read out of the gate-free at-100 auto-file arm). protected strips the identity
+        # keys + the type's CURRENT ref/date roles at consumption (stale-row seam: a role
+        # re-pointed onto an already-hidden key after setHiddenField validated the hide).
+        # Any failure ⇒ no exclusion ⇒ today's zero-scoring ⇒ held. =0 restores byte-identical.
+        _hidden_excl = None
+        if (os.environ.get("HIDDEN_FIELD_SCORING", "1") != "0"
+                and templates and supplier_name and document_slug):
+            try:
+                _protected = {"supplier_name", "customer_name"}
+                if ref_field_key:
+                    _protected.add(ref_field_key)
+                if date_field_key:
+                    _protected.add(date_field_key)
+                _hx = template_matcher.hidden_fields_for_scope(
+                    templates, supplier_name, document_slug, protected_keys=_protected)
+            except Exception:
+                _hx = None
+            if _hx and _hx.get("keys"):
+                _hidden_excl = _hx["keys"]
+                self.log(f"  Hidden-field scoring: {sorted(_hidden_excl)} declared absent for this "
+                         f"layout (templates {_hx['template_ids']}, via {_hx['arm']}) — empty reads "
+                         f"excluded from the document score")
+        overall_conf  = validator.overall_confidence(results, field_defs, exclude_keys=_hidden_excl)
         # Document-level format-consistency weighting: penalise the document when
         # any field failed its expected format, and reward it when several well-
         # supported fields all match. "Supported" = fields with a learned format

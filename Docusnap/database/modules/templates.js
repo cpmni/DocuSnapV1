@@ -49,6 +49,11 @@ function getAll(db) {
     t.landmarks           = getLandmarks(db, t.id);
     t.logo_phashes        = getLogoHashes(db, t.id);
     t.logo_detail_hashes = getLogoDetailHashes(db, t.id);
+    // HIDDEN_FIELD_SCORING: the operator's "this layout lacks this field" declaration rides the
+    // templates JSON so the Python engine can exclude a declared-absent EMPTY field from the
+    // document score (template_matcher.hidden_fields_for_scope). Additive key — the matcher
+    // ignores it; [] on a DB without migration 54.
+    t.hidden_fields       = getHiddenFields(db, t.id);
     t.keyword_fingerprint = _parseJson(t.keyword_fingerprint, []);
     t.ocr_auto_params     = _parseJson(t.ocr_auto_params, null);
     const dom             = getDominantSupplier(db, t.id);
@@ -1348,6 +1353,7 @@ module.exports = {
   getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
   recordMappingTest, setSampleDocument, reassignDocuments, mergeInto, setFieldFixedValue,
   getHiddenFields, getHiddenFieldsForSupplierType, reuseByEstablishedName, isFieldHideable, setHiddenField, getTypeFieldsForHiding,
+  _normNameForVis,   // exported for the JS↔Python parity pin (vis_norm_vectors.json)
   setOcrAutoParams, setOcrAutoEnabled,
   getLandmarks, setLandmarks, clearLandmarks, hasManualLandmarks, hasCrossSampleLandmarks,
   replaceSampleWords, countSampleDocs, getSampleWordsByDoc,

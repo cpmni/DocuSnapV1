@@ -33,6 +33,74 @@ CALENDAR_WORDS = {
     'mon', 'tue', 'tues', 'wed', 'thu', 'thur', 'thurs', 'fri', 'sat', 'sun',
 }
 
+# ── Hidden-field SCORING resolver (HIDDEN_FIELD_SCORING, Oracle-signed 2026-07-27) ──────────────
+# Scoring twin of JS templates.getHiddenFieldsForSupplierType (templates.js): the UNION of the
+# operator's per-template "this layout lacks this field" declarations across every template sharing
+# the doc's (normalised supplier NAME, type slug), plus group_id siblings of any name-resolved row.
+# Consumed by engine.py at overall-confidence time so a declared-absent EMPTY field stops counting
+# as an expected-but-missing 0 (the "72% with nothing flagged" cap). DELIBERATE divergences from the
+# display resolver, both fail-toward-review:
+#   * NO branding-fingerprint backup arm — an unresolvable supplier name ⇒ no exclusion ⇒ the empty
+#     field keeps its zero-score hold (display may hide a row scoring still counts; accepted residual).
+#   * protected_keys (engine passes the identity keys + the type's CURRENT ref/date roles) are
+#     stripped at consumption — closes the stale-row seam where a role is re-pointed onto an
+#     already-hidden key AFTER setHiddenField validated it.
+# _norm_name_for_vis must stay a byte-mirror of templates.js _normNameForVis — pinned by the shared
+# vector file python_backend/tests/data/vis_norm_vectors.json (both suites read it).
+
+_VIS_NORM_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _norm_name_for_vis(s) -> str:
+    return _VIS_NORM_RE.sub(" ", str("" if s is None else s).lower()).strip()
+
+
+def hidden_fields_for_scope(templates, supplier_name, document_slug, protected_keys=None):
+    """UNION of hidden-field declarations for (supplier_name, document_slug).
+
+    Returns {"keys": set[str], "template_ids": [int], "arm": str|None} — template_ids are the
+    rows that CONTRIBUTED keys (for the trace line), arm is "name" or "name+group". Total
+    function: any unresolvable input returns an empty result (⇒ no exclusion ⇒ held)."""
+    out = {"keys": set(), "template_ids": [], "arm": None}
+    slug = (document_slug or "").lower().strip()
+    if not slug or not templates:
+        return out
+    q = _norm_name_for_vis(supplier_name)
+    if len(q) < 3:                      # too short to match safely (mirror: fail toward "no exclusion")
+        return out
+    arms = {}                           # template id -> resolving arm
+    for t in templates:
+        if (t.get("document_type_slug") or "").lower() != slug:
+            continue
+        n = _norm_name_for_vis(t.get("name"))
+        if n and (n == q or q in n or n in q):   # exact OR containment, mirror of the display rule
+            arms[t.get("id")] = "name"
+    # Group arm — ADDITIVE union of group_id siblings of any name-resolved row (no slug filter,
+    # mirroring the JS group clause; grouped siblings are same-(name,type) by backfill construction).
+    gids = {t.get("group_id") for t in templates
+            if t.get("id") in arms and t.get("group_id") is not None}
+    if gids:
+        for t in templates:
+            if t.get("group_id") in gids and t.get("id") not in arms:
+                arms[t.get("id")] = "group"
+    protected = set(protected_keys or ())
+    used_group = False
+    for t in templates:
+        tid = t.get("id")
+        if tid not in arms:
+            continue
+        keys = [k for k in (t.get("hidden_fields") or []) if k not in protected]
+        if keys:
+            out["keys"].update(keys)
+            out["template_ids"].append(tid)
+            if arms[tid] == "group":
+                used_group = True
+    if out["template_ids"]:
+        out["template_ids"].sort()
+        out["arm"] = "name+group" if used_group else "name"
+    return out
+
+
 # ── Distinctive-token identity primitives (TEMPLATE_GATE_DISTINCTIVE, Oracle-signed 2026-07-20) ──
 # Generic document-TYPE / heading words that leak into template keyword-fingerprints and appear on
 # ANY supplier's document of that type — so they never DISTINGUISH a supplier. THE definition lives
