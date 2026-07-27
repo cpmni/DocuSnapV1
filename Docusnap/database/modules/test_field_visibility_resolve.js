@@ -75,5 +75,30 @@ section('slug scoping: same name, different type → not resolved');
   check('different slug → null', R(db, { supplier_name: 'Saltmarsh Seafoods', document_type_slug: 'service_worksheet', mode: 1 }) === null);
 }
 
+section('getHiddenFieldsForSupplierType: UNION across duplicate same-name+type templates (2026-07-27)');
+{
+  const db = makeDb();
+  db.exec("CREATE TABLE template_hidden_fields (template_id INTEGER, field_key TEXT, hidden_at TEXT DEFAULT '', UNIQUE(template_id, field_key));");
+  const configd = mkT(db, 'Northgate Textiles', 'service_worksheet', FP, 0);   // the sibling the owner configured
+  const empty   = mkT(db, 'Northgate Textiles', 'service_worksheet', FP, 0);   // the duplicate the logo matched
+  db.prepare("INSERT INTO template_hidden_fields (template_id, field_key) VALUES (?, 'item'), (?, 'serial_no')").run(configd, configd);
+  const H = (o) => templates.getHiddenFieldsForSupplierType(db, o);
+  check('union across both Northgate worksheet siblings → {item, serial_no} (duplicate-proof)',
+    JSON.stringify(H({ supplier_name: 'Northgate Textiles', document_type_slug: 'service_worksheet', mode: 1 })) === JSON.stringify(['item', 'serial_no']));
+  check('the EMPTY-sibling case (the owner bug): getHiddenFields(matched)=[] but the union lifts it to 2',
+    templates.getHiddenFields(db, empty).length === 0 &&
+    H({ supplier_name: 'Northgate Textiles', document_type_slug: 'service_worksheet', mode: 1 }).length === 2);
+  const inv = mkT(db, 'Northgate Textiles', 'invoice', FP, 0);
+  db.prepare("INSERT INTO template_hidden_fields (template_id, field_key) VALUES (?, 'vat_no')").run(inv);
+  check('slug-scoped: a same-NAME invoice sibling is NOT unioned into the worksheet set',
+    !H({ supplier_name: 'Northgate Textiles', document_type_slug: 'service_worksheet', mode: 1 }).includes('vat_no'));
+  check('fail-safe: unknown supplier → [] (show all)',
+    H({ supplier_name: 'Totally Different Co', document_type_slug: 'service_worksheet', mode: 1 }).length === 0);
+  check('fail-safe: 1-2 char supplier → [] (too short, no branding) ',
+    H({ supplier_name: 'NT', document_type_slug: 'service_worksheet', mode: 1 }).length === 0);
+  check('inert: no template_hidden_fields table → []',
+    templates.getHiddenFieldsForSupplierType(makeDb(), { supplier_name: 'Northgate Textiles', document_type_slug: 'service_worksheet', mode: 1 }).length === 0);
+}
+
 console.log('\n' + (failures === 0 ? 'ALL PASS' : failures + ' check(s) FAILED'));
 process.exit(failures === 0 ? 0 : 1);

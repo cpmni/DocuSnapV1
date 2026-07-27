@@ -702,6 +702,36 @@ function findForSupplierType(db, { supplier_name, document_type_slug, keyword_fi
   return (mode === 2) ? byName() : (byName() || byBranding());
 }
 
+// UNION of the hidden-field configs across EVERY template that shares this doc's (supplier NAME, type)
+// — so a per-supplier "hide item/serial" setting applies regardless of WHICH duplicate sibling template
+// the logo matched (2026-07-27, owner: visibly-same same-supplier same-type templates must be treated as
+// one AUTOMATICALLY, no manual merge). Same name-normalisation + type scoping + branding backup as
+// findForSupplierType, but returns the UNIONED field_key list instead of a single template id. Display-
+// only; fail-safe [] (⇒ show ALL fields) when nothing resolves or the table is absent.
+function getHiddenFieldsForSupplierType(db, { supplier_name, document_type_slug, keyword_fingerprint = null, mode = 1 } = {}) {
+  if (!document_type_slug || !_thfTableExists(db)) return [];
+  const slug = document_type_slug;
+  const ids = new Set();
+  const q = _normNameForVis(supplier_name);
+  if (q.length >= 3) {
+    const rows = safe(() => db.prepare(
+      "SELECT id, name FROM templates WHERE LOWER(COALESCE(document_type_slug, '')) = LOWER(?) AND name IS NOT NULL"
+    ).all(slug), []);
+    for (const t of rows) {
+      const n = _normNameForVis(t.name);
+      if (n && (n === q || n.includes(q) || q.includes(n))) ids.add(t.id);
+    }
+  }
+  // Branding backup (mode 1 only), same as findForSupplierType — only when the NAME resolved nothing.
+  if (mode !== 2 && ids.size === 0 && Array.isArray(keyword_fingerprint) && keyword_fingerprint.length) {
+    const m = safe(() => findByBrandingFingerprint(db, keyword_fingerprint, slug, 0.80), null);
+    if (m) ids.add(m.id);
+  }
+  const out = new Set();
+  for (const id of ids) for (const k of getHiddenFields(db, id)) out.add(k);
+  return [...out].sort();
+}
+
 // Lightweight current-template recheck — given a document's already-stored
 // logo_phash/ocr_text (no page image, no OCR, no extraction pipeline), tries
 // the same logo-then-keyword identification order and accept thresholds as
@@ -1281,7 +1311,7 @@ module.exports = {
   stabiliseFingerprint, chooseLogoPhash,
   getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
   recordMappingTest, setSampleDocument, reassignDocuments, mergeInto, setFieldFixedValue,
-  getHiddenFields, isFieldHideable, setHiddenField, getTypeFieldsForHiding,
+  getHiddenFields, getHiddenFieldsForSupplierType, isFieldHideable, setHiddenField, getTypeFieldsForHiding,
   setOcrAutoParams, setOcrAutoEnabled,
   getLandmarks, setLandmarks, clearLandmarks, hasManualLandmarks, hasCrossSampleLandmarks,
   replaceSampleWords, countSampleDocs, getSampleWordsByDoc,

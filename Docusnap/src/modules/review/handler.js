@@ -488,17 +488,23 @@ function register(ctx) {
       // Empty [] ⇒ show all fields (fail-safe; byte-identical when nothing resolves).
       try {
         const _t = require('../../../database/modules/templates');
-        if (doc.template_id) {
-          doc.hidden_fields = _t.getHiddenFields(db, doc.template_id);
-        } else if (process.env.FIELD_VIS_LIVE_RESOLVE !== '0') {
+        // Start with the MATCHED template's hidden fields (unchanged when the resolver is off).
+        let _hidden = doc.template_id ? _t.getHiddenFields(db, doc.template_id) : [];
+        // UNION the (supplier, type) config across ALL sibling templates — so a per-supplier hide applies
+        // regardless of WHICH duplicate template the logo matched, and EVEN when a template matched (the
+        // old code resolved by name+type only on a Stage-0 MISS, so a doc matching the empty duplicate
+        // sibling showed the fields the owner had hidden on the other sibling). Owner 2026-07-27:
+        // same-supplier same-type templates are treated as one AUTOMATICALLY, no manual merge. Display-
+        // only + fail-safe (show all when nothing resolves). FIELD_VIS_LIVE_RESOLVE=0 ⇒ matched-only ⇒
+        // byte-identical to before.
+        if (process.env.FIELD_VIS_LIVE_RESOLVE !== '0' && doc.type_slug) {
           const _mode = String((db.prepare('SELECT value FROM settings WHERE key = ?').get('field_visibility_resolve_mode') || {}).value) === '2' ? 2 : 1;
           let _fp = null; try { _fp = JSON.parse(doc.keyword_fingerprint || 'null'); } catch {}
-          const _tid = _t.findForSupplierType(db, { supplier_name: doc.supplier_name,
+          const _res = _t.getHiddenFieldsForSupplierType(db, { supplier_name: doc.supplier_name,
             document_type_slug: doc.type_slug, keyword_fingerprint: Array.isArray(_fp) ? _fp : null, mode: _mode });
-          doc.hidden_fields = _tid ? _t.getHiddenFields(db, _tid) : [];
-        } else {
-          doc.hidden_fields = [];
+          _hidden = [...new Set([..._hidden, ..._res])];
         }
+        doc.hidden_fields = _hidden;
       } catch { doc.hidden_fields = []; }
       logAudit(db, { action: 'document_open', target_type: 'document', target_id: id,
         document_id: id, outcome: 'success', metadata: { type: doc.type_slug || null, status: doc.status || null } });
@@ -562,7 +568,10 @@ function register(ctx) {
       }
       const tid = templatesMod.findForSupplierType(db, {
         supplier_name, document_type_slug, keyword_fingerprint: Array.isArray(fp) ? fp : null, mode });
-      const hidden = tid ? templatesMod.getHiddenFields(db, tid) : [];
+      // UNION the hidden-field config across ALL (supplier, type) sibling templates (duplicate-proof),
+      // not just the single tie-broken pick — same automatic resolution as get-document-with-extractions.
+      const hidden = templatesMod.getHiddenFieldsForSupplierType(db, {
+        supplier_name, document_type_slug, keyword_fingerprint: Array.isArray(fp) ? fp : null, mode });
       return { hidden, templateId: tid || null, mode };
     } catch { return { hidden: [], templateId: null }; }
   });
