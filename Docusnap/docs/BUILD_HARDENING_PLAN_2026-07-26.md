@@ -64,3 +64,48 @@ Not OSS-permissive → fails "commercially free." Prefer Nuitka/Cython + bytenod
 ## Recovery
 Every rung is `git revert`-able. Rung A is additionally kill-switched (`HARDEN_FUSES` default off).
 `SHIP_PY_SOURCE=1` restores verbatim Python source (the existing `.pyc` kill switch).
+
+---
+
+## Stage 3 arming procedure (security remediation, 2026-07-27)
+
+**Stage 3a — DONE (code, no smoke risk):** `build.nsis.perMachine: true` (package.json). The next
+installer installs to `Program Files` (not user-writable) and requires elevation once at install —
+closing H4/M11 (a user-writable install tree). `%APPDATA%\ScanFinder` (DB, inbox, certs) stays per-user
+and is unchanged; `npm start` (dev) is unaffected (perMachine is installer-only). check-licenses green.
+⚠ Rollout note (deployment, owner): existing per-user installs do NOT auto-migrate to Program Files;
+plan the transition (uninstall-then-reinstall, or ship both a period). The `installer.nsh` `HKCU
+Software\ScanFinder OutputPath` key is per-user (best-effort SafeWipe guard) — under a per-machine
+install by a different admin than the end user, the uninstall SafeWipe may not see the recorded output
+path; the default uninstall keeps data (opt-in wipe only), and filed docs live outside %APPDATA%, so the
+risk is contained. Not a blocker.
+
+**Stage 3b — OWNER SMOKE REQUIRED (a bad flip = the app won't start):**
+1. **Fuses (Rung A, already scaffolded):** `set HARDEN_FUSES=1 && npm run build`, install, and **launch
+   EVERY window** — main / review / search / settings / teach / license / update-lock / onboarding /
+   welcome / tutorial — and **reprocess one document** (proves the Python spawn still works under the
+   flipped fuses). If all start clean, keep `HARDEN_FUSES=1` in the release build command. Disarms
+   `ELECTRON_RUN_AS_NODE` / `NODE_OPTIONS` / `--inspect` (closes M3).
+   *Mechanism-only proof without launch:* `set HARDEN_FUSES=1 && npx electron-builder --dir --win --x64`,
+   then read the fuses back off `dist\win-unpacked\ScanFinder.exe` (`@electron/fuses` CLI). This proves
+   the flip PACKS + reads back; it does NOT replace the launch smoke (a fuse can pack fine and still
+   prevent launch).
+2. **asar integrity (Rung B):** add to `package.json` `build` (electron-builder embeds the asar hash):
+   ```json
+   "electronFuses": {
+     "runAsNode": false,
+     "enableNodeOptionsEnvironmentVariable": false,
+     "enableNodeCliInspectArguments": false,
+     "onlyLoadAppFromAsar": true,
+     "enableEmbeddedAsarIntegrityValidation": true
+   }
+   ```
+   (This supersedes the afterPack Rung A once added — remove the `afterPack` fuse hook to avoid a
+   double-flip.) Then the SAME full-window launch smoke + reprocess. A wrong asar-integrity flip is a
+   guaranteed brick, so smoke before shipping. Verify a MODIFIED `app.asar` fails to load post-integrity.
+3. Confirm the installed tree under `Program Files\ScanFinder` is NOT writable by a standard user.
+
+**Stage 3c — BLOCKED on the OV code-signing cert (owner purchase):** Authenticode-sign the installer +
+`ScanFinder.exe` (electron-builder `win.certificateFile`/`certificateSubjectName` or a signtool step),
+move the pinned Ed25519 trust anchor into the signed bundle (M4), and confirm SmartScreen accepts the
+signed installer. Signing is what gives fuses + asar integrity real teeth (a tamperer can't re-sign).

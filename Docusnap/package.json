@@ -31,7 +31,7 @@
     "nsis": {
       "artifactName": "ScanFinder Setup ${version}-r${env.BUILD_REV}.exe",
       "oneClick": false,
-      "perMachine": false,
+      "perMachine": true,
       "allowToChangeInstallationDirectory": true,
       "allowElevation": true,
       "createDesktopShortcut": true,
