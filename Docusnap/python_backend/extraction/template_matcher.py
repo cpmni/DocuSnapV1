@@ -250,6 +250,12 @@ def identify_template(page_image, ocr_text: str, templates: list,
     # refuse returns immediately at its original site ⇒ byte-identical.
     _logo_refused = None
     _refused_supplier = None
+    # LOGO_REFUSE_SUPPLIER_CORROB (Phillip/Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-27): two-factor the
+    # logo-refuse supplier guard so a 64-bit phash COLLISION (a foreign look-alike letterhead, measured
+    # cross-supplier Hamming 0-6 = zero separation) can't block the correct same-type rescue. OFF ⇒ the
+    # guard is byte-identical to the af346d8 C1 (capture the locked supplier unconditionally + blanket-allow
+    # the unknown-supplier branch).
+    _supplier_corrob = os.environ.get('LOGO_REFUSE_SUPPLIER_CORROB', '1') != '0'
 
     def _fallthrough_supplier_ok(cand):
         # Oracle C1: on the captured-refuse fall-through, a rescue/keyword match for a DIFFERENT known
@@ -258,8 +264,19 @@ def identify_template(page_image, ocr_text: str, templates: list,
         # right type by construction → allow. No refuse captured (the normal accept path) → always allow.
         if _logo_refused is None:
             return True
-        if not _refused_supplier:          # the logo-locked supplier is unknown (fresh/unconfirmed sibling)
-            return True                    # → can't judge cross-supplier → allow (no false hold; branding bars still gate)
+        if not _refused_supplier:
+            # The logo-locked supplier is unknown — a fresh/unconfirmed sibling, OR (under
+            # LOGO_REFUSE_SUPPLIER_CORROB) a text-uncorroborated phash collision whose foreign supplier
+            # we declined to trust as a blocker below. Can't judge cross-supplier by NAME → require the
+            # CANDIDATE's OWN distinctive branding on the page instead (Oracle C-1, mirrors the veto C3
+            # at :307): an all-generic/junk foreign fingerprint has n==0 and can NEVER clear it → the
+            # rescue is blocked → re-emit the refuse/hold (fail-toward-review). Switch OFF ⇒
+            # _refused_supplier is always captured, so this branch only ever sees the genuine
+            # fresh-sibling case and stays the old blanket allow ⇒ byte-identical.
+            if not _supplier_corrob:
+                return True
+            _o, _k = _distinctive_hit_ratio(cand, ocr_lower)
+            return _k > 0 and _o >= _BRANDING_PRESENT_RATIO
         ds = (cand.get('dominant_supplier') or '').strip().lower()
         return (not ds) or (ds == _refused_supplier)
 
@@ -377,7 +394,18 @@ def identify_template(page_image, ocr_text: str, templates: list,
                     # match for a DIFFERENT known supplier is rejected (C1). The accept path below is skipped
                     # while _logo_refused is set (its veto/gate/return are guarded on `_logo_refused is None`).
                     _logo_refused = (detected_slug, best_t.get('document_type_slug'))
-                    _refused_supplier = (best_t.get('dominant_supplier') or '').strip().lower()
+                    _rs = (best_t.get('dominant_supplier') or '').strip().lower()
+                    if _supplier_corrob:
+                        # Trust the logo-locked supplier to BLOCK a cross-supplier rescue ONLY when its OWN
+                        # branding is actually on the page. The 64-bit phash cannot separate suppliers on
+                        # shared letterheads, so a lock whose supplier's branding is ABSENT is a collision,
+                        # not identity — leave _refused_supplier empty and let the winner-side
+                        # distinctive-presence gate in _fallthrough_supplier_ok decide. Present ⇒ the genuine
+                        # same-letterhead wrong-type case af346d8's C1 was built for (unchanged).
+                        _ro, _rk = _distinctive_hit_ratio(best_t, ocr_lower)
+                        _refused_supplier = _rs if (_rk > 0 and _ro >= _BRANDING_PRESENT_RATIO) else ''
+                    else:
+                        _refused_supplier = _rs
                 # SLICE C — isolated-mark VETO: a ≥2-supplier logo cluster whose picked template's mark
                 # DISAGREES with the scan is a look-alike collision → ABSTAIN (fall to keyword + branding
                 # net + review). See _logo_detail_veto (scoped, fail-safe, kill-switched, inert until

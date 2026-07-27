@@ -532,6 +532,57 @@ def main():
     # (d, no-right-type still refuses) is covered above by m_refuse (:447) + m_single (:470): both now flow through
     # the fall-through and end in a refuse via the keyword arm's own trusted-title guard — the preserved fail-safe.
 
+    # ── LOGO_REFUSE_SUPPLIER_CORROB (2026-07-27, Phillip/Oracle SIGN-OFF-WITH-CONDITIONS): the 64-bit
+    #    phash can't separate suppliers on shared letterheads, so a Northgate sales order's nearest logo
+    #    hash is a FOREIGN supplier's wrong-type template. The af346d8 C1 supplier-guard then BLOCKS the
+    #    correct same-supplier SO rescue purely because its supplier != the collided foreign one. Fix:
+    #    two-factor the guard — only trust the logo-locked supplier to block when its branding is on the
+    #    page (else it's a collision), and require the RESOLVED winner's OWN distinctive branding present
+    #    (Oracle C-1) so an all-generic foreign fingerprint can't silently resolve. ──────────────────────
+    section('LOGO_REFUSE_SUPPLIER_CORROB: phash collision does not block the right rescue; all-generic foreign holds')
+    COLL    = '0000000000000000'            # doc logo + a FOREIGN wrong-type template collide (dist 0)
+    OWN_FAR = '000000000003ffff'            # the real supplier's own same-type template (dist 18, keyword-only reachable)
+    FOR_WS = {'id': 40, 'name': 'Saltmarsh WS', 'logo_phash': COLL, 'confirmed_count': 3,
+              'document_type_slug': 'service_worksheet', 'keyword_fingerprint': ['saltmarsh', 'seafoods'],
+              'dominant_supplier': 'Saltmarsh Seafoods'}
+    OWN_SO = {'id': 41, 'name': 'Northgate SO', 'logo_phash': OWN_FAR, 'confirmed_count': 3,
+              'document_type_slug': 'sales_order', 'keyword_fingerprint': ['northgate', 'textiles'],
+              'dominant_supplier': 'Northgate Textiles'}
+    ng_ocr = "NORTHGATE TEXTILES\nSALES ORDER\nSALES ORDER NO SO-77608"   # Northgate present, Saltmarsh ABSENT
+
+    # (a) THE FIX — foreign wrong-type logo lock (branding absent) must NOT block the correct SO rescue.
+    #     RED on baseline (C1 blocks northgate != saltmarsh -> refuse); GREEN with the corroboration gate.
+    m_coll = with_stub_hash(lambda: template_matcher.identify_template(
+        FakePage(COLL), ng_ocr, [FOR_WS, OWN_SO], detected_slug='sales_order', title_trusted=True))
+    if not check('collision: foreign wrong-type logo lock (branding absent) does NOT block the correct '
+                 'same-supplier SO rescue -> resolves Northgate id41, no refuse',
+                 m_coll and (m_coll.get('template') or {}).get('id') == 41 and not m_coll.get('type_refused')):
+        failures += 1
+
+    # (b) SAFETY (Oracle C-2, the load-bearing winner-gate) — real supplier has NO own same-type template;
+    #     a FOREIGN all-generic SO fingerprint clears the RAW 0.80 bar but has ZERO distinctive presence
+    #     -> the winner-side gate HOLDS (never files the wrong company). Removing C-1 makes this RED.
+    GEN_SO = {'id': 42, 'name': 'Generic SO', 'logo_phash': 'ffffffffffffffff', 'confirmed_count': 3,
+              'document_type_slug': 'sales_order', 'keyword_fingerprint': ['sales', 'order'],   # both stopwords -> 0 distinctive
+              'dominant_supplier': 'Generic Trading Co'}
+    acme_ocr = "ACME WIDGETS\nSALES ORDER\nDATE 01/01/2026\nTOTAL 100.00"   # only the generic type words hit GEN_SO
+    m_gen = with_stub_hash(lambda: template_matcher.identify_template(
+        FakePage(COLL), acme_ocr, [FOR_WS, GEN_SO], detected_slug='sales_order', title_trusted=True))
+    if not check('safety: an all-generic FOREIGN SO fingerprint (raw>=0.80, distinctive n==0) is NOT '
+                 'resolved -> re-emit refuse/hold (winner-side gate; RED if C-1 removed)',
+                 (m_gen or {}).get('template') is None and (m_gen or {}).get('type_refused') is True):
+        failures += 1
+
+    # (c) OFF byte-identical: LOGO_REFUSE_SUPPLIER_CORROB=0 restores the af346d8 C1 -> the collision case
+    #     (a) reverts to the pre-fix bug (foreign lock blocks the correct rescue -> refuse/hold).
+    _os2.environ['LOGO_REFUSE_SUPPLIER_CORROB'] = '0'
+    m_off3 = with_stub_hash(lambda: template_matcher.identify_template(
+        FakePage(COLL), ng_ocr, [FOR_WS, OWN_SO], detected_slug='sales_order', title_trusted=True))
+    _os2.environ.pop('LOGO_REFUSE_SUPPLIER_CORROB', None)
+    if not check('OFF (=0): collision case reverts to the af346d8 block -> refuse/hold (byte-identical)',
+                 (m_off3 or {}).get('template') is None and (m_off3 or {}).get('type_refused') is True):
+        failures += 1
+
     print()
     if failures:
         print(f"{failures} check(s) failed - template_matcher Stage 0 identification regressed.")
