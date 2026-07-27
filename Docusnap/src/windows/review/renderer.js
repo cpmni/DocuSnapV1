@@ -5308,8 +5308,7 @@ async function generateEnhancedPreview(page) {
   if (!params) return null;
   try {
     return await window.docusnap.getEnhancedPreview({
-      folderPath:    currentDoc.folder_path,
-      filename:      currentDoc.original_filename,
+      docId:         currentDoc.id,
       page,
       enhanceParams: params,
     });

@@ -54,7 +54,7 @@ function createReviewService(deps = {}) {
   // ── Confirm / file ────────────────────────────────────────────────────────────
   async function confirm(db, actor, payload) {
     const {
-      document_id, folder_path, original_filename,
+      document_id,
       corrections, allValues, supplier_name,
       document_type, document_type_slug, taught_fields, bulk,
     } = payload || {};
@@ -62,7 +62,15 @@ function createReviewService(deps = {}) {
     const _t0 = Date.now();   // confirm return-latency probe (logged below when diag logging is on)
 
     const docRow = documents.getById(db, document_id);
-    const workingPath = docRow?.working_path || null;
+    if (!docRow) return fail('NOT_FOUND', 'Document not found.');
+    // SECURITY (Stage 1 — H1/M12): the on-disk source paths are resolved SERVER-SIDE from the doc
+    // row, NEVER from the payload (which carries field VALUES only). This mirrors the /v1 confirm
+    // path (api/handler.js), which already reads folder_path/original_filename from the row. Without
+    // this, a compromised/replaced renderer could aim filing's copy-in (arbitrary file → output
+    // tree) or the deferred source-unlink (arbitrary file delete) at any host path it named.
+    const folder_path       = docRow.folder_path || null;
+    const original_filename = docRow.original_filename || null;
+    const workingPath = docRow.working_path || null;
     // PREVIOUSLY-FILED copy: the doc's current filed copy, captured REGARDLESS of status and
     // BEFORE the claim below (which nulls the row's stored_path). Two cases carry one:
     //   • an already-confirmed doc ("Edit in Review" / re-surfaced auto-filed doc), and

@@ -637,12 +637,22 @@ function register(ctx) {
   });
 
   // ── OCR preprocessing preview ────────────────────────────────────────────────
-  ipcMain.handle('get-enhanced-preview', async (_e, { folderPath, filename, page, enhanceParams }) => {
-    requireLogin();
-    if (!folderPath || !filename || !enhanceParams) return null;
-
-    const filePath = path.join(folderPath, filename);
-    if (!fs.existsSync(filePath)) return null;
+  ipcMain.handle('get-enhanced-preview', async (_e, { docId, page, enhanceParams }) => {
+    const sess = requireLogin();
+    if (docId == null || !enhanceParams) return null;
+    const db = getDb();
+    _assertDocAccess(db, sess, docId);
+    // SECURITY (Stage 1 — H3, mirror get-document-pages): resolve the on-disk file SERVER-SIDE from
+    // the doc row ONLY — the client-supplied folderPath/filename are NOT read. A compromised/replaced
+    // renderer could otherwise render (and read back as an image) any file on disk, or point a UNC
+    // path at an attacker host to trigger an outbound SMB/NTLM authentication.
+    const row = db.prepare(
+      'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(docId);
+    const filePath = row
+      ? (row.working_path || row.stored_path
+         || (row.folder_path && row.original_filename ? path.join(row.folder_path, row.original_filename) : null))
+      : null;
+    if (!filePath || !fs.existsSync(filePath)) return null;
 
     const enhanceFile = path.join(os.tmpdir(), `ds_enh_preview_${Date.now()}.json`);
     fs.writeFileSync(enhanceFile, JSON.stringify(enhanceParams));

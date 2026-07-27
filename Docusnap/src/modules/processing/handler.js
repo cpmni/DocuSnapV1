@@ -1321,11 +1321,28 @@ function register(ctx) {
     // found" on a doc the preview could still render. Using one resolver keeps
     // reprocess able to find the file exactly wherever the preview can show it.
     const previewService = require('../../services/previewService');
+    // SECURITY (Stage 1 — H3 class, Oracle C1): resolve the on-disk location SERVER-SIDE from the doc
+    // row BEFORE handing it to the shared resolver. The client-supplied folderPath/filename are NOT
+    // trusted — via _resolveDocFile's sourcePath fallback (previewService.js) a compromised renderer
+    // could otherwise point reprocess's existsSync/copyFileSync at a UNC host (outbound SMB/NTLM) or any
+    // readable file, which reprocess would then OCR into the doc's own fields. `confirm` nulls
+    // working_path on filing, so for a confirmed/auto-filed doc the resolver would fall straight to the
+    // renderer path. Mirrors get-document-pages (review/handler.js); the resolver still prefers the
+    // working copy and recovers a moved source from the row.
+    const _row = db.prepare(
+      'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(docId);
+    const _pick = _row ? (_row.working_path || _row.stored_path
+      || (_row.folder_path && _row.original_filename ? path.join(_row.folder_path, _row.original_filename) : null)) : null;
+    const _rFolder = _pick ? path.dirname(_pick) : null;
+    const _rFile   = _pick ? path.basename(_pick) : null;
+    if (!_rFolder || !_rFile) {
+      return { success: false, error: 'File not found for this document.' };
+    }
     const srcFile = previewService.resolveDocFile(
-      db, { docId, folderPath, filename }, { fs, path, log: (m) => logger?.log?.(m) }
+      db, { docId, folderPath: _rFolder, filename: _rFile }, { fs, path, log: (m) => logger?.log?.(m) }
     );
     if (!srcFile || !fs.existsSync(srcFile)) {
-      return { success: false, error: 'File not found: ' + (srcFile || path.join(folderPath, filename)) };
+      return { success: false, error: 'File not found: ' + (srcFile || path.join(_rFolder, _rFile)) };
     }
 
     // Snapshot existing extractions
@@ -1333,9 +1350,9 @@ function register(ctx) {
       'SELECT * FROM extractions WHERE document_id = ?'
     ).all(docId);
 
-    // Copy to temp dir with unique name
+    // Copy to temp dir with unique name (extension from the RESOLVED source, not the renderer arg)
     const tmpDir      = fs.mkdtempSync(path.join(os.tmpdir(), 'docusnap-'));
-    const ext         = path.extname(filename);
+    const ext         = path.extname(srcFile);
     const tmpFilename = `reprocess_${Date.now()}${ext}`;
     fs.copyFileSync(srcFile, path.join(tmpDir, tmpFilename));
 
@@ -2084,27 +2101,38 @@ function register(ctx) {
     // `every` (split every N pages, 1 = every page) is an alternative to an
     // explicit range string; exactly one is required.
     const everyN = Number(every) > 0 ? Math.floor(Number(every)) : null;
-    if (!filePath || (!ranges && !everyN)) {
-      return { success: false, error: 'filePath and ranges or every are required' };
+    if (docId == null || (!ranges && !everyN)) {
+      return { success: false, error: 'docId and ranges or every are required' };
     }
 
-    // Resolve the ACTUAL source file: prefer the app-managed working copy. The original
-    // is DRAINED out of the intake folder into Processed/ once a working copy exists, so
-    // splitting from `filePath` (the original location) would fail "file not found" after
-    // a normal process. Mirrors the reprocess path's working-copy-first resolution.
-    let srcFile = filePath;
-    try {
-      if (docId) {
-        const wp = getDb().prepare('SELECT working_path FROM documents WHERE id = ?').get(docId);
-        if (wp && wp.working_path && fs.existsSync(wp.working_path)) srcFile = wp.working_path;
-      }
-    } catch { /* fall back to filePath */ }
+    // SECURITY (Stage 1 — H2): resolve the source PDF, the output directory, AND the delete target
+    // SERVER-SIDE from the doc row. The renderer-supplied `filePath`/`outDir` are NOT trusted for any
+    // filesystem operation — a compromised/replaced renderer could otherwise write split PDFs to an
+    // arbitrary directory and unlink an arbitrary host file (the read swapped to the working copy while
+    // the delete still hit the caller's path). All three now derive from paths the app itself recorded
+    // for this document.
+    const db = getDb();
+    const documents = require('../../../database/modules/documents');
+    const row = db.prepare(
+      'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(docId);
+    if (!row) return { success: false, error: 'document not found' };
+    const recordedOriginal = (row.folder_path && row.original_filename)
+      ? path.join(row.folder_path, row.original_filename) : null;
+    // Read source: prefer the app-managed working copy (stable + app-owned); then the filed copy; then
+    // the recorded original. `folder_path`/`original_filename` track the CURRENT recorded location — they
+    // are updated to the Processed/ folder when the source is drained after a normal import — so
+    // recordedOriginal stays valid; the working copy is preferred only because it's the reliable
+    // app-owned path that doesn't depend on the user's folder.
+    const srcFile = [row.working_path, row.stored_path, recordedOriginal].find(p => p && fs.existsSync(p)) || null;
     if (!srcFile || !fs.existsSync(srcFile)) {
       return { success: false, error: 'Source PDF not found — the original may have been moved into the Processed folder after processing.' };
     }
-    // Write the split pages next to the ORIGINAL location (a real user folder), never the
-    // hidden inbox where the working copy lives.
-    const splitOutDir = outDir || (filePath ? path.dirname(filePath) : path.dirname(srcFile));
+    // Write the split pages next to the doc's own RECORDED location (a real user folder the app already
+    // recorded for it), never the hidden inbox where the working copy lives, and never a renderer-chosen
+    // directory.
+    const splitOutDir = recordedOriginal ? path.dirname(recordedOriginal)
+                      : row.stored_path ? path.dirname(row.stored_path)
+                      : path.dirname(srcFile);
 
     const py             = pythonExe();
     const splitterScript = path.join(path.dirname(backendScript()), 'pdf_splitter.py');
@@ -2124,11 +2152,6 @@ function register(ctx) {
 
     if (!raw.success) return raw;
 
-    // Register split files as pending documents and remove the original.
-    // Only deletes the original after all outputs are confirmed on disk.
-    const documents = require('../../../database/modules/documents');
-    const db        = getDb();
-
     const createdFiles = (raw.files || []).filter(f => fs.existsSync(f));
     if (createdFiles.length === 0) {
       return { success: false, error: 'Splitter reported success but no output files were found on disk.' };
@@ -2144,12 +2167,11 @@ function register(ctx) {
       docIds.push(info.lastInsertRowid);
     }
 
-    // Remove original from DB and disk — only after outputs are confirmed.
-    if (docId) {
-      documents.deleteDoc(db, docId);
-    }
-    if (filePath && fs.existsSync(filePath)) {
-      try { fs.unlinkSync(filePath); } catch (e) { logger?.warn('Could not delete original after split:', e.message); }
+    // Remove the original from DB + disk — only after outputs are confirmed. The delete target is the
+    // doc's RECORDED original location (resolved above), never a renderer-supplied path.
+    documents.deleteDoc(db, docId);
+    if (recordedOriginal && fs.existsSync(recordedOriginal)) {
+      try { fs.unlinkSync(recordedOriginal); } catch (e) { logger?.warn('Could not delete original after split:', e.message); }
     }
 
     notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
