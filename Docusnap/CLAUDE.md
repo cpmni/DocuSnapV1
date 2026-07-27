@@ -808,10 +808,11 @@ the LATE session block above.) Daytime detail: `HANDOVER_2026-07-20.md` (then
 
 ## Working rules (read before any fix)
 
-**STOP AND SECOND-GUESS at these five junctures** (owner rule, added 2026-07-24 after a root cause was
-missed that the owner spotted immediately). Not "think harder" — at each named juncture, spend ONE extra
-step asking **"do I need more information?"** and **"what am I missing?"**, then continue. This does NOT
-override token conservation: it is five specific moments, not a licence to widen every investigation.
+**STOP AND SECOND-GUESS at these six junctures** (owner rule, added 2026-07-24 after a root cause was
+missed that the owner spotted immediately; item 6 added 2026-07-27). Not "think harder" — at each named
+juncture, spend ONE extra step asking **"do I need more information?"** and **"what am I missing?"**, then
+continue. This does NOT override token conservation: it is six specific moments, not a licence to widen
+every investigation.
 1. **You just looked at an artefact to answer ONE question.** Before closing an image / trace / report,
    describe what ELSE is in the frame. FAILURE 2026-07-24: nine document crops were opened to read a
    reference number; every one of them also showed a visibly SKEWED page, which was the actual root
@@ -831,6 +832,17 @@ override token conservation: it is five specific moments, not a licence to widen
    the symptom. FAILURE: `project_skew_anchor_misread` / `project_detect_deskew_parked` /
    `project_deskew_field_reread` already recorded that skew breaks anchored reads. All three were in the
    index and none were consulted.
+6. **You are about to ASSERT that something EXISTS / does not exist / is configured a certain way** — a
+   template, field, setting, DB column, learned row, file, flag. **NEVER state system state from indirect
+   or partial evidence — VERIFY IT AT THE SOURCE first** (query the DB, read the code, list the table/dir).
+   It is almost always a cheap, bounded check (one SQL query / one grep), and when the claim is load-bearing
+   for a diagnosis it is mandatory, not optional. A UI or trace signal is NOT the state: "No template match"
+   on screen means the matcher did not SELECT one for THIS doc — NOT that no template EXISTS. FAILURE
+   2026-07-27: asserted "Northgate has no sales_order template" from a "No template match" flag plus a stale
+   forensic, and built a diagnosis on it; the owner knew a sales_order template with ~10 confirms existed. A
+   5-second `SELECT … FROM templates` would have caught it and changed the whole root cause. Do not make the
+   owner be your fact-checker for state you could have queried.
+
 **Corollary — the owner is a live source of information, not just an approver.** When something is cheap
 for them to answer and expensive to infer (how they draw a teach box, whether duplicate imports are
 deliberate, what a scan actually looks like), ASK before building on an assumption.
