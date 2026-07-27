@@ -727,6 +727,13 @@ function getHiddenFieldsForSupplierType(db, { supplier_name, document_type_slug,
     const m = safe(() => findByBrandingFingerprint(db, keyword_fingerprint, slug, 0.80), null);
     if (m) ids.add(m.id);
   }
+  // C3 (2026-07-27, group activation): also include GROUP siblings (group_id) of any resolved template —
+  // so once the owner-run backfill groups the duplicates, config resolves group-wide too. ADDITIVE
+  // (group_id ∪ name), never a replacement, so a name-matched-but-ungrouped cluster never loses its config.
+  for (const tid of [...ids]) {
+    const gid = safe(() => (db.prepare('SELECT group_id FROM templates WHERE id = ?').get(tid) || {}).group_id, null);
+    if (gid != null) for (const s of safe(() => db.prepare('SELECT id FROM templates WHERE group_id = ?').all(gid), [])) ids.add(s.id);
+  }
   const out = new Set();
   for (const id of ids) for (const k of getHiddenFields(db, id)) out.add(k);
   return [...out].sort();

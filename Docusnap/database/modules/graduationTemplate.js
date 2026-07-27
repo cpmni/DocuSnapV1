@@ -136,6 +136,19 @@ function decide(db, docId, info = {}, opts = {}) {
     return { action: 'link', templateId: match.template.id, name: match.template.name || null, reason: 'exists' };
   }
 
+  // NAME-PRIMARY REUSE (Lever 1, TEMPLATE_REUSE_BY_NAME default ON, Phillip/Oracle 2026-07-27): the
+  // fingerprint existence check above (logo>=60 OR keyword>=75) can MISS a drifted same-supplier template
+  // — OR deliberately abstain (name-presence/detail veto) — and fall to CREATE, minting a duplicate. Before
+  // creating, reuse a same-type template whose ESTABLISHED (dominant confirmed) identity EXACTLY equals this
+  // graduated scope's supplier — the confirmed-identity signal the fingerprint arms lack (Oracle §3c: keyed
+  // on confirmed identity, stronger than a logo suggestion; fires even when identifyByFingerprint abstained
+  // — intentional, not a veto leak). LINK only (Oracle C1 — never update-fold on graduation). OFF ⇒
+  // byte-identical (arm skipped ⇒ falls to the unchanged create).
+  if (process.env.TEMPLATE_REUSE_BY_NAME !== '0') {
+    const _nmId = templates.reuseByEstablishedName(db, supplier, slug, docId);
+    if (_nmId) return { action: 'link', templateId: _nmId, name: null, reason: 'name-reuse' };
+  }
+
   // C2: only auto-create with a >=K distinctive-token identity (downstream-judgeable, and a real
   // "who/what" signal). A thin-identity (logo-primary/sparse-text) scope is left to review.
   const kf   = _parseJson(doc.keyword_fingerprint, []);
