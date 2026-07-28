@@ -3027,14 +3027,15 @@ class ExtractionEngine:
             # docs/designs/IDENTITY_TEXT_FIRST_2026-07-19.md
             _gate = 'accept'
             if logo_match and os.environ.get("LOGO_TEXT_GATE", "1") != "0":
-                # Geometry name-presence WITNESS (Oracle C1; kill LOGO_NAME_PRESENCE_ACCEPT, default
-                # OFF ⇒ geom_issuer_norm stays None ⇒ decide_logo_text_gate byte-identical). Recompute
-                # the issuer GEOMETRICALLY — page0_geometry on a scan, or the born-digital line bridge
-                # (geometry_from_lines) on a generated PDF — and let it CONFIRM the logo ONLY where the
-                # branding-fingerprint arms are unjudgeable. Geometry-ONLY pick, NO text-arm fallback,
-                # so a marker-less recipient can never confirm itself as the issuer.
+                # Geometry name-presence WITNESS (Oracle C1; kill LOGO_NAME_PRESENCE_ACCEPT=0 restores
+                # byte-identical). Recompute the issuer GEOMETRICALLY — page0_geometry on a scan, or the
+                # born-digital line bridge (geometry_from_lines) on a generated PDF — and let it CONFIRM
+                # the logo ONLY where the branding-fingerprint arms are unjudgeable. Geometry-ONLY pick,
+                # NO text-arm fallback, so a marker-less recipient can never confirm itself as the issuer.
+                # DEFAULT ON (corpus-gated 2026-07-28: +14 correct auto-files, 0 new wrong, M_type 0;
+                # real born-digital SuperStore replay flips suggest→accept 8/8, OFF byte-identical).
                 _geom_issuer_norm = None
-                if os.environ.get("LOGO_NAME_PRESENCE_ACCEPT", "0") == "1":
+                if os.environ.get("LOGO_NAME_PRESENCE_ACCEPT", "1") != "0":
                     from extraction import letterhead as _lh
                     _geom = page0_geometry or _lh.geometry_from_lines(page_text_lines)
                     if _geom and _geom.get("rows"):
