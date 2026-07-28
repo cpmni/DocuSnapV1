@@ -28,7 +28,7 @@ function register(ctx) {
   const { spawn } = require('child_process');
   const templates = require('../../../database/modules/templates');
   const documents = require('../../../database/modules/documents');
-  const { requireRole } = require('../auth/handler');
+  const { requireRole, logAudit } = require('../auth/handler');   // Stage 5a: audit destructive template ops
 
   // Resolve a document row to an on-disk file (managed working copy preferred,
   // then the filed/stored location) — mirrors the preview/reprocess resolution.
@@ -331,12 +331,17 @@ function register(ctx) {
 
   ipcMain.handle('rename-template', (_e, templateId, name) => {
     requireRole('admin');
-    return templates.rename(getDb(), templateId, (name || '').trim());
+    const r = templates.rename(getDb(), templateId, (name || '').trim());
+    logAudit(getDb(), { action: 'template_renamed', action_category: 'templates', target_type: 'template',
+      target_id: String(templateId), outcome: 'success', metadata: { name: (name || '').trim().slice(0, 80) } });
+    return r;
   });
 
   ipcMain.handle('delete-template', (_e, templateId) => {
     requireRole('admin');
     templates.remove(getDb(), templateId);
+    logAudit(getDb(), { action: 'template_deleted', action_category: 'templates', target_type: 'template',
+      target_id: String(templateId), outcome: 'success' });
     return true;
   });
 
@@ -406,6 +411,8 @@ function register(ctx) {
   ipcMain.handle('clear-template-landmarks', async (_e, templateId) => {
     requireRole('admin');
     templates.clearLandmarks(getDb(), templateId);
+    logAudit(getDb(), { action: 'template_landmarks_cleared', action_category: 'templates', target_type: 'template',
+      target_id: String(templateId), outcome: 'success' });
     return generateLandmarks(templateId);
   });
 
@@ -415,7 +422,10 @@ function register(ctx) {
   // empty duplicate to be removed. Returns a {moved, sampleAdopted} summary.
   ipcMain.handle('reassign-template-documents', (_e, fromTemplateId, toTemplateId) => {
     requireRole('admin');
-    return templates.reassignDocuments(getDb(), Number(fromTemplateId), Number(toTemplateId));
+    const r = templates.reassignDocuments(getDb(), Number(fromTemplateId), Number(toTemplateId));
+    logAudit(getDb(), { action: 'template_documents_reassigned', action_category: 'templates', target_type: 'template',
+      target_id: String(toTemplateId), outcome: 'success', metadata: { from: Number(fromTemplateId), to: Number(toTemplateId) } });
+    return r;
   });
 
   // Consolidate a duplicate/fragment template INTO a canonical one and delete the
@@ -424,7 +434,10 @@ function register(ctx) {
   // (target wins) and removes the source. See templates.mergeInto.
   ipcMain.handle('merge-template', (_e, fromTemplateId, toTemplateId) => {
     requireRole('admin');
-    return templates.mergeInto(getDb(), Number(fromTemplateId), Number(toTemplateId));
+    const r = templates.mergeInto(getDb(), Number(fromTemplateId), Number(toTemplateId));
+    logAudit(getDb(), { action: 'template_merged', action_category: 'templates', target_type: 'template',
+      target_id: String(toTemplateId), outcome: 'success', metadata: { from: Number(fromTemplateId), to: Number(toTemplateId) } });
+    return r;
   });
 
   // ── M3 template-convergence cleanup (docs/designs/TEMPLATE_CONVERGENCE_2026-07-17.md) ──────────
@@ -458,7 +471,10 @@ function register(ctx) {
   // NON-DESTRUCTIVE: apply the backfill LINK (guarded `WHERE template_id IS NULL`; reversible).
   ipcMain.handle('apply-template-backfill', () => {
     requireRole('admin');
-    return templateMerge.applyBackfill(getDb());
+    const r = templateMerge.applyBackfill(getDb());
+    logAudit(getDb(), { action: 'template_backfill_applied', action_category: 'templates', target_type: 'template',
+      outcome: 'success', metadata: { linked: (r && (r.linked ?? r.count)) ?? undefined } });
+    return r;
   });
 
   // DESTRUCTIVE, admin-confirmed: BACK UP THE DB, then fold each member template INTO the canonical
@@ -479,6 +495,9 @@ function register(ctx) {
       catch (e) { results.push({ from: m, ok: false, reason: e.message }); }
     }
     const merged = results.filter(r => r.ok).length;
+    logAudit(db, { action: 'template_cluster_merged', action_category: 'templates', target_type: 'template',
+      target_id: String(canon), outcome: merged > 0 ? 'success' : 'failure',
+      metadata: { canonical: canon, members: members.length, merged, backup: !!backup } });
     return { ok: merged > 0, backup, canonicalId: canon, merged, attempted: members.length, results };
   });
 

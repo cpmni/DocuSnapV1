@@ -183,9 +183,10 @@ function register(ctx) {
   });
 
   // ── Fields ──────────────────────────────────────────────────────────────────
-  ipcMain.handle('add-field',    (_e, data)    => { requireRole('admin'); return doctypes.addField(getDb(), data); });
-  ipcMain.handle('update-field', (_e, id, ch)  => { requireRole('admin'); return doctypes.updateField(getDb(), id, ch); });
-  ipcMain.handle('delete-field', (_e, id)      => { requireRole('admin'); return doctypes.deleteField(getDb(), id); });
+  // Stage 5a: schema mutations are audited (field add/update/delete change what every future doc extracts).
+  ipcMain.handle('add-field',    (_e, data)    => { requireRole('admin'); const r = doctypes.addField(getDb(), data); logAudit(getDb(), { action: 'field_added', action_category: 'settings', target_type: 'field', target_id: String((data && data.key) || ''), outcome: 'success', metadata: { document_type_id: data && data.document_type_id } }); return r; });
+  ipcMain.handle('update-field', (_e, id, ch)  => { requireRole('admin'); const r = doctypes.updateField(getDb(), id, ch); logAudit(getDb(), { action: 'field_updated', action_category: 'settings', target_type: 'field', target_id: String(id), outcome: 'success' }); return r; });
+  ipcMain.handle('delete-field', (_e, id)      => { requireRole('admin'); const r = doctypes.deleteField(getDb(), id); logAudit(getDb(), { action: 'field_deleted', action_category: 'settings', target_type: 'field', target_id: String(id), outcome: 'success' }); return r; });
 
   // ── Learning Recovery ────────────────────────────────────────────────────────
   // Small inspection/cleanup surface for the automatic-learning corpora
@@ -218,7 +219,9 @@ function register(ctx) {
   // renderer. Returns per-table deleted counts.
   ipcMain.handle('reset-all-learning', () => {
     requireRole('admin');
-    return learning.resetAllLearning(getDb());
+    const r = learning.resetAllLearning(getDb());
+    logAudit(getDb(), { action: 'reset_all_learning', action_category: 'settings', target_type: 'learning', outcome: 'success' });   // Stage 5a
+    return r;
   });
 
   // Developer "fresh install (keep document corpus)" reset — superset of the
@@ -230,6 +233,7 @@ function register(ctx) {
   // still proceeds (best-effort safety net, not a hard dependency).
   ipcMain.handle('reset-fresh-install', () => {
     requireRole('admin');
+    logAudit(getDb(), { action: 'reset_fresh_install', action_category: 'settings', target_type: 'learning', outcome: 'success' });   // Stage 5a — records the destructive invocation (a backup is taken below)
     const fs = ctx.fs || require('fs');
     const db = getDb();
     let backup = null;
