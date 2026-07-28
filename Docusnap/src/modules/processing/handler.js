@@ -104,6 +104,11 @@ function _diagEnabled(db) {
 
 let _currentBatchProcs = [];     // all running Python worker processes for the active batch (bounded pool)
 let _singleReprocessActive = false;  // a single reprocess-document is in flight (NOT in the pool array)
+// Live "Reprocess All" status, so a Review window that was CLOSED mid-batch can reconnect on reopen
+// (the batch runs in this main process and survives the window). Read via get-reprocess-status.
+// pendingCompletion: a batch FINISHED and its window-side completion (auto-file the reprocessed-to-100
+// docs + summary) has not yet been run by any window — consumed once via consume-reprocess-completion.
+let _reprocessStatus = { running: false, total: 0, done: 0, failed: 0, pendingCompletion: false };
 // ANY OCR/extraction work is in flight — a batch (import / reprocess-all) OR a single reprocess.
 // Used to SERIALISE heavy work: starting a second reprocess while one is running oversubscribes
 // the CPU (every worker + the single proc OCR at once) and can race two merges into the same doc,
@@ -563,6 +568,14 @@ function register(ctx) {
   const mirror = (sender, channel, msg) => {
     safeSend(sender, channel, msg);
     notifyDevInspector?.(channel, msg);
+  };
+
+  // Reprocess-All progress goes to the LIVE Review window (looked up fresh on every send), NOT the
+  // window that STARTED the batch — so the batch survives closing + reopening Review and the reopened
+  // window reconnects (see _reprocessStatus + get-reprocess-status). Plus the dev inspector.
+  const mirrorReprocess = (msg) => {
+    notifyReview?.('reprocess-progress', msg);
+    notifyDevInspector?.('reprocess-progress', msg);
   };
 
   // Should the Python child emit the dev trace stream this run? True when the
@@ -1547,6 +1560,10 @@ function register(ctx) {
             const msg = JSON.parse(trimmed);
             if (msg.type === 'trace') { routeTrace(msg); continue; }
             if (msg.type === 'file_done') _recordDevDoc(msg);
+            // Single-doc reprocess stays on event.sender (short, window-bound). NOTE the asymmetry:
+            // Reprocess-ALL uses mirrorReprocess (the LIVE review window) so it survives close+reopen.
+            // The two share the 'reprocess-progress' channel but the busy guard keeps them mutually
+            // exclusive — don't naively "unify" them without handling concurrent addressing.
             mirror(event.sender, 'reprocess-progress', msg);
             if (msg.type === 'file_done') result = msg;
           } catch {
@@ -1705,7 +1722,8 @@ function register(ctx) {
     const threadCap = shards.length > 1
       ? Math.max(1, Math.floor((os.cpus().length || 1) / shards.length)) : 0;
 
-    mirror(event.sender, 'reprocess-progress', { type: 'start', total: tmpNames.length });
+    _reprocessStatus = { running: true, total: tmpNames.length, done: 0, failed: 0, pendingCompletion: false };
+    mirrorReprocess({ type: 'start', total: tmpNames.length });
     let done = 0, failed = 0;
     const shardFiles = [];
     _currentBatchProcs = [];
@@ -1749,10 +1767,10 @@ function register(ctx) {
               try { applyReprocessResult(db, nd.docId, nd.existing, msg, nd.filename, diagOn); done++; }
               catch (e) { failed++; logger?.err(`reprocess-batch merge ${nd.filename}: ${e.message}`); }
             } else if (nd) { failed++; }
-            mirror(event.sender, 'reprocess-progress',
-              { type: 'file_done', done, failed, total: tmpNames.length, docId: nd ? nd.docId : null });
+            _reprocessStatus.done = done; _reprocessStatus.failed = failed;
+            mirrorReprocess({ type: 'file_done', done, failed, total: tmpNames.length, docId: nd ? nd.docId : null });
           } else if (msg.type !== 'start') {
-            mirror(event.sender, 'reprocess-progress', msg);   // file_begin / log
+            mirrorReprocess(msg);   // file_begin / log
           }
         }
       });
@@ -1765,10 +1783,30 @@ function register(ctx) {
       await Promise.all(shards.map(runShard));
     } finally {
       _currentBatchProcs = [];
+      // Mark the batch finished + tell the LIVE Review window (which may be a REOPENED window that
+      // reconnected mid-run) so it can refresh the queue + re-enable its buttons. The window that
+      // STARTED the batch also resolves via this handler's return; a reopened one relies on this event.
+      _reprocessStatus = { ..._reprocessStatus, running: false, pendingCompletion: true };
+      mirrorReprocess({ type: 'batch_done', done, failed, total: _reprocessStatus.total });
       try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
       cleanupFiles([manifestFile, ...shardFiles, ...tempFiles]);
     }
     return { success: true, done, failed, lockedSkipped };
+  });
+
+  // Live "Reprocess All" status — a Review window that was closed mid-batch reads this on reopen to
+  // reconnect (show progress + disable the reprocess buttons) instead of looking idle over a batch
+  // that is still running in this process. Any signed-in principal may read it (display-only).
+  ipcMain.handle('get-reprocess-status', () => ({ ..._reprocessStatus }));
+
+  // Consume-once: a batch's window-side completion (auto-file reprocessed-to-100 docs + summary).
+  // Returns the final counts the FIRST time it is called after a batch finishes, then null. Both the
+  // fresh-start window (which already ran its own completion) and a reopened window call it — so the
+  // completion runs exactly once, whether or not a window was open at the finish line.
+  ipcMain.handle('consume-reprocess-completion', () => {
+    if (!_reprocessStatus.pendingCompletion) return null;
+    _reprocessStatus.pendingCompletion = false;
+    return { done: _reprocessStatus.done, failed: _reprocessStatus.failed, total: _reprocessStatus.total };
   });
 
   // ── OCR region ──────────────────────────────────────────────────────────────

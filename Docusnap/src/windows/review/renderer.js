@@ -407,6 +407,23 @@ async function loadQueue() {
   renderQueueList();
   refreshAutoCommittedBar();   // surface recently auto-filed docs for re-checking (independent of the selection below)
 
+  // Reconnect to a "Reprocess All" that Review was closed during. If it's STILL running, show
+  // progress + lock the buttons (reconnectRunningBatch). If it FINISHED while Review was closed, its
+  // window-side completion (auto-file the reprocessed-to-100 docs + summary) never ran — consume it
+  // once here so those docs still auto-file. Best-effort; never blocks the queue load.
+  try {
+    const _rs = await window.docusnap.getReprocessStatus();
+    if (_rs && _rs.running) {
+      reconnectRunningBatch(_rs);
+    } else {
+      const _c = await window.docusnap.consumeReprocessCompletion();
+      if (_c) {
+        try { await autoCommitFullConfidence(); } catch { /* best-effort */ }
+        showToast(`Reprocess finished — ${_c.done} document${_c.done !== 1 ? 's' : ''} updated${_c.failed ? `, ${_c.failed} failed` : ''}`, _c.failed ? 'warn' : 'ok');
+      }
+    }
+  } catch { /* non-fatal */ }
+
   // Decide what to land on ONCE. getReviewTarget is consume-once, so read it first, then let
   // decideInitialSelection choose target-nav XOR auto-land — the two can never both fire selectDoc
   // (removes the old double-select race). The single-group branch is the cold-start fix: a first
@@ -5589,6 +5606,78 @@ document.getElementById('btn-stop-reprocess').addEventListener('click', () => {
   btnStop.innerHTML = 'Stopping…';
 });
 
+// RECONNECT to a "Reprocess All" that is still running in the main process after Review was closed
+// and reopened (Option A — the batch is never interrupted). Enters the same in-progress UI as a
+// fresh start (banner + locked buttons + Stop) and drives it from the broadcast progress events; the
+// batch's 'batch_done' event (emitted to the LIVE Review window) triggers the same refresh + re-enable
+// the fresh path does in its finally. Called once from loadQueue when get-reprocess-status says running.
+async function reconnectRunningBatch(status) {
+  if (_batchActive || !status || !status.running) return;
+  const btnAll  = document.getElementById('btn-reprocess-all');
+  const btnSup  = document.getElementById('btn-reprocess-supplier');
+  const btnOne  = document.getElementById('btn-reprocess');
+  const btnStop = document.getElementById('btn-stop-reprocess');
+  const banner  = document.getElementById('reprocess-progress');
+  if (!btnAll || !btnStop || !banner) return;
+
+  _batchActive  = true;
+  _batchStopped = false;
+  btnAll.disabled = true;
+  if (btnSup) btnSup.disabled = true;
+  if (btnOne) btnOne.disabled = true;
+  btnStop.disabled = false;
+  btnStop.innerHTML = '&#9632; Stop';
+  btnStop.style.display = '';
+  banner.classList.remove('done');
+  banner.classList.add('show');
+  const total = status.total || 0;
+  banner.textContent = `Reprocessing ${status.done || 0} of ${total} · the queue (already running)…`;
+
+  // Completion — the same refresh the fresh-start path runs in its finally. Guarded so the batch_done
+  // event and the race-recheck below can't both fire it.
+  let finished = false;
+  const finish = async (done, failed) => {
+    if (finished) return; finished = true;
+    window.docusnap.removeReprocessProgress();
+    try {
+      if (currentDoc) {
+        const full = await window.docusnap.getDocumentWithExtractions(currentDoc.id);
+        if (full && currentDoc && currentDoc.id === full.id) {
+          currentDoc = full; corrections = {}; pendingAnchors = {}; pendingFieldRules = {};
+          syncDocTypeFromRecord(full); renderFields(full);
+        }
+      }
+    } catch { /* panel refresh is best-effort */ }
+    queue         = await window.docusnap.getReviewQueue();
+    deferredQueue = await window.docusnap.getDeferredQueue();
+    updateTabCounts();
+    renderQueueList();
+    _batchActive          = false;
+    btnAll.disabled       = false;
+    if (btnOne) btnOne.disabled = false;
+    btnStop.style.display = 'none';
+    updateReprocessSupplierButton();
+    await autoCommitFullConfidence();
+    try { await window.docusnap.consumeReprocessCompletion(); } catch { /* this window ran the completion — clear the once-flag */ }
+    banner.classList.add('done');
+    banner.textContent = _batchStopped ? `Stopped — ${done} reprocessed`
+      : (failed ? `Completed — ${done} OK, ${failed} failed` : `Completed ${done} of ${total}`);
+    setTimeout(() => { if (!_batchActive) { banner.classList.remove('show', 'done'); banner.textContent = ''; } }, 4000);
+    showToast(_batchStopped ? `Stopped — ${done} reprocessed`
+      : (failed ? `Reprocessed ${done} — ${failed} failed` : `Reprocessed ${done} document${done !== 1 ? 's' : ''}`),
+      (failed || _batchStopped) ? 'warn' : 'ok');
+  };
+
+  window.docusnap.removeReprocessProgress();
+  window.docusnap.onReprocessProgress((msg) => {
+    if (msg.type === 'file_done') banner.textContent = `Reprocessing ${msg.done || 0} of ${msg.total || total} · the queue…`;
+    else if (msg.type === 'batch_done') finish(msg.done || 0, msg.failed || 0);
+  });
+  // RACE GUARD: the batch may have finished between get-reprocess-status (in loadQueue) and this
+  // subscription — in which case batch_done already fired and was missed. Re-read and finalise now.
+  try { const st2 = await window.docusnap.getReprocessStatus(); if (!st2 || !st2.running) await finish((st2 && st2.done) || 0, (st2 && st2.failed) || 0); } catch { /* leave the batch subscription in place */ }
+}
+
 // Reprocess a set of documents (the whole queue, or just one sender's) through the shared
 // batched-worker path. scopeLabel is shown in the progress banner + toast.
 async function runReprocessBatch(docs, scopeLabel) {
@@ -5676,6 +5765,9 @@ async function runReprocessBatch(docs, scopeLabel) {
     updateReprocessSupplierButton();   // re-enable + relabel the per-sender button for the open doc
     // Auto-commit any docs that reprocessed to 100% (setting-gated) + toast.
     await autoCommitFullConfidence();
+    // This window ran the completion — clear the main-side once-flag so a later reopen doesn't re-fire
+    // a stale "reprocess finished" auto-commit + summary (the closed-till-done path consumes it there).
+    try { await window.docusnap.consumeReprocessCompletion(); } catch { /* best-effort */ }
   }
 
   const stopped = _batchStopped;
