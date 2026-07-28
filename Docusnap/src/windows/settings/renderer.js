@@ -866,6 +866,56 @@ async function loadOutputStructure() {
 }
 loadOutputStructure();
 
+// ── Duplicate-file label (Settings → Files & filing) ─────────────────────────
+// Stored setting `duplicate_suffix`: DUPLICATE (default) | COPY | number | date | any custom word.
+// Default is byte-identical to the legacy "-DUPLICATE". Server-authoritative preview (no drift).
+const dupSelect  = document.getElementById('dup-suffix-select');
+const dupCustom  = document.getElementById('dup-suffix-custom');
+const dupPreview = document.getElementById('dup-preview');
+const DUP_KNOWN  = new Set(['DUPLICATE', 'COPY', 'NUMBER', 'DATE']);
+let _dupDebounce = null;
+
+function _dupEffectiveValue() {
+  if (!dupSelect) return 'DUPLICATE';
+  if (dupSelect.value === '__custom') return (dupCustom.value || '').trim();
+  return dupSelect.value;
+}
+async function refreshDupPreview() {
+  if (!dupPreview) return;
+  try {
+    const r = await api.previewDuplicateName(_dupEffectiveValue() || 'DUPLICATE');
+    dupPreview.textContent = (r && r.example) ? r.example : '…';
+  } catch { dupPreview.textContent = '…'; }
+}
+async function saveDupSuffix() {
+  // A blank custom box falls back to the default so filing never receives an empty label.
+  try { await api.setSetting('duplicate_suffix', _dupEffectiveValue() || 'DUPLICATE'); } catch { /* noop */ }
+  refreshDupPreview();
+}
+async function loadDupSuffix() {
+  if (!dupSelect) return;
+  const stored = String((await api.getSetting('duplicate_suffix')) || 'DUPLICATE').trim();
+  const up = stored.toUpperCase();
+  if (DUP_KNOWN.has(up)) {
+    dupSelect.value = (up === 'NUMBER' || up === 'DATE') ? up.toLowerCase() : up;
+    dupCustom.style.display = 'none';
+  } else {
+    dupSelect.value = '__custom';
+    dupCustom.value = stored;
+    dupCustom.style.display = '';
+  }
+  refreshDupPreview();
+}
+if (dupSelect) {
+  dupSelect.addEventListener('change', () => {
+    const custom = dupSelect.value === '__custom';
+    dupCustom.style.display = custom ? '' : 'none';
+    if (custom) { dupCustom.focus(); refreshDupPreview(); } else saveDupSuffix();
+  });
+  dupCustom.addEventListener('input', () => { clearTimeout(_dupDebounce); _dupDebounce = setTimeout(saveDupSuffix, 400); });
+  loadDupSuffix();
+}
+
 function renderOutputTokenList(listId, tokens, editor) {
   const list = document.getElementById(listId);
   if (!list) return;

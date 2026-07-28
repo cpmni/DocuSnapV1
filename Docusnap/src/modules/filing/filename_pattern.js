@@ -249,6 +249,15 @@ function resolveDuplicate(baseFilename, ext, existsIn, opts = {}) {
   return { filename: cand, subfolder: '' };
 }
 
+// Preview (Settings → Files & filing): the name the FIRST duplicate of `baseFilename` receives
+// under `suffix`. PURE, no disk check — mirrors the 'suffix' branch of resolveDuplicate so the UI
+// preview can never drift from filing-time behaviour. `now` injectable for the 'date' token.
+function previewDuplicateName(baseFilename, ext, suffix, now) {
+  const stem = (ext && baseFilename.endsWith(ext)) ? baseFilename.slice(0, -ext.length) : baseFilename;
+  const tag = _duplicateTag(suffix, now);
+  return tag ? `${stem}-${tag}${ext}` : `${stem}-2${ext}`;   // '' tag = the 'number' style (-2, -3, …)
+}
+
 // Build the subfolder segments for one document from a folder PATTERN. "/" in the
 // pattern separates subfolder levels; each level is token-substituted and run
 // through the same Windows-safety pass as a filename stem (illegal chars stripped,
@@ -276,5 +285,6 @@ module.exports = {
   buildFolderSegments,
   resolveDuplicateFilename,
   resolveDuplicate,
+  previewDuplicateName,
   DUPLICATES_SUBFOLDER,
 };

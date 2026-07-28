@@ -506,9 +506,29 @@
         <div id="output-path-preview" class="pattern-preview">…</div>
         <p class="section-desc" style="margin-top:8px;">
           Forbidden characters (<span class="field-key">&lt; &gt; : " / \ | ? *</span>) are
-          stripped from folder and file names, reserved device names are defused, and
-          duplicate files get a <span class="field-key">-DUPLICATE</span> suffix automatically.
+          stripped from folder and file names, and reserved device names are defused. Duplicate
+          files are labelled using the setting below.
         </p>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Duplicate files</div>
+        <p class="section-desc">
+          If a new document would be filed under a name that already exists, the newer copy is kept
+          with a label added to its file name, so nothing is ever overwritten. Choose the label:
+        </p>
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <select id="dup-suffix-select" style="min-width:240px;">
+            <option value="DUPLICATE">DUPLICATE — Invoice….INV-001-DUPLICATE.pdf</option>
+            <option value="COPY">COPY — Invoice….INV-001-COPY.pdf</option>
+            <option value="number">Number only — Invoice….INV-001-2.pdf</option>
+            <option value="date">Import date — Invoice….INV-001-2026-07-28.pdf</option>
+            <option value="__custom">Custom label…</option>
+          </select>
+          <input id="dup-suffix-custom" type="text" maxlength="40" placeholder="e.g. OLD"
+                 style="display:none; min-width:160px;">
+        </div>
+        <div id="dup-preview" class="pattern-preview" style="margin-top:10px;">…</div>
       </div>
 
     </div>

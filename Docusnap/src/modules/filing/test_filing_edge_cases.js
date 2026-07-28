@@ -101,7 +101,24 @@ const underRoot = (p) => { const r = path.resolve(OUTPUT), t = path.resolve(p); 
     check('sanitiseFolderName: strips illegal chars', !/[\\/:*?"<>|]/.test(filing.sanitiseFolderName('a/b:c*d')));
     check('sanitiseFolderName: caps length ≤ 60', filing.sanitiseFolderName('Z'.repeat(200)).length <= 60);
   }
-  // 11. EVERY produced path in this run is contained (defence-in-depth sweep already asserted per-case).
+  // 11. Custom duplicate label — commitDocument honours the `duplicate_suffix` setting (the wiring).
+  {
+    const { setSetting } = require('../../../database/modules/learning');
+    const vals = { supplier_name: 'LabelCo', invoice_number: 'INV-LBL', invoice_date: '09-09-2024' };
+    await file(vals);                                     // base copy (no suffix)
+    setSetting(db, 'duplicate_suffix', 'COPY');
+    const copyR = await file(vals);
+    check('custom label COPY → -COPY + isDuplicate', /-COPY\.pdf$/.test(path.basename(copyR.filePath)) && copyR.isDuplicate, path.basename(copyR.filePath));
+    setSetting(db, 'duplicate_suffix', 'OLD Version');    // arbitrary custom → Windows-safed onto the name
+    const custR = await file(vals);
+    const cb = path.basename(custR.filePath);
+    check('arbitrary custom label appears on the name (safed)', /OLD/i.test(cb) && /Version/i.test(cb) && !/[\\/:*?"<>|]/.test(cb) && custR.isDuplicate, cb);
+    setSetting(db, 'duplicate_suffix', 'number');
+    const numR = await file(vals);
+    check("'number' → bare -N counter, no word", /-\d+\.pdf$/.test(path.basename(numR.filePath)) && !/DUPLICATE|COPY/i.test(path.basename(numR.filePath)), path.basename(numR.filePath));
+    setSetting(db, 'duplicate_suffix', 'DUPLICATE');      // restore default before the root sweep
+  }
+  // 12. EVERY produced path in this run is contained (defence-in-depth sweep already asserted per-case).
   check('no filing escaped the output root (root sweep)', fs.readdirSync(ROOT).length >= 1);
 
   db.close();

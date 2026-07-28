@@ -255,6 +255,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   previewFilenamePattern:  (pattern)  => ipcRenderer.invoke('preview-filename-pattern', pattern),
   getOutputStructureInfo:  ()         => ipcRenderer.invoke('get-output-structure-info'),
   previewOutputPath:       (folderPattern, filenamePattern) => ipcRenderer.invoke('preview-output-path', { folderPattern, filenamePattern }),
+  previewDuplicateName:    (suffix)    => ipcRenderer.invoke('preview-duplicate-name', suffix),
 
   // ── Search ───────────────────────────────────────────────────────────────────
   searchDocuments:     (params)   => ipcRenderer.invoke('search-documents', params),

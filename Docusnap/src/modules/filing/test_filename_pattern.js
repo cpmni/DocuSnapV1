@@ -32,7 +32,7 @@
 const {
   DEFAULT_PATTERN, validatePattern,
   sanitiseFilenameStem,
-  buildFilename, resolveDuplicateFilename, resolveDuplicate, DUPLICATES_SUBFOLDER,
+  buildFilename, resolveDuplicateFilename, resolveDuplicate, previewDuplicateName, DUPLICATES_SUBFOLDER,
   DEFAULT_FOLDER_PATTERN, FIELD_TOKENS, buildFolderSegments, buildFilenameStem,
 } = require('./filename_pattern');
 
@@ -273,6 +273,13 @@ function main() {
 
     r = resolveDuplicate(base, '.pdf', inDir(new Set([base])), { policy: 'suffix', suffix: 'ARCHIVE' });
     if (!check('custom suffix -> -ARCHIVE', r.filename === 'Invoice.15-12-2025.INV-001-ARCHIVE.pdf')) failures++;
+
+    // previewDuplicateName — the Settings live preview; mirrors the FIRST-collision 'suffix' result (pure).
+    if (!check('preview DUPLICATE', previewDuplicateName(base, '.pdf', 'DUPLICATE') === 'Invoice.15-12-2025.INV-001-DUPLICATE.pdf')) failures++;
+    if (!check('preview COPY',      previewDuplicateName(base, '.pdf', 'COPY')      === 'Invoice.15-12-2025.INV-001-COPY.pdf')) failures++;
+    if (!check('preview number -> -2', previewDuplicateName(base, '.pdf', 'number') === 'Invoice.15-12-2025.INV-001-2.pdf')) failures++;
+    if (!check('preview date',      previewDuplicateName(base, '.pdf', 'date', new Date(2026, 2, 5)) === 'Invoice.15-12-2025.INV-001-2026-03-05.pdf')) failures++;
+    if (!check('preview default (unset) === DUPLICATE', previewDuplicateName(base, '.pdf', null) === 'Invoice.15-12-2025.INV-001-DUPLICATE.pdf')) failures++;
 
     r = resolveDuplicate(base, '.pdf', inDir(new Set([base])), { policy: 'suffix', suffix: 'a/b:c' });
     if (!check('custom suffix sanitised (no path sep / illegal chars)',

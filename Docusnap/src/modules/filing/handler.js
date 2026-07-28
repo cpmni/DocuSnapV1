@@ -20,6 +20,7 @@ const MONTH_NAMES = [
 const {
   DEFAULT_PATTERN, DEFAULT_FOLDER_PATTERN, SUPPORTED_TOKENS, FIELD_TOKENS,
   buildFilename, buildFolderSegments, buildFilenameStem, resolveDuplicateFilename,
+  resolveDuplicate, previewDuplicateName,
 } = require('./filename_pattern');
 
 // ── Register IPC ──────────────────────────────────────────────────────────────
@@ -75,6 +76,13 @@ function register(ctx) {
     const segments = buildFolderSegments(folderPattern, sample);
     const fn = buildFilename({ pattern: filenamePattern, values: sample, ext: '.pdf' });
     return { segments, filename: fn.filename, warning: fn.fellBack ? fn.reason : null };
+  });
+
+  // Live example of the label a duplicate would get (Settings → Files & filing). Uses the SAME
+  // resolver logic as filing so the preview can't drift from what actually happens on disk.
+  ipcMain.handle('preview-duplicate-name', (_e, suffix) => {
+    requireRole('admin');
+    return { example: previewDuplicateName('Invoice.15-12-2025.INV-2025-0142.pdf', '.pdf', suffix) };
   });
 }
 
@@ -175,10 +183,18 @@ async function commitDocument({
   // update, not a collision — exclude the doc's own current copy so it isn't suffixed
   // "-DUPLICATE". A genuine collision with a DIFFERENT doc's file still suffixes.
   const efpResolved = existingFiledPath ? path.resolve(existingFiledPath) : null;
-  const finalFilename = resolveDuplicateFilename(
+  // The duplicate LABEL is user-configurable (Settings → Files & filing). Default 'DUPLICATE'
+  // is byte-identical to the legacy resolveDuplicateFilename path. Tokens: DUPLICATE | COPY |
+  // number (bare -2/-3) | date (import date) | any custom word (Windows-safed). Policy stays
+  // 'suffix' (same folder) — the 'subfolder' policy is supported by resolveDuplicate but not yet
+  // surfaced, so `subfolder` here is always ''.
+  const duplicateSuffix = learning.getSetting(db, 'duplicate_suffix', 'DUPLICATE');
+  const dup = resolveDuplicate(
     baseFilename, ext,
-    (name) => { const p = path.join(targetDir, name); return fs.existsSync(p) && path.resolve(p) !== efpResolved; }
+    (name, sub) => { const p = path.join(targetDir, sub || '', name); return fs.existsSync(p) && path.resolve(p) !== efpResolved; },
+    { policy: 'suffix', suffix: duplicateSuffix }
   );
+  const finalFilename = dup.filename;
 
   const targetPath = path.join(targetDir, finalFilename);
   const srcPath    = path.join(folderPath, originalFilename);
@@ -232,7 +248,7 @@ async function commitDocument({
     filename:     finalFilename,
     filePath:     targetPath,
     metadataPath,
-    isDuplicate:  finalFilename.includes('-DUPLICATE'),
+    isDuplicate:  dup.filename !== baseFilename,   // any label/policy, not just '-DUPLICATE'
     srcPath,      // caller schedules removal once the original is no longer in use
   };
 }
