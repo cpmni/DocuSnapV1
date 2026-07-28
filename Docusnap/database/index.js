@@ -1143,6 +1143,31 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 55 applied: audit_log tamper-evidence (prev_hash/row_hmac + append-only triggers)');
   }
 
+  // Migration 56 (Stage 8 GROUNDWORK — INERT): doctype_grants scaffold for future per-doc-type /
+  // per-user authorization. NO consumer reads it yet — accessService.doctypeGrantDecision is a no-op
+  // seam — so this is purely additive and byte-identical (empty table ⇒ no behaviour change). Design +
+  // activation semantics: docs/designs/STAGE8_DOCTYPE_AUTHZ_2026-07-27.md. Polarity in `access`
+  // ('allow'|'deny') is reserved for that design; role NULL + user_id set = a per-user grant, role set
+  // + user_id NULL = a per-role grant. FK cascades keep it clean when a type or user is removed.
+  if (!applied.has(56)) {
+    if (tableExists(db, 'document_types') && !tableExists(db, 'doctype_grants')) {
+      try {
+        db.exec(`CREATE TABLE doctype_grants (
+          id                INTEGER PRIMARY KEY AUTOINCREMENT,
+          role              TEXT,
+          user_id           INTEGER REFERENCES users(id) ON DELETE CASCADE,
+          document_type_id  INTEGER NOT NULL REFERENCES document_types(id) ON DELETE CASCADE,
+          access            TEXT NOT NULL DEFAULT 'allow',
+          created_at        TEXT DEFAULT (datetime('now'))
+        )`);
+        db.exec('CREATE INDEX IF NOT EXISTS idx_doctype_grants_role ON doctype_grants(role, document_type_id)');
+        db.exec('CREATE INDEX IF NOT EXISTS idx_doctype_grants_user ON doctype_grants(user_id, document_type_id)');
+      } catch (e) { console.warn(`  migration 56 doctype_grants: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (56)').run();
+    console.log('JS migration 56 applied: doctype_grants scaffold (INERT — per-doc-type authorization groundwork, unused until Stage 8)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

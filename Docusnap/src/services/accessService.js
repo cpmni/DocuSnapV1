@@ -69,6 +69,17 @@ function canAccessDocument(db, user, docId, deps = {}) {
 
   if (doc.status === 'deleted') return { allow: false, reason: 'deleted' };   // non-admin never sees a soft-deleted doc
 
+  // ── Stage 8 extension seam (INERT groundwork) — per-doc-type / per-document authorization ─────
+  // When the doctype_grants scaffold (migration 56) is populated and activated, a role's or user's
+  // access to a specific document TYPE is restricted HERE — applied to the role-based grants below,
+  // but deliberately NOT to admin (returned above) nor to an explicit OPEN-route party (a routed doc
+  // stays visible to its parties by design). Today doctypeGrantDecision ALWAYS returns {deny:false}
+  // (no consumer reads the table) ⇒ byte-identical. Kept as a NAMED seam so the future feature is a
+  // body change here, not a re-architecture of this fail-closed predicate. See
+  // docs/designs/STAGE8_DOCTYPE_AUTHZ_2026-07-27.md.
+  const dt = (deps.doctypeGrantDecision || doctypeGrantDecision)(db, user, doc, deps);
+  if (dt && dt.deny) return { allow: false, reason: 'doctype_restricted' };
+
   if (role === 'edit') return { allow: true, reason: 'writer' };
   if (role === 'readonly') {
     return doc.status === 'confirmed'
@@ -78,4 +89,14 @@ function canAccessDocument(db, user, docId, deps = {}) {
   return { allow: false, reason: 'denied' };                       // null user / unknown role
 }
 
-module.exports = { canAccessDocument, gateEnabled };
+// Stage 8 (GROUNDWORK — INERT). The extension point for per-doc-type / per-document authorization.
+// It will read the doctype_grants scaffold (migration 56); that table is UNUSED until Stage 8 ships,
+// so this ALWAYS returns {deny:false} today (no rows ⇒ no restriction ⇒ byte-identical behaviour).
+// Design + activation semantics: docs/designs/STAGE8_DOCTYPE_AUTHZ_2026-07-27.md. When implemented,
+// the model is DEFAULT-ALLOW-PRESERVING: an empty table changes nothing; a role/doc-type restriction
+// activates only where explicitly configured, and evaluates fail-closed like the rest of this gate.
+function doctypeGrantDecision(_db, _user, _doc, _deps) {
+  return { deny: false };
+}
+
+module.exports = { canAccessDocument, gateEnabled, doctypeGrantDecision };

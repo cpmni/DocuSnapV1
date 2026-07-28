@@ -136,5 +136,36 @@ console.log('§5 user shape — accepts both transports (userId vs id)');
   check('desktop shape {id,role}', accessService.canAccessDocument(db, { id: 7, role: 'readonly' }, nr).allow);
 }
 
+console.log('§6 Stage 8 — the doctype-grant seam is INERT by default + reachable when a decision is injected');
+{
+  const db = makeDb();
+  const nr = mkDoc(db, 'needs_review'), cf = mkDoc(db, 'confirmed');
+  // inert: the default seam changes nothing — the whole matrix above already proves byte-identical
+  check('default seam is a no-op (edit still sees needs_review)', can(db, E, nr) && reason(db, E, nr) === 'writer');
+  check('doctypeGrantDecision default returns {deny:false}', accessService.doctypeGrantDecision(db, E, { id: nr }, {}).deny === false);
+  // reachable: an injected DENY restricts a role-based grant (proves the wiring, future-proofs the seam)
+  const deny = { doctypeGrantDecision: () => ({ deny: true }) };
+  check('injected deny → edit RESTRICTED with reason doctype_restricted',
+    accessService.canAccessDocument(db, E, nr, deny).allow === false && accessService.canAccessDocument(db, E, nr, deny).reason === 'doctype_restricted');
+  check('injected deny → readonly on a confirmed doc also restricted', accessService.canAccessDocument(db, R, cf, deny).allow === false);
+  // exemptions: admin + an open-route party return ABOVE the seam and are never restricted
+  check('injected deny → admin still allowed (exempt, returns above the seam)', accessService.canAccessDocument(db, A, nr, deny).allow === true);
+  const db2 = makeDb();
+  const nr2 = mkDoc(db2, 'needs_review');
+  mkRoute(db2, nr2, E.id, RECIP.id, 'pending');
+  check('injected deny → open-route party still allowed (exempt)',
+    accessService.canAccessDocument(db2, RECIP, nr2, deny).allow === true && accessService.canAccessDocument(db2, RECIP, nr2, deny).reason === 'route_party');
+}
+
+console.log('§7 migration 56 — doctype_grants scaffold exists + is empty (additive, inert)');
+{
+  const { runMigrations } = require('../../database/index');
+  const db = new Database(':memory:'); runMigrations(db);
+  check('doctype_grants table created by migration 56',
+    !!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='doctype_grants'").get());
+  check('  → and it is empty (no consumer, no rows)', db.prepare('SELECT COUNT(*) AS n FROM doctype_grants').get().n === 0);
+  db.close();
+}
+
 console.log(`\n${fails ? 'FAIL' : 'PASS'} — ${fails} failure(s)`);
 process.exit(fails ? 1 : 0);
