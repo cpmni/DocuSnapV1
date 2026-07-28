@@ -723,7 +723,8 @@ def _identity_text_sufficient(ocr_text):
     return len(band) >= _IDENTITY_MIN_BAND_TOKENS
 
 
-def decide_logo_text_gate(logo_supplier, banks, ocr_text, norm, accepted_issuers=()):
+def decide_logo_text_gate(logo_supplier, banks, ocr_text, norm, accepted_issuers=(),
+                          geom_issuer_norm=None):
     """PURE three-way decision for an accepted logo match (identity text-first, slice 1b).
     Returns one of 'accept' | 'suggest' | 'abstain'.
 
@@ -739,16 +740,25 @@ def decide_logo_text_gate(logo_supplier, banks, ocr_text, norm, accepted_issuers
     already ruled on this identity; a text-poor page must not silently override them."""
     if not logo_supplier:
         return 'abstain'
+    # NAME-PRESENCE ACCEPT ARM (geometry witness; kill LOGO_NAME_PRESENCE_ACCEPT). An INDEPENDENT
+    # geometry-only read of the letterhead (the largest top-of-page name, recipient excluded by
+    # size+position — letterhead.pick_issuer_geometry, Oracle C1) that AGREES with the logo's
+    # supplier CONFIRMS the identity where the branding-fingerprint arms are UNJUDGEABLE: a
+    # single-word wordmark, or a minimalist letterhead below the token/band floors. It promotes a
+    # HOLD to ACCEPT only at the two unjudgeable returns below — it NEVER reaches the destructive
+    # 'abstain' (a decisively-present rival brand still wins). geom_issuer_norm is None unless the
+    # caller resolved a geometry pick with the switch on ⇒ inert (byte-identical) by default.
+    _name_confirmed = geom_issuer_norm is not None and geom_issuer_norm == norm(logo_supplier)
     if not _identity_text_sufficient(ocr_text):
-        return 'suggest'                       # C2: too little text to judge → never destructive
+        return 'accept' if _name_confirmed else 'suggest'   # thin band, but the name IS the letterhead
     own_ratio = _branding_own_ratio(logo_supplier, banks, ocr_text, norm)
     if own_ratio is None:
-        return 'suggest'                       # no >=K-word bank → unjudgeable (fail-safe)
+        return 'accept' if _name_confirmed else 'suggest'   # no >=K-word bank, but name IS the letterhead
     if own_ratio > _BRANDING_PRESENT_RATIO:
         return 'accept'
     if norm(logo_supplier) in (accepted_issuers or ()):
         return 'suggest'                       # C3: operator allowlist outranks the text check
-    return 'abstain'
+    return 'abstain'                           # POSITIVE DISAGREEMENT — name arm never reaches here
 
 
 def _branding_own_ratio(supplier_name, banks, ocr_text, norm):
@@ -3017,10 +3027,26 @@ class ExtractionEngine:
             # docs/designs/IDENTITY_TEXT_FIRST_2026-07-19.md
             _gate = 'accept'
             if logo_match and os.environ.get("LOGO_TEXT_GATE", "1") != "0":
+                # Geometry name-presence WITNESS (Oracle C1; kill LOGO_NAME_PRESENCE_ACCEPT, default
+                # OFF ⇒ geom_issuer_norm stays None ⇒ decide_logo_text_gate byte-identical). Recompute
+                # the issuer GEOMETRICALLY — page0_geometry on a scan, or the born-digital line bridge
+                # (geometry_from_lines) on a generated PDF — and let it CONFIRM the logo ONLY where the
+                # branding-fingerprint arms are unjudgeable. Geometry-ONLY pick, NO text-arm fallback,
+                # so a marker-less recipient can never confirm itself as the issuer.
+                _geom_issuer_norm = None
+                if os.environ.get("LOGO_NAME_PRESENCE_ACCEPT", "0") == "1":
+                    from extraction import letterhead as _lh
+                    _geom = page0_geometry or _lh.geometry_from_lines(page_text_lines)
+                    if _geom and _geom.get("rows"):
+                        _gp = _lh.pick_issuer_geometry(
+                            ocr_text, _geom, detected_title=document_type,
+                            type_phrases=_letterhead_type_phrases(self.patterns))     # C2 parity
+                        _geom_issuer_norm = self._accept_norm(_gp) if _gp else None    # C3 same norm
                 _gate = decide_logo_text_gate(
                     logo_match["supplier_name"],
                     _branding_banks(templates, self._accept_norm),
-                    ocr_text, self._accept_norm, self.accepted_issuers)
+                    ocr_text, self._accept_norm, self.accepted_issuers,
+                    geom_issuer_norm=_geom_issuer_norm)
             if logo_match and _gate == 'abstain':
                 # The page says someone else. Drop the identity rather than scope every
                 # per-supplier learning corpus to the wrong company — but NEVER go mute

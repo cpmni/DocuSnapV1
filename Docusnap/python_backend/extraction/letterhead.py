@@ -251,16 +251,9 @@ def pick_issuer(ocr_text, detected_title=None, type_phrases=None, geometry=None)
     # distinctive token). Every uncertain verdict falls through to the text arm, so on documents
     # where geometry can't decide, behaviour is exactly the pre-slice reader.
     if geometry and geometry.get("rows"):
-        def _geom_candidate(seg):
-            s = seg.strip()
-            if not s or s.lower() in excluded or _disqualified(s):
-                return False
-            if not _LETTERHEAD_NAME_RE.match(s):
-                return False
-            if not keyword._is_plausible_supplier_name(s):
-                return False
-            return _distinctive_core(s)
-        pick = _pick_by_height(lines, geometry, _geom_candidate)
+        # Delegate to the standalone geometry-only pick (identical guards) so the live arm and the
+        # logo-text gate's confirmation witness can never drift (Oracle C1).
+        pick = pick_issuer_geometry(ocr_text, geometry, detected_title, type_phrases)
         if pick is not None:
             return pick
 
@@ -298,3 +291,53 @@ def pick_issuer(ocr_text, detected_title=None, type_phrases=None, geometry=None)
     if first_i > _MAX_BAND_INDEX:
         return None
     return first
+
+
+def geometry_from_lines(page_text_lines):
+    """Adapt born_digital.page_lines() output → the pick_issuer geometry contract
+    ({lines, rows, med_h, words}). Born-digital page 0 has page0_geometry=None (there is no OCR
+    pass), but its text-layer lines carry per-word h_norm — so the geometry issuer arm can run on
+    generated PDFs too, not just scans. Ratios to med_h are unit-invariant, so the born-digital
+    normalized h_norm maps in identically. None when there is nothing to measure. Rows carry
+    (x, y, w, h, text, conf); _pick_by_height reads the height at index 3."""
+    if not page_text_lines:
+        return None
+    lines, rows, all_h = [], [], []
+    for ln in page_text_lines:
+        ws = ln.get("words") or []
+        lines.append(ln.get("text", ""))
+        rows.append([(w["x_norm"], w["y_norm"], w["w_norm"], w["h_norm"], w["text"], 90) for w in ws])
+        all_h += [w["h_norm"] for w in ws if w.get("h_norm", 0) > 0]
+    if not all_h:
+        return None
+    all_h.sort()
+    return {"lines": lines, "rows": rows, "med_h": all_h[len(all_h) // 2], "words": []}
+
+
+def pick_issuer_geometry(ocr_text, geometry, detected_title=None, type_phrases=None):
+    """The GEOMETRY-ONLY issuer pick — pick_issuer's height arm with NO text-arm fallback (Oracle
+    C1). Returns the largest surviving letterhead COLUMN SEGMENT when _pick_by_height is decisive,
+    else None. This is the confirmation WITNESS for the logo-text gate's name-presence accept arm
+    (engine.decide_logo_text_gate): it must NEVER fall through to a text-arm guess, because a
+    marker-less recipient could otherwise confirm itself as the issuer. The guards mirror
+    pick_issuer's geometry branch EXACTLY (which now delegates here), so the two cannot drift."""
+    if not geometry or not geometry.get("rows"):
+        return None
+    lines = chrome_band.issuer_chrome_lines(ocr_text)
+    if not lines:
+        return None
+    excluded = {str(detected_title or "").strip().lower()}
+    excluded.update(str(p).strip().lower() for p in (type_phrases or []))
+    excluded.discard("")
+
+    def _geom_candidate(seg):
+        s = seg.strip()
+        if not s or s.lower() in excluded or _disqualified(s):
+            return False
+        if not _LETTERHEAD_NAME_RE.match(s):
+            return False
+        if not keyword._is_plausible_supplier_name(s):
+            return False
+        return _distinctive_core(s)
+
+    return _pick_by_height(lines, geometry, _geom_candidate)

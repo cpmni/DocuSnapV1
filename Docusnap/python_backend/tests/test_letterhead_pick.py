@@ -260,6 +260,64 @@ check("RED PROOF: text-only abstains on the window-envelope layout (two candidat
 check("with geometry the LETTERHEAD-SIZED issuer wins over the body-sized recipient",
       pick_issuer(WINDOW, type_phrases=PROD_TYPE_PHRASES, geometry=W_GEOM) == "Bigcorp Industries")
 
+print("\n-- geometry_from_lines: the born-digital bridge (Piece 1, SuperStore accept-arm) --")
+from extraction.letterhead import geometry_from_lines, pick_issuer_geometry
+
+
+def _bd_line(text, *hs):
+    """A born_digital.page_lines() line: {text, words:[{x_norm,y_norm,w_norm,h_norm,text}]}."""
+    toks = text.split()
+    return {"text": text, "words": [{"x_norm": 0.05 + 0.12 * i, "y_norm": 0.04, "w_norm": 0.1,
+                                     "h_norm": h, "text": t} for i, (t, h) in enumerate(zip(toks, hs))]}
+
+
+# Real replayed born-digital SuperStore heights: name 0.0119 (own line), title 0.0271 (own line,
+# gated as the type heading), body ~0.0094. med_h must land at body size, NOT be dragged up by the
+# big title — else the name ratio never clears 1.15 and the accept silently never fires (Oracle C5).
+PTL = [_bd_line("SuperStore", 0.0119), _bd_line("INVOICE", 0.0271),
+       _bd_line("# 33526", 0.011, 0.0115),
+       _bd_line("Date Mar 30 2012", 0.0094, 0.0094, 0.0094, 0.0094),
+       _bd_line("Bill To Ship To", 0.0094, 0.0094, 0.0094, 0.0094),
+       _bd_line("Item Quantity Rate Amount", 0.0094, 0.0094, 0.0094, 0.0094)]
+BG = geometry_from_lines(PTL)
+check("bridge builds the contract (rows parallel to lines, first line intact)",
+      bool(BG) and BG["lines"][0] == "SuperStore" and len(BG["rows"]) == len(BG["lines"]))
+check("bridge med_h is body-sized (~0.0094), NOT dragged up by the big title", abs(BG["med_h"] - 0.0094) < 1e-9)
+check("bridge rows carry the height at index 3 (what _pick_by_height reads)", BG["rows"][0][0][3] == 0.0119)
+check("empty / None page_text_lines -> None (fail-safe)",
+      geometry_from_lines([]) is None and geometry_from_lines(None) is None)
+
+SS_OCR = "SuperStore\nINVOICE\n# 33526\nDate Mar 30 2012\nBill To Ship To\nItem Quantity Rate Amount"
+check("END-TO-END: bridge + geometry-only pick resolves 'SuperStore' on the born-digital shape "
+      "(mirrors the live 115-doc replay: OFF=hold, this witness=accept)",
+      pick_issuer_geometry(SS_OCR, BG, detected_title="Invoice", type_phrases=PROD_TYPE_PHRASES) == "SuperStore")
+
+print("\n-- pick_issuer_geometry: geometry-ONLY, NO text-arm fallback (Oracle C1, load-bearing) --")
+# A page the TEXT arm resolves (company + address corroboration) but whose geometry is FLAT (every
+# line at med_h): the geometry-only helper MUST return None (never the text guess), while pick_issuer
+# (full) still text-falls-back and resolves it. This is the exact trapdoor Oracle C1 closes.
+NG_OCR = "Northgate Textiles\n14 Mill Street\nLeeds LS1 4DF"
+NG_FLAT = geom([("Northgate Textiles", 31), ("14 Mill Street", 31), ("Leeds LS1 4DF", 31)], med_h=31)
+check("geometry-only returns None where geometry cannot decide (NO text fallback)",
+      pick_issuer_geometry(NG_OCR, NG_FLAT) is None)
+check("  ...yet pick_issuer (full) STILL text-falls-back + resolves it (delegation preserved)",
+      pick_issuer(NG_OCR, geometry=NG_FLAT) == "Northgate Textiles")
+check("geometry-only fail-safe on a None / rowless hand-off (no crash)",
+      pick_issuer_geometry(NG_OCR, None) is None and pick_issuer_geometry(NG_OCR, {"rows": []}) is None)
+check("RECIPIENT-BLEED DEFENSE: geometry picks the letterhead-sized ISSUER over a top recipient "
+      "(Bigcorp, never Megan Harris) — the owner's core worry, by construction",
+      pick_issuer_geometry(WINDOW, W_GEOM, type_phrases=PROD_TYPE_PHRASES) == "Bigcorp Industries")
+
+print("\n-- delegation identity: pick_issuer's geometry arm == pick_issuer_geometry (no drift) --")
+for _lbl, _ocr, _g in [("SuperStore decisive", SUPERSTORE, SS_GEOM),
+                       ("two-company abstain", TWO_BIG, TB_GEOM),
+                       ("window recipient-first", WINDOW, W_GEOM)]:
+    _direct = pick_issuer_geometry(_ocr, _g, type_phrases=PROD_TYPE_PHRASES)
+    _viafull = pick_issuer(_ocr, type_phrases=PROD_TYPE_PHRASES, geometry=_g)
+    # Where geometry DECIDES, the full reader returns exactly the same (it delegates). Where it
+    # abstains (_direct None), the full reader may text-fall-back — so only pin the decisive case.
+    check("delegation identical on decisive geometry (%s)" % _lbl, _direct is None or _direct == _viafull)
+
 print("\n-- purity: no I/O, no env reads, deterministic --")
 _before = dict(os.environ)
 check("repeated calls agree", pick_issuer(VELLUM) == pick_issuer(VELLUM))
