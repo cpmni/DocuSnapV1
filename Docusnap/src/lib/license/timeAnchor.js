@@ -23,6 +23,44 @@
  * absurdly-future anchor must always degrade to today's behaviour, never to a lockout.
  */
 const path = require('path');
+const crypto = require('crypto');
+
+// Stage 6c: OPTIONAL integrity stamp. When the caller supplies a per-install key (deps.hmacKey — the
+// device-fingerprint hash), the mark is written as `AV1:<value>:<hmac>` and verified on read, so a
+// foreign anchor copied from another machine, accidental corruption, or a naive text-edit is REJECTED.
+// BACKWARD-COMPATIBLE: a legacy bare-integer anchor is still read; the next write upgrades it. FAIL-OPEN
+// preserved — a bad/foreign/keyed HMAC reads as 0 ("no opinion"), NEVER a lock. With NO key the format
+// and behaviour are the legacy bare integer (byte-identical) — withholding the key IS the kill switch.
+// WHAT THIS IS (Oracle-corrected framing) — machine-binding + BRICK-CONTAINMENT: a foreign/cloned HIGH
+// anchor (profile-clone, disk-image, roaming-sync onto a second machine) now reads as 0 instead of
+// propagating and locking that machine out — a SAFETY win — plus modest raise-effort vs a notepad edit.
+// It is NOT rollback hardening: the SEC-05 rollback move is to DELETE the file (→0 → falls to a restored
+// low DB), which keying does nothing against, so the SEC-05 rollback residual is UNCHANGED (its follow-up
+// stays open). Also note: a MachineGuid change (OS reinstall / some VM clones) gives a new key, so the
+// old AV1 reads foreign→0 — a bare anchor's persistence across that event no longer holds. Fail-open (only
+// ever unlocks); re-stamped on the next bump / online heal, and an fp change forces online re-activation.
+const _STAMP_PREFIX = 'AV1:';
+function _anchorHmac(valueStr, key) {
+  const k = Buffer.isBuffer(key) ? key : Buffer.from(String(key), 'utf8');
+  return crypto.createHmac('sha256', k).update(String(valueStr), 'utf8').digest('hex');
+}
+function _macEq(a, b) {
+  try { const x = Buffer.from(String(a)), y = Buffer.from(String(b)); return x.length === y.length && crypto.timingSafeEqual(x, y); }
+  catch { return false; }
+}
+// → { value:Number, drop:boolean }. drop=true means a keyed verify FAILED (tampered/foreign) → ignore.
+function _decodeAnchor(content, key) {
+  const s = String(content).trim();
+  if (s.startsWith(_STAMP_PREFIX)) {
+    const rest = s.slice(_STAMP_PREFIX.length);
+    const i = rest.lastIndexOf(':');
+    if (i < 0) return { value: NaN, drop: !!key };
+    const valStr = rest.slice(0, i), mac = rest.slice(i + 1);
+    if (key && !_macEq(mac, _anchorHmac(valStr, key))) return { value: NaN, drop: true };
+    return { value: Number(valStr), drop: false };   // keyed+valid, or unkeyed downgrade (still honoured)
+  }
+  return { value: Number(s), drop: false };          // legacy bare integer (unverified, still honoured)
+}
 
 // A rollback further than this is not a scenario we defend — beyond it a value is far more likely
 // to be corruption (or a filesystem clock artefact) than a real observation, and treating it as
@@ -62,7 +100,9 @@ function readAnchor(now, deps = {}) {
   try {
     const p = anchorPath(deps);
     if (!p || !fs.existsSync(p)) return 0;
-    return sanitiseAnchor(String(fs.readFileSync(p, 'utf8')).trim(), now);
+    const dec = _decodeAnchor(fs.readFileSync(p, 'utf8'), deps.hmacKey);
+    if (dec.drop) return 0;                    // keyed verify failed (tampered/foreign) → NEVER lock
+    return sanitiseAnchor(dec.value, now);
   } catch { return 0; }
 }
 
@@ -84,7 +124,9 @@ function writeAnchor(value, now, deps = {}, opts = {}) {
     // mark went wrongly high: this file survives deleting the database, so the old rescue fails.
     if (!opts.force && readAnchor(now, deps) >= v) return false;
     fs.mkdirSync(path.dirname(p), { recursive: true });
-    fs.writeFileSync(p, String(v), 'utf8');
+    // Stamp when keyed (AV1); legacy bare integer otherwise (byte-identical kill-switch path).
+    const body = deps.hmacKey ? (_STAMP_PREFIX + v + ':' + _anchorHmac(String(v), deps.hmacKey)) : String(v);
+    fs.writeFileSync(p, body, 'utf8');
     return true;
   } catch { return false; }
 }

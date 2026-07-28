@@ -64,12 +64,28 @@ const timeAnchor = require('../../lib/license/timeAnchor');
 // refuses to lower it — permanently locking a PAYING customer offline (eff >= end ⇒ locked), and
 // defeating the old "delete docusnap.db" rescue. Clamping both directions costs nothing and also
 // fixes the pre-existing unclamped-DB exposure.
+// Stage 6c: bind the LOCALAPPDATA anchor to THIS install via an HMAC keyed by the device-fingerprint
+// hash — so a foreign anchor copied from another machine, or a naive text-edit, reads as "no opinion"
+// (fail-open, never a lock). Computed ONCE and cached: computeFpHash spawns reg.exe, far too costly to
+// repeat on every gate-check. Kill switch ANCHOR_HMAC=0 withholds the key → the anchor stays the legacy
+// bare integer (byte-identical); a missing config resolves to null and does the same.
+let _anchorKey;   // undefined = unresolved; null = disabled/unavailable; string = active fp hash
+function anchorDeps() {
+  if (process.env.ANCHOR_HMAC === '0') return {};
+  if (_anchorKey === undefined) {
+    try {
+      const cfg = _ctx ? loadConfig(_ctx) : null;
+      _anchorKey = (cfg && cfg.product_id) ? fingerprintLib.computeFpHash(cfg.product_id) : null;
+    } catch { _anchorKey = null; }
+  }
+  return _anchorKey ? { hmacKey: _anchorKey } : {};
+}
 function readHwm(db) {
   const now = Date.now();
   const raw = Number(getSetting(db, HWM_KEY));
   const fromDb = timeAnchor.sanitiseAnchor(Number.isFinite(raw) ? raw : 0, now);
   let fromAnchor = 0;
-  try { fromAnchor = timeAnchor.readAnchor(now); } catch { fromAnchor = 0; }
+  try { fromAnchor = timeAnchor.readAnchor(now, anchorDeps()); } catch { fromAnchor = 0; }
   return Math.max(fromDb, fromAnchor);
 }
 function bumpHwm(db, t) {
@@ -78,7 +94,7 @@ function bumpHwm(db, t) {
   if (!next) return 0;                      // absurd input → record nothing (never brick on it)
   setSetting(db, HWM_KEY, String(next));
   // Best-effort mirror; a read-only/locked-down profile just keeps the DB-only behaviour.
-  try { timeAnchor.writeAnchor(next, now); } catch { /* never break the gate */ }
+  try { timeAnchor.writeAnchor(next, now, anchorDeps()); } catch { /* never break the gate */ }
   return next;
 }
 
@@ -96,7 +112,7 @@ function maybeHealHwm(db, issuedAtStr, auditFn) {
     const current = readHwm(db);
     if (current <= issued + HWM_RESET_SLACK_MS) return false;
     setSetting(db, HWM_KEY, String(issued));
-    timeAnchor.writeAnchor(issued, Date.now(), {}, { force: true });
+    timeAnchor.writeAnchor(issued, Date.now(), anchorDeps(), { force: true });
     try {
       if (auditFn) auditFn({ action: 'license.hwm_reset', action_category: 'licensing', outcome: 'success',
         details: `high-water mark reset from ${current} to server issued_at ${issued}` });

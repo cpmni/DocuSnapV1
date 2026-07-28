@@ -17,6 +17,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const { sanitiseAnchor, readAnchor, writeAnchor, clearAnchor, anchorPath, MAX_FUTURE_SKEW_MS } =
   require('./timeAnchor');
 
@@ -95,6 +96,40 @@ check('clearAnchor removes it entirely (support/uninstall recovery)',
   clearAnchor(d2) === true && readAnchor(NOW, d2) === 0);
 check('clearAnchor on an absent file is a no-op, not a throw', clearAnchor(d2) === false);
 fs.rmSync(b2, { recursive: true, force: true });
+
+console.log('\n§7 Stage 6c — keyed integrity stamp (machine binding + tamper rejection, fail-open)');
+const b3 = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-anchor3-'));
+const KEY = 'fp-hash-AAAA';
+const kd = { baseDir: b3, hmacKey: KEY };
+const p3 = anchorPath(kd);
+check('keyed write succeeds', writeAnchor(NOW, NOW, kd) === true);
+check('  → file is AV1-stamped, not a bare integer', fs.readFileSync(p3, 'utf8').startsWith('AV1:'));
+check('  → keyed read verifies + returns the value', readAnchor(NOW, kd) === NOW);
+check('a DIFFERENT key (anchor copied from another machine) → 0 (fail open, never a lock)',
+  readAnchor(NOW, { baseDir: b3, hmacKey: 'fp-hash-BBBB' }) === 0);
+check('editing the stamped value without re-MACing → 0 (tamper rejected)',
+  (() => { const c = fs.readFileSync(p3, 'utf8'); fs.writeFileSync(p3, c.replace(/AV1:\d+/, 'AV1:' + (NOW - 99999999)), 'utf8'); return readAnchor(NOW, kd) === 0; })());
+fs.writeFileSync(p3, String(NOW + 5000), 'utf8');   // a legacy bare-integer anchor from before 6c
+check('a legacy bare anchor is still honoured WITH a key (backward compat)', readAnchor(NOW, kd) === NOW + 5000);
+check('  → and the next keyed write upgrades it to AV1',
+  writeAnchor(NOW + 6000, NOW, kd) === true && fs.readFileSync(p3, 'utf8').startsWith('AV1:'));
+check('an AV1 file read with NO key still yields its value (graceful downgrade, no data loss)',
+  readAnchor(NOW, { baseDir: b3 }) === NOW + 6000);
+check('monotonicity still holds under keying',
+  writeAnchor(NOW, NOW, kd) === false && readAnchor(NOW, kd) === NOW + 6000);
+check('OFF (no key) writes the legacy bare format (byte-identical kill switch)',
+  (() => { const b4 = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-anchor4-')); const ok = writeAnchor(NOW, NOW, { baseDir: b4 }) === true; const bare = fs.readFileSync(anchorPath({ baseDir: b4 }), 'utf8'); fs.rmSync(b4, { recursive: true, force: true }); return ok && bare === String(NOW); })());
+// Oracle 6c condition 2: a VALID-MAC absurd-future anchor must STILL clamp to 0. writeAnchor's sanitise
+// refuses to create this, so hand-craft it — it pins that the lockout clamp runs AFTER a keyed decode,
+// so a future refactor moving the clamp can't silently reintroduce a keyed permanent-lockout.
+check('a VALID-MAC absurd-future keyed anchor STILL reads 0 (no keyed lockout — clamp runs post-decode)',
+  (() => {
+    const absurd = NOW + MAX_FUTURE_SKEW_MS * 3;
+    const mac = crypto.createHmac('sha256', Buffer.from(KEY, 'utf8')).update(String(absurd), 'utf8').digest('hex');
+    fs.writeFileSync(p3, `AV1:${absurd}:${mac}`, 'utf8');
+    return readAnchor(NOW, kd) === 0;
+  })());
+fs.rmSync(b3, { recursive: true, force: true });
 
 fs.rmSync(base, { recursive: true, force: true });
 console.log(fail ? `\n${fail} check(s) FAILED` : '\nAll time-anchor checks passed.');
