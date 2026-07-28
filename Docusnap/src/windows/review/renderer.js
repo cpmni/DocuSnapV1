@@ -2573,8 +2573,15 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   const confClass = conf === null ? '' : conf >= 70 ? 'high' : conf >= 40 ? 'mid' : 'low';
   // Pair the % with a plain word so non-technical users read it at a glance.
   const confWord = conf === null ? '' : conf >= 70 ? 'High' : conf >= 40 ? 'Check' : 'Low';
+  // Demystify the amber/red dot so a CORRECT-but-not-High read doesn't push people to teach an
+  // anchor they don't need (which is how a fragile taught position gets created). "Check" ≠ broken.
+  const confTitle = confWord === 'High'
+    ? `High confidence — the app is ${conf}% sure of this reading`
+    : confWord === 'Check'
+      ? `Read at ${conf}% — worth a glance, but the value may well be right. Only teach this field (⊕) if the value shown is actually WRONG.`
+      : `Low confidence (${conf}%) — please check this value and correct it if it's wrong. Teaching (⊕) only helps if the app can't read the value here.`;
   const confLabel = conf !== null
-    ? `<span class="conf-badge ${confClass}" title="${confWord} confidence — the app is ${conf}% sure of this reading">${confWord} · ${conf}%</span>`
+    ? `<span class="conf-badge ${confClass}" title="${confTitle}">${confWord} · ${conf}%</span>`
     : '';
   // A correction that was ALREADY APPLIED to the value (Stage 4.5 strong auto-fix:
   // an OCR misread of a near-universal learned token, e.g. "Lid"→"Ltd") shows as a
@@ -2663,7 +2670,7 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
       <input type="text" class="field-input ${low ? 'low-conf' : ''}"
              data-key="${key}" data-original="${escHtml(val)}" data-method="${escHtml(method || '')}"
              value="${escHtml(val)}" placeholder="Not found">
-      <button class="pick-btn" data-key="${key}" title="Teach this field — draw a box round its value; Scan Finder learns where it sits and reads it on every future document from this supplier">&#8853;</button>
+      <button class="pick-btn" data-key="${key}" title="Teach this field — only if it's showing the WRONG value. Draw a box round the correct value; Scan Finder pins that position and reads it on every future document from this supplier. A field already reading correctly doesn't need teaching.">&#8853;</button>
     </div>
     ${noteHtml}${anchorHtml}
   `;
@@ -3861,7 +3868,8 @@ function showAnchorReadout(detected, value) {
   const val   = escHtml((value || '').trim());
   const isLeft  = detected.direction === 'right';
   const isAbove = detected.direction === 'below';
-  const suspicious = !detected.fallback && labelLooksSuspicious(detected.anchor_label);
+  const typeHeading = !detected.fallback && labelIsTypeHeading(detected.anchor_label);
+  const suspicious = !detected.fallback && (labelLooksSuspicious(detected.anchor_label) || typeHeading);
   const warn = detected.fallback || suspicious;
   // Garble verdict → never keep the misread caption staged: fall back to a POSITION-ONLY anchor
   // (empty label + registration/position relocation), the same safe fallback used for a cleared
@@ -3884,9 +3892,11 @@ function showAnchorReadout(detected, value) {
     // GARBLE is never displayed (product rule: never ask the user to vouch for junk they
     // can't find on the page) — the input starts EMPTY (= position-only, already staged
     // below) and the message says so plainly; typing the printed caption upgrades it.
-    const lead = suspicious
-      ? '&#9888; Couldn&#39;t read the caption beside this value &mdash; anchored by position. Type it to anchor on text:'
-      : `&#10003; Anchor (label ${isAbove ? 'above' : 'to the left'}):`;
+    const lead = typeHeading
+      ? '&#9888; That&#39;s the document heading, not a field label &mdash; anchored by its position instead (still reads on future documents). Type a real caption to anchor on text:'
+      : suspicious
+        ? '&#9888; Couldn&#39;t read the caption beside this value &mdash; anchored by position. Type it to anchor on text:'
+        : `&#10003; Anchor (label ${isAbove ? 'above' : 'to the left'}):`;
     msg = `<span class="ar-msg">${lead} `
       + `<input class="ar-label-edit" spellcheck="false" title="The caption this field sits beside — edit if it was misread" `
       + `style="font:inherit;font-weight:600;padding:1px 5px;min-width:90px;border:1px solid var(--border2);border-radius:5px;background:var(--surface)"> `
@@ -6538,6 +6548,27 @@ function advanceWizardField() {
 // extraction re-locates.
 function sanitizeAnchorLabel(label) { return window.AnchorLabel.sanitizeAnchorLabel(label); }
 function labelLooksSuspicious(label) { return window.AnchorLabel.labelLooksSuspicious(label); }
+
+// A caption that is actually the document's TYPE HEADING ("INVOICE", "PURCHASE ORDER") — not a
+// field label — must NOT become an anchor label. The heading is large/ambiguous and relocating off
+// it is fragile: it is exactly what made every SuperStore invoice hold at 69% (a taught invoice_number
+// anchor whose auto-label grabbed the "INVOICE" title, which then never re-located, tripping the
+// taught-ownership guard on the correct keyword read). Treat it like a garbled caption → fall back to
+// a POSITION-ONLY anchor (registration-relocated, robust). EXACT-match against the install's type
+// names + their printed-title aliases, so a real caption that merely CONTAINS a type word
+// ("Invoice No", "Order Date") is never caught.
+function labelIsTypeHeading(label) {
+  const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const n = norm(label);
+  if (!n) return false;
+  for (const t of (allDocTypes || [])) {
+    if (norm(t.name) === n) return true;
+    let aliases = t.title_aliases;
+    if (typeof aliases === 'string') { try { aliases = JSON.parse(aliases); } catch { aliases = []; } }
+    for (const a of (aliases || [])) if (norm(a) === n) return true;
+  }
+  return false;
+}
 
 // OCR a NORMALISED box on the current page image (docImg) via the existing
 // ocr-region IPC (same light-first region.py recipe the target read-back uses).
