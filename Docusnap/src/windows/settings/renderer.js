@@ -4931,3 +4931,33 @@ document.getElementById('aud-csv')?.addEventListener('click', async () => {
   }
   setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1800);
 });
+
+// Stage 5b — re-walk the tamper-evident audit hash chain (live + archives) and report the result.
+document.getElementById('aud-verify')?.addEventListener('click', async () => {
+  const btn = document.getElementById('aud-verify');
+  const out = document.getElementById('aud-verify-result');
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Verifying…';
+  try {
+    const r = await api.verifyAuditChain();
+    let msg, colour;
+    if (r && r.ok) {
+      msg = `✓ Integrity OK — ${r.checked || 0} record(s) verified, chain unbroken.`;
+      if (r.archivesPartial) msg += ' (Note: some archived months exceeded the attach limit and were not all checked.)';
+      colour = 'var(--ok)';
+    } else if (r && r.reason === 'no_key') {
+      msg = 'Integrity checking is not active on this install (no audit key set).'; colour = 'var(--muted)';
+    } else if (r && r.reason === 'no_chain_columns') {
+      msg = 'This log predates tamper-evidence — no chain to verify.'; colour = 'var(--muted)';
+    } else {
+      const at = r && r.brokenAt != null ? ` at record #${r.brokenAt}` : '';
+      msg = `⚠ Integrity FAILED${at} — the audit log has been altered, reordered, or truncated (${(r && r.reason) || 'unknown'}).`;
+      colour = 'var(--err)';
+    }
+    out.textContent = msg; out.style.color = colour; out.style.display = 'block';
+  } catch (e) {
+    out.textContent = 'Verify failed: ' + (e && e.message ? e.message : 'unknown error');
+    out.style.color = 'var(--err)'; out.style.display = 'block';
+  }
+  btn.textContent = orig; btn.disabled = false;
+});

@@ -91,6 +91,13 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  workflow paid heal: ${e.message}`); }
   }
 
+  // Stage 5b (unconditional heal): clear a stale audit-archive bypass flag left by a crash mid-archive,
+  // so the audit_log DELETE trigger is never silently disarmed across a restart. Guarded — audit_ctl
+  // exists only after migration 55. Idempotent, unstamped.
+  if (tableExists(db, 'audit_ctl')) {
+    try { db.prepare("UPDATE audit_ctl SET v = 0 WHERE k = 'archiving'").run(); } catch { /* best-effort */ }
+  }
+
   // Migration 2: upgrade v1 fields table to v2 (adds document_type_id)
   if (!applied.has(2)) {
     upgradeFieldsTable(db);
@@ -1097,6 +1104,43 @@ function runJsMigrations(db, applied) {
     }
     db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (54)').run();
     console.log('JS migration 54 applied: template_hidden_fields table added (per-template field-hiding mask; INERT with no rows)');
+  }
+
+  // Stage 5b — audit_log tamper-EVIDENCE. Two additive columns carry a per-row HMAC hash chain
+  // (row_hmac keyed from a DPAPI-held secret kept OUTSIDE the DB — see src/lib/auditKey.js; the DB
+  // module stays key-agnostic and only computes when auth.setAuditKey has been called). The chain
+  // makes an EDIT / REORDER / middle-DELETE detectable via database/modules/auth.verifyAuditChain.
+  // Two append-only triggers mirror route_decisions_noupd/_nodel: UPDATE is always blocked (the
+  // archiver never updates); DELETE is blocked UNLESS the archiver's controlled bypass flag
+  // (audit_ctl.archiving=1) is set — this stops the trivial `DELETE FROM audit_log` tail-erase (the
+  // H5 attack) while still letting the sanctioned archive path move rows. HONEST LIMIT: a same-user
+  // attacker who obtains the DPAPI-held key can forge a consistent chain; the chain detects tampering
+  // by anything WITHOUT the key (bugs, partial compromise, a naive attacker), and Stage-3 signing +
+  // Stage-6 DB encryption raise that bar. INERT until auth.setAuditKey is called (older rows: NULL hmac).
+  // CONSTRAINT: audit_log rows are now immutable. The app DEACTIVATES users (never hard-deletes), so the
+  // audit_log.user_id FK (ON DELETE SET NULL) never cascades; if a future feature hard-deletes a user
+  // with foreign_keys=ON, that cascade is an UPDATE on audit_log → the append-only trigger blocks it (and
+  // it would break the HMAC anyway). The actor is already snapshotted (actor_username/actor_role, mig 25),
+  // so a hard delete is unnecessary — deactivate, or NULL the FK under the archiver bypass if ever needed.
+  if (!applied.has(55)) {
+    try {
+      if (tableExists(db, 'audit_log')) {
+        if (!hasColumn(db, 'audit_log', 'prev_hash')) db.exec('ALTER TABLE audit_log ADD COLUMN prev_hash TEXT');
+        if (!hasColumn(db, 'audit_log', 'row_hmac'))  db.exec('ALTER TABLE audit_log ADD COLUMN row_hmac TEXT');
+        // A pre-mig-55 audit write (the workflow-paid heal) may have cached the OLD column set; drop it
+        // so post-migration writes see row_hmac and actually chain.
+        try { require('./modules/auth').invalidateAuditColumns(db); } catch { /* best-effort */ }
+        db.exec(`CREATE TABLE IF NOT EXISTS audit_ctl (k TEXT PRIMARY KEY, v INTEGER)`);
+        db.exec(`INSERT OR IGNORE INTO audit_ctl (k, v) VALUES ('archiving', 0)`);
+        db.exec(`CREATE TRIGGER IF NOT EXISTS audit_log_noupd BEFORE UPDATE ON audit_log
+                 BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END`);
+        db.exec(`CREATE TRIGGER IF NOT EXISTS audit_log_nodel BEFORE DELETE ON audit_log
+                 WHEN COALESCE((SELECT v FROM audit_ctl WHERE k = 'archiving'), 0) = 0
+                 BEGIN SELECT RAISE(ABORT, 'audit_log is append-only (archive via the maintenance path)'); END`);
+      }
+    } catch (e) { console.warn(`  migration 55 audit chain: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (55)').run();
+    console.log('JS migration 55 applied: audit_log tamper-evidence (prev_hash/row_hmac + append-only triggers)');
   }
 
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.

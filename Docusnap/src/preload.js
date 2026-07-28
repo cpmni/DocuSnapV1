@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   authGetAuditLog:      (limit)      => ipcRenderer.invoke('auth-get-audit-log', limit),
   auditQuery:           (filters)    => ipcRenderer.invoke('audit-query', filters),
   auditExportCsv:       (filters)    => ipcRenderer.invoke('audit-export-csv', filters),
+  verifyAuditChain:     ()           => ipcRenderer.invoke('verify-audit-chain'),
   // Login ⇄ main-app window swap (the login window has no other window powers)
   authEnterApp:         () => ipcRenderer.send('auth-enter-app'),
   authShowLoginScreen:  () => ipcRenderer.send('auth-show-login'),

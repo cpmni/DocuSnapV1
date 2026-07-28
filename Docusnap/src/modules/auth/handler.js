@@ -466,6 +466,52 @@ function register(ctx) {
     require('fs').writeFileSync(r.filePath, csv, 'utf8');
     return { saved: true, path: r.filePath, count: rows.length };
   });
+
+  // Stage 5b: re-walk the tamper-evident HMAC chain across live + ALL archived months and report
+  // the first break (deletion / reorder / out-of-band edit). Archived rows keep their original live
+  // id, so ORDER BY id ASC is the correct global order. Best-effort archive attach; a bad archive is
+  // skipped + flagged (archivesPartial) and never throws. Admin-only. Returns
+  // { ok, checked, brokenAt?, reason?, archivesPartial? }.
+  ipcMain.handle('verify-audit-chain', () => {
+    requireRole('admin');
+    const db = getDb();
+    const attached = [];
+    let archivesPartial = false;
+    try {
+      const cols = new Set(db.prepare('PRAGMA table_info(audit_log)').all().map(r => r.name));
+      if (!cols.has('row_hmac') || !cols.has('prev_hash')) return { ok: false, reason: 'no_chain_columns' };
+      const colSql = [...cols].map(c => `"${c}"`).join(', ');
+      const parts = [`SELECT ${colSql} FROM audit_log`];
+      const archiveDir = _auditArchiveDir();
+      if (archiveDir) {
+        try {
+          const { archiveFilesForRange } = require('../../../database/modules/audit_archive');
+          const picked = archiveFilesForRange(archiveDir, null, null, 8);   // all months, capped
+          archivesPartial = picked.partial;
+          picked.files.forEach((file, i) => {
+            const alias = `arcv${i}`;
+            try {
+              db.exec(`ATTACH DATABASE '${String(file.path).replace(/'/g, "''")}' AS ${alias}`);
+              const acols = new Set(db.prepare(`PRAGMA ${alias}.table_info(audit_log)`).all().map(r => r.name));
+              const sel = [...cols].map(c => (acols.has(c) ? `"${c}"` : `NULL AS "${c}"`)).join(', ');
+              parts.push(`SELECT ${sel} FROM ${alias}.audit_log`);
+              attached.push(alias);
+            } catch { archivesPartial = true; try { db.exec(`DETACH DATABASE ${alias}`); } catch { /* ignore */ } }
+          });
+        } catch { archivesPartial = true; }
+      }
+      const sql = parts.length > 1
+        ? `SELECT * FROM (${parts.join(' UNION ALL ')}) ORDER BY id ASC`
+        : 'SELECT * FROM audit_log ORDER BY id ASC';
+      const res = auth.verifyAuditChainRows(db.prepare(sql).all());
+      if (archivesPartial) res.archivesPartial = true;
+      return res;
+    } catch (e) {
+      return { ok: false, reason: 'verify_error', error: e && e.message };
+    } finally {
+      for (const a of attached) { try { db.exec(`DETACH DATABASE ${a}`); } catch { /* ignore */ } }
+    }
+  });
 }
 
 // Stage-A audit archive directory (userData/audit-archive) so the admin search /

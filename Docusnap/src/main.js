@@ -987,6 +987,15 @@ app.whenReady().then(() => {
     recordOutputPath(require('../database/modules/learning').getSetting(getDb(), 'output_folder', null));
   } catch (e) { try { logger?.warn?.(`[output-path-registry] startup hook skipped: ${e.message}`); } catch {} }
 
+  // ── Tamper-evident audit chain (Stage 5b) ──────────────────────────────────────
+  // Inject the per-install HMAC key (userData/.audit-key, DPAPI-wrapped) into the key-agnostic
+  // DB layer, so every subsequent audit row is hash-chained. Set BEFORE the archive run and
+  // before any startup audit write. Fully guarded — a missing/undecryptable key leaves the chain
+  // INERT (older behaviour, NULL hmac), never blocks launch.
+  try {
+    require('../database/modules/auth').setAuditKey(require('./lib/auditKey').getAuditKey(logger));
+  } catch (e) { try { logger?.warn?.(`[audit-chain] key wiring skipped: ${e.message}`); } catch {} }
+
   // Best-effort audit-log retention: archive audit_log rows older than the window
   // (settings `audit_retention_days`, default 180; 0 disables) into monthly files
   // under userData/audit-archive — MOVE, never delete-without-archive. Throttled to
