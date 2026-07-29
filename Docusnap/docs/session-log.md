@@ -1634,3 +1634,95 @@ the LATE session block above.) Daytime detail: `HANDOVER_2026-07-20.md` (then
 - **Process rules**: include Barry EARLY on new features (before design/Oracle); control-test-first
   (baseline BEFORE code; kill-switched; OFF ⇒ byte-identical); advisor+Oracle gate on substantive changes.
 
+
+
+---
+
+## ARCHIVE: CLAUDE.md 2026-07-29 DAYTIME session-state block (moved out 2026-07-29 EVENING to keep CLAUDE.md lean)
+
+## Current session state (2026-07-29) — long day: fixes + born-digital test rig + reggie fix — ALL PUSHED
+**2026-07-29 (Opus 4.8). ALL PUSHED through `3705296` (HEAD; origin `0 0`, tree clean).** THREE phases:
+(A) morning "run of fixes" (below), (B) an 800-doc BORN-DIGITAL test batch + a cold/warm SCORER, (C) a
+reggie ISO-date/ref-label fix — B+C detailed in the AFTERNOON block after the veto section. Installer
+**`dist\ScanFinder Setup 2.0.0-r20260729-0905-3351e2f.exe`** (VETO ON) **PREDATES the reggie config fix
+`42a9334` — REBUILD to carry it.** The `-0812-41f1916` build (veto DARK) is superseded.
+**Morning "run of fixes":** Committed + pushed the 07-28 uncommitted batch (DPI/forget/focus/overlay) + 3
+owner-requested builds.
+**Batch committed (07-28 work, now pushed):** `1e0a896` configurable OCR render DPI (`ocr_dpi` 150/200/300,
+default 300 = byte-identical; owner LIVE-CONFIRMED 150 FASTER) · `a0ca71d` OCR-DPI selector + native-dialog focus
+repair · `91ef6a7` case-insensitive Forget (`COLLATE NOCASE`) · `d04339a` stale anchor-overlay clear + clearer
+position-anchor copy · `3a578f4` CLAUDE.md.
+**Built THIS session (3 fixes):**
+· `aebbd79` **import-view counts** (`main/renderer.js`, renderer-only) — folder preview re-scans at run end
+(originals drained to Processed/); session "Found" counts per `file_done`, not the up-front folder total. Fixes
+"still says 900 on stop".
+· `958229c` **S1 band-graduate — DARK** (kill `TEMPLATE_IDENTITY_BAND_GRADUATE` default OFF) — sheds the
+MAJORITY-tier template-identity issuer note → `{V,85,template_identity_corroborated}` when V is STRICTLY
+corroborated in the ISSUER BAND (Profile-Construction class: name printed under BILL FROM, fill+note wins the
+read). gary→Oracle C1 (strict ALL-tokens, not the FILL's ≥60%) + C2 (band-gated, never raw `[:600]`) + C3
+(excluded from `_IDENTITY_STRUCTURAL_METHODS`). Pure static `_should_shed_template_identity_note`; pins
+`test_template_identity_band_graduate.py` (20 green). **Corpus fired 0× (vacuous). FIRING TEST DONE (real docs
+897/905/963/981/1128): S1 is INERT on its target — DO NOT FLIP.** The Profile docs are TWO-COLUMN born-digital
+(`BILL FROM   BILL TO` one line, `Profile Construction   ACME Inc` the next); `_issuer_hint_band` truncates at
+the "BILL TO" recipient marker which precedes the issuer name → band `"INVOICE BILL FROM"`, name excluded → no
+shed (predicate logic verified correct — ON sheds / OFF keeps / wrong-name held; only the BAND lacks the name).
+Same truncation defeats hint-graduation = WHY the docs are stuck. Real fix (deferred, gary+Oracle, C2 is the
+constraint): a column/geometry-aware issuer window OR a `BILL FROM`-anchored recipient-excluding window.
+[[project_autofile_s1_band_graduate_20260729]]
+· `41f1916` (dark) → `3351e2f` **TYPE_PRESENCE_VETO — FLIPPED ON** (kill `TYPE_PRESENCE_VETO=0` restores byte-
+identical) — the TYPE analog of `namePresence.js`. HOLDs a wrong-type logo-collision pick whose OWN type-heading
+is ABSENT from the candidate top band (worksheet→delivery_note, PO→sales_order — the misfires that happen when
+`title_trusted=False` starves the trusted-title refuse `template_matcher.py:457`). Two seams parity-pinned via
+`python_backend/tests/data/type_presence_vectors.json`: LEARN = `database/modules/typePresence.js` +
+`templates.getAll` threads `{type_heading_ratio,_n,_tokens}` per template; CONSUME = `template_matcher.py`
+`_type_heading_absent` + the veto block (after the refuse, gated `_logo_refused is None`, reuses
+`_type_refuse`/`type_refused`). Pins `test_type_presence.js` + `test_type_presence_matcher.py` green (matcher
+fixtures unaffected — no threaded tokens ⇒ abstain). [[project_type_presence_veto_20260728]]
+**Corpus gate (realdoc, 2057 docs, OFF baseline vs BOTH-flags-ON):** M_type=0 held · **ZERO new silent-wrong M**
+· veto ELIMINATED #2390 (wrong-ref PO now held) · would-auto-file −30 (~1.5%) + taught-ownership 24→74, ALL
+HOLD-only + FAIL-SAFE BY CONSTRUCTION (type_refused → no-template → one-click review, never a wrong file). S1
+0 firings. (ON log `scratchpad/corpus_on.log`; OFF baseline = night session `beaewxxm4.output`.)
+
+**AFTERNOON — BORN-DIGITAL TEST RIG + reggie ref/date fix (owner: "we've only tested 2 digital doc types,
+both had bugs — build a varied batch"):**
+· **Demo batch** — `stress_test/gen_demo_digital.py` (reportlab, born-digital = real text layer, isolates
+LAYOUT/anchor/band/type bugs, no OCR noise) writes **800 PDFs to `Desktop/Demo Docs Digital/`**. **Set A** (600:
+6 NEW suppliers × 6 archetypes — saas-clean / two-col BILL FROM\|BILL TO / footer-letterhead / three-party /
+minimalist-text-wordmark / subheading — reproduces the 2 known bugs; safe anywhere). **Set B** (200: CLASH —
+reuses live names SuperStore/Marlowe on divergent layouts). `ground_truth.json` per doc; edge tags
+(below_tall / in_image_title / watermark / multi_page). Catalogue from barry+herald+gary. `README_PROTOCOL.txt`:
+Set B → COPY DB or plain-confirm-only (gary: template-reuse-by-name collapses digital+scanned into one row,
+un-unmergeable; ⊕-teach/correct irreversibly wipes scanned anchors); veto is SEED-FIRST (inert < 3 confirms).
+· **Scorer** — `stress_test/score_demo_digital.js` reprocesses vs ground_truth.json, **cold** (empty learning,
+isolates layout) or **`warm`** (loads live snapshot). Findings: type detection SOLID (invoice 100/PO 98.8/SO
+97.5/delivery 98.8 — installed types); **supplier 8% cold = letterhead cold-start hole**; warm Set B **CLASH
+BLEED CONFIRMED** (supplier 90% inherited from scanned learning, ref 29% layout-mismatch → held); warm Set A
+**CROSS-CONTAMINATION** (ref 58→33% — live learning degrades UNRELATED new suppliers; suspect name-blind
+`findLogoMatch` / global anchor → [[pendingfeatures]]). ⚠ DB has only 5 types + NO total field (install
+credit_note/quote/statement/receipt + a total field to score the full 9 + money).
+· **`42a9334` reggie ISO-date + ref-labels** (config-only `keyword_patterns.json`, reggie→Oracle SIGN-OFF-W/COND
+ALL met) — **ISO date transposition** `2026-11-01`→`26-11-2001` FIXED (`_clean_value`/`_clean_text_fallback`
+first-matched the DD/MM pattern on the ISO tail): ISO pattern FIRST + BOTH numeric date patterns now carry
+`(?<!\d)…(?!\d)` (Oracle C2, no clip inside a longer digit run). NEW **`delivery_number`** field_patterns entry
+(was NONE → 0%). `Our Ref`/`Order Ref`/`Issued` labels. Pins `test_iso_date_clip.py` (+C2 boundary +C5 mirror
+trade-off). Corpus: date 96.1% UNCHANGED (corpus is scanned, no ISO — fix targets born-digital), M 19 no-new,
+M_type 0, **delivery_number safe on 540 confirmed delivery notes (C3 PROVEN)**. Demo rescore ref 58→83 / date
+60→84. **Config change → LIVE in the running dev app on the next processed doc (no restart).**
+· **`3705296` `pendingfeatures.md`** — running backlog (owner convention: add discussed-but-deferred features
+here). Item 1 = import **"couldn't be read" banner** (`renderStuckChip` `main/renderer.js:1265` — count-only,
+no filename/reason/DISMISS; the doc holds at `status='error'`, NOT lost; `getStuckDocs()` already has names) +
+10 deferred items (letterhead reader, S1 column-window, warm cross-contam, digital↔scanned bleed, delivery/
+worksheet ref, preset+total fields, TYPE-veto slices, identity branding-primary, Cython/fuses hardening).
+· **Security Q answered** (owner: ".py/.pak decompilable?"): engine ships sourceless **`.pyc`** (verified in the
+package — a speed bump, decompilable); `.pak` = Chromium resources (non-issue); most `.py` = third-party libs +
+thin entry shims. Real upgrades (deferred, backlog): Cython→native `.pyd`, arm fuses (`HARDEN_FUSES`), asar
+rungs. **Licensing gate = the commercial moat, not code secrecy.**
+
+**NEEDS OWNER:** (1) **REBUILD installer** off `3705296` — `r20260729-0905` predates the reggie config fix. Then
+live-smoke: 150-DPI import, reprocess-reconnect (`eebe154`), forget/focus/overlay, the VETO. (2) **Import the demo
+batch** — Set A into the live app (safe), Set B into a COPY DB (per README); run `score_demo_digital.js A` /
+`… B warm`. (3) **Diagnose the Set A warm cross-contamination** (58→33 ref, [[pendingfeatures]]). (4) work
+`pendingfeatures.md` (the stuck-banner UX + the rest). (5) SuperStore anchor-removal
+`scripts/remove-superstore-invnum-anchor.js --apply` (app-closed, STILL not run). (6) untracked
+`HANDOVER_2026-07-28*.md` + `docs/SECURITY_HARDENING_REPORT_2026-07-28.md` — commit or leave.
+**S1 stays DARK (INERT on two-column, real fix deferred). Prior block ↓**
