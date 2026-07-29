@@ -553,6 +553,18 @@ window.__genericFallbackOn = false;
   try { window.__genericFallbackOn = (await window.docusnap.getSetting('generic_fallback_enabled')) === 'true'; }
   catch { /* stays false — chip hidden */ }
 })();
+
+// Draw-tool perf (lever 1) — overlap the anchor-LABEL OCR reads with the VALUE read so a drawn box
+// costs ~ONE OCR wall-time on the warm worker pool instead of TWO serial waves (value fills, THEN
+// the left/above label reads run — the visible post-fill wait). DEFAULT OFF = byte-identical: the
+// label reads run serially after the value, exactly as before. Flip via the
+// draw_concurrent_anchor_reads setting AFTER an eric/Oracle review of the focus-repair seam + a live
+// draw smoke (concurrent OCR spawns can re-fire the page-focus edge).
+window.__drawConcurrentAnchor = false;
+(async () => {
+  try { window.__drawConcurrentAnchor = (await window.docusnap.getSetting('draw_concurrent_anchor_reads')) === 'true'; }
+  catch { /* stays false — serial path */ }
+})();
 document.getElementById('generic-chip')?.addEventListener('click', () => {
   const sel = document.getElementById('doctype-select');
   sel.value = 'general_document';
@@ -3339,7 +3351,26 @@ async function runZoneOcr(rect, fieldKey) {
 
     // Read via the --boxes path so we also learn the line COUNT (for the tall-box auto-rule).
     // result.text is the same cleaned, multi-line-aware value the plain path returns.
-    const boxes  = await window.docusnap.ocrRegionBoxes?.(base64);
+    // Lever 1 (kill switch): start the value read as a PROMISE so the anchor-LABEL reads (inside
+    // captureAnchorContext — geometry-only, independent of the value text) can OVERLAP it on the warm
+    // worker pool instead of running as a second serial wave. supplier_name is excluded: its anchor
+    // scope reads the just-populated issuer input, so it must stay serial to see the new value.
+    const _valueReadP = window.docusnap.ocrRegionBoxes?.(base64);
+    let _anchorP = null;
+    if (window.__drawConcurrentAnchor && fieldKey !== 'supplier_name') {
+      const _valTextP = (async () => {
+        const _b  = await _valueReadP;
+        const _rt = ((_b && _b.text) || (await window.docusnap.ocrRegion(base64)) || '').trim();
+        return _rt ? await normalizeDrawnValue(fieldKey, _rt) : _rt;
+      })();
+      // Start the label reads NOW, concurrent with the value read. captureAnchorContext consumes the
+      // value only for its diagnostic tee + an empty-guard (both AFTER its own reads; the anchor
+      // record carries no value), so feeding it a promise is safe. .catch keeps an abandoned start
+      // (empty read → the if(text) block below is skipped, _anchorP never awaited) quiet.
+      _anchorP = captureAnchorContext(rect, fieldKey, _valTextP, imgW, imgH, scaleX, scaleY, null, deskewSnap)
+                   .catch(() => null);
+    }
+    const boxes  = await _valueReadP;
     const rawText = ((boxes && boxes.text) || (await window.docusnap.ocrRegion(base64)) || '').trim();
     // Tidy to the field type — strip a currency symbol, parse a date to canonical DD-MM-YYYY
     // (region-aware). Used for the input value, the correction, and the learned anchor value.
@@ -3387,7 +3418,9 @@ async function runZoneOcr(rect, fieldKey) {
         try { showToast('Looks like this value wraps onto the next line — wrapping enabled, saved on Confirm.', 'ok'); } catch {}
       }
       lastTeachCtx = { fieldKey, rect, imgW, imgH, scaleX, scaleY, value: text, deskewSnap };
-      const detected = await captureAnchorContext(rect, fieldKey, text, imgW, imgH, scaleX, scaleY, null, deskewSnap);
+      // Lever 1: if the concurrent capture was started above, await it; else run the serial call.
+      const detected = _anchorP ? await _anchorP
+                                : await captureAnchorContext(rect, fieldKey, text, imgW, imgH, scaleX, scaleY, null, deskewSnap);
       if (detected) {
         anchorTaughtFields.add(fieldKey);
         // The Document Issuer (company/supplier name) is usually a top-corner logo/letterhead
@@ -3684,15 +3717,19 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
   // If extraction later reads something else at these same coords, the review
   // preview and the extraction render aren't the same pixels. No-op unless
   // diagnostic logging is on (main checks the flag).
-  try {
+  // `value` may be a string (serial caller) or a Promise (lever 1 concurrent caller). The diag tee
+  // is a best-effort no-op unless diagnostic logging is on — fire it with the RESOLVED value, and
+  // do NOT block the label reads below on it. A string caller takes the sync branch = byte-identical.
+  const _fireDiag = (v) => { try {
     window.docusnap.diagTeach?.({
-      field_key: fieldKey, value, x_norm: xNorm, y_norm: yNorm,
+      field_key: fieldKey, value: v, x_norm: xNorm, y_norm: yNorm,
       w_norm: rect.w / imgW, h_norm: rect.h / imgH,
       rect, imgW, imgH, scaleX, scaleY,
       naturalW: docImg.naturalWidth, naturalH: docImg.naturalHeight,
       page: currentPage, preview_active: !!previewActive,
     });
-  } catch {}
+  } catch {} };
+  if (value && typeof value.then === 'function') value.then(_fireDiag); else _fireDiag(value);
 
   // Best-effort: try to find a real label to the left of the box, then above.
   // Search the WHOLE row to the LEFT of the value (not a fixed 300px window): on wide
@@ -3825,6 +3862,11 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
   // Both caption reads run CONCURRENTLY (Slice 2b): the two OCR round-trips OVERLAP instead of
   // back-to-back. Independent, self-guarded → order-free; the pick logic below is unchanged.
   const [leftCand, aboveCand] = await Promise.all([_readLeftCand(), _readAboveCand()]);
+
+  // Lever 1: a concurrent caller passes a value PROMISE and starts this before the drawn box has
+  // been read. If the read yielded nothing, teach nothing — matching the serial caller, which is
+  // gated on a truthy value upstream (so this is inert for it → byte-identical).
+  if (value && typeof value.then === 'function') { if (!(await value)) return null; }
 
   // D1 — PICK between the left and above captions. forceDir pins one side; else pickLabelCandidate
   // scores each (2 = matches this field's caption · 1 = clean · 0 = suspicious/empty), higher wins,
