@@ -2,6 +2,23 @@
 
 const api = window.docusnap;
 
+// Keyboard-focus repair (Windows) — mirror of the Review window's wrapper. A native
+// confirm()/alert() drops Blink's render-widget keyboard focus while the window still reports
+// focused (document.hasFocus() lies TRUE), so the preload's pointerdown self-heal can't detect
+// the desync on its own and the NEXT text-field click shows no caret until you alt-tab out and
+// back. Settings' Learning Repair fires confirm() (Forget / Delete / clear-anchors), so wrap the
+// native dialogs once: flag this window "focus suspect" in main whenever one returns, and the
+// pointerdown repair (preload → ensure-window-focus → focusRepair.blurWebView) then does the real
+// transition on the next field press. Single point, no call-site changes. Guarded so it never
+// breaks a dialog.
+(function instrumentNativeDialogsForFocusRepair() {
+  const mark = () => { try { window.docusnap?.markFocusSuspect?.(); } catch {} };
+  const _confirm = window.confirm.bind(window);
+  const _alert = window.alert.bind(window);
+  window.confirm = (...a) => { try { return _confirm(...a); } finally { mark(); } };
+  window.alert = (...a) => { try { return _alert(...a); } finally { mark(); } };
+})();
+
 // ── Tab switching ─────────────────────────────────────────────────────────────
 document.querySelectorAll('.tab').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -651,6 +668,23 @@ if (fileTimeoutSelect) {
   })();
   fileTimeoutSelect.addEventListener('change', async () => {
     await api.setSetting('file_timeout_seconds', fileTimeoutSelect.value);
+  });
+}
+
+// ── Scan reading detail (OCR render resolution) ───────────────────────────────
+// Lower DPI = faster OCR + far better parallel scaling, traded against small-text accuracy.
+// Default 300 (byte-identical to the old hardcoded render). Snaps a stored/legacy value to an
+// offered option; the backend independently coerces anything out of [100,600] back to 300.
+const ocrDpiSelect = document.getElementById('ocr-dpi-select');
+if (ocrDpiSelect) {
+  (async () => {
+    let n = parseInt(await api.getSetting('ocr_dpi'), 10);
+    if (!Number.isFinite(n)) n = 300;                                   // unset → default 300
+    if (!['150', '200', '300'].includes(String(n))) n = 300;           // snap to an offered option
+    ocrDpiSelect.value = String(n);
+  })();
+  ocrDpiSelect.addEventListener('change', async () => {
+    await api.setSetting('ocr_dpi', ocrDpiSelect.value);
   });
 }
 
