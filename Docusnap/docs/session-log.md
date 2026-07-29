@@ -783,3 +783,854 @@ extends the standing Cloudpeak high-conf-ref-misread class; reggie pass queued.
   trigger"; a non-armed desync (child-window close, keyboard-Tab-only) falls through to the recoverable
   click-out-and-back dead caret (fail-safe — never a wrong value). Arming child-window-close is a fast-follow.
 
+
+
+---
+
+## ARCHIVE: CLAUDE.md session-state blocks 2026-07-20 → 2026-07-28 (moved out 2026-07-29 to keep CLAUDE.md lean)
+
+> These are the verbatim per-session state blocks that had piled up in CLAUDE.md.
+> Each also has a matching `HANDOVER_<date>*.md`. Grep here before re-touching recent work.
+
+## (prior) Session state (2026-07-28) — long live-test day — READ `HANDOVER_2026-07-28.md` FIRST
+**2026-07-28 (Opus 4.8). 5 commits ahead of origin ALL UNPUSHED (`c22e771`→`eebe154`, from BEFORE today) PLUS a
+LARGE UNCOMMITTED batch this session (11 tracked + 3 untracked) — NOTHING committed/pushed today. Owner REBOOTED
+the PC at wrap-up (chasing a lingering import slowdown).** All uncommitted work is default-safe + unit-tested,
+NOT live-smoked, NO corpus run.
+**Committed before today (5, unpushed):** `a666b83` SuperStore teach-safety (`labelIsTypeHeading()` — a ⊕-teach
+whose auto-label EXACT-matches a type name/alias falls back to POSITION-ONLY, so the doc TITLE "INVOICE" can't be
+pinned as the invoice_number label → the "stuck at 69%" taught-ownership cap; + clearer teach copy/badge) ·
+`eebe154` reprocess-All survives Review close/reopen (persists `_reprocessStatus`, mirrors to the LIVE window,
+`reconnectRunningBatch`, consume-once auto-file). Data cleanup `scripts/remove-superstore-invnum-anchor.js`
+(uncommitted, removes the EXISTING bad anchor — owner runs app-closed `--apply`).
+**Built THIS session (all UNCOMMITTED):** (1) case-insensitive **Forget** — `supplier_name = @sn COLLATE NOCASE`
+in `learning.js`/`recoveryService.js`/`documents.js` so a lowercase "superstore" clears "SuperStore" learning
+(pinned, GREEN). (2) **Focus** fix — settings `renderer.js` wraps `confirm`/`alert` to arm the focus-suspect
+(mirror of Review), curing the no-caret Learning-Repair field. (3) **Stale-overlay** + (4) **clearer position-
+anchor message** in review `renderer.js`. (5) **Configurable OCR render DPI** — kill via `ocr_dpi` setting
+(Settings→Processing, 150/200/300, DEFAULT 300 = byte-identical); env `OCR_RENDER_DPI` → `tesseract.py`
+`_resolve_render_dpi` (clamp [100,600]→300); wired into all 3 extraction spawns in `handler.js`; pins GREEN.
+**Designed (gary→Oracle SIGN OFF W/COND, GO to build, NOT built):** consolidated auto-file **S1** — shed the
+template-identity issuer note when corroborated in the ISSUER BAND (kill `TEMPLATE_IDENTITY_BAND_GRADUATE` OFF;
+C1 all-tokens-in-band, C2 unconditional band). #4 SuperStore label-less same-pixel ref correctly STAYS in review.
+**Import perf — NO code regression:** acute crawl = Chrome (~2GB) + low free RAM starving the OCR fleet; each doc
+is a fixed ~3.7s single-threaded 300-DPI Tesseract (thread-invariant) so MORE parallelism helps not less (earlier
+"lower to 6" advice was WRONG). Corpus is 150-DPI-native → 300-DPI OCR = 4× waste → the DPI setting. Owner post-
+DPI: "faster on 150 but still slower than before" → rebooted. **Diagnosed, NOT built:** import-view folder count
+stuck at 900 + session stats +900/run (both `main/renderer.js`). **Prior block ↓**
+
+## Current session state (2026-07-27 PM) — hidden-field SCORING built + live-gated
+**2026-07-27 PM (Fable 5). PUSHED through `6a7a447` (origin `0 0`).** Owner: "Northgate worksheets stuck
+at 72%, nothing flagged, won't auto-file." Root (math-exact): worksheet type has 6 schema fields, layout
+lacks item/serial_no → `overall_confidence` zero-scores the two empties → cap ~74 < graduated floor 95
+FOREVER; the owner's mig-54 field-HIDING was display-only (engine blind). **`59c4032` HIDDEN_FIELD_SCORING
+(kill, default ON; =0 byte-identical)** — gary→Oracle SIGN-OFF-W/COND: `templates.getAll` rides
+`hidden_fields` to Python; `template_matcher.hidden_fields_for_scope` = byte-mirror of the JS display
+resolver (name exact/containment + group_id union, NO branding arm — fail toward held);
+`overall_confidence(exclude_keys=)` **EMPTY-ONLY** (Oracle C1 LOAD-BEARING: a VALUED hidden field keeps
+its drag — at 100 the structural docTrustGate is opt-in-OFF, so dropping the drag would file+learn a
+ghost gate-free; never widen to key_fields filtering); engine strips identity+current-ref/date-role keys
+(`date_field_key` newly threaded); fc_delta/needs_review untouched. JS↔Python parity pinned via SHARED
+vectors `python_backend/tests/data/vis_norm_vectors.json` read by BOTH new suites. **Gates: #714-717
+replay 71-73→100 values-identical + all 4 pixel-page-checked; corpus A/B (710-doc snapshot) 36 diffs ALL
+confined to the two hidden-config worksheet scopes (Saltmarsh id23, Northgate id33), +28 correct
+would-auto-file, 0 genuine new M.** The gate CAUGHT `6a7a447` **#557 GT POISON** (worksheet_15 confirmed
+with sibling #558's values; page pixel-proves WS-18541/22-02-2026/Corvus; -DUPLICATE filename = the
+collision receipt) → gt_overrides "557". ⚠ Residuals (accepted, pinned): branding-only-resolvable scope
+still holds at ~72 (display hides, scoring doesn't exclude); containment false-inherit mirrored from
+display. NEEDS OWNER: reprocess the 4 held Northgate worksheets (they'll now file at 100); Learning
+Repair → send `SaltmarshSeafoods_worksheet_15` back → re-confirm with the page's real values (WS-18541 /
+22-02-2026). Memory [[project_hidden_field_scoring_20260727]]. **Morning block ↓**
+
+## Current session state (2026-07-27) — READ `HANDOVER_2026-07-27.md` FIRST
+**2026-07-27 (Opus 4.8) — long owner-driven live-testing day. ALL PUSHED through `c0f9434` (origin `0 0`),
+tree clean, no running processes.** 9 commits, each kill-switched + advisor→Oracle gated (realdoc is BLIND to
+the JS/renderer paths → several used live-DB replays). Shipped: type-flip `e0b5c04` + hardening `c617230`
+(overnight, pushed a.m.), then 4 live-found fixes — **`93b766c` SO-template phash-collision refuse**
+(`LOGO_REFUSE_SUPPLIER_CORROB`: the 64-bit phash can't separate suppliers → a foreign wrong-type template →
+the trusted-title refuse blocks the correct same-supplier rescue; fix = two-factor the guard + a winner-side
+distinctive-presence gate; 10/20 roulette→0) · **`8be9ac5` field-hiding UNION**
+(`getHiddenFieldsForSupplierType` resolves hidden fields across DUPLICATE templates by (name,type), EVEN when
+matched; display-only) · **`9164c28` po_number "Order No." reader** (`PO_ORDER_NO_LABELS`: inject the missing
+label + a qualified-caption guard + close a latent sales_order_number-grabs-PO leak. **007-A full-res inline
+re-read BUILT but DARK** — corpus regressed because the `inline_box` is LOW-RES-derived; 007 pixel-proved doc
+669's `PO-78399`→`PO-78309` is a ~120-DPI DOWNSCALE in the label-locate pass, owner rule "look at the SLICES")
+· **`1f0a021`+`c0f9434` template DEDUP** (`TEMPLATE_REUSE_BY_NAME`: `templates.reuseByEstablishedName` — exact
+`establishedIdentity`+slug, NEVER containment, richest canonical — wired FIRST in `_upsertTemplate` +
+`graduationTemplate` to PREVENT new dups; + group_id activation + owner-run reversible backfill
+`scripts/template-group-backfill.js --apply` to COLLAPSE existing; Phillip-measured; live replay 0
+cross-identity) · **`522749a` juncture 6** (verify system STATE at the source, never from a UI/indirect
+signal). ⚠ OPEN: 669 ref still shows the wrong value (the taught anchor's low-res misread wins over reggie's
+correct keyword read — needs a full-res re-LOCATE, not the coarse re-crop that regressed); deferred Python
+matcher tie-break + IDF (Oracle C5). NEEDS OWNER: restart app (main-process changes) + reprocess; run the
+backfill `--apply`; rebuild the installer + smoke hardening. **Prior block ↓**
+
+## Current session state (2026-07-26 NIGHT, autonomous) — READ `HANDOVER_2026-07-26_NIGHT.md` FIRST
+**2026-07-26 NIGHT (Opus 4.8, autonomous; owner asleep). ALL PUSHED through `c617230` (origin `0 0`), tree
+clean.** Two atomic kill-switched commits. **`e0b5c04` TASK #5 Northgate PO→Invoice TYPE-FLIP FIXED** —
+Herald-designed, Oracle SIGN-OFF-W/COND (C1-C6 all met), corpus-gated on a FROZEN live-DB snapshot:
+**Lever 1 `HEADING_FUZZY_VOCAB`** (keyword.py, DEFAULT ON) = a fuzzy-to-closed-vocabulary title arm beside
+the exact `_despaced_heading` (difflib ratio ≥0.82, ARGMAX+0.08 margin, single-word only-if-fragmented so
+the alias contract holds; new `_collapse_title_tokens`, `_despaced_heading` byte-UNTOUCHED) — recovers
+'PU RC fa ASE ORDER'/'I N V O I C E'; **Lever 3 `KW_TYPE_NONDISTINCTIVE_HOLD`** (template_matcher.py,
+DEFAULT ON) = the silent-misfile backstop: `_kw_nondistinctive_hold` HOLDs a keyword winner whose
+DISTINCTIVE fingerprint ⊆ a same-supplier different-type sibling's, NO exact tie needed; gate
+`winner_slug_match==0 and not title_trusted` composes cleanly with Lever 1 (no double-hold); reuses the
+intact ambiguity→HOLD engine chain (no engine change). BOTH OFF ⇒ byte-identical. **Gate: value accuracy
+byte-identical (type 99.5/sup 100/ref 98.0/date 95.3), M_type 0, 0 new silent-misfile, 0 new false-hold,
+−6 false-holds, +1 correct auto-file; Northgate 673/674 invoice→PO, Lever-3-only turns a conf-100 garble
+from silent-Invoice into ambiguity-HELD-with-correct-PO-suggestion.** New gate tooling (data-free):
+`stress_test/type_outcome_report.js` + `northgate_type_trace.js` + an inert `RR_TYPE_ENUM` dump in
+realdoc_regression.js. · **`c617230` BUILD DECOMPILE-HARDENING scaffold** (eric-designed,
+`docs/BUILD_HARDENING_PLAN_2026-07-26.md`): **Rung C DEFAULT ON** (asar `files` negations drop
+`test_*.js`/`__tests__` — dry-pack verified 0 of our test files in app.asar) + **Rung A scaffold DEFAULT
+OFF** (`scripts/afterPack-fuses.js`, kill `HARDEN_FUSES`; arms RunAsNode/NODE_OPTIONS/--inspect OFF on
+ScanFinder.exe; `@electron/fuses` MIT devDep). Default dry pack `electron-builder --dir` SUCCEEDS, afterPack
+no-op fires (byte-identical), check-licenses OK (79 comps commercially-free). ⭐ **NEEDS OWNER (needs a live
+app, couldn't do asleep): (1) reprocess Northgate in `npm start` to SEE the fix (POs now type Purchase
+Order, held); (2) ARM the fuses — `HARDEN_FUSES=1 npm run build` + smoke every window (a bad flip = won't
+start) — then decide to keep it in the release build cmd; (3) decide the deferred rungs B/D/F/E (each needs
+a smoke; weakest links = config JSON + JS-in-asar, `.pyc` already best-protected).** Installer
+`r20260726-1018` predates all of this — rebuild to carry task #5 + smoke hardening. Revert: `git revert
+e0b5c04`/`c617230`, or the kill switches restore byte-identical. **Prior block ↓**
+
+## Current session state (2026-07-26 EVENING) — READ `HANDOVER_2026-07-26_EVENING.md` FIRST
+**2026-07-26 EVENING (Opus 4.8) — ALL PUSHED through `7cfcc5f` (origin `0 0`), tree clean; a dev
+`npm start` is RUNNING (owner live test). READ `HANDOVER_2026-07-26_EVENING.md` (its ⭐ LATEST block first).** Built the two planned
+targets, each gary→Oracle gated + kill-switched: **`18d851a` B′ TYPE-SCOPED taught-ownership label
+exemption — DEFAULT ON** (`keyword.label_is_own_discriminating_in_type` intersects the global label owners
+with the RESOLVED type's field keys → "Order Date" on a PO is own-label; fires only on an AUTHORITATIVE
+type `self._type_authoritative` = title_trusted AND not type-ambiguous/-refused; method-only; kill
+`TAUGHT_OWNERSHIP_TYPE_SCOPED_LABEL=0`. C1 live: the 13 Copperfield POs 69→98 VALUES-UNCHANGED; C2 corpus
+diff = 1 line, M/accuracy identical) · **`9119227` Fix A #183 inline-harvest absence hold**
+(`engine._inline_absence_should_hold` = a critical `anchor_inline` winner that
+`_fallthrough_critical_corroborated` can't confirm is HELD; Oracle C2 DROPPED the crop-box requirement
+[pure fn of the result, closes the label-less-anchor hole too]; corpus M 2→1 [#183 caught, #583 untouched],
+accuracy identical) · **`ae12a0e` Fix A → DARK** (owner live-test: over-flags a CORRECT VISIBLE ref on the
+systematically-skewed Northgate batch — the rigid crop read it too but rejected on the caption prefix, so
+its agreement is invisible to the winners-only ledger; refine before re-flip, task #4). **THEN: the
+Northgate PO→Invoice TYPE-FLIP was root-caused by a NEW agent HERALD** (created + registered this session,
+`bd400e4`/`7cfcc5f`; `.claude/agents/herald.md`, skill `document-type-heading`, standing ref
+`docs/HERALD_TYPE_DETECTION_REFERENCE.md` = THE spec — read before building). Herald renders+OCRs the TITLE
+BAND before citing a score and CORRECTED the diagnosis: **axis-2 classification is SOUND** (correct title →
+PO 95/trusted); the mis-type is a **DETERMINISTIC generic-fingerprint** hole (the pure-letterhead Invoice
+template scores 1.0 on every page → wins; `_kw_type_ambiguity` blind = exact-tie-only), TEMPLATE-path not
+logo-only, NOT a coin-flip — a garbled PO with clean fields would silently auto-file Invoice. **The owner's
+REAL docs type correctly TODAY** (born-digital/logoless SuperStore + real-scanned City Office/"doc-solutions";
+`detect_document_type` scans every line = layout-agnostic) — Northgate is a DEMO-skew artefact. ⭐ **NEXT:
+(1) owner reprocess Copperfield (B′ clears 69→98) + Northgate (Fix A dark clears the flags) in the dev app;
+(2) TYPE-FLIP (task #5, HERALD owns it): Herald designs the GENERALISED fix — PRIMARY = fuzzy-to-CLOSED-
+VOCABULARY beside `_despaced_heading`'s exact test (skew-agnostic; drop the multi-word-only guard), + a
+TEMPLATE-PATH HOLD-on-generic-fingerprint + fp hygiene (strip Bluefin/Marine from PO id30) → Oracle → build;
+GATE = corpus type-outcome enumerator (false-hold + silent-misfile); (3) Fix A refinement = crop-read
+corroboration (task #4).** Installer `r20260726-1018` predates all commits; iris + herald are registered
+agents. **ALL PUSHED through `7cfcc5f`, origin `0 0`. The 2026-07-26 morning block's "NEXT" is DONE
+(Copperfield = B′; #183 = Fix A). ↓**
+
+## Current session state (2026-07-26) — READ `HANDOVER_2026-07-26.md` FIRST
+**Wrapped 2026-07-26 (Fable 5). ALL PUSHED through `fff6cde` (origin `0 0`), tree clean, no background
+processes.** The day: logo-identity fix END-TO-END (iris forensics → A+C → corpus block → G1/G2 guards
+→ revised-C8 PASS → FLIPPED ON → owner live-validated "docs filed fine") + installer
+`r20260726-1018-58533ea` BUILT with NEW bytecode hardening (extraction ships sourceless .pyc; kill
+`SHIP_PY_SOURCE=1`) + `docs/ARCHITECTURE_SNAPSHOT_2026-07-26.md` (C++-port report; MODULES.md = stale).
+⭐ **NEXT SESSION: (1) owner smoke of the hardened installer, (2) the COPPERFIELD TAUGHT-OWNERSHIP PLAN
+(formulated, NOT built — 13 POs @69; root = a BLIND label-less po_date anchor the ⊕ teach silently
+planted; slices 0/A/B/B′/B″/C incl. the owner's TWO DESIGN DECISIONS: TYPE-SCOPED label ownership +
+single-date crop salvage — [[project_taught_anchor_ownership_20260726]]), (3) #183 anchor-binding.**
+Details + recovery anchors below. **↓**
+
+## (detail) 2026-07-26 — logo-identity LIVE + INSTALLER BUILT (bytecode-hardened)
+**INSTALLER: `dist\ScanFinder Setup 2.0.0-r20260726-1018-58533ea.exe`** — carries the ENTIRE week
+(logo-identity A+C+G1+G2 flipped ON, field-vis, logo-refuse, caption-strip DARK) **+ the new
+BYTECODE HARDENING**: `scripts/compile-python-bytecode.js` stages `build_python/` (extraction/ etc.
+compiled sourceless under vendor/python — 38 modules .pyc-only, 15 JS-spawned entries stay .py;
+packaged-tree VERIFIED zero .py in extraction/). Kill `SHIP_PY_SOURCE=1` stages verbatim source.
+⚠ Build trap found: Git-bash mangles `taskkill /IM` into a path (silent fail) — close the app via
+PowerShell `Stop-Process -Name electron` or the EBUSY on better_sqlite3.node kills electron-builder.
+**RECOVERY ANCHORS:** tag `milestone-20260726-logo-identity` (=`3c37500`, pushed) · DB snapshot
+`%APPDATA%\ScanFinder\docusnap.backup-20260726-prebuild.db` · prior installer `r20260724-1432` in
+dist · revert `58533ea` or SHIP_PY_SOURCE=1 to un-harden. Hardening ladder recorded: .pyc now →
+Cython/bytenode at PRE-LAUNCH (see the decompile discussion; C++ port = engine-first if ever, see
+`docs/ARCHITECTURE_SNAPSHOT_2026-07-26.md`; vendor/ bundles python AND tesseract — port Q1 answered).
+**NEXT: #183 anchor-binding** (007→Oracle→build; the last real corpus M) in a FRESH session.
+**FLIP + LIVE VALIDATION (latest):** defaults flipped ON (`eeb257d` — `TEMPLATE_VETO_FALLTHROUGH` +
+`LOGO_DETAIL_GLOBAL_RIVALS` default '1', =0 restores; test OFF-cases now set '0' explicitly). Owner ran
+`npm start`, reprocessed the stuck Saltmarsh dockets: **"the docs filed fine"** — the full chain
+(collision-vetoed → fall-through match → boost → G1/G2 clean → FILED) is live-proven. ⚠ The PACKAGED
+app needs an installer REBUILD to carry it. **10 commits ahead of origin, ALL UNPUSHED** (through
+`3e0812c` — incl. `docs/ARCHITECTURE_SNAPSHOT_2026-07-26.md`, the C++-port planning report; MODULES.md
+verified badly stale there). Push decision = owner. **The earlier DARK note below is superseded. ↓**
+**LATER 2026-07-26: the corroboration-gated variant CLEARED the gate.** gary designed + Oracle signed
+(revised C8) the G1/G2 guards, BUILT `ba8bcea`, all green: **G1** (final assembly) — a fall-through
+doc's critical winner must be corroborated (independent-FAMILY rail read, or boundary-guarded page
+presence incl. the date RAW-form arm; field-kind-aware note holds via the flagged gate; NO authoritative
+exemption) · **G2** (Stage-2 merge) — a non-authoritative crop at INVERTED confidence never silently
+displaces a disagreeing keyword (keep keyword + note; agreeing keeps the incumbent noteless, C6;
+authoritative exempt BY RULING — G1 backstops, accepted cost (c) pinned). Tag `veto_fallthrough` from
+the matcher; ONE master switch (`TEMPLATE_VETO_FALLTHROUGH`) — **naked C is unreachable at runtime**
+(Oracle-blessed deviation). **Gate results: M == 2 exactly** (#472 eliminated; baseline #183/#583 only),
+M_type 0, **would-auto-file 377** (+42 vs OFF 335), ref/supplier = baseline, dates 98.2 with the complete
+wrong-stored set {#456, #472} both **[flagged]** note-held ("no silent wrong value"); live: #472/#456
+held with notes, Saltmarsh clean 100. Unit `test_veto_fallthrough_corrob.py` 20 pins + 7 sibling suites
+green. **STILL DARK — the flip (defaults ON + installer rebuild) is the OWNER'S call.** Backlog (named,
+do NOT widen G1 for it): G1 verifies EXISTENCE not BINDING — a lone read grabbing a different genuine
+page token passes; that is the #183 Fix-A anchor-binding work. **The earlier block below is superseded
+on the gate outcome; its root-cause forensics remain canonical. ↓**
+
+## (superseded on outcome) 2026-07-26 — logo-identity slices BUILT DARK; corpus gate BLOCKED naked C
+**2026-07-26 (Fable 5, owner-directed).** The remaining 4 "perfect" dockets (587/588/589/590, overall 94
+< graduated floor 95) were root-caused to the END: owner's exercise ("the logo is visually identical —
+find the algorithmic fix") → built the **iris** perceptual-forensics agent (`.claude/agents/iris.md`,
+REGISTERED — pixels-first, 4-layer decomposition, contrastive matrices) → iris proved the 64-bit "logo
+hash" hashes **LAYOUT not the mark** (phash of the top-left w/2×h/5 crop; mark <5% of area; intra- ==
+inter-supplier distance ⇒ ZERO separation; 8/16 dockets coarse-lock a WRONG supplier ≤6) while the
+**256-bit isolated mark separates cleanly** (own ≤38 vs impostors ≥86 min-over-set; pairwise tails cross
+— the multi-ref set is load-bearing) and the purpose-built detail veto was silent because its rival
+universe was cut by the same broken coarse hash. **BUILT (Oracle-conditioned, both DARK/OFF, 2 commits):**
+`522cc3b` Slice A global-rival veto universe (kill `LOGO_DETAIL_GLOBAL_RIVALS`; probe 606 docs 0 wrong/0
+false-abstain) · `c1f9a3f` Slice C identity-veto fall-through to the text arms (kill
+`TEMPLATE_VETO_FALLTHROUGH`; C2 supplier-scoped sibling exclusion LOAD-BEARING + C3 winner branding/mark
+bar). Unit 6/6+8/8, matcher family green. **Live A+C ON: all 4 dockets match T24, overall 99-100, values
+unchanged-correct.** Slice B (mark as primary matcher) DEFERRED per Oracle until mark normalisation.
+**⚠ CORPUS FLAG-MATRIX FAILED THE FLIP — DO NOT FLIP:** ON = +43 would-auto-file BUT **NEW M #472**
+(template match un-holds its skew-wrong ref — the hold was luck, not safety) **+ date 98.4→98.2 (#456**
+new wrong date on the template-matched path). Flip prerequisite = the skew read-layer fix
+([[project_183_harvest_synthesis]] A/B) OR a corroboration-gated C (fall-through docs auto-file only on
+multi-source-corroborated criticals — Saltmarsh 4 pass, #472 fails); each needs its own Oracle round.
+Meanwhile: the 4 docs are correct on screen — owner confirms by hand. Earlier same session: caption-strip
+`9dfa011` (DARK), audit `docs/AUTOFILE_AUDIT_2026-07-25.md` (07-26 update appended), template-diagnosis
+`6c13ec3`. **6 commits ahead of origin, ALL LOCAL/UNPUSHED.** Memory:
+[[project_logo_identity_slices_20260726]] · [[project_autofile_blockers_20260725]] ·
+[[project_caption_prefix_strip_20260725]]. **Prior block ↓**
+
+## Current session state (2026-07-25 NIGHT, autonomous) — READ `HANDOVER_2026-07-25_NIGHT.md` FIRST
+**2026-07-25 NIGHT (Opus 4.8, autonomous overnight; owner asleep, hard NO-REGRESSIONS rule).** Chased the
+owner's "recipient/customer anchor" problem to root and it is a **RED HERRING for the auto-file pile-up**:
+customer_name is `required=0` → never feeds `overall_confidence`. The 16 correct Saltmarsh dockets pile up
+because of **TEMPLATE MATCH + confidence caps + an ungraduated scope**, NOT a wrong read. Full audit:
+**`docs/AUTOFILE_AUDIT_2026-07-25.md`**. Root: match→supplier early→Stage-2.5 conformance boost (85→96)+
+docTrustGate ok→95; no-match→supplier LATE→`late_anchor_rescue` cap 85→88, and **no-template BARS sub-100
+auto-file** (docTrustGate, trust.js:391). Scope **4/10 confirms→floor 100→nothing auto-files**; simulated
+at graduated floor 95 only **4/20** file (11 no-template + 5 flagged [2 "type changed on reprocess", 3
+customer phantom note]). **BUILT (DARK, LOCAL commit `9dfa011`, NOT pushed): caption-prefix strip** (kill
+`ANCHOR_CAPTION_PREFIX_STRIP` default OFF) — `_strip_caption_prefix` recovers a structured crop that
+captured its caption ("Date 22/07/2026"→"22/07/2026") + fixes a cold-supplier dirty-commit; reggie+Oracle
+SIGN-OFF-W/COND (SEAM A currency-exclude, SEAM B recovery-not-pre-emption). OFF byte-identical; unit green
+(`test_caption_prefix_strip.py`); ON live batch **16/16 zero VALUE changes** (method-only recovery). ⚠ NOT
+flipped, NOT full-corpus-gated, **does NOT clear the batch**. **RULED OUT (gary+Oracle DO NOTHING): the
+corroboration lift** (late-rescue⟺template-less⟹zero recall; enumeration confirmed inert). **UNCOMMITTED
+new files** (safe, carry no data): `stress_test/caption_strip_ab.js` (A/B harness), `docs/AUTOFILE_AUDIT_2026-07-25.md`,
+`HANDOVER_2026-07-25_NIGHT.md`. **NEXT (owner-gated; Oracle: do NOT touch the matcher autonomously):** confirm
+6 more dockets→graduate; diagnose the template-match gap (primary lever, [[project_template_defrag_20260725]]);
+decide the "type changed on reprocess" flag; flip the strip after corpus A/B + page-verify. Memory:
+[[project_autofile_blockers_20260725]] · [[project_caption_prefix_strip_20260725]]. **Prior block ↓**
+
+## Current session state (2026-07-25 EVENING) — READ `HANDOVER_2026-07-25_EVENING.md` FIRST
+**2026-07-25 (Opus 4.8) — live-testing day with the owner; branch `feat/reprocess-throughput-autostraighten`
+ALL PUSHED through `863e914` (origin `0 0`, tree clean). 6 commits, all kill-switched + advisor/Oracle gated.**
+`5501be1` **merge tool (Slice 1)** — `templateMerge` splits `insufficient` vs `divergent` + offers an owner-
+confirmed backup-first `merge_review` for near-identical-branding dupes (kill `TEMPLATE_MERGE_REVIEW`;
+Settings→Templates→Suggested cleanups; ⚠ the merges themselves are an OWNER click, NOT run) · `aba2f46`
+**reuse-by-branding DEFAULT ON (Slice 2)** — a confirm/teach reuses its (branding,slug) template instead of
+minting (kill `TEMPLATE_REUSE_BY_BRANDING`; replay 482/534 reuse, 0 cross-supplier; ⚠ needs one LIVE OWNER
+BATCH + Phillip's IDF hardening before wide rollout) · `17f25e5` **live field-visibility by supplier** —
+`templates.findForSupplierType` resolves a no-template doc's hidden fields + re-scopes on issuer edit (kill
+`FIELD_VIS_LIVE_RESOLVE`; modes via setting `field_visibility_resolve_mode`) · `af346d8` **logo-refuse
+fall-through** — `identify_template`'s logo-arm trusted-title refuse falls through to the same-type keyword
+rescue (+ Oracle C1 supplier guard) so a wrong-type same-supplier logo lock no longer gives "No template match"
+on reprocess (kill `LOGO_REFUSE_FALLTHROUGH`; corpus M/accuracy-neutral, +5 correct auto-files; VALIDATED LIVE)
+· `8103268`/`863e914` docs (label-separator tolerance INVESTIGATED → DO NOT BUILD: reggie premise-break, no-op
+for its symptom). ⚠ **Python change ⇒ clear `python_backend/**/__pycache__`** or a reprocess runs STALE
+bytecode (masked the logo fix for ~an hour this session). ⭐ **NEXT SESSION'S TARGET: the recipient/customer
+anchor** can't pick the COMPANY-NAME line out of a captioned multi-line address block ("Deliver To" / "Site
+Customer") — it reads the caption or a garbled address line, `keyword_override` rescues the correct name, and
+the batch keeps landing in review; DIAGNOSED, not fixed (handover + [[project_recipient_anchor_problem]]).
+Memory: [[project_logo_refuse_fallthrough_20260725]] · [[project_field_visibility_live_resolve_20260725]] ·
+[[project_template_defrag_20260725]]. **Prior block ↓**
+
+## Current session state (2026-07-24 LATE → overnight) — READ `HANDOVER_2026-07-24_LATE.md` FIRST
+**2026-07-24 LATE (Opus 5 → Opus 4.8 re-review + autonomous overnight) — 5 commits PUSHED through
+`c9d9480` (origin `0 0`, tree clean).** `733b4e1` **late-rescue sticky cap** (kill `LATE_RESCUE_CAP_STICKY`,
+default ON; restores the documented 85 cap that Stage-2.5b +8 conformance + Stage-4.5 +5 silently lifted to
+98; terminal re-cap before overall_confidence; A/B M 10→9, OFF byte-identical) · `ef612ae` **GT repair** (9
+poisoned corpus rows re-read at 600 DPI + corrected in `gt_overrides.json`, self-validating; + type-override
+support; corpus now type 100% / ref 98.6% / M 10→1 [only #183] / M_type 0) · `2cc20f7` docs · `14d52c4`+
+`c9d9480` **per-template field HIDING BUILT** (Task #2; migration **54** `template_hidden_fields`; hide a
+field the type has but a layout lacks so Review stops flagging it missing; HIDE-ONLY + superset-locked +
+structural roles never hideable; INERT with no rows ⇒ byte-identical; Template Manager toggle + Review
+row-skip need a LIVE-TEST). ⚠ Remaining real M = **#183** (skew broke OCR row-grouping → the harvest
+SYNTHESISED `PO-20008`; two fixes proposed, NOT built — see `project_183_harvest_synthesis`). ⚠ The
+`NAME_GUARD_KEYWORD_CLEAR` flip is now UNBLOCKED (#259 GT repaired) but its gate is "enumerate the docs it
+newly auto-files + check each against the PAGE", not M. **↓ The Opus-5 investigation block (superseded on
+the facts by the re-review) follows.**
+**2026-07-24 LATE (Opus 5) — an INVESTIGATION session. The session was asked to build the REF-HOLD guard
+and instead demolished its premise.**
+⚠ **THE REF-HOLD GUARD IS DEAD — do NOT build it** (Oracle DO NOTHING, on MECHANISM not measurement: the
+doctrine at `anchor.py:651` presumes BOTH reads are credible, and the guard would apply it to one credible
+read + one the pipeline already binned as not-credible = the invariant inverted). Measured 0 TP / 9-10 FP.
+⚠ **THE CORPUS GT IS POISONED ON 8 ROWS — true M is 2, not 10** (#180 #259 #262 #263 #266 #269 #273 #287
++#190; each page read at 350-400 DPI; only **#183** and **#472** are genuine misreads). This invalidates the
+"M-safe" gate on ALL FOUR of 2026-07-24's commits, in BOTH directions — re-run them after the GT repair.
+⚠ **#259 is NOT a real misread**: the pipeline's `DN-38472` is CORRECT; its `corrections` row is a
+single-character prepend (`N-28472`→`DN-28472`), so the operator fixed a missing letter and never audited
+the digits. The prior claim *"two sources say DN-28472"* is FALSE — the quoted "crop read" was verbatim that
+row's `original_value`. So `NAME_GUARD_KEYWORD_CLEAR`'s DARK reason does not exist; its gate is NOT "did M
+rise" (the harness's scored set excludes `customer_name`) but "enumerate the docs the flip newly auto-files
+and check each against the PAGE".
+⚠ **ROOT CAUSE = MULTI-FACTOR STACK, no single clean fix (Opus 4.8 re-review, TESTED — corrects the
+"skew is THE cause / deskew is THE fix" framing that an earlier pass asserted untested).** For the two
+genuine misreads {#183, #472} the chain is: (a) keyword can't read the clean value — po_number labels
+lack "Order No" AND the doc's footer boilerplate ("quote this Order No. on all correspondence") collides,
+so a naive label-add REGRESSES to null (TESTED) → (b) falls to the taught crop → (c) supplier resolved
+LATE → Stage 2.6 blind crop → (d) SKEW clips it → wrong value → (e) the 85 late-rescue cap LEAKS to 98 →
+silent misfile. **SKEW is real (deskew recovers #472→PO-98093, #183→PO-60906) BUT DESKEW IS NOT THE FIX:
+it is not fail-safe — it CORRUPTED #180 (correct raw `PO-91914` → resample-flipped `PO-81914`), exactly
+the `DESKEW_RAW_WITNESS` glyph-flip.** Global deskew trades errors; any deskew must be field-scoped +
+witnessed. `project_detect_deskew_parked`/`_deskew_field_reread`/`_deskew_raw_witness` already warned this.
+**SAFEST NEXT BUILD = the late-rescue TERMINAL RE-CAP (below): fail-toward-review, Oracle-signed, converts
+#472 to held-for-review without solving skew/keyword — but its ~14% review-volume cost is an OWNER call.**
+⚠ **#180 is a GT-poison, NOT a genuine misread** (raw pipeline reads `PO-91914` correctly). GT poisoning
+re-confirmed at 600 DPI (#180/#259/#266); true M=2. Skew measurement (still valid as CONTEXT): spread
+−2.1°…+2.4°, ~15px/degree walk at x_norm 0.83-0.86, up to 66% of a band; corpus is SYNTHETIC (simulated
+scans, skew deliberate). ⚠ **(a SYMPTOM, do NOT lead with it, A/B REGRESSED, DEFAULT OFF) structured
+ref/date OCR crops slice the glyph bottoms off.** `anchor.py:3053-3058` gives vertical headroom ONLY to
+text/multiline_text;
+ref/date keep a FLAT 20px. The stated reason ("numerics keep the tight box so they don't bleed into the next
+COLUMN") does not cover what it gates — the withheld pad is `half_h`, i.e. VERTICAL, which can only bleed
+into an adjacent ROW. Measured on #472 at 300 DPI: OFF ⇒ `"No. PQO-aRano"` (garbage) · 0.25 ⇒ `"No. PO-98092"`
+· **0.35/0.4 ⇒ `"No. PO-98093"` EXACTLY CORRECT**. PART 1 BUILT (kill `ANCHOR_STRUCTURED_HEADROOM`, DEFAULT
+OFF). ⚠ **BUT THE FIRST A/B FAILED — DO NOT FLIP IT ON:** at 0.35, part 1 ALONE gives M 10→11, M_type 0→1,
+ref −2, **0 healed** (new silent wrongs #173 `WS-77682`→`WS-77622`, #484 `PO-83362`→`PO-82262`) — the
+adjacent-row/extra-noise risk is MEASURED. Mechanism proven, shipped shape not. Measure part 1+2 TOGETHER,
+sweep the ratio DOWN, and consider applying the headroom ONLY where the rigid crop would otherwise be
+REJECTED (that shape avoids both regressions by construction). **PART 2 REQUIRED, not built**: the correct
+crop is STILL rejected because it carries the caption tail
+`No.` and `_pattern_coverage` (`anchor.py:2208-2222`) uses `re.search` = FIRST match (3/12) — and `finditer`
+alone only reaches 0.67 < 0.8, so the fix is to STRIP THE TAUGHT LABEL before the credibility gate.
+⚠ **Stage-2.6 late-rescue cap leak (real, DEMOTED):** `engine.py:3628` caps 85, then `:3784` +8
+(`ocr_corrector.py:274` `boost_table{0:8}` = +8 for ZERO fixes) and `:4358` +5 ⇒ **98**. 55 of 56 rescued
+fields leak. Holding them costs 54 correct docs to catch 1 → **re-measure AFTER the crop fix, not before**.
+Dead code found: `late_rescue` (`engine.py:3629`) is written and NEVER read; `review/renderer.js:2482` tests
+it as a METHOD string and can never fire; `engine.py:4338`'s "never reaches 100" is stale (graduated floor is
+**95**, `trust.js:45/548`). `test_late_anchor_rescue.py` 7 RED = ONE stale fixture (its OCR puts the supplier
+after "Customer", a recipient marker per `chrome_band.py:26`) — and its `capped at 85` check passes
+VACUOUSLY on an empty field. **Prior block ↓**
+
+## (prior) Session state (2026-07-24) — READ `HANDOVER_2026-07-24.md` FIRST
+**2026-07-24 (Opus 4.8 1M) — live-testing day WITH the owner; branch `feat/reprocess-throughput-autostraighten`
+PUSHED through `f0107f9` (origin in sync `0 0`); tree clean.** Owner-facing pipeline overview (flowchart + plain-
+English stage-by-stage): **`docs/DETECTION_OVERVIEW_2026-07-24.pdf`**. **6 code commits, all kill-switched
+(OFF ⇒ byte-identical), each advisor→Oracle SIGN-OFF, corpus M-safe:**
+`4af4bba` **issue-2 own-label exemption** — a precise labelled keyword read (Invoice No/PO Date) no longer
+over-flagged by the taught-ownership guard; SHARED/generic labels (Date/#) still held (kill `TAUGHT_OWNERSHIP_OWN_LABEL`, ON) ·
+`5c94db8` **located-recovery** — Stage-2.6b re-runs an owned taught anchor when the supplier resolved LATE (Stage 2
+ran supplier-blind) so a correct held ref/date lifts (kill `LATE_RESCUE_LOCATED_CORROB`, ON; #473 fixed; the crop-
+BLIND version was Oracle-REJECTED = repeated-date misfile) · `7229cdd` **name-presence veto** — kills a cross-supplier
+LOGO false-match on the JS template SUGGESTION path (Larkspur-on-Saltmarsh): a supplier that reliably prints its own
+name can't be suggested for a page missing it (kill `TEMPLATE_NAME_PRESENCE_VETO`, ON; live sweep 510 docs → 0 false-
+vetoes; guards the pill + teach-wizard save-target + graduation link) · `7d11f86` **name-guard keyword-clear — DARK**
+(kill `NAME_GUARD_KEYWORD_CLEAR`, **DEFAULT OFF**) — clears a PHANTOM 'caption disagreed' flag on a keyword-corroborated
+name; the owner's raw-OCR-witness idea was Oracle-SENT-BACK (it silently files a stale DRIFTED name); its M-gate rose
+10→11 on **#259** (a CORRECT name-flag-clear un-masked a pre-existing REAL ref misread DN-28472→DN-38472), so per
+Oracle+owner it ships DARK · (+ overnight `8e2211c` deskew raw-witness ON, `5377e24` slice-1d DO-NOTHING; the naive
+cross-tier auto-file lift was MEASURED+REVERTED). **Installer** `dist\ScanFinder Setup 2.0.0-r20260724-1432-7229cdd.exe`
+(3 LIVE fixes; name-guard is dark → NO rebuild needed for it). ~~**NEXT — the REF-HOLD guard.**~~
+⚠ **SUPERSEDED 2026-07-24 LATE — DO NOT BUILD THE REF-HOLD GUARD.** Its whole premise was wrong: #259's GT is
+POISONED (the pipeline's `DN-38472` is CORRECT), the cited crop read `'N-28472'` was actually a `corrections`
+row's `original_value` not a measurement, the "single-digit" framing was wrong (the crop is 2 positions off),
+the cited site `anchor.py:638-659` is stale (`:642-689`, and it is structurally unreachable on a rejected crop
+because it is gated `method == "anchor_crop"` at `:665`), and `on_reject` is TRACE-ONLY so a guard hung off it
+would be dead in production. Measured 0 TP / 9-10 false holds. See the LATE block above. **Owner live-checks OPEN**
+(on the current installer): Thornbury
+invoice/PO_05 (issue-2 + located-recovery) + Saltmarsh sales-order (no "Template available: Larkspur"). Memory:
+[[project_taught_ownership_own_label]] · [[project_late_located_corrob]] · [[project_name_presence_veto]] ·
+[[project_name_guard_keyword_clear]] · [[project_deskew_raw_witness]] · [[project_slice1d_donothing]]. **Prior block ↓**
+
+## (prior) Session state (2026-07-23 NIGHT) — READ `HANDOVER_2026-07-23_NIGHT.md` FIRST
+**2026-07-23 NIGHT (Fable 5) — 15 commits, ALL PUSHED through `b28f581`; tree clean; migration 53.**
+`48262e0` **ANCHOR_LINE_SELECT built DARK** (flip = the live Thornbury gate) · UI: editor subgrid rows
++ Keywords pill `c5c1e58`, type-LIST drag `76c2b96`, Review labels left `7b07620` · **identity chain**:
+JS detail-hash veto `6ab04f1` (64-bit histograms CROSSED — 2/64 cross vs 18/64 drift, never tune it;
+256-bit impostor floor 86) + poisoned-link sweep `2c1dd13` (13 live links, owner --apply PENDING) +
+enrolment DARK `c9725e2` (`LOGO_DETAIL_ENROL=1` arms — INVERTED default) + sparse guard `059d87b` →
+**unified `b28f581`: BOTH detail arms suggest-only, coarse winner THREADED to the text gate; C5 gate
+PASSED (backfilled == starved BYTE-IDENTICAL, 268/390, M=9 same rows) — enrolment flip now SAFE,
+owner-timed** · `06470a4` KEYWORD_ANCHOR_CORROB lift + weak-critical-field hold copy ·
+repair symmetry: send-back UN-PLANTS `a9f2d42` (hints retract + corrections delete + suspect notes;
+corrections queries had NO status filter — that leak is closed), delete/restore `6d61cb0` (mig-53
+marker; re-plant IFF retract proven), C7 plant-side foreign filter `de67cc7`. ⚠ PREMISES CORRECTED:
+the sparse-set "abstention" theory was WRONG (it was the Slice-D miss-fill arm); the Oracle's
+"disagree can't fire on genuine docs" was measured FALSE (the WINNER is the rival on 2-bit
+collisions) — he re-adjudicated; "ref-via-keyword NEVER auto-files" was over-broad (shipped patterns
+score 90; the support boost self-heals at ≥5 confirms). NEXT (2026-07-24 CORRECTION): Slice 1d
+INVESTIGATED → **DO-NOTHING-IN-CODE** (gary + Oracle SIGN-OFF-W/CONDITIONS). The "Stage-0 accepts on
+logo alone" premise was a STORE CATEGORY-ERROR: the Stage-0 veto (`_logo_detail_veto`→`veto_by_detail`)
+reads `template_logo_hashes.detail_hash` (**Store B, 19/21, written UNCONDITIONALLY at confirm-time**),
+NOT the starved Store A `logo_fingerprints.detail_hash` (0/29 = the dark-enrolment/backfill target,
+which feeds the ANCHOR path only). Engine threads the query hash (engine.py:2484). MEASURED live:
+`veto_by_detail` fires 13/13 on the poisoned links, 0/364 false abstains; a fresh `identify_template`
+replay (`stress_test/stage0_detail_veto_probe.py`, veto OFF vs ON) = **0 wrong matches** → the 13 links
+are HISTORICAL DATA, not reproducible today. "Mirror the JS twin" would MISFILE (bare one-sided veto is
+non-separable at Stage-0 — drift p90 96 overlaps impostor floor 86; regresses 268→131 auto-files).
+Owner action = `scripts/poisoned-template-link-sweep.js --apply` (NOT reprocess — the known-id fallback
+re-imposes the poison). Full ledger + seam pins + residual-(b) fix: [[project_slice1d_donothing]].
+Owner live checks still open. **Prior block ↓**
+
+## (prior) Session state (2026-07-23 EVENING) — READ `HANDOVER_2026-07-23_EVENING.md` FIRST
+**2026-07-23 EVENING (Opus 4.8 → Fable 5) — Thornbury live-testing day; 5 commits PUSHED through
+`0ae0f46` (origin in sync `0 0`); tree clean.** `0bbfdce` SFDEV trace shows EVERY field + per-field
+OCR crop thumbnails · `d91da4b` field drag-to-reorder (shared DocTypeEditor, ⠿ handle) · `274276c`
+per-field keyword labels (🏷, reuses label_overrides) · **`1c8243b` E2** — a crop-vs-fullpage
+crosscheck flip auto-accepts when a Stage-1 keyword read normalises-equal (re-based `anchor_inline`
+@90 ≥ the 88 floor; kill `CROSSCHECK_KEYWORD_CLEAR`; corpus A/B: only 117→118 would-auto-file, M=3
+unchanged) · **`0ae0f46`** gate-reread NORMALISATION-ONLY recoveries file clean (0-edit alnum-core;
+dates need strict CALENDAR equality — Oracle C1; kill `GATE_REREAD_CLEAN_ACCEPT`; corpus A/B
+byte-identical). ⚠ DEAD PREMISES, do not re-chase: E1 "oversized taught box" (all taught ref/date
+anchors are SINGLE-ROW h_norm 0.015-0.024 — the 2-row crop is READ-TIME +20px padding bleed) ·
+"keyword corroboration inert on delivery_number" (preset installs seed 8 labels — owner caught it).
+**NEXT SESSION'S BUILD JOB: `ANCHOR_LINE_SELECT`** — per-line crop selection, fully designed +
+Oracle-SIGNED: **`docs/designs/ANCHOR_LINE_SELECT_2026-07-23.md`** is the canonical spec (band +
+per-rung rescale, pins a-k incl. RED-first, slice-2 `ANCHOR_ROW_GRACE` builds DARK). Then:
+owner-requested **doc-TYPE list rearranging** (backend sort_order READY, UI only) + live-test
+drag-reorder/keywords · the **85-vs-88 hold class** (BUILT 2026-07-23 late session, Oracle fork-A:
+`KEYWORD_ANCHOR_CORROB` lift + the weak-critical-field panel copy. FRAMING CORRECTED per Oracle C8:
+the SEEDED/override keyword path caps at 85 by design — shipped patterns score 90 and clear the
+floor — and the class PARTIALLY SELF-HEALS: the Stage-4.5 support boost lifts 85→89 at ≥5 confirmed
+docs in scope; the truly-held residue is young scopes + same-batch first contact + constant-value
+fields, which the corroboration lift now covers when a second located read agrees. The recovered/
+slipfix caps are DELIBERATELY not lifted — anchor.py:1247-1275). P4 CORRECTED: Review already honours sort_order —
+only Search-preview extras (rowid) + the /v1 DTO remain. Corpus facts: 276 docs, ref accuracy 95.3%
+(the weak spot), several "regressions" are poisoned `N-99718`-style GT. **Base block ↓**
+
+## (prior) Session state (2026-07-23) — READ `HANDOVER_2026-07-23.md` FIRST
+**2026-07-23 (Opus 4.8) — a RENDERER-ONLY Review first-run UX fix. Branch
+`feat/reprocess-throughput-autostraighten` PUSHED through `f4463cd` (origin in sync `0 0`); tree clean.**
+Fixed the "first-import user gets lost in Review" hole: the queue defaults to **grouped-by-sender**,
+all groups **collapsed on open**, and on a cold DB every doc's `supplier_name` is null → a single
+collapsed **"—"** bar over an EMPTY pane, nothing selected. **2 commits, both pushed:** `5e0fc80` —
+new PURE `decideInitialSelection()` (grouped view with a SINGLE sender pile auto-expands + opens doc 1;
+**2+ piles → land on nothing**, preserving the collapsed overview; flat unchanged) + made target-nav
+**XOR** auto-land (removes a pre-existing double-select race) + relabel the null pile via
+`groupTitle()` ("Your scanned documents" alone / "Sender not identified" among named piles; per-row →
+"Not yet identified"; **KEY stays `'—'`** so expand/nav unchanged; unidentified pile sunk in the SHARED
+sort but BELOW the `need>0` term so a flagged pile is never buried) + an empty-pane "Start reviewing →"
+CTA (`#preview-cta`, hidden via the single `_clearPreviewState` seam). `f4463cd` — Defer + File-All
+done-paths now `advanceAfterAction()` (land on the next doc in grouped view) instead of blanking the
+pane; the flat-only `selectDoc(queue[0])` pattern is now gone from **all three** sites. Advisors:
+**barry + eric + oracle (SIGN OFF WITH CONDITIONS C1–C4, all met)**. **No kill switch** (renderer-only;
+corpus harness is BLIND to renderer code). **Pinned:** `src/windows/review/test_review_initial_selection.js`
+(16/16 green under `node` — extracts+evals the pure fn, incl. the "2+ groups → select nothing" widening
+guard). Siblings green; `node --check` OK. **⚠ NOT DONE: the live cold-DB smoke** — reopen Review to
+load it; (ii)+(iii) checkable now on the live DB, (i) needs a cold/single-null-pile queue (fresh-install
+run or a seeded copy — do NOT wipe the live 187-confirmed DB). **Prior block ↓**
+
+## (prior) Session state (2026-07-22 NIGHT) — READ `HANDOVER_2026-07-22_NIGHT.md` FIRST
+**2026-07-22 NIGHT (Opus 4.8) — a LIVE CUSTOMER CRASH session. Branch
+`feat/reprocess-throughput-autostraighten` PUSHED through `dde0e39` (origin in sync `0 0`); tree clean.**
+Fixed a production crash **`'bool' object has no attribute 'get'`** on 2 PCs (surfaced BOTH as reprocess
+"No data returned" AND import→Errors): the logo text-gate **`'suggest'`** branch injects
+`results["_needs_review"]=True` (a bool) mid-pipeline (`engine.py:2605`) and the 3 UNGUARDED Stage-0/1/2
+"found" counters (`engine.py:2421/:2783/:3010`) `.get()` it → crash; fires once a supplier's LOGO is learned
+but its page TEXT doesn't corroborate. **`3e3fde1`** = shared `_count_valued_fields()` guard (log-only,
+byte-identical). **INSTALLER BUILT crash-fix-only:** `dist\ScanFinder Setup 2.0.0-r20260722-1742-3e3fde1.exe`
+(does NOT include the label guard — rebuild off `dde0e39` to add it; ⚠ 4 stray `electron.exe` at wrap-up →
+close before building). ⚠ RULED OUT + do NOT re-chase: the parallel reprocess option (`ocr_parallel_reprocess_enabled`)
+AND the `field_rules` multiline rule were BOTH wrong leads. **5 commits, all PUSHED:** `2cbc3ec` **P2**
+foreign-date-field drop at BOTH confirm sites after the auto-file gate (kill `FOREIGN_FIELD_DROP`; shared
+`src/lib/foreignFields.js`; sweep `scripts/p2-foreign-field-sweep.js` found **94** live rows — owner `--apply`) ·
+`bd7eb83` date cross-check by CALENDAR date not raw string (kill `DATE_AWARE_CROSSCHECK`) · `f55bf98`
+garbled-snippet tidy (renderer) · `3e3fde1` the crash fix · `dde0e39` **label caption guard** — a taught
+label ("Item") that leads a HEADING ("Item Information") no longer harvests "information"; nulls the caption
+re-read + emits an empty+note row → review (kill `ANCHOR_CAPTION_HARVEST_GUARD`; Oracle conds 1-6 met; corpus
+A/B OFF-vs-ON **byte-identical**; the geometry occurrence-picker to make teaching auto-STICK is a DEFERRED
+follow-up). Live DB **mig 52, 187 confirmed**. Corpus gate EXITS 1 on the PRE-EXISTING baseline (M=3
+poisoned-GT #190/#7 + OCR misreads), NOT this session's fixes (crash fix log-only; label guard A/B empty diff).
+**Base block ↓**
+
+## (prior) Session state (2026-07-22 LATE) — READ `HANDOVER_2026-07-22_LATE.md` FIRST
+**2026-07-22 LATE adds to the below:** this session's unit tests all RAN GREEN (P1/audit/P3/P5); P1 scope
+corrected to **JS-only** (`bc677d1`); **P3 BUILT+PUSHED** (`4e0af32`, wizard 12s self-close, eric-signed,
+kill `WIZARD_TEARDOWN_FIX`); **P5 BUILT UNPUSHED** (`0849579`, alphabetical Template Manager, kill
+`TEMPLATE_VIEWER_ALPHA`). Origin at `5db3590`, **1 commit ahead**. Open: H2 owner decision · P2/P4
+designs · installer rebuild + owner live-test of P3/P5/teach. **Base block ↓**
+**2026-07-22 (Opus 4.8) — the night run + a security-audit remediation pass; branch
+`feat/reprocess-throughput-autostraighten` has **11 commits UNPUSHED** on top of origin `370d04d`
+(`f6d85b5`→`90ecaf7`). Tree clean except this session-state refresh.** The LATE handover's UI batch is
+now COMMITTED (`f6d85b5` cards, `1618f77` wizard height, `f9bc202` teach batch — **still none owner-tested**).
+**P1 BUILT** (`ac7bdb3`): `repairSuspects.detectRefPrefixOutliers` (JS, kill `REPAIR_PREFIX_MISMATCH`) —
+suggestion-only Learning-Repair flag for a ref whose alpha prefix (DN/PO/SO/INV) disagrees with the
+type's dominant one. **JS-ONLY by deliberate reggie+Oracle decision** — the "one side or both" answer is
+**JS-only + a Python tripwire**: `format_anomaly_checker.shape_signature` stays PREFIX-BLIND on purpose
+(prefix-awareness at extraction time would fail-toward-review-violate on a new supplier), pinned by
+`test_format_shape_consistency.py` §8. Do NOT port the rule into Python. Tests green (JS 27/27 + Py §8). **P3 BUILT** (`4e0af32`, kill
+`WIZARD_TEARDOWN_FIX=0`): the first-run wizard's 12s self-close — `openMainShell`'s teardown now
+identity-scopes the captured cover-window instances + tears down synchronously on the reuse branch +
+stores/clears the backstop timer (`src/lib/coverTeardown.js`, pin `test_coverteardown.js` 19 checks;
+eric SIGN-OFF-W/CONDITIONS, all met). **⚠ needs an owner FULL-RESTART to confirm live** (main-process
+change); does NOT fix the separate "Re-run reopens a stale wizard on its old step". **P5 BUILT** (2026-07-22,
+kill `TEMPLATE_VIEWER_ALPHA=0`): Template Manager roster now ALPHABETICAL by name — sorted in the
+viewer-only wrapper `templates.getAllWithLiveCounts` (its sole non-test caller is the `get-templates`
+IPC); the matcher-facing `templates.getAll` count-desc order is left BYTE-IDENTICAL (pinned in
+`test_template_confirmed_count.js` with divergent names). **P2 DIAGNOSED, P4 DESIGNED** (`b0739ca`, docs
+in `docs/designs/`): P2 fault(b) root cause = generic Stage-1 date patterns all carry a bare `"Date"`
+label, so a delivery docket's `Date:` fills invoice/order/po_date alike (Option A storage-seam fix
+recommended, NOT built). **SECURITY AUDIT `SECURITY_AUDIT_2026-07-21.md` — 6/7 FIXED:** H1 CA-key-at-rest (`8546932`,
+`src/lib/secretStore.js`) · M1 secure_delete (`75634be`) · M2+M3 `/v1` session-revoke + TOTP re-auth
+(`90ecaf7`) · M4 nav lockdown (`3555c73` `src/lib/navGuard.js`) + CSP `'none'` sweep (`12c9da1`) · M5
+empty-array backup guard (`596c083`). **H2 (LAN pairing TOFU) is the ONLY open finding — DESIGN ONLY,
+needs OWNER Path-A-vs-B call** (`docs/designs/AUDIT_H2_PAIRING_2026-07-21.md`; add-on OFF by default = no
+live exposure). ⚠ **UNVERIFIED: no test suite / corpus gate was RUN this session — unit tests authored,
+not proven green.** Installer predates all 11 commits → REBUILD before any live test. Nothing pushed.
+
+## (prior) Session state (2026-07-21 LATE) — `HANDOVER_2026-07-21_LATE.md` (NIGHT RUN NOW DONE — see 07-22)
+**2026-07-21 LATE (Opus 4.8) — UI session; branch `feat/reprocess-throughput-autostraighten` was
+pushed through `370d04d`** (verified `git rev-list --left-right --count @{u}...HEAD` = `0 0` —
+the earlier "7 commits ALL UNPUSHED" note below is STALE, do not re-push). **(This batch is now
+COMMITTED as `f6d85b5`/`1618f77`/`f9bc202` — see the 07-22 block; still NONE owner-tested.)** (1) `onboarding/index.html` **first-run cards** — a `theme.css` `.card + .card{margin-top:16px}`
+leak knocked every row-card after the first down 16px (the long-standing "second card doesn't line up");
+cancelled + selected card grows via **flex-grow NOT scale** (scale overlapped the wide Accuracy row) —
+owner said "this is better" · (2) `main.js` **wizard height 720→820**, screen-clamped via new
+`onboardingWindowOptions()` (fixed-size window must fit its TALLEST step; step 1 grows ~95px when
+"Choose a folder" reveals the path row) — NOT yet seen running · (3) `teach/{index.html,renderer.js}`
+**teach batch** (7 changes): native-resolution crop = **OCR parity with Review** (fixes teach reading
+`SO-51261` as `$00-51261`; kill `TEACH_NATIVE_CROP=false`), **Issuer taught POSITION-ONLY** (no phantom
+label anchor; same rule as Review RC2), read-back panel moved to the banner via one `setConfirm()` seam,
+`.pact`/`.ptitle` prompt emphasis via one `setPrompt()` (⚠ the "What to do now" GUIDANCE BAND was
+REJECTED — do NOT rebuild), page-preview doc picker + 1.5× default zoom. **WIZARD SELF-CLOSE ROOT-CAUSED
+(not fixed):** `openMainShell()` arms an uncancelled `setTimeout(teardown,12000)` (`main.js:210-217`)
+whose `destroyWindow('onboarding')` resolves the window at FIRE time, so any wizard alive 12s after any
+`openMainShell()` is destroyed — and on a re-run the main-shell reuse branch skips `loadFile` so
+ready-to-show never fires and the 12s timer is the ONLY teardown. Fix = run teardown synchronously on the
+reuse branch + identity-scope it + clearTimeout (eric-gate). **Corrections to CLAUDE.md:** live DB is at
+**mig 52** (not "51 until next start"); opt-in diagnostics IS built (`telemetry.js` + mig 42 + Settings
+toggle + wizard card, OFF by default — not "DESIGNED but NOT built"). **The AUTONOMOUS NIGHT RUN this
+block planned (§7) HAS RUN — P1 built, P2 diagnosed, P3–P5 designed; see the 07-22 block for outcomes.**
+Installer `...r20260721-1010-581d626.exe` predates the 07-22 commit stack → REBUILD before live-test.
+
+## (prior) Session state (2026-07-21) — READ `HANDOVER_2026-07-21.md`
+**2026-07-21 (Opus 4.8) — 7 commits, ALL UNPUSHED on `feat/reprocess-throughput-autostraighten`
+(`f08f131`→`8f41e95`); tree clean.** Overnight SECURITY AUDIT delivered (`SECURITY_AUDIT_2026-07-21.md`,
+gitignored: DB not encrypted → recommend disk-level; licensing self-grant main-process-only; PHP
+hardening inert until IONOS). Then, live-testing: (1) `581d626` **label-as-value** — a taught 'below'
+anchor no longer commits its own caption garble (order A→C→D→B; kills `NAME_HOLD_ADMIT_OVERRIDE`/
+`LABELLOCK_INLINE_PROVENANCE`/`CAPTION_BAND_REJECT`) · (2) `666258a` **identity self-poisoning** — the
+`TEMPLATE_SUPPLIER_LINK_GUARD` confirm path voted the doc-being-confirmed for its own stale identity
+(the "Copperfield sticks after re-teach" root cause); `getDominantSupplier`/`establishedIdentity` now
+take `excludeDocId` (kill `TEMPLATE_GUARD_SELF_INDEPENDENT`) · (3) `27d54b7`+`5760489` **Search UI** —
+vertical rail + zoom/pan + expandable details + ↑/↓ cycle · (4) `1234814` **box-width learning**
+(migration **52** `field_anchors.max_w_norm` high-water; DARK behind `ANCHOR_MAX_CROP_WIDTH`; live DB
+**IS at 52** — the "still at 51" note was superseded once the app restarted) · (5) `80d532c` **letter-spacing type recovery** — "PU RC HASE ORDER"→
+Purchase Order via top-band collapsed-equality + Seam-B heading force (default ON `HEADING_LETTER_SPACING`;
+multi-word-only guard) · (6) `8f41e95` audit-log View buttons styled. **Installer
+`...r20260721-1010-581d626.exe` predates commits 2–6 → REBUILD before owner live-test.** Non-bug: filed
+files show scan mtime (copyFileSync preserves it), not a filing bug. Poisoned GT: doc #190
+LarkspurInteriors_purchase_order_08 mis-confirmed as delivery_note. **QUEUE (diagnosed, not built):**
+first-run-wizard output-folder-not-copying-on-a-different-PC (REAL, unstarted) · per-template field
+HIDING (superset-locked, structural-protected) · keyword-per-field (backend done, UI left) · po_date
+corroboration date-separator exemption · worksheet line-merge mode-3 (diagnose doc-156 A-vs-B first) ·
+buyer-issued Supplier→issuer guard trace · `LETTERHEAD_ISSUER` flip · **TEACH-WIZARD PROMPT EMPHASIS — DONE 2026-07-21, uncommitted**
+(owner: the wizard is hard to follow — "you don't know what to do next, so you find yourself looking for
+the instruction". ⚠ A "What to do now" GUIDANCE BAND above the pane was built and **REJECTED by the owner
+as "too much" — do NOT rebuild it.** The accepted answer is far smaller: make the EXISTING step-3 banner
+stand out by splitting the prompt into a quiet ACTION line + the FIELD NAME as a title
+(`.pact`/`.ptitle` in `teach/index.html`; single `setPrompt(action,title)` helper in `teach/renderer.js`
+so a later prompt can't lose the emphasis). Awaiting owner test) ·
+**FIELD ORDER UNSTABLE ACROSS DOCS** (owner 2026-07-21, Search pane + probably the detached client:
+the same type's fields appear in a DIFFERENT order doc-to-doc. LEAD, evidenced: `getWithExtractions`
+`database/modules/documents.js:126` is `ORDER BY rowid` = the order the PYTHON ENGINE happened to emit
+fields for THAT doc, which varies by which stage won — so it is arbitrary per document. `fields.sort_order`
+ALREADY EXISTS (`database/index.js:1205`, default 100) and is the intended canonical order. Fix = order
+displayed fields by the type's `sort_order` (fallback rowid) at the SHARED seam so Review/Search/client
+all agree; then ADD drag-to-reorder in the Doc Type editor writing `sort_order`. ⚠ structural roles
+issuer/date/ref must stay reorderable-but-never-deletable; check the /v1 DTO contract before changing
+client-visible ordering) · **"RE-RUN SETUP" REOPENS A STALE WIZARD, NEVER A FRESH ONE** (found 2026-07-21 while styling
+the cards. VERIFIED: `close_to_tray` defaults to `'true'` (`main.js:655`), and onboarding is in
+`PRIMARY_WINDOWS`, so the window X **hides** it (`main.js:571-578`) instead of destroying it.
+`showOnboarding()` (`main.js:220`) then calls `createWindow`, which REUSES a live window —
+`.restore()/.show()/.focus()` and returns WITHOUT `loadFile` (`main.js` createWindow reuse branch).
+So Settings→Advanced→Re-run setup re-shows the wizard **on whatever step it was left on, with the
+previous field values and stale renderer state** — it does not restart setup. Also means renderer
+edits to onboarding/login/license/main need a FULL APP RESTART, not a window reopen (child windows
+like teach/review/settings/search DO reload — they are destroyed on close). FIX DIRECTION: have
+`showOnboarding` reload/reset when reusing (e.g. `loadFile` again), so the wizard always starts at
+step 0. ⚠ Check the same reuse-without-reload seam on login/license before changing createWindow
+itself) · **"MIGHT NOT BELONG" IS BLIND TO A REF-PREFIX OUTLIER** (owner 2026-07-21, doc **#190**
+`LarkspurInteriors_purchase_order_08.pdf` — a PURCHASE ORDER confirmed as a DELIVERY NOTE, with
+`PO-21275` stored in Delivery Number while every sibling reads `DN-#####`. ROOT CAUSE **VERIFIED, not
+hypothesised**: `repairSuspects.shapeSignature` (`src/services/repairSuspects.js:36-45`) maps EVERY
+letter to `@`, so `PO-21275` and `DN-70795` BOTH reduce to `@@-#####` — identical. The detector
+discards the only differing token, so this class is STRUCTURALLY invisible; no threshold tuning can
+ever surface it (B1 at :182 and the pool check at :239 both compare shapes only). FIX DIRECTION: learn
+the dominant ALPHABETIC PREFIX / literal token per (doc-type, field) alongside the shape and flag a
+strong-dominant mismatch — owner: "needs to be smarter than a 1-char swap". ⚠ Mirror lives in
+`format_anomaly_checker.shape_signature` (python) — keep the two aligned or they drift. NOTE doc #190
+is ALSO the known poisoned-GT doc, so fixing this detector would have caught the poisoning itself) ·
+**IRRELEVANT DATE FIELDS ALL FILLED WITH THE SAME VALUE** (owner 2026-07-21, seen in Learning
+Repair on `IronbridgeFabrication_delivery_docket_04.pdf`: a DELIVERY NOTE shows Delivery Date **and**
+Invoice Date **and** Order Date **and** Po Date, all four = "12-06-2026", while the real Delivery Date
+read as the garbled "2 12/06/2026" and got flagged. TWO separate faults: (a) a delivery note carries
+invoice/order/po date fields AT ALL — CLAUDE.md already records that extraction runs against the UNION
+of all installed types' keys, so a date lands in every date-ish key; (b) one date value is copied into
+every one of them, which then feeds learning as if corroborated. Overlaps the per-template field HIDING
+item but is NOT the same thing — hiding is display-only, this is bad DATA being stored and learned.
+Diagnose which stage writes the duplicates before designing) · **TEMPLATE MANAGER ALPHABETICAL** (owner 2026-07-21. LEAD: `templates.getAll`
+`database/modules/templates.js:32` sorts `confirmed_count DESC, name`. ⚠ SEAM — that same `getAll` feeds
+the sibling tiebreaks and "the order templates reach the matcher" (`277a107`/`TEMPLATE_LIVE_COUNTS`), so
+do NOT re-sort the query; sort in the Admin Template VIEWER only, or add an explicit display-order arg).
+
+## (prior) Session state (2026-07-20) — full detail in `HANDOVER_2026-07-20_LATE.md` + `docs/session-log.md`
+**LATE SESSION 2026-07-20 (Fable 5) — READ `HANDOVER_2026-07-20_LATE.md` FIRST.** All pushed
+through `2a81124`, tag `milestone-20260720-identity` (owner-marked good point). **CURRENT installer
+`dist\ScanFinder Setup 2.0.0-r20260720-2050-2a81124.exe`** — every earlier one is stale. The live
+DB was WIPED ~21:00 for a fresh-install test (migration 51); the OLD 213-doc misfile corpus is
+preserved at `%APPDATA%\ScanFinder\docusnap.backup-20260720-misfile-corpus.db` (replayable via
+`TEMPLATE_PROBE_DB`).
+**THE FRESH SESSION'S BUILD JOB — the LABEL-AS-VALUE plan (Oracle-ruled, NOT built).** A correctly-
+taught 'below' anchor commits a garble OF ITS OWN LABEL ('Vetiver 10'≈"Deliver To") as
+customer_name — 12/20 live Ridgeway dockets, 7 of 12 UNFLAGGED; on a graduated supplier the class
+silently wrong-files. Root causes (007 instrumented replay, all code-verified): the OCR ladder's
+preview fast path re-crops the FULL PAGE from the UNCLAMPED box (anchor.py:2335-2347/:2402/:2448 —
+restores the caption band the :525 clamp excluded; `clean_crop_segment` takes the FIRST line) · a
+swallowed NameError at :578 (bare except :598; fixing it ALONE makes inline junk MORE Tier-A-
+eligible — sequencing load-bearing) · flag family structurally capped
+(name_quality('Veliver to')=1.0 == 'Denver Trading') · merge hold dead on `keyword_override`
+(engine.py:255 checks =="keyword") · Tier-A ignores confidence. **Build order A→C→D→B** (ladder
+clamp → composed reject [bare fuzzy-echo vocab AND window-overlaps-caption-band; content alone
+CANNOT separate: gary's full-label echo misses 'Vetiver 10' at 0.444, the bare vocab falsely
+rejects 'Denver Trading' at 0.286] → keyword_override one-token → NameError fix; E crop-first
+DEFERRED). Full plan + merge gate: memory `project_label_capture_plan.md`. ⚠ DATA HYGIENE: the 12
+garble docs are in the review queue — confirming one plants the garble into learning; reprocess
+after the fix, or correct Customer per-doc first.
+**GEOMETRY SLICE BUILT+MEASURED, still DARK (`2a81124`, LETTERHEAD_ISSUER=0):** words_out threads
+page-0 rows/heights → `pick_issuer(geometry=)`; COLUMN-SEGMENT candidates, LINE-level heights
+ratioed to med_h, fragment-yields-to-superset. Real scans 0%→**67% correct** (117/174, 13 garble
+fragments, 44 honest abstains), synthetic 45/45. Flip = owner+Oracle decision. Corpus byte-identical
+proven on a SAME-DB stash pair (mid-session A/B is invalid while the owner confirms — re-pair).
+**Earlier today (see EVENING/daytime handovers):** trust gate `eb79638`, issuer band `e8f3a6c`,
+detected-type nudge `0f3c8e9`, word-geometry hand-off `1bc144e` (now consumed by the slice above).
+**Five PRE-EXISTING test failures catalogued by stash-bisect (NOT today's work, un-triaged):**
+test_anchor_crop_crosscheck(3) · test_late_anchor_rescue(7) · test_template_rescue(1) ·
+test_field_data_types(silent) · test_identity_fusion(known).
+**THE 10 template_fixed MISFILES ARE FIXED (late evening 2026-07-20, `705da10`→`7c541fa`)** — full
+investigation → gary+Phillip design → Oracle SIGN-OFF-WITH-CONDITIONS → built in his order. Five
+kill-switched slices, ALL ON: `TEMPLATE_SUPPLIER_LINK_GUARD` (the confirm-time reinforcement loop —
+Oracle's blocking catch: a corrected confirm bumped/appended/diluted/landmark-sampled the WRONG
+template; guard at BOTH the reviewService confirm seam and `_upsertTemplate` Part E) ·
+`TEMPLATE_GATE_DISTINCTIVE` (Stage-0 gate on distinctive tokens — V1 was defeated 3 ways: the
+logo+slug bypass, junk 'INV'/'Industrial' stored tokens, and a rival bar unreachable by cross-type/
+customer-leaked fingerprints; V2 = per-identity banks + supplier-NAME arm, fuzzy, issuer-band) ·
+`BRANDING_DISTINCTIVE_TOKENS` (engine banks, parity-pinned) · `FINGERPRINT_HYGIENE` (digit-glue
+harvest skip + confirmed-customer-token subtraction; stored leaks HEAL via the update intersect) ·
+`BRANDING_NAMED_BLANK` (a named-rival-contradicted `template_fixed` value blanks + keeps the "Use"
+button; locked/un-named/non-template NEVER blank). **Gate: `stress_test/template_gate_probe.py`**
+(permanent live-DB replay — realdoc_regression is BLIND to this class): 52/52 wrong-match outcomes
+healed (the 10 + the Larkspur-class), false-abstain 0; corpus ON == baseline byte-identical.
+**The 6 misfiled Vellum docs in review are safe to correct+confirm once a build with the guard is
+installed** (needs an installer REBUILD — the current one predates all of this). Residual, honest:
+a FULLY cold supplier (no template/hints/name anywhere) still accepts + flags with the wrong name —
+that is the letterhead cold-start thread's job, not this fix's.
+
+**Branch `feat/reprocess-throughput-autostraighten` — ALL PUSHED through `2a81124`, working tree
+clean. (Installer note superseded — the CURRENT installer is `...r20260720-2050-2a81124.exe`, see
+the LATE session block above.) Daytime detail: `HANDOVER_2026-07-20.md` (then
+`HANDOVER_2026-07-19.md`).**
+- **OWNER-REPORTED LIVE BUGS FIXED 2026-07-20** (all root-caused from their log + a copy of the
+  second machine's DB, all corpus-gated byte-identical): **`04a6af1` the FRESH-INSTALL TYPE HOLE** —
+  a type detected from the SHIPPED keyword buckets but NOT installed (Delivery Note is a PRESET, not
+  a built-in) left `detected_slug` None, which silently DISARMED **both** type-refuse guards, so a
+  same-supplier PO template stamped its slug on delivery dockets; now the slug is DERIVED
+  (`_slug_from_type_name`, parity with JS `safeSlug`; kill `DETECTED_SLUG_FALLBACK`) ·
+  **`277a107` `templates.confirmed_count` was ALWAYS 0** (only bumped on the taught-confirm branch) —
+  NOT cosmetic: it feeds the sibling tiebreaks at `template_matcher.py:179` + `engine.py:696` and the
+  order templates reach the matcher, all inert at 0; `getAll` now serves the LIVE count
+  (`liveConfirmedCounts` returns **null**, not an empty Map, when uncountable so a fixture without a
+  `documents` table keeps the stored value; kill `TEMPLATE_LIVE_COUNTS`; a pin asserting "getAll is
+  UNTOUCHED" was deliberately flipped) · **`0107331`** a GARBLED caption on the RELOCATED crop (the
+  exact check was relocate-only, the fuzzy check rigid-only — a garbled relocate fell between them) ·
+  **`53ceea9`** Review now says WHY a clean doc waits below the auto-file threshold.
+- **UNTYPED-DOC REVIEW MESSAGE FIXED `39e8142`** (gary design → Oracle SEND-BACK-WITH-CONDITIONS;
+  his C1 IS the commit): a null-type doc used to fall through to the clean-hold branch and be told
+  "just below the X% you've set — lower the threshold", which is FALSE at any threshold because
+  `trust.js` refuses `no-type` unconditionally; `validateConfirm` also disabled Confirm with NO note.
+  New FIRST branch in `renderReviewReason` **gated on `document_type_id`, NOT on any detected name**
+  (the advice is wrong for EVERY untyped doc; detection usually returns nothing at all) + a note on
+  the no-type Confirm return. ORDERING is the load-bearing property — pinned by
+  `src/windows/review/test_review_untyped_reason.js` (8 checks red pre-fix). **STILL OPEN (gary's
+  slice 1 tail, Oracle C2/C3/C5/C6): `detected_type_name`/`detected_type_conf` columns (migration 51
+  is free) + the "Add '<type>'" button. TRAP to solve first — extraction ran against the union of
+  all installed types' keys, so add-type → auto-select rebuilds rows by key and every field goes
+  BLANK; add-a-type must be followed by a REPROCESS (safe: reprocess forces needs_review and
+  `_maybeAutoFile` has ONE call site, the import `file_done` path) or must not auto-select. Also:
+  clear the columns wherever a type is later assigned, and `document_type` can be template-overridden
+  while `type_confidence` is always the keyword score (don't pair them blindly).**
+  ⚠ `realdoc_regression.js` spawns `process_docs.py` DIRECTLY — it is structurally blind to every
+  Electron/renderer change. A green corpus run proves nothing about renderer work.
+- **DETECTED-TYPE NUDGE BUILT `0f3c8e9`** (the tail above, Oracle C2/C3/C5/C6): **migration 51**
+  `documents.detected_type_name` (NULL-inert; set ONLY when a detected name matches no installed
+  type; **name only — no confidence column**, since `type_confidence` is a keyword-bucket score and
+  `document_type` can be template-overridden) · one helper `_resolveDetectedType` at BOTH insert
+  seams, reprocess **CLEARS** via plain assignment not COALESCE (else the suggestion outlives the
+  type being added) · Review's untyped notice gains "Add '<type>'" which **adds AND RE-READS** —
+  auto-select alone BLANKS every field, because extraction ran against the union of all installed
+  types' keys (Oracle's best catch) · **NO slug fallback** (would newly resolve types exact matching
+  misses = a live `document_type_id` change; pinned out) · kill `DETECTED_TYPE_NUDGE=0`. PIN A: a
+  named detection never adopts Generic. Guarded by `test_detected_type_nudge.js` (whitelist trap
+  proven red first). **UNCLICKED — needs an owner fresh-install run with dockets.**
+- **AUTO-FILE TRUST GATE — non-role shape leniency, DEFAULT ON `eb79638`** (built dark `5f88791`;
+  Barry+gary designed, **Oracle SENT BACK and the shipped design is his**). Sub-100 auto-file
+  required EVERY valued field to pass `valueMatchesShape`, which returns false for `'freetext'` BY
+  DESIGN — so a per-document customer name made the gate UNSATISFIABLE and **graduation unreachable
+  for any doc carrying one**. Measured: 29 docs held, 25 of them among 156 already hand-confirmed.
+  **THE TRAP THAT KILLED TWO DESIGNS:** `item="Information"` is a misread that GETS CONFIRMED, which
+  collapses its own field to freetext — so a blanket freetext exemption **disarms the guard exactly
+  when the field is poisoned** (today's blanket block fails SAFE under contamination; both proposed
+  designs failed OPEN). Also rejected: keying on `isNameLikeField` — it matches on SUBSTRING, so
+  `customer_order_number`/`company_reg_no` are "name-like" CODE fields; it was built for
+  `_buildTemplateFields` where over-inclusion is safe, here it inverts. **SHIPPED:**
+  `_dominantStructuredClass` (≥5 samples, ≥75%) consulted ONLY in the lenient branch — 14 codes
+  outvote one intruder, 11 varied names abstain. Do NOT change `classifyLearnedShape` itself (it
+  feeds `scopeTrust`, and reclassifying there widens GRADUATION). NULL/dangling role ⇒ NO leniency
+  (the 88 floor is already a no-op there — two guards off at once). Gate: corpus A/B 50→82
+  would-auto-file, **M unchanged at 1**, M_type 0, accuracy byte-identical. Kill
+  `TRUST_NONROLE_SHAPE_LENIENT=0`. Pins: `test_scope_trust.js` §18b (contaminated history — FAILS
+  against the rejected design) + §18c (NULL-role) + the both-directions trade-off pin.
+- **REVIEW HOLD REASON IS NOW AUTHORITATIVE (`5f88791`, Oracle merge precondition)** — the panel
+  derived its message from the confidence threshold and claimed that was "truthful by construction".
+  **FALSE once graduation is active** (effective floor = min(threshold, 95)), and wrong BOTH ways: a
+  gate-held doc was told to lower a threshold that cannot help it, and a graduated doc ABOVE its
+  floor was told **"Ready to file"** about a doc the predicate had refused. New `get-auto-file-reason`
+  IPC returns the SAME predicate's verdict; the panel names the blocking field. **THIRD false
+  hold-reason of this class fixed 2026-07-20** (`39e8142` untyped, this one, + the nudge copy) —
+  when Review explains a hold, it must read the real verdict, never re-derive one.
+- **ISSUER BAND for known-supplier text matches `e8f3a6c`** (gary design → Oracle SIGN-OFF-WITH-
+  CONDITIONS C1-C4). `engine.py` Stage 2.5a matched a known supplier HINT anywhere in a raw
+  `ocr_text[:600]` slice whose docstring called it "the issuer band" — it isn't: the RECIPIENT name
+  sits ~160-180 chars in on real docs, so the CUSTOMER was admissible evidence for the ISSUER.
+  Now `_issuer_hint_band` truncates at the first recipient marker via `chrome_band.issuer_chrome`,
+  keeping the 600-char REACH (`_HINT_BAND_LINES=40`) — chrome_band's own `max_lines=6` default is
+  NOT used and must NOT be moved (it is calibrated for TOKEN-RATIO consumers like
+  `_identity_text_sufficient`; this consumer is an all-or-nothing substring test). Kill
+  `ISSUER_HINT_BAND=0`. **THE REWARD IS ON THE GRADUATION ARM, not the swap arm** — graduation swaps
+  a NOTED fill for an UN-NOTED one and `trust.js` refuses auto-file on any note BEFORE the floor
+  check, so the note IS the human checkpoint; its stated evidence standard (`engine.py:3024`) had
+  never matched the code. **Oracle C1 (the blocking catch): the swap arm has NO else** — suppressing
+  a match left an IMPLAUSIBLE incumbent ('IN') standing as the filing + learning scope, unnoted; it
+  now blanks with a note, DELTA-SCOPED to only where the legacy slice would have matched.
+  HONEST SCOPE: marker-bearing layouts only — a marker-free "To:"-first page still gets the legacy
+  window. Accepted+pinned costs: issuer-RIGHT two-column loses its match; a two-row-wrapped name is
+  newly matchable. **Does NOT fix the buyer-issued vendor-caption class** (needs a type-aware slice;
+  do NOT add supplier/vendor/seller to `_RECIPIENT_MARKER` — type-blind, 3+ consumers, and
+  "Supplier: ACME" is the issuer's own self-declaration on a supplier-issued form).
+- **⚠ THE ISSUER IS ONLY FINDABLE BY A CAPTION — the structural cold-start hole (OPEN)**. Traced
+  2026-07-20: `Vellum & Crane Stationers` is OCR line 1 and `supplier_name` comes back null.
+  `field_patterns.supplier_name` is caption-only (Bill From/Supplier/Vendor/Issued By/Billed By/
+  Seller/Company Name/Business Name) and real letterheads carry NONE; `position_hint:"top_third"`
+  is DEAD CONFIG (read nowhere). The RECIPIENT *is* captioned (`Bill To`, base_confidence **78** vs
+  the issuer's **40**). EVERY other issuer path (template/logo/hint-scan/branding) is
+  learning-dependent ⇒ dead on a cold DB. 007: the geometry that would fix it (word boxes, heights,
+  `med_h`) is COMPUTED THEN DISCARDED at `ocr/tesseract.py:239` — `keyword.py` gets a bare string, so
+  "largest text in the top band" is UNREPRESENTABLE, not merely unimplemented. Designed, NOT built:
+  a `letterhead.py` SUGGESTION-only reader (it only ever has to carry doc #1 — after one confirm,
+  learning resolves the supplier forever, so it never needs authority to assert).
+- **⚠ RECURRING TRAP — THREE stale fixtures fixed in one day, all one class** (`71ffc8d`, `0f3c8e9`):
+  a `documents`/`templates` test fixture that never gained a column production gained. Because
+  `documents.insert()`/`templates.create()` name every column, the INSERT fails outright and EVERY
+  downstream assertion reads as a PRODUCT regression ("the failure-row producer regressed"). SUSPECT
+  THE FIXTURE SCHEMA FIRST. Also: `documents.update()`'s `allowed` whitelist SILENTLY DROPS unknown
+  keys — a column added to `insert()` but not there writes once and can never be cleared.
+- **THE TWO PRE-EXISTING TEST FAILURES ARE FIXED (`71ffc8d`)** — both were stale, not regressions:
+  `test_reprocess_type_flip.py` unpacked a 5-tuple from `doc_overrides` (6 since the supplier-pin
+  work), and its own shape pin was red too so it never flagged it; `test_promote_custom_doctype.js`
+  had a fixture predating `logo_detail_hash`/`detail_hash` (mig 47), so the promote died on
+  "no such column" and EVERY later assertion cascaded off that one error. A stale pin there was
+  deliberately flipped: it asserted a recipient `customer` name freezes as a template `fixed_value`,
+  which contradicts `_buildTemplateFields` rule (B) — only the ISSUER is legitimately constant.
+- **WORKFLOW SUITE — engine COMPLETE for single-hop; 2 slices left, neither blocking**: built =
+  slice 0 (authz) · 1 (reveal core) · 2 (decision snapshot) · 3 (amount routing) · routing-settings ·
+  FYI non-locking · E1 admin cancel. REMAINING = **slice 5 delegation+escalation** (a real feature,
+  not a prerequisite) and **slice 6 PACKAGING FLIP** (unbundle from the client seat + backend SKU +
+  entitlement card — this is the go-live switch). Slice 4 multi-step DEFERRED (Barry). The temp
+  `WORKFLOW_FEATURE_ENABLED=true` flip is REVERTED (`14a7d2e`) — the suite ships dark; flipping it
+  locally for testing turns `test_entitlement.js` red, which is expected, not a regression.
+- **FYI NON-LOCKING slice BUILT 2026-07-19 (Barry→gary/eric→Oracle C1–C8, 20-suite gate green)** —
+  only open APPROVE routes lock (`hasActiveApprovalRoute`, NOT-acknowledge polarity incl. NULL;
+  env `WORKFLOW_ACK_LOCKS=1` restores old locking); delete now CLOSES open routes as 'recalled' +
+  "Document deleted by <name>" at ALL SIX soft-delete doors (five were unguarded — pre-existing
+  approve-strand hole fixed; **/v1 delete also GAINED editGuard**, was a remote authz hole); rule
+  builder offers "for approval / for information"; mailbox shows "For your information"/"Got it"
+  (display-only). Spec+conditions `docs/designs/WORKFLOW_FYI_NONLOCKING_2026-07-19.md`. KNOWN:
+  `test_entitlement.js` fails while the temp flag flip is in the tree (revert to clear).
+- **E1 ADMIN CANCEL-ROUTE ALSO BUILT 2026-07-19 (gary GO-W/CHANGES + eric + Oracle OC1–OC4;
+  19-suite gate green)** — `workflowService.adminCancelRoute` (admin-only both layers; pending AND
+  claimed; CAS; comment ALWAYS "Cancelled by <name> (administrator)" = the third 'recalled'
+  producer discriminator; conditional workflow_status stamp; `admin_cancelled` badge-only event;
+  heals routes on deleted docs/recipients — NEVER add a ROUTABLE_STATES check there) + 3 IPCs
+  (`workflow-admin-cancel` / `workflow-doc-routes` access-gated per SEC-03 / `workflow-open-routes`)
+  + Search-preview routed-banner (self-populating `.wf-routed`, two-step confirm, no native
+  confirm()) + Settings→Workflow "Open routes" list (THE discovery surface — system routes appear
+  in nobody's Sent; deleted-doc rows included as the legacy-strand healer). Spec
+  `docs/designs/WORKFLOW_ADMIN_CANCEL_2026-07-19.md`. The workflow feature is now
+  PRE-LAUNCH-COMPLETE per the handover checklist. **NEXT:** owner live tests (print/Ricoh; a
+  click-through of the rule builder + FYI flow + cancel surfaces while the flag is on) → revert
+  `WORKFLOW_FEATURE_ENABLED` to false before any push/build → push decision (23 commits).
+- **Workflow suite**: Slices 1–3 + the routing-settings slice ALL BUILT, DARK behind
+  `WORKFLOW_FEATURE_ENABLED=false` (entitlementService.js). Routing = a separate step at the FILING SEAM
+  for EVERY filed doc (auto-filed via `workflowService.assignSystem` null-sender + reviewed + File-All-Ready),
+  admin rules in a hidden Workflow Settings tab. Spec `docs/designs/WORKFLOW_ROUTING_SLICE_2026-07-19.md`;
+  Slice-1 plan `docs/designs/WORKFLOW_SLICE1_BUILD_2026-07-18.md`. Multi-step routing DEFERRED (Barry).
+- **⚠ AWAITING OWNER LIVE TEST**: print flow fix `75206fb` (does the Ricoh spool paper? z-order OK?) —
+  Electron 31 CANNOT show the classic Windows print dialog (Win11 behaviour; print callback UNRELIABLE —
+  modal is callback-independent); clean native rebuild BANKED in `docs/designs/NATIVE_PRINT_2026-07-18.md`
+  (C2: compiled C# helper, NOT .ps1). Also pending: Generic-Document owner smoke; reprocess-parallelism
+  load test (`ocr_parallel_reprocess_enabled`); Filing Slips real-MFD pilot (then slice 5 watch parity
+  BEFORE default-ON).
+- **Recently shipped, DEFAULT OFF unless noted**: Filing Slips slices 1+2 (synthetic pilot PASSED);
+  Generic Document type + Auto-Title (6 slices, `4a4abe4`); template convergence M2/M3
+  (`TEMPLATE_REUSE_BY_BRANDING` — ⚠ open: real-DB duplicates have no landmarks → merge won't fire, see
+  `docs/designs/TEMPLATE_CONVERGENCE_2026-07-17.md`); supplier PIN + resolve-the-issuer (`SUPPLIER_PIN`);
+  single-doc reprocess parallelism B+C. DEFAULT ON: accessService authz gate (SEC-03 fix, `f8299d4`);
+  auto-file critical-field floor (88); Slice D 256-bit logo detail; OCR warm worker pool; the 2026-07-09→15
+  extraction-guard family (see the archive).
+- **Security**: work `SECURITY_BACKLOG.md` (repo root, gitignored, LOCAL-ONLY) one-by-one; proactively
+  flag holes any new feature exposes. **CODE-FIXED + Oracle-signed: SEC-01/02/06/14 (`aad2141`,
+  `bd82a9e`) · SEC-05 (`07d01af` + `98da251` = its Oracle C1/C2/C3) · SEC-13/15/19 (`10bb9e1`).**
+  ALL INERT UNTIL DEPLOYED TO IONOS. Owner gates V7 (live `REMOTE_ADDR` — load-bearing for SEC-01)
+  + V8 (`php licensing-backend\scripts\test_admin_throttle.php` with WAMP up, never run); the live
+  console will REQUIRE 2FA (break-glass env `LICENSING_ADMIN_ALLOW_NO_2FA=1` once).
+  **SEC-05 recovery runbook CHANGED**: the rollback mark now also lives at
+  `%LOCALAPPDATA%\ScanFinder\.time-anchor`, so "delete `%APPDATA%\ScanFinder`" alone no longer
+  un-bricks a machine — delete that file too, or just get it online once (the C2 self-heal).
+  **Next open: SEC-04** (dead pairing gate) — eric-designed, NOT built; client transport+IPC already
+  thread `code`, ship CLIENT field first then core; his own finding to fold in:
+  `backupService._settingExcluded` only filters `licens`, so a pairing code would ride out in backups.
+- **IDENTITY REDESIGN — BUILT 2026-07-20** (owner-signed, Oracle C1–C8 folded; 5 commits
+  `3c0a744`→`febdc29`; spec `docs/designs/IDENTITY_TEXT_FIRST_2026-07-19.md` carries the full
+  verification ledger). A logo match no longer asserts identity alone: it must AGREE with the page
+  text (`LOGO_TEXT_GATE`), may only SUGGEST when the text can't judge, and is DROPPED when the text
+  contradicts it — while still surfacing the branding-detected name so the "Use '<name>'" button (and
+  the ripple) survive. A confirm can no longer teach the logo to a wrong-but-confirmed supplier
+  (`LOGO_PLANT_TEXT_GATE`, corroboration-gated so first-contact enrolment still works). The renderer's
+  silent auto-fill is now a click affordance. One correction RIPPLES to same-sender siblings by text
+  (`SUPPLIER_RIPPLE`) through the review-bound pin rail. Corpus ON==OFF byte-identical; on the live
+  install the gate abstains on exactly the 4 misassigned dockets, 0 correct identities suppressed.
+  **OPEN**: Slice 1d — **RESOLVED 2026-07-24 DO-NOTHING-IN-CODE** (Oracle SIGN-OFF-W/COND; the Stage-0
+  veto is LIVE via Store B, the 13 links are historical DATA → owner sweep, not a code fix; genuine
+  cold-start residual (b) is NOT text-gate-defended = the issuer-by-caption family, letterhead/text
+  layer not a logo veto; ledger [[project_slice1d_donothing]]) · D2 Barry slices 3-5 · D3 the inert
+  detail-hash path (retire or fix) · **UX: a clean doc held just below the auto-file threshold gives
+  no on-screen reason** (owner hit this: 9/20 auto-filed at 100, #121 held at 98 with
+  `auto_file_threshold` unset=100 — the mechanism is correct, the silence isn't; Review should say
+  "98% — just below your auto-file setting").
+- **(superseded) IDENTITY REDESIGN (overnight 2026-07-19) — DESIGNED**: the Larkspur
+  incident (20 new-supplier docs; logo layer misassigned 5; correction didn't heal) is diagnosed to root —
+  the 64-bit logo phash has ZERO separating power (live-measured cross-supplier min hamming 2) while the
+  branding TEXT named the true supplier every time. Direction (Barry+gary): **text-first, logo
+  corroborates, abstain-by-default; a logo match alone never assigns or plants learning** + a correction
+  RIPPLE via the pin rail. Spec `docs/designs/IDENTITY_TEXT_FIRST_2026-07-19.md`; permanent suite
+  `stress_test/logo_identity_suite.py` (GREEN — 6 PIN-BROKEN reality pins). Oracle vet AFTER owner D1.
+  KEY TRAP for the build: review-renderer `attemptLogoMatch` is NOT display-only (auto-fills + writes
+  corrections = the confirm-time poison back door); Stage-0 `identify_template` accepts on logo alone
+  (Slice 1d, own corpus gate).
+- **Process rules**: include Barry EARLY on new features (before design/Oracle); control-test-first
+  (baseline BEFORE code; kill-switched; OFF ⇒ byte-identical); advisor+Oracle gate on substantive changes.
+
