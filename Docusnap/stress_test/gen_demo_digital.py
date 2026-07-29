@@ -52,7 +52,7 @@ TYPES = {
     "quote":          dict(title="QUOTATION",      ref_prefs=["QT"],       ref_labels=["Quote No:", "Quotation No:", "Estimate No:", "Ref:"],           date_labels=["Quote Date:", "Date:", "Valid From:"],      money=True, alt_titles=["QUOTATION", "ESTIMATE", "PROFORMA INVOICE"]),
     "statement":      dict(title="STATEMENT",      ref_prefs=["STMT"],     ref_labels=["Account No:", "Statement No:", "A/C:"],                          date_labels=["Statement Date:", "Date:"],                 money=True, multi_ref=True),
     "receipt":        dict(title="RECEIPT",        ref_prefs=["RCP"],      ref_labels=["Receipt No:", "Transaction ID:", "Ref:"],                       date_labels=["Date:", "Paid:"],                           money=True),
-    "worksheet":      dict(title="SERVICE WORKSHEET", ref_prefs=["WS"],    ref_labels=["Worksheet No:", "Job No:", "Ref:"],                             date_labels=["Date:", "Job Date:"],                       money=False),
+    "service_worksheet": dict(title="SERVICE WORKSHEET", ref_prefs=["WS"], ref_labels=["Worksheet No:", "Job No:", "Ref:"],                             date_labels=["Date:", "Job Date:"],                       money=False),
 }
 
 # ── Suppliers ─────────────────────────────────────────────────────────────────────
@@ -67,7 +67,7 @@ SET_A = [
     dict(name="Ferndale Trading Co",  initials="FT", logo="image", rgb=(198, 40, 40),   seed=22000, cur="gbp",
          archetype="two_col_parties", types=["invoice", "sales_order", "purchase_order", "delivery_note", "credit_note"]),
     dict(name="Kingsworth Industrial", initials="KI", logo="image", rgb=(46, 125, 50),  seed=33000, cur="gbp",
-         archetype="footer_letterhead", types=["invoice", "purchase_order", "delivery_note", "statement", "worksheet"]),
+         archetype="footer_letterhead", types=["invoice", "purchase_order", "delivery_note", "statement", "service_worksheet"]),
     dict(name="Oakmere Logistics",    initials="OL", logo="image", rgb=(106, 27, 154),  seed=44000, cur="usd",
          archetype="three_party",     types=["purchase_order", "delivery_note", "sales_order", "invoice", "receipt"]),
     dict(name="METROMART",            initials="MM", logo="text",  rgb=(33, 33, 33),     seed=55000, cur="gbp",
@@ -301,9 +301,11 @@ def lay_three_party(doc, title_at):
 
 
 def lay_minimalist_text(doc, title_at):
-    # SuperStore class: text wordmark top, very sparse chrome, title top-right.
+    # SuperStore class: the company NAME as a styled TEXT wordmark (in the text layer — no pictorial
+    # mark, so identity MUST come from the letterhead text; the phash has nothing to grip).
     it = []
-    logo = (40, 30, 260, 55)     # the text-wordmark PNG
+    logo = None
+    it.append((40, 34, doc["sup"]["name"].upper(), 22, True, "l"))
     _title_items(it, doc, title_at, right_x=PAGE_W - 50, top_y=44)
     it.append((PAGE_W - 50, 80, "{} {}".format(doc["ref_label"], doc["ref"]), 10, False, "r"))
     it.append((PAGE_W - 50, 94, "{} {}".format(doc["date_label"], doc["date_shown"]), 10, False, "r"))
@@ -316,9 +318,11 @@ def lay_minimalist_text(doc, title_at):
 
 
 def lay_subheading_text(doc, title_at):
-    # text wordmark centered; the TYPE title as a small subheading under a marketing line.
+    # text wordmark centered (styled TEXT, in the text layer); the TYPE title as a small subheading
+    # under a marketing line.
     it = []
-    logo = (PAGE_W / 2 - 130, 26, 260, 55)
+    logo = None
+    it.append((PAGE_W / 2, 40, doc["sup"]["name"].title(), 22, True, "c"))
     it.append((PAGE_W / 2, 92, "Quality office supplies since 1998", 9, False, "c"))
     # subheading title (small, with words around it) -> title_trusted stress
     if title_at == "subheading":
@@ -381,22 +385,23 @@ def render_pdf(doc, path, edge_tags, watermark=None, in_image_title=False):
     elif "ref_in_title" in edge_tags:  title_at = "ref_in_title"
     elif "subheading" in edge_tags:    title_at = "subheading"
     logo_box, _, items = lay(doc, title_at)
+    # in_image_title only applies to a pictorial (image) logo — a text-wordmark supplier has no image
+    # to bake the title into, so it must keep its text-layer title.
+    bake_title = in_image_title and logo_box is not None
 
     c = canvas.Canvas(path, pagesize=letter)
-    # logo (image or text wordmark). in_image_title bakes the TYPE word INTO the logo image
-    # (born-digital-unique: the heading is legible but ABSENT from the text layer).
+    # logo (pictorial crest). bake_title puts the TYPE word INTO the logo image (born-digital-unique:
+    # the heading is legible but ABSENT from the text layer).
     if logo_box is not None:
         lx, ly, lw, lh = logo_box
-        logo_path = gen_logo(doc["sup"])
-        if in_image_title:
-            logo_path = _logo_with_title(doc)
+        logo_path = _logo_with_title(doc) if bake_title else gen_logo(doc["sup"])
         c.drawImage(logo_path, lx, PAGE_H - ly - lh, width=lw, height=lh, mask="auto")
     if watermark:
         c.saveState(); c.setFont("Helvetica-Bold", 60); c.setFillGray(0.85)
         c.translate(PAGE_W / 2, PAGE_H / 2); c.rotate(35)
         c.drawCentredString(0, 0, watermark); c.restoreState()
     for (x, yt, text, size, bold, align) in items:
-        if in_image_title and size >= 22 and text.strip().upper().startswith(doc["type_title"].split()[0]):
+        if bake_title and size >= 22 and text.strip().upper().startswith(doc["type_title"].split()[0]):
             continue                       # suppress the text-layer title (it lives in the image)
         c.setFont("Helvetica-Bold" if bold else "Helvetica", size)
         y = PAGE_H - yt - size
@@ -464,7 +469,9 @@ def gen_supplier(sup, per_type, out_dir, gt, rng):
             tags = []
             wm = None; in_img = False
             if edge == "watermark":       tags.append("watermark"); wm = rng.choice(["COPY", "DUPLICATE", "PRO FORMA", "DRAFT"])
-            elif edge == "in_image_title": tags.append("in_image_title"); in_img = True
+            elif edge == "in_image_title":
+                if sup["logo"] == "image": tags.append("in_image_title"); in_img = True
+                else:                      tags.append("below_tall")   # text-logo: no image to bake into
             elif edge:                    tags.append(edge)
             if sup["archetype"] == "subheading_text" and i % 5 == 2:
                 tags.append("subheading")
