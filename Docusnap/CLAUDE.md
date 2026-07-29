@@ -39,8 +39,13 @@ MAJORITY-tier template-identity issuer note → `{V,85,template_identity_corrobo
 corroborated in the ISSUER BAND (Profile-Construction class: name printed under BILL FROM, fill+note wins the
 read). gary→Oracle C1 (strict ALL-tokens, not the FILL's ≥60%) + C2 (band-gated, never raw `[:600]`) + C3
 (excluded from `_IDENTITY_STRUCTURAL_METHODS`). Pure static `_should_shed_template_identity_note`; pins
-`test_template_identity_band_graduate.py` (20 green). **Corpus fired 0× — VACUOUS (Oracle-predicted: `not
-supplier_name` is false when the logo re-resolves) → NOT flip-ready; needs a Profile-Construction firing test.**
+`test_template_identity_band_graduate.py` (20 green). **Corpus fired 0× (vacuous). FIRING TEST DONE (real docs
+897/905/963/981/1128): S1 is INERT on its target — DO NOT FLIP.** The Profile docs are TWO-COLUMN born-digital
+(`BILL FROM   BILL TO` one line, `Profile Construction   ACME Inc` the next); `_issuer_hint_band` truncates at
+the "BILL TO" recipient marker which precedes the issuer name → band `"INVOICE BILL FROM"`, name excluded → no
+shed (predicate logic verified correct — ON sheds / OFF keeps / wrong-name held; only the BAND lacks the name).
+Same truncation defeats hint-graduation = WHY the docs are stuck. Real fix (deferred, gary+Oracle, C2 is the
+constraint): a column/geometry-aware issuer window OR a `BILL FROM`-anchored recipient-excluding window.
 [[project_autofile_s1_band_graduate_20260729]]
 · `41f1916` (dark) → `3351e2f` **TYPE_PRESENCE_VETO — FLIPPED ON** (kill `TYPE_PRESENCE_VETO=0` restores byte-
 identical) — the TYPE analog of `namePresence.js`. HOLDs a wrong-type logo-collision pick whose OWN type-heading
@@ -56,8 +61,9 @@ fixtures unaffected — no threaded tokens ⇒ abstain). [[project_type_presence
 HOLD-only + FAIL-SAFE BY CONSTRUCTION (type_refused → no-template → one-click review, never a wrong file). S1
 0 firings. (ON log `scratchpad/corpus_on.log`; OFF baseline = night session `beaewxxm4.output`.)
 **NEEDS OWNER:** (1) install `r20260729-0905` + live-smoke — 150-DPI import, reprocess-reconnect (`eebe154`),
-forget/focus/overlay, the VETO (a mis-typing worksheet/PO now HOLDs, not misfiles). (2) S1 firing test in a
-session with a Profile-Construction born-digital doc, THEN decide the flip. (3) SuperStore anchor-removal
+forget/focus/overlay, the VETO (a mis-typing worksheet/PO now HOLDs, not misfiles). (2) S1 firing test DONE —
+INERT on the two-column BILL FROM|BILL TO layout, keep DARK; the real fix (column-aware issuer window) is a
+deferred gary+Oracle design. (3) SuperStore anchor-removal
 `scripts/remove-superstore-invnum-anchor.js --apply` (app-closed, STILL not run). (4) untracked
 `HANDOVER_2026-07-28*.md` + `docs/SECURITY_HARDENING_REPORT_2026-07-28.md` — commit or leave. **Prior block ↓**
 
