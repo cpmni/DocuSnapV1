@@ -274,6 +274,9 @@ def _filter_located_corrob(corrob_results, anchors_by_key, date_field_keys,
 _IDENTITY_STRUCTURAL_METHODS = frozenset({
     'logo', 'template_identity', 'template_fixed', 'template_fixed_locked', 'template_anchor',
 })
+# DELIBERATELY excludes 'template_identity_corroborated' (the S1 note-shed variant, Oracle C3
+# 2026-07-28): a page-corroborated identity is treated NON-structural, so the dual-key
+# customer_name rescue is a no-op on an S1 value — the safe direction.
 
 _STAGE05_LOCATED_METHODS = (
     "template_mapping", "template_mapping_expanded",
@@ -861,6 +864,39 @@ def _template_identity_corroborated(value: str | None, ocr_text: str | None) -> 
     return present >= 1 and (present / len(toks)) >= 0.6
 
 
+def _identity_corroborated_strict(value: str | None, band: str | None) -> bool:
+    """STRICTER local predicate for SHEDDING a template-identity review note (S1, Oracle C1
+    2026-07-28) — distinct from `_template_identity_corroborated` (>=60%, used for the FILL).
+    True when EITHER the full normalised value appears as a contiguous alnum substring of the
+    (already issuer-band-truncated) `band`, OR EVERY distinctive name token (>=3 chars, minus
+    generic suffixes) is present as a whole word. The >=60% FILL test would shed on a 2-of-3
+    descriptor SUBSET ('...water systems' minus 'Cascade' = 0.67) — clearing the note on a
+    same-trade sibling inside the logo-collision cluster; requiring ALL tokens closes that.
+    Guarded so a lone short token (<6 chars) can never shed on its own. FAIL toward keeping the
+    note (any doubt → False)."""
+    if not value or not band:
+        return False
+    import re as _re
+    _norm  = " ".join(_re.findall(r"[a-z0-9]+", str(value).lower()))
+    _btext = " ".join(_re.findall(r"[a-z0-9]+", str(band).lower()))
+    # Substring arm: a multi-token value, or a single token >=6 chars, present contiguously. A lone
+    # SHORT value ('IN') must fall through to the token arm (which filters <3-char tokens out) so an
+    # incidental word match can never shed the note.
+    if _norm and (" " in _norm or len(_norm) >= 6) and _norm in _btext:
+        return True
+    _GENERIC = {"ltd", "limited", "plc", "llp", "inc", "incorporated", "co", "company", "corp",
+                "group", "holdings", "services", "service", "the", "and"}
+    toks = [t for t in _re.findall(r"[a-z0-9]+", str(value).lower())
+            if len(t) >= 3 and t not in _GENERIC]
+    if not toks:
+        return False
+    # A lone token must be long (>=6) to shed; otherwise require >=2 distinctive tokens.
+    if len(toks) < 2 and not (len(toks) == 1 and len(toks[0]) >= 6):
+        return False
+    present = sum(1 for t in toks if _re.search(r"\b" + _re.escape(t) + r"\b", _btext))
+    return present == len(toks)
+
+
 def _is_ref_field(key: str) -> bool:
     """Reference-number-style fields, by naming convention (no supplier/doc
     specifics): invoice_number / po_number / sales_order_number (..._number),
@@ -1191,6 +1227,27 @@ class ExtractionEngine:
         if not sn_cur.get("validation_note"):
             return None
         return sn_cur.get("value") or None
+
+    @staticmethod
+    def _should_shed_template_identity_note(sn_cur, issuer_band, *, env=None):
+        """S1 decision (pure/static, unit-testable): may we shed the review note from a MAJORITY-tier
+        template-identity fill? True iff — S1 armed (TEMPLATE_IDENTITY_BAND_GRADUATE!='0'), the issuer
+        band is trusted (ISSUER_HINT_BAND!='0' — C2: never shed off the raw ocr_text[:600] fallback),
+        `sn_cur` is a still-noted MAJORITY template_identity fill with a value, AND that value is
+        STRICTLY corroborated in `issuer_band` (the caller's pre-computed _issuer_hint_band window).
+        SINGLE-tier fills are deliberately never shed (their note stays — accepted trade-off pin).
+        `env` is injectable for tests. FAIL toward keeping the note."""
+        _env = os.environ if env is None else env
+        if _env.get("TEMPLATE_IDENTITY_BAND_GRADUATE", "0") == "0":
+            return False
+        if _env.get("ISSUER_HINT_BAND", "1") == "0":
+            return False
+        if not isinstance(sn_cur, dict) or sn_cur.get("method") != "template_identity":
+            return False
+        if sn_cur.get("validation_note") != _TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY:
+            return False
+        v = sn_cur.get("value")
+        return bool(v) and _identity_corroborated_strict(v, issuer_band)
 
     # How many top lines `_issuer_hint_band` may scan. Deliberately LARGE so the 600-character cap
     # — not this line cap — is what binds on a marker-free page: the only intended narrowing is the
@@ -3811,6 +3868,42 @@ class ExtractionEngine:
                     supplier_name = None
                     self.log("  Stage 2.5: a known supplier name matched OUTSIDE the issuer band "
                              "— withheld and routed to review rather than adopted")
+
+        # ── S1: TEMPLATE-IDENTITY BAND GRADUATE (2026-07-28, DEFAULT OFF) ─────────
+        # Shed the review note from a MAJORITY-tier template-identity FILL when the filled issuer
+        # name is INDEPENDENTLY printed in this page's issuer band. The note is the human checkpoint
+        # for an INFERRED identity; when the page itself corroborates the value, the checkpoint is
+        # pure friction (Profile-Construction class: 'BILL FROM: Profile Construction' is on the page,
+        # yet the fill @70+note wins the read because the issuer caption's own base_confidence is 40).
+        # Value is FIXED to the incumbent V — S1 ONLY sheds the note, it NEVER swaps supplier.
+        # Fires AFTER the text-first graduation above, so if a hint already resolved the supplier
+        # (method 'hint_text_match') this is skipped; idempotent (its own method skips a re-run).
+        # C2 (Oracle): gated on ISSUER_HINT_BAND!='0' so the band is the TRUNCATED issuer window,
+        # never the raw ocr_text[:600] fallback (which re-opens recipient self-corroboration).
+        # C1 (Oracle): _identity_corroborated_strict (ALL distinctive tokens, not the FILL's >=60%)
+        # so a same-trade descriptor subset can't shed the note on a logo-collision sibling.
+        # Confidence 85 = parity with the hint_text_match ceiling; supplier_name is required=1, so 85
+        # only clears the 95 graduated floor when ref+date are ~100 (true for born-digital) — NOT a
+        # blanket auto-file. Kill switch TEMPLATE_IDENTITY_BAND_GRADUATE (default '0' = byte-identical).
+        if os.environ.get("TEMPLATE_IDENTITY_BAND_GRADUATE", "0") != "0":
+            _sn_cur = results.get("supplier_name")
+            # Cheap preconditions keep the issuer-band computation off all but a majority-noted
+            # fill; the full decision (incl. the ISSUER_HINT_BAND kill + strict corroboration)
+            # lives in the pure _should_shed_template_identity_note helper so every gate branch is
+            # unit-testable without a full extract().
+            if (isinstance(_sn_cur, dict)
+                    and _sn_cur.get("method") == "template_identity"
+                    and _sn_cur.get("validation_note") == _TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY
+                    and _sn_cur.get("value")
+                    and self._should_shed_template_identity_note(
+                        _sn_cur, self._issuer_hint_band(ocr_text))):
+                results["supplier_name"] = {
+                    "value":      _sn_cur["value"],
+                    "confidence": 85,
+                    "method":     "template_identity_corroborated",
+                }
+                self.log(f"  S1: template-identity note shed — '{_sn_cur['value']}' corroborated "
+                         f"in the issuer band (confidence 85, no note)")
 
         # ── Stage 2.6: LATE-ANCHOR RESCUE (2026-07-10) ───────────────────────────
         # On a doc whose supplier was UNKNOWN at Stage-2 time (no template/logo hit — exactly
