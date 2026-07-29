@@ -3879,7 +3879,20 @@ document.addEventListener('pointerdown', (e) => {
   if (e.target?.closest?.('.field-input')) hideAnchorReadout();
 }, true);
 function showAnchorReadout(detected, value) {
-  try { if (detected.normBox) drawTraceBbox(detected.normBox, 'anchor', 'manual'); } catch {}
+  // Own the overlay exclusively: wipe any PRIOR anchor highlight first, so a stale box from an
+  // earlier field/teach can't be mistaken for the anchor of THIS draw. Then show where THIS teach
+  // anchors: the label box (blue) when a caption was found, else the VALUE spot (amber) for a
+  // position-only anchor — so "anchored by position" always has a visible spot on the page.
+  try {
+    clearTraceHighlight();
+    if (detected.normBox) {
+      drawTraceBbox(detected.normBox, 'anchor', 'manual');
+    } else if (lastTeachCtx?.rect && lastTeachCtx.imgW && lastTeachCtx.imgH) {
+      const r = lastTeachCtx.rect;
+      drawTraceBbox([r.x / lastTeachCtx.imgW, r.y / lastTeachCtx.imgH,
+                     r.w / lastTeachCtx.imgW, r.h / lastTeachCtx.imgH], 'target', 'manual');
+    }
+  } catch {}
   const bar = document.getElementById('anchor-readout');
   if (!bar) return;
   const val   = escHtml((value || '').trim());
@@ -3902,7 +3915,7 @@ function showAnchorReadout(detected, value) {
   }
   let msg;
   if (detected.fallback) {
-    msg = `<span class="ar-msg">&#10003; No caption nearby — anchored by its position. This spot will be read on future documents from this supplier. Read: <span class="ar-val">${val}</span></span>`;
+    msg = `<span class="ar-msg">&#10003; No label word sits next to this value, so Scan Finder will <strong>remember this exact spot</strong> (highlighted on the page) and read whatever prints here on future documents from this supplier. Read: <span class="ar-val">${val}</span></span>`;
   } else {
     // The label is EDITABLE — an auto-detect off a noisy scan can be misread ("verial No."),
     // and a wrong label never re-locates. The operator can correct it here before Confirm.
@@ -3910,9 +3923,9 @@ function showAnchorReadout(detected, value) {
     // can't find on the page) — the input starts EMPTY (= position-only, already staged
     // below) and the message says so plainly; typing the printed caption upgrades it.
     const lead = typeHeading
-      ? '&#9888; That&#39;s the document heading, not a field label &mdash; anchored by its position instead (still reads on future documents). Type a real caption to anchor on text:'
+      ? '&#9888; That&#39;s the document&#39;s <strong>title</strong>, not a label for this field &mdash; so Scan Finder will <strong>remember this spot</strong> (highlighted) and read whatever prints here on future documents. If a real label word sits beside the value, type it below to anchor on the word instead:'
       : suspicious
-        ? '&#9888; Couldn&#39;t read the caption beside this value &mdash; anchored by position. Type it to anchor on text:'
+        ? '&#9888; Couldn&#39;t read the label beside this value &mdash; so Scan Finder will <strong>remember this spot</strong> (highlighted) and read whatever prints here on future documents. Type the label as printed to anchor on the word instead:'
         : `&#10003; Anchor (label ${isAbove ? 'above' : 'to the left'}):`;
     msg = `<span class="ar-msg">${lead} `
       + `<input class="ar-label-edit" spellcheck="false" title="The caption this field sits beside — edit if it was misread" `
