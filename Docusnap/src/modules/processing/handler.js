@@ -83,6 +83,20 @@ function _autoTitleEnv(db) {
   } catch { return {}; }
 }
 
+// OCR render-DPI spawn env: the extraction OCR renders each page at this DPI (ocr/tesseract.py
+// _RENDER_DPI). DEFAULT 300 (returns {} → byte-identical env); a lower 'ocr_dpi' setting (150/200)
+// is a large speed win — the OCR cost scales ~DPI^2 and smaller images parallelise far better — at
+// the cost of small-text accuracy on genuine high-res scans, so it is an operator opt-in. Coerced
+// to the same [100,600] band tesseract.py enforces; anything else falls back to the 300 default.
+function _ocrDpiEnv(db) {
+  try {
+    const learning = require('../../../database/modules/learning');
+    const raw = parseInt(learning.getSetting(db, 'ocr_dpi', '300'), 10);
+    const dpi = (Number.isFinite(raw) && raw >= 100 && raw <= 600) ? raw : 300;
+    return dpi === 300 ? {} : { OCR_RENDER_DPI: String(dpi) };
+  } catch { return {}; }
+}
+
 // Coerce the stored processing_mode to a value the backend accepts. A stale/legacy value
 // (e.g. an old "light", or one from a restored settings backup) must never reach
 // process_docs.py's --mode and break the whole batch on an arg-parse error.
@@ -969,6 +983,7 @@ function register(ctx) {
         ...process.env,
         ...(threadCap > 0 ? { OMP_THREAD_LIMIT: String(threadCap) } : {}),
         ..._autoTitleEnv(db),
+        ..._ocrDpiEnv(db),
       };
       const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
         { windowsHide: true, env });
@@ -1504,12 +1519,12 @@ function register(ctx) {
       // Gated by a setting, DEFAULT OFF; passed ONLY here on the single-reprocess spawn, NEVER the
       // batch/import/shard path (those already parallelise ACROSS docs with their own OMP cap, so
       // nesting a per-doc pool inside them would oversubscribe). The python side caps OMP to 1.
-      let spawnEnv = process.env;
+      let spawnEnv = { ...process.env, ..._ocrDpiEnv(db) };   // honour the ocr_dpi setting on reprocess too (default 300 = byte-identical)
       try {
         if (require('../../../database/modules/learning').getSetting(db, 'ocr_parallel_reprocess_enabled', 'false') === 'true') {
           // B = parallel full-page OCR passes (straighten/enhance/first-import); C = parallel per-field
           // crop reads (every reprocess). Both byte-identical, single-reprocess spawn only.
-          spawnEnv = { ...process.env, DS_OCR_PARALLEL_FULLPAGE: '1', DS_OCR_PARALLEL_FIELDS: '1' };
+          spawnEnv = { ...spawnEnv, DS_OCR_PARALLEL_FULLPAGE: '1', DS_OCR_PARALLEL_FIELDS: '1' };
         }
       } catch { /* setting read failed → sequential (default) */ }
       const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
@@ -1742,6 +1757,7 @@ function register(ctx) {
         ...process.env,
         ...(threadCap > 0 ? { OMP_THREAD_LIMIT: String(threadCap) } : {}),
         ..._autoTitleEnv(db),
+        ..._ocrDpiEnv(db),
       };
       const proc = spawn(pythonExe(), pythonArgs(backendScript(), ...scriptArgs), { windowsHide: true, env });
       _currentBatchProcs.push(proc);

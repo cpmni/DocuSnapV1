@@ -191,6 +191,18 @@ check("grouping: two close single-column lines are NOT glued into one",
 check("_with_dpi appends the render DPI", tess_mod._with_dpi("--psm 3", 300) == "--psm 3 --dpi 300")
 check("_with_dpi is a no-op when DPI is unknown", tess_mod._with_dpi("--psm 3", None) == "--psm 3")
 
+# ── 10e2. _resolve_render_dpi: the ocr_dpi setting reaches the render, DEFAULT/garbage -> 300 ──
+import os as _os
+def _rdpi(v):
+    if v is None: _os.environ.pop("OCR_RENDER_DPI", None)
+    else: _os.environ["OCR_RENDER_DPI"] = v
+    return tess_mod._resolve_render_dpi()
+check("render DPI defaults to 300 when unset (byte-identical)", _rdpi(None) == 300)
+check("render DPI honours a valid in-band value", _rdpi("150") == 150 and _rdpi("200") == 200)
+check("render DPI coerces out-of-band back to 300 (never a broken render)", _rdpi("999") == 300 and _rdpi("50") == 300)
+check("render DPI coerces garbage back to 300", _rdpi("abc") == 300 and _rdpi("") == 300)
+_os.environ.pop("OCR_RENDER_DPI", None)
+
 # ── 10f. THREE-column header: a value's row is SEEDED AFTER it, so a single greedy pass glued it to
 #   the row above (real Anconia coords: 179914 at yc1270 stuck to BILLING@yc1252 instead of its own
 #   INVOICE NUMBER row@yc1274). The two-pass assignment must re-home it to its label's row. ─────────

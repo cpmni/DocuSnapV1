@@ -634,6 +634,17 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Scan reading detail (OCR resolution)</div>
+                <div class="threshold-sub">How finely each page is read for text. <b>High (300 DPI)</b> is most accurate for genuine paper scans. <b>Balanced (200)</b> and <b>Fast (150)</b> read noticeably quicker and use far less memory — ideal when your documents are already low-resolution. Lower detail can miss very small print, so check accuracy after changing it.</div>
+              </div>
+              <select id="ocr-dpi-select" class="field-select" style="width:230px;">
+                <option value="150">Fast (150 DPI)</option>
+                <option value="200">Balanced (200 DPI)</option>
+                <option value="300">High — most accurate (300 DPI)</option>
+              </select>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Per-document safety timeout</div>
                 <div class="threshold-sub">If a single document ever gets stuck being read (a rare unreadable page), skip it after this long and carry on — it's marked as an error you can retry, so one bad file can't freeze a whole batch.</div>
               </div>

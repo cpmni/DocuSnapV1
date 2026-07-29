@@ -33,7 +33,22 @@ def ocr_image(img: Image.Image, config: str = "--oem 3 --psm 3") -> str:
 # segmentation drops (see reconstruct_page_text). Confidence-gated so only clean words are merged.
 _SUPP_CONFIG   = "--oem 3 --psm 6"
 _SUPP_MIN_CONF = 50
-_RENDER_DPI    = 300               # PDF pages are rasterised at this DPI; told to Tesseract via --dpi
+def _resolve_render_dpi():
+    """Extraction OCR render DPI. Env OCR_RENDER_DPI is set from the 'ocr_dpi' processing setting
+    (handler.js _ocrDpiEnv). DEFAULT 300 = byte-identical to the old hardcoded value. A LOWER DPI is
+    a large speed win — the OCR cost scales ~DPI^2 (150 is ~2.8x faster than 300) AND smaller page
+    images scale far better across parallel workers (less memory-bandwidth contention) — traded
+    against small-text OCR accuracy on genuine high-res scans, so it is an operator OPT-IN. Garbage /
+    out-of-band falls back to 300 (never a broken render). The same value drives BOTH the render scale
+    and the --dpi told to Tesseract, so they can't diverge."""
+    try:
+        v = int(os.environ.get("OCR_RENDER_DPI", "300") or "300")
+    except (TypeError, ValueError):
+        return 300
+    return v if 100 <= v <= 600 else 300
+
+
+_RENDER_DPI    = _resolve_render_dpi()   # PDF pages rasterised at this DPI; told to Tesseract via --dpi
 
 
 def _words_from_data(data) -> list:
