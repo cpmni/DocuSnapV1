@@ -120,6 +120,8 @@
         "Invoice ID",
         "Bill No",
         "Bill Number",
+        "Our Ref",
+        "Our Reference",
         {
           "text": "#",
           "directions": [
@@ -145,7 +147,8 @@
         "Dated",
         "Billing Date",
         "Invoice Dt",
-        "Inv Date"
+        "Inv Date",
+        "Issued"
       ],
       "directions": [
         "right",
@@ -448,6 +451,33 @@
       "validation": "alphanumeric",
       "base_confidence": 88
     },
+    "delivery_number": {
+      "labels": [
+        "Delivery Note No",
+        "Delivery Note Number",
+        "Delivery Note No.",
+        "Delivery No",
+        "Delivery No.",
+        "Delivery Number",
+        "Delivery #",
+        "DN No",
+        "DN No.",
+        "DN Number",
+        "DN #",
+        "Despatch No",
+        "Dispatch No",
+        "Docket No",
+        "Docket No.",
+        "Docket Number",
+        "Delivery Ref"
+      ],
+      "directions": [
+        "right",
+        "below"
+      ],
+      "validation": "alphanumeric",
+      "base_confidence": 88
+    },
     "po_date": {
       "labels": [
         "PO Date",
@@ -511,7 +541,9 @@
         "S.O. No.",
         "S.O. No",
         "S.O. #",
-        "SO #"
+        "SO #",
+        "Order Ref",
+        "Order Reference"
       ],
       "directions": [
         "right",
@@ -591,8 +623,8 @@
   },
   "validation_patterns": {
     "date": [
-      "\\d{1,2}[/\\-.]\\d{1,2}[/\\-.]\\d{2,4}",
-      "\\d{4}[/\\-]\\d{2}[/\\-]\\d{2}",
+      "(?<!\\d)\\d{4}[/\\-]\\d{2}[/\\-]\\d{2}(?!\\d)",
+      "(?<!\\d)\\d{1,2}[/\\-.]\\d{1,2}[/\\-.]\\d{2,4}(?!\\d)",
       "\\d{1,2}\\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{2,4}",
       "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{1,2},?\\s+\\d{2,4}"
     ],
