@@ -806,6 +806,10 @@ async function startProcessing() {
   setBtnLabel(btnRun, 'Process Documents');
   btnStop.classList.remove('visible');
   clearStage();
+  // Imported originals have drained to Processed/, so the pick-time
+  // "N documents ready to import" count is now stale — re-scan the folder so
+  // the preview reflects what's actually left (and disables Process if empty).
+  if (selectedFolder) showFolderPreview(selectedFolder);
   if (processResult && processResult.stopped) {
     logStatus.textContent = 'Stopped';
     progressText.textContent = `Stopped — ${batch.done} of ${batch.total} processed`;
@@ -951,7 +955,10 @@ function handleProgress(msg) {
       { const _ab = document.getElementById('autofiled-banner'); if (_ab) _ab.style.display = 'none'; }  // clear last run's auto-filed summary
       _autoFiledThisRun = 0;
       batch.total  = msg.total;     // this run, for the progress bar
-      stats.total += msg.total;     // add the batch to the cumulative session "Found"
+      // Session "Found" now counts docs ACTUALLY processed (incremented per
+      // file_done below, mirroring the watch path at handleWatchProgress) — NOT
+      // this up-front folder total, which re-inflated "Found" by the whole count
+      // on every re-run of the same folder and on an early Stop.
       updateStats();
       updateProgressCount();
       logStatus.textContent = 'Processing';
@@ -980,6 +987,7 @@ function handleProgress(msg) {
     case 'file_done':
       batch.done++;
       stats.done++;
+      stats.total++;                // Session "Found" = docs actually processed this session (mirrors the watch path)
       if (msg.success) { batch.ok++; stats.ok++; if (msg.needs_review) batch.review++; } else { batch.err++; stats.err++; }
       updateStats();
       updateProgressCount();
