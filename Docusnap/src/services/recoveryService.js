@@ -22,7 +22,7 @@ function createRecoveryService(deps = {}) {
   const learning  = deps.learning  || require('../../database/modules/learning');
 
   const _count = (db, table, sn, dt) => db.prepare(
-    `SELECT COUNT(*) AS n FROM ${table} WHERE (@sn IS NULL OR supplier_name = @sn) AND (@dt IS NULL OR document_type = @dt)`
+    `SELECT COUNT(*) AS n FROM ${table} WHERE (@sn IS NULL OR supplier_name = @sn COLLATE NOCASE) AND (@dt IS NULL OR document_type = @dt)`
   ).get({ sn: sn || null, dt: dt || null }).n;
 
   // Light, READ-ONLY diagnosis: confirmed docs in THIS scope whose reference number or
@@ -38,7 +38,7 @@ function createRecoveryService(deps = {}) {
              AND o.document_type_id <> d.document_type_id
              AND ( (d.reference_number IS NOT NULL AND TRIM(d.reference_number) <> '' AND o.reference_number = d.reference_number)
                 OR (o.original_filename = d.original_filename) )
-        WHERE d.status = 'confirmed' AND (@sn IS NULL OR d.supplier_name = @sn)
+        WHERE d.status = 'confirmed' AND (@sn IS NULL OR d.supplier_name = @sn COLLATE NOCASE)
       `).all({ sn: sn || null, dt }).map(r => r.id);
     } catch { return []; }
   }

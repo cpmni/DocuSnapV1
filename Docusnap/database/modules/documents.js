@@ -294,7 +294,7 @@ function requeueConfirmedDocsForScope(db, { supplier_name, document_type_slug } 
     UPDATE documents
        SET status = 'needs_review', confirmed_at = NULL, confirmed_by_username = NULL
      WHERE status = 'confirmed'
-       AND (@sn IS NULL OR supplier_name = @sn)
+       AND (@sn IS NULL OR supplier_name = @sn COLLATE NOCASE)
        AND document_type_id = (SELECT id FROM document_types WHERE slug = @slug)
   `).run({ sn, slug: document_type_slug });
 }

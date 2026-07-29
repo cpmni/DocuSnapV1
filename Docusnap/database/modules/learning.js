@@ -1079,7 +1079,7 @@ function clearFieldAnchorsForScope(db, { supplier_name, document_type } = {}) {
   if (!sn && !dt) return { changes: 0 };
   return db.prepare(`
     DELETE FROM field_anchors
-    WHERE (@sn IS NULL OR supplier_name = @sn) AND (@dt IS NULL OR document_type = @dt)
+    WHERE (@sn IS NULL OR supplier_name = @sn COLLATE NOCASE) AND (@dt IS NULL OR document_type = @dt)
   `).run({ sn, dt });
 }
 
@@ -1088,7 +1088,7 @@ function clearSupplierHintsForScope(db, { supplier_name, document_type } = {}) {
   if (!sn && !dt) return { changes: 0 };
   return db.prepare(`
     DELETE FROM supplier_hints
-    WHERE (@sn IS NULL OR supplier_name = @sn) AND (@dt IS NULL OR document_type = @dt)
+    WHERE (@sn IS NULL OR supplier_name = @sn COLLATE NOCASE) AND (@dt IS NULL OR document_type = @dt)
   `).run({ sn, dt });
 }
 
@@ -1102,7 +1102,7 @@ function clearCorrectionsForScope(db, { supplier_name, document_type } = {}) {
   if (!sn && !dt) return { changes: 0 };
   return db.prepare(`
     DELETE FROM corrections
-    WHERE (@sn IS NULL OR supplier_name = @sn) AND (@dt IS NULL OR document_type = @dt)
+    WHERE (@sn IS NULL OR supplier_name = @sn COLLATE NOCASE) AND (@dt IS NULL OR document_type = @dt)
   `).run({ sn, dt });
 }
 
@@ -1176,7 +1176,7 @@ function clearFieldRulesForScope(db, { supplier_name, document_type } = {}) {
   if (!sn && !dt) return { changes: 0 };
   return db.prepare(`
     DELETE FROM field_rules
-    WHERE (@sn IS NULL OR supplier_name = @sn) AND (@dt IS NULL OR document_type = @dt)
+    WHERE (@sn IS NULL OR supplier_name = @sn COLLATE NOCASE) AND (@dt IS NULL OR document_type = @dt)
   `).run({ sn, dt });
 }
 
