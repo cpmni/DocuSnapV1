@@ -14,12 +14,17 @@ const path = require('path'), fs = require('fs'), os = require('os');
 const { spawn } = require('child_process');
 const Database = require('better-sqlite3');
 const REPO = 'c:/GIT Projects/Docusnap';
+const learning = require(path.join(REPO, 'database', 'modules', 'learning.js'));
+const templates = require(path.join(REPO, 'database', 'modules', 'templates.js'));
+let labelOverrides = null; try { labelOverrides = require(path.join(REPO, 'database', 'modules', 'label_overrides.js')); } catch {}
 const CFG = path.join(REPO, 'config', 'keyword_patterns.json');
 const PROCESS_DOCS = path.join(REPO, 'python_backend', 'process_docs.py');
 const TESS = 'C:/Program Files/Tesseract-OCR/tesseract.exe';
 const LIVE_DB = process.env.RR_DB || path.join(process.env.APPDATA, 'ScanFinder', 'docusnap.db');
 const ROOT = path.join(process.env.USERPROFILE, 'Desktop', 'Demo Docs Digital');
-const WHICH = (process.argv[2] || 'A').toUpperCase();   // A (default) | B | ALL
+const _argv = process.argv.slice(2).map(s => s.toLowerCase());
+const WARM = _argv.includes('warm');                    // load live learning (real steady-state + Set B bleed)
+const WHICH = (_argv.find(s => ['a', 'b', 'all'].includes(s)) || 'a').toUpperCase();
 
 const normSupplier = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const normRef = s => String(s || '').toUpperCase().replace(/\s+/g, '');
@@ -38,7 +43,10 @@ function docTypesWithFields(db) {
   return dts;
 }
 
-// COLD snapshot: real doc-types + fields, EMPTY learning (no hints/anchors/logos/templates/rules).
+// COLD snapshot: real doc-types + fields, EMPTY learning (no hints/anchors/logos/templates/rules)
+// -> isolates born-digital layout/keyword/anchor/type accuracy. WARM: loads the live learning
+// snapshot (read-only) -> the app's real STEADY-STATE + surfaces Set B read-time digital<->scanned
+// bleed (does a digital "Marlowe" doc match the scanned Marlowe template/logo?). No DB write either way.
 function coldArgs(db) {
   const dts = docTypesWithFields(db);
   return ['--fields-file', w('f', dts.flatMap(d => d.fields)),
@@ -46,6 +54,20 @@ function coldArgs(db) {
           '--doc-types-file', w('d', dts), '--formats-file', w('fm', []),
           '--templates-file', w('t', []), '--label-overrides-file', w('lo', []),
           '--field-rules-file', w('fr', []),
+          '--config-file', CFG, '--registration', '--born-digital', '--multiline'];
+}
+
+function warmArgs(db) {
+  const dts = docTypesWithFields(db);
+  return ['--fields-file', w('f', dts.flatMap(d => d.fields)),
+          '--hints-file', w('h', safe(() => learning.getAllHints(db), [])),
+          '--anchors-file', w('a', safe(() => learning.getAllAnchors(db), [])),
+          '--logos-file', w('l', safe(() => learning.getAllLogos(db), [])),
+          '--doc-types-file', w('d', dts),
+          '--formats-file', w('fm', safe(() => learning.getFieldFormats(db), [])),
+          '--templates-file', w('t', safe(() => templates.getAll(db), [])),
+          '--label-overrides-file', w('lo', safe(() => labelOverrides ? labelOverrides.getForExtraction(db) : [], [])),
+          '--field-rules-file', w('fr', safe(() => learning.getFieldRules(db), [])),
           '--config-file', CFG, '--registration', '--born-digital', '--multiline'];
 }
 
@@ -80,11 +102,11 @@ function runP(folder, args, files) {
     const base = path.basename(src);
     fs.copyFileSync(src, path.join(TMP, base)); files.push(base); gt[base] = g;
   }
-  console.log(`Scoring ${files.length} ${WHICH} docs (cold: no learning). Types installed: ${[...installed].length}`);
+  console.log(`Scoring ${files.length} ${WHICH} docs (${WARM ? 'WARM: live learning loaded' : 'COLD: no learning'}). Types installed: ${[...installed].length}`);
   const notInstalled = [...new Set(gtRows.map(g => g.type_slug))].filter(s => !installed.has(s));
   if (notInstalled.length) console.log(`  ⚠ type(s) NOT installed in the DB (will mis-type/skip field score): ${notInstalled.join(', ')}`);
 
-  const res = await runP(TMP, coldArgs(db), files);
+  const res = await runP(TMP, WARM ? warmArgs(db) : coldArgs(db), files);
   try { fs.rmSync(TMP, { recursive: true, force: true }); } catch {}
 
   // 'total' is intentionally NOT scored: the installed doc-types define only issuer/ref/date fields
@@ -133,14 +155,14 @@ function runP(folder, args, files) {
     }
     return out;
   };
-  let rep = `# Demo-digital COLD score — Set ${WHICH}\n\nReprocessed ${files.length} docs with NO learning (pure born-digital layout/keyword/anchor/type). `;
+  let rep = `# Demo-digital ${WARM ? 'WARM' : 'COLD'} score — Set ${WHICH}\n\nReprocessed ${files.length} docs ${WARM ? 'WITH the live learning snapshot (real steady-state; Set B surfaces digital<->scanned read-time bleed)' : 'with NO learning (pure born-digital layout/keyword/anchor/type)'}. `;
   rep += `no-result: ${noResult} · held(needs_review): ${held}` + (notInstalled.length ? ` · uninstalled types: ${notInstalled.join(', ')}` : '') + `\n`;
   rep += `\n## Overall\n\n| field | ` + F.join(' | ') + ` |\n|---|` + '---|'.repeat(F.length) + `\n| accuracy | ` + F.map(f => pct(overall[f].ok, overall[f].n)).join(' | ') + ` |\n`;
   rep += tbl('by archetype', byArch) + tbl('by type', byType) + tbl('by edge', byEdge);
   rep += `\n## Sample mismatches (up to 14 per field)\n`;
   for (const f of F) { rep += `\n**${f}** (${overall[f].n - overall[f].ok} wrong / ${overall[f].n})\n`; for (const line of miss[f]) rep += `- ${line}\n`; }
 
-  const outPath = path.join(ROOT, `score_report_${WHICH}.md`);
+  const outPath = path.join(ROOT, `score_report_${WHICH}_${WARM ? 'warm' : 'cold'}.md`);
   fs.writeFileSync(outPath, rep);
   console.log('\nOVERALL  ' + F.map(f => `${f} ${pct(overall[f].ok, overall[f].n)}`).join('  '));
   console.log(`held ${held}  no-result ${noResult}  ->  ${outPath}`);
