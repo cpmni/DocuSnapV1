@@ -21,7 +21,47 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-28) — long live-test day — READ `HANDOVER_2026-07-28.md` FIRST
+## Current session state (2026-07-29) — "run of fixes" day — ALL PUSHED
+**2026-07-29 (Opus 4.8). ALL 14 commits PUSHED through `3351e2f` (origin `0 0`, verified fresh fetch: HEAD ==
+origin tip), tree clean.** Committed + pushed the ENTIRE 07-28 uncommitted batch (DPI/forget/focus/overlay) PLUS
+3 owner-requested builds. Installer **`dist\ScanFinder Setup 2.0.0-r20260729-0905-3351e2f.exe`** (VETO ON, all 14
+commits; check-licenses OK, fuses skipped). The `-0812-41f1916` build (veto DARK) is superseded.
+**Batch committed (07-28 work, now pushed):** `1e0a896` configurable OCR render DPI (`ocr_dpi` 150/200/300,
+default 300 = byte-identical; owner LIVE-CONFIRMED 150 FASTER) · `a0ca71d` OCR-DPI selector + native-dialog focus
+repair · `91ef6a7` case-insensitive Forget (`COLLATE NOCASE`) · `d04339a` stale anchor-overlay clear + clearer
+position-anchor copy · `3a578f4` CLAUDE.md.
+**Built THIS session (3 fixes):**
+· `aebbd79` **import-view counts** (`main/renderer.js`, renderer-only) — folder preview re-scans at run end
+(originals drained to Processed/); session "Found" counts per `file_done`, not the up-front folder total. Fixes
+"still says 900 on stop".
+· `958229c` **S1 band-graduate — DARK** (kill `TEMPLATE_IDENTITY_BAND_GRADUATE` default OFF) — sheds the
+MAJORITY-tier template-identity issuer note → `{V,85,template_identity_corroborated}` when V is STRICTLY
+corroborated in the ISSUER BAND (Profile-Construction class: name printed under BILL FROM, fill+note wins the
+read). gary→Oracle C1 (strict ALL-tokens, not the FILL's ≥60%) + C2 (band-gated, never raw `[:600]`) + C3
+(excluded from `_IDENTITY_STRUCTURAL_METHODS`). Pure static `_should_shed_template_identity_note`; pins
+`test_template_identity_band_graduate.py` (20 green). **Corpus fired 0× — VACUOUS (Oracle-predicted: `not
+supplier_name` is false when the logo re-resolves) → NOT flip-ready; needs a Profile-Construction firing test.**
+[[project_autofile_s1_band_graduate_20260729]]
+· `41f1916` (dark) → `3351e2f` **TYPE_PRESENCE_VETO — FLIPPED ON** (kill `TYPE_PRESENCE_VETO=0` restores byte-
+identical) — the TYPE analog of `namePresence.js`. HOLDs a wrong-type logo-collision pick whose OWN type-heading
+is ABSENT from the candidate top band (worksheet→delivery_note, PO→sales_order — the misfires that happen when
+`title_trusted=False` starves the trusted-title refuse `template_matcher.py:457`). Two seams parity-pinned via
+`python_backend/tests/data/type_presence_vectors.json`: LEARN = `database/modules/typePresence.js` +
+`templates.getAll` threads `{type_heading_ratio,_n,_tokens}` per template; CONSUME = `template_matcher.py`
+`_type_heading_absent` + the veto block (after the refuse, gated `_logo_refused is None`, reuses
+`_type_refuse`/`type_refused`). Pins `test_type_presence.js` + `test_type_presence_matcher.py` green (matcher
+fixtures unaffected — no threaded tokens ⇒ abstain). [[project_type_presence_veto_20260728]]
+**Corpus gate (realdoc, 2057 docs, OFF baseline vs BOTH-flags-ON):** M_type=0 held · **ZERO new silent-wrong M**
+· veto ELIMINATED #2390 (wrong-ref PO now held) · would-auto-file −30 (~1.5%) + taught-ownership 24→74, ALL
+HOLD-only + FAIL-SAFE BY CONSTRUCTION (type_refused → no-template → one-click review, never a wrong file). S1
+0 firings. (ON log `scratchpad/corpus_on.log`; OFF baseline = night session `beaewxxm4.output`.)
+**NEEDS OWNER:** (1) install `r20260729-0905` + live-smoke — 150-DPI import, reprocess-reconnect (`eebe154`),
+forget/focus/overlay, the VETO (a mis-typing worksheet/PO now HOLDs, not misfiles). (2) S1 firing test in a
+session with a Profile-Construction born-digital doc, THEN decide the flip. (3) SuperStore anchor-removal
+`scripts/remove-superstore-invnum-anchor.js --apply` (app-closed, STILL not run). (4) untracked
+`HANDOVER_2026-07-28*.md` + `docs/SECURITY_HARDENING_REPORT_2026-07-28.md` — commit or leave. **Prior block ↓**
+
+## (prior) Session state (2026-07-28) — long live-test day — READ `HANDOVER_2026-07-28.md` FIRST
 **2026-07-28 (Opus 4.8). 5 commits ahead of origin ALL UNPUSHED (`c22e771`→`eebe154`, from BEFORE today) PLUS a
 LARGE UNCOMMITTED batch this session (11 tracked + 3 untracked) — NOTHING committed/pushed today. Owner REBOOTED
 the PC at wrap-up (chasing a lingering import slowdown).** All uncommitted work is default-safe + unit-tested,
