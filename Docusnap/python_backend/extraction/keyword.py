@@ -908,6 +908,17 @@ def extract_fields(ocr_text: str, field_keys: list[str],
             # Clean up the value
             value = _clean_value(value, val_type, validation)
 
+            # reggie 2026-07-29 (PO_REF_DIGIT_GATE): an order-family reference is a CODE — a spaceless
+            # run bearing >=2 digits — never footer prose ("... on all correspondence and delivery
+            # notes") that the loose 'alphanumeric' re.search would otherwise accept as a value.
+            # Un-anchored + space-tolerant so a noisy real header (", p0-22954" / OCR-split "PO 22954")
+            # still reads (contrast the anchored reference_code — the 2026-07-24 null regression). Fail
+            # toward review: no code here -> try the next label, else the field stays empty for Review.
+            if (os.environ.get('PO_REF_DIGIT_GATE', '1') != '0'
+                    and field_key in ('po_number', 'sales_order_number')
+                    and not re.search(r'\d\S*\d', value or '')):
+                continue
+
             # Confidence boost for exact label match
             conf = base_conf
             if direction == "right":
@@ -1127,6 +1138,29 @@ def _qualified_order_caption(line: str, start: int) -> bool:
     return bool(prec and prec.group(1) in _ORDER_QUALIFIER_STOP)
 
 
+# reggie 2026-07-29 (PO_ORDER_INSTRUCTION_SKIP): a bare "Order No/Number" caption is also stolen by a
+# footer INSTRUCTION — "please quote our order number on all correspondence and delivery notes" — where
+# "order number" is prose, not a field caption. The discriminator is the token AFTER the caption: a real
+# caption is followed by a CODE ("Order No. PO-123"); the instruction by a prose lead-word ("... order
+# number ON all ..."). Cue 2 (the tail) is load-bearing; cue 1 (an instruction verb earlier on the line)
+# is a secondary catch. Complements _qualified_order_caption (which reads the word BEFORE) — "our"/"your"
+# stay legit own-refs there, so the tail is what separates the footer prose from a genuine own-ref.
+_ORDER_INSTRUCTION_VERB = frozenset({
+    "quote", "quoting", "cite", "citing", "state", "stating", "mention", "mentioning",
+})
+_ORDER_INSTRUCTION_TAIL = re.compile(r'^(?:on|in|with|when|upon|for|to|must|should|shall)\b', re.I)
+
+
+def _order_caption_is_instruction(line: str, start: int, end: int) -> bool:
+    """True when a bare 'order no/number' at [start,end) is a boilerplate INSTRUCTION
+    ('quote our order number on all correspondence and delivery notes'), not a real caption. Pure."""
+    # Cue 2 (LOAD-BEARING): the token right after the caption is a prose lead-word, never a code.
+    if _ORDER_INSTRUCTION_TAIL.match(re.sub(r'^[\s:.,\-–]+', '', line[end:].lower())):
+        return True
+    # Cue 1: an instruction verb earlier on the line ("please quote our order number …").
+    return any(w in _ORDER_INSTRUCTION_VERB for w in re.findall(r'[a-z]+', line[:start].lower()))
+
+
 def _search_for_label(lines: list[str], label: str,
                       directions: list[str],
                       role_caption: str | None = None,
@@ -1151,6 +1185,7 @@ def _search_for_label(lines: list[str], label: str,
     _is_bare_total = label.strip().lower() == 'total'
     _is_bare_order = (os.environ.get('PO_ORDER_NO_LABELS', '1') != '0'
                       and label.strip().lower().split()[:1] == ['order'])
+    _instr_skip = os.environ.get('PO_ORDER_INSTRUCTION_SKIP', '1') != '0'
     _is_identity_caption = label.strip().lower() in _IDENTITY_CAPTION_LABELS
     for i, line in enumerate(lines):
         line_lower = line.lower()
@@ -1163,7 +1198,8 @@ def _search_for_label(lines: list[str], label: str,
             continue
         # A bare "Order No"/"Order Number" (PO_ORDER_NO_LABELS) must not poach a QUALIFIED order caption
         # ("Sales/Delivery/Purchase/Your Order No") — skip so the qualified caption's own field reads it.
-        if _is_bare_order and _qualified_order_caption(line, m.start()):
+        if _is_bare_order and (_qualified_order_caption(line, m.start())
+                               or (_instr_skip and _order_caption_is_instruction(line, m.start(), m.end()))):
             continue
         # A bare "Supplier"/"Vendor"/"Seller" must not read a "Supplier Ref/No/Account" reference
         # caption as the issuer name — skip; a real "Supplier: Acme" still matches. See above.
