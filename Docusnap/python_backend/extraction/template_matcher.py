@@ -537,9 +537,11 @@ def identify_template(page_image, ocr_text: str, templates: list,
                 # instead of stamping the wrong type. Reuses type_refused (Oracle C-c: do NOT invent a
                 # new key — the engine already consumes type_refused to HOLD). Ordered after the refuse
                 # (guarded `_logo_refused is None` so it never double-holds), before the detail veto.
-                # Kill switch TYPE_PRESENCE_VETO (default '0' = OFF → this block is skipped, byte-identical).
+                # Kill switch TYPE_PRESENCE_VETO (default '1' = ON, corpus-gated 2026-07-29: no new M,
+                # M_type=0, held #2390 + the 4 live wrong-type incidents; ~1.5% fail-safe holds. '0'
+                # restores the byte-identical OFF path — this block is skipped).
                 if (_logo_refused is None
-                        and os.environ.get('TYPE_PRESENCE_VETO', '0') != '0'
+                        and os.environ.get('TYPE_PRESENCE_VETO', '1') != '0'
                         and _type_heading_absent(best_t, ocr_lower)):
                     return _type_refuse(best_t.get('document_type_slug'),
                                         best_t.get('document_type_slug'))
