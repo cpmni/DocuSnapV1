@@ -21,6 +21,33 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
+## Current session state (2026-07-28) — long live-test day — READ `HANDOVER_2026-07-28.md` FIRST
+**2026-07-28 (Opus 4.8). 5 commits ahead of origin ALL UNPUSHED (`c22e771`→`eebe154`, from BEFORE today) PLUS a
+LARGE UNCOMMITTED batch this session (11 tracked + 3 untracked) — NOTHING committed/pushed today. Owner REBOOTED
+the PC at wrap-up (chasing a lingering import slowdown).** All uncommitted work is default-safe + unit-tested,
+NOT live-smoked, NO corpus run.
+**Committed before today (5, unpushed):** `a666b83` SuperStore teach-safety (`labelIsTypeHeading()` — a ⊕-teach
+whose auto-label EXACT-matches a type name/alias falls back to POSITION-ONLY, so the doc TITLE "INVOICE" can't be
+pinned as the invoice_number label → the "stuck at 69%" taught-ownership cap; + clearer teach copy/badge) ·
+`eebe154` reprocess-All survives Review close/reopen (persists `_reprocessStatus`, mirrors to the LIVE window,
+`reconnectRunningBatch`, consume-once auto-file). Data cleanup `scripts/remove-superstore-invnum-anchor.js`
+(uncommitted, removes the EXISTING bad anchor — owner runs app-closed `--apply`).
+**Built THIS session (all UNCOMMITTED):** (1) case-insensitive **Forget** — `supplier_name = @sn COLLATE NOCASE`
+in `learning.js`/`recoveryService.js`/`documents.js` so a lowercase "superstore" clears "SuperStore" learning
+(pinned, GREEN). (2) **Focus** fix — settings `renderer.js` wraps `confirm`/`alert` to arm the focus-suspect
+(mirror of Review), curing the no-caret Learning-Repair field. (3) **Stale-overlay** + (4) **clearer position-
+anchor message** in review `renderer.js`. (5) **Configurable OCR render DPI** — kill via `ocr_dpi` setting
+(Settings→Processing, 150/200/300, DEFAULT 300 = byte-identical); env `OCR_RENDER_DPI` → `tesseract.py`
+`_resolve_render_dpi` (clamp [100,600]→300); wired into all 3 extraction spawns in `handler.js`; pins GREEN.
+**Designed (gary→Oracle SIGN OFF W/COND, GO to build, NOT built):** consolidated auto-file **S1** — shed the
+template-identity issuer note when corroborated in the ISSUER BAND (kill `TEMPLATE_IDENTITY_BAND_GRADUATE` OFF;
+C1 all-tokens-in-band, C2 unconditional band). #4 SuperStore label-less same-pixel ref correctly STAYS in review.
+**Import perf — NO code regression:** acute crawl = Chrome (~2GB) + low free RAM starving the OCR fleet; each doc
+is a fixed ~3.7s single-threaded 300-DPI Tesseract (thread-invariant) so MORE parallelism helps not less (earlier
+"lower to 6" advice was WRONG). Corpus is 150-DPI-native → 300-DPI OCR = 4× waste → the DPI setting. Owner post-
+DPI: "faster on 150 but still slower than before" → rebooted. **Diagnosed, NOT built:** import-view folder count
+stuck at 900 + session stats +900/run (both `main/renderer.js`). **Prior block ↓**
+
 ## Current session state (2026-07-27 PM) — hidden-field SCORING built + live-gated
 **2026-07-27 PM (Fable 5). PUSHED through `6a7a447` (origin `0 0`).** Owner: "Northgate worksheets stuck
 at 72%, nothing flagged, won't auto-file." Root (math-exact): worksheet type has 6 schema fields, layout
