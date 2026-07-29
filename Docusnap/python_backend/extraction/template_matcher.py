@@ -287,6 +287,60 @@ def _type_refuse(detected_slug, template_slug):
             'detected_slug': detected_slug, 'refused_slug': template_slug or None}
 
 
+# ── TYPE-PRESENCE VETO (Type Slice 1, 2026-07-28) ────────────────────────────────────────────────
+# The consume side of database/modules/typePresence.js (parity). The learn side threads, per template,
+# {type_heading_ratio, type_heading_n, type_heading_tokens}; here we HOLD a logo-collision pick whose
+# OWN type reliably prints its heading but whose heading is ABSENT from THIS candidate's top band.
+def _type_presence_top_band(ocr_lower):
+    """First ~14 lines / 600 chars of the (already-lowered) candidate text — the TITLE band. Same
+    shape as typePresence.js.topBand (parity)."""
+    return '\n'.join((ocr_lower or '').split('\n')[:14])[:600]
+
+
+def _type_heading_present(tokens, band):
+    """True <=> >=0.6 of `tokens` present as WHOLE WORDS in `band`. Mirror of typePresence.js
+    headingPresent (and the namePresence ratio). `tokens` are pre-computed [a-z0-9]+ (regex-safe)."""
+    if not tokens or not band:
+        return False
+    text = band.lower()
+    present = sum(1 for t in tokens if re.search(r'\b' + re.escape(t) + r'\b', text))
+    return present >= 1 and (present / len(tokens)) >= 0.6
+
+
+def _type_heading_absent(best_t, ocr_lower):
+    """TYPE-PRESENCE VETO predicate. True => HOLD: `best_t`'s OWN type reliably prints its heading
+    (learned ratio threaded from templates.js) but that heading is ABSENT from this candidate's top
+    band. FAIL-TOWARD-ABSTAIN on every doubt — not armed / thin scan / heading present / any error →
+    False. Thresholds env-overridable (TYPE_PRESENCE_{RATIO,MIN_SAMPLE,MIN_TOKENS})."""
+    try:
+        tokens = best_t.get('type_heading_tokens') or []
+        if not tokens:
+            return False
+
+        def _envf(k, d):
+            try:    return float(os.environ.get(k, d))
+            except (TypeError, ValueError):  return float(d)
+
+        def _envi(k, d):
+            try:    return int(os.environ.get(k, d))
+            except (TypeError, ValueError):  return int(d)
+
+        try:
+            ratio = float(best_t.get('type_heading_ratio') or 0)
+            n     = int(best_t.get('type_heading_n') or 0)
+        except (TypeError, ValueError):
+            return False
+        if n < _envi('TYPE_PRESENCE_MIN_SAMPLE', 3):          # young / unlearned template -> abstain
+            return False
+        if ratio < _envf('TYPE_PRESENCE_RATIO', 0.80):        # type doesn't reliably print its heading
+            return False
+        if len(re.findall(r'[a-z0-9]+', ocr_lower or '')) < _envi('TYPE_PRESENCE_MIN_TOKENS', 50):
+            return False                                      # thin/failed scan -> never veto
+        return not _type_heading_present(tokens, _type_presence_top_band(ocr_lower))
+    except Exception:
+        return False
+
+
 def identify_template(page_image, ocr_text: str, templates: list,
                       detected_slug: str | None = None,
                       title_trusted: bool = False,
@@ -474,6 +528,21 @@ def identify_template(page_image, ocr_text: str, templates: list,
                         _refused_supplier = _rs if (_rk > 0 and _ro >= _BRANDING_PRESENT_RATIO) else ''
                     else:
                         _refused_supplier = _rs
+                # TYPE-PRESENCE VETO (Type Slice 1, 2026-07-28; owner idea → Herald/gary → Oracle
+                # SIGN-OFF-WITH-CONDITIONS). The TYPE analog of namePresence: a phash collision can pick
+                # a WRONG-TYPE same-letterhead sibling (worksheet → delivery_note) when the doc's printed
+                # heading isn't read (title_trusted False) so the trusted-title refuse above is STARVED.
+                # If best_t's OWN type reliably prints its heading (learned ratio, threaded from
+                # templates.js) but that heading is ABSENT from THIS candidate's top band, HOLD for review
+                # instead of stamping the wrong type. Reuses type_refused (Oracle C-c: do NOT invent a
+                # new key — the engine already consumes type_refused to HOLD). Ordered after the refuse
+                # (guarded `_logo_refused is None` so it never double-holds), before the detail veto.
+                # Kill switch TYPE_PRESENCE_VETO (default '0' = OFF → this block is skipped, byte-identical).
+                if (_logo_refused is None
+                        and os.environ.get('TYPE_PRESENCE_VETO', '0') != '0'
+                        and _type_heading_absent(best_t, ocr_lower)):
+                    return _type_refuse(best_t.get('document_type_slug'),
+                                        best_t.get('document_type_slug'))
                 # SLICE C — isolated-mark VETO: a ≥2-supplier logo cluster whose picked template's mark
                 # DISAGREES with the scan is a look-alike collision → ABSTAIN (fall to keyword + branding
                 # net + review). See _logo_detail_veto (scoped, fail-safe, kill-switched, inert until

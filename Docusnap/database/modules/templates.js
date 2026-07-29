@@ -14,6 +14,7 @@ const LOGO_APPEND_BAND = 13;   // append only within this Hamming of an existing
 const brandingFp = require('./branding_fingerprint');
 const logoDetail = require('./logoDetail');   // 256-bit isolated-mark veto arithmetic (mig 47)
 const namePresence = require('./namePresence');   // per-supplier name-presence veto (Oracle 2026-07-24)
+const typePresence = require('./typePresence');    // per-template type-heading presence (Type Slice 1, 2026-07-28)
 const safe = (fn, dflt) => { try { return fn(); } catch { return dflt; } };
 
 // The stored templates.confirmed_count is bumped ONLY by templates.update(), which runs on the
@@ -60,6 +61,13 @@ function getAll(db) {
     t.dominant_supplier       = dom ? dom.value  : null;
     t.dominant_supplier_count = dom ? dom.count  : 0;
     t.dominant_supplier_total = dom ? dom.total  : 0;
+    // TYPE_PRESENCE_VETO (Type Slice 1): thread this template's type-heading reliability + the token
+    // set so the Python consume seam can HOLD a wrong-type logo-collision pick whose heading is absent
+    // from the candidate. Additive keys, INERT until the Python kill switch TYPE_PRESENCE_VETO is on.
+    const th              = typePresence.templateTypeHeadingPresence(db, t);
+    t.type_heading_ratio  = th.ratio;
+    t.type_heading_n      = th.count;
+    t.type_heading_tokens = th.tokens;
   }
   return rows;
 }
