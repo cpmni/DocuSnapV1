@@ -386,9 +386,10 @@ function redrawCanvas(){
   if (!state.img) return;
   ctx.clearRect(0,0,canvas.width,canvas.height);
   ctx.drawImage(state.img,0,0,canvas.width,canvas.height);
-  // other captured fields' values (faint green). Stored boxes are RAW → forward-transform to the
-  // current (possibly straightened) display frame; drawnBox/drag are live DISPLAY boxes, drawn as-is.
-  for (const f of state.fields){ const r=state.results[f.key]; if(r&&r.target&&r.status==='done') drawBox(_teachFwdBox(r.target),'#3ecf8e',false); }
+  // Show ONLY the field being taught right now (owner 2026-07-30) — the previously-confirmed fields'
+  // boxes are no longer drawn, so a new box is drawn on a clean page and the LAST box clears once the
+  // final field is confirmed (advanceField parks fieldIndex past the end → curField() is undefined
+  // below → nothing drawn). The stored results (state.results) are untouched; this is display-only.
   // current field: its label (blue) + value (green) — same colours as Template Manager
   const cf=curField(), cr=cf?state.results[cf.key]:null;
   if (cr&&cr.anchor) drawBox(_teachFwdBox(cr.anchor),'#4f8ef7',true);
@@ -708,7 +709,14 @@ function advanceField(){
   const next=state.fields.findIndex((f,i)=>i>state.fieldIndex && !state.results[f.key] || (i>state.fieldIndex && state.results[f.key] && state.results[f.key].status==='pending'));
   const firstMissing=state.fields.findIndex(f=>!state.results[f.key]);
   if (firstMissing>=0){ state.fieldIndex=firstMissing; promptField(); }
-  else { renderFieldRail(); setConfirm('<div class="muted">All details captured — choose <b>Review →</b> below.</div>'); }
+  else {
+    // All captured: park the index PAST the last field so curField() is undefined and redrawCanvas
+    // draws a CLEAN page (the last confirmed box is removed too — owner 2026-07-30). A dot-click or
+    // Back re-selects a field (recomputes fieldIndex) so nothing is stranded.
+    state.fieldIndex = state.fields.length;
+    renderFieldRail(); redrawCanvas();
+    setConfirm('<div class="muted">All details captured — choose <b>Review →</b> below.</div>');
+  }
 }
 $('rg-redraw').onclick=()=>{ const f=curField(); if(f) delete state.results[f.key]; promptField(); };
 $('rg-skip').onclick=()=>{ const f=curField(); if(!f)return; state.results[f.key]={value:'',target:null,anchor:null,anchor_text:null,status:'skip'}; advanceField(); };

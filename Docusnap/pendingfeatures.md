@@ -8,6 +8,41 @@
 
 ## UX / product
 
+### Teach wizard — label non-recognition  (added 2026-07-30, owner; screenshot)
+- **Symptom (live):** drawing the value box for **PO Date** on a Saltmarsh Seafoods PO reads the value
+  `13/11/2026` correctly, but the wizard reports "**No label found here** — try the other direction, draw
+  one, or continue without" even though the printed label **"Order Date"** sits immediately to the LEFT of
+  the value. Same class as the DIAGNOSED-not-fixed teach-label miss in `HANDOVER_2026-07-29_EVENING.md`.
+- **Leading causes (from the handover, not yet reproduced at the slice):** (1) `src/windows/teach/renderer.js:779/795`
+  recompute a downscale `ds` that IGNORES `TEACH_NATIVE_CROP` (crop sent native at ds=1.0) → the label
+  word-box coords are mis-scaled; (2) the wide label band left of the value includes the big heading text
+  ("PURCHASE ORDER"/"Order No.") so region OCR loses the small "Order Date" caption; (3) mild page skew
+  breaks the left/above label relocation.
+- **Next:** reproduce the actual label-band slice (owner rule: look at the slice) → fix the read + the `ds`
+  frame bug. Teach-renderer-mostly.
+
+### ✓ SHIPPED — Teach wizard: only-current-box overlay + Straighten text button  (2026-07-30, owner)
+- Overlay now draws ONLY the field being taught (removed the done-fields loop in `redrawCanvas`); the last
+  box clears once the final field confirms (`advanceField` parks `fieldIndex` past the end → `curField()`
+  undefined). Display-only — `state.results` untouched.
+- The teach `∞` straighten control replaced with Review's icon + "Straighten" text button (`#tz-deskew`,
+  auto-width; keeps the `.active` pressed style). `src/windows/teach/{renderer.js,index.html}`. Needs app reopen.
+
+### Template Manager — Straighten button  (added 2026-07-30, owner)
+- **Wanted:** a Straighten control in the Template Manager preview (same as Review/teach) so a tilted
+  sample can be levelled before drawing/checking anchor→target boxes. `src/windows/settings/` (Template
+  Viewer `#tpl-dock`) + reuse `get-page-deskew` + the AnchorLabel transform (as teach does).
+
+### Template Manager — visualize + tighten anchor boxes  (added 2026-07-30, owner — EXPLORE)
+- **Owner questions (answered inline in chat 2026-07-30):** do TM-drawn boxes validate on import? what is
+  the TM for? should the drawn zones be VISIBLE on a doc (like Review's "show where it reads") so the user
+  sees where the system snaps? what settings tighten a frequently-misfiring box?
+- **Direction to design:** (1) a "show where it reads" overlay in the TM preview (reuse the Review overlay
+  path + `template_mapper` located-zone output); (2) per-mapping tightness controls (padding/expansion,
+  registration on/off, label-lock strictness, absolute-vs-relocate) surfaced per field; (3) a per-box
+  test-on-this-sample readout (already partly in `recordMappingTest`). See the chat exploration for the
+  full write-up + the FACT-checked answers on how mappings/anchors are actually used at extraction.
+
 ### ✓ SHIPPED — Import "couldn't be read" banner: details + dismiss  (2026-07-30)
 The amber Import banner now (1) reworded "held for retry (not filed, not lost)"; (2) a **Details** toggle
 lists each held doc + WHY (`documents.error_message`, via the existing `getStuckDocs`); (3) a **dismiss (×)**

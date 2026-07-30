@@ -157,6 +157,10 @@
     line-height:1;border-radius:5px;cursor:pointer}
   .zoombar button:hover{background:var(--surface2)}
   .zoombar button.active{background:var(--accent);color:var(--on-accent)}
+  /* Straighten is a text button (Review's icon + label) — auto width, the fixed 26px icon size
+     would clip "Straighten" (owner 2026-07-30). Keeps the .active pressed style above. */
+  .zoombar #tz-deskew{width:auto;height:24px;display:inline-flex;align-items:center;gap:3px;padding:0 9px;font-size:11px;font-weight:600}
+  .zoombar #tz-deskew .straighten-ico{width:13px;height:13px;flex:0 0 auto}
   .zoombar .lvl{min-width:42px;text-align:center;font-size:11px;color:var(--muted)}
   .rail{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px}
   .rail h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:10px}
@@ -282,7 +286,7 @@
               <span class="lvl" id="tz-level">100%</span>
               <button id="tz-in" data-help-key="teach-zoom" title="Zoom in">+</button>
               <button id="tz-reset" data-help-key="teach-zoom" title="Reset view">⟲</button>
-              <button id="tz-deskew" data-help-key="teach-straighten" title="Straighten the page (on by default — teaching needs a level scan)">∞</button>
+              <button id="tz-deskew" data-help-key="teach-straighten" title="Straighten the page (on by default — teaching needs a level scan)"><svg class="straighten-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18"/><path d="M5 17l9-4"/><path d="M4 11a8 8 0 0 1 15.5-1"/><path d="M19.5 10l.8-4M19.5 10l-3.6-1.6"/></svg>Straighten</button>
             </div>
           </div>
           <div class="readback" id="rg-readback"></div>
