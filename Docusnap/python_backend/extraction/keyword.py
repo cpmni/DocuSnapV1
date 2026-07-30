@@ -990,6 +990,14 @@ def _type_keyword_pattern(label: str) -> "re.Pattern | None":
     body = r'\s*'.join(re.escape(w) for w in words)
     if len(words) == 1 and words[0].isalpha():
         return re.compile(r'(?<![a-z0-9])' + body + r'(?![a-z0-9])')
+    # MULTI-WORD phrases historically compiled UNBOUNDED, so a phrase whose last token is a prefix
+    # of a longer word bleeds into it — the live bug: the PO keyword "order to" -> `order\s*to`
+    # prefix-matched "order to(tal)" in a totals line and typed worksheets as Purchase Order. With
+    # TYPE_KEYWORD_BOUND on, apply the SAME alnum boundary guard as single-word phrases so the phrase
+    # must sit on its own word edges. Kill switch (default OFF) => byte-identical to the historical
+    # unbounded compile; corpus-gated before flip (a legit heading is a standalone phrase, not a prefix).
+    if os.environ.get("TYPE_KEYWORD_BOUND", "0") == "1":
+        return re.compile(r'(?<![a-z0-9])' + body + r'(?![a-z0-9])')
     return re.compile(body)
 
 
