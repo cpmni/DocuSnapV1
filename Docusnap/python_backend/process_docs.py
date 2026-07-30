@@ -878,6 +878,24 @@ def main():
             # Sanitise — ensure all values are proper dicts
             extractions = sanitise_extractions(raw_extractions)
 
+            # TYPE-HEADING NUDGE (Slice 1b-nudge, kill switch TYPE_HEADING_NUDGE, default OFF). When the
+            # doc ended UNTYPED (the presence gate/veto dropped a wrong type, or nothing matched), harvest
+            # the page's own dominant top-band heading — an UNINSTALLED type like "Worksheet" — and emit it
+            # as the detected type NAME. It maps to NO installed type, so the doc STAYS untyped
+            # (document_type_id null, cannot auto-file) but the handler's _resolveDetectedType surfaces
+            # detected_type_name -> the existing "Add '<type>'" nudge, closing the loop (add the type once
+            # -> future docs of it type correctly). Conservative harvest -> None on any doubt = plain untyped.
+            # Runs BEFORE AUTO_TITLE so a real heading nudge wins over a generic title.
+            if doc_type_result is None and os.environ.get("TYPE_HEADING_NUDGE", "0") == "1":
+                try:
+                    from extraction.keyword import _harvest_top_band_heading
+                    _hh = _harvest_top_band_heading(ocr_text.split("\n"), known_type_names)
+                    if _hh:
+                        doc_type_result = _hh
+                        log(f"  Detected uninstalled type heading '{_hh}' -> UNTYPED + Add-type nudge")
+                except Exception:
+                    pass
+
             # AUTO-TITLE (Generic Document design §5; kill switch env AUTO_TITLE, default
             # OFF): ONLY for a doc NO type claimed — the same None the Electron fallback
             # maps to "General Document" — so title rows exist precisely for the docs that

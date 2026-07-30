@@ -490,6 +490,39 @@ def _line_is_heading_like(line: str, phrase: str) -> bool:
     return any(_segment_is_heading(seg.strip(), p) for seg in _COL_BREAK_RE.split(s))
 
 
+# Field-caption / letterhead words that head a top-band line WITHOUT being the document's TYPE title.
+_HARVEST_STOP = frozenset({
+    'date', 'reference', 'ref', 'number', 'no', 'invoice', 'account', 'order', 'page', 'sheet',
+    'to', 'from', 'for', 'site', 'customer', 'supplier', 'client', 'total', 'subtotal', 'tel',
+    'fax', 'email', 'vat', 'reg', 'company', 'ltd', 'limited', 'address', 'phone', 'mobile',
+})
+
+
+def _harvest_top_band_heading(lines, installed_type_names=None):
+    """Best-effort dominant standalone TYPE heading — an UNINSTALLED type like 'Worksheet' — from the
+    top band, to seed the "Add <type>" nudge when the type-presence gate/veto leaves a doc UNTYPED.
+    CONSERVATIVE: returns None on any ambiguity (a wrong harvest = a confusing nudge; None = plain
+    untyped, safe). Skips line 0 (letterhead); a candidate is the leftmost column segment of a line
+    that is an ALL-CAPS standalone of 1-2 alpha words (each >=3 chars) — the shape a real type BANNER
+    takes ("WORKSHEET", "DELIVERY DOCKET") — that is neither a field caption nor an already-installed
+    type (an installed type would have been detected and typed the doc)."""
+    installed_lc = {str(n).strip().lower() for n in (installed_type_names or [])}
+    for line in (lines or [])[1:12]:                              # skip L0 (letterhead); top band only
+        seg = _COL_BREAK_RE.split((line or "").strip())[0].strip()
+        words = seg.split()
+        if not (1 <= len(words) <= 2):
+            continue
+        if not all(w.isalpha() and len(w) >= 3 for w in words):   # a code/address/number is not a title
+            continue
+        if not seg.isupper():                                     # a type BANNER is set in caps
+            continue
+        low = seg.lower()
+        if low in installed_lc or any(w.lower() in _HARVEST_STOP for w in words):
+            continue
+        return seg.title()                                        # "WORKSHEET" -> "Worksheet"
+    return None
+
+
 # SLICE 1 (HEADING_LETTER_SPACING, Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-21): a document-TYPE
 # heading set in a TRACKED / letter-spaced display font ("PURCHASE ORDER") is fragmented by Tesseract
 # into pseudo-words ("PU RC HASE ORDER"); _type_keyword_pattern joins the phrase's words with \s* but
