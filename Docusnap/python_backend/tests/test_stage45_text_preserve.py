@@ -121,11 +121,22 @@ def test_clean_text_value_unflagged():
 
 
 def test_ref_field_still_shape_enforced():
-    print("ref field (typed 'text'): a shape-violating reference is STILL withheld")
+    # A ('')-scoped shape-violating ref hard-nulls ONLY under the cross-contamination kill switch
+    # (SHAPE_WITHHOLD_SUPPLIER_SCOPED=0) now that the fix is default-ON; at the default it flags-and-keeps
+    # (pinned by test_shape_withhold_supplier_scoped.py). This pins the legacy withhold + the kill switch.
+    print("ref field (typed 'text'), kill switch =0: a ('')-only shape-violating reference is STILL withheld")
     f = 0
-    r = _run({"reference_number": {"value": "9999-9999", "confidence": 85, "method": "keyword_override"}})
+    _prev = os.environ.get("SHAPE_WITHHOLD_SUPPLIER_SCOPED")
+    os.environ["SHAPE_WITHHOLD_SUPPLIER_SCOPED"] = "0"
+    try:
+        r = _run({"reference_number": {"value": "9999-9999", "confidence": 85, "method": "keyword_override"}})
+    finally:
+        if _prev is None:
+            os.environ.pop("SHAPE_WITHHOLD_SUPPLIER_SCOPED", None)
+        else:
+            os.environ["SHAPE_WITHHOLD_SUPPLIER_SCOPED"] = _prev
     ref = _f(r, "reference_number")
-    f += not check("reference_number nulled by shape enforcement (unchanged behaviour)",
+    f += not check("reference_number nulled by shape enforcement (kill switch restores legacy)",
                    ref.get("value") is None)
     f += not check("reference_number carries the 'enter manually' note",
                    "manually" in (ref.get("validation_note") or ""))

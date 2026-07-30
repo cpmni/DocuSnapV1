@@ -93,9 +93,9 @@ def _with_switch(val, fn):
 
 
 def test_xsupplier_stranger_ref_flags_not_nulls():
-    print("switch ON, unconfirmed supplier: a stranger ref that differs from the ('') shape is KEPT + flagged")
+    print("DEFAULT (fix ON): a stranger ref that differs from the ('') shape is KEPT + flagged, not nulled")
     f = 0
-    r = _with_switch("1", lambda: _run_fmt(
+    r = _with_switch(None, lambda: _run_fmt(
         {"reference_number": {"value": BAD_REF, "confidence": 85, "method": "keyword"}}, XSUP_FMT))
     ref = _f(r, "reference_number")
     f += not check(f"'{BAD_REF}' kept (NOT nulled by the cross-supplier shape)", ref.get("value") == BAD_REF)
@@ -105,22 +105,22 @@ def test_xsupplier_stranger_ref_flags_not_nulls():
     return f
 
 
-def test_switch_off_stranger_ref_still_nulled():
-    print("switch OFF (default): the SAME stranger ref is still NULLED — byte-identical guarantee")
+def test_kill_switch_off_stranger_ref_still_nulled():
+    print("kill switch =0: the SAME stranger ref is NULLED — the legacy withhold is restored")
     f = 0
-    r = _with_switch(None, lambda: _run_fmt(
+    r = _with_switch("0", lambda: _run_fmt(
         {"reference_number": {"value": BAD_REF, "confidence": 85, "method": "keyword"}}, XSUP_FMT))
     ref = _f(r, "reference_number")
-    f += not check("value nulled (unchanged behaviour with the switch off)", ref.get("value") is None)
+    f += not check("value nulled (kill switch =0 restores the legacy withhold)", ref.get("value") is None)
     f += not check("carries the 'enter manually' note", "manually" in (ref.get("validation_note") or ""))
     print()
     return f
 
 
 def test_supplier_scoped_garble_still_withheld():
-    print("switch ON, CONFIRMED supplier (_xsupplier False): a supplier's OWN shape-violating ref STILL NULLS")
+    print("DEFAULT (fix ON), CONFIRMED supplier (_xsupplier False): a supplier's OWN shape-violating ref STILL NULLS")
     f = 0
-    r = _with_switch("1", lambda: _run_fmt({
+    r = _with_switch(None, lambda: _run_fmt({
         "supplier_name":   {"value": "Copperfield Electrical", "confidence": 95, "method": "logo"},
         "reference_number": {"value": BAD_REF, "confidence": 85, "method": "keyword"},
     }, SUP_FMT))
@@ -137,7 +137,7 @@ def test_supplier_scoped_garble_still_withheld():
 if __name__ == "__main__":
     fails = 0
     for t in (test_xsupplier_stranger_ref_flags_not_nulls,
-              test_switch_off_stranger_ref_still_nulled,
+              test_kill_switch_off_stranger_ref_still_nulled,
               test_supplier_scoped_garble_still_withheld):
         fails += t()
     print(f"{'ALL PASS' if fails == 0 else str(fails) + ' FAILED'}")

@@ -4428,7 +4428,7 @@ class ExtractionEngine:
                 # supplier's ref convention wearing a doc-type-wide costume, so it may FLAG a cleanly-read
                 # stranger's ref for review but must NOT hard-null it (one supplier's shape can't veto
                 # another's). Consumed only by the terminal shape-withhold below; a supplier-scoped format
-                # (_xsupplier False) keeps the byte-unchanged hard null. No effect while the switch is off.
+                # (_xsupplier False) keeps the byte-unchanged hard null. DEFAULT ON; kill switch =0 = legacy.
                 _xsupplier = _sup_fmt is None
                 # ── Canonical token repair for NAME-LIKE fields ── runs INDEPENDENT of
                 # the anomaly verdict: a garbled company name is coarse-class FREETEXT
@@ -4637,8 +4637,9 @@ class ExtractionEngine:
                             continue
                         results[key] = _reread if _reread is not None else (
                             {
-                                # Cross-contamination fix (SHAPE_WITHHOLD_SUPPLIER_SCOPED, default OFF): a
-                                # ('')-only shape verdict must not BLANK a cleanly-read stranger ref — keep
+                                # Cross-contamination fix (SHAPE_WITHHOLD_SUPPLIER_SCOPED, DEFAULT ON since the
+                                # flip; kill switch =0 restores the legacy null): a ('')-only shape verdict
+                                # must not BLANK a cleanly-read stranger ref — keep
                                 # the value + FLAG for review. conf<=70 + the note triple-lock it out of
                                 # auto-file (the note alone blocks at every floor via trust.isAutoFileEligible;
                                 # the cap is belt-and-braces). Value-kept means the operator verifies a value
@@ -4648,7 +4649,7 @@ class ExtractionEngine:
                                 'confidence':      min(data.get('confidence') or 0, 70),
                                 'validation_note': 'format differs from the usual — please verify',
                             }
-                            if (_xsupplier and os.environ.get('SHAPE_WITHHOLD_SUPPLIER_SCOPED', '0') == '1')
+                            if (_xsupplier and os.environ.get('SHAPE_WITHHOLD_SUPPLIER_SCOPED', '1') != '0')
                             else {
                                 **data,
                                 'value':           None,
