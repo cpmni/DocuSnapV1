@@ -2812,14 +2812,24 @@ class ExtractionEngine:
         self._veto_fallthrough = False # G1/G2: set True below when the match arrived via the identity-veto
                                        # fall-through (TEMPLATE_VETO_FALLTHROUGH) — arms the corroboration guards
         if templates:
-            match = template_matcher.identify_template(
-                _id_img,
-                ocr_text,
-                templates,
-                detected_slug=detected_slug,
-                title_trusted=title_trusted,
-                query_detail_hash=logo_detail_hash,   # Slice C: isolated-mark veto on a ≥2-supplier logo collision
-            )
+            # Imageless fast re-extract (--reextract, text-only from cached OCR): the LIVE Stage-0
+            # identify consumes the page image AND, run imageless, would fall to its TEXT arms WITHOUT
+            # the logo-arm guards (trusted-title refuse / TYPE_PRESENCE_VETO / detail-mark veto) — a
+            # text-arm match could then stamp a supplier/type the full image pipeline would have vetoed.
+            # So SKIP the live call when there is no image and let the known-id honour path below apply
+            # the caller-supplied known_template_id text-only (Oracle C1 — guard the CALL, never the
+            # `if templates:` block, which also holds the honour path + extract_with_template). Byte-
+            # identical when an image is present (every non-reextract caller: _id_img is always set).
+            match = None
+            if _id_img is not None:
+                match = template_matcher.identify_template(
+                    _id_img,
+                    ocr_text,
+                    templates,
+                    detected_slug=detected_slug,
+                    title_trusted=title_trusted,
+                    query_detail_hash=logo_detail_hash,   # Slice C: isolated-mark veto on a ≥2-supplier logo collision
+                )
             # C1 (TYPE-heading authority): identify_template returns a REFUSE sentinel (template
             # None + type_refused) when a TRUSTED heading declares a type the matched template does
             # NOT carry. Collapse it to "no template" so every branch below is byte-identical to the

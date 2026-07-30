@@ -238,6 +238,13 @@ def main():
     # the learned data does, and per-field crop reads still re-run). Single-doc reprocess
     # only; the batch path carries the text per-doc in --reprocess-manifest instead.
     parser.add_argument("--cached-ocr-file", default=None)
+    # Fast text-only re-extract (Oracle-vetted, kill switch caller-side REEXTRACT_TEXT_ONLY): with a
+    # cached full-page OCR supplied (--cached-ocr-file / manifest ocr_text), render NO page images and
+    # run only the engine's image-free stages (keyword + hints + validation + known-id template text-read;
+    # crop/anchor/mapping stages self-skip on page_images=[]). Skips BOTH the full-page OCR AND the
+    # per-field crop OCR. Absent flag ⇒ byte-identical. Caller excludes born-digital docs (C3).
+    parser.add_argument("--reextract", action="store_true",
+                        help="text-only re-extract from cached OCR; render no images (fast on-open path)")
     # Dev-only: emit a structured per-field extraction TRACE stream (type:"trace")
     # for the hidden Dev Inspector. Off by default → zero extra output/overhead and
     # the user-facing process-progress stream is byte-identical.
@@ -482,13 +489,20 @@ def main():
             # born-digital page 0 (exact vector text, no word boxes) → consumers fall back to
             # text-only. Empty dict ⇒ None into engine.extract (byte-identical no-geometry path).
             _page0_geom = {}
-            ocr_text, page_images = extract_text_and_images(
-                filepath, _enh, born_digital=args.born_digital, engine=ocr_engine,
-                cached_text=(_cached if (_cached and _cached.strip()) else None),
-                auto_rotate=getattr(args, 'auto_rotate', False), rotations_out=_rotations,
-                provenance_out=_provenance,
-                deskew_pages=_deskew_pages, deskew_min_angle=_deskew_min_angle, raw_pages_out=_raw_pages,
-                page0_words_out=_page0_geom)
+            if getattr(args, 'reextract', False):
+                # Fast text-only re-extract: reuse the cached full-page OCR verbatim, render NO images →
+                # the engine runs its image-free subset and every crop/anchor/mapping stage self-skips on
+                # page_images=[]. Kills BOTH the full-page OCR and the per-field crop OCR (the two repeated
+                # reprocess costs once OCR is cached). An empty cache trips the non-empty guard below.
+                ocr_text, page_images = (_cached or ''), []
+            else:
+                ocr_text, page_images = extract_text_and_images(
+                    filepath, _enh, born_digital=args.born_digital, engine=ocr_engine,
+                    cached_text=(_cached if (_cached and _cached.strip()) else None),
+                    auto_rotate=getattr(args, 'auto_rotate', False), rotations_out=_rotations,
+                    provenance_out=_provenance,
+                    deskew_pages=_deskew_pages, deskew_min_angle=_deskew_min_angle, raw_pages_out=_raw_pages,
+                    page0_words_out=_page0_geom)
             if any(_rotations):
                 log(f"  auto-rotate: {[r for r in _rotations if r]} (clockwise°) on {filepath.name}")
 
@@ -503,7 +517,7 @@ def main():
             # taken from the vector text, not an OCR re-read. None for image-only/
             # scanned pages (no text layer) -> anchors fall back to OCR unchanged.
             page_text_lines = None
-            if args.born_digital and filepath.suffix.lower() == ".pdf":
+            if args.born_digital and not getattr(args, 'reextract', False) and filepath.suffix.lower() == ".pdf":
                 _bd_doc = None
                 try:
                     import pypdfium2 as _pdfium
