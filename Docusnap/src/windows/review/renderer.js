@@ -1328,6 +1328,13 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
       renderExtractionStatus(renderedDoc);
     });
   }
+
+  // Fast on-open re-extract (Slice B, DARK — inert unless `reextract_fast_enabled`). Fire-and-forget
+  // AFTER the fields are painted: refresh the EMPTY, non-anchored fields from this doc's already-cached
+  // OCR without a reprocess, surfacing each as an unconfirmed PILL suggestion. Skipped in fieldsOnly
+  // (bulk). See _scheduleReextractFast — debounced, doc-guarded, edit-guarded; the kill-switch OFF path
+  // returns {ok:false} so this is a no-op end-to-end.
+  if (!fieldsOnly) _scheduleReextractFast(doc.id);
 }
 
 // ── Page rendering ────────────────────────────────────────────────────────────
@@ -5480,6 +5487,64 @@ function hasPendingReviewEdits() {
   const detected = currentDoc && currentDoc.type_slug;
   if (selectedTypeSlug && detected && selectedTypeSlug !== detected) return true;   // manual type override
   return false;
+}
+
+// ── Fast on-open re-extract (Slice B, DARK) ─────────────────────────────────────
+// Debounced, doc-guarded trigger for the text-only re-extract. Rapid ↑/↓ cycling must NOT spawn a
+// worker per selection, so it waits for the operator to settle on a doc; it never fires while there
+// are unsaved edits (a suggestion must never fight a human), and it skips the IPC entirely unless
+// there's an EMPTY non-anchored field to gain (fill-only can't touch a filled or taught field, so a
+// fully-populated doc has nothing to add). The kill switch (server-side) OFF path returns
+// {ok:false,reason:'disabled'} — so even when this fires, nothing spawns until the feature is enabled.
+let _reextractTimer = null;
+function _scheduleReextractFast(docId) {
+  clearTimeout(_reextractTimer);
+  _reextractTimer = setTimeout(() => {
+    if (!currentDoc || currentDoc.id !== docId) return;        // moved on during the debounce
+    if (hasPendingReviewEdits()) return;                        // don't fight a human
+    // Only-when-gain (client pre-check): at least one EMPTY, non-taught field. Saves a spawn on a
+    // fully-read doc; the server re-checks the anchor scope authoritatively.
+    const inputs = Array.from(document.querySelectorAll('#fields-scroll .field-input'));
+    const hasGain = inputs.some(i => !String(i.value || '').trim() && !taughtFieldKeys.has(i.dataset.key));
+    if (!hasGain) return;
+    Promise.resolve(window.docusnap.reextractFieldsFast?.(docId)).then(res => {
+      if (!res || !res.ok || !Array.isArray(res.suggestions) || !res.suggestions.length) return;
+      if (!currentDoc || currentDoc.id !== docId) return;      // moved on during the spawn
+      if (hasPendingReviewEdits()) return;                      // started editing while it ran
+      _applyReextractSuggestions(res.suggestions);
+    }).catch(() => {});
+  }, 450);
+}
+
+// Paint the fill-only suggestions into the still-empty field inputs. Sets .value DIRECTLY (no input
+// event, no `corrections` entry) so a confirmed-untouched suggestion is treated as an ordinary
+// extracted value, NOT a human correction (Oracle C4). Each filled field gets a subtle marker + a
+// pill note; the operator's Confirm reads the input value and persists/learns it normally.
+function _applyReextractSuggestions(suggestions) {
+  const scroll = document.getElementById('fields-scroll');
+  if (!scroll) return;
+  let applied = 0;
+  for (const s of (suggestions || [])) {
+    if (!s || !s.field_key || !String(s.value ?? '').trim()) continue;
+    let inp = null;
+    try { inp = scroll.querySelector(`.field-input[data-key="${CSS.escape(s.field_key)}"]`); } catch { inp = null; }
+    if (!inp) continue;
+    if (String(inp.value || '').trim()) continue;              // only ever fill a STILL-empty input
+    inp.value = s.value;                                        // NO input event, NO corrections[] (Oracle C4)
+    inp.classList.add('reextract-suggested');
+    inp.title = 'Suggested from a re-read of the cached text — check it, then Confirm to keep.';
+    inp.style.borderColor = 'var(--accent2)';                  // subtle "this is a suggestion" cue
+    const row = inp.closest('.field-row');
+    if (row && !row.querySelector('.reextract-pill')) {
+      const pill = document.createElement('div');
+      pill.className = 'field-note reextract-pill';
+      pill.textContent = '⟳ Suggested from a cached-text re-read — check it, then Confirm to keep.';
+      Object.assign(pill.style, { fontSize: '11px', color: 'var(--accent2)', marginTop: '3px' });
+      row.appendChild(pill);
+    }
+    applied++;
+  }
+  if (applied) validateConfirm();   // a required empty field may have just gained a value — re-eval the gate
 }
 const REPROCESS_DISCARD_WARNING =
   'Reprocessing re-reads this document with the latest learned data and REPLACES the '
