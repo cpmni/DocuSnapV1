@@ -714,8 +714,13 @@ function advanceField(){
     // draws a CLEAN page (the last confirmed box is removed too — owner 2026-07-30). A dot-click or
     // Back re-selects a field (recomputes fieldIndex) so nothing is stranded.
     state.fieldIndex = state.fields.length;
+    // Clear the last field's step header (owner 2026-07-30) — no lingering "confirm the printed label
+    // for <field>" / per-field explanation. Show only the done-message + the Review pointer.
+    setPrompt('Teaching complete', 'Ready to review');
+    $('rg-sub').textContent = 'All fields captured — choose Review → below to save this document type.';
+    const rb = $('rg-readback'); if (rb) rb.innerHTML = '';
     renderFieldRail(); redrawCanvas();
-    setConfirm('<div class="muted">All details captured — choose <b>Review →</b> below.</div>');
+    setConfirm('');
   }
 }
 $('rg-redraw').onclick=()=>{ const f=curField(); if(f) delete state.results[f.key]; promptField(); };
