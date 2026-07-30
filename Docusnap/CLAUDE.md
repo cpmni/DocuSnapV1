@@ -21,43 +21,30 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-29 EVENING) — draw-perf DARK + Copperfield learn-on-commit fix — READ `HANDOVER_2026-07-29_EVENING.md`
-**2026-07-29 EVENING (Opus 4.8). HEAD `bb553dd`; origin 2 BEHIND (`7b46bbe`,`bb553dd` UNPUSHED); tree clean. No installer built.**
-· `262c26c` (PUSHED) **CLAUDE.md de-bloat** — the session-state pile-up 07-20→07-28 moved to `docs/session-log.md`.
-· `7b46bbe` **draw-tool concurrent OCR reads — DARK** (kill `draw_concurrent_anchor_reads`, default OFF = byte-identical):
-  overlap the value read with the left/above LABEL reads (geometry-only) so a drawn box costs ~1 OCR wall-time not 2.
-  `supplier_name` stays serial; empty-guard; the diag tee tolerates a value-promise. eric+Oracle SIGN-OFF-W/COND — flip
-  needs C1 owner live smoke + C2 wire `regionWorker.warmUp()` on Review open + C3 string/promise pin (C2/C3 mine to build).
-· **COPPERFIELD-PO 3-axis fix** (herald/iris/reggie/gary/Oracle). Root (VERIFIED): the identity-convergence step
-  (`addLogoHash` + `stabiliseFingerprint` intersect, in `templates.update()`) runs ONLY on a TAUGHT confirm, so
-  graduation-born templates FREEZE at 1 logo hash + a CUSTOMER-token-polluted fingerprint → PO rescue 0.70 < 0.80 floor,
-  the invoice letterhead-magnet (pure-letterhead fingerprint scores 1.0) wins → trusted-title refuse → "No template
-  match". iris replay: enriched = all 60 docs own-type, 0 cross-type flips. ⚠ My mid-session phash-separation AND
-  "gated-on-match" theories were BOTH FALSIFIED (herald/iris) — real cause is the keyword arm + the teaching-only gate.
-  - **Slice 2 BUILT `bb553dd`** (reggie): po_number/sales_order footer-boilerplate guard (kill `PO_ORDER_INSTRUCTION_SKIP`
-    + `PO_REF_DIGIT_GATE`, default ON; OFF byte-identical) — a bare "order no/number" whose tail is prose ("…on all
-    correspondence") is skipped + an order-family value must carry a ≥2-digit run. Backend `keyword.py` ONLY (shared
-    `validation_patterns` UNTOUCHED — renderer keys off field TYPE). Unit 5/5 + corpus GREEN (M_type 0; the 1 ref miss
-    #33 is invoice_number = PRE-EXISTING, field-scope-proven not Slice 2). Pins `test_po_order_footer.py`. Cosmetic
-    follow-up: strip the leading comma the "Order No" header read stores.
-  - **Slice 1 DESIGNED, NOT BUILT** (learn-on-commit — the owner's requirement). gary design + Oracle SIGN-OFF-W/COND
-    (GO-BUILD / NO-FLIP). Extract `templates.enrichIdentity`; guarded `learnTemplateOnCommit` on all 3 commit routes
-    (single confirm / File-All / auto-file), TYPE-SCOPED + SUPPLIER-VALIDATED + SYMMETRIC; kill `TEMPLATE_LEARN_ON_CONFIRM`;
-    + reversible owner-run backfill `scripts/template-enrich-backfill.js`. ⚠⚠ **C-A MANDATORY (fold in AT BUILD):
-    `appendLogoOnly` — never seed a NEW primary logo automatically** (else it re-plants a logo graduation-C3 withheld on a
-    cross-supplier collision → silent misfile; gary's "impossible by construction" holds for the fingerprint intersect,
-    NOT the logo seed/append). + C-B behavioural pin / C-C supplier-AWARE audit / C-D proven-reversible backfill / C-E
-    full-corpus 0-flip gate (all in the handover). herald A DROPPED (double-counts the 0.80 lift), herald B DARK.
-· **Teach-wizard label read** DIAGNOSED, NOT fixed (owner suspected DPI — it's NOT `ocr_dpi`; teach renders its OWN
-  288-DPI preview `TEACH_RENDER_SCALE=4.0`). Leading cause: the wide label band includes the big RED "PURCHASE ORDER"
-  heading beside the small "Order No." → region OCR loses the caption; + a real `ds` frame bug `teach/renderer.js:779/795`
-  (recomputes a downscale that ignores `TEACH_NATIVE_CROP`). Reproduce the band slice + fix next.
-· **Installer Finish-page freeze** (owner laptop) = one-off Windows shell/SmartScreen on the UNSIGNED exe, NOT our code
-  (installer.nsh does nothing heavy at finish; app launches only on Finish click). Durable fix = code-sign the installer.
-**Prior-day 07-29 DAYTIME work** (born-digital test rig, reggie ISO-date fix `42a9334`, TYPE_PRESENCE_VETO ON `3351e2f`,
-S1 band-graduate DARK `958229c`) is archived in `docs/session-log.md` + memory (`project_*_20260729`). Its open owner
-items STILL STAND: rebuild the installer off `3705296` (carries the reggie config fix), import the demo batch, run
-`scripts/remove-superstore-invnum-anchor.js --apply` (app-closed).
+## Current session state (2026-07-30) — flips + security + teach + reextract WIP — READ `HANDOVER_2026-07-30.md`
+**2026-07-30 (Opus 4.8). HEAD `fbea19d` (the ONE unpushed commit); origin `d35f42c`; tree clean. Dev `npm start`
+LEFT RUNNING. Installer built mid-session at `2b8bdb2` (predates the later teach/reextract/learn-on-commit work).
+Live DB `%APPDATA%\ScanFinder\docusnap.db` — backfill `--apply` WAS RUN on it (backed up + reversible).**
+· **Cross-contamination FIXED + FLIPPED ON** (`d9ec7d5`+`2b8bdb2`, kill `SHAPE_WITHHOLD_SUPPLIER_SCOPED`). iris PROVED
+  (isolation, NOT phash/anchor) it was the learned-shape `('')` doc-type aggregate = one supplier's ref convention
+  hard-nulling stranger refs at Stage 4.5. A `('')`-only verdict now FLAGS-not-NULLS; supplier-scoped withhold
+  byte-unchanged. Gate score_demo A warm ref **55→89%**, realdoc **M=0**. Stage-2 residual = **DO-NOTHING** (`23a8f2e`,
+  Oracle-traced narrow/corpus-inert). Memory `project_shape_withhold_supplier_scoped_20260730`.
+· **Slice 1 learn-on-commit FLIPPED ON** (`8c487e4`, kill `template_learn_on_confirm`). Backfill `--apply`'d on the live
+  DB (backup `docusnap.backup-2026-07-30T13-18-45-930Z.db` + snapshot beside it, reversible) — healed the frozen
+  Copperfield templates; PROVEN POs resolve to their PO template (`probe_held_pos.py`).
+· **Security F1+F2** (`0b63794`, + Sammy re-audit): F1 baked the offline-verify licence keys into `pinnedKeys.js`
+  (loose `config/license.json` was forgeable; kill `LICENSE_PINNED_KEYS`); F2 `activate.php` seat-race `FOR UPDATE`;
+  H-1 backup-restore guard + M-1 device_fp + L-5 XML. Detail: gitignored `SECURITY_AUDIT_2026-07-29_LOCAL.md`.
+· **Teach fixes:** label-detect **frame-math fix** (`1ef3e50` — both label-band `ds` now honour `TEACH_NATIVE_CROP`;
+  owner-smoked, labels detect now) · only-current-box overlay + Straighten text button (`c1d128f`) · all-captured
+  header cleanup (`d35f42c`). · **Import "couldn't be read" banner** details+dismiss (`4b40284`).
+· **⏳ OPEN BUILD — fast on-open re-extract (Slice B, DARK).** gary+eric→Oracle SIGN-OFF-W/COND. **Foundation done**
+  `fbea19d`: `process_docs --reextract` (imageless, cached OCR, no crop OCR) + engine Oracle-C1 guard (skip the live
+  identify CALL not the block → known-id honour applies the template text-only) + pin GREEN. **LEFT:** the JS delivery
+  (IPC `reextract-fields-fast` + fill-only display-only merge + on-open trigger) + the C2 corpus shadow gate + C5
+  spawn profile + Slice C warm worker. Full plan in `HANDOVER_2026-07-30.md` + `pendingfeatures.md` + memory
+  `project_reextract_fast_20260730`.
 
 
 
