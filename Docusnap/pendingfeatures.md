@@ -54,6 +54,20 @@ lost) — dismiss is display-only. Needs an app reopen to render.
 
 ## Extraction / accuracy
 
+### Cross-contamination residual — Stage-2 `_qualify_against_format` (Oracle C2, 2026-07-30)
+- **State:** the Stage-4.5 cross-contamination fix (`SHAPE_WITHHOLD_SUPPLIER_SCOPED`, engine.py:4421/4631)
+  converts a `('')`-only shape WITHHOLD to a FLAG. **A SECOND site does the same class of null one stage
+  earlier:** `anchor._qualify_against_format` (`anchor.py:1252`, `check_value` against the same `('')`
+  fallback `engine.py:1636-1637`) can NULL — or rarely silent-TRIM — a **cleanly-read stranger structured
+  ref** read via a swept authoritative crop whose method is NOT in `_LABEL_CONFIRMED_METHODS`
+  (`anchor.py:2436`; `anchor_crop` is the danger). gary's design called this "orthogonal"; **Oracle proved
+  it is not.** Usually recovered by the parallel keyword read (which the Stage-4.5 fix then saves), and the
+  born-digital demo has no taught anchors so the harness is BLIND to it.
+- **Fix direction (deferred — higher blast radius, 13+ call sites + the `test_doctype_scoped_format_gate.py`
+  clipped-crop pin):** the same `_xsupplier`-aware "don't hard-null a clean stranger value" at Stage 2, and
+  a note when it trims. Own slice, own gate. **Do NOT advertise the Stage-4.5 fix as "cross-contamination
+  closed" — it closes the keyword/rigid path only.**
+
 ### Letterhead cold-start supplier reader  (confirmed at scale 2026-07-29)
 - **Symptom:** cold (first-contact, no learning) supplier identity reads only from a `Supplier:`/`Bill
   From:` caption. The born-digital demo batch measured **~8%** supplier accuracy cold — name-as-text

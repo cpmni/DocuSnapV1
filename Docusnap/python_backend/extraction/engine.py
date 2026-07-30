@@ -4418,11 +4418,18 @@ class ExtractionEngine:
                 # bypassed for identity at the shape-check below (see _IDENTITY_FIELD_KEYS there),
                 # NOT by starving it of the lexicon. (Cf. 0cbafb8, which killed the veto by dropping
                 # the whole fallback and silently lost identity's repair + truncation with it — R2.)
-                fmt_entry = self.format_class_index.get((s_lower, dt_lower, key)) if s_lower else None
-                if not fmt_entry:
-                    fmt_entry = self.format_class_index.get(('', dt_lower, key))
+                _sup_fmt = self.format_class_index.get((s_lower, dt_lower, key)) if s_lower else None
+                fmt_entry = _sup_fmt if _sup_fmt else self.format_class_index.get(('', dt_lower, key))
                 if not fmt_entry:
                     continue
+                # Cross-contamination fix (kill SHAPE_WITHHOLD_SUPPLIER_SCOPED): _xsupplier means the shape
+                # verdict rests ONLY on the cross-supplier ('') aggregate — this (supplier,field) has NO
+                # confirmed history of its own. On a single-supplier install that ('') aggregate is one
+                # supplier's ref convention wearing a doc-type-wide costume, so it may FLAG a cleanly-read
+                # stranger's ref for review but must NOT hard-null it (one supplier's shape can't veto
+                # another's). Consumed only by the terminal shape-withhold below; a supplier-scoped format
+                # (_xsupplier False) keeps the byte-unchanged hard null. No effect while the switch is off.
+                _xsupplier = _sup_fmt is None
                 # ── Canonical token repair for NAME-LIKE fields ── runs INDEPENDENT of
                 # the anomaly verdict: a garbled company name is coarse-class FREETEXT
                 # and may not trip check_value at all, so gating it behind `anomaly`
@@ -4628,12 +4635,27 @@ class ExtractionEngine:
                             # pre-existing note on THIS field survived the spread → trust gate).
                             results[key] = _reread
                             continue
-                        results[key] = _reread if _reread is not None else {
-                            **data,
-                            'value':           None,
-                            'confidence':      0,
-                            'validation_note': "doesn't match the expected format — please enter manually",
-                        }
+                        results[key] = _reread if _reread is not None else (
+                            {
+                                # Cross-contamination fix (SHAPE_WITHHOLD_SUPPLIER_SCOPED, default OFF): a
+                                # ('')-only shape verdict must not BLANK a cleanly-read stranger ref — keep
+                                # the value + FLAG for review. conf<=70 + the note triple-lock it out of
+                                # auto-file (the note alone blocks at every floor via trust.isAutoFileEligible;
+                                # the cap is belt-and-braces). Value-kept means the operator verifies a value
+                                # instead of an empty field. Only fires for _xsupplier (no supplier-scoped
+                                # format); a supplier's OWN shape-violating ref still hits the hard null below.
+                                **data,
+                                'confidence':      min(data.get('confidence') or 0, 70),
+                                'validation_note': 'format differs from the usual — please verify',
+                            }
+                            if (_xsupplier and os.environ.get('SHAPE_WITHHOLD_SUPPLIER_SCOPED', '0') == '1')
+                            else {
+                                **data,
+                                'value':           None,
+                                'confidence':      0,
+                                'validation_note': "doesn't match the expected format — please enter manually",
+                            }
+                        )
                     else:
                         # In-class difference with no learned shape to enforce —
                         # keep it but flag for a human to verify.

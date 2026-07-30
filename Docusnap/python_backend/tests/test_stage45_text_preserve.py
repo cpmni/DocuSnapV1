@@ -61,7 +61,7 @@ def _run(kw_results):
     orig_va = engine_mod.validator.validate_and_adjust
     engine_mod.keyword.extract_fields = lambda *a, **k: {kk: dict(vv) for kk, vv in kw_results.items()}
     engine_mod.anchor.extract_with_anchors = lambda *a, **k: {}
-    engine_mod.validator.validate_and_adjust = lambda results, field_defs: results  # isolate Stage 4.5
+    engine_mod.validator.validate_and_adjust = lambda results, field_defs, **kw: results  # isolate Stage 4.5
     try:
         return eng.extract(ocr_text="stub", page_images=[], filename="t.pdf",
                            field_defs=FIELDS, hints=[], anchors=[], logos=[], templates=[],
@@ -81,7 +81,7 @@ def _run_fmt(kw_results, formats, fields):
     orig_va = engine_mod.validator.validate_and_adjust
     engine_mod.keyword.extract_fields = lambda *a, **k: {kk: dict(vv) for kk, vv in kw_results.items()}
     engine_mod.anchor.extract_with_anchors = lambda *a, **k: {}
-    engine_mod.validator.validate_and_adjust = lambda results, field_defs: results
+    engine_mod.validator.validate_and_adjust = lambda results, field_defs, **kw: results
     try:
         return eng.extract(ocr_text="stub", page_images=[], filename="t.pdf",
                            field_defs=fields, hints=[], anchors=[], logos=[], templates=[],
