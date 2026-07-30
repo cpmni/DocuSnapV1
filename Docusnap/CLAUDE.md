@@ -21,11 +21,20 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-30) — reextract FLIPPED ON (gates PASS + server smoke) — READ `HANDOVER_2026-07-30.md`
-**2026-07-30 (Opus 4.8). HEAD `41f71d5` (+ a CLAUDE.md docs commit); push after this. `reextract_fast_enabled` FLIPPED
-ON in the LIVE DB (revert `UNFLIP=1`). Dev `npm start` is STALE — restart to load the reextract feature (main IPC +
-renderer). Installer at `2b8bdb2` predates all reextract/teach/learn-on-commit work. Live DB
-`%APPDATA%\ScanFinder\docusnap.db` — backfill `--apply` WAS RUN on it (backed up + reversible).**
+## Current session state (2026-07-30) — reextract + worksheet-type-presence FLIPPED ON — READ `HANDOVER_2026-07-30.md`
+**2026-07-30 (Opus 4.8). HEAD `f3a650a` (+ a CLAUDE.md docs commit); pushed, origin in sync. TWO big flips this session:
+`reextract_fast_enabled` (LIVE DB setting, revert `UNFLIP=1` via `reextract_flip_smoke.js`) + the WORKSHEET TYPE-PRESENCE
+fix (4 CODE kill-switches default ON — kill each with its env =0). Dev `npm start` is STALE — restart to load. Installer
+at `2b8bdb2` predates all this work. Live DB `%APPDATA%\ScanFinder\docusnap.db` — backfill `--apply` WAS RUN (backed up
++ reversible).**
+· **✅ WORKSHEET mis-typed as PO/SO — FIXED + FLIPPED ON.** herald traced: (a) the PO keyword "order to" → `order\s*to`
+  prefix-matched "Order Total" (14 docs); (b) phash noise (a worksheet locks closer to a DIFFERENT supplier than to its
+  OWN template) routed 6 to the UNGUARDED keyword-fingerprint arm → template SO stamped by fingerprint. 4 slices, all ON:
+  1a `f2d18ae` `TYPE_KEYWORD_BOUND` · 1b `2300afb` `TYPE_PRESENCE_GATE` (+ Python `_type_heading_tokens` twin, parity-
+  pinned) · 2 `21519f9` `TYPE_PRESENCE_VETO_KW` (the kw-fingerprint arm) · nudge `85c7f0b` `TYPE_HEADING_NUDGE` (harvest
+  "Worksheet" → Add-type prompt) · flip `f3a650a`. realdoc **BYTE-IDENTICAL 5×** (type 100%, M_type 0, auto-file 82).
+  herald→gary→Oracle SIGN-OFF-W/COND all met. NOT retroactive: the 20 existing rows need Add-"Worksheet"-type + reprocess;
+  de-confirm #120. Memory `project_worksheet_type_presence_20260730`.
 · **Cross-contamination FIXED + FLIPPED ON** (`d9ec7d5`+`2b8bdb2`, kill `SHAPE_WITHHOLD_SUPPLIER_SCOPED`). iris PROVED
   (isolation, NOT phash/anchor) it was the learned-shape `('')` doc-type aggregate = one supplier's ref convention
   hard-nulling stranger refs at Stage 4.5. A `('')`-only verdict now FLAGS-not-NULLS; supplier-scoped withhold
