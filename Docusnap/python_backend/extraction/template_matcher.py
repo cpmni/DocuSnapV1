@@ -716,6 +716,21 @@ def identify_template(page_image, ocr_text: str, templates: list,
         if title_trusted and detected_slug and \
            (kw_match['template'].get('document_type_slug') or '') != detected_slug:
             return _type_refuse(detected_slug, kw_match['template'].get('document_type_slug'))
+        # TYPE-PRESENCE VETO on the KEYWORD-FINGERPRINT arm (Slice 2, kill switch TYPE_PRESENCE_VETO_KW,
+        # default OFF = byte-identical). The logo-arm veto (L568) only guards the STRONG-lock accept
+        # (conf>=60 ⇔ dist<=6). A doc that fails to lock strongly against its OWN supplier's template is
+        # typed HERE, unguarded — phash hashes LAYOUT, so a Ridgeway worksheet sits closer to a
+        # different supplier's templates (dist 8) than to its own SO template, and template 5's
+        # sales_order gets stamped by fingerprint alone (herald trace). Apply the SAME predicate: if the
+        # kw_match template's OWN type reliably prints its heading (armed ratio, threaded) but that
+        # heading is ABSENT from this candidate's top band, REFUSE -> no template -> untyped (Slice 1
+        # then drops any spurious keyword type). `_type_heading_absent` already abstains (returns False)
+        # for an UNARMED scope (n<3 / ratio<0.80 / no tokens), so a supplier who doesn't print the banner
+        # is never wrongly rejected (herald's NEVER/UNKNOWN). Symmetric with the L568 logo-arm veto.
+        if (os.environ.get('TYPE_PRESENCE_VETO_KW', '0') == '1'
+                and _type_heading_absent(kw_match['template'], ocr_lower)):
+            return _type_refuse(kw_match['template'].get('document_type_slug'),
+                                kw_match['template'].get('document_type_slug'))
         if _fallthrough_supplier_ok(kw_match['template']) and _vetoed_fallthrough_ok(kw_match['template']):
             # C1: reject a type-refuse fall-through for a DIFFERENT supplier; C3: an identity-veto
             # fall-through winner must clear the mark/branding bar (else None, as today).
