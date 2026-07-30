@@ -21,9 +21,9 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-30) — flips + security + teach + reextract WIP — READ `HANDOVER_2026-07-30.md`
-**2026-07-30 (Opus 4.8). HEAD `9ebd91d`; origin in sync (pushed, incl. a CLAUDE.md trim 989→870). Dev `npm start`
-LEFT RUNNING. Installer built mid-session at `2b8bdb2` (predates the later teach/reextract/learn-on-commit work).
+## Current session state (2026-07-30) — reextract JS delivery + both gates DONE — READ `HANDOVER_2026-07-30.md`
+**2026-07-30 (Opus 4.8). HEAD `f79980b`; origin in sync (pushed). Dev `npm start` may be stale — restart to load the
+reextract renderer changes. Installer built mid-session at `2b8bdb2` (predates teach/reextract/learn-on-commit work).
 Live DB `%APPDATA%\ScanFinder\docusnap.db` — backfill `--apply` WAS RUN on it (backed up + reversible).**
 · **Cross-contamination FIXED + FLIPPED ON** (`d9ec7d5`+`2b8bdb2`, kill `SHAPE_WITHHOLD_SUPPLIER_SCOPED`). iris PROVED
   (isolation, NOT phash/anchor) it was the learned-shape `('')` doc-type aggregate = one supplier's ref convention
@@ -39,11 +39,14 @@ Live DB `%APPDATA%\ScanFinder\docusnap.db` — backfill `--apply` WAS RUN on it 
 · **Teach fixes:** label-detect **frame-math fix** (`1ef3e50` — both label-band `ds` now honour `TEACH_NATIVE_CROP`;
   owner-smoked, labels detect now) · only-current-box overlay + Straighten text button (`c1d128f`) · all-captured
   header cleanup (`d35f42c`). · **Import "couldn't be read" banner** details+dismiss (`4b40284`).
-· **⏳ OPEN BUILD — fast on-open re-extract (Slice B, DARK).** gary+eric→Oracle SIGN-OFF-W/COND. **Foundation done**
-  `fbea19d`: `process_docs --reextract` (imageless, cached OCR, no crop OCR) + engine Oracle-C1 guard (skip the live
-  identify CALL not the block → known-id honour applies the template text-only) + pin GREEN. **LEFT:** the JS delivery
-  (IPC `reextract-fields-fast` + fill-only display-only merge + on-open trigger) + the C2 corpus shadow gate + C5
-  spawn profile + Slice C warm worker. Full plan in `HANDOVER_2026-07-30.md` + `pendingfeatures.md` + memory
+· **✅ Fast on-open re-extract (Slice B) — JS DELIVERY DONE + BOTH FLIP GATES PASS; still DARK.** Kill switch
+  `reextract_fast_enabled` (or env `REEXTRACT_TEXT_ONLY=1`), OFF. B-1 `312674b` (IPC `reextract-fields-fast` in
+  processing/handler.js — where the spawn plumbing lives — + fill-only `mergeReextractRows`; pin `test_reextract_merge.js`
+  13/13). B-2 `faaf584` (renderer `_selectDoc` → debounced/doc-guarded trigger + ⟳ pill suggestions; `.value`-only,
+  no input event = Oracle C4). Gates: **C2 `39c35d3`** correctness (imageless vs full-reprocess, 80 docs → 40 candidates
+  **100% AGREE**, 0 flips) · **C5 `f79980b`** ~284ms vendor/python cold spawn, no sys.path trap. Fire-rate 0 on a stable
+  corpus (fills come from learning-since-import). LEFT (owner): live B-2 smoke (engineer the dynamic case — teach a
+  template, open a sibling with that field empty) + flip; Slice C warm worker deferred. Memory
   `project_reextract_fast_20260730`.
 
 
