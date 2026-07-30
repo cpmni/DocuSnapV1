@@ -40,6 +40,7 @@ function createReviewService(deps = {}) {
   const onScheduleSourceMove = deps.onScheduleSourceMove || (() => {});
   const onTaughtConfirm      = deps.onTaughtConfirm      || (async () => {});
   const onScopeGraduated     = deps.onScopeGraduated     || (async () => {});
+  const learnTemplateOnCommit = deps.learnTemplateOnCommit || (async () => {});   // Slice 1: identity convergence on every commit (dark)
   const captureSample        = deps.captureSample        || (async () => {});
   const notifyCounts         = deps.notifyCounts         || (() => {});
   const captureRouteContext  = deps.captureRouteContext  || (() => null);   // Slice 3: total trust ctx captured pre-note-clear
@@ -326,6 +327,15 @@ function createReviewService(deps = {}) {
         // check; a failure here can never affect the already-returned confirm.
         try { await onScopeGraduated(db, document_id, { allValues, document_type_slug, supplier_name, dtInfo }); }
         catch (e) { console.warn('Graduation auto-template failed:', e.message); }
+        // Slice 1 (learn-on-commit): AFTER graduation may have created/linked the template, keep its
+        // identity converging on this confirm (kill switch template_learn_on_confirm, DEFAULT OFF ⇒
+        // no-op). SKIP a taught confirm — onTaughtConfirm already enriched via templates.update. The
+        // hook self-gates on a resolvable same-type/same-supplier template; a failure can never affect
+        // the already-returned confirm.
+        if (!(Array.isArray(taught_fields) && taught_fields.length)) {
+          try { await learnTemplateOnCommit(db, document_id, { document_type_slug, supplier_name }); }
+          catch (e) { console.warn('Learn-on-commit failed:', e.message); }
+        }
       }).catch(() => {});
     }
 
@@ -344,6 +354,15 @@ function createReviewService(deps = {}) {
           documentTypeId: (dtInfo && dtInfo.id) || null,
         });
       }).catch(() => {});
+    }
+
+    // Slice 1 (learn-on-commit) — the !bulk chain above is SKIPPED on File-All/bulk, but bulk is the
+    // owner's common route, so mirror the hook here for bulk exactly as routing fires on both. Bulk
+    // carries no taught_fields, so no taught-skip is needed. Detached + fail-open + self-gated on the
+    // kill switch (DEFAULT OFF ⇒ byte-identical).
+    if (bulk) {
+      Promise.resolve().then(() => learnTemplateOnCommit(db, document_id, { document_type_slug, supplier_name }))
+        .catch(() => {});
     }
 
     return { ok: true, success: true, ...filingResult };

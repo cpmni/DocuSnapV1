@@ -2784,6 +2784,13 @@ async function _autoFileDoc(db, docId, folderPath, notifyMainWindow, logger) {
     notifyMainWindow?.('doc-auto-filed', { docId, count: getAutoFiledIds(db).length });
     notifyMainWindow?.('review-count-changed', documents.getReviewCount(db));
   } catch {}
+  // Slice 1 (learn-on-commit): auto-file is the THIRD commit route — keep the matched template's
+  // identity converging on it too, or a supplier whose docs all auto-file would never converge past
+  // its first frozen sample. Self-gated on the kill switch (DEFAULT OFF ⇒ byte-identical) + a
+  // resolvable same-type/same-supplier template. fail-open — the doc is already filed above.
+  try { require('../../../database/modules/templates').learnTemplateOnCommit(db, docId, { document_type_slug: dtInfo.slug, supplier_name: allValues.supplier_name || doc.supplier_name || null }); }
+  catch (e) { logger?.warn?.(`[auto-file] learn-on-commit skipped for docId=${docId}: ${e && e.message}`); }
+
   // Routing slice (SEAM A): auto-create an approval route from the extracted total/type — detached +
   // fail-open (can NEVER disturb the already-completed file). System sender via assignSystem (no human
   // confirmer on auto-file). Self-gated on the kill switch + REAL entitlement (master const, false

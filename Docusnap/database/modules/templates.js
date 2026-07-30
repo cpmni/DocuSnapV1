@@ -988,28 +988,42 @@ function chooseLogoPhash(existing, incoming) {
   return (incoming == null || String(incoming).trim() === '') ? null : incoming;
 }
 
-function update(db, id, { logo_phash, logo_detail_hash, keyword_fingerprint, fields } = {}) {
-  const sets   = ["confirmed_count = confirmed_count + 1", "updated_at = datetime('now')"];
-  const params = [];
+// Converge a template's IDENTITY (keyword fingerprint + logo-hash set) toward one
+// document's signals, WITHOUT bumping confirmed_count or touching fields (count-free,
+// field-free — safe to call on any commit, not only a taught one). The fingerprint is
+// INTERSECTED (stabiliseFingerprint) so per-document noise (customer tokens, a one-off
+// misread) erodes and stable branding survives: this is the healer that strips the
+// customer-token pollution a graduation-frozen template carries. The logo is the
+// fragile axis — a single phash drifts double-digit Hamming per render — so it is
+// SEEDED once when empty then APPENDED within the drift band, never overwritten.
+//
+// appendLogoOnly (Oracle C-A — set by the automatic learn-on-commit hook + backfill):
+// NEVER seed a NEW primary logo. Enrich the logo set only when the template ALREADY
+// carries a primary; a template with no primary (a graduation-C3 KEYWORD-ONLY template,
+// whose logo was deliberately withheld on a cross-supplier logo collision) is left with
+// NO logo at all. Re-planting that withheld logo would be a silent cross-supplier
+// misfile (the 64-bit phash hashes letterhead LAYOUT, so same-layout/different-supplier
+// is the danger zone). The fingerprint intersect — the real healer — still runs in
+// every mode; only the logo SEED is suppressed.
+function enrichIdentity(db, id, { logo_phash, logo_detail_hash, keyword_fingerprint, appendLogoOnly = false } = {}) {
+  const cur  = db.prepare('SELECT logo_phash, keyword_fingerprint FROM templates WHERE id = ?').get(id) || {};
+  const sets = [], params = [];
 
-  // Identity must STABILISE across confirms, never be overwritten by one noisy
-  // sample — read the established identity and merge the incoming sample into it
-  // (see stabiliseFingerprint / chooseLogoPhash above).
-  if (logo_phash !== undefined || keyword_fingerprint !== undefined) {
-    const cur = db.prepare('SELECT logo_phash, keyword_fingerprint FROM templates WHERE id = ?').get(id) || {};
-    if (logo_phash !== undefined) {
-      sets.push('logo_phash = ?');
-      params.push(chooseLogoPhash(cur.logo_phash, logo_phash));
-    }
-    if (keyword_fingerprint !== undefined) {
-      const merged = stabiliseFingerprint(_parseJson(cur.keyword_fingerprint, []), keyword_fingerprint);
-      sets.push('keyword_fingerprint = ?');
-      params.push(JSON.stringify(merged));
-    }
+  if (keyword_fingerprint !== undefined) {
+    const merged = stabiliseFingerprint(_parseJson(cur.keyword_fingerprint, []), keyword_fingerprint);
+    sets.push('keyword_fingerprint = ?');
+    params.push(JSON.stringify(merged));
   }
-  params.push(id);
-  db.prepare(`UPDATE templates SET ${sets.join(', ')} WHERE id = ?`).run(...params);
-  if (fields && fields.length) _upsertFields(db, id, fields);
+  // Seed/keep the primary logo column ONLY on the taught-update path. Under
+  // appendLogoOnly the column is untouched so a null primary can never be seeded.
+  if (logo_phash !== undefined && !appendLogoOnly) {
+    sets.push('logo_phash = ?');
+    params.push(chooseLogoPhash(cur.logo_phash, logo_phash));
+  }
+  if (sets.length) {
+    params.push(id);
+    db.prepare(`UPDATE templates SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+  }
 
   // Multi-reference logo-hash maintenance (migration 26): seed the established
   // primary into the reference set, then APPEND this scan's hash when it's a
@@ -1017,10 +1031,66 @@ function update(db, id, { logo_phash, logo_detail_hash, keyword_fingerprint, fie
   // converges to span this supplier's render drift. addLogoHash dedups + caps.
   if (logo_phash) {
     const primary = (db.prepare('SELECT logo_phash FROM templates WHERE id = ?').get(id) || {}).logo_phash;
-    if (primary) addLogoHash(db, id, primary);   // seed's own detail hash unknown here → backfills on re-confirm
+    if (appendLogoOnly && !primary) return;       // C-A: no established primary → never enrich the logo
+    if (primary) addLogoHash(db, id, primary);    // seed's own detail hash unknown here → backfills on re-confirm
     const minD = minLogoDistance(db, id, logo_phash, primary);
     if (minD > LOGO_DEDUP_FLOOR && minD <= LOGO_APPEND_BAND) addLogoHash(db, id, logo_phash, logo_detail_hash);
   }
+}
+
+function update(db, id, { logo_phash, logo_detail_hash, keyword_fingerprint, fields } = {}) {
+  // confirmed_count bump + timestamp stay here (identity convergence is delegated).
+  db.prepare("UPDATE templates SET confirmed_count = confirmed_count + 1, updated_at = datetime('now') WHERE id = ?").run(id);
+  // Taught-confirm identity convergence — NOT appendLogoOnly, so a first taught confirm
+  // still seeds the primary logo exactly as before (byte-identical to the old inline body).
+  enrichIdentity(db, id, { logo_phash, logo_detail_hash, keyword_fingerprint });
+  if (fields && fields.length) _upsertFields(db, id, fields);
+}
+
+// Slice 1 — LEARN-ON-COMMIT. Re-run identity convergence for a document's ALREADY-resolved
+// template on ANY commit route (single confirm / File-All / auto-file), so a matched or
+// graduation-born template keeps converging toward its supplier's real branding instead of
+// freezing at its first sample (a customer-token-polluted fingerprint + a single logo hash).
+// Historically this ran ONLY on a taught confirm (via update()); a frozen template lets the
+// same-supplier invoice "letterhead magnet" out-score the real PO template → refuse / misfile.
+//   · Kill switch template_learn_on_confirm — DEFAULT OFF ⇒ byte-identical; env
+//     TEMPLATE_LEARN_ON_CONFIRM=1/0 hard-forces it for the flip gate + route tests.
+//   · TYPE-SCOPED     — only a template of the confirmed type is enriched.
+//   · SUPPLIER-VALIDATED — a doc whose confirmed issuer is a provably DIFFERENT company from the
+//     template's established identity donates nothing (a mislinked doc can't plant a foreign hash).
+//   · appendLogoOnly  — Oracle C-A: never seeds a NEW primary logo (a graduation-C3 keyword-only
+//     template stays logo-less; only the fingerprint intersect heals it).
+//   · SYMMETRIC across all types. Pure DB (no ctx) — safe to call from any commit path.
+function learnTemplateOnCommit(db, document_id, { document_type_slug, supplier_name } = {}) {
+  const learning = require('./learning');   // lazy — avoids a load-order knot
+  const env = process.env.TEMPLATE_LEARN_ON_CONFIRM;
+  const on  = env === '1' ? true : env === '0' ? false
+            : learning.getSetting(db, 'template_learn_on_confirm', 'false') === 'true';
+  if (!on) return;
+
+  const doc = db.prepare(
+    'SELECT template_id, logo_phash, logo_detail_hash, keyword_fingerprint FROM documents WHERE id = ?'
+  ).get(document_id);
+  const tid = doc && doc.template_id;
+  if (!tid) return;                          // no resolved template on this doc → nothing to enrich
+
+  const tmpl = db.prepare('SELECT document_type_slug FROM templates WHERE id = ?').get(tid);
+  if (!tmpl) return;
+  // TYPE-SCOPE: never let a same-logo sibling of another type absorb this doc's fingerprint.
+  if (document_type_slug && tmpl.document_type_slug && tmpl.document_type_slug !== document_type_slug) return;
+
+  // SUPPLIER-VALIDATE: exclude this doc from the identity read (a plain establishedIdentity would
+  // count the doc against itself); enrich only if the OTHER samples' issuer is not provably foreign.
+  const ident = establishedIdentity(db, tid, document_id);
+  if (ident && supplier_name && supplierNamesDisjoint(supplier_name, ident)) return;
+
+  const fp = _parseJson(doc.keyword_fingerprint, null);
+  enrichIdentity(db, tid, {
+    logo_phash:          doc.logo_phash || undefined,
+    logo_detail_hash:    doc.logo_detail_hash || undefined,
+    keyword_fingerprint: Array.isArray(fp) ? fp : undefined,
+    appendLogoOnly:      true,          // C-A — never seed a new primary logo automatically
+  });
 }
 
 function _upsertFields(db, templateId, fields) {
@@ -1356,7 +1426,7 @@ module.exports = {
   getDominantSupplier, establishedIdentity, supplierNamesDisjoint,
   unfreezeAutoFrozenRecipientNames,
   searchByName,
-  create, update, remove, rename, shouldAdoptIssuerName, hammingDistance,
+  create, update, enrichIdentity, learnTemplateOnCommit, remove, rename, shouldAdoptIssuerName, hammingDistance,
   stabiliseFingerprint, chooseLogoPhash,
   getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
   recordMappingTest, setSampleDocument, reassignDocuments, mergeInto, setFieldFixedValue,

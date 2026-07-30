@@ -89,6 +89,9 @@ function register(ctx) {
     onScheduleSourceMove: (args) => _scheduleSourceMove(ctx, getDb(), documents, args),
     onTaughtConfirm: (db, docId, info) => _upsertTemplate(ctx, db, docId, info),
     onScopeGraduated: (db, docId, info) => _maybeGraduationTemplate(ctx, db, docId, info),
+    // Slice 1 (learn-on-commit) — keep a matched/graduated template's identity converging on
+    // EVERY confirm, not only a taught one (kill switch template_learn_on_confirm, DEFAULT OFF).
+    learnTemplateOnCommit: (db, docId, info) => templates.learnTemplateOnCommit(db, docId, info),
     captureSample: async (tId, docId) => {
       if (ctx.captureSampleWords) {
         await ctx.captureSampleWords(tId, docId);
