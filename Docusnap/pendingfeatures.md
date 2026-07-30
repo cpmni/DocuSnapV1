@@ -54,19 +54,28 @@ lost) — dismiss is display-only. Needs an app reopen to render.
 
 ## Extraction / accuracy
 
-### Cross-contamination residual — Stage-2 `_qualify_against_format` (Oracle C2, 2026-07-30)
-- **State:** the Stage-4.5 cross-contamination fix (`SHAPE_WITHHOLD_SUPPLIER_SCOPED`, engine.py:4421/4631)
-  converts a `('')`-only shape WITHHOLD to a FLAG. **A SECOND site does the same class of null one stage
-  earlier:** `anchor._qualify_against_format` (`anchor.py:1252`, `check_value` against the same `('')`
-  fallback `engine.py:1636-1637`) can NULL — or rarely silent-TRIM — a **cleanly-read stranger structured
-  ref** read via a swept authoritative crop whose method is NOT in `_LABEL_CONFIRMED_METHODS`
-  (`anchor.py:2436`; `anchor_crop` is the danger). gary's design called this "orthogonal"; **Oracle proved
-  it is not.** Usually recovered by the parallel keyword read (which the Stage-4.5 fix then saves), and the
-  born-digital demo has no taught anchors so the harness is BLIND to it.
-- **Fix direction (deferred — higher blast radius, 13+ call sites + the `test_doctype_scoped_format_gate.py`
-  clipped-crop pin):** the same `_xsupplier`-aware "don't hard-null a clean stranger value" at Stage 2, and
-  a note when it trims. Own slice, own gate. **Do NOT advertise the Stage-4.5 fix as "cross-contamination
-  closed" — it closes the keyword/rigid path only.**
+### Cross-contamination residual — Stage-2 `_qualify_against_format` — DO-NOTHING (gary+Oracle, 2026-07-30)
+- **Resolved understanding (Oracle traced it):** the Stage-4.5 fix (`SHAPE_WITHHOLD_SUPPLIER_SCOPED`, default
+  ON, engine.py:4421/4631) closes the keyword/rigid path. The feared Stage-2 `anchor_crop` null is **largely
+  already handled**: `method='anchor_crop'` is set at `anchor.py:586` only AFTER passing `_qualify_against_format`
+  at `582`; a clean stranger crop is nulled at **582** (the ENTRY to the relocate/registration recovery chain),
+  and the located case is **already resurrected** at `anchor.py:1102-1104`/`1175-1177` by the same
+  `_digit_free_on_digit_field`/`_partial_of_uniform_shape` predicates (flagged at Stage 4.5). So `anchor_crop`
+  is NOT the danger the earlier note claimed.
+- **The genuine residual is a NARROW sliver:** `method='anchor'` text-fallback (+`anchor_crop_recovered`) —
+  label readable as a text line but NOT locatable as a box, relocate/registration failed, field `_xsupplier`.
+- **Why DO-NOTHING (gary designed a fix; Oracle SIGN-OFF-W/COND → build DARK / fallback DO-NOTHING):** the fix
+  (an `xsupplier_lookup` companion threaded to `anchor.py:1253`, keep-clean-reject-garble via the readability
+  predicates) is sound + fail-safe (kept value → Stage-4.5 flag → never auto-files), BUT (a) reward is the
+  narrow text-fallback sliver only; (b) a kept stranger ref WINS Tier A (engine.py:3552, `located` includes
+  `'anchor'`) and DEMOTES a would-be keyword auto-file to a flagged review showing a WRONG value on disagreement
+  — a real auto-file-rate regression (never a silent misfile); (c) the FIRING path is CORPUS-INERT (no taught
+  anchors in the born-digital harness; real anchors belong to confirmed suppliers), so it can't be validated —
+  Oracle's flip gate needs a constructed taught-anchor `_xsupplier` case on the BF_/KO_/… corpus. Not worth the
+  demotion downside for a corpus-inert edge on a single-supplier install. Revisit only if a real firing case
+  appears on a genuine multi-supplier install. gary's full design + Oracle's conditions (A corrected framing /
+  B demotion pin / C taught-anchor gate / D `test_doctype_scoped_format_gate.py` direct-call short-circuit /
+  E single `(entry,is_xsupplier)` closure) are in the 2026-07-30 chat.
 
 ### Letterhead cold-start supplier reader  (confirmed at scale 2026-07-29)
 - **Symptom:** cold (first-contact, no learning) supplier identity reads only from a `Supplier:`/`Bill
