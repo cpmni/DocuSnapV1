@@ -577,11 +577,15 @@ function register(ctx) {
   // migrate to a new PC, but a fresh trial can't import another machine's learned data
   // to dodge the trial. Legacy backups (no device_fp) and dev boxes are not blocked.
   function _deviceImportAllowed(meta) {
-    const backupFp = meta && meta.device_fp;
-    if (!backupFp) return { allowed: true };          // pre-binding backup — can't enforce
     const curFp = _currentDeviceFp();
     if (!curFp) return { allowed: true };             // no licensing config (dev) — don't block
-    if (backupFp === curFp) return { allowed: true }; // same machine
+    const backupFp = meta && meta.device_fp;
+    if (backupFp && backupFp === curFp) return { allowed: true }; // same machine
+    // SECURITY (Sammy M-1): a MISSING/empty device_fp used to auto-allow ("pre-binding backup"),
+    // but a crafted archive can simply OMIT the field to defeat the whole gate. Treat absent-fp the
+    // same as a cross-machine import — require a signature-verified active PAID seat below. A real
+    // legacy backup on a licensed machine still restores (it holds a seat); a fresh trial importing
+    // another machine's OR a crafted no-fp archive is blocked (anti-trial-stacking intact).
     try {
       // SECURITY (Stage 4 — M5): the seat must be a SIGNATURE-VERIFIED active paid token, not merely a
       // license_tokens ROW whose convenience columns say kind='seat'/state='active'. Reading those raw

@@ -296,7 +296,12 @@ async function removeSourceFile(fs, srcPath, logger) {
 // ── XML builder ───────────────────────────────────────────────────────────────
 function buildXml({ allValues, documentType, originalFilename,
                     storedAs, processedAt }) {
-  const esc = s => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+  // Strip XML-1.0-illegal control chars (0x00–08, 0B, 0C, 0E–1F) from a crafted-doc value BEFORE
+  // entity-escaping (Sammy L-5) — otherwise they land verbatim in element content and produce a
+  // malformed sidecar that a strict external / /v1 consumer rejects. Tag/entity injection was
+  // already fully blocked by the & < > escaping; this only removes the never-valid bytes.
+  const esc = s => String(s || '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+                                  .replace(/&/g,'&amp;').replace(/</g,'&lt;')
                                   .replace(/>/g,'&gt;');
   const lines = [
     '<?xml version="1.0" encoding="UTF-8"?>',

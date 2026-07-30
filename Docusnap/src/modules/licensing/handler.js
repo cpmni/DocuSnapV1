@@ -44,6 +44,24 @@ function loadConfig(ctx) {
   if (_config) return _config;
   const cfgPath = ctx.resourcePath('config', 'license.json');
   _config = JSON.parse(ctx.fs.readFileSync(cfgPath, 'utf8'));
+  // SEC (offline forge hardening): the verification keys come from a constant baked INSIDE the
+  // asar, NOT from this loose extraResources file. config/license.json ships as a plain, editable
+  // file in the packaged app's resources/ dir, so trusting its `public_keys` let an attacker swap
+  // in their own key and sign a token offline (a full licence bypass with a text editor). The baked
+  // keys equal the shipped config keys (a rotation must update BOTH — pinned by
+  // test_license_pinned_keys.js), so a legitimate install is byte-identical; only a TAMPERED loose
+  // file diverges, and there the baked keys win. base_url / product_id still come from the file
+  // (deployment-specific, and un-forgeable-into-access on their own). Kill switch
+  // LICENSE_PINNED_KEYS=0 restores the legacy loose-file keys (reversibility / the red-vs-green pin).
+  if (process.env.LICENSE_PINNED_KEYS !== '0') {
+    try {
+      const pinned = require('../../lib/license/pinnedKeys');
+      if (pinned && pinned.PINNED_PUBLIC_KEYS) {
+        _config.public_keys = pinned.PINNED_PUBLIC_KEYS;
+        if (pinned.PINNED_ACTIVE_KID) _config.active_kid = pinned.PINNED_ACTIVE_KID;
+      }
+    } catch { /* baked module unreachable — fall back to the loose file (never brick the gate) */ }
+  }
   return _config;
 }
 

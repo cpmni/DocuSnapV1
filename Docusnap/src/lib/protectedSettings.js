@@ -11,11 +11,21 @@
 const _KEYS = new Set([
   'detached_client_licensed', 'detached_search_seats', 'detached_workflow_seats',
   'detached_features_signed', 'update_info',
+  // GATE STATE (Sammy H-1): flipping these via a restored backup / the generic set-setting door
+  // bypasses the legal-acceptance and first-run gates. They are written only by the dedicated
+  // legal-accept / onboarding-complete flows (setSetting direct), so protecting the generic door
+  // + backup here never blocks the real path.
+  'terms_accepted', 'first_run_completed',
 ]);
 
 function isProtectedSettingKey(key) {
   const s = String(key == null ? '' : key).toLowerCase();
-  return _KEYS.has(s) || /^licens/.test(s) || s.includes('licens');
+  // client_api_* (Sammy M-2/M-3): the LAN /v1 API host/port/cert PATHS + the enrollment PAIRING
+  // SECRET. Exporting them leaks LAN topology + the pairing secret; restoring them lets a crafted
+  // backup stand up the API with a pairing code the attacker knows. Written only by the dedicated
+  // client-api enable/cert handlers (setSetting direct), never the generic door — so excluding them
+  // from set-setting + backup is safe.
+  return _KEYS.has(s) || /^licens/.test(s) || s.includes('licens') || s.startsWith('client_api');
 }
 
 module.exports = { isProtectedSettingKey };
