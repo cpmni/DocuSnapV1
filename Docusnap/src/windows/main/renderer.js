@@ -1266,17 +1266,29 @@ window.docusnap.onWatchProgress?.(handleWatchProgress);
 // A doc that fails extraction now holds at status='error' (no longer silently
 // dropped). Surface the count with a "Try again" that reprocesses them through
 // the existing per-doc reprocess path; on success they become needs_review.
-const stuckChip     = document.getElementById('stuck-chip');
-const stuckMsg      = document.getElementById('stuck-msg');
-const btnStuckRetry = document.getElementById('btn-stuck-retry');
+const stuckChip      = document.getElementById('stuck-chip');
+const stuckMsg       = document.getElementById('stuck-msg');
+const btnStuckRetry  = document.getElementById('btn-stuck-retry');
+const stuckList      = document.getElementById('stuck-list');
+const btnStuckDetails = document.getElementById('btn-stuck-details');
+const btnStuckDismiss = document.getElementById('btn-stuck-dismiss');
+
+// Per-session acknowledge: the count the user last dismissed at. The chip re-surfaces only when
+// MORE documents fail (count grows past it), and the dismiss resets when the queue clears — so an
+// acknowledge hides today's errors without ever hiding a NEW failure. Errored docs are never lost
+// (they hold at status='error' and stay in getStuckDocs); dismiss is display-only.
+let _stuckDismissedAt = -1;
 
 function renderStuckChip(n) {
   _stuckCount = n || 0;
   updateAttention();   // keep the dashboard attention card in sync (cheap)
   if (!stuckChip) return;
-  if (!n || n < 1) { stuckChip.style.display = 'none'; return; }
-  stuckMsg.textContent = `${n} document${n === 1 ? "" : "s"} couldn't be read`;
+  if (!n || n < 1) { stuckChip.style.display = 'none'; _stuckDismissedAt = -1; return; }  // cleared → reset ack
+  if (n <= _stuckDismissedAt) { stuckChip.style.display = 'none'; return; }                // acknowledged, nothing new
+  _stuckDismissedAt = -1;                                                                  // a new/extra failure → re-surface
+  stuckMsg.textContent = `${n} document${n === 1 ? "" : "s"} couldn't be read — held for retry (not filed, not lost).`;
   stuckChip.style.display = '';
+  if (stuckList) { stuckList.hidden = true; stuckList.innerHTML = ''; }   // collapse stale details on re-render
   // "Try again" runs reprocess (Admin/Edit only) — hide the action for read-only.
   if (btnStuckRetry) btnStuckRetry.style.display = _userCanReview ? '' : 'none';
 }
@@ -1285,6 +1297,35 @@ async function refreshStuckCount() {
 }
 refreshStuckCount();
 window.docusnap.onStuckCountChanged?.((n) => renderStuckChip(n));
+
+// "Details" — name each held document + WHY it couldn't be read (documents.error_message), so the
+// banner explains itself instead of a bare count. Toggles a collapsible list; values go in via
+// textContent (never innerHTML) so an error string can't inject markup.
+btnStuckDetails?.addEventListener('click', async () => {
+  if (!stuckList) return;
+  if (!stuckList.hidden) { stuckList.hidden = true; return; }   // toggle closed
+  let docs = [];
+  try { docs = await window.docusnap.getStuckDocs(); } catch {}
+  stuckList.innerHTML = '';
+  if (!docs.length) {
+    const li = document.createElement('li'); li.textContent = 'No details available.'; stuckList.appendChild(li);
+  } else {
+    for (const d of docs) {
+      const li = document.createElement('li');
+      const name = document.createElement('span'); name.className = 'stuck-name'; name.textContent = d.original_filename || `Document #${d.id}`;
+      const why  = document.createElement('span'); why.className  = 'stuck-why';  why.textContent  = d.error_message ? ` — ${d.error_message}` : ' — couldn’t be read';
+      li.append(name, why);
+      stuckList.appendChild(li);
+    }
+  }
+  stuckList.hidden = false;
+});
+
+// Dismiss (×) — acknowledge the current count for this session (display-only; the docs stay held).
+btnStuckDismiss?.addEventListener('click', () => {
+  _stuckDismissedAt = _stuckCount;
+  if (stuckChip) stuckChip.style.display = 'none';
+});
 
 btnStuckRetry?.addEventListener('click', async () => {
   if (running) return;                       // don't fight a manual batch

@@ -8,21 +8,12 @@
 
 ## UX / product
 
-### ★ Import "couldn't be read" banner — no dismiss, no detail  (added 2026-07-29, owner)
-- **Symptom (live):** the amber "**N document(s) couldn't be read** — Try again" banner on the Import
-  screen has **no way to dismiss it**, and gives **no explanation** — which doc failed, *why*, or
-  *where it went*. Owner: "there is no way to get rid of it."
-- **Where it went (fact):** a failed doc holds at `status='error'` (no longer silently dropped) — it is
-  NOT filed and NOT lost; the banner reflects the live error-doc count and only clears when those docs
-  are retried-successfully or deleted. That's why it can't be dismissed today.
-- **Code:** `src/windows/main/renderer.js:1265-1293` (`renderStuckChip` / `refreshStuckCount` /
-  `#btn-stuck-retry`), markup `src/windows/main/index.html:994` (`#stuck-chip`/`#stuck-msg`).
-  `getStuckDocs()` ALREADY returns the failed docs (filenames are available) — the banner just shows a
-  bare count.
-- **Wanted:** (1) name the doc(s) + the failure reason (from `documents.error` / the `file_done` error);
-  (2) say it's *held for retry*, not lost, and where to find it (an Errors view / filter); (3) a
-  dismiss/acknowledge (per-session hide) OR a click-through to the error docs. Renderer-mostly; may need
-  the error reason surfaced via `getStuckDocs`.
+### ✓ SHIPPED — Import "couldn't be read" banner: details + dismiss  (2026-07-30)
+The amber Import banner now (1) reworded "held for retry (not filed, not lost)"; (2) a **Details** toggle
+lists each held doc + WHY (`documents.error_message`, via the existing `getStuckDocs`); (3) a **dismiss (×)**
+per-session acknowledge that re-surfaces only when MORE docs fail (`_stuckDismissedAt`). Renderer + markup +
+CSS only (`src/windows/main/{renderer.js,index.html}`); errored docs still hold at `status='error'` (never
+lost) — dismiss is display-only. Needs an app reopen to render.
 
 ---
 
