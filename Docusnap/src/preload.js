@@ -220,6 +220,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   promoteToTemplate:           (data)    => ipcRenderer.invoke('promote-to-template', data),
   linkDocumentToTemplate:      (data)    => ipcRenderer.invoke('link-document-to-template', data),
   checkTemplateMatch:          (id)      => ipcRenderer.invoke('check-template-match-for-document', id),
+  reextractFieldsFast:         (docId)   => ipcRenderer.invoke('reextract-fields-fast', { docId }),
   notifyReviewComplete:        ()        => ipcRenderer.send('notify-review-complete'),
 
   // ── Zone OCR & learning ──────────────────────────────────────────────────────

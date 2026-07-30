@@ -271,6 +271,42 @@ function mergeReprocessRows(existing, newRows, flip = null, onTrace = null) {
   return mergedRows;
 }
 
+// Fill-only merge for the fast text-only re-extract (Slice B, DARK). Unlike
+// mergeReprocessRows — which CLOBBERS a stored value with a fresh read — this NEVER
+// overwrites and NEVER writes the DB: it returns ONLY additive suggestions for fields the
+// operator has no value for AND the system isn't already positioned to read. The renderer
+// surfaces these as dismissable pills that persist only on the operator's own confirm.
+//
+// A field becomes a suggestion ONLY when ALL hold (Oracle C4/C6):
+//   (a) the fast run produced a non-empty value with NO validation_note (Stage-4 clean);
+//   (b) the STORED field is genuinely empty — no display_value AND no validation_note
+//       (a flagged empty is a deliberate review state, not a hole to fill);
+//   (c) the field has NO learned anchor in (supplier,type) scope — an anchored empty means
+//       the taught position read nothing on purpose; a text-fallback must not override it.
+// `anchoredKeys` = Set<field_key> the caller built from learning.getTaughtFieldKeys.
+function mergeReextractRows(existing, newExtractions, anchoredKeys = new Set()) {
+  const exMap = {};
+  for (const e of (existing || [])) exMap[e.field_key] = e;
+  const suggestions = [];
+  for (const [key, data] of Object.entries(newExtractions || {})) {
+    if (!data || typeof data !== 'object') continue;
+    const value = data.value != null ? String(data.value) : '';
+    if (!value.trim()) continue;                                   // (a) non-empty
+    if (data.validation_note) continue;                            // (a) Stage-4 clean
+    const ex = exMap[key];
+    if (ex && ex.display_value && String(ex.display_value).trim()) continue;  // (b) stored has a value
+    if (ex && ex.validation_note) continue;                        // (b) flagged empty — keep the flag
+    if (anchoredKeys && anchoredKeys.has(key)) continue;           // (c) anchor-abstain
+    suggestions.push({
+      field_key:  key,
+      value,
+      confidence: data.confidence ?? null,
+      method:     data.method || null,
+    });
+  }
+  return suggestions;
+}
+
 function buildTrainingArgs(db, configPath, logger = null) {
   const docTypes  = require('../../../database/modules/document_types');
   const learning  = require('../../../database/modules/learning');
@@ -1611,6 +1647,130 @@ function register(ctx) {
     });
   });
 
+  // ── Fast on-open text-only re-extract (Slice B, DARK) ───────────────────────
+  // Refresh a document's EMPTY fields from its already-cached full-page OCR WITHOUT a full
+  // reprocess — skips the full-page OCR (cached) AND the per-field crop OCR AND all image
+  // rendering (`--reextract`, process_docs.py). Read-only: returns fill-only SUGGESTIONS,
+  // writes NOTHING to the DB (persist happens on the operator's confirm). No renderer trigger
+  // yet — nothing invokes this channel until Slice B-2 wires _selectDoc, so it is inert.
+  // Oracle conditions honoured: C1 known-id honour (imageless → the engine applies the known
+  // template text-only), C4 (suggestion, no phantom human-correction), C6 (anchor-abstain,
+  // no 2nd auto-file site, no type/status mutation — this path never writes).
+  ipcMain.handle('reextract-fields-fast', async (_event, { docId } = {}) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    // DARK by default (Slice B). The whole fast path is inert unless EXPLICITLY enabled —
+    // setting `reextract_fast_enabled` = 'true', OR env REEXTRACT_TEXT_ONLY=1. OFF → the
+    // channel returns 'disabled' and nothing spawns, so wiring a renderer trigger (B-2) can
+    // never go live by accident. Byte-identical to the feature not existing.
+    const _fastOn = process.env.REEXTRACT_TEXT_ONLY === '1'
+      || require('../../../database/modules/learning').getSetting(db, 'reextract_fast_enabled', 'false') === 'true';
+    if (!_fastOn) return { ok: false, reason: 'disabled' };
+    // Same network-free cached-license re-check as reprocess (this re-runs the engine).
+    const licenseDenial = require('../licensing/handler').licenseDenied(db);
+    if (licenseDenial) return { ok: false, reason: 'license' };
+    // Never add load while a batch / single reprocess is running (shares the CPU + busy model).
+    if (_anyProcessingBusy()) return { ok: false, reason: 'busy' };
+
+    const learning  = require('../../../database/modules/learning');
+    const templates = require('../../../database/modules/templates');
+
+    const doc = db.prepare(`
+      SELECT d.id, d.ocr_text, d.template_id, d.supplier_name, d.original_filename,
+             d.logo_phash, d.logo_detail_hash, dt.slug AS document_type_slug
+        FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id
+       WHERE d.id = ?`).get(docId);
+    if (!doc) return { ok: false, reason: 'no-doc' };
+    // Cached OCR is the whole premise — no cache, no fast path (fall back to a real reprocess).
+    if (!doc.ocr_text || !doc.ocr_text.trim()) return { ok: false, reason: 'no-cache' };
+
+    // Known template: the doc's own link, else a NOW-available same-type template (the
+    // "newly-found template" gain case) via the SAME type-scoped fingerprint recheck the
+    // Teach-this-document CTA uses. Null is fine — a text-only re-extract still re-reads
+    // keyword fields from the cached OCR.
+    let knownTemplateId = doc.template_id || null;
+    if (!knownTemplateId) {
+      try {
+        const m = templates.identifyByFingerprint(db, {
+          logo_phash: doc.logo_phash, ocr_text: doc.ocr_text,
+          document_type_slug: doc.document_type_slug, logo_detail_hash: doc.logo_detail_hash,
+        });
+        if (m) knownTemplateId = m.template.id;
+      } catch { /* no match → keyword-only re-extract */ }
+    }
+
+    const existing = db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(docId);
+
+    // reextract NEVER reads the file bytes (process_docs.py:492) — so we do NOT resolve/copy
+    // the (possibly missing) source. A zero-byte placeholder with the right extension is all
+    // the folder-enumeration needs; this also works for a filed doc whose working copy was nulled.
+    const ext    = (doc.original_filename && path.extname(doc.original_filename)) || '.pdf';
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'docusnap-rx-'));
+    const cachedFile = path.join(tmpDir, 'cached_ocr.txt');
+    let trainingArgs = [], tempFiles = [];
+    try {
+      fs.writeFileSync(path.join(tmpDir, `reextract_${Date.now()}${ext}`), '');
+      fs.writeFileSync(cachedFile, doc.ocr_text, 'utf8');
+      ({ args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath, logger));
+    } catch (e) {
+      try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
+      return { ok: false, reason: 'setup' };
+    }
+
+    const reprMode = _validMode(learning.getSetting(db, 'processing_mode', 'smart'));
+    const scriptArgs = [
+      '--folder',        tmpDir,
+      '--tesseract',     tesseractPath(),
+      '--mode',          reprMode,
+      ...trainingArgs,
+      '--reextract',
+      '--cached-ocr-file', cachedFile,
+    ];
+    if (knownTemplateId)        scriptArgs.push('--known-template-id', String(knownTemplateId));
+    if (doc.document_type_slug) scriptArgs.push('--known-doc-slug', doc.document_type_slug);   // honour the doc's own type
+
+    return new Promise((resolve) => {
+      let settled = false, watchdog = null, proc = null;
+      const finish = (v) => {
+        if (settled) return; settled = true;
+        if (watchdog) clearTimeout(watchdog);
+        try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
+        cleanupFiles(tempFiles);
+        resolve(v);
+      };
+      try {
+        proc = spawn(pythonExe(), pythonArgs(backendScript(), ...scriptArgs),
+          { windowsHide: true, env: { ...process.env, ..._ocrDpiEnv(db) } });
+      } catch (e) { return finish({ ok: false, reason: 'spawn' }); }
+
+      // Imageless + cached → seconds at most; a short watchdog keeps a hung child from leaking.
+      watchdog = setTimeout(() => { try { proc.kill(); } catch {} finish({ ok: false, reason: 'timeout' }); }, 60 * 1000);
+
+      let buf = '', result = null;
+      proc.stdout.on('data', (d) => {
+        buf += d.toString();
+        const lines = buf.split('\n'); buf = lines.pop();
+        for (const line of lines) {
+          const t = line.trim(); if (!t) continue;
+          try { const msg = JSON.parse(t); if (msg.type === 'file_done') result = msg; } catch { /* non-JSON log line */ }
+        }
+      });
+      proc.on('error', () => finish({ ok: false, reason: 'spawn' }));
+      proc.on('close', () => {
+        if (!result || !result.extractions) return finish({ ok: false, reason: 'no-result' });
+        let anchoredKeys = new Set();
+        try {
+          anchoredKeys = new Set(learning.getTaughtFieldKeys(db, {
+            supplier_name: doc.supplier_name || result.supplier_name || '',
+            document_type: doc.document_type_slug || null,
+          }).map(r => r.field_key));
+        } catch { /* no anchors → none abstained */ }
+        const suggestions = mergeReextractRows(existing, result.extractions, anchoredKeys);
+        finish({ ok: true, docId, suggestions, templateId: knownTemplateId || null });
+      });
+    });
+  });
+
   // ── Reprocess All (batched) ───────────────────────────────────────────────
   // Reprocess many queued documents through a BOUNDED POOL of Python workers, each
   // handling a SHARD of docs in ONE process — so the Python/Tesseract startup cost is
@@ -2896,4 +3056,6 @@ module.exports = {
   _isOpenablePath,
   // Exposed for the reprocess type-flip persistence unit test (test_reprocess_type_flip.js).
   _mergeReprocessRows: mergeReprocessRows,
+  // Exposed for the fast re-extract fill-only merge unit test (test_reextract_merge.js).
+  _mergeReextractRows: mergeReextractRows,
 };
