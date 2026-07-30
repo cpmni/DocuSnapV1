@@ -307,6 +307,31 @@ def _type_heading_present(tokens, band):
     return present >= 1 and (present / len(tokens)) >= 0.6
 
 
+# TYPE-heading generic tokens = the JS typePresence.TYPE_GENERIC_TOKENS set (namePresence.
+# GENERIC_NAME_TOKENS ∪ {note, document}). DELIBERATELY DISTINCT from _GENERIC_NAME_TOKENS above (the
+# name-arm distinctiveness set, which diverges — office/systems/solutions/... — see that comment) so
+# the keyword-path type-presence gate scores the IDENTICAL token set the JS learn side threads for the
+# template path. Parity-pinned by tests/test_type_heading_tokens.py against typePresence.typeHeadingTokens.
+_TYPE_GENERIC_TOKENS = frozenset({
+    "ltd", "limited", "plc", "llp", "inc", "incorporated", "co", "company", "corp",
+    "group", "holdings", "services", "service", "the", "and", "note", "document",
+})
+
+
+def _type_heading_tokens(name, aliases=None):
+    """Distinctive [a-z0-9]{3,} tokens of a type NAME (∪ its printed-title aliases), minus generics —
+    the Python twin of typePresence.typeHeadingTokens (parity-pinned). Order-preserving, de-duped, so
+    the keyword-path presence gate and the JS-threaded template-path veto score one token set."""
+    src = " ".join(str(x) for x in ([name] + list(aliases or [])) if x)
+    seen = set()
+    toks = []
+    for t in re.findall(r"[a-z0-9]+", src.lower()):
+        if len(t) >= 3 and t not in _TYPE_GENERIC_TOKENS and t not in seen:
+            seen.add(t)
+            toks.append(t)
+    return toks
+
+
 def _type_heading_absent(best_t, ocr_lower):
     """TYPE-PRESENCE VETO predicate. True => HOLD: `best_t`'s OWN type reliably prints its heading
     (learned ratio threaded from templates.js) but that heading is ABSENT from this candidate's top

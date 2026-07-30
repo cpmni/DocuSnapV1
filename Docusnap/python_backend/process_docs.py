@@ -585,6 +585,30 @@ def main():
                 except Exception:
                     pass  # additive; on any failure the original detection stands (fail toward review)
 
+            # TYPE-PRESENCE GATE (keyword path, Slice 1b — kill switch TYPE_PRESENCE_GATE, default OFF
+            # = byte-identical). A keyword-detected type must show its OWN name/alias as a HEADING in the
+            # title band. A type assigned only from a BODY mention (heading=False) whose name is ABSENT
+            # from the top band is a false-positive — the PO keyword "order to" substring-matched an
+            # "Order Total" totals line and typed worksheets as Purchase Order. DROP it -> review UNTYPED
+            # (a null type CANNOT auto-file, trust.js 'no-type' — fail toward review). Nulls the COMMITTED
+            # type ONLY; type_detection is left intact so detected_name_slug/title_trusted still thread to
+            # the template-path guards (herald). Fresh-import path only — a reprocess with an assigned
+            # _ks re-honours the stored type at L613, so existing mis-typed docs need re-import/re-type.
+            # Reuses the parity-locked type-presence primitives; the token set is the same one the
+            # template-path veto scores (test_type_heading_tokens.py). Nudge harvest (emit the page's own
+            # heading for the "Add <type>" prompt) is a separate follow-on — until then a dropped doc
+            # lands generically-untyped in review (safe, no misfile).
+            if (os.environ.get("TYPE_PRESENCE_GATE", "0") == "1"
+                    and document_type and type_detection and not type_detection.get("heading")):
+                from extraction.template_matcher import (
+                    _type_heading_tokens, _type_presence_top_band, _type_heading_present)
+                _th_tok = _type_heading_tokens(document_type, (type_aliases or {}).get(document_type))
+                if _th_tok and not _type_heading_present(_th_tok, _type_presence_top_band(ocr_text.lower())):
+                    log(f"  Type '{document_type}' has no title-band heading — body-mention "
+                        f"false-positive; routing to UNTYPED review")
+                    document_type = None
+                    type_conf = 0
+
             if document_type:
                 log(f"  Document type: {document_type} ({type_conf}%)")
 
