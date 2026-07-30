@@ -727,7 +727,7 @@ def identify_template(page_image, ocr_text: str, templates: list,
         # then drops any spurious keyword type). `_type_heading_absent` already abstains (returns False)
         # for an UNARMED scope (n<3 / ratio<0.80 / no tokens), so a supplier who doesn't print the banner
         # is never wrongly rejected (herald's NEVER/UNKNOWN). Symmetric with the L568 logo-arm veto.
-        if (os.environ.get('TYPE_PRESENCE_VETO_KW', '0') == '1'
+        if (os.environ.get('TYPE_PRESENCE_VETO_KW', '1') != '0'    # flipped default ON 2026-07-30; =0 disables
                 and _type_heading_absent(kw_match['template'], ocr_lower)):
             return _type_refuse(kw_match['template'].get('document_type_slug'),
                                 kw_match['template'].get('document_type_slug'))

@@ -598,7 +598,7 @@ def main():
             # template-path veto scores (test_type_heading_tokens.py). Nudge harvest (emit the page's own
             # heading for the "Add <type>" prompt) is a separate follow-on — until then a dropped doc
             # lands generically-untyped in review (safe, no misfile).
-            if (os.environ.get("TYPE_PRESENCE_GATE", "0") == "1"
+            if (os.environ.get("TYPE_PRESENCE_GATE", "1") != "0"    # flipped default ON 2026-07-30; =0 disables
                     and document_type and type_detection and not type_detection.get("heading")):
                 from extraction.template_matcher import (
                     _type_heading_tokens, _type_presence_top_band, _type_heading_present)
@@ -886,7 +886,7 @@ def main():
             # detected_type_name -> the existing "Add '<type>'" nudge, closing the loop (add the type once
             # -> future docs of it type correctly). Conservative harvest -> None on any doubt = plain untyped.
             # Runs BEFORE AUTO_TITLE so a real heading nudge wins over a generic title.
-            if doc_type_result is None and os.environ.get("TYPE_HEADING_NUDGE", "0") == "1":
+            if doc_type_result is None and os.environ.get("TYPE_HEADING_NUDGE", "1") != "0":   # default ON 2026-07-30; =0 disables
                 try:
                     from extraction.keyword import _harvest_top_band_heading
                     _hh = _harvest_top_band_heading(ocr_text.split("\n"), known_type_names)

@@ -1027,9 +1027,9 @@ def _type_keyword_pattern(label: str) -> "re.Pattern | None":
     # of a longer word bleeds into it — the live bug: the PO keyword "order to" -> `order\s*to`
     # prefix-matched "order to(tal)" in a totals line and typed worksheets as Purchase Order. With
     # TYPE_KEYWORD_BOUND on, apply the SAME alnum boundary guard as single-word phrases so the phrase
-    # must sit on its own word edges. Kill switch (default OFF) => byte-identical to the historical
-    # unbounded compile; corpus-gated before flip (a legit heading is a standalone phrase, not a prefix).
-    if os.environ.get("TYPE_KEYWORD_BOUND", "0") == "1":
+    # must sit on its own word edges. Kill switch DEFAULT ON (flipped 2026-07-30, corpus-gated: realdoc
+    # byte-identical + the 20 Ridgeway worksheets untyped); =0 restores the historical unbounded compile.
+    if os.environ.get("TYPE_KEYWORD_BOUND", "1") != "0":
         return re.compile(r'(?<![a-z0-9])' + body + r'(?![a-z0-9])')
     return re.compile(body)
 
