@@ -21,10 +21,11 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-30) — reextract JS delivery + both gates DONE — READ `HANDOVER_2026-07-30.md`
-**2026-07-30 (Opus 4.8). HEAD `f79980b`; origin in sync (pushed). Dev `npm start` may be stale — restart to load the
-reextract renderer changes. Installer built mid-session at `2b8bdb2` (predates teach/reextract/learn-on-commit work).
-Live DB `%APPDATA%\ScanFinder\docusnap.db` — backfill `--apply` WAS RUN on it (backed up + reversible).**
+## Current session state (2026-07-30) — reextract FLIPPED ON (gates PASS + server smoke) — READ `HANDOVER_2026-07-30.md`
+**2026-07-30 (Opus 4.8). HEAD `41f71d5` (+ a CLAUDE.md docs commit); push after this. `reextract_fast_enabled` FLIPPED
+ON in the LIVE DB (revert `UNFLIP=1`). Dev `npm start` is STALE — restart to load the reextract feature (main IPC +
+renderer). Installer at `2b8bdb2` predates all reextract/teach/learn-on-commit work. Live DB
+`%APPDATA%\ScanFinder\docusnap.db` — backfill `--apply` WAS RUN on it (backed up + reversible).**
 · **Cross-contamination FIXED + FLIPPED ON** (`d9ec7d5`+`2b8bdb2`, kill `SHAPE_WITHHOLD_SUPPLIER_SCOPED`). iris PROVED
   (isolation, NOT phash/anchor) it was the learned-shape `('')` doc-type aggregate = one supplier's ref convention
   hard-nulling stranger refs at Stage 4.5. A `('')`-only verdict now FLAGS-not-NULLS; supplier-scoped withhold
@@ -39,15 +40,16 @@ Live DB `%APPDATA%\ScanFinder\docusnap.db` — backfill `--apply` WAS RUN on it 
 · **Teach fixes:** label-detect **frame-math fix** (`1ef3e50` — both label-band `ds` now honour `TEACH_NATIVE_CROP`;
   owner-smoked, labels detect now) · only-current-box overlay + Straighten text button (`c1d128f`) · all-captured
   header cleanup (`d35f42c`). · **Import "couldn't be read" banner** details+dismiss (`4b40284`).
-· **✅ Fast on-open re-extract (Slice B) — JS DELIVERY DONE + BOTH FLIP GATES PASS; still DARK.** Kill switch
-  `reextract_fast_enabled` (or env `REEXTRACT_TEXT_ONLY=1`), OFF. B-1 `312674b` (IPC `reextract-fields-fast` in
-  processing/handler.js — where the spawn plumbing lives — + fill-only `mergeReextractRows`; pin `test_reextract_merge.js`
-  13/13). B-2 `faaf584` (renderer `_selectDoc` → debounced/doc-guarded trigger + ⟳ pill suggestions; `.value`-only,
-  no input event = Oracle C4). Gates: **C2 `39c35d3`** correctness (imageless vs full-reprocess, 80 docs → 40 candidates
-  **100% AGREE**, 0 flips) · **C5 `f79980b`** ~284ms vendor/python cold spawn, no sys.path trap. Fire-rate 0 on a stable
-  corpus (fills come from learning-since-import). LEFT (owner): live B-2 smoke (engineer the dynamic case — teach a
-  template, open a sibling with that field empty) + flip; Slice C warm worker deferred. Memory
-  `project_reextract_fast_20260730`.
+· **✅ Fast on-open re-extract (Slice B) — DONE, BOTH GATES PASS, FLIPPED ON.** `reextract_fast_enabled='true'` in the
+  LIVE DB (a DB state, not a commit; revert `UNFLIP=1` via `stress_test/reextract_flip_smoke.js`). B-1 `312674b` (IPC
+  `reextract-fields-fast` in processing/handler.js — where the spawn plumbing lives — + fill-only `mergeReextractRows`;
+  pin `test_reextract_merge.js` 13/13). B-2 `faaf584` (renderer `_selectDoc` → debounced/doc-guarded trigger + ⟳ pill
+  suggestions; `.value`-only, no input event = Oracle C4). Gates: **C2 `39c35d3`** correctness (imageless vs full,
+  80 docs → 40 candidates **100% AGREE**, 0 flips) · **C5 `f79980b`** ~284ms vendor/python cold spawn. **Server smoke
+  PASS `41f71d5`** (gate enabled, 8 forced-empty fills — all supplier_name via template-fixed value; ref/date correctly
+  anchor-abstained). Fire-rate 0 on a stable corpus. LEFT: renderer ⟳-pill VISUAL confirm on next app RESTART (running
+  dev app is stale; a stable-corpus open shows none — force an empty field on a templated doc to see one); Slice C
+  warm worker deferred. Memory `project_reextract_fast_20260730`.
 
 
 
