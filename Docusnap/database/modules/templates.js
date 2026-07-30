@@ -1053,7 +1053,7 @@ function update(db, id, { logo_phash, logo_detail_hash, keyword_fingerprint, fie
 // freezing at its first sample (a customer-token-polluted fingerprint + a single logo hash).
 // Historically this ran ONLY on a taught confirm (via update()); a frozen template lets the
 // same-supplier invoice "letterhead magnet" out-score the real PO template → refuse / misfile.
-//   · Kill switch template_learn_on_confirm — DEFAULT OFF ⇒ byte-identical; env
+//   · Kill switch template_learn_on_confirm — DEFAULT ON since the flip (setting='false' disables); env
 //     TEMPLATE_LEARN_ON_CONFIRM=1/0 hard-forces it for the flip gate + route tests.
 //   · TYPE-SCOPED     — only a template of the confirmed type is enriched.
 //   · SUPPLIER-VALIDATED — a doc whose confirmed issuer is a provably DIFFERENT company from the
@@ -1065,7 +1065,7 @@ function learnTemplateOnCommit(db, document_id, { document_type_slug, supplier_n
   const learning = require('./learning');   // lazy — avoids a load-order knot
   const env = process.env.TEMPLATE_LEARN_ON_CONFIRM;
   const on  = env === '1' ? true : env === '0' ? false
-            : learning.getSetting(db, 'template_learn_on_confirm', 'false') === 'true';
+            : learning.getSetting(db, 'template_learn_on_confirm', 'true') !== 'false';
   if (!on) return;
 
   const doc = db.prepare(

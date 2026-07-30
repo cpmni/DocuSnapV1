@@ -84,18 +84,20 @@ function main() {
   let f = 0;
   const db = makeDb();
 
-  // ── OFF: default (no env, no setting) ⇒ NO-OP ────────────────────────────────
+  // ── DEFAULT (no env, no setting) ⇒ ON since the flip: enriches ───────────────
   setEnv(null);
+  const Tdef = templates.create(db, { name: 'PO-def', document_type_slug: 'purchase_order', logo_phash: H0, keyword_fingerprint: POLLUTED });
+  const dDef = commitDoc(db, { tid: Tdef, supplier: 'Copperfield Electrical Ltd', logo: H9, fp: CLEANDOC });
+  templates.learnTemplateOnCommit(db, dDef, { document_type_slug: 'purchase_order', supplier_name: 'Copperfield Electrical Ltd' });
+  f += !check('DEFAULT (no env/setting): fix ON — fingerprint intersects', JSON.stringify(fpOf(db, Tdef)) === JSON.stringify(HEALED));
+
+  // ── OFF: kill switch (env=0, or setting=false) ⇒ NO-OP (byte-identical) ───────
+  setEnv('0');
   const T = templates.create(db, { name: 'PO', document_type_slug: 'purchase_order', logo_phash: H0, keyword_fingerprint: POLLUTED });
   const d0 = commitDoc(db, { tid: T, supplier: 'Copperfield Electrical Ltd', logo: H9, fp: CLEANDOC });
   templates.learnTemplateOnCommit(db, d0, { document_type_slug: 'purchase_order', supplier_name: 'Copperfield Electrical Ltd' });
-  f += !check('OFF (default): fingerprint untouched', JSON.stringify(fpOf(db, T)) === JSON.stringify(POLLUTED));
-  f += !check('OFF (default): logo set still just the primary', templates.getLogoHashes(db, T).length === 1);
-
-  // ── OFF: env=0 hard force ⇒ NO-OP ────────────────────────────────────────────
-  setEnv('0');
-  templates.learnTemplateOnCommit(db, d0, { document_type_slug: 'purchase_order', supplier_name: 'Copperfield Electrical Ltd' });
   f += !check('OFF (env=0): fingerprint untouched', JSON.stringify(fpOf(db, T)) === JSON.stringify(POLLUTED));
+  f += !check('OFF (env=0): logo set still just the primary', templates.getLogoHashes(db, T).length === 1);
 
   // ── ON: happy path — intersect + append ──────────────────────────────────────
   setEnv('1');
