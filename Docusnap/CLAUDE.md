@@ -22,7 +22,7 @@ touches that area — read the pointed-to doc BEFORE working in it:
   ➜AN there). Read the matching block before changing one of those files.
 
 ## Current session state (2026-07-30) — flips + security + teach + reextract WIP — READ `HANDOVER_2026-07-30.md`
-**2026-07-30 (Opus 4.8). HEAD `fbea19d` (the ONE unpushed commit); origin `d35f42c`; tree clean. Dev `npm start`
+**2026-07-30 (Opus 4.8). HEAD `9ebd91d`; origin in sync (pushed, incl. a CLAUDE.md trim 989→870). Dev `npm start`
 LEFT RUNNING. Installer built mid-session at `2b8bdb2` (predates the later teach/reextract/learn-on-commit work).
 Live DB `%APPDATA%\ScanFinder\docusnap.db` — backfill `--apply` WAS RUN on it (backed up + reversible).**
 · **Cross-contamination FIXED + FLIPPED ON** (`d9ec7d5`+`2b8bdb2`, kill `SHAPE_WITHHOLD_SUPPLIER_SCOPED`). iris PROVED
