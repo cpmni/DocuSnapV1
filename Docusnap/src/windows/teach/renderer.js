@@ -784,7 +784,12 @@ async function autoLabel(box, forceDir){
         // Row nearest the VALUE's centre first (the band is taller than one line), then the
         // column nearest the value. Word boxes are in the DOWNSCALED crop px (cropB64's ds).
         const bandHpx = band.h*state.img.naturalHeight;
-        const ds = bandHpx>OCR_TARGET_H?(OCR_TARGET_H/bandHpx):1.0;
+        // ds MUST match cropB64's actual downscale — which honours TEACH_NATIVE_CROP (sends the crop
+        // NATIVE at ds=1.0). Recomputing OCR_TARGET_H/bandHpx here IGNORED that, so cY was scaled ~0.42×
+        // against words that are in native crop px → nearestRowTo looked in the wrong place and returned
+        // no row → "No label found here" even when the caption sits right beside the value (the Saltmarsh
+        // "Order Date" miss). Now frame-consistent with the crop.
+        const ds = TEACH_NATIVE_CROP ? 1.0 : (bandHpx>OCR_TARGET_H?(OCR_TARGET_H/bandHpx):1.0);
         const cY = ((box.y + box.h/2) - band.y) * state.img.naturalHeight * ds;
         const rowWords = A.nearestRowTo(res && res.words, cY);
         cluster = A.nearestLeftCluster(rowWords || (res && res.words));
@@ -800,7 +805,9 @@ async function autoLabel(box, forceDir){
         const srcBox = cluster ? cluster.box : (Array.isArray(res.box) ? res.box : null);
         if (srcBox){
           const bandHpx=band.h*state.img.naturalHeight;
-          const ds=bandHpx>OCR_TARGET_H?(OCR_TARGET_H/bandHpx):1.0;
+          // Same frame fix as above: honour TEACH_NATIVE_CROP so the label word-box → page-norm
+          // conversion divides by the SAME scale the crop was sent at (native = 1.0), not a phantom 0.42×.
+          const ds=TEACH_NATIVE_CROP?1.0:(bandHpx>OCR_TARGET_H?(OCR_TARGET_H/bandHpx):1.0);
           const nW=state.img.naturalWidth*ds, nH=state.img.naturalHeight*ds;
           const [l,t,w,h]=srcBox;
           if (nW>0&&nH>0&&w>0&&h>0){

@@ -8,18 +8,17 @@
 
 ## UX / product
 
-### Teach wizard — label non-recognition  (added 2026-07-30, owner; screenshot)
-- **Symptom (live):** drawing the value box for **PO Date** on a Saltmarsh Seafoods PO reads the value
-  `13/11/2026` correctly, but the wizard reports "**No label found here** — try the other direction, draw
-  one, or continue without" even though the printed label **"Order Date"** sits immediately to the LEFT of
-  the value. Same class as the DIAGNOSED-not-fixed teach-label miss in `HANDOVER_2026-07-29_EVENING.md`.
-- **Leading causes (from the handover, not yet reproduced at the slice):** (1) `src/windows/teach/renderer.js:779/795`
-  recompute a downscale `ds` that IGNORES `TEACH_NATIVE_CROP` (crop sent native at ds=1.0) → the label
-  word-box coords are mis-scaled; (2) the wide label band left of the value includes the big heading text
-  ("PURCHASE ORDER"/"Order No.") so region OCR loses the small "Order Date" caption; (3) mild page skew
-  breaks the left/above label relocation.
-- **Next:** reproduce the actual label-band slice (owner rule: look at the slice) → fix the read + the `ds`
-  frame bug. Teach-renderer-mostly.
+### ✓ FIXED (pending owner smoke) — Teach wizard label non-recognition  (2026-07-30)
+- **Root cause (frame-math bug):** `cropB64` sends the label band NATIVE (ds=1.0 under `TEACH_NATIVE_CROP`),
+  but the label-detection code at `src/windows/teach/renderer.js:787/803` recomputed `ds=OCR_TARGET_H/bandHpx`
+  (~0.42) WITHOUT honouring `TEACH_NATIVE_CROP` — so `cY` (the value centre fed to `nearestRowTo`) and the
+  label word-box→page-norm conversion were scaled ~0.42× against words that are in NATIVE crop px →
+  `nearestRowTo` looked in the wrong place → no row → "No label found here" even with the caption right beside
+  the value (the Saltmarsh "Order Date" miss). FIX: both `ds` now `TEACH_NATIVE_CROP ? 1.0 : (…)`, frame-
+  consistent with the crop. `nearestRowTo`/`nearestLeftCluster` then correctly narrow a wide band (heading +
+  caption) to the caption row, so cause (2) is subsumed.
+- **Smoke:** reopen Teach on the Saltmarsh PO → draw the Order Date value → "Order Date" should now be detected.
+  If a residual remains on a badly-skewed scan (cause 3), look at the band slice next.
 
 ### ✓ SHIPPED — Teach wizard: only-current-box overlay + Straighten text button  (2026-07-30, owner)
 - Overlay now draws ONLY the field being taught (removed the done-fields loop in `redrawCanvas`); the last
@@ -100,12 +99,13 @@ lost) — dismiss is display-only. Needs an app reopen to render.
   teach), NOT the global `_REF_ROLE_CAPTIONS` seed (reggie: global would collide with `job_no` + blast
   every custom ref field).
 
-### Set A warm cross-contamination  (found 2026-07-29)
-- **Symptom:** loading the live learning snapshot DROPPED new-supplier ref accuracy **58% → 33%** on the
-  demo Set A — suppliers that share nothing with the scanned data. Live learning bleeds onto strangers.
-- **Prime suspects:** `findLogoMatch` is name-blind (phash-only) → a crest phash-collides with a live
-  template; or a global/`__unknown__`-scope anchor; or a template fingerprint cross-match imposing a wrong
-  fixed zone. Needs diagnosis (rerun the demo warm scorer + trace which live template/anchor matched).
+### ✓ FIXED — Set A warm cross-contamination  (2026-07-30, d9ec7d5 + flip 2b8bdb2)
+- Loading live learning dropped new-supplier ref accuracy (Set A ref 84.7% cold → 50% warm). iris PROVED
+  (isolation) it was NOT phash/fingerprint/anchor (all falsified) but the learned-shape `formats` store: the
+  doc-type-scoped `('')` aggregate on a single-supplier install IS that supplier's ref convention, hard-nulling
+  stranger refs at Stage 4.5. FIX (`SHAPE_WITHHOLD_SUPPLIER_SCOPED`, default ON): a `('')`-only verdict FLAGS
+  not NULLS; supplier-scoped withhold byte-unchanged. Gate: score_demo A warm ref 55→89%, realdoc M=0. See
+  memory `project_shape_withhold_supplier_scoped_20260730`.
 
 ### Digital ↔ scanned bleed (same supplier, divergent layout)
 - **Confirmed (Set B warm):** a digital doc reusing a live name inherits the scanned identity (**supplier
