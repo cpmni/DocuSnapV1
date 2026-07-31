@@ -21,7 +21,34 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-31 NIGHT wrap) — full day: veto + merge fix + teach + needless-flags + catch-up design
+## Current session state (2026-08-01 OVERNIGHT wrap) — dpi dig → suffix-reconcile ON + catch-up slices 1+2 + validation designs
+**2026-08-01 overnight (Fable 5, autonomous while owner slept). PUSHED, origin in sync. READ
+`HANDOVER_2026-08-01_OVERNIGHT.md` FIRST.** Arc: the owner's "Worksh Eet" garbled-nudge screenshot →
+dpi sweep (150/200/240/250/260/275 all garble a heading somewhere; only 225/280/300 clean; NO flawless
+res exists) → cross-res escalation designed then Oracle-PARKED (its trigger provably unreachable for
+the class — label-confirmed reads are shape-exempt) → the real fixes shipped instead.
+· **`36a4a32` CLIPPED-SUFFIX RECONCILIATION ON** (kill `CANDIDATE_SUFFIX_RECONCILE`): label-confirmed
+  clip 'V-69523' healed by adopting the discarded fuller keyword read from the always-on candidate
+  ledger (suffix + digit-identity + shape-pass + confirmed-prefix). ref 91.8→94.5%, M 8→7 zero new.
+  NO corrected_to emitted (reprocess-merge operator-grade seam deliberately dodged).
+· **`15e9846` garbled-anchor remediation**: `scripts/sweep-garbled-anchors.js` purged the 07-30
+  'Inwotce No.' row (backup beside live DB). Then **#141 re-met the registration audit condition on
+  CLEAN landmarks** — see THE BIG FINDING in the handover (Tier-A fiat-located quality-blind win).
+· **Catch-up Filing slices 1+2 built** (design signed 07-31): `376ed23` mig 57 `confirmed_via` +
+  human-only trust window / corrections-SPAN (byte-identical gate vs mig-applied DB copy) ·
+  `621a105` `_reextractFastCore` + `sweep-scope-candidates` READ-ONLY IPC + `sweepPredicate.js`
+  (DARK — `scope_sweep_enabled` OFF). **Slices 3 (renderer consent UI) + 4 (gates+flip) = next
+  owner-present session.**
+· **`0495458` template hardening**: mapping geometry validation (anchor==target PINNED allowed —
+  teach issuer mapping), reassign target-missing refusal, HONEST audit outcomes + adversarial suite.
+· **BANKED awaiting Oracle (do NOT build unvetted): gary's S-A/B/C/D validation slices** —
+  `pendingfeatures.md` "Validation slices S-A/B/C/D" (date-in-ref flag · ref length profile ·
+  blind-geometry disagreement reconciliation · registration fit audit + S-B2 confidence lever).
+· Realdoc at wrap: 202 docs, ref 96.5%, type/supplier 100%, M=5 (all GT-poison-suspect class).
+· Owner in-app TODO: `ocr_dpi` 200→300 (still speed-test value = the original garble source);
+  teach one-step visual smoke. Memory `project_overnight_20260801`.
+
+### Prior session (2026-07-31 NIGHT) — veto + merge fix + teach + needless-flags + catch-up design
 **2026-07-31 (Opus 4.8, three sessions). HEAD `a308e0b`, PUSHED, origin in sync. Dev app may be running
 (owner `npm start`). Installer `5b5d344` predates the WHOLE day — rebuild to ship. READ
 `HANDOVER_2026-07-31_NIGHT.md` first (night); `_EVENING.md` + `HANDOVER_2026-07-31.md` carry the

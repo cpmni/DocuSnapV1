@@ -231,6 +231,55 @@ lost) — dismiss is display-only. Needs an app reopen to render.
   real scans it's a downsample and likely worse). UI swap (150/200→225/300 + write-back snap) was
   edited then REVERTED per verdict — do not commit a Faster preset before C7.
 
+### Validation slices S-A/B/C/D — gary-designed 2026-08-01 overnight, AWAITING ORACLE (not built)
+- **Evidence base:** realdoc 202-doc residual M=5 + 8 regressions decomposed into classes; the #141
+  delivery_number trace ('21/07/2026' committed to a REF field @88 silent). gary traced the WIN to
+  Tier-A (engine.py:3764): the Ridgeway anchor row is an operator ⊕ teach (last_authoritative_at) →
+  authoritative=True; Tier-A never consults confidence; `located` is BY FIAT for anchor_registration
+  (anchor.py:1376 membership — even after relocate PROVED label_off_taught_position); ocr_min_conf
+  is None for non-free-text (anchor.py:1497) → _ocr_clean blind; `alphanumeric` pattern contains `/`
+  → a date has coverage 1.0. Registration rung also RESURRECTS a shape-failing read (anchor.py:
+  1175-1177) and is _LABEL_CONFIRMED (shape-exempt everywhere). "Distrusted as witness
+  (KEYWORD_ANCHOR_CORROB independence-fraud exclusion), trusted as winner" — the one-sided
+  contradiction is the primary lever.
+- **S-A date-in-ref flag** (kill DATE_IN_REF_FLAG): engine pass beside _flag_prefix_outlier (order:
+  suffix-reconcile → S-A → prefix-outlier → S-B); ref-role/reference fields whose value FULLY parses
+  as a date (validator.parse_date + full-string 3-component same-separator regex belt) → cap 69 +
+  customer-plain note, NEVER null; exempt manual/template_fixed + scopes whose OWN shape accepts it;
+  gary deviation FOR ORACLE: keyword_override NOT exempt (label authority ≠ value authority).
+  PINs: '20260731'/'21/07'/'DN-24/07/26' NOT flagged; '12.05.11' FLAGGED (pinned trade-off).
+  Highest rank: deterministic, near-zero regression surface, holds at EVERY floor (the note is the
+  only floor-independent block — trust.js:601 flagged check).
+- **S-B ref digit-run LENGTH profile** (kill REF_LENGTH_OUTLIER_GUARD, build OFF): ocr_corrector
+  beside the prefix model — digit_run_profile tuples ('7602-1354-4'→(4,4,1)), build_length_index
+  with DOMINANT_MIN_COUNT/SHARE + the weight-aware self-heal accept bars; exact tuple match; flag
+  cap 69. Catches accretion (#33 'INV-12110') + digit-dup ('PO-643224') that the LENGTH-FOLDED shape
+  cannot see (fold BY DESIGN, untouched, pinned). Rollover PIN: 'INV-1000' vs uniform (3,) FLAGS —
+  accepted trade-off. Note precedence S-A > prefix-outlier > S-B.
+- **S-C blind-geometry disagreement reconciliation** (kill BLIND_GEOM_DISAGREE_RECONCILE, DARK,
+  flip=owner+gates): post-merge pass (suffix-reconcile pattern, ledger, no new OCR). v1 scope:
+  winner method == anchor_registration EXACTLY (NOT inline/relocated — pinned, protects the
+  2026-07-26 Tier-A re-teach fix; NOT rigid anchor_crop — already shape-gated); winner fails own-
+  supplier shape; ledger has independent-stage (0_template/0.5_mapping/1_keyword) shape-PASSING
+  disagreeing candidate. ADOPT when ≥2 independent stages agree normalise-equal (the #141 case:
+  keyword_override@93 + template_mapping@90 both 'DN-24408') — a method inadmissible as corroboration
+  witness cannot silently overrule two admissible witnesses; FLAG (cap 69, both values named) when
+  only one. Deliberately narrows the authoritative-wins invariant for anchor_registration only
+  ("the teach fixed the position, not the value" doctrine) — state in commit + pin.
+- **S-D registration fit audit** (investigation only): measure per-fire n_inliers/residual/landmark
+  spread/target leverage/provenance (07-30-era landmarks?) vs realised divergence (#141 = 0.047 norm
+  vs the 0.02 inlier bar). Hypotheses H1 n=2 vacuous similarity fit / H2 leverage extrapolation /
+  H3 stale landmarks / H4 similarity-vs-affine. Cheap gates if evidence: min_inliers=3, leverage
+  refusal → keyword fall-through, or trust-cap 69+flag. Fix only on clean separation, zero clean-case
+  collateral; else data remediation (re-pin landmarks), not code.
+- **S-B2 conforming-profile confidence corroboration** (separate switch, DARK, own Oracle pass —
+  never bundle with the flag slices): solo keyword read capped 85 whose digit-run profile AND prefix
+  are both confirmed-dominant in a supported scope → +3 (the Stage-4.5 support boost falls 1 short).
+  The direct MORE-auto-commits lever, alongside S-C's ADOPT lane and the unbuilt Stage-7 stage 3
+  field_format_rules.
+- **Expected residual after S-A+B+C:** {#65, #154, #86} interior stroke-level substitutions — only a
+  second-render/second-engine witness could reach (the parked xres design's territory).
+
 ### Digital ↔ scanned bleed (same supplier, divergent layout)
 - **Confirmed (Set B warm):** a digital doc reusing a live name inherits the scanned identity (**supplier
   90%**) but the scanned template's field geometry doesn't fit the digital layout (**ref 29%**, held).
