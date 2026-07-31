@@ -778,6 +778,29 @@ def _branding_own_ratio(supplier_name, banks, ocr_text, norm):
         {"keyword_fingerprint": sorted(own["words"])}, ocr_text.lower())
 
 
+def _prints_name_stats(templates, norm):
+    """{norm(stamped supplier): (ratio, count)} from the templates payload's
+    supplier_prints_name enrichment (database/modules/templates.js getAll): the fraction of
+    that supplier's CONFIRMED docs whose page text corroborates its name, and the sample size.
+    Keyed by the value the template would STAMP (its fixed supplier_name), normalised with the
+    SAME _accept_norm the probe uses (Oracle condition 2 — parity, never bare .lower()).
+    Missing/old payload → {} → the TEMPLATE_FIXED_NAME_PRESENCE_VETO abstains (byte-identical
+    backward compat — pinned in tests/test_template_fixed_name_presence.py)."""
+    out = {}
+    for t in (templates or []):
+        spn = t.get("supplier_prints_name") if isinstance(t, dict) else None
+        if not isinstance(spn, dict):
+            continue
+        sup = (spn.get("supplier") or "").strip()
+        if not sup:
+            continue
+        try:
+            out[norm(sup)] = (float(spn.get("ratio") or 0), int(spn.get("count") or 0))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def _genuine_template_supplier(matched_tmpl: dict | None) -> str | None:
     """The matched template's DOMINANT confirmed issuer identity when it is a CLEAR majority, else
     None. Uses the learned issuer DISTRIBUTION (templates.getAll emits dominant_supplier / _count /
@@ -1998,6 +2021,44 @@ class ExtractionEngine:
         else:
             note = (f"This document's letterhead doesn't match '{supplier_name}'. "
                     "Please confirm the correct company.")
+            # TEMPLATE_FIXED_NAME_PRESENCE_VETO (2026-07-31; gary + Oracle SIGN-OFF-W/COND) — the
+            # UN-NAMED twin of BRANDING_NAMED_BLANK for the Ironbridge-as-Copperfield class: a
+            # phash/keyword collision seeds a FROZEN template_fixed supplier stamp on a stranger's
+            # page, the rival can't be NAMED (a new supplier has no template bank), and the wrong
+            # prefill stood at 69 — one confirm-keystroke from GT-poison. When the stamped supplier
+            # reliably PRINTS its own name (the learned per-supplier ratio threaded in via the
+            # templates payload's supplier_prints_name — database/modules/templates.js getAll,
+            # computed by namePresence.supplierNamePresenceRatio) but the name is ABSENT from THIS
+            # page (fuzzy: _template_identity_corroborated's >=60%-distinctive-tokens check), BLANK
+            # the stamp instead of keeping it. Destructive-gate prerequisites, fail-toward-keep at
+            # every doubt (mirrors namePresence.nameBearingButAbsent, Oracle 2026-07-24):
+            #   * method 'template_fixed' EXACTLY — template_fixed_locked is deliberate admin
+            #     intent, stays flag-only (same pinned rationale as BRANDING_NAMED_BLANK above);
+            #     covers BOTH stamp paths (template_matcher seed + _doctype_fixed_supplier).
+            #   * _identity_text_sufficient — the C2 floor: a failed/thin scan is UNJUDGEABLE,
+            #     never "name absent" (the flag above never needed the floor; the blank does).
+            #   * stats missing (old payload / no fixed-supplier template) → keep: byte-identical
+            #     backward compat. count/ratio floors shared with the JS twin via the SAME env keys.
+            #   * a corroborated name (>=60% distinctive tokens on page) keeps today's flag+69.
+            # PIN: this branch must NEVER emit fld['suggested_supplier'] — the un-named veto has no
+            # candidate, and arming the renderer's "Use '<name>'" button here would hand the user a
+            # one-click WRONG answer (Oracle condition 3).
+            if (fld.get("method") == "template_fixed"
+                    and os.environ.get("TEMPLATE_FIXED_NAME_PRESENCE_VETO", "1") != "0"
+                    and _identity_text_sufficient(ocr_text)):
+                _stats = _prints_name_stats(templates, self._accept_norm).get(
+                    self._accept_norm(supplier_name))
+                try:
+                    _min_n = int(os.environ.get("TEMPLATE_NAME_PRESENCE_MIN_SAMPLE", "3"))
+                    _min_r = float(os.environ.get("TEMPLATE_NAME_PRESENCE_RATIO", "0.80"))
+                except ValueError:
+                    _min_n, _min_r = 3, 0.80
+                if (_stats and _stats[1] >= _min_n and _stats[0] >= _min_r
+                        and not _template_identity_corroborated(supplier_name, ocr_text)):
+                    _blank = True
+                    note = (f"This matched a template belonging to '{supplier_name}', but that "
+                            "name isn't on this page — so nothing was assumed. "
+                            "Please confirm the correct company.")
         existing = str(fld.get("validation_note") or "").strip()
         fld["validation_note"] = (existing + " " + note).strip() if existing else note
         fld["confidence"] = min(int(fld.get("confidence") or 100), 69)

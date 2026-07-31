@@ -119,6 +119,31 @@ lost) — dismiss is display-only. Needs an app reopen to render.
   not NULLS; supplier-scoped withhold byte-unchanged. Gate: score_demo A warm ref 55→89%, realdoc M=0. See
   memory `project_shape_withhold_supplier_scoped_20260730`.
 
+### Name-presence veto residuals  (2026-07-31, Oracle-logged with the TEMPLATE_FIXED_NAME_PRESENCE_VETO sign-off)
+- **Bank-less collision survives unflagged:** a collision onto a supplier with **no ≥3-word branding
+  fingerprint** exits `_flag_branding_conflict` at the own_ratio-None fail-safe (engine.py ~1959)
+  BEFORE the un-named branch — a conf-95 wrong `template_fixed` stamp stands unflagged and CAN
+  auto-file. The supplier_prints_name ratio is exactly the evidence that could judge it where the
+  bank can't — extend the veto ahead of that early-return (own slice + own gate).
+- **`_doctype_fixed_supplier` is a DEAD GUARD in production** (found 2026-07-31 building the veto):
+  it reads `f.get('key')` but the templates payload carries `field_key` (template_matcher reads
+  `field_key`; only the unit fixture uses `key` — test_fixed_supplier_immune.py greens on a shape
+  production never sends). The template-MISS fixed-supplier fill + its logo-immunity have therefore
+  never fired live. Fixing = one word, but it ACTIVATES a dormant conf-95 stamp path — needs its own
+  vet + gate (and the new veto already covers it once live). Do NOT "fix" casually.
+- **Ratio-deflation poison loop:** each wrong-scope confirm under a name-printing supplier drags its
+  prints-name ratio toward <0.80 and disarms the veto. Clean at flip (Copperfield 1.0/60,
+  Ridgeway 1.0/101 — verified 2026-07-31); re-check at any mass-misfile incident.
+
+### Teach label pass-2 follow-ups  (2026-07-31)
+- **Pass-1 type-heading gap:** teach still lacks a pass-1 `labelIsTypeHeading` reject (Review ⊕ has
+  one at review/renderer.js:6792); pass-2 rejects headings (`isTypeHeadingLabel`), but a clean
+  UNCLIPPED pass-1 heading read would still be offered. Port the reject to teach pass-1 + dedup with
+  Review's copy (its test regex-extracts from renderer.js — move both onto the shared pure helper).
+- **Review ⊕ two-pass adoption:** review/renderer.js ~3771-3786 builds the same open-loop 1.8× label
+  band — same decapitation class, unverified there. Adopt the shared clip-gate + re-read
+  (`clusterTouchesClipEdge`/`labelRereadRect`/`cropBoxToPageNorm`) in the ⊕ tool.
+
 ### Digital ↔ scanned bleed (same supplier, divergent layout)
 - **Confirmed (Set B warm):** a digital doc reusing a live name inherits the scanned identity (**supplier
   90%**) but the scanned template's field geometry doesn't fit the digital layout (**ref 29%**, held).

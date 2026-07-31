@@ -35,6 +35,7 @@ function getAll(db) {
     ? db.prepare('SELECT * FROM templates').all()
     : db.prepare('SELECT * FROM templates ORDER BY confirmed_count DESC, name').all();
   const counts = useLive ? liveConfirmedCounts(db) : null;
+  const npCache = new Map();   // per-call memo: distinct fixed supplier → name-presence stats
   if (counts) {                                   // null ⇒ uncountable, keep the stored column
     for (const t of rows) t.confirmed_count = counts.get(t.id) || 0;
     // Re-create the SQL ordering in JS so "shown count" and "order" still agree.
@@ -68,6 +69,25 @@ function getAll(db) {
     t.type_heading_ratio  = th.ratio;
     t.type_heading_n      = th.count;
     t.type_heading_tokens = th.tokens;
+    // TEMPLATE_FIXED_NAME_PRESENCE_VETO (2026-07-31, gary+Oracle signed): thread the name-presence
+    // stats for the supplier this row would STAMP as method 'template_fixed' — the fixed_value of
+    // its supplier_name field (the template_matcher seed AND engine._doctype_fixed_supplier both
+    // stamp exactly this value). The Python un-named branding branch uses it to BLANK a frozen
+    // stamp whose name-printing supplier is absent from the page (the Ironbridge-as-Copperfield
+    // phash-collision class) instead of leaving the wrong prefill standing. Additive key — an old
+    // payload without it leaves the engine byte-identical. Memoized per distinct supplier;
+    // never throws (getAll is the pipeline reader).
+    const fx = (t.fields || []).find(f =>
+      f && f.field_key === 'supplier_name' && f.fixed_value && String(f.fixed_value).trim());
+    if (fx) {
+      const sup = String(fx.fixed_value).trim();
+      let st = npCache.get(sup);
+      if (!st) {
+        st = safe(() => namePresence.supplierNamePresenceRatio(db, sup), { ratio: 0, count: 0 });
+        npCache.set(sup, st);
+      }
+      t.supplier_prints_name = { supplier: sup, ratio: st.ratio, count: st.count };
+    }
   }
   return rows;
 }
