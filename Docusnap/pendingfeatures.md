@@ -8,6 +8,21 @@
 
 ## UX / product
 
+### DEFERRED — Teach clipped-code reconcile, Slice 2 (the DRIFTED-sibling path)  (2026-07-31)
+- **Context:** Slice 1 (`f2e5ee3`, flipped `c70bae7`, `TEMPLATE_INLINE_CODE_RECONCILE`) fixed taught inline CODE
+  fields clipping on the FAST path (`_extract_one`) — `DN-93159`→`N-93159` etc. See memory
+  `project_teach_inline_code_reconcile_20260731` + `HANDOVER_2026-07-31.md`.
+- **What's left:** the DRIFTED-sibling path `_geometric()` (`python_backend/extraction/template_mapper.py:573`)
+  seats the value crop off the located label + the SAME narrow drawn width, so it has the identical prefix-clip
+  risk. It short-circuits `_inline()` via `_geometric() or _inline()` (:622). None of the 10 observed dockets
+  drift, so Slice 1 is complete for the reported bug; add a call to `_inline_code_reconcile` inside `_geometric()`
+  (after its gate, ~:573-574) — the helper is already generic. gary designed this; trivial once a drifted taught
+  code field actually shows the clip. Gate: reprocess-probe a drifted taught docket → full `DN-#####`.
+- **Perf follow-up (optional):** the reconcile does a page-wide locate per clean CODE read; it's `line_cache`-shared
+  with the registration landmark fit (≈0 extra OCR on registration-enabled docs), but a doc with a taught code
+  field and NO landmarks pays one fresh page-wide OCR. If profiling ever flags it, gate the cross-check on a cheap
+  pre-signal (e.g. the local pre-pass `inline_value` disagreeing) before escalating to the page-wide locate.
+
 ### ✓ FIXED (pending owner smoke) — Teach wizard label non-recognition  (2026-07-30)
 - **Root cause (frame-math bug):** `cropB64` sends the label band NATIVE (ds=1.0 under `TEACH_NATIVE_CROP`),
   but the label-detection code at `src/windows/teach/renderer.js:787/803` recomputed `ds=OCR_TARGET_H/bandHpx`

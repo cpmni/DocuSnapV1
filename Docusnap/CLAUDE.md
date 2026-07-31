@@ -21,7 +21,25 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-30) — reextract + worksheet-type-presence FLIPPED ON — READ `HANDOVER_2026-07-30.md`
+## Current session state (2026-07-31) — TEACH clipped-code fix FLIPPED ON — READ `HANDOVER_2026-07-31.md`
+**2026-07-31 (Opus 4.8). HEAD `c70bae7`, pushed, origin in sync. Dev `npm start` restarted. Installer `2b8bdb2`
+predates everything since.**
+· **✅ Teach/Template mis-read taught CODE fields — FIXED + FLIPPED ON.** A taught delivery docket read `DN-93159`
+  → `N-93159` / `DN-39550` → `39550` / garbage. Root: the Stage-0.5 mapper trusts the ABSOLUTE drawn box, which drifts
+  off the value's LEFT/prefix under per-scan offset/scale; the `alphanumeric` gate is clip-blind; the clipped taught
+  read (conf 90) OVERRODE the correct keyword read (teaching REGRESSED the field). Fix `f2e5ee3` + flip `c70bae7`
+  (`_inline_code_reconcile`, kill `TEMPLATE_INLINE_CODE_RECONCILE=0`): after drift/registration, cross-check the box
+  read vs a full-res **label-anchored inline read** (page-wide locate + `inline_box` ladder re-read — Oracle Seam A/B);
+  **SUFFIX** = left-clip → un-clip CLEAN; genuine disagreement → conf-arbitrated **FAIL-TOWARD-REVIEW**; scoped
+  `{alphanumeric,reference_code}`, free-text seam untouched. **INDEPENDENT of `anchor.py`** (owner rule — parity harness
+  10/10 diff-methods + agree). Gates: probe **5/10→10/10** DN-#####, realdoc **OFF==ON** (0 new; the 13 are pre-existing
+  GT-poison, GATE exit-1 is the baseline), **11** unit/PIN. 007+gary+Oracle SIGN-OFF-W/COND. **NOT retroactive** —
+  reprocess the ~20 needs_review dockets to heal (full reprocess, not fill-only reextract). Slice 2 (`_geometric` drift
+  path) deferred → `pendingfeatures.md`. Memory `project_teach_inline_code_reconcile_20260731`.
+· **✅ Teach cursor-lock** (`c2afc87`): at "Teaching complete" the canvas draw + crosshair now derive from `curField()`
+  → default pointer + mousedown bails; re-selecting a field restores drawing. Needs an app-reopen visual smoke.
+
+### Prior session (2026-07-30) — reextract + worksheet-type-presence FLIPPED ON (READ `HANDOVER_2026-07-30.md`)
 **2026-07-30 (Opus 4.8). HEAD `f3a650a` (+ a CLAUDE.md docs commit); pushed, origin in sync. TWO big flips this session:
 `reextract_fast_enabled` (LIVE DB setting, revert `UNFLIP=1` via `reextract_flip_smoke.js`) + the WORKSHEET TYPE-PRESENCE
 fix (4 CODE kill-switches default ON — kill each with its env =0). Dev `npm start` is STALE — restart to load. Installer
