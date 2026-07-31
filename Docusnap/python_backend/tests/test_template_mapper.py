@@ -1059,6 +1059,73 @@ def test_inline_code_reconcile():
     return failures
 
 
+def test_inline_code_reconcile_drift():
+    """Slice 2: the same un-clip on the DRIFT/relocate path. _geometric() re-seats the value at the
+    located label's origin + offset with the SAME narrow drawn WIDTH → identical prefix-clip risk.
+    Slice 2 routes through _inline_code_reconcile, which does its OWN PAGE-WIDE locate — so it must
+    recover the full value even when the drift-branch `located` handed in carries a CLIPPED local
+    inline (Oracle Seam A). Drives _relocate_and_read directly. Off by default."""
+    failures = 0
+    print("inline-code reconcile (drift path): page-wide un-clip of a relocated code read")
+    page = FakePage((1000, 1000))
+    mapping = _del_mapping()          # dx/dy set -> geometric runs first; target_w 0.10 (narrow)
+    ab = template_mapper._norm_box(mapping, "anchor")
+    tb = template_mapper._norm_box(mapping, "target")
+    # The `located` handed to the drift path — its LOCAL inline is CLIPPED ('N-93159'), the exact
+    # Seam-A case. A partial fix reading located.inline_box would agree with the clip and NOT heal.
+    located = {
+        "x_norm": 0.10, "y_norm": 0.20, "w_norm": 0.20, "h_norm": 0.03,
+        "matched_text": "Delivery Note No.",
+        "label_box": {"x_norm": 0.10, "y_norm": 0.20, "w_norm": 0.18, "h_norm": 0.03},
+        "inline_value": "N-93159",
+        "inline_box": {"x_norm": 0.32, "y_norm": 0.20, "w_norm": 0.10, "h_norm": 0.03},
+    }
+    # The PAGE-WIDE locate (via ocr_lines_fn) sees the FULL value 'DN-93159' on the label's row.
+    full_line = kv_line_stub([
+        {"text": "Delivery", "x": 0.10, "y": 0.20, "w": 0.08, "h": 0.03},
+        {"text": "Note",     "x": 0.19, "y": 0.20, "w": 0.05, "h": 0.03},
+        {"text": "No.",      "x": 0.25, "y": 0.20, "w": 0.03, "h": 0.03},
+        {"text": "DN-93159", "x": 0.30, "y": 0.20, "w": 0.12, "h": 0.03},
+    ])
+
+    def _reloc(texts, lines, drift_on):
+        saved = template_mapper._INLINE_CODE_RECONCILE_DRIFT_ON
+        template_mapper._INLINE_CODE_RECONCILE_DRIFT_ON = drift_on
+        try:
+            return template_mapper._relocate_and_read(
+                page, mapping, ab, tb, located, "alphanumeric", text_queue_stub(texts),
+                0.0, _ALNUM_VPS, None, None, 0, "delivery_number", lines, {})
+        finally:
+            template_mapper._INLINE_CODE_RECONCILE_DRIFT_ON = saved
+
+    # SOURCE-COVERAGE PIN (Oracle C4b): geometric reads the CLIP; the PAGE-WIDE inline reads the FULL
+    # value even though the handed-in local located.inline_value is 'N-93159'. Robust recovers full;
+    # a partial (reading located.inline_box) would keep the clip -> this asserts DN-93159.
+    out = _reloc(["N-93159", "DN-93159"], full_line, True)
+    if not check("drift page-wide un-clip 'N-93159' -> 'DN-93159' (ignores clipped local located)",
+                 out is not None and out.get("value") == "DN-93159"):
+        failures += 1
+    # DRIFT flag OFF -> byte-identical: the clipped geometric read stands.
+    out_off = _reloc(["N-93159", "DN-93159"], full_line, False)
+    if not check("drift flag OFF -> clipped 'N-93159' stands (byte-identical)",
+                 out_off is not None and out_off.get("value") == "N-93159"):
+        failures += 1
+    # geometric already correct, page-wide inline agrees -> keep the geometric read.
+    out_ok = _reloc(["DN-93159", "DN-93159"], full_line, True)
+    if not check("drift geometric correct + inline agrees -> geometric value kept 'DN-93159'",
+                 out_ok is not None and out_ok.get("value") == "DN-93159"
+                 and "shapewarn" not in (out_ok.get("method") or "")):
+        failures += 1
+    # DISAGREEMENT PIN (Oracle C4c): geometric disagrees with the page-wide inline, no containment ->
+    # FAIL TOWARD REVIEW (flagged), never a clean auto-file.
+    out_dis = _reloc(["AB-12345", "DN-93159"], full_line, True)
+    if not check("drift total disagreement -> flagged for review (never clean auto-file)",
+                 out_dis is not None and "shapewarn" in (out_dis.get("method") or "")):
+        failures += 1
+    print()
+    return failures
+
+
 def main():
     failures = 0
     failures += test_geometry_helpers()
@@ -1076,6 +1143,7 @@ def main():
     failures += test_manual_anchor_shape_precedence()
     failures += test_registration_rung()
     failures += test_inline_code_reconcile()
+    failures += test_inline_code_reconcile_drift()
 
     if failures:
         print(f"{failures} check(s) failed — template_mapper regressed.")

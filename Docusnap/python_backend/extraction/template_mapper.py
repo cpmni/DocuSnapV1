@@ -101,6 +101,13 @@ _CODE_CROSSCHECK_TYPES = frozenset({'alphanumeric', 'reference_code'})
 # Flipped ON after: delivery probe 5/10→10/10, realdoc OFF==ON (0 new), 11 unit/PIN, parity 10/10.
 _INLINE_CODE_RECONCILE_ON = os.environ.get('TEMPLATE_INLINE_CODE_RECONCILE', '1') != '0'
 
+# Slice 2 — the same reconcile on the DRIFT/relocate path (`_geometric`), where a drifted taught
+# label re-seats the value at the SAME narrow drawn width → identical prefix-clip risk. Routes through
+# Slice 1's own page-wide reconcile (Oracle-conditioned robust source). Default ON (kill with
+# TEMPLATE_INLINE_CODE_RECONCILE_DRIFT=0). Flipped ON after: forced-drift probe 10/10 + 0 degraded
+# + 3 real drift-garble fixes, realdoc DRIFT==baseline (0 new), 4 drift unit/PIN. =0: byte-identical.
+_INLINE_CODE_RECONCILE_DRIFT_ON = os.environ.get('TEMPLATE_INLINE_CODE_RECONCILE_DRIFT', '1') != '0'
+
 
 def extract_with_mappings(page_images, mappings, field_patterns=None,
                           ocr_lines_fn=None, ocr_text_fn=None, slice_capture=None,
@@ -539,6 +546,59 @@ def _target_inline_with_anchor(anchor_box, target_box):
     return abs(_cy(anchor_box) - _cy(target_box)) <= tol
 
 
+def _read_inline_box(page, located, val_type, ocr_text_fn, field_key,
+                     validation_patterns, format_lookup, slice_capture, page_idx):
+    """Full-res OCR-ladder re-read of the located label's INLINE value column (Seam B — the
+    value's own box, isolated by cluster_value_words; never the ~120-DPI locate text, which is
+    only a fallback when the re-read yields nothing). One-token code trim + the shared gate.
+    Returns (value, ocr_conf) or (None, None). Shared by Slice 1 (fast path) and Slice 2 (drift)."""
+    inline_box = located.get("inline_box")
+    inline_val = None
+    inline_conf = None
+    if inline_box:
+        _pad = _expand_box(inline_box, 0.005)                 # guard against clipping edge glyphs
+        _icap = ((lambda c: slice_capture(field_key, "template_mapping", page_idx,
+                   (_pad["x_norm"], _pad["y_norm"], _pad["w_norm"], _pad["h_norm"]),
+                   c, "target")) if slice_capture else None)
+        _imeta = {}
+        inline_val = _crop_and_ocr(page, _pad, val_type, ocr_text_fn, capture=_icap, meta=_imeta)
+        inline_conf = _imeta.get('conf')
+    if not inline_val:                                        # fallback: the locate-pass text
+        inline_val = _clean_value(located.get("inline_value"), val_type)
+    if inline_val and " " in inline_val:                      # a code column is one token
+        inline_val = inline_val.split()[0]
+    inline_val, _, _ = _gate_value(inline_val, val_type, field_key, validation_patterns,
+                                   format_lookup, shape_mode='ignore')
+    return inline_val, inline_conf
+
+
+def _pick_fuller_code(rigid_text, rigid_conf, inline_val, inline_conf, anchor, val_type, inline_geom):
+    """Reconcile a clip-prone rigid CODE read against a label-anchored inline read; return the
+    Stage 0.5 result to COMMIT, or None to keep the rigid read. The single decision shared by
+    Slice 1 (rigid = the absolute drawn box) and Slice 2 (rigid = the drift-relocated geometric
+    crop):
+      • agree / rigid fuller (inline is a suffix of rigid) → keep rigid (None);
+      • rigid is a SUFFIX of inline → the drawn box clipped the LEFT (prefix); the glyph overlap
+        corroborates the same token un-clipped (a right-side over-read is a PREFIX, not a suffix,
+        and is deliberately NOT clean-committed) → un-clip, commit CLEAN;
+      • genuine disagreement (floated/garbled box, or an inline over-read) → prefer the higher-
+        OCR-confidence read; when inline wins, FAIL TOWARD REVIEW (capped + flagged), never a
+        clean auto-file. No confidence signal (a test stub) → default to inline, still flagged."""
+    if not inline_val:
+        return None
+    na, ni = _code_norm(rigid_text), _code_norm(inline_val)
+    if not na or not ni or na == ni:
+        return None
+    if ni.endswith(na):
+        return _mapping_result(inline_val, True, False, False, anchor, val_type=val_type, geom=inline_geom)
+    if na.endswith(ni):
+        return None
+    if rigid_conf is not None and inline_conf is not None and inline_conf <= rigid_conf:
+        return None
+    return _mapping_result(inline_val, True, False, False, anchor, shape_warn=True,
+                           val_type=val_type, geom=inline_geom)
+
+
 def _inline_code_reconcile(page, rigid_text, anchor_box, target_box, val_type, field_key,
                            anchor_text, ocr_lines_fn, ocr_text_fn, validation_patterns,
                            format_lookup, line_cache, slice_capture, page_idx,
@@ -567,67 +627,24 @@ def _inline_code_reconcile(page, rigid_text, anchor_box, target_box, val_type, f
         return None
     # Seam A: a FULL-COVERAGE page-wide locate (line_cache-shared — usually already run by the
     # drift guard / landmark fit, so no extra OCR). The pre-pass local locate can itself clip a
-    # value wider than label_box + the local search margin.
+    # value wider than label_box + the local search margin. No _located_too_wide guard: the inline
+    # path uses inline_box (the value's OWN column, isolated by cluster_value_words from any merged
+    # title/column on the line), so a wide matched line is expected and harmless.
     located = _locate_anchor(page, anchor_box, anchor_text, 1.0, ocr_lines_fn,
                              min_search=_ANCHOR_SEARCH_MIN, line_cache=line_cache)
     if not located or located.get("matched_text") is None:
         return None
-    # NB: no _located_too_wide guard here. That protects the GEOMETRIC label-origin derivation
-    # (seating a value crop off label_box); THIS path uses inline_box — the value's OWN column,
-    # already isolated by cluster_value_words from any merged title/column sharing the OCR line
-    # (a 120-DPI page-wide read routinely groups "DELIVERY DOCKET … Delivery Note No. DN-93159"
-    # into one wide line). A wide matched line is therefore expected and harmless; the value
-    # column is still tight, and the containment check below is the real corroboration.
-    inline_box = located.get("inline_box")
-    # Seam B: commit a FULL-RES ladder read of the inline value box, not the ~120-DPI locate
-    # text (which under-reads dashed codes). A small pad guards against clipping edge glyphs.
-    # Capture the read's OCR confidence to arbitrate a genuine disagreement below.
-    inline_val = None
-    inline_conf = None
-    if inline_box:
-        _pad = _expand_box(inline_box, 0.005)
-        _icap = ((lambda c: slice_capture(field_key, "template_mapping", page_idx,
-                   (_pad["x_norm"], _pad["y_norm"], _pad["w_norm"], _pad["h_norm"]),
-                   c, "target")) if slice_capture else None)
-        _imeta = {}
-        inline_val = _crop_and_ocr(page, _pad, val_type, ocr_text_fn, capture=_icap, meta=_imeta)
-        inline_conf = _imeta.get('conf')
-    if not inline_val:                                  # fallback: the locate-pass text
-        inline_val = _clean_value(located.get("inline_value"), val_type)
-    # One-token code: drop a trailing caption sharing the value's cluster.
-    if inline_val and " " in inline_val:
-        inline_val = inline_val.split()[0]
-    inline_val, _, _ = _gate_value(inline_val, val_type, field_key, validation_patterns,
-                                   format_lookup, shape_mode='ignore')
-    if not inline_val:
-        return None
-    na, ni = _code_norm(rigid_text), _code_norm(inline_val)
-    if not na or not ni or na == ni:
-        return None                                     # agree/empty → keep rigid (result byte-identical)
-    inline_geom = _box_list(inline_box) if (slice_capture and inline_box) else None
-    if ni.endswith(na):
-        # The box read is the TAIL of the inline value → the drawn box clipped the LEFT (prefix),
-        # the exact failure being fixed (DN-93159 → N-93159). The glyph overlap corroborates it is
-        # the same token un-clipped (a right-side over-read would be a PREFIX, not a suffix, and is
-        # deliberately NOT clean-committed here). Commit CLEAN.
-        return _mapping_result(inline_val, True, False, False, anchor_text or field_key,
-                               val_type=val_type, geom=inline_geom)
-    if na.endswith(ni):
-        return None                                     # inline is a clipped tail of the box read → box fuller, keep it
-    # Otherwise the two genuinely disagree — a floated/garbled box (145 'eae', 143 'HAL7ea7ca'), OR an
-    # inline OVER-read that appended a neighbouring token (INV-121 vs INV-12110). Ambiguous: do NOT
-    # silently trade a clean box read for it. Prefer the higher-OCR-confidence read; when inline wins,
-    # FAIL TOWARD REVIEW (capped + flagged), never a clean auto-file (Oracle Q3). With no confidence
-    # signal (a test stub) default to the label-anchored inline, still flagged.
-    if abs_ocr_conf is not None and inline_conf is not None and inline_conf <= abs_ocr_conf:
-        return None                                     # the drawn box is at least as credible → keep it (clean)
-    return _mapping_result(inline_val, True, False, False, anchor_text or field_key,
-                           shape_warn=True, val_type=val_type, geom=inline_geom)
+    inline_val, inline_conf = _read_inline_box(page, located, val_type, ocr_text_fn, field_key,
+                                               validation_patterns, format_lookup, slice_capture, page_idx)
+    inline_geom = (_box_list(located.get("inline_box"))
+                   if (slice_capture and located.get("inline_box")) else None)
+    return _pick_fuller_code(rigid_text, abs_ocr_conf, inline_val, inline_conf,
+                             anchor_text or field_key, val_type, inline_geom)
 
 
 def _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
                        ocr_text_fn, expansion, validation_patterns, format_lookup,
-                       slice_capture, page_idx, field_key):
+                       slice_capture, page_idx, field_key, ocr_lines_fn=None, line_cache=None):
     """Derive the value crop from where the anchor label ACTUALLY landed
     (located + drift-invariant stored offset, inset-corrected) and read it. Shared
     by the early drift branch and the late single-label fallback in _extract_one.
@@ -690,6 +707,21 @@ def _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
             text, val_type, field_key, validation_patterns, format_lookup, shape_mode='flag')
         if not text:
             return None
+        # SLICE 2 — drift-path clip guard: the geometric read re-seats the value at the SAME narrow
+        # drawn WIDTH, so a drifted taught CODE label carries the identical prefix-clip risk as the
+        # fast path (Slice 1). Reuse Slice 1's reconcile WHOLESALE with the geometric read as the
+        # rigid input — its OWN page-wide locate (the drift-branch `located` handed in can be a
+        # clipped LOCAL locate — Oracle Seam A), its `_target_inline_with_anchor` guard, and the
+        # full-res Seam-B re-read. DARK by default (TEMPLATE_INLINE_CODE_RECONCILE_DRIFT=1); OFF →
+        # skipped, byte-identical. (ocr_lines_fn absent on a legacy direct call → skip safely.)
+        if (_INLINE_CODE_RECONCILE_DRIFT_ON and val_type in _CODE_CROSSCHECK_TYPES
+                and ocr_lines_fn is not None):
+            picked = _inline_code_reconcile(page, text, anchor_box, target_box, val_type, field_key,
+                                            mapping.get("anchor_text"), ocr_lines_fn, ocr_text_fn,
+                                            validation_patterns, format_lookup, line_cache,
+                                            slice_capture, page_idx, abs_ocr_conf=_d_meta.get('conf'))
+            if picked is not None:
+                return picked
         return _mapping_result(
             text,
             located.get("matched_text") is not None and bool(mapping.get("anchor_text")),
@@ -872,7 +904,7 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
                                            drift_located, val_type, ocr_text_fn,
                                            expansion, validation_patterns,
                                            format_lookup, slice_capture, page_idx,
-                                           field_key)
+                                           field_key, ocr_lines_fn, line_cache)
             if relocated:
                 return relocated
         elif drift_located:
@@ -948,7 +980,8 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
         # guard above uses; returns the relocated read or None (gate failed).
         relocated = _relocate_and_read(page, mapping, anchor_box, target_box, located,
                                        val_type, ocr_text_fn, expansion, validation_patterns,
-                                       format_lookup, slice_capture, page_idx, field_key)
+                                       format_lookup, slice_capture, page_idx, field_key,
+                                       ocr_lines_fn, line_cache)
         if relocated:
             return relocated
 
