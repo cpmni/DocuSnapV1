@@ -501,6 +501,14 @@ function reassignDocuments(db, fromTemplateId, toTemplateId) {
   if (!fromTemplateId || !toTemplateId || fromTemplateId === toTemplateId) {
     return { moved: 0, sampleAdopted: false, from: fromTemplateId, to: toTemplateId };
   }
+  // Target must EXIST (2026-07-31 hardening): reassigning onto a nonexistent id previously
+  // relied on the DB-level FK alone — a mid-transaction throw surfaced as an unexplained IPC
+  // error and the audit row still claimed success. Refuse cleanly instead; ok:false threads
+  // to the handler's audit outcome.
+  if (!db.prepare('SELECT id FROM templates WHERE id = ?').get(toTemplateId)) {
+    return { ok: false, reason: 'target-missing', moved: 0, sampleAdopted: false,
+             from: fromTemplateId, to: toTemplateId };
+  }
   let sampleAdopted = false;
   const tx = db.transaction(() => {
     const info = db.prepare(

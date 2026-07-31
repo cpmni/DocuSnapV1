@@ -423,8 +423,13 @@ function register(ctx) {
   ipcMain.handle('reassign-template-documents', (_e, fromTemplateId, toTemplateId) => {
     requireRole('admin');
     const r = templates.reassignDocuments(getDb(), Number(fromTemplateId), Number(toTemplateId));
+    // Audit the REAL outcome (2026-07-31 hardening): the old unconditional 'success' asserted
+    // reassigns/merges that never happened — an audit log that can't be trusted is worse than
+    // none. ok:false → 'failure' with the reason in metadata.
     logAudit(getDb(), { action: 'template_documents_reassigned', action_category: 'templates', target_type: 'template',
-      target_id: String(toTemplateId), outcome: 'success', metadata: { from: Number(fromTemplateId), to: Number(toTemplateId) } });
+      target_id: String(toTemplateId), outcome: (r && r.ok !== false) ? 'success' : 'failure',
+      metadata: { from: Number(fromTemplateId), to: Number(toTemplateId),
+                  ...(r && r.ok === false ? { reason: r.reason || 'failed' } : { moved: r && r.moved }) } });
     return r;
   });
 
@@ -435,8 +440,12 @@ function register(ctx) {
   ipcMain.handle('merge-template', (_e, fromTemplateId, toTemplateId) => {
     requireRole('admin');
     const r = templates.mergeInto(getDb(), Number(fromTemplateId), Number(toTemplateId));
+    // Real outcome (2026-07-31 hardening — see reassign above): a refused merge
+    // (self/missing source/missing target) must not audit as a merge that happened.
     logAudit(getDb(), { action: 'template_merged', action_category: 'templates', target_type: 'template',
-      target_id: String(toTemplateId), outcome: 'success', metadata: { from: Number(fromTemplateId), to: Number(toTemplateId) } });
+      target_id: String(toTemplateId), outcome: (r && r.ok !== false) ? 'success' : 'failure',
+      metadata: { from: Number(fromTemplateId), to: Number(toTemplateId),
+                  ...(r && r.ok === false ? { reason: r.reason || 'failed' } : {}) } });
     return r;
   });
 
@@ -561,6 +570,24 @@ function register(ctx) {
                       'target_x_norm', 'target_y_norm', 'target_w_norm', 'target_h_norm'];
     if (required.some(k => mapping[k] == null)) {
       return { success: false, error: 'anchor and target boxes are both required' };
+    }
+    // GEOMETRY VALIDATION (2026-07-31 hardening): presence-only checking persisted NaN /
+    // negative / off-page / zero-area boxes straight into Stage-0.5 geometry, where they
+    // become silent mis-crops on every future doc of the template. Each coordinate must be
+    // a finite normalised number; each box needs real area and must stay on the page.
+    // Renderer draws can't produce these; a buggy/scripted caller could. NOTE anchor==target
+    // is LEGITIMATE and must stay allowed — the teach wizard's POSITION-ONLY issuer mapping
+    // deliberately sets the anchor box to the target box (teach/renderer.js ~:992, "never a
+    // synthesised box"); do not add an identity refusal here.
+    for (const k of required) {
+      const v = Number(mapping[k]);
+      if (!Number.isFinite(v) || v < 0 || v > 1) return { success: false, error: `invalid ${k}` };
+    }
+    for (const side of ['anchor', 'target']) {
+      const x = Number(mapping[`${side}_x_norm`]), y = Number(mapping[`${side}_y_norm`]);
+      const w = Number(mapping[`${side}_w_norm`]), h = Number(mapping[`${side}_h_norm`]);
+      if (w <= 0 || h <= 0) return { success: false, error: `${side} box has no area` };
+      if (x + w > 1.0001 || y + h > 1.0001) return { success: false, error: `${side} box off the page` };
     }
     const saved = templates.saveMapping(getDb(), templateId, mapping);
     return { success: true, mapping: saved };
