@@ -226,11 +226,25 @@ function newTypeReady(){ return !!dtEditor && dtEditor.isReady(); }
 // (The inline create-form — chips, key selectors, and their listeners — is gone;
 //  the shared DocTypeEditor component now owns the new-type fields + role pickers.)
 
+// Every install doc-type NAME + its "Also appears as" title_aliases (+ the just-created type):
+// the pass-2 label re-read must never accept a TYPE HEADING as an anchor (the a666b83 class —
+// a heading appears on every doc of that type, so the anchor re-locates wrongly everywhere).
+// isTypeHeadingLabel is JSON-string tolerant, so title_aliases can ride raw.
+function _collectTypeHeadingNames(types, extra){
+  const names=[];
+  for (const t of (types||[])){
+    if (t && t.name) names.push(t.name);
+    if (t && t.title_aliases) names.push(t.title_aliases);
+  }
+  if (extra) names.push(extra);
+  return names;
+}
 async function commitTypeChoice(){
   if (!isNewTypeSelected()){
     const card=$('type-grid').querySelector('.card.sel');
     state.docTypeSlug=card.dataset.slug; state.docTypeName=card.dataset.name;
     let types=[]; try{ types=await D.getAllDocTypes()||[]; }catch{}
+    state.typeHeadingNames=_collectTypeHeadingNames(types, state.docTypeName);
     const t=types.find(x=>x.slug===state.docTypeSlug);
     state.fields=(t&&t.fields?t.fields:[]).filter(f=>f.enabled!==0).map(f=>({key:f.key,label:f.label,type:f.type,required:!!f.required}));
     if (!state.fields.length){ toast('That type has no fields to teach.'); return false; }
@@ -244,6 +258,8 @@ async function commitTypeChoice(){
   const t=res.type;
   state.docTypeSlug = t ? t.slug : null;
   state.docTypeName = t ? t.name : '';
+  { let types=[]; try{ types=await D.getAllDocTypes()||[]; }catch{}
+    state.typeHeadingNames=_collectTypeHeadingNames(types, state.docTypeName); }
   state.fields=(t&&t.fields?t.fields:[]).map(f=>({
     key:f.key, label:f.label, type:f.type,
     required:(f.key===t.ref_field_key || f.key===t.date_field_key),
@@ -645,61 +661,60 @@ async function readBack(box){
   store(f, box, anchor, value, /*pending*/true);
   showValueConfirm(f, state.results[f.key]);
 }
-// Value is stored; let the user confirm it before moving to the anchor step.
+// Value stored; ONE combined confirmation for the value read AND the detected label
+// (owner 2026-07-31: one confirm for both, separate redraws — the old separate "Step 2"
+// label panel cost a click per field). The label was already detected during readBack,
+// so showing both here costs no extra OCR. Issuer stays value-only (no label — see
+// isIssuerField above).
 function showValueConfirm(f, r){
-  setConfirm(
-    `<div>I read: <span class="val mono">${esc(r.value)}</span> — is that right?</div>`+
-    `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">`+
-      `<button class="btn primary" id="rb-yes">Yes →</button>`+
-      `<button class="btn ghost" id="rb-redraw">Redraw</button>`+
-    `</div>`);
-  // Issuer: the value confirmation is the LAST step — no label to confirm.
-  onConfirm('rb-yes',   ()=> isIssuerField(f) ? finishIssuerField(f) : enterAnchorMode());
-  onConfirm('rb-redraw',()=>{ delete state.results[f.key]; promptField(); });
-}
-// After confirming the value, auto-enter anchor mode so the user can mark (or skip)
-// the printed label Scan Finder follows when the layout shifts.
-function enterAnchorMode(){
-  const f=curField(), r=f&&state.results[f.key]; if(!r) return;
-  drawMode='anchor';
-  setPrompt('Step 2 — confirm the printed label for', f.label);
-  $('rg-sub').textContent=`Scan Finder follows a printed label so the field keeps reading when the layout shifts. Confirm the detected label and its direction, draw a different box, or continue without one.`;
-  renderAnchorReadout();
-  redrawCanvas();
-}
-// The anchor read-out + the Left/Above direction question. Factored out so the toggle
-// re-renders after a re-detect. The primary button KEEPS the detected label (or accepts
-// position-only) and advances — it never discards a detected label.
-function renderAnchorReadout(){
-  const f=curField(), r=f&&state.results[f.key]; if(!r) return;
-  // A garbled (suspicious) read is treated as UNREADABLE: the junk string is never displayed
-  // or offered as "Keep this label" — a garbled label never re-locates on future pages, and
-  // the user must never be asked to vouch for text they can't find on the page. The offer
-  // becomes position-only; the junk itself is dropped on advance (rb-skip-anchor below).
+  const issuer = isIssuerField(f);
+  setPrompt('Confirm what I read for', f.label);
+  $('rg-sub').textContent = issuer
+    ? 'Check the company name — the issuer is recognised by its name and letterhead, no label needed.'
+    : 'Check both readings below. Scan Finder follows the printed label so the field keeps reading when the layout shifts.';
+  // A garbled (suspicious) label read is treated as UNREADABLE: the junk string is never
+  // displayed or vouched for — the offer becomes position-only and the junk is dropped on
+  // confirm. The user can still redraw the label or flip the direction.
   const suspicious = !!(r.anchor_text && r.anchorSuspicious);
   const hasLabel = !!r.anchor_text && !suspicious;
   const dir = r.anchor_dir || 'left';
-  const lbl = hasLabel
-    ? `Detected label: <span class="mono">"${esc(r.anchor_text)}"</span>`
-    : suspicious
-      ? `⚠ Couldn't read the caption here cleanly — the position will be remembered instead. Draw a box round the printed label, try the other direction, or continue without one.`
-      : 'No label found here — try the other direction, draw one, or continue without.';
-  const keepText = hasLabel ? 'Keep this label →' : 'Continue without a label →';
+  const labelBit = issuer ? '' :
+    `<span class="muted" style="margin:0 8px">·</span>Label: ` + (hasLabel
+      ? `<span class="val mono">${esc(r.anchor_text)}</span> <span class="muted">(${dir==='above'?'above':'left of'} the value)</span>`
+      : `<span class="muted">${suspicious ? "⚠ couldn't read it cleanly — its position will be remembered" : 'none found — its position will be remembered'}</span>`);
+  const dirBtns = issuer ? '' :
+    `<span class="muted" style="font-size:12px;align-self:center;margin-left:6px">Label is:</span>`+
+    `<button class="btn ${dir==='left'?'primary':'ghost'}" id="rb-dir-left">← Left</button>`+
+    `<button class="btn ${dir==='above'?'primary':'ghost'}" id="rb-dir-above">↑ Above</button>`;
   setConfirm(
-    `<div class="muted" style="font-size:13px">${lbl}</div>`+
-    `<div style="margin-top:9px;font-size:13px">Is the label to the <b>left</b> of the value, or <b>above</b> it?</div>`+
-    `<div style="margin-top:6px;display:flex;gap:6px">`+
-      `<button class="btn ${dir==='left'?'primary':'ghost'}" id="rb-dir-left">← Left</button>`+
-      `<button class="btn ${dir==='above'?'primary':'ghost'}" id="rb-dir-above">↑ Above</button>`+
-    `</div>`+
-    `<div style="margin-top:11px;display:flex;gap:8px;flex-wrap:wrap">`+
-      `<button class="btn primary" id="rb-skip-anchor">${keepText}</button>`+
-      `<button class="btn ghost" id="rb-redraw-val">← Redraw value</button>`+
+    `<div>Value: <span class="val mono">${esc(r.value)}</span>${labelBit}</div>`+
+    `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">`+
+      `<button class="btn primary" id="rb-yes">Looks right →</button>`+
+      `<button class="btn ghost" id="rb-redraw">Redraw value</button>`+
+      (issuer ? '' : `<button class="btn ghost" id="rb-redraw-label">Redraw label</button>`)+
+      dirBtns+
     `</div>`);
-  onConfirm('rb-dir-left',   ()=>redetectAnchor('left'));
-  onConfirm('rb-dir-above',  ()=>redetectAnchor('above'));
-  onConfirm('rb-skip-anchor',()=>{ if (suspicious) r.anchor_text=null; r.status='done'; drawMode='value'; advanceField(); });
-  onConfirm('rb-redraw-val', ()=>{ delete state.results[f.key]; promptField(); });
+  onConfirm('rb-yes', ()=>{
+    if (issuer) return finishIssuerField(f);
+    if (suspicious) r.anchor_text = null;   // junk never persists — position-only
+    r.status='done'; drawMode='value'; advanceField();
+  });
+  onConfirm('rb-redraw', ()=>{ delete state.results[f.key]; promptField(); });
+  if (!issuer){
+    onConfirm('rb-redraw-label', enterLabelRedraw);
+    onConfirm('rb-dir-left',  ()=>redetectAnchor('left'));
+    onConfirm('rb-dir-above', ()=>redetectAnchor('above'));
+  }
+}
+// "Redraw label": arm anchor-draw mode; captureAnchor below returns to the combined
+// confirmation (it no longer auto-advances — one confirm covers both readings).
+function enterLabelRedraw(){
+  const f=curField(); if(!f) return;
+  drawMode='anchor';
+  setPrompt('Draw a box around the printed label for', f.label);
+  $('rg-sub').textContent='Drag a rectangle over the printed caption on the page (e.g. "Invoice No."). You’ll confirm both readings after.';
+  setConfirm('<span class="muted">Draw the label box on the page…</span>');
+  redrawCanvas();
 }
 // Re-run label detection in the chosen direction (the Left/Above toggle) and refresh.
 async function redetectAnchor(dir){
@@ -712,7 +727,7 @@ async function redetectAnchor(dir){
   }catch{ r.anchor_dir=dir; }
   _teachReadBusy = false;
   redrawCanvas();
-  renderAnchorReadout();
+  showValueConfirm(f, r);
 }
 async function captureAnchor(box){
   const f=curField(), r=f&&state.results[f.key]; if(!r){ drawMode='value'; return; }
@@ -731,11 +746,10 @@ async function captureAnchor(box){
   const v=r.target?_teachFwdBox(r.target):{};   // r.target is RAW — compare in the display frame the box was drawn in
   r.anchor_dir = (typeof v.y==='number' && (box.y+box.h) <= (v.y+(v.h||0)*0.5)) ? 'above' : 'left';
   r.anchorManual = true;
-  r.status = 'done';
   drawMode='value';
   redrawCanvas();
   toast('Label captured');
-  advanceField();
+  showValueConfirm(f, r);   // back to the combined confirm — the user OKs both together
 }
 function store(f,box,anchor,value,pending){
   // Canonicalise to the RAW frame (identity when straighten is off) so doCommit registers to the raw scan.
@@ -846,18 +860,42 @@ async function autoLabel(box, forceDir){
         // The cluster/word box is in the DOWNSCALED OCR-crop px (cropB64's height-target ds);
         // divide by naturalHeight*ds (from the band's own pixel height) to get page-norm coords.
         const srcBox = cluster ? cluster.box : (Array.isArray(res.box) ? res.box : null);
+        let ds=1.0;
         if (srcBox){
           const bandHpx=band.h*state.img.naturalHeight;
           // Same frame fix as above: honour TEACH_NATIVE_CROP so the label word-box → page-norm
           // conversion divides by the SAME scale the crop was sent at (native = 1.0), not a phantom 0.42×.
-          const ds=TEACH_NATIVE_CROP?1.0:(bandHpx>OCR_TARGET_H?(OCR_TARGET_H/bandHpx):1.0);
+          ds=TEACH_NATIVE_CROP?1.0:(bandHpx>OCR_TARGET_H?(OCR_TARGET_H/bandHpx):1.0);
           const nW=state.img.naturalWidth*ds, nH=state.img.naturalHeight*ds;
           const [l,t,w,h]=srcBox;
           if (nW>0&&nH>0&&w>0&&h>0){
             abox={x:band.x+l/nW, y:band.y+t/nH, w:w/nW, h:h/nH};
           }
         }
-        return {box:abox, anchor_text:label, dir:band.dir, suspicious:A.labelLooksSuspicious(label)};
+        // ── PASS-2: clip-gated tight re-read (2026-07-31, gary+Oracle signed; "oe ee No.") ──
+        // The band's vertical extent is open-loop from the DRAWN value box, so a low/short draw
+        // decapitates the caption and OCR reads half-glyph junk that sanitize/suspicious can't
+        // always catch. Mechanism evidence — the picked cluster's box touching the band's
+        // clipping edge (fragments sit AT the edge by construction; ABOVE bands only clip at
+        // their top, their bottom abuts the value row by design) — or a suspicious pass-1 label
+        // triggers ONE tight re-read anchored to the label's OWN glyph rows. A clean unclipped
+        // draw never pays a second OCR and can never be degraded (the tight-draw PIN).
+        let suspicious = A.labelLooksSuspicious(label);
+        const cropHpx  = Math.round(band.h*state.img.naturalHeight*ds);
+        const clipped  = !!(cluster && srcBox)
+          && A.clusterTouchesClipEdge(srcBox, cropHpx, band.dir);
+        if (clipped || suspicious){
+          try{
+            const up = await _rereadLabelTight(abox, box, band.dir);
+            if (up) return {box:up.box, anchor_text:up.anchor_text, dir:band.dir, suspicious:false};
+          }catch{}
+          // Pass-2 unavailable or rejected (garble again / type heading / doc changed): keep
+          // pass-1 but geometric clip evidence FORCES the suspicious flag, so the junk is never
+          // shown as a legit label — it takes the existing suspicious→position-only downgrade.
+          // Deliberate: a maybe-locatable garble label is discarded rather than vouched for.
+          suspicious = suspicious || clipped;
+        }
+        return {box:abox, anchor_text:label, dir:band.dir, suspicious};
       }
     }catch{}
   }
@@ -867,6 +905,45 @@ async function autoLabel(box, forceDir){
   }
   const ab={x:Math.max(0,box.x-Math.min(box.x,0.12)),y:box.y,w:Math.min(box.x,0.12)||box.w,h:box.h};
   return {box:ab, anchor_text:null, dir:'left'};
+}
+
+// PASS-2 of the label read: re-crop TIGHT around the pass-1 cluster's own word-box union
+// (pads keyed to the larger of cluster/value height — the cluster height is the CLIPPED height)
+// and re-read at native resolution, re-running the SAME picker chain on the fresh words (never
+// raw res.text — the big type banner can share the OCR row, and the per-gap column split is what
+// severs it). Returns {box, anchor_text} ONLY for a clean, non-suspicious, non-type-heading
+// label with a usable word box — every other outcome is null (caller keeps pass-1 + forces
+// suspicious). MUST never reject: fully try-wrapped by the caller; internal awaits are guarded
+// against the doc changing mid-read (the ca90c73 stale-image class).
+async function _rereadLabelTight(clusterNorm, valueBox, dir){
+  const A = window.AnchorLabel;
+  const imgRef = state.img;
+  if (!imgRef) return null;
+  const rect = A.labelRereadRect(clusterNorm, valueBox);
+  if (!(rect.w > 0 && rect.h > 0)) return null;
+  const res = await D.ocrRegionBoxes(await cropB64(rect));
+  if (state.img !== imgRef) return null;          // doc changed mid-read — stale frame, drop
+  let cluster;
+  if (dir === 'above'){
+    cluster = A.nearestAboveRow(res && res.words);
+  } else {
+    // Row nearest the VALUE's centre, in the pass-2 crop's own SENT pixels — same ds law as
+    // cropB64 (native 1.0 under TEACH_NATIVE_CROP; the 1ef3e50 frame-math class otherwise).
+    const rectHpx = rect.h * imgRef.naturalHeight;
+    const ds = TEACH_NATIVE_CROP ? 1.0 : (rectHpx > OCR_TARGET_H ? (OCR_TARGET_H / rectHpx) : 1.0);
+    const cY = ((valueBox.y + valueBox.h/2) - rect.y) * imgRef.naturalHeight * ds;
+    const rowWords = A.nearestRowTo(res && res.words, cY);
+    cluster = A.nearestLeftCluster(rowWords || (res && res.words));
+  }
+  if (!cluster || !Array.isArray(cluster.box)) return null;
+  const text = A.sanitizeAnchorLabel(A.extractLabel(String(cluster.text || '').trim()) || '');
+  if (!text || A.labelLooksSuspicious(text)) return null;
+  if (A.isTypeHeadingLabel(text, state.typeHeadingNames)) return null;   // the a666b83 belt
+  const rectHpx = rect.h * imgRef.naturalHeight;
+  const ds = TEACH_NATIVE_CROP ? 1.0 : (rectHpx > OCR_TARGET_H ? (OCR_TARGET_H / rectHpx) : 1.0);
+  const abox = A.cropBoxToPageNorm(rect, cluster.box, imgRef.naturalWidth, imgRef.naturalHeight, ds);
+  if (!abox) return null;
+  return { box: abox, anchor_text: text };
 }
 
 // ── Step 4: summary + commit ─────────────────────────────────────────────────

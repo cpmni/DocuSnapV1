@@ -292,5 +292,81 @@ try {
   check('position-only anchor (no offset) → transform, no offset', r.action === 'transform' && r.offset_dx == null);
 }
 
+// ── PASS-2 clip-gated re-read helpers (2026-07-31, gary+Oracle; the teach "oe ee No." class) ──
+console.log('\nDecapitation-fragment belt (labelLooksSuspicious):');
+{
+  check("'oe ee No.' → suspicious (2 consecutive short lowercase junk tokens)",
+        A.labelLooksSuspicious('oe ee No.') === true);
+  check("'oe ee' → suspicious", A.labelLooksSuspicious('oe ee') === true);
+  // False-positive guards (Oracle condition 5) — real captions with short tokens stay clean:
+  check("'a/c no.' clean ('ac' alone, then vocab 'no')", A.labelLooksSuspicious('a/c no.') === false);
+  check("'p/o no.' clean ('po' is vocab)", A.labelLooksSuspicious('p/o no.') === false);
+  check("'Date of Issue' clean (lone 'of')", A.labelLooksSuspicious('Date of Issue') === false);
+  check("'Ship To' clean (uppercase T)", A.labelLooksSuspicious('Ship To') === false);
+  check("'S/O No.' clean (uppercase stems)", A.labelLooksSuspicious('S/O No.') === false);
+  check("'Deliver to site' clean ('to' is vocab)", A.labelLooksSuspicious('Deliver to site') === false);
+  check("'Sales Order No.' clean", A.labelLooksSuspicious('Sales Order No.') === false);
+}
+
+console.log('\nclusterTouchesClipEdge (mechanism evidence for a decapitated caption):');
+{
+  // LEFT band, 59px tall: fragments hugging an edge = clipped; a centred cluster = healthy.
+  check('top-edge fragment → clipped', A.clusterTouchesClipEdge([100, 0, 200, 20], 59, 'left') === true);
+  check('bottom-edge fragment → clipped', A.clusterTouchesClipEdge([100, 40, 200, 18.5], 59, 'left') === true);
+  check('centred cluster → NOT clipped (the tight-draw PIN: pass-2 never fires on a clean draw)',
+        A.clusterTouchesClipEdge([100, 14, 200, 33], 59, 'left') === false);
+  // ABOVE band: the bottom row abuts the value row BY CONSTRUCTION — bottom contact is healthy
+  // (Oracle condition 3); only TOP contact is clip evidence.
+  check('above band: bottom contact → NOT clipped (healthy by construction)',
+        A.clusterTouchesClipEdge([100, 40, 200, 19], 59, 'above') === false);
+  check('above band: top contact → clipped', A.clusterTouchesClipEdge([100, 1, 200, 20], 59, 'above') === true);
+  check('degenerate input → false', A.clusterTouchesClipEdge(null, 59, 'left') === false
+        && A.clusterTouchesClipEdge([0, 0, 10, 10], 0, 'left') === false);
+}
+
+console.log('\nlabelRereadRect (pass-2 crop sizing — pads keyed to the LARGER of cluster/value height):');
+{
+  const cluster = { x: 0.60, y: 0.140, w: 0.10, h: 0.005 };   // clipped sliver: 0.5% page height
+  const value   = { x: 0.75, y: 0.138, w: 0.08, h: 0.010 };
+  const r = A.labelRereadRect(cluster, value);
+  // pad keys to value height (0.010 > 0.005): vPad 0.008, hPad 0.005
+  check('vertical pad from the VALUE height (cluster height is the clipped height)',
+        Math.abs(r.y - (0.140 - 0.008)) < 1e-9 && Math.abs(r.h - (0.005 + 0.016)) < 1e-9);
+  check('horizontal pad applied', Math.abs(r.x - (0.60 - 0.005)) < 1e-9);
+  const edge = A.labelRereadRect({ x: 0.001, y: 0.001, w: 0.05, h: 0.01 }, { h: 0.01 });
+  check('clamped to the page', edge.x >= 0 && edge.y >= 0 && edge.x + edge.w <= 1 && edge.y + edge.h <= 1);
+}
+
+console.log('\nisTypeHeadingLabel (the a666b83 belt — pass-2 must never adopt a type heading):');
+{
+  const names = ['Sales Order', 'Invoice', '["Delivery Docket","Goods Received Note"]'];
+  check("'SALES ORDER' → rejected (case/space-insensitive)", A.isTypeHeadingLabel('SALES  ORDER', names) === true);
+  check("'Invoice' → rejected", A.isTypeHeadingLabel('Invoice', names) === true);
+  check('JSON-string title_aliases honoured', A.isTypeHeadingLabel('Goods Received Note', names) === true);
+  check("'Sales Order No.' NOT rejected (a caption, not the bare heading)",
+        A.isTypeHeadingLabel('Sales Order No.', names) === false);
+  check('empty/none-of → false', A.isTypeHeadingLabel('', names) === false
+        && A.isTypeHeadingLabel('Order Date', names) === false);
+}
+
+console.log('\ncropBoxToPageNorm (pass-2 frame math — the 1ef3e50 class, pinned with ds≠1):');
+{
+  const rect = { x: 0.2, y: 0.1, w: 0.3, h: 0.05 };
+  const nat = { W: 2000, H: 3000 };
+  // ds=1 (native, TEACH_NATIVE_CROP): a word at crop px (100,30,200,60)
+  let b = A.cropBoxToPageNorm(rect, [100, 30, 200, 60], nat.W, nat.H, 1.0);
+  check('ds=1: origin-shifted into page-norm',
+        Math.abs(b.x - (0.2 + 100 / 2000)) < 1e-9 && Math.abs(b.y - (0.1 + 30 / 3000)) < 1e-9
+        && Math.abs(b.w - 200 / 2000) < 1e-9 && Math.abs(b.h - 60 / 3000) < 1e-9);
+  // ds=0.5 (legacy downscale): the SAME page box arrives at half-size crop px — conversion must
+  // divide by nat*ds, not nat (the phantom-0.42× bug this pins against).
+  b = A.cropBoxToPageNorm(rect, [50, 15, 100, 30], nat.W, nat.H, 0.5);
+  check('ds=0.5: divides by nat*ds (frame-consistent)',
+        Math.abs(b.x - (0.2 + 100 / 2000)) < 1e-9 && Math.abs(b.y - (0.1 + 30 / 3000)) < 1e-9
+        && Math.abs(b.w - 200 / 2000) < 1e-9 && Math.abs(b.h - 60 / 3000) < 1e-9);
+  check('degenerate → null', A.cropBoxToPageNorm(rect, [0, 0, 0, 10], nat.W, nat.H, 1) === null
+        && A.cropBoxToPageNorm(rect, null, nat.W, nat.H, 1) === null);
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nAll anchor-label checks passed');
 process.exit(fails ? 1 : 0);
