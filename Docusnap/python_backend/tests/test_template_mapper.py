@@ -851,6 +851,208 @@ def test_label_score_word_boundary():
     return failures
 
 
+def kv_line_stub(words):
+    """Crop-aware `ocr_lines_fn` returning ONE line (WITH a per-word list) built from the
+    page-coord `words` that fall inside the requested crop, reported crop-relative — mirrors
+    real image_to_data line grouping so `inline_value`/`inline_box` populate (page_words_stub
+    returns words-as-lines with no `words` key, so it can't exercise the inline harvest).
+    A local crop that excludes the value word yields a label-only line (Seam A in miniature);
+    a page-wide crop yields the whole key/value line."""
+    def stub(crop):
+        _, (x1, y1, x2, y2) = crop
+        cw, ch = (x2 - x1) / 1000.0, (y2 - y1) / 1000.0
+        if cw <= 0 or ch <= 0:
+            return []
+        cx, cy = x1 / 1000.0, y1 / 1000.0
+        inside = [w for w in words
+                  if w["x"] >= cx - 1e-9 and w["y"] >= cy - 1e-9
+                  and w["x"] + w["w"] <= cx + cw + 1e-9 and w["y"] + w["h"] <= cy + ch + 1e-9]
+        if not inside:
+            return []
+        rel = [{"text": w["text"], "x_norm": (w["x"] - cx) / cw, "y_norm": (w["y"] - cy) / ch,
+                "w_norm": w["w"] / cw, "h_norm": w["h"] / ch} for w in inside]
+        x_min = min(r["x_norm"] for r in rel); y_min = min(r["y_norm"] for r in rel)
+        x_max = max(r["x_norm"] + r["w_norm"] for r in rel); y_max = max(r["y_norm"] + r["h_norm"] for r in rel)
+        return [{"text": " ".join(r["text"] for r in rel),
+                 "x_norm": x_min, "y_norm": y_min, "w_norm": x_max - x_min, "h_norm": y_max - y_min,
+                 "words": rel}]
+    return stub
+
+
+# "Delivery Note No.  <VALUE>" laid out on ONE row: label at x0.10-0.28, value word at x0.30.
+_DEL_LABEL_WORDS = [
+    {"text": "Delivery", "x": 0.10, "y": 0.20, "w": 0.08, "h": 0.03},
+    {"text": "Note",     "x": 0.19, "y": 0.20, "w": 0.05, "h": 0.03},
+    {"text": "No.",      "x": 0.25, "y": 0.20, "w": 0.03, "h": 0.03},
+]
+_DEL_FPS = {"delivery_number": {"validation": "alphanumeric"}}
+_ALNUM_VPS = {"alphanumeric": [r"[A-Za-z0-9][A-Za-z0-9\-\/\.]{2,20}"]}
+
+
+def _del_mapping(**ov):
+    """An INLINE delivery_number mapping: value box level with (to the right of) the label."""
+    m = {
+        "field_key": "delivery_number", "page_number": 0, "enabled": True,
+        "anchor_text": "Delivery Note No.", "ocr_type": "text", "search_expansion": 0.0,
+        "anchor_x_norm": 0.10, "anchor_y_norm": 0.20, "anchor_w_norm": 0.18, "anchor_h_norm": 0.03,
+        "target_x_norm": 0.315, "target_y_norm": 0.20, "target_w_norm": 0.10, "target_h_norm": 0.03,
+        "offset_dx_norm": 0.215, "offset_dy_norm": 0.0,
+    }
+    m.update(ov)
+    return m
+
+
+def _run_del(abs_read, inline_read, value_text="DN-93159", mapping=None, fps=None, on=True, words=None):
+    """Drive extract_with_mappings for a delivery-note-style inline code field.
+    `abs_read` = what the absolute drawn box OCRs (1st text call); `inline_read` = what the
+    inline value-box re-read OCRs (2nd). `value_text` places the value WORD on the row; pass
+    `words` to override the whole line (e.g. to prepend a merged title)."""
+    page = FakePage((1000, 1000))
+    words = words if words is not None else (
+        list(_DEL_LABEL_WORDS) + [{"text": value_text, "x": 0.30, "y": 0.20, "w": 0.12, "h": 0.03}])
+    lines = kv_line_stub(words)
+    text = text_queue_stub([abs_read, inline_read])
+    saved = template_mapper._INLINE_CODE_RECONCILE_ON
+    template_mapper._INLINE_CODE_RECONCILE_ON = on
+    try:
+        return template_mapper.extract_with_mappings(
+            [page], [mapping or _del_mapping()], fps or _DEL_FPS,
+            ocr_lines_fn=lines, ocr_text_fn=text, validation_patterns=_ALNUM_VPS)
+    finally:
+        template_mapper._INLINE_CODE_RECONCILE_ON = saved
+
+
+def test_inline_code_reconcile():
+    """Stage 0.5 inline-code reconcile: a fixed narrow drawn box clips a code value's prefix
+    under per-scan drift; the label-anchored inline read un-clips it. Off by default."""
+    failures = 0
+    print("inline-code reconcile: un-clip a taught code field via the label-anchored inline read")
+
+    # 1. SUFFIX-clip (the D of DN-93159 cut off) → inline un-clips.
+    got = _run_del("N-93159", "DN-93159", value_text="DN-93159").get("delivery_number", {})
+    if not check("box read 'N-93159' un-clipped to 'DN-93159'", got.get("value") == "DN-93159"):
+        failures += 1
+    if not check(f"committed clean via template_mapping (method={got.get('method')})",
+                 (got.get("method") or "").startswith("template_mapping")
+                 and "shapewarn" not in (got.get("method") or "")):
+        failures += 1
+
+    # 2. PREFIX-clip (whole DN- cut) → inline un-clips.
+    got = _run_del("39550", "DN-39550", value_text="DN-39550").get("delivery_number", {})
+    if not check("box read '39550' un-clipped to 'DN-39550'", got.get("value") == "DN-39550"):
+        failures += 1
+
+    # 3. Total disagreement (box floated into whitespace → hallucination) → inline wins but
+    #    FAILS TOWARD REVIEW (capped + flagged), never a clean auto-file.
+    got = _run_del("HAL7ea7ca", "DN-78756", value_text="DN-78756").get("delivery_number", {})
+    if not check("garbage box read replaced by inline 'DN-78756'", got.get("value") == "DN-78756"):
+        failures += 1
+    if not check(f"disagreement flagged for review (method={got.get('method')}, note={bool(got.get('validation_note'))})",
+                 "shapewarn" in (got.get("method") or "") and bool(got.get("validation_note"))
+                 and (got.get("confidence") or 100) <= 70):
+        failures += 1
+
+    # 4. AGREE → keep the rigid read, byte-identical to the OFF path.
+    got_on = _run_del("DN-81978", "DN-81978", value_text="DN-81978", on=True).get("delivery_number", {})
+    got_off = _run_del("DN-81978", "DN-81978", value_text="DN-81978", on=False).get("delivery_number", {})
+    if not check("agreeing reads keep the box value 'DN-81978'", got_on.get("value") == "DN-81978"):
+        failures += 1
+    if not check("ON==OFF when reads agree (no shapewarn, same value/method)",
+                 got_on.get("value") == got_off.get("value")
+                 and (got_on.get("method") or "") == (got_off.get("method") or "")):
+        failures += 1
+
+    # 5. Rigid FULLER than inline (inline truncated) → keep the rigid read.
+    got = _run_del("DN-93159", "93159", value_text="93159").get("delivery_number", {})
+    if not check("rigid 'DN-93159' kept when inline is the shorter '93159'", got.get("value") == "DN-93159"):
+        failures += 1
+
+    # 6. OFF flag → byte-identical to today: the clipped read stands.
+    got = _run_del("N-93159", "DN-93159", value_text="DN-93159", on=False).get("delivery_number", {})
+    if not check("flag OFF -> clipped 'N-93159' still commits (byte-identical)", got.get("value") == "N-93159"):
+        failures += 1
+
+    # 7. PIN — free-text (customer_name) is NEVER reconciled (the :742-750 garble seam): the
+    #    clean box read stands even when an inline garble is available.
+    page = FakePage((1000, 1000))
+    ftwords = [{"text": "Customer", "x": 0.10, "y": 0.20, "w": 0.08, "h": 0.03},
+               {"text": "Beaumont", "x": 0.30, "y": 0.20, "w": 0.10, "h": 0.03},
+               {"text": "Care", "x": 0.41, "y": 0.20, "w": 0.06, "h": 0.03},
+               {"text": "Homes", "x": 0.48, "y": 0.20, "w": 0.07, "h": 0.03}]
+    ftmap = _del_mapping(field_key="customer_name", anchor_text="Customer",
+                         anchor_x_norm=0.10, anchor_w_norm=0.10,
+                         target_x_norm=0.30, target_w_norm=0.25)
+    text = text_queue_stub(["Beaumont Care Homes Ltd", "pantionahe MUGS Liu COTVCE"])
+    saved = template_mapper._INLINE_CODE_RECONCILE_ON
+    template_mapper._INLINE_CODE_RECONCILE_ON = True
+    try:
+        ftres = template_mapper.extract_with_mappings(
+            [page], [ftmap], {"customer_name": {"validation": "text"}},
+            ocr_lines_fn=kv_line_stub(ftwords), ocr_text_fn=text, validation_patterns=_ALNUM_VPS)
+    finally:
+        template_mapper._INLINE_CODE_RECONCILE_ON = saved
+    ftval = ftres.get("customer_name", {})
+    if not check("free-text box read 'Beaumont Care Homes Ltd' NOT replaced by inline garble",
+                 ftval.get("value") == "Beaumont Care Homes Ltd"
+                 and "shapewarn" not in (ftval.get("method") or "")):
+        failures += 1
+
+    # 8. PIN — job_reference is EXCLUDED from the code cross-check set (its pattern permits
+    #    internal spaces; reconcile + the .split()[0] guard would truncate it). If a future dev
+    #    adds it, this fails and forces a space-aware harvest first.
+    if not check("job_reference excluded from _CODE_CROSSCHECK_TYPES",
+                 "job_reference" not in template_mapper._CODE_CROSSCHECK_TYPES):
+        failures += 1
+
+    # 9. PIN — label-ABOVE layout (value a line below the label) is NOT reconciled: the value
+    #    isn't inline, so the geometric/relocate path owns it and the box read stands.
+    above = _del_mapping(target_y_norm=0.26)          # cy 0.275 vs anchor cy 0.215 → > one row
+    got = _run_del("DN-500", "DN-999", value_text="DN-500", mapping=above).get("delivery_number", {})
+    if not check("label-above code NOT reconciled (box 'DN-500' stands)", got.get("value") == "DN-500"):
+        failures += 1
+
+    # 10. PIN — a merged TITLE on the same OCR line (a 120-DPI page-wide read groups
+    #     "DELIVERY DOCKET  Delivery Note No.  DN-93159" into one WIDE line) must NOT block the
+    #     un-clip: cluster_value_words isolates the value's own column, so the wide line is
+    #     harmless. Guards against re-adding a _located_too_wide bail (the real-doc miss).
+    wide_words = [
+        {"text": "DELIVERY", "x": 0.05, "y": 0.14, "w": 0.08, "h": 0.02},
+        {"text": "DOCKET",   "x": 0.14, "y": 0.14, "w": 0.07, "h": 0.02},
+        {"text": "Delivery", "x": 0.62, "y": 0.14, "w": 0.06, "h": 0.02},
+        {"text": "Note",     "x": 0.69, "y": 0.14, "w": 0.04, "h": 0.02},
+        {"text": "No.",      "x": 0.74, "y": 0.14, "w": 0.03, "h": 0.02},
+        {"text": "DN-93159", "x": 0.80, "y": 0.14, "w": 0.07, "h": 0.02},
+    ]
+    wide_map = _del_mapping(anchor_x_norm=0.62, anchor_y_norm=0.14, anchor_w_norm=0.16, anchor_h_norm=0.02,
+                            target_x_norm=0.80, target_y_norm=0.14, target_w_norm=0.07, target_h_norm=0.02,
+                            offset_dx_norm=0.18, offset_dy_norm=0.0)
+    got = _run_del("N-93159", "DN-93159", mapping=wide_map, words=wide_words).get("delivery_number", {})
+    if not check("merged title on the OCR line does NOT block the un-clip (no too_wide regression)",
+                 got.get("value") == "DN-93159"):
+        failures += 1
+
+    # 11. PIN — an inline OVER-read (box read is a PREFIX of inline, not a suffix: INV-121 vs
+    #     INV-12110) must NEVER take the CLEAN un-clip arm. Un-clip is suffix-only (left-clip); a
+    #     prefix relation is ambiguous → review-flagged, so an over-read can't silently win. Guards
+    #     against reverting the suffix test to a plain substring (which would commit INV-12110 clean).
+    inv_words = [
+        {"text": "Invoice", "x": 0.10, "y": 0.20, "w": 0.09, "h": 0.03},
+        {"text": "No.",     "x": 0.20, "y": 0.20, "w": 0.04, "h": 0.03},
+        {"text": "INV-12110", "x": 0.30, "y": 0.20, "w": 0.14, "h": 0.03},
+    ]
+    inv_map = _del_mapping(field_key="invoice_number", anchor_text="Invoice No.",
+                           anchor_x_norm=0.10, anchor_w_norm=0.15,
+                           target_x_norm=0.30, target_w_norm=0.14)
+    got = _run_del("INV-121", "INV-12110", mapping=inv_map, words=inv_words,
+                   fps={"invoice_number": {"validation": "alphanumeric"}}).get("invoice_number", {})
+    if not check("inline over-read (INV-121 vs INV-12110) is NOT clean-un-clipped (flagged, not silent)",
+                 "shapewarn" in (got.get("method") or "")):
+        failures += 1
+
+    print()
+    return failures
+
+
 def main():
     failures = 0
     failures += test_geometry_helpers()
@@ -867,6 +1069,7 @@ def main():
     failures += test_gate_value_shape_modes()
     failures += test_manual_anchor_shape_precedence()
     failures += test_registration_rung()
+    failures += test_inline_code_reconcile()
 
     if failures:
         print(f"{failures} check(s) failed — template_mapper regressed.")

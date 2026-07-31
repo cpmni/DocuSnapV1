@@ -27,6 +27,7 @@ pipeline (keyword/anchor/LLM) for that field.
 
 import difflib
 import math
+import os
 import re
 
 from PIL import Image, ImageFilter, ImageOps
@@ -84,6 +85,20 @@ _SHAPE_WARN_NOTE = ("manually mapped value differs from the usual format for thi
 # learned-SHAPE veto must be skipped (they vary legitimately — see _gate_value).
 _SELF_VALIDATING_TYPES = frozenset({'date', 'currency', 'currency_code',
                                     'mac_address', 'ip_address'})
+
+# Single-token CODE validation types whose value is ONE token on the label's row, so a
+# label-anchored inline read can cross-check (and un-clip) the absolute drawn-box read
+# without the free-text garble risk that removed blanket inline-first (see :742-750).
+# reference_code is a single dashed token like alphanumeric; job_reference is EXCLUDED —
+# its pattern permits internal spaces, so the one-token .split()[0] below would truncate it.
+_CODE_CROSSCHECK_TYPES = frozenset({'alphanumeric', 'reference_code'})
+
+# Stage 0.5 inline-code reconcile — DARK by default (TEMPLATE_INLINE_CODE_RECONCILE=1).
+# A fixed narrow drawn target box clips a code value's prefix under per-scan offset/scale
+# (DN-93159 → N-93159) and the alphanumeric gate can't see it; the label-anchored inline
+# read can't clip. ON: for a single-token CODE field taught INLINE with its label, prefer
+# the fuller of the drawn-box read and the label-anchored inline read. OFF: byte-identical.
+_INLINE_CODE_RECONCILE_ON = os.environ.get('TEMPLATE_INLINE_CODE_RECONCILE', '0') == '1'
 
 
 def extract_with_mappings(page_images, mappings, field_patterns=None,
@@ -507,6 +522,108 @@ def _label_drifted(anchor_box, located):
         or abs(_cy(located) - _cy(anchor_box)) > tol_y
 
 
+def _code_norm(s):
+    """Alphanumeric-only lower fold for CODE containment tests, so a separator jitter
+    (DN-93159 vs DN 93159) can't defeat the substring check."""
+    return re.sub(r'[^a-z0-9]', '', (s or '').lower())
+
+
+def _target_inline_with_anchor(anchor_box, target_box):
+    """True when the taught value sits on the label's ROW (an inline key/value row), not a
+    line below it. Compares box CENTRES vertically against ~one row height; a label-ABOVE
+    layout (target a line under the anchor) is excluded so the inline reconcile only fires
+    where an inline harvest is even meaningful (the geometric/relocate path owns label-above)."""
+    def _cy(b): return (b.get("y_norm") or 0.0) + (b.get("h_norm") or 0.0) / 2.0
+    tol = max(anchor_box.get("h_norm") or 0.0, target_box.get("h_norm") or 0.0, _DRIFT_FLOOR)
+    return abs(_cy(anchor_box) - _cy(target_box)) <= tol
+
+
+def _inline_code_reconcile(page, rigid_text, anchor_box, target_box, val_type, field_key,
+                           anchor_text, ocr_lines_fn, ocr_text_fn, validation_patterns,
+                           format_lookup, line_cache, slice_capture, page_idx,
+                           abs_ocr_conf=None):
+    """Cross-check a single-token CODE field's absolute drawn-box read (`rigid_text`) against
+    the label-anchored INLINE read, and prefer the fuller value when the box read is a clipped
+    subset of it (a fixed narrow box drifts off the value's prefix under per-scan offset/scale:
+    DN-93159 → N-93159) or disagrees entirely (the box floated off-row into whitespace:
+    DN-78756 → HAL7ea7ca). Makes a taught mapping robust the way Review's Stage-2 anchor is —
+    WITHOUT reusing anchor.py: it reads operator-taught geometry via THIS stage's own machinery,
+    so it stays an INDEPENDENT validator.
+
+    Returns a Stage 0.5 result dict to COMMIT, or None to keep the rigid read (they agree, the
+    rigid read is the fuller one, the label isn't found, the value isn't inline, or the inline
+    read is unusable → byte-identical to today for those cases).
+
+    Oracle conditions honoured:
+      • the inline read is sourced from a PAGE-WIDE locate (expansion=1.0, line_cache-shared) —
+        the pre-pass LOCAL locate can clip a wide value the same way the box does (Seam A);
+      • the committed value is a FULL-RES ladder re-read of the inline VALUE box, never the
+        ~120-DPI PSM-6 locate text (Seam B) — the locate text is only a last-ditch fallback;
+      • total disagreement FAILS TOWARD REVIEW (capped + flagged), not a clean auto-file (Q3);
+      • scoped to CODE val_types so the free-text box-first seam (:742-750) is untouched."""
+    # Value must be taught inline with the label, else the geometric/relocate path owns it.
+    if not _target_inline_with_anchor(anchor_box, target_box):
+        return None
+    # Seam A: a FULL-COVERAGE page-wide locate (line_cache-shared — usually already run by the
+    # drift guard / landmark fit, so no extra OCR). The pre-pass local locate can itself clip a
+    # value wider than label_box + the local search margin.
+    located = _locate_anchor(page, anchor_box, anchor_text, 1.0, ocr_lines_fn,
+                             min_search=_ANCHOR_SEARCH_MIN, line_cache=line_cache)
+    if not located or located.get("matched_text") is None:
+        return None
+    # NB: no _located_too_wide guard here. That protects the GEOMETRIC label-origin derivation
+    # (seating a value crop off label_box); THIS path uses inline_box — the value's OWN column,
+    # already isolated by cluster_value_words from any merged title/column sharing the OCR line
+    # (a 120-DPI page-wide read routinely groups "DELIVERY DOCKET … Delivery Note No. DN-93159"
+    # into one wide line). A wide matched line is therefore expected and harmless; the value
+    # column is still tight, and the containment check below is the real corroboration.
+    inline_box = located.get("inline_box")
+    # Seam B: commit a FULL-RES ladder read of the inline value box, not the ~120-DPI locate
+    # text (which under-reads dashed codes). A small pad guards against clipping edge glyphs.
+    # Capture the read's OCR confidence to arbitrate a genuine disagreement below.
+    inline_val = None
+    inline_conf = None
+    if inline_box:
+        _pad = _expand_box(inline_box, 0.005)
+        _icap = ((lambda c: slice_capture(field_key, "template_mapping", page_idx,
+                   (_pad["x_norm"], _pad["y_norm"], _pad["w_norm"], _pad["h_norm"]),
+                   c, "target")) if slice_capture else None)
+        _imeta = {}
+        inline_val = _crop_and_ocr(page, _pad, val_type, ocr_text_fn, capture=_icap, meta=_imeta)
+        inline_conf = _imeta.get('conf')
+    if not inline_val:                                  # fallback: the locate-pass text
+        inline_val = _clean_value(located.get("inline_value"), val_type)
+    # One-token code: drop a trailing caption sharing the value's cluster.
+    if inline_val and " " in inline_val:
+        inline_val = inline_val.split()[0]
+    inline_val, _, _ = _gate_value(inline_val, val_type, field_key, validation_patterns,
+                                   format_lookup, shape_mode='ignore')
+    if not inline_val:
+        return None
+    na, ni = _code_norm(rigid_text), _code_norm(inline_val)
+    if not na or not ni or na == ni:
+        return None                                     # agree/empty → keep rigid (result byte-identical)
+    inline_geom = _box_list(inline_box) if (slice_capture and inline_box) else None
+    if ni.endswith(na):
+        # The box read is the TAIL of the inline value → the drawn box clipped the LEFT (prefix),
+        # the exact failure being fixed (DN-93159 → N-93159). The glyph overlap corroborates it is
+        # the same token un-clipped (a right-side over-read would be a PREFIX, not a suffix, and is
+        # deliberately NOT clean-committed here). Commit CLEAN.
+        return _mapping_result(inline_val, True, False, False, anchor_text or field_key,
+                               val_type=val_type, geom=inline_geom)
+    if na.endswith(ni):
+        return None                                     # inline is a clipped tail of the box read → box fuller, keep it
+    # Otherwise the two genuinely disagree — a floated/garbled box (145 'eae', 143 'HAL7ea7ca'), OR an
+    # inline OVER-read that appended a neighbouring token (INV-121 vs INV-12110). Ambiguous: do NOT
+    # silently trade a clean box read for it. Prefer the higher-OCR-confidence read; when inline wins,
+    # FAIL TOWARD REVIEW (capped + flagged), never a clean auto-file (Oracle Q3). With no confidence
+    # signal (a test stub) default to the label-anchored inline, still flagged.
+    if abs_ocr_conf is not None and inline_conf is not None and inline_conf <= abs_ocr_conf:
+        return None                                     # the drawn box is at least as credible → keep it (clean)
+    return _mapping_result(inline_val, True, False, False, anchor_text or field_key,
+                           shape_warn=True, val_type=val_type, geom=inline_geom)
+
+
 def _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
                        ocr_text_fn, expansion, validation_patterns, format_lookup,
                        slice_capture, page_idx, field_key):
@@ -589,7 +706,7 @@ def _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
         if not iv:
             return None
         hv = _clean_value(iv, val_type)
-        if hv and val_type == "alphanumeric" and " " in hv:
+        if hv and val_type in _CODE_CROSSCHECK_TYPES and " " in hv:
             hv = hv.split()[0]          # a code column is one token; drop trailing captions
         hv, iv_salvaged, iv_shapewarn = _gate_value(
             hv, val_type, field_key, validation_patterns, format_lookup, shape_mode='flag')
@@ -778,6 +895,23 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
                                  format_lookup, slice_capture, page_idx, field_key)
         if reg:
             return reg
+    # ── INLINE CODE RECONCILE (single-token code, taught inline) — DARK ──────────
+    # The label is found and NOT drifted (so drift-relocate + registration above did not
+    # fire), yet a fixed narrow drawn box can still clip a code value's prefix under
+    # per-scan offset/scale (DN-93159 → N-93159), or float off-row into whitespace
+    # (→ HAL7ea7ca), and the alphanumeric gate can't catch it. Cross-check the box read
+    # against a full-res, label-anchored inline read and prefer the fuller value. Placed
+    # AFTER drift/registration so genuine drift still uses the full-res _geometric path;
+    # scoped to code val_types so the free-text box-first seam (:742-750) is untouched.
+    # Off by default (TEMPLATE_INLINE_CODE_RECONCILE=1); OFF → this block is skipped.
+    if (abs_text and _INLINE_CODE_RECONCILE_ON and anchor_text
+            and val_type in _CODE_CROSSCHECK_TYPES):
+        rc = _inline_code_reconcile(page, abs_text, anchor_box, target_box, val_type,
+                                    field_key, anchor_text, ocr_lines_fn, ocr_text_fn,
+                                    validation_patterns, format_lookup, line_cache,
+                                    slice_capture, page_idx, abs_ocr_conf=_abs_meta.get('conf'))
+        if rc is not None:
+            return rc
     if abs_text:
         return _mapping_result(abs_text, bool(mapping.get("anchor_text")),
                                abs_expanded, abs_salvaged,
