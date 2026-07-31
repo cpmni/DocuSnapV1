@@ -2015,8 +2015,12 @@ class ExtractionEngine:
             if (_fuzzy and fld.get("method") == "template_fixed"
                     and os.environ.get("BRANDING_NAMED_BLANK", "1") != "0"):
                 _blank = True
-                note = (f"The page branding reads '{named}', but this matched a template belonging "
-                        f"to '{supplier_name}' — so nothing was assumed. "
+                # Customer-facing copy (owner 2026-07-31, same pass as the un-named veto note):
+                # no "template" jargon. "page branding reads" + "confirm the correct company"
+                # are LOAD-BEARING markers (test_logo_detail_sparse_guard, logo_identity_suite,
+                # test_suggested_supplier_persist, renderer isBrandingFlag) — keep both.
+                note = (f"The page branding reads '{named}', but this document looks similar to "
+                        f"paperwork from '{supplier_name}' — so the sender was left blank. "
                         "Please confirm the correct company.")
         else:
             note = (f"This document's letterhead doesn't match '{supplier_name}'. "
@@ -2056,8 +2060,14 @@ class ExtractionEngine:
                 if (_stats and _stats[1] >= _min_n and _stats[0] >= _min_r
                         and not _template_identity_corroborated(supplier_name, ocr_text)):
                     _blank = True
-                    note = (f"This matched a template belonging to '{supplier_name}', but that "
-                            "name isn't on this page — so nothing was assumed. "
+                    # Customer-facing copy (owner 2026-07-31): no "template" jargon; KEEP the
+                    # lookalike hint — on the guard's flip side (a genuine doc with a mangled
+                    # letterhead) it is what lets the operator type the right name in one
+                    # glance. "isn't on this page" + "confirm the correct company" are LOAD-
+                    # BEARING markers (test_template_fixed_name_presence.py + the renderer's
+                    # isBrandingFlag regex) — keep both in any rewording.
+                    note = (f"This document looks similar to paperwork from '{supplier_name}', "
+                            "but that name isn't on this page — so the sender was left blank. "
                             "Please confirm the correct company.")
         existing = str(fld.get("validation_note") or "").strip()
         fld["validation_note"] = (existing + " " + note).strip() if existing else note
