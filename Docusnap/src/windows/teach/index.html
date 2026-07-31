@@ -145,6 +145,13 @@
      pane and pushing the controls below it off-screen. */
   .canvaswrap{position:relative;background:#0a0c12;border:1px solid var(--border);border-radius:10px;
     overflow:hidden;height:72vh;min-height:360px;display:flex;align-items:center;justify-content:center}
+  /* "Reading document…" overlay while the (background-prefetched) page render is still in flight. */
+  #rg-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:11px;
+    background:rgba(10,12,18,.82);color:#e6e9f2;font-size:14px;font-weight:600;z-index:3;pointer-events:none}
+  #rg-loading.hidden{display:none}
+  .rg-spin{width:18px;height:18px;border:2.5px solid rgba(255,255,255,.22);border-top-color:var(--accent);
+    border-radius:50%;animation:rgspin .8s linear infinite}
+  @keyframes rgspin{to{transform:rotate(360deg)}}
   /* (The read-back panel used to be docked here at the bottom of the preview pane.
      It now renders ONLY in the banner above the page — see .banner .rg-top.) */
   /* Same high-visibility crosshair as the Template Manager (dark outline under a blue
@@ -290,6 +297,7 @@
               <button id="tz-reset" data-help-key="teach-zoom" title="Reset view">⟲</button>
               <button id="tz-deskew" data-help-key="teach-straighten" title="Straighten the page (on by default — teaching needs a level scan)"><svg class="straighten-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18"/><path d="M5 17l9-4"/><path d="M4 11a8 8 0 0 1 15.5-1"/><path d="M19.5 10l.8-4M19.5 10l-3.6-1.6"/></svg>Straighten</button>
             </div>
+            <div id="rg-loading" class="hidden"><span class="rg-spin"></span>Reading document…</div>
           </div>
           <div class="readback" id="rg-readback"></div>
         </div>

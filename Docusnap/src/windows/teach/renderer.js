@@ -127,6 +127,7 @@ async function renderDocPicker(){
     // construction — no card can keep the big styling after another is picked.
     c.onclick=()=>{
       state.doc=d;
+      _prefetchTeachPage();                // start the background page render the moment it's picked
       for (const el of grid.querySelectorAll('.card')) el.classList.toggle('sel', el===c);
       renderFooter();
     };
@@ -136,6 +137,7 @@ async function renderDocPicker(){
   // rather than with every card the same size and nothing to look at.
   if (!state.doc && state.docs.length){
     state.doc = state.docs[0];
+    _prefetchTeachPage();                  // prefetch the default pick too, so accepting it is instant
     const first = grid.querySelector('.card');
     if (first) first.classList.add('sel');
     renderFooter();
@@ -163,7 +165,7 @@ $('btn-import-teach')?.addEventListener('click', async () => {
     await D.processFolder(staged.folder, { autoFile: false });  // same import path, but DON'T auto-file (keep it in Review to teach)
     state.docs = await D.getReviewQueue() || [];
     const match = state.docs.filter(d => d.original_filename === staged.filename).sort((a, b) => b.id - a.id)[0];
-    if (match) state.doc = match;
+    if (match) { state.doc = match; _prefetchTeachPage(); }   // read done -> start the page render in the background
     await renderDocPicker(); renderFooter();
     if (st) st.textContent = match ? 'Imported — selected below.' : 'Imported. Pick it below.';
   } catch (e) {
@@ -282,6 +284,17 @@ function tzApply(){
 }
 function tzSet(z){ const nz=Math.max(TZ_MIN,Math.min(TZ_MAX,z)); if(nz>1 && tzZoom<=1) _fitW=0; tzZoom=nz; tzApply(); }
 function tzReset(){ tzZoom=1; tzPanX=0; tzPanY=0; _fitW=0; tzApply(); }
+// Park the INITIAL zoomed view at the TOP of the page rather than the vertical centre the
+// flex-centred pane defaults to: the fields being taught (label/value) sit near the top, so the
+// operator shouldn't have to scroll up on open. The pane centres the (over-tall) canvas, so its
+// top sits (ch-ph)/2 above the pane; translate DOWN by that to bring the top flush. Panning is
+// free afterwards; a no-op when the page fits (ch<=ph) or when not zoomed.
+function tzShowTop(){
+  if (!canvas || tzZoom<=1) return;
+  const pane = canvas.parentElement; if (!pane) return;
+  const ch = canvas.getBoundingClientRect().height, ph = pane.getBoundingClientRect().height;
+  if (ch > ph){ tzPanY = (ch - ph) / 2; tzApply(); }
+}
 // Render the DISPLAY at a higher scale than the 1.5/108 DPI default so the page is crisp
 // on a large/zoomed pane; the OCR crop is downscaled back to OCR_RENDER_SCALE in cropB64
 // so read quality is unchanged. (Only applies to PDFs — an image file is returned at its
@@ -344,14 +357,33 @@ async function toggleTeachDeskew(forceOn){
   } finally { _teachDeskewBusy = false; }
 }
 
+// Prefetch the (heavy, ~scale-4.0) page render as soon as a doc is chosen, so it renders in the
+// BACKGROUND while the operator picks the type — the draw step then opens instantly (or shows the
+// "Reading…" overlay until it's ready). Re-fires when the chosen doc changes, dropping the stale
+// render + its cached image so a different doc can never show the previous one's page.
+function _prefetchTeachPage(){
+  const d = state.doc; if (!d || !D.getDocumentPages) return;
+  if (state.pageFor === d.id && (state.pagePromise || state.img)) return;   // already in-flight / loaded for this doc
+  state.pageFor = d.id;
+  state.img = null; state.rawImg = null; state.deskewImg = null;
+  state.deskewImgAngle = 0; state.deskewAngle = 0; state.pageDataUrl = null;
+  state.pagePromise = D.getDocumentPages(d.id, d.folder_path, d.original_filename, TEACH_RENDER_SCALE)
+    .then(pages => (Array.isArray(pages) ? pages[0] : null))
+    .catch(() => null);
+}
+function _setPageLoading(on){ const el = $('rg-loading'); if (el) el.classList.toggle('hidden', !on); }
+
 async function startRegionStep(){
   canvas=$('pageCanvas'); ctx=canvas.getContext('2d');
-  if (!state.img){
-    try{
-      const pages=await D.getDocumentPages(state.doc.id, state.doc.folder_path, state.doc.original_filename, TEACH_RENDER_SCALE);
-      state.pageDataUrl=Array.isArray(pages)?pages[0]:null;
-    }catch{ state.pageDataUrl=null; }
-    if (!state.pageDataUrl){ $('rg-prompt').textContent="Couldn't load that page."; return; }
+  const _loading = !state.img;
+  if (_loading){
+    // Prefer the background prefetch started when the doc was chosen; fetch now only if it's absent
+    // or was for a different doc (e.g. the operator jumped straight here). The "Reading…" overlay
+    // stays up until the page + deskew are ready.
+    if (!(state.pagePromise && state.pageFor === state.doc.id)) _prefetchTeachPage();
+    _setPageLoading(true);
+    try{ state.pageDataUrl = await state.pagePromise; }catch{ state.pageDataUrl=null; }
+    if (!state.pageDataUrl){ _setPageLoading(false); $('rg-prompt').textContent="Couldn't load that page."; return; }
     await new Promise(res=>{ const im=new Image(); im.onload=()=>{state.img=im;res();}; im.onerror=()=>res(); im.src=state.pageDataUrl; });
     state.rawImg = state.img;        // canonical RAW frame — boxes are stored here (see store-raw note)
   }
@@ -360,11 +392,12 @@ async function startRegionStep(){
   // Straighten ON by default — training needs a level page so anchor↔target geometry registers cleanly.
   // Runs once (deskewImg unset); if the page is already straight it's a silent no-op.
   if (state.rawImg && !state.deskewImg) await toggleTeachDeskew(true);
+  if (_loading) _setPageLoading(false);           // page + deskew ready — drop the "Reading…" overlay
   // Open at TZ_DEFAULT rather than fit-to-pane: the fitted page is too small to draw an
   // accurate box on, so this is where the user was going to zoom to anyway. Deferred to
   // the next frame and set AFTER any deskew re-render, so tzApply measures the true
   // fitted width (_fitW) instead of a stale or mid-layout one.
-  if (TZ_DEFAULT > 1) requestAnimationFrame(() => { try { tzSet(TZ_DEFAULT); } catch {} });
+  if (TZ_DEFAULT > 1) requestAnimationFrame(() => { try { tzSet(TZ_DEFAULT); tzShowTop(); } catch {} });
   state.fieldIndex = state.fields.findIndex(f=>!state.results[f.key]);
   if (state.fieldIndex<0) state.fieldIndex=0;
   renderFieldRail(); promptField();
