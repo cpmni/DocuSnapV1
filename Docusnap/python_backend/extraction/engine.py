@@ -1258,7 +1258,10 @@ class ExtractionEngine:
         band is trusted (ISSUER_HINT_BAND!='0' — C2: never shed off the raw ocr_text[:600] fallback),
         `sn_cur` is a still-noted MAJORITY template_identity fill with a value, AND that value is
         STRICTLY corroborated in `issuer_band` (the caller's pre-computed _issuer_hint_band window).
-        SINGLE-tier fills are deliberately never shed (their note stays — accepted trade-off pin).
+        SINGLE-tier fills are deliberately never shed BY THIS BAND ARM (a band substring can be a
+        recipient self-corroborating on a marker-free layout — the C2 hole; pin re-scoped 2026-07-31):
+        the GEOMETRY-WITNESS arm (_should_shed_fill_note_geom, Oracle-signed) may shed EITHER tier,
+        because its evidence is an independent geometry-only letterhead read, not a substring.
         `env` is injectable for tests. FAIL toward keeping the note."""
         _env = os.environ if env is None else env
         if _env.get("TEMPLATE_IDENTITY_BAND_GRADUATE", "0") == "0":
@@ -1271,6 +1274,32 @@ class ExtractionEngine:
             return False
         v = sn_cur.get("value")
         return bool(v) and _identity_corroborated_strict(v, issuer_band)
+
+    @staticmethod
+    def _should_shed_fill_note_geom(sn_cur, geom_issuer_norm, value_norm, *, env=None):
+        """G decision (pure/static; 2026-07-31 gary→Oracle SIGN-OFF-W/COND; kill
+        TEMPLATE_IDENTITY_GEOM_WITNESS, default ON — flipped after unit+probe gates; INDEPENDENT of the band arm's switch —
+        Oracle G1): may the review note be shed from a template-identity fill because an INDEPENDENT
+        geometry-only letterhead read (pick_issuer_geometry — largest top-of-page name, recipient
+        excluded by size+position, two-candidate abstain; the SAME evidence class
+        LOGO_NAME_PRESENCE_ACCEPT already trusts to let a logo assert un-noted) AGREES with the
+        filled value? Tier-INDEPENDENT — a single-confirm supplier's page still prints its own
+        letterhead; the band arm's single-never-sheds pin is about SUBSTRING evidence, not this.
+        STRICT norm equality (caller passes _accept_norm(value) as `value_norm`): a token-superset
+        letterhead ("Ironbridge Fabrication Ltd" vs confirmed "Ironbridge Fabrication") does NOT
+        shed — pinned as a deliberate, measured limit (Oracle G5). FAIL toward keeping the note:
+        no witness / abstain / disagree / switch off → False."""
+        _env = os.environ if env is None else env
+        if _env.get("TEMPLATE_IDENTITY_GEOM_WITNESS", "1") == "0":
+            return False
+        if not isinstance(sn_cur, dict) or sn_cur.get("method") != "template_identity":
+            return False
+        if sn_cur.get("validation_note") not in (_TEMPLATE_IDENTITY_FILL_NOTE_SINGLE,
+                                                 _TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY):
+            return False
+        if not sn_cur.get("value") or not geom_issuer_norm or not value_norm:
+            return False
+        return value_norm == geom_issuer_norm
 
     # How many top lines `_issuer_hint_band` may scan. Deliberately LARGE so the 600-character cap
     # — not this line cap — is what binds on a marker-free page: the only intended narrowing is the
@@ -3233,9 +3262,13 @@ class ExtractionEngine:
         # supplier is still empty AND a template matched AND the template's DISTINCTIVE
         # fingerprint words are ON THIS PAGE (corroboration) — the corroboration gate is
         # what prevents a colliding-logo template (Cascade<->Northgate) from imposing the
-        # WRONG supplier. ALWAYS REVIEW-BOUND (persisted note) — an inferred identity must
-        # never silently drive the filing folder (Oracle 2026-07-14). Kill switch env
-        # TEMPLATE_IDENTITY_FILL (default on) → =0 is byte-identical.
+        # WRONG supplier. REVIEW-BOUND at fill time (persisted note) — an INFERRED identity
+        # must never silently drive the filing folder (Oracle 2026-07-14; pin REWRITTEN
+        # 2026-07-31, not weakened: a fill later WITNESSED by the independent geometry
+        # letterhead read is no longer merely inferred — the page prints it as its own
+        # letterhead — and the dark G arm at Stage 2.5a may then shed the note,
+        # gary→Oracle-signed). Kill switch env TEMPLATE_IDENTITY_FILL (default on) → =0 is
+        # byte-identical.
         if (not supplier_name and matched_tmpl
                 and os.environ.get("TEMPLATE_IDENTITY_FILL", "1") != "0"):
             _fill = _template_identity_for_fill(matched_tmpl)
@@ -3985,6 +4018,48 @@ class ExtractionEngine:
                 }
                 self.log(f"  S1: template-identity note shed — '{_sn_cur['value']}' corroborated "
                          f"in the issuer band (confidence 85, no note)")
+
+        # ── G: GEOMETRY-WITNESS shed for the template-identity fill note ─────────────────────
+        # (2026-07-31; gary→Oracle SIGN-OFF-W/COND; kill TEMPLATE_IDENTITY_GEOM_WITNESS, default
+        # OFF = dark — a SIBLING of the band arm above, NEVER nested under its switch: Oracle G1.)
+        # The band arm is majority-only + band-substring-fragile (proven INERT on its target class
+        # — the S1 memory's DO-NOT-FLIP). This arm re-derives the issuer GEOMETRICALLY
+        # (pick_issuer_geometry: the largest top-of-page name, recipient excluded by size+position,
+        # two-candidate abstain — the SAME independent evidence LOGO_NAME_PRESENCE_ACCEPT already
+        # trusts to let a logo assert un-noted at full confidence) and, when it AGREES with the
+        # filled value, replaces the hedged fill with a normal read: conf 85 (hint parity —
+        # do-NOT-raise pin: stays below the 95/100 floors until normal graduation), method
+        # 'template_identity_corroborated', NO note. Tier-INDEPENDENT (the owner's doc-170 class:
+        # a single-confirm supplier whose page prints its own letterhead heals immediately).
+        # Geometry expression VERBATIM from the accept arm (Oracle G2) so born-digital docs heal
+        # too; a cached-text reprocess has no page0 geometry → no witness → note kept (honest).
+        # _flag_branding_conflict still re-judges the un-noted value at finalisation.
+        if os.environ.get("TEMPLATE_IDENTITY_GEOM_WITNESS", "1") != "0":
+            _sn_g = results.get("supplier_name")
+            if (isinstance(_sn_g, dict) and _sn_g.get("method") == "template_identity"
+                    and _sn_g.get("value")
+                    and _sn_g.get("validation_note") in (_TEMPLATE_IDENTITY_FILL_NOTE_SINGLE,
+                                                         _TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY)):
+                _geom_issuer_norm_g = None
+                try:
+                    from extraction import letterhead as _lh
+                    _geom_g = page0_geometry or _lh.geometry_from_lines(page_text_lines)
+                    if _geom_g and _geom_g.get("rows"):
+                        _gp_g = _lh.pick_issuer_geometry(
+                            ocr_text, _geom_g, detected_title=document_type,
+                            type_phrases=_letterhead_type_phrases(self.patterns))
+                        _geom_issuer_norm_g = self._accept_norm(_gp_g) if _gp_g else None
+                except Exception:
+                    _geom_issuer_norm_g = None   # any witness failure → keep the note (fail-safe)
+                if self._should_shed_fill_note_geom(_sn_g, _geom_issuer_norm_g,
+                                                    self._accept_norm(_sn_g.get("value"))):
+                    results["supplier_name"] = {
+                        "value":      _sn_g["value"],
+                        "confidence": 85,
+                        "method":     "template_identity_corroborated",
+                    }
+                    self.log(f"  G: template-identity note shed — the letterhead geometry reads "
+                             f"'{_sn_g['value']}' (confidence 85, no note)")
 
         # ── Stage 2.6: LATE-ANCHOR RESCUE (2026-07-10) ───────────────────────────
         # On a doc whose supplier was UNKNOWN at Stage-2 time (no template/logo hit — exactly
