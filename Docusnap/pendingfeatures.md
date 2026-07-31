@@ -135,6 +135,20 @@ lost) — dismiss is display-only. Needs an app reopen to render.
   prints-name ratio toward <0.80 and disarms the veto. Clean at flip (Copperfield 1.0/60,
   Ridgeway 1.0/101 — verified 2026-07-31); re-check at any mass-misfile incident.
 
+### Needless-flag session residuals  (2026-07-31 evening; herald+gary+Oracle)
+- **Slice C — `_center_in_any` overlap-fraction fix at source** (ocr/tesseract.py:76-85): the PSM-6
+  supp merge's center-point dedupe lets an overlapping supp word through inter-fragment gaps →
+  DOUBLED tokens in `ocr_text` for every consumer (the manufactured heading garble rung-2 now
+  works around). An overlap-fraction test fixes it at source but changes OCR text corpus-wide —
+  own session, own full gate. Do not bundle.
+- **Demo-corpus identity residuals (pre-existing, measured in `demo_notes_gate.js`):**
+  `SaltmarshSeafoods_purchase_order_01` reads issuer `'altmarsh Seafoods'` (leading-glyph clip);
+  `_02` reads `Ridgeway Plant Hire` (cross-supplier identity collision). Both identical OFF/ON —
+  the branding-primary redesign class (`project_identity_branding_primary_20260728`), plus the
+  refuse-note holds on cross-supplier phash locks (herald's 172/175 — CORRECT protective holds).
+- Demo gate + probes live in `stress_test/`: `demo_notes_gate.js` (sampled 2/supplier×type — no
+  silent caps, logged), `heading_band_probe.py`, `geom_witness_probe.js`.
+
 ### Teach label pass-2 follow-ups  (2026-07-31)
 - **Pass-1 type-heading gap:** teach still lacks a pass-1 `labelIsTypeHeading` reject (Review ⊕ has
   one at review/renderer.js:6792); pass-2 rejects headings (`isTypeHeadingLabel`), but a clean

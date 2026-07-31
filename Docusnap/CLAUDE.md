@@ -21,9 +21,30 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-31 PM) — issuer name-presence VETO + teach one-step confirm + label pass-2
-**2026-07-31 afternoon (Opus 4.8). HEAD `934df8a`. Dev `npm start` RUNNING (background). Installer `5b5d344`
-predates everything since — rebuild to ship (close dev app first).**
+## Current session state (2026-07-31 EVE) — needless-flag cures (3 slices) + reprocess merge fix
+**2026-07-31 evening (Opus 4.8). HEAD `d8768fe`+docs. Dev app state: owner-run `npm start` (restart to load
+main-process changes). Installer `5b5d344` predates the whole day — rebuild to ship.**
+· **✅ Needless review flags — THREE slices BUILT+ON** (herald+gary→Oracle W/COND each; memory
+  `project_needless_flags_20260731`): **B `0f33e20`** TYPE_AMBIG_COHESION — the "letterhead used for several
+  document types" note counted CROSS-SUPPLIER phash-band templates; now kw-arm-parity single-supplier cohort.
+  **A `4a058a6`** HEADING_BAND_REREAD — rung-2 geometry-pre-gated single-pass title-band re-read cures the
+  PSM-3+supp-merge DOUBLED-heading garble (doc-180 "PURCHASE PU RC HASE Oo RDER"→PO@95 trusted; probe
+  `stress_test/heading_band_probe.py`). **G `d8768fe`** TEMPLATE_IDENTITY_GEOM_WITNESS — "Company inferred…"
+  fill note shed when `pick_issuer_geometry` agrees (tier-independent, conf 85 emitted, probe
+  `stress_test/geom_witness_probe.js`; S1 band arm untouched/dark). Combined gate
+  `stress_test/demo_notes_gate.js` (Desktop\Demo Docs 90-doc sample) ALL PASS — 0 wrong sheds, 0 new wrongs,
+  0 ambiguity notes on correctly-typed docs, 1 type flip = verified heal. NOT retroactive — reprocess to heal
+  queue docs. Residuals in `pendingfeatures.md` (Slice C `_center_in_any`; Saltmarsh clip/cross =
+  branding-primary class). `ocr_dpi=200` live = owner speed-test only; fixes proven at 200.
+· **✅ Reprocess merge — annotated empty WINS** (`72fe746`, kill `REPROCESS_ANNOTATED_EMPTY_WINS`): the veto
+  fired but `kept_existing` resurrected the stale value+note (proven live); now a deliberate blank+note wins
+  the merge (operator `corrected_to` outranks — Oracle C1), doc column mirrored NULL. Realdoc is BLIND to this
+  merge (fresh-extraction harness) — gate = `test_reprocess_annotated_empty.js` 16/16. Also repaired a
+  PRE-EXISTING silently-failing pin in `test_reprocess_type_flip.js`. Customer-plain blank-note copy
+  `ea4101a`.
+
+### Session (2026-07-31 PM) — issuer name-presence VETO + teach one-step confirm + label pass-2
+**HEAD was `934df8a`. Installer `5b5d344` predates.**
 · **✅ template_fixed name-presence VETO — BUILT+ON** (`20d6be3`, kill `TEMPLATE_FIXED_NAME_PRESENCE_VETO=0`):
   Ironbridge POs (docs 171/173/180/181) carried supplier "Copperfield Electrical" `template_fixed`@69 — phash
   collision seeds the template's FROZEN fixed supplier, un-named branding branch kept it. Now: name-printing
