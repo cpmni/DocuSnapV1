@@ -556,6 +556,25 @@ def is_prefix_outlier(read_prefix, rec):
     return not (c >= _PREFIX_ACCEPT_ABS or c >= thr)
 
 
+def prefix_confirmed(read_prefix, rec):
+    """True when read_prefix is a CONFIRMED in-scope code prefix with real support — the
+    dominant prefix, or any known prefix whose confirmed count clears the SAME weight-aware
+    accept bar is_prefix_outlier uses to exempt (so 'confirmed' means the same thing on both
+    sides of the guard pair, and a low-count poison stray is NOT confirmed). Membership, not
+    similarity: used by the clipped-suffix reconciliation (suffix_reconcile.py) as its adopt
+    bar — a completed prefix the operator has never confirmed in this scope must NOT be
+    silently written onto a value."""
+    if not read_prefix or not rec:
+        return False
+    if read_prefix == rec.get('dominant'):
+        return True
+    counts = rec.get('counts') or {}
+    total  = int(rec.get('total') or 0)
+    c = int(counts.get(read_prefix, 0) or 0)
+    thr = max(_PREFIX_ACCEPT_MIN, math.ceil(_PREFIX_ACCEPT_RATIO * total))
+    return c >= _PREFIX_ACCEPT_ABS or c >= thr
+
+
 # ── FIX B1: ref-prefix type SUGGESTION (suggest-only; the caller keeps the review hold) ──────────
 # When the logo says "this supplier" but the same-letterhead cluster spans ≥2 doc types AND the
 # skew-garbled title can't resolve which (Fix A's ambiguous-type case), the doc's own reference

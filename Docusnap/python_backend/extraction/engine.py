@@ -2361,6 +2361,104 @@ class ExtractionEngine:
         except Exception:
             pass   # advisory guard — must never break extraction
 
+    def _reconcile_clipped_suffix(self, results, field_defs, supplier_name, document_slug):
+        """CLIPPED-SUFFIX RECONCILIATION (Oracle amended verdict 2026-07-31; kill switch
+        CANDIDATE_SUFFIX_RECONCILE, default ON — flipped same day after the full gate set:
+        OFF byte-identical to baseline; ON heals #121/123/124/136/137, ref 91.8→94.5%,
+        M 8→7 with ZERO new members, flags unchanged). A label-confirmed anchor read
+        (anchor_registration / anchor_crop_relocated / anchor_inline — the shape-EXEMPT set,
+        see :4692 and anchor._LABEL_CONFIRMED_METHODS) can win a ref/code field with a value
+        whose LEADING glyphs a misplaced crop cut off ('V-69523', the #121 class: the
+        registration transform landed the box ~76px right of the value start), while the
+        DISCARDED Stage-1 keyword read of the SAME token held the full value ('INV-69523').
+        The shape exemption is deliberate (variable codes must not be shape-vetoed), so no
+        downstream gate can see the clip — it files silently at 90+. Reconcile from the
+        always-on candidate ledger instead of any new OCR:
+          winner fails its OWN-SUPPLIER learned shape
+          + a '1_keyword' candidate is the same token read more completely (strict alnum
+            suffix; alpha-only completion 1-3 chars; digit subsequence byte-identical)
+          + the debris-stripped candidate PASSES that shape
+          + the completed prefix is a CONFIRMED in-scope prefix (ocr_corrector.
+            prefix_confirmed — membership with real support, never similarity)
+          -> ADOPT the fuller value, keeping the winner's method/tier/confidence (no note:
+             this is two independent same-render mechanisms agreeing on the digits, the
+             corroboration bar Oracle set; the realdoc M gate arbitrates fileability).
+        Prefix unconfirmed / no prefix record -> FLAG-only (cap 69 + note, review-bound —
+        fail toward review). Runs BEFORE _flag_prefix_outlier so the healed value is what
+        that guard judges. Encroachment (audited 2026-07-31): the merge loop is untouched;
+        nothing is nulled/capped on shape opinion alone (the flag lane requires the fuller
+        agreeing read as EVIDENCE); one-note-per-field respected in both directions; NO
+        corrected_to is emitted (the reprocess merge treats corrected_to as operator-grade
+        — deliberately never entered). Pinned residual: '1V-69523' (digit-bearing
+        completion) is NOT healed — widening to digit completions would let a hallucinated
+        leading digit rewrite a real code (tests/test_suffix_reconcile.py). Best-effort:
+        never breaks extraction."""
+        if os.environ.get('CANDIDATE_SUFFIX_RECONCILE', '1') == '0':   # default ON (flipped 2026-07-31 after gates); =0 kills
+            return
+        try:
+            from extraction import suffix_reconcile
+            from extraction.value_quality import is_name_like_field
+            _skip_types = {'date', 'currency', 'number', 'percentage', 'email', 'iban', 'vat_gb',
+                           'postcode_uk', 'ip_address', 'mac_address', 'currency_code', 'website'}
+            type_by_key = {f.get('key'): (f.get('type') or '').lower() for f in (field_defs or [])}
+            s_lower  = (supplier_name or '').lower().strip()
+            dt_lower = (document_slug or '').lower().strip()
+            if not s_lower:
+                return                  # own-supplier shapes only — never a ('') cross-supplier verdict
+            for key, data in results.items():
+                if key.startswith('_') or not isinstance(data, dict):
+                    continue
+                val = data.get('value')
+                if not val or is_name_like_field(key) or type_by_key.get(key) in _skip_types:
+                    continue
+                if str(data.get('method') or '') not in anchor._LABEL_CONFIRMED_METHODS:
+                    continue            # v1 scope = exactly the shape-exempt stage-2 set
+                if str(data.get('validation_note') or '').strip() or data.get('corrected_to'):
+                    continue            # one note per field — another stage already spoke
+                fmt_entry = self.format_class_index.get((s_lower, dt_lower, key))
+                if not fmt_entry or not fmt_entry.get('shapes'):
+                    continue
+                if not format_anomaly_checker.check_value(str(val), fmt_entry):
+                    continue            # winner passes its own shape — nothing to reconcile
+                rec = ocr_corrector.lookup_prefix(self.prefix_index, key, supplier_name, document_slug)
+                lane = None
+                fuller = None
+                for cand in (self._field_candidates.get(key) or []):
+                    if cand.get('stage') != '1_keyword':
+                        continue        # independent full-page read only (same-eye anchor stages excluded)
+                    cv = str(cand.get('value') or '')
+                    if suffix_reconcile.clip_completion(val, cv) is None:
+                        continue
+                    # Debris-strip the candidate's EDGES only ('. INV-69523' -> 'INV-69523'):
+                    # the shape check and code_prefix both reject on leading page junk.
+                    clean = suffix_reconcile.edge_strip(cv)
+                    if not clean or format_anomaly_checker.check_value(clean, fmt_entry):
+                        continue        # candidate itself fails the shape — no corroboration
+                    verdict = suffix_reconcile.classify(val, cv, clean, rec,
+                                                        ocr_corrector.prefix_confirmed,
+                                                        ocr_corrector.code_prefix)
+                    if verdict and verdict[0] == 'adopt':
+                        lane, fuller = 'adopt', verdict[1]
+                        break           # adopt beats flag
+                    if verdict and lane is None:
+                        lane, fuller = 'flag', clean
+                if lane == 'adopt':
+                    self._t('suffix_reconcile', field=key, was=str(val), now=fuller,
+                            method=data.get('method'))
+                    self.log(f"  Clip reconcile: {key} '{val}' -> '{fuller}' "
+                             f"(fuller keyword read of the same number)")
+                    results[key] = {**data, 'value': fuller, 'display_value': fuller,
+                                    'suffix_reconciled': True}
+                elif lane == 'flag':
+                    self._t('suffix_reconcile_flag', field=key, value=str(val), fuller=fuller)
+                    results[key] = {**data,
+                                    'confidence': min(int(data.get('confidence') or 0), 69),
+                                    'validation_note': 'this may be missing its first letters — '
+                                                       'a fuller read of the same number was also '
+                                                       'seen; please verify'}
+        except Exception:
+            pass   # advisory reconciliation — must never break extraction
+
     def _flag_taught_field_ownership(self, results, field_defs, supplier_name,
                                      anchors, hints, document_slug, caption_vocab):
         """TAUGHT-FIELD OWNERSHIP GUARD (flag-only — Oracle-signed 2026-07-11, DIRECTION_SUPREMACY
@@ -4849,6 +4947,12 @@ class ExtractionEngine:
         # generic caption stand-in). Beside the recipient guard, BEFORE identity rescue + the boost.
         self._flag_taught_field_ownership(
             results, field_defs, supplier_name, anchors, hints, document_slug, _caption_vocab)
+        # CLIPPED-SUFFIX RECONCILIATION (2026-07-31, ON — kill CANDIDATE_SUFFIX_RECONCILE=0): a
+        # label-confirmed anchor read whose misplaced crop cut the value's leading glyphs
+        # ('V-69523') is shape-EXEMPT, so only the discarded keyword read of the same token can
+        # expose it. Adopt-or-flag from the candidate ledger, no new OCR. BEFORE the
+        # prefix-outlier guard so that guard judges the healed value.
+        self._reconcile_clipped_suffix(results, field_defs, supplier_name, document_slug)
         # PREFIX-OUTLIER GUARD (2026-07-12): a shape-valid single-glyph misread of a ref field's
         # dominant code prefix (DN->IN) evades every format gate + auto-files at 95%+ on import; flag
         # it (cap 69 + note) so it can't silently file + poison learning. Flag-only, before the boost.
