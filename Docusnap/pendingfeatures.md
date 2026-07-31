@@ -173,6 +173,64 @@ lost) — dismiss is display-only. Needs an app reopen to render.
   band — same decapitation class, unverified there. Adopt the shared clip-gate + re-read
   (`clusterTouchesClipEdge`/`labelRereadRect`/`cropBoxToPageNorm`) in the ⊕ tool.
 
+### ✓ SUPERSEDED for the V-class — clipped-suffix reconciliation SHIPPED ON (2026-07-31 night, `36a4a32`)
+- The section below was AMENDED by Oracle after a traced single-doc run showed the 'V-69523' class is
+  an `anchor_registration` box misplacement (~76px right of the value start) whose read WINS over the
+  discarded correct keyword read — label-confirmed methods are shape-EXEMPT (engine:4692), so neither
+  the crop-matte fix (pixels outside the crop) nor the escalation rung (trigger never fires) could
+  touch it. Shipped instead: `_reconcile_clipped_suffix` (kill `CANDIDATE_SUFFIX_RECONCILE`, ON) —
+  adopt the fuller keyword read of the SAME token from the always-on candidate ledger (suffix +
+  digit-identity + shape-pass + confirmed-prefix membership), flag-only without prefix support.
+  Gates: OFF byte-identical; ON ref 91.8→94.5%, M 8→7 zero new members, heals #121/123/124/136/137.
+- **Amended Oracle rulings (2nd pass):** XRES escalation = DO NOTHING for now (both rungs; revival
+  gate = a MEASURED count of withhold-branch abstains-after-GATE_REREAD on the corpus); oscar crop
+  fix DEFERRED pending its own measured heal; **NEXT: garbled-anchor remediation sweep** (07-30-era
+  taught rows with garbled labels, e.g. Ridgeway 'Inwotce No.' — re-teach or purge, then re-trace
+  #121 on a clean anchor); registration.py fit audit ONLY if the ~0.03-norm misplacement survives
+  remediation; 225 preset stays PARKED and the CURRENT 225 measurement is CONFOUNDED both ways —
+  re-measure only after guard + remediation (added to C7 preconditions).
+
+### Cross-res escalation re-read + "Faster (225)" preset — Oracle-gated plan (2026-07-31 night)
+- **Origin:** live "Worksh Eet" garbled Add-type nudge at owner's `ocr_dpi=200` speed test. Full dpi
+  sweep (202 docs, GT=confirmed): 150/200/240/250/260/275 each garble 1-4 tracked headings (different
+  docs per res — decorrelated lottery); 225/280/300 clean; 280 only 7% faster (pointless). Realdoc:
+  225 = type/supplier 100% (even heals #54, wrong at 300) but ref 90.1% vs 91.8%, **M 8→9** (prefix
+  clip 'INV-35900'→'V-35900' crosses into auto-file; digit-dup 'PO-64334'→'PO-643224'). Scratch data:
+  session scratchpad `filed*.tsv` / `rr300.txt` / `rr225.txt` (regenerable).
+- **Oracle verdict (gary+oscar consensus vetted):** SIGN OFF W/COND on the escalation mechanism at
+  **300-base only, dark**; **DO NOTHING (parked)** on the 225 preset. Killer fact (Oracle traced,
+  overturning gary's stale-docstring read): `format_anomaly_checker._fold_shape` folds the digit-run
+  length of ANY single-run shape — `'@@-#####'`→`'@@-#'` — so the 225 digit-dup class PASSES shape,
+  never triggers escalation, and has ZERO in-pipeline guard. Length-invariance is BY DESIGN
+  (`project_numeric_shape_fold`); do not revert it.
+- **Build order (never bundle):** (1) oscar's crop fix — outward-rounded crop bounds + 12-16px white
+  matte on field slices (cures edge-glyph drop at ALL res, incl. the 'V-xxxxx' class living at 300
+  today on #121/123/124) — standalone, own switch, own realdoc M≤8 pass FIRST (it changes crop bytes
+  everywhere, so it must precede the escalation baselines). (2) Slice 1 field rung `XRES_GATE_REREAD`
+  inside `_maybe_gate_reread` (engine.py ~2729-2815/4782): injected `render_page_fn(page_idx,dpi)`
+  from process_docs (pypdfium2 + recorded rotations; None for image-imports/born-digital), one cached
+  alt render per (doc,page) keyed (dpi,pidx), independent LOCATE at alt res (no frame mapping).
+  Lane A files clean ONLY IF: passes the exact failed check AND digits byte-identical AND base is a
+  contiguous suffix with alpha-only prefix len 1-3 AND (C1) learned-shapes non-empty + ref/code field
+  class only AND (C2) completed prefix ∈ confirmed prefixes via `ocr_corrector.lookup_prefix`
+  (membership, not distance) — else lane B (cap 69 + corrected_to + note, customer-plain copy).
+  Method stays original tier, never authoritative. (3) Slice 2 heading rung 3 `XRES_HEADING_REREAD`
+  (same adopt contract as rungs 1-2; re-green `demo_notes_gate.js` ON+OFF — composes with 4a058a6).
+- **Other conditions:** C3 PINs (digit substitution NEVER lane A; agree-but-still-fails = reject;
+  never method-authoritative) · C4 RAM (alt-render cache ≤2 pages/doc, freed per doc — slow-PC
+  feature must not re-create import RAM starvation) · C5 gates (300+ON vs 300 byte-identical-or-
+  better M≤8; OFF byte-identical; probes #131/#121 lane A, #70/#163 lane B, stable no-fire control)
+  · C6 merge seam: engine-emitted `corrected_to` (GATE_REREAD lane B, handler.js ~246) currently
+  gets OPERATOR-grade veto power in the reprocess merge — add the pinned case to
+  `test_reprocess_annotated_empty.js` + fix the comment; do NOT redesign the merge in this feature.
+- **C7 preset revival (v2, only then "Faster (225)" returns):** trigger-widening length signal
+  (single-group ref digit-run length differs from uniform in-scope confirmed length → fire re-read;
+  cross-res agree → clean, disagree → lane B) + oscar's native-dpi-relative base/escalate rule +
+  a gate asserting every new-wrong-at-225 doc is healed-or-flagged (absent-from-M-by-luck ≠ pass)
+  + evidence on REAL 300-native scans (this corpus is 150-native; 225 there is an upsample — on
+  real scans it's a downsample and likely worse). UI swap (150/200→225/300 + write-back snap) was
+  edited then REVERTED per verdict — do not commit a Faster preset before C7.
+
 ### Digital ↔ scanned bleed (same supplier, divergent layout)
 - **Confirmed (Set B warm):** a digital doc reusing a live name inherits the scanned identity (**supplier
   90%**) but the scanned template's field geometry doesn't fit the digital layout (**ref 29%**, held).

@@ -71,6 +71,31 @@ _(updated as cases accrue — keep/retire recommendation)_
   and the polluted-GT gate shape. Every one of these was a real defect the first-draft consensus missed.
   Pattern holds: he verifies at the mechanism level and catches the seam. Route identity/precedence/
   auto-file changes through him.
+- 2026-07-31 night (cross-res escalation re-read + "Faster 225 dpi" preset): **KEEP — the sharpest catch
+  yet.** gary+oscar consensus: escalation rung in `_maybe_gate_reread` + hard-coupled 225 preset. Verdict
+  SIGN OFF W/COND (mechanism, 300-base, dark) + DO NOTHING (preset PARKED). He TRACED
+  `format_anomaly_checker._fold_shape` and overturned gary's claim (built on the STALE first docstring
+  paragraph) that letter-bearing shapes keep digit count — the fold collapses ANY single-digit-run shape
+  (`'@@-#####'`→`'@@-#'`), so the 225 digit-duplication class passes shape, the escalation trigger can
+  never fire on it, and the "M≤8 at 225" gate could go green while the failure class stays live ("a green
+  gate that cannot fail on the failure mode is worse than none"). Also: ruled the lane-A fork FOR gary
+  (files clean) but closed the one non-⊆-300 hole with prefix-membership (C2); found the engine
+  `corrected_to` acquiring operator-grade veto in the 07-31 reprocess merge (C6); ordered oscar's crop
+  fix FIRST so it can't invalidate the escalation baselines; killed the uncommitted UI preset swap.
+  One-liner from the verdict: "the specialists' consensus was one stale docstring away from shipping a
+  speed preset whose only guard against its own signature failure could never fire." Full conditions:
+  `pendingfeatures.md` cross-res section.
+  **2nd pass same night — the amended verdict that redirected the whole build.** Confronted with the
+  traced #121 lineage (keyword read the ref correctly and LOST to a registration read placed 76px off;
+  label-confirmed = shape-exempt = both his own approved fixes unreachable), he re-verified both claims
+  in code, ABANDONED his own prior warrant explicitly, and redirected to the merge layer: the shipped
+  `36a4a32` clipped-suffix reconciliation (adopt-superset under lane-A-grade constraints, no new OCR)
+  — plus the ruling ORDER (data remediation of the garbled 07-30 taught anchors BEFORE any
+  registration-algorithm work; "do not rework the registration algorithm off one poisoned exemplar")
+  and the honest call that the 225 measurement is now confounded in BOTH directions. Gates: OFF
+  byte-identical; ON ref 91.8→94.5%, M 8→7 zero new members. His close: "the class we designed a
+  cross-resolution engine to heal turns out to be a read the pipeline already made correctly and threw
+  away — the fix was never at a different resolution, it was at the merge."
 - After case 6 (2026-07-12, PO vendor-caption issuer fix): **KEEP — 6-for-6.** Adjudicating the reggie(flag)
   vs gary(drop) split, he ruled DROP with the *right* reason — not the brief's lead argument (the @40 cap is
   a no-op) but that the value drives the filing/learning SCOPE (engine.py:2259 reads `.value`), so flag
