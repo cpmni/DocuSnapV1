@@ -585,6 +585,38 @@ def main():
                 except Exception:
                     pass  # additive; on any failure the original detection stands (fail toward review)
 
+            # RUNG 2 — GENERAL TITLE-BAND RE-READ (2026-07-31; herald→Oracle SIGN-OFF-W/COND;
+            # kill HEADING_BAND_REREAD=0; default ON — flipped after unit+probe+realdoc census). The full-page pass can MANUFACTURE a
+            # garbled heading the red rung can't touch: at low ocr_dpi PSM-3 fragments a tracked
+            # banner and the PSM-6 supp merge DOUBLES tokens ("PURCHASE PU RC HASE Oo RDER", doc 180
+            # @200 DPI) → wrong low-conf detection → title_trusted=False → the heading-authority net
+            # disarms and the ambiguity/refuse guards mis-arm. A geometry-pre-gated (no OCR;
+            # top-band banner-height type only — the mid-body column class stays out, Oracle A2)
+            # SINGLE-PASS re-read of just the banner band recovers the same pixels verbatim; adoption
+            # via the SAME detect_fn + trusted-heading contract as rung 1 (Oracle A1 — no new
+            # matcher). Fresh page-0 geometry only (_page0_geom empty on cached reprocess /
+            # born-digital → honestly inert). SAME ordering constraint as rung 1 (before
+            # title_trusted_fresh + identify_template).
+            _band_reread = False   # telemetry: did the general band re-read adopt a type?
+            if (os.environ.get("HEADING_BAND_REREAD", "1") != "0"
+                    and not _banner_reread
+                    and not (type_detection and type_detection.get("heading") and type_conf >= 70)
+                    and page_images and known_type_names and _page0_geom
+                    and _provenance and _provenance[0] == "ocr"):
+                try:
+                    from ocr.heading_reread import recover_type_detection_general
+                    _aug2 = recover_type_detection_general(page_images[0], _page0_geom, ocr_text,
+                                                           known_type_names, type_aliases or None,
+                                                           engine.detect_document_type)
+                    if _aug2:
+                        type_detection = _aug2
+                        document_type  = _aug2["type"]
+                        type_conf      = _aug2["confidence"]
+                        _band_reread   = True
+                        log(f"  Banner heading recovered: {document_type} ({type_conf}%) [band re-read]")
+                except Exception:
+                    pass  # additive; on any failure the original detection stands (fail toward review)
+
             # TYPE-PRESENCE GATE (keyword path, Slice 1b — kill switch TYPE_PRESENCE_GATE, default OFF
             # = byte-identical). A keyword-detected type must show its OWN name/alias as a HEADING in the
             # title band. A type assigned only from a BODY mention (heading=False) whose name is ABSENT
