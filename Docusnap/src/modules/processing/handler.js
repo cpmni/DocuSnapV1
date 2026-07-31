@@ -227,6 +227,26 @@ function mergeReprocessRows(existing, newRows, flip = null, onTrace = null) {
     const ex = existingMap[row.field_key];
     if (!ex) return row;
     if (ex.display_value && !row.display_value) {
+      // REPROCESS_ANNOTATED_EMPTY_WINS (2026-07-31; Oracle SIGN-OFF-W/COND): an ANNOTATED
+      // empty — no value but a non-empty validation_note — is a DECISION the engine explains
+      // (the abstain-speak class: the un-named/named branding blanks, logo-abstain,
+      // positional-read drop, shape/date withholds), NOT a failed read. kept_existing here
+      // silently UNDID every such arm on the reprocess path — the Ironbridge-as-Copperfield
+      // rows survived their own veto (live 2026-07-31). The new row wins: null value + its
+      // own note + its own method/suggested_supplier (so the named-blank "Use '<name>'"
+      // button now works on reprocess too). EXCLUSION (Oracle C1, blocking): a row the
+      // OPERATOR corrected (ex.corrected_to) keeps the human's answer unconditionally — an
+      // engine abstain never displaces it. An UN-annotated empty (the validator normaliser
+      // placeholder {value:None, conf:0, method:'unknown'}) keeps today's kept_existing
+      // byte-identically — that is THE shape this carry-over exists for (PINNED in
+      // test_reprocess_annotated_empty.js). NOTE: the realdoc M=0 harness runs FRESH
+      // extraction and is structurally blind to this merge — the unit battery is the gate.
+      if (String(row.validation_note || '').trim()
+          && !String(ex.corrected_to || '').trim()
+          && process.env.REPROCESS_ANNOTATED_EMPTY_WINS !== '0') {
+        trace(row.field_key, 'used_new_annotated', ex.display_value, row.display_value);
+        return row;
+      }
       trace(row.field_key, 'kept_existing', ex.display_value, row.display_value);
       return {
         ...row, raw_value: ex.raw_value,
@@ -269,6 +289,17 @@ function mergeReprocessRows(existing, newRows, flip = null, onTrace = null) {
       : flip.noteText;
   }
   return mergedRows;
+}
+
+// Column-mirror predicate (Oracle C2; module-level so the unit test can pin it): TRUE when
+// the MERGED supplier_name row is an ANNOTATED empty — the doc-level supplier column (queue
+// grouping / filing + learning scope) must not outlive the blanked field, so the caller
+// writes an explicit NULL instead of the COALESCE keep. Same kill switch as the merge rule
+// (REPROCESS_ANNOTATED_EMPTY_WINS) — one seam, never split (Oracle C2).
+function supplierColumnBlanked(mergedRows) {
+  if (process.env.REPROCESS_ANNOTATED_EMPTY_WINS === '0') return false;
+  const r = (mergedRows || []).find(x => x && x.field_key === 'supplier_name');
+  return !!r && !r.display_value && !!String(r.validation_note || '').trim();
 }
 
 // Fill-only merge for the fast text-only re-extract (Slice B, DARK). Unlike
@@ -1308,6 +1339,7 @@ function register(ctx) {
     learning.deleteExtractions(db, docId);
     learning.insertExtractions(db, docId, mergedRows);
 
+    const _supBlanked = supplierColumnBlanked(mergedRows);
     db.prepare(
       `UPDATE documents SET
          overall_confidence  = ?,
@@ -1317,7 +1349,7 @@ function register(ctx) {
          logo_phash          = ?,
          logo_detail_hash    = ?,
          keyword_fingerprint = ?,
-         supplier_name       = COALESCE(?, supplier_name),
+         supplier_name       = CASE WHEN ? THEN NULL ELSE COALESCE(?, supplier_name) END,
          ocr_text            = COALESCE(?, ocr_text),
          detected_type_name  = ?,
          review_acknowledged_at = NULL
@@ -1329,6 +1361,7 @@ function register(ctx) {
       result.logo_phash         || null,
       result.logo_detail_hash   || null,
       result.keyword_fingerprint ? JSON.stringify(result.keyword_fingerprint) : null,
+      _supBlanked ? 1 : 0,
       result.supplier_name      || null,
       result.ocr_text           || null,
       // Plain assignment, NOT COALESCE: null must actually CLEAR the stamp. COALESCE here would
@@ -3056,6 +3089,7 @@ module.exports = {
   _isOpenablePath,
   // Exposed for the reprocess type-flip persistence unit test (test_reprocess_type_flip.js).
   _mergeReprocessRows: mergeReprocessRows,
+  _supplierColumnBlanked: supplierColumnBlanked,
   // Exposed for the fast re-extract fill-only merge unit test (test_reextract_merge.js).
   _mergeReextractRows: mergeReextractRows,
 };
