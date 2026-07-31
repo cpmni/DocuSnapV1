@@ -1689,22 +1689,13 @@ function register(ctx) {
   // Oracle conditions honoured: C1 known-id honour (imageless → the engine applies the known
   // template text-only), C4 (suggestion, no phantom human-correction), C6 (anchor-abstain,
   // no 2nd auto-file site, no type/status mutation — this path never writes).
-  ipcMain.handle('reextract-fields-fast', async (_event, { docId } = {}) => {
-    requireRole('admin', 'edit');
-    const db = getDb();
-    // DARK by default (Slice B). The whole fast path is inert unless EXPLICITLY enabled —
-    // setting `reextract_fast_enabled` = 'true', OR env REEXTRACT_TEXT_ONLY=1. OFF → the
-    // channel returns 'disabled' and nothing spawns, so wiring a renderer trigger (B-2) can
-    // never go live by accident. Byte-identical to the feature not existing.
-    const _fastOn = process.env.REEXTRACT_TEXT_ONLY === '1'
-      || require('../../../database/modules/learning').getSetting(db, 'reextract_fast_enabled', 'false') === 'true';
-    if (!_fastOn) return { ok: false, reason: 'disabled' };
-    // Same network-free cached-license re-check as reprocess (this re-runs the engine).
-    const licenseDenial = require('../licensing/handler').licenseDenied(db);
-    if (licenseDenial) return { ok: false, reason: 'license' };
-    // Never add load while a batch / single reprocess is running (shares the CPU + busy model).
-    if (_anyProcessingBusy()) return { ok: false, reason: 'busy' };
-
+  // ── Fast imageless re-extract CORE (Catch-up slice 2 refactor — byte-identical move) ──
+  // The body of `reextract-fields-fast` hoisted into a callable so the scope sweep can run
+  // it per candidate with buildTrainingArgs HOISTED ONCE (opts.trainingArgs). Behaviour is
+  // the IPC's, unchanged; the caller owns role/enable/license/busy gating. ZERO DB WRITES —
+  // temp files under os.tmpdir only. When opts.trainingArgs is provided the caller owns its
+  // temp-file cleanup; otherwise the core builds and cleans its own.
+  async function _reextractFastCore(db, docId, opts = {}) {
     const learning  = require('../../../database/modules/learning');
     const templates = require('../../../database/modules/templates');
 
@@ -1740,11 +1731,14 @@ function register(ctx) {
     const ext    = (doc.original_filename && path.extname(doc.original_filename)) || '.pdf';
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'docusnap-rx-'));
     const cachedFile = path.join(tmpDir, 'cached_ocr.txt');
-    let trainingArgs = [], tempFiles = [];
+    // Sweep callers pass HOISTED trainingArgs (built once per sweep) and own their cleanup;
+    // the solo path builds + cleans its own — byte-identical to the pre-refactor IPC body.
+    const _hoisted = Array.isArray(opts.trainingArgs);
+    let trainingArgs = _hoisted ? opts.trainingArgs : [], tempFiles = [];
     try {
       fs.writeFileSync(path.join(tmpDir, `reextract_${Date.now()}${ext}`), '');
       fs.writeFileSync(cachedFile, doc.ocr_text, 'utf8');
-      ({ args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath, logger));
+      if (!_hoisted) ({ args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath, logger));
     } catch (e) {
       try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
       return { ok: false, reason: 'setup' };
@@ -1799,9 +1793,123 @@ function register(ctx) {
           }).map(r => r.field_key));
         } catch { /* no anchors → none abstained */ }
         const suggestions = mergeReextractRows(existing, result.extractions, anchoredKeys);
-        finish({ ok: true, docId, suggestions, templateId: knownTemplateId || null });
+        // `result`/`doc`/`existing` ride along for the scope sweep's consistency predicate;
+        // the reextract-fields-fast IPC return shape below is built from the same fields it
+        // always returned (byte-identical to the pre-refactor channel).
+        finish({ ok: true, docId, suggestions, templateId: knownTemplateId || null,
+                 result, doc, existing });
       });
     });
+  }
+
+  ipcMain.handle('reextract-fields-fast', async (_event, { docId } = {}) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    // DARK by default (Slice B). The whole fast path is inert unless EXPLICITLY enabled —
+    // setting `reextract_fast_enabled` = 'true', OR env REEXTRACT_TEXT_ONLY=1. OFF → the
+    // channel returns 'disabled' and nothing spawns, so wiring a renderer trigger (B-2) can
+    // never go live by accident. Byte-identical to the feature not existing.
+    const _fastOn = process.env.REEXTRACT_TEXT_ONLY === '1'
+      || require('../../../database/modules/learning').getSetting(db, 'reextract_fast_enabled', 'false') === 'true';
+    if (!_fastOn) return { ok: false, reason: 'disabled' };
+    // Same network-free cached-license re-check as reprocess (this re-runs the engine).
+    const licenseDenial = require('../licensing/handler').licenseDenied(db);
+    if (licenseDenial) return { ok: false, reason: 'license' };
+    // Never add load while a batch / single reprocess is running (shares the CPU + busy model).
+    if (_anyProcessingBusy()) return { ok: false, reason: 'busy' };
+    const r = await _reextractFastCore(db, docId);
+    return r.ok ? { ok: true, docId, suggestions: r.suggestions, templateId: r.templateId }
+                : { ok: false, reason: r.reason };
+  });
+
+  // ── Catch-up Filing slice 2: scope-sweep candidate evaluation (READ-ONLY) ──────────
+  // docs/designs/CATCHUP_FILING_2026-07-31.md. After same-scope confirms, re-ask the NORMAL
+  // auto-file trust gate on fresher data for the scope's still-queued docs. Tier 1: the stored
+  // rows pass trust.isAutoFileEligible NOW (scopeTrust is live — "stored 96, floor just
+  // graduated to 95" qualifies with zero machinery). Tier 2: fast imageless re-extract of the
+  // SAME stored ocr_text, then the pure consistency predicate (sweepPredicate.js — values the
+  // operator can SEE unchanged, both sides note-free) + isAutoFileEligible re-asked on the
+  // fresh-confidence overlay. NOTHING IS PERSISTED — evaluation only; the accept path is
+  // slice 3 (unbuilt). Kill: setting `scope_sweep_enabled` default OFF + env SCOPE_SWEEP=0
+  // hard-off / =1 force-on (test harnesses); OFF ⇒ {ok:false, reason:'disabled'}, zero spawns.
+  // Framing (Oracle): Tier 2 is a warmer-learning CONSISTENCY check on the same stored text,
+  // never corroboration or a re-read of the page.
+  ipcMain.handle('sweep-scope-candidates', async (_event, { supplier, typeSlug } = {}) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    if (process.env.SCOPE_SWEEP === '0') return { ok: false, reason: 'disabled' };
+    const _sweepOn = process.env.SCOPE_SWEEP === '1'
+      || require('../../../database/modules/learning').getSetting(db, 'scope_sweep_enabled', 'false') === 'true';
+    if (!_sweepOn) return { ok: false, reason: 'disabled' };
+    const licenseDenial = require('../licensing/handler').licenseDenied(db);
+    if (licenseDenial) return { ok: false, reason: 'license' };
+    if (_anyProcessingBusy()) return { ok: false, reason: 'busy' };
+    const sup = String(supplier || '').trim();
+    const slug = String(typeSlug || '').toLowerCase().trim();
+    if (!sup || !slug) return { ok: false, reason: 'bad-scope' };
+
+    const trust = require('../../../database/modules/trust');
+    const { evaluateSweepConsistency, extractionsFingerprint } = require('../../services/sweepPredicate');
+    const presence = require('../../services/presenceService').shared();
+
+    const dtRow = db.prepare('SELECT * FROM document_types WHERE LOWER(slug) = ?').get(slug);
+    if (!dtRow) return { ok: false, reason: 'unknown-type' };
+    const roleKeys = new Set(['supplier_name', dtRow.ref_field_key, dtRow.date_field_key].filter(Boolean));
+
+    // Candidates: still-queued docs of the scope, no workflow lock, capped (~25 by design).
+    const SWEEP_CAP = 25;
+    const docs = db.prepare(`
+      SELECT d.* FROM documents d
+       WHERE d.status = 'needs_review' AND d.document_type_id = ?
+         AND LOWER(TRIM(d.supplier_name)) = LOWER(TRIM(?))
+         AND COALESCE(d.workflow_status, '') NOT IN ('pending', 'claimed')
+       ORDER BY d.id LIMIT ?`).all(dtRow.id, sup, SWEEP_CAP);
+
+    const candidates = [], excluded = [];
+    let trainingArgs = null, tempFiles = [];
+    let aborted = false;
+    try {
+      for (const doc of docs) {
+        // A batch/import starting mid-sweep aborts the remainder (never compete for CPU).
+        if (_anyProcessingBusy()) { aborted = true; break; }
+        if (presence.viewers(doc.id).length) { excluded.push({ docId: doc.id, reason: 'being-viewed' }); continue; }
+        const rows = db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(doc.id);
+        const fingerprint = extractionsFingerprint(rows);
+
+        // Tier 1 — stored rows pass the live gate as-is.
+        const t1 = trust.isAutoFileEligible(db, doc);
+        if (t1.eligible) { candidates.push({ docId: doc.id, tier: 1, fingerprint }); continue; }
+
+        // Tier 2 — imageless re-extract consistency + the gate re-asked on the overlay.
+        if (!trainingArgs) ({ args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath, logger));
+        const r = await _reextractFastCore(db, doc.id, { trainingArgs });
+        if (!r.ok) { excluded.push({ docId: doc.id, reason: `recheck-${r.reason}` }); continue; }
+        // Type pinned via --known-doc-slug: assert the echo matches (design: type flip = out).
+        const freshTypeName = String(r.result.document_type || '');
+        const storedTypeName = String(db.prepare('SELECT name FROM document_types WHERE id = ?').get(doc.document_type_id)?.name || '');
+        const verdict = evaluateSweepConsistency({
+          storedRows: rows,
+          freshFields: r.result.extractions || {},
+          roleKeys,
+          storedSlug: storedTypeName,
+          freshSlug: freshTypeName || storedTypeName,
+        });
+        if (!verdict.pass) { excluded.push({ docId: doc.id, reason: verdict.reason, field: verdict.field }); continue; }
+        const synth = { id: doc.id, document_type_id: doc.document_type_id,
+                        supplier_name: doc.supplier_name,
+                        overall_confidence: Number(r.result.overall_confidence) || 0 };
+        const gate = trust.isAutoFileEligible(db, synth, {
+          extractions: verdict.overlay,
+          templateMatched: !!r.templateId,
+        });
+        if (gate.eligible) candidates.push({ docId: doc.id, tier: 2, fingerprint });
+        else excluded.push({ docId: doc.id, reason: gate.reason });
+      }
+    } finally {
+      cleanupFiles(tempFiles);
+    }
+    return { ok: true, scope: { supplier: sup, typeSlug: slug }, aborted,
+             candidates, excluded, evaluated: candidates.length + excluded.length };
   });
 
   // ── Reprocess All (batched) ───────────────────────────────────────────────
