@@ -4856,6 +4856,23 @@ async function offerIssuerRipple(srcDocId, name, row) {
 // this would put the wrong name straight back in. Now it renders a CLICK affordance in the same
 // style as the branding "Use '<name>'" button: the app shows what the logo saw and says why it
 // isn't sure; the human decides. Nothing is written until they click.
+// Does the matched supplier's NAME actually appear in the page text? The 64-bit logo phash
+// collides across suppliers (a red mark ≈ another red mark), so a logo match alone suggested e.g.
+// "Saltmarsh Seafoods" on a Copperfield invoice. Mirrors the engine's identity text-first rule:
+// abstain ONLY on POSITIVE disagreement — require a real body of page text, then check the name's
+// distinctive tokens; too little text (or a name with no distinctive token) → fail-open (show).
+function _supplierNameOnPage(name, pageText) {
+  const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const page = norm(pageText);
+  if (page.split(' ').filter(Boolean).length < 8) return true;      // too little text to judge → fail-open
+  const STOP = new Set(['ltd','limited','plc','llp','inc','co','company','corp','the','and','group',
+                        'holdings','services','solutions','trading','uk','gmbh','llc','sa','bv','ag']);
+  const toks = norm(name).split(' ').filter(t => t.length >= 2 && !STOP.has(t));
+  if (!toks.length) return true;                                    // nothing distinctive to judge → fail-open
+  const padded = ' ' + page + ' ';
+  return toks.some(t => padded.includes(' ' + t + ' '));            // any distinctive token present as a whole word
+}
+
 async function attemptLogoMatch() {
   if (!docImg.complete || !docImg.naturalWidth) return;
   try {
@@ -4863,6 +4880,9 @@ async function attemptLogoMatch() {
     if (!b64) return;
     const match = await window.docusnap.matchLogoHash(b64);
     if (!match || match.confidence < 60 || !match.supplier_name) return;
+    // NAME-PRESENCE VETO (owner 2026-07-31): the logo alone is not enough — only offer the name when
+    // it actually appears on the page, so a phash collision can't suggest an off-page company.
+    if (!_supplierNameOnPage(match.supplier_name, (currentDoc && currentDoc.ocr_text) || '')) return;
     const supplierInput = document.querySelector('.field-input[data-key="supplier_name"]');
     if (!supplierInput || supplierInput.value.trim()) return;      // never overwrite a read/typed value
     if (document.querySelector('.logo-suggest-btn')) return;        // one offer at a time
