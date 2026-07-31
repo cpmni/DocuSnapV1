@@ -21,81 +21,34 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-31 EVE) — needless-flag cures (3 slices) + reprocess merge fix
-**2026-07-31 evening (Opus 4.8). HEAD `d8768fe`+docs. Dev app state: owner-run `npm start` (restart to load
-main-process changes). Installer `5b5d344` predates the whole day — rebuild to ship.**
-· **✅ Needless review flags — THREE slices BUILT+ON** (herald+gary→Oracle W/COND each; memory
-  `project_needless_flags_20260731`): **B `0f33e20`** TYPE_AMBIG_COHESION — the "letterhead used for several
-  document types" note counted CROSS-SUPPLIER phash-band templates; now kw-arm-parity single-supplier cohort.
-  **A `4a058a6`** HEADING_BAND_REREAD — rung-2 geometry-pre-gated single-pass title-band re-read cures the
-  PSM-3+supp-merge DOUBLED-heading garble (doc-180 "PURCHASE PU RC HASE Oo RDER"→PO@95 trusted; probe
-  `stress_test/heading_band_probe.py`). **G `d8768fe`** TEMPLATE_IDENTITY_GEOM_WITNESS — "Company inferred…"
-  fill note shed when `pick_issuer_geometry` agrees (tier-independent, conf 85 emitted, probe
-  `stress_test/geom_witness_probe.js`; S1 band arm untouched/dark). Combined gate
-  `stress_test/demo_notes_gate.js` (Desktop\Demo Docs 90-doc sample) ALL PASS — 0 wrong sheds, 0 new wrongs,
-  0 ambiguity notes on correctly-typed docs, 1 type flip = verified heal. NOT retroactive — reprocess to heal
-  queue docs. Residuals in `pendingfeatures.md` (Slice C `_center_in_any`; Saltmarsh clip/cross =
-  branding-primary class). `ocr_dpi=200` live = owner speed-test only; fixes proven at 200.
-· **✅ Reprocess merge — annotated empty WINS** (`72fe746`, kill `REPROCESS_ANNOTATED_EMPTY_WINS`): the veto
-  fired but `kept_existing` resurrected the stale value+note (proven live); now a deliberate blank+note wins
-  the merge (operator `corrected_to` outranks — Oracle C1), doc column mirrored NULL. Realdoc is BLIND to this
-  merge (fresh-extraction harness) — gate = `test_reprocess_annotated_empty.js` 16/16. Also repaired a
-  PRE-EXISTING silently-failing pin in `test_reprocess_type_flip.js`. Customer-plain blank-note copy
-  `ea4101a`.
-
-### Session (2026-07-31 PM) — issuer name-presence VETO + teach one-step confirm + label pass-2
-**HEAD was `934df8a`. Installer `5b5d344` predates.**
-· **✅ template_fixed name-presence VETO — BUILT+ON** (`20d6be3`, kill `TEMPLATE_FIXED_NAME_PRESENCE_VETO=0`):
-  Ironbridge POs (docs 171/173/180/181) carried supplier "Copperfield Electrical" `template_fixed`@69 — phash
-  collision seeds the template's FROZEN fixed supplier, un-named branding branch kept it. Now: name-printing
-  supplier (payload `supplier_prints_name` ratio≥0.8/n≥3, `templates.js getAll` + `namePresence`) absent from
-  page (C2 floor + `_template_identity_corroborated`) → BLANK+note, never `suggested_supplier`. gary+Oracle
-  W/COND all met; realdoc OFF==ON **byte-identical**; py 17/17 + JS 6/6. **Heal 171/173/180/181 by reprocess.**
-  Residuals in `pendingfeatures.md` (bank-less collision; `_doctype_fixed_supplier` = production DEAD GUARD
-  key-vs-field_key — do NOT fix casually). Memory `project_template_fixed_name_presence_veto_20260731`.
-· **✅ Teach ONE-STEP confirm + label pass-2 re-read** (`934df8a`): value+label confirmed in ONE panel
-  (Redraw value / Redraw label / Left-Above kept); "oe ee No." root = open-loop band decapitates the caption →
-  clip-gated tight re-read (pure helpers in `shared/anchorLabel.js`: `clusterTouchesClipEdge`/`labelRereadRect`/
-  `cropBoxToPageNorm` ds-pinned/`isTypeHeadingLabel` a666b83-belt + fragment belt in `labelLooksSuspicious`).
-  Doc-182 probe (`stress_test/teach_label_reread_probe.js` + `teach_label_probe_crops.py`): all clipped
-  variants recover 'Sales Order No.', tight draw 0 extra OCR, heading never adopted. Renderer-only — REOPEN
-  the teach window. GOTCHA: machine-wide env `TESSERACT`=install DIR (WinError 5 if executed — use own key).
-  Memory `project_teach_label_reread_20260731`.
-
-### Session (2026-07-31, earlier) — TEACH clipped-code (both slices) + UX fixes — READ `HANDOVER_2026-07-31_EVENING.md`
-**HEAD was `9b4e478`, pushed. Installer `5b5d344` predates the 3 renderer UX fixes below.**
-· **✅ Teach preview UX** (`ca90c73`): the draw step now (a) opens at the **TOP** of the doc (not the centred
-  middle — fields sit up top; `tzShowTop`), and (b) **background-renders** the page (`_prefetchTeachPage` fires
-  `getDocumentPages` on doc-pick) so the draw step opens instantly or shows a "Reading document…" overlay. Also
-  fixed a latent stale-image-on-doc-change bug. Renderer-only; parse-checked, NOT visually smoked. NOTE: the import
-  OCR itself still blocks (row created on `file_done`); making import itself instant is DEFERRED (pending-row on
-  `file_begin`).
-· **✅ Logo-suggestion name-presence veto** (`9b4e478`): the Review "Use '<name>' — the logo looks similar" button
-  (renderer `attemptLogoMatch`, raw `matchLogoHash`) suggested off-page companies on phash collisions (e.g.
-  "Saltmarsh Seafoods" on a Copperfield invoice). Now vetoed unless a distinctive name token appears in
-  `currentDoc.ocr_text` (`_supplierNameOnPage`; fail-open on <8 words). Mirrors the engine's abstain-on-positive-
-  disagreement rule; backend branding `Use '<name>'` buttons unaffected.
-
-### Session (2026-07-31, morning) — TEACH clipped-code fix FLIPPED ON (READ `HANDOVER_2026-07-31.md`)
-**2026-07-31 (Opus 4.8). HEAD `c70bae7`, pushed, origin in sync. Dev `npm start` restarted. Installer `2b8bdb2`
-predates everything since.**
-· **✅ Teach/Template mis-read taught CODE fields — FIXED + FLIPPED ON.** A taught delivery docket read `DN-93159`
-  → `N-93159` / `DN-39550` → `39550` / garbage. Root: the Stage-0.5 mapper trusts the ABSOLUTE drawn box, which drifts
-  off the value's LEFT/prefix under per-scan offset/scale; the `alphanumeric` gate is clip-blind; the clipped taught
-  read (conf 90) OVERRODE the correct keyword read (teaching REGRESSED the field). Fix `f2e5ee3` + flip `c70bae7`
-  (`_inline_code_reconcile`, kill `TEMPLATE_INLINE_CODE_RECONCILE=0`): after drift/registration, cross-check the box
-  read vs a full-res **label-anchored inline read** (page-wide locate + `inline_box` ladder re-read — Oracle Seam A/B);
-  **SUFFIX** = left-clip → un-clip CLEAN; genuine disagreement → conf-arbitrated **FAIL-TOWARD-REVIEW**; scoped
-  `{alphanumeric,reference_code}`, free-text seam untouched. **INDEPENDENT of `anchor.py`** (owner rule — parity harness
-  10/10 diff-methods + agree). Gates: probe **5/10→10/10** DN-#####, realdoc **OFF==ON** (0 new; the 13 are pre-existing
-  GT-poison, GATE exit-1 is the baseline), **11** unit/PIN. 007+gary+Oracle SIGN-OFF-W/COND. **NOT retroactive** —
-  reprocess the ~20 needs_review dockets to heal (full reprocess, not fill-only reextract). **Slice 2 — drift path —
-  BUILT + ON** (`a4fa107`, kill `TEMPLATE_INLINE_CODE_RECONCILE_DRIFT=0`): the DRIFT `_geometric` read carries the same
-  clip+garble risk; routes through Slice 1's page-wide reconcile wholesale (Oracle sent back the partial version).
-  Gate `drift_forced_probe.py` 10/10 + 0 degraded + 3 real drift-garble fixes; realdoc DRIFT==baseline. Memory
-  `project_teach_inline_code_reconcile_20260731`.
-· **✅ Teach cursor-lock** (`c2afc87`): at "Teaching complete" the canvas draw + crosshair now derive from `curField()`
-  → default pointer + mousedown bails; re-selecting a field restores drawing. Needs an app-reopen visual smoke.
+## Current session state (2026-07-31 NIGHT wrap) — full day: veto + merge fix + teach + needless-flags + catch-up design
+**2026-07-31 (Opus 4.8, three sessions). HEAD `a308e0b`, PUSHED, origin in sync. Dev app may be running
+(owner `npm start`). Installer `5b5d344` predates the WHOLE day — rebuild to ship. READ
+`HANDOVER_2026-07-31_NIGHT.md` first (night); `_EVENING.md` + `HANDOVER_2026-07-31.md` carry the
+morning/afternoon arcs. NEXT AGREED TASK: build Catch-up Filing slice 1 —
+`docs/designs/CATCHUP_FILING_2026-07-31.md` is the SIGNED design (do not re-litigate its rulings).**
+· **Issuer collision cured end-to-end**: `20d6be3` TEMPLATE_FIXED_NAME_PRESENCE_VETO (un-named branding
+  branch BLANKS an off-page name-printing supplier stamp; templates.js threads `supplier_prints_name`)
+  + `72fe746` REPROCESS_ANNOTATED_EMPTY_WINS (reprocess merge resurrected engine-blanked values —
+  annotated empty now WINS; operator `corrected_to` outranks; doc column mirrored; realdoc is BLIND to
+  this merge, gate = `test_reprocess_annotated_empty.js`) + `ea4101a` customer-plain note copy.
+  Memory `project_template_fixed_name_presence_veto_20260731`.
+· **Teach**: `934df8a` ONE-step value+label confirm + clip-gated label pass-2 re-read (the "oe ee No."
+  decapitation garble; pure helpers in `shared/anchorLabel.js`; probes green). Memory
+  `project_teach_label_reread_20260731`.
+· **Needless flags — 3 slices ON** (`0f33e20` TYPE_AMBIG_COHESION · `4a058a6` HEADING_BAND_REREAD ·
+  `d8768fe` TEMPLATE_IDENTITY_GEOM_WITNESS): cross-supplier phash band can't manufacture "several
+  document types"; rung-2 single-pass title re-read cures the PSM-3+supp-merge DOUBLED-heading garble
+  (doc-180 SO@65→PO@95 on same pixels); "Company inferred…" note sheds when `pick_issuer_geometry`
+  agrees. Combined gate `stress_test/demo_notes_gate.js` ALL PASS (Desktop\Demo Docs sample). NOT
+  retroactive — heal queue via Reprocess all. Memory `project_needless_flags_20260731`.
+· **Catch-up Filing DESIGN SIGNED OFF, NOT BUILT** (barry→gary→Oracle W/COND): consent-gated batch
+  filing of stale-scored queue docs after same-scope confirms. Key rulings: `confirmed_via` migration —
+  sweep confirms EXCLUDED from graduation; corrections-SPAN revocation; candidacy fingerprint;
+  banner+list+untick v1. Memory `project_catchup_filing_design_20260731`.
+· Gotchas added: machine env `TESSERACT`=install DIR (WinError 5 if executed — own env keys in
+  harnesses); `_doctype_fixed_supplier` = production DEAD GUARD (`key` vs `field_key`) — do NOT fix
+  casually; `ocr_dpi=200` live was owner speed-testing (fixes proven at 200).
 
 ### Prior session (2026-07-30) — reextract + worksheet-type-presence FLIPPED ON (READ `HANDOVER_2026-07-30.md`)
 **2026-07-30 (Opus 4.8). HEAD `f3a650a` (+ a CLAUDE.md docs commit); pushed, origin in sync. TWO big flips this session:
