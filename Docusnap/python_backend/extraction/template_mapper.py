@@ -93,12 +93,13 @@ _SELF_VALIDATING_TYPES = frozenset({'date', 'currency', 'currency_code',
 # its pattern permits internal spaces, so the one-token .split()[0] below would truncate it.
 _CODE_CROSSCHECK_TYPES = frozenset({'alphanumeric', 'reference_code'})
 
-# Stage 0.5 inline-code reconcile — DARK by default (TEMPLATE_INLINE_CODE_RECONCILE=1).
+# Stage 0.5 inline-code reconcile — default ON (kill with TEMPLATE_INLINE_CODE_RECONCILE=0).
 # A fixed narrow drawn target box clips a code value's prefix under per-scan offset/scale
 # (DN-93159 → N-93159) and the alphanumeric gate can't see it; the label-anchored inline
 # read can't clip. ON: for a single-token CODE field taught INLINE with its label, prefer
-# the fuller of the drawn-box read and the label-anchored inline read. OFF: byte-identical.
-_INLINE_CODE_RECONCILE_ON = os.environ.get('TEMPLATE_INLINE_CODE_RECONCILE', '0') == '1'
+# the fuller of the drawn-box read and the label-anchored inline read. =0: byte-identical.
+# Flipped ON after: delivery probe 5/10→10/10, realdoc OFF==ON (0 new), 11 unit/PIN, parity 10/10.
+_INLINE_CODE_RECONCILE_ON = os.environ.get('TEMPLATE_INLINE_CODE_RECONCILE', '1') != '0'
 
 
 def extract_with_mappings(page_images, mappings, field_patterns=None,

@@ -391,6 +391,11 @@ def test_absolute_target_first():
     located — the regression for "why doesn't it read it right the first time"."""
     failures = 0
     print("absolute target fast path: read the drawn box first, skip relocation when clean")
+    # Isolate the PRE-reconcile fast path (absolute-first precedence + no locate on a clean read).
+    # The inline-code reconcile is a separately-tested layer (test_inline_code_reconcile) that DOES
+    # cross-check a clean CODE read, so force it off here to keep the boom_lines invariant valid.
+    _saved_rc = template_mapper._INLINE_CODE_RECONCILE_ON
+    template_mapper._INLINE_CODE_RECONCILE_ON = False
     page = FakePage((1000, 1000))
     m = base_mapping()   # target x=0.25 -> x1 250; derived (if reached) differs
     fps = {"invoice_number": {"validation": "alphanumeric"}}
@@ -439,6 +444,7 @@ def test_absolute_target_first():
                  and located_calls["n"] > 0):
         failures += 1
 
+    template_mapper._INLINE_CODE_RECONCILE_ON = _saved_rc
     print()
     return failures
 
