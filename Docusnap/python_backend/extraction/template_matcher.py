@@ -191,20 +191,54 @@ _LOGO_AMBIG_MARGIN = 3
 # resolved SUPPLIER spans ≥2 DOC TYPES. WIDER than the pick margin (3) on purpose — a same-letterhead
 # sibling's stored phash drifts double-digit Hamming per scan, so a real sibling can fall OUTSIDE
 # margin-3 while a skewed incoming doc still lands near it; the SAFETY flag must over-detect where the
-# PICK under-detects, or a same-logo type-flip auto-files un-flagged. Kept below the ~28 unrelated-logo
-# floor so a DIFFERENT supplier's letterhead is never pulled into the ambiguity set. The PICK stays on 3.
+# PICK under-detects, or a same-logo type-flip auto-files un-flagged. The PICK stays on 3.
+# ⚠ STALE-CLAIM CORRECTION (herald, measured 2026-07-31): the original "~28 unrelated-logo floor keeps
+# a DIFFERENT supplier's letterhead out of the band" does NOT hold on real scans — 64-bit phash has
+# ZERO cross-supplier separating power on same-layout corpora (doc 180's band held Copperfield@4,
+# Ridgeway@8, Copperfield@12 against an Ironbridge pick). Distance cannot scope the band by supplier;
+# the SINGLE-SUPPLIER COHESION filter below (TYPE_AMBIG_COHESION) does.
 _AMBIG_LOGO_BAND = 13
 
 
-def _type_ambiguity(cands, base_dist, detected_slug, title_trusted) -> bool:
+def _letterhead_cohort(band, best_t):
+    """SINGLE-SUPPLIER COHESION for the logo ambiguity/sibling band (2026-07-31; herald→Oracle
+    SIGN-OFF-W/COND). VERBATIM parity with the keyword arm's load-bearing C1 guard
+    (_kw_type_ambiguity, Oracle-signed 2026-07-13): a band template joins the pick's SAME-LETTERHEAD
+    cohort only if it shares best_t's keyword FINGERPRINT set (works on a fresh sibling whose
+    dominant_supplier is still null) OR the same NON-NULL dominant_supplier. Belt-and-braces: if the
+    cohort still spans two DIFFERENT non-null suppliers, return None (caller treats as
+    not-a-same-letterhead-coin-flip — the kw arm's exact bail). Pure."""
+    bf_set = {w.lower() for w in (best_t.get('keyword_fingerprint') or [])}
+    best_sup = (best_t.get('dominant_supplier') or '').strip().lower()
+    cohort = [t for t in band
+              if {w.lower() for w in (t.get('keyword_fingerprint') or [])} == bf_set
+              or (best_sup and (t.get('dominant_supplier') or '').strip().lower() == best_sup)]
+    sups = {(t.get('dominant_supplier') or '').strip().lower() for t in cohort}
+    sups.discard('')
+    if len(sups) > 1:
+        return None
+    return cohort
+
+
+def _type_ambiguity(cands, base_dist, detected_slug, title_trusted, best_t=None) -> bool:
     """FIX A predicate (pure — Oracle SIGN-OFF-WITH-CONDITIONS). Is the logo-resolved supplier's TYPE
     ambiguous on this doc? TRUE when the logo cluster — taken over the WIDER `_AMBIG_LOGO_BAND` (jitter-
     immune; a real sibling's stored phash can sit >margin-3 from the pick) — spans ≥2 DISTINCT doc-type
     slugs AND no TRUSTED title resolves which one. That is exactly the popularity-coin-flip case
     (same-letterhead siblings carry identical fingerprints), so the engine holds the doc for review
     instead of auto-filing a guessed type. An UNTRUSTED detected_slug does NOT resolve (that IS the
-    skew failure). Guarded by tests/test_template_type_ambiguity.py."""
+    skew failure). TYPE_AMBIG_COHESION (2026-07-31, default ON — flipped after unit+realdoc+demo gates; kill =0): count slugs only over the
+    pick's OWN letterhead cohort (_letterhead_cohort — the kw arm's C1 parity), so a cross-supplier
+    phash collision inside the band can no longer manufacture "several document types" that this
+    supplier never issues (herald: doc 180's 4 "types" were 3 other suppliers'). A genuine
+    same-supplier multi-type letterhead with an untrusted title still flags (the designed case).
+    Guarded by tests/test_template_type_ambiguity.py."""
     ambig = [t for (t, d) in cands if d <= base_dist + _AMBIG_LOGO_BAND]
+    if best_t is not None and os.environ.get('TYPE_AMBIG_COHESION', '1') != '0':
+        cohort = _letterhead_cohort(ambig, best_t)
+        if cohort is None:
+            return False        # spans two known suppliers → cross-supplier tie, never a coin-flip
+        ambig = cohort
     slugs = {(t.get('document_type_slug') or '') for t in ambig if (t.get('document_type_slug') or '')}
     title_resolves = bool(title_trusted and detected_slug and detected_slug in slugs)
     return len(slugs) >= 2 and not title_resolves
@@ -256,16 +290,22 @@ def _logo_detail_veto(cands, base_dist, best_t, query_detail_hash, all_templates
         return False   # best-effort; a broken veto must never break identification
 
 
-def _band_siblings(cands, base_dist) -> dict:
+def _band_siblings(cands, base_dist, best_t=None) -> dict:
     """FIX B1 (suggest-only): {doc_type_slug: closest template} over the SAME wider `_AMBIG_LOGO_BAND`
     the ambiguity test uses (NOT the margin-3 pick cluster — a real drifted sibling can sit at Hamming
     ~8, inside the band, outside the pick margin; a `detected_slug`-only pick would silently under-reach
     it). identify_template EXPOSES this so process_docs can resolve the correct sibling from the doc's
-    ref-prefix and PIN it, without coupling this pure matcher to the learned-value model (gary)."""
+    ref-prefix and PIN it, without coupling this pure matcher to the learned-value model (gary).
+    TYPE_AMBIG_COHESION (2026-07-31): scoped by the SAME _letterhead_cohort as _type_ambiguity
+    (Oracle: the two must stay coherent) — a cross-supplier band template must never be offered as a
+    ref-prefix sibling, which also closes the latent cross-supplier surface in
+    resolve_type_by_ref_prefix (ocr_corrector)."""
+    band = [t for (t, d) in cands if d <= base_dist + _AMBIG_LOGO_BAND]
+    if best_t is not None and os.environ.get('TYPE_AMBIG_COHESION', '1') != '0':
+        cohort = _letterhead_cohort(band, best_t)
+        band = cohort if cohort is not None else []
     out = {}
-    for (t, d) in cands:
-        if d > base_dist + _AMBIG_LOGO_BAND:
-            continue
+    for t in band:
         slug = t.get('document_type_slug') or ''
         if slug and slug not in out:          # cands are distance-sorted → first per slug is closest
             out[slug] = t
@@ -649,7 +689,8 @@ def identify_template(page_image, ocr_text: str, templates: list,
                         _logo_vetoed = True
                         _vetoed_supplier = (best_t.get('dominant_supplier') or '').strip().lower()
                         _vetoed_tid = best_t.get('id')
-                ambiguous_type = _type_ambiguity(cands, cluster_dist, detected_slug, title_trusted)
+                ambiguous_type = _type_ambiguity(cands, cluster_dist, detected_slug, title_trusted,
+                                                 best_t=best_t)
                 result = {'template': best_t, 'confidence': conf, 'method': method,
                           'logo_phash': logo_phash, 'ambiguous_type': ambiguous_type}
                 if ambiguous_type:
@@ -657,7 +698,7 @@ def identify_template(page_image, ocr_text: str, templates: list,
                     # resolve the correct type from the doc's ref-prefix and PIN it (suggest-only —
                     # the engine still flags ambiguous_type, so the doc stays HELD). Additive keys;
                     # non-ambiguous matches never carry them → every existing caller is unchanged.
-                    result['ambiguous_siblings'] = _band_siblings(cands, cluster_dist)
+                    result['ambiguous_siblings'] = _band_siblings(cands, cluster_dist, best_t=best_t)
                     result['cluster_supplier'] = best_t.get('dominant_supplier')
                 # Return the accepted logo match — UNLESS the logo arm refused a wrong-type sibling
                 # (LOGO_REFUSE_FALLTHROUGH) or an identity veto refuted the pick (Slice C), in which
