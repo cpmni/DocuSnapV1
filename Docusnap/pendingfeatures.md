@@ -63,6 +63,21 @@ lost) — dismiss is display-only. Needs an app reopen to render.
 
 ---
 
+## UX / product (continued)
+
+### Catch-up filing ("file the rest") — DESIGN SIGNED OFF 2026-07-31, NOT BUILT
+- Owner idea: after K same-scope manual confirms, remaining queue docs (correct values, stale
+  scores) re-gate against the warmer learning and batch-file behind a per-scope consent
+  banner+list with per-doc untick. barry (L3, near top of office backlog) → gary (two-tier
+  predicate: free re-gate + imageless consistency re-score; memory-held; files STORED rows via
+  reviewService.confirm bulk) → **Oracle SIGN-OFF-W/COND** with two rulings (sweep confirms
+  EXCLUDED from graduation via new `confirmed_via` column, values-learning flows;
+  banner-consent v1, silent File-All absorption rejected) and two seams both advisors missed
+  (corrections-SPAN revocation so human-only windows don't disarm self-revocation; candidacy
+  extractions FINGERPRINT so consent can't go stale). **Full agreed design + build slices:
+  `docs/designs/CATCHUP_FILING_2026-07-31.md`.** Build in a fresh session, slice 1 first
+  (migration + scopeTrust rework — feature-independent).
+
 ## Extraction / accuracy
 
 ### Cross-contamination residual — Stage-2 `_qualify_against_format` — DO-NOTHING (gary+Oracle, 2026-07-30)
