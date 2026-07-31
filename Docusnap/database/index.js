@@ -1168,6 +1168,23 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 56 applied: doctype_grants scaffold (INERT — per-doc-type authorization groundwork, unused until Stage 8)');
   }
 
+  // Migration 57 (Catch-up Filing slice 1 — docs/designs/CATCHUP_FILING_2026-07-31.md):
+  // documents.confirmed_via — WHO/WHAT performed the confirm. TEXT, NULL = legacy/human (every
+  // existing row). The scope-sweep accept path (slice 3, unbuilt) will set 'scope_sweep'
+  // SERVER-SIDE from the call site — never client/payload-suppliable. Read-side consumer today:
+  // trust.scopeTrust's graduation window EXCLUDES 'scope_sweep' rows (machine confirms must not
+  // fill the human trust window) while its corrections SPAN still covers them (a correction on a
+  // sweep-filed doc still revokes trust — the Oracle SEAM-1 ruling). Purely additive: with every
+  // row NULL the trust computation is byte-identical (pinned in test_scope_trust.js).
+  if (!applied.has(57)) {
+    if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'confirmed_via')) {
+      try { db.exec('ALTER TABLE documents ADD COLUMN confirmed_via TEXT'); }
+      catch (e) { console.warn(`  migration 57 confirmed_via: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (57)').run();
+    console.log('JS migration 57 applied: documents.confirmed_via (NULL = human/legacy; scope-sweep confirms excluded from trust graduation)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

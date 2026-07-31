@@ -116,6 +116,17 @@ function _matchesTypePattern(type, value) {
   return arr.some(p => { const re = _compile(p); return re ? re.test(String(value)) : true; });
 }
 
+// documents.confirmed_via presence (mig 57) — cached per DB handle so older fixture DBs
+// (and pre-migration installs) keep the legacy single-query trust computation untouched.
+const _viaCache = new WeakMap();
+function _hasConfirmedVia(db) {
+  if (_viaCache.has(db)) return _viaCache.get(db);
+  let ok = false;
+  try { db.prepare('SELECT confirmed_via FROM documents LIMIT 0'); ok = true; } catch { ok = false; }
+  _viaCache.set(db, ok);
+  return ok;
+}
+
 const _digits     = v => /^\d+$/.test(String(v).trim());
 const _currencyish = v => /^[£$€]?\s?-?\d[\d,]*(?:\.\d+)?$/.test(String(v).trim());
 const _codeish    = v => {
@@ -346,21 +357,44 @@ function scopeTrust(db, supplier, slug, opts = {}) {
     'SELECT key, type FROM fields WHERE document_type_id = ? AND required = 1 AND COALESCE(enabled, 1) = 1'
   ).all(dt.id);
 
-  const confirmed = db.prepare(`
-    SELECT d.id FROM documents d
+  // ── Catch-up Filing slice 1 (mig 57 confirmed_via; docs/designs/CATCHUP_FILING_2026-07-31.md) ──
+  // The graduation WINDOW counts HUMAN confirms only (confirmed_via NULL = human/legacy): a
+  // 'scope_sweep' machine confirm must never fill the trust window — a 25-doc sweep could
+  // otherwise fill all W slots with machine echoes whose wrongs never get corrected (they left
+  // the review surface). The corrections SPAN, by contrast, covers ALL in-scope confirmed docs
+  // (any confirmed_via) at-or-after the OLDEST of those W human confirms, in the SAME
+  // (confirmed_at DESC, id DESC) total order as the window cut — so a correction on a
+  // sweep-FILED doc still revokes trust (Oracle SEAM 1: a naive human-only window would disarm
+  // self-revocation). With ZERO machine rows — every DB today — the span set is EXACTLY the
+  // naive last-W window (same total-order cut, timestamp ties land the same side on both), so
+  // behaviour is byte-identical by construction; pinned in test_scope_trust.js. An unmigrated
+  // DB (no confirmed_via column — older fixtures/harnesses) keeps the legacy single query.
+  const hasVia = _hasConfirmedVia(db);
+  const _confirmedSql = (viaFilter) => `
+    SELECT d.id, COALESCE(d.confirmed_at, '') AS ts FROM documents d
     JOIN document_types dt ON dt.id = d.document_type_id
     WHERE d.status = 'confirmed' AND LOWER(TRIM(d.supplier_name)) = ? AND LOWER(dt.slug) = ?
+      ${viaFilter ? "AND COALESCE(d.confirmed_via, '') <> 'scope_sweep'" : ''}
     ORDER BY d.confirmed_at DESC, d.id DESC
-  `).all(sup, sl).map(r => r.id);
-  const confirmedCount = confirmed.length;
+  `;
+  const human = db.prepare(_confirmedSql(hasVia)).all(sup, sl);
+  const confirmedCount = human.length;
   if (confirmedCount < W) return no('volume', { confirmedCount, needed: W - confirmedCount });
 
-  const windowIds = confirmed.slice(0, W);
-  const ph = windowIds.map(() => '?').join(',');
+  const windowRows = human.slice(0, W);
+  const windowIds = windowRows.map(r => r.id);
+  let spanIds = windowIds;
+  if (hasVia) {
+    const b = windowRows[windowRows.length - 1];             // the OLDEST of the W human confirms
+    spanIds = db.prepare(_confirmedSql(false)).all(sup, sl)
+      .filter(r => r.ts > b.ts || (r.ts === b.ts && r.id >= b.id))
+      .map(r => r.id);
+  }
+  const ph = spanIds.map(() => '?').join(',');
   const corrections = db.prepare(
     `SELECT COUNT(*) c FROM corrections WHERE document_id IN (${ph})
        AND COALESCE(original_value, '') <> COALESCE(corrected_value, '')`
-  ).get(...windowIds).c;
+  ).get(...spanIds).c;
   if (corrections > MAXC) return no('recent-correction', { confirmedCount, corrections });
 
   const fmts = _scopeFormats(db, sup, sl, opts.formats);

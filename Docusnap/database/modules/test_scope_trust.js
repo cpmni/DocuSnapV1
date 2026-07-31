@@ -655,6 +655,108 @@ function main() {
     check("dropped-decimal '38774' still blocked",        trust.currencyDpConsistent('38774', H) === false);
   }
 
+  // ── 23. Catch-up Filing slice 1 (mig 57 confirmed_via) — window/span PINs ────
+  // docs/designs/CATCHUP_FILING_2026-07-31.md. The graduation WINDOW counts HUMAN confirms
+  // only; the corrections SPAN covers ALL in-scope confirms at-or-after the oldest of those W
+  // (same (confirmed_at, id) total order — Oracle SEAM 1). These pins make the seam and its
+  // trade-offs permanent: a future dev cannot restore naive undistinguished counting.
+  section('23. confirmed_via: human window + corrections span (Catch-up slice 1)');
+  {
+    const migrate = db => db.exec('ALTER TABLE documents ADD COLUMN confirmed_via TEXT');
+    const sweepDoc = (db, tid, when, fields) => {
+      const id = db.prepare(
+        "INSERT INTO documents (supplier_name, document_type_id, status, confirmed_at, template_id, overall_confidence, confirmed_via) VALUES ('Anconia Corp',?, 'confirmed', ?, 1, 100, 'scope_sweep')"
+      ).run(tid, when).lastInsertRowid;
+      for (const [k, v] of Object.entries(fields || {})) {
+        db.prepare('INSERT INTO extractions (document_id, field_key, display_value, confidence, extraction_method) VALUES (?,?,?,?,?)')
+          .run(id, k, v, null, 'keyword');
+      }
+      return id;
+    };
+
+    // (a) MIGRATED all-human DB ≡ unmigrated DB — byte-identical trust output, INCLUDING a
+    // timestamp TIE at the window boundary (File-All batches share confirmed_at seconds; the
+    // span cut must land ties the same side as the window cut or live graduation shifts).
+    {
+      const mk = (withVia) => {
+        const db = makeDb(); const tid = seedType(db);
+        if (withVia) migrate(db);
+        seedCleanScope(db, tid, 9);
+        // two more docs TIED on the same timestamp (the 10th + an 11th just outside W=10)
+        for (let i = 0; i < 2; i++) {
+          seedDoc(db, tid, { supplier: 'Anconia Corp', when: '2026-06-01T11:00:00Z',
+                             fields: { supplier_name: 'Anconia Corp', invoice_date: `1${i}/06/2026`,
+                                       invoice_number: `760${i}-1354-${i}`, total: `£1${i}0.00`, item: 'Consulting' } });
+        }
+        return { db, tid };
+      };
+      const a = mk(false), b = mk(true);
+      const ta = trust.scopeTrust(a.db, 'Anconia Corp', 'invoice');
+      const tb = trust.scopeTrust(b.db, 'Anconia Corp', 'invoice');
+      check('mig-57 equivalence: all-human migrated DB gives IDENTICAL trust output (tie at boundary)',
+            JSON.stringify(ta) === JSON.stringify(tb));
+      check('  …and it graduates (control)', tb.trusted === true);
+    }
+
+    // (b) HUMAN-ONLY WINDOW: machine confirms never fill the trust window.
+    {
+      const db = makeDb(); const tid = seedType(db); migrate(db);
+      seedCleanScope(db, tid, 5);                                  // 5 HUMAN confirms
+      for (let i = 0; i < 10; i++) {                               // + 10 sweep confirms (newer)
+        sweepDoc(db, tid, `2026-06-02T10:00:${String(i).padStart(2, '0')}Z`,
+                 { supplier_name: 'Anconia Corp', invoice_date: `0${(i % 9) + 1}/06/2026`,
+                   invoice_number: `860${i}-1354-${i % 10}`, total: `£${i}0.00`, item: 'Consulting' });
+      }
+      const t = trust.scopeTrust(db, 'Anconia Corp', 'invoice');
+      check("PIN: 5 human + 10 sweep confirms does NOT graduate (window is HUMAN-only)",
+            t.trusted === false && t.reason === 'volume' && t.confirmedCount === 5);
+    }
+
+    // (c) CORRECTIONS SPAN (Oracle SEAM 1): a correction on a SWEEP-FILED doc newer than the
+    // human-window boundary still revokes — under naive id-membership counting it would be
+    // invisible (the sweep doc is not one of the W human window ids). Control: a correction on
+    // a sweep doc OLDER than the boundary does not (the span is bounded, not all-history).
+    {
+      const db = makeDb(); const tid = seedType(db); migrate(db);
+      const oldSweep = sweepDoc(db, tid, '2026-05-01T09:00:00Z',   // OLDER than every human confirm
+               { supplier_name: 'Anconia Corp', invoice_date: '01/05/2026',
+                 invoice_number: '9000-1354-0', total: '£10.00', item: 'Consulting' });
+      seedCleanScope(db, tid, 10);                                 // the W=10 human window
+      const newSweep = sweepDoc(db, tid, '2026-06-03T10:00:00Z',   // NEWER than the boundary
+               { supplier_name: 'Anconia Corp', invoice_date: '03/06/2026',
+                 invoice_number: '9001-1354-1', total: '£20.00', item: 'Consulting' });
+      seedCorrection(db, oldSweep, 'invoice_number', '9000-1354-0', '9000-1354-9');
+      const t1 = trust.scopeTrust(db, 'Anconia Corp', 'invoice');
+      check('control: correction on a PRE-window sweep doc does not revoke', t1.trusted === true);
+      seedCorrection(db, newSweep, 'invoice_number', '9001-1354-1', '9001-1354-7');
+      const t2 = trust.scopeTrust(db, 'Anconia Corp', 'invoice');
+      check('PIN (SEAM 1): correction on an IN-SPAN sweep-filed doc REVOKES trust',
+            t2.trusted === false && t2.reason === 'recent-correction');
+    }
+
+    // (d) opts-seam SUPPORT PIN (design condition): the evaluate-a-reprocessed-result overrides
+    // (templateMatched / extractions / formats / dtRow) and scopeTrust's window/maxCorrections
+    // opts stay supported — the Catch-up sweep predicate (slice 2) becomes their first
+    // in-product consumer; today they are harness-only.
+    {
+      const db = makeDb(); const tid = seedType(db); migrate(db);
+      seedCleanScope(db, tid, 10);
+      const id = seedDoc(db, tid, { supplier: 'Anconia Corp', when: '2026-06-05T10:00:00Z',
+                                    status: 'needs_review', template: null,
+                                    fields: { invoice_number: '7602-1354-4' } });
+      const viaOpts = trust.docTrustGate(db, id, 'Anconia Corp', 'invoice', {
+        templateMatched: true,
+        extractions: [{ field_key: 'invoice_number', display_value: '7602-1354-4',
+                        raw_value: '7602-1354-4', validation_note: null }],
+      });
+      check('opts seam: templateMatched+extractions overrides evaluate a synthetic doc', viaOpts.ok === true);
+      const noTmpl = trust.docTrustGate(db, id, 'Anconia Corp', 'invoice', { extractions: [] });
+      check('opts seam: stored template_id NULL still blocks without the override', noTmpl.ok === false);
+      const w5 = trust.scopeTrust(db, 'Anconia Corp', 'invoice', { window: 20 });
+      check('opts seam: scopeTrust window override honoured', w5.trusted === false && w5.reason === 'volume');
+    }
+  }
+
   console.log(`\n${fails === 0 ? 'ALL PASS' : fails + ' FAILED'}`);
   process.exit(fails === 0 ? 0 : 1);
 }
