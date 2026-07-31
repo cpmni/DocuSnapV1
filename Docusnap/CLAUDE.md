@@ -34,8 +34,11 @@ predates everything since.**
   `{alphanumeric,reference_code}`, free-text seam untouched. **INDEPENDENT of `anchor.py`** (owner rule — parity harness
   10/10 diff-methods + agree). Gates: probe **5/10→10/10** DN-#####, realdoc **OFF==ON** (0 new; the 13 are pre-existing
   GT-poison, GATE exit-1 is the baseline), **11** unit/PIN. 007+gary+Oracle SIGN-OFF-W/COND. **NOT retroactive** —
-  reprocess the ~20 needs_review dockets to heal (full reprocess, not fill-only reextract). Slice 2 (`_geometric` drift
-  path) deferred → `pendingfeatures.md`. Memory `project_teach_inline_code_reconcile_20260731`.
+  reprocess the ~20 needs_review dockets to heal (full reprocess, not fill-only reextract). **Slice 2 — drift path —
+  BUILT + ON** (`a4fa107`, kill `TEMPLATE_INLINE_CODE_RECONCILE_DRIFT=0`): the DRIFT `_geometric` read carries the same
+  clip+garble risk; routes through Slice 1's page-wide reconcile wholesale (Oracle sent back the partial version).
+  Gate `drift_forced_probe.py` 10/10 + 0 degraded + 3 real drift-garble fixes; realdoc DRIFT==baseline. Memory
+  `project_teach_inline_code_reconcile_20260731`.
 · **✅ Teach cursor-lock** (`c2afc87`): at "Teaching complete" the canvas draw + crosshair now derive from `curField()`
   → default pointer + mousedown bails; re-selecting a field restores drawing. Needs an app-reopen visual smoke.
 

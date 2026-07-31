@@ -8,17 +8,14 @@
 
 ## UX / product
 
-### DEFERRED — Teach clipped-code reconcile, Slice 2 (the DRIFTED-sibling path)  (2026-07-31)
-- **Context:** Slice 1 (`f2e5ee3`, flipped `c70bae7`, `TEMPLATE_INLINE_CODE_RECONCILE`) fixed taught inline CODE
-  fields clipping on the FAST path (`_extract_one`) — `DN-93159`→`N-93159` etc. See memory
-  `project_teach_inline_code_reconcile_20260731` + `HANDOVER_2026-07-31.md`.
-- **What's left:** the DRIFTED-sibling path `_geometric()` (`python_backend/extraction/template_mapper.py:573`)
-  seats the value crop off the located label + the SAME narrow drawn width, so it has the identical prefix-clip
-  risk. It short-circuits `_inline()` via `_geometric() or _inline()` (:622). None of the 10 observed dockets
-  drift, so Slice 1 is complete for the reported bug; add a call to `_inline_code_reconcile` inside `_geometric()`
-  (after its gate, ~:573-574) — the helper is already generic. gary designed this; trivial once a drifted taught
-  code field actually shows the clip. Gate: reprocess-probe a drifted taught docket → full `DN-#####`.
-- **Perf follow-up (optional):** the reconcile does a page-wide locate per clean CODE read; it's `line_cache`-shared
+### ✓ DONE — Teach clipped-code reconcile, Slice 2 (the DRIFTED-sibling path)  (2026-07-31, `a4fa107`, ON)
+- Slice 1 (`f2e5ee3`/`c70bae7`, `TEMPLATE_INLINE_CODE_RECONCILE`) fixed the FAST path; Slice 2 (`a4fa107`,
+  `TEMPLATE_INLINE_CODE_RECONCILE_DRIFT` default ON) extends the reconcile to the DRIFT/relocate path
+  (`_geometric`). Routes through `_inline_code_reconcile` wholesale (robust page-wide source — Oracle SEND-BACK of
+  the partial `located`-based version, which could DEGRADE a correct geometric read). Gate: `drift_forced_probe.py`
+  10/10 + 0 degraded + 3 real drift-garble fixes; realdoc DRIFT==baseline; 4 drift unit/PIN. Memory
+  `project_teach_inline_code_reconcile_20260731`.
+- **Perf follow-up (optional, still open):** the reconcile does a page-wide locate per clean CODE read; it's `line_cache`-shared
   with the registration landmark fit (≈0 extra OCR on registration-enabled docs), but a doc with a taught code
   field and NO landmarks pays one fresh page-wide OCR. If profiling ever flags it, gate the cross-check on a cheap
   pre-signal (e.g. the local pre-pass `inline_value` disagreeing) before escalating to the page-wide locate.
