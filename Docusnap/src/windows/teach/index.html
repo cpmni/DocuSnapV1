@@ -151,6 +151,8 @@
      cross + centre ring) so it shows against a white document. */
   #pageCanvas{max-width:100%;max-height:72vh;display:block;flex:0 0 auto;transform-origin:center center;will-change:transform;
     cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Cline x1='16' y1='0' x2='16' y2='13' stroke='%23000' stroke-width='4' stroke-opacity='0.5'/%3E%3Cline x1='16' y1='19' x2='16' y2='32' stroke='%23000' stroke-width='4' stroke-opacity='0.5'/%3E%3Cline x1='0' y1='16' x2='13' y2='16' stroke='%23000' stroke-width='4' stroke-opacity='0.5'/%3E%3Cline x1='19' y1='16' x2='32' y2='16' stroke='%23000' stroke-width='4' stroke-opacity='0.5'/%3E%3Ccircle cx='16' cy='16' r='4' fill='none' stroke='%23000' stroke-width='3' stroke-opacity='0.5'/%3E%3Cline x1='16' y1='0' x2='16' y2='13' stroke='%234f8ef7' stroke-width='1.5'/%3E%3Cline x1='16' y1='19' x2='16' y2='32' stroke='%234f8ef7' stroke-width='1.5'/%3E%3Cline x1='0' y1='16' x2='13' y2='16' stroke='%234f8ef7' stroke-width='1.5'/%3E%3Cline x1='19' y1='16' x2='32' y2='16' stroke='%234f8ef7' stroke-width='1.5'/%3E%3Ccircle cx='16' cy='16' r='4' fill='none' stroke='%234f8ef7' stroke-width='1.5'/%3E%3C/svg%3E") 16 16, crosshair}
+  /* Teaching complete: no field left to capture → drawing is disabled, so show the normal pointer. */
+  #pageCanvas.capture-done{cursor:default}
   .zoombar{position:absolute;top:8px;right:8px;z-index:2;display:flex;align-items:center;gap:2px;
     background:var(--surface);border:1px solid var(--border2);border-radius:8px;padding:3px;box-shadow:0 1px 4px rgba(0,0,0,.25)}
   .zoombar button{width:26px;height:24px;border:0;background:transparent;color:var(--text);font-size:15px;

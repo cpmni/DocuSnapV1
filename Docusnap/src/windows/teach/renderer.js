@@ -384,6 +384,10 @@ function fitCanvas(){
 }
 function redrawCanvas(){
   if (!state.img) return;
+  // Draw only while a field is still being captured. At "Teaching complete" curField() is
+  // undefined (fieldIndex parked past the last field) → lock the canvas: swap the crosshair
+  // for the default pointer (.capture-done CSS) to match the disabled mousedown-draw gate.
+  canvas.classList.toggle('capture-done', !curField());
   ctx.clearRect(0,0,canvas.width,canvas.height);
   ctx.drawImage(state.img,0,0,canvas.width,canvas.height);
   // Show ONLY the field being taught right now (owner 2026-07-30) — the previously-confirmed fields'
@@ -412,7 +416,8 @@ let _bound=false;
 function bindCanvas(){
   if (_bound) return; _bound=true;
   // LEFT-drag draws the box; right-click is reserved for panning (below).
-  canvas.addEventListener('mousedown',e=>{ if(e.button!==0)return; const p=cpoint(e); drag={x:p.x,y:p.y,w:0,h:0,_sx:p.x,_sy:p.y}; });
+  // No field left to capture ("Teaching complete") → don't start a draw (cursor is locked too).
+  canvas.addEventListener('mousedown',e=>{ if(e.button!==0 || !curField())return; const p=cpoint(e); drag={x:p.x,y:p.y,w:0,h:0,_sx:p.x,_sy:p.y}; });
   canvas.addEventListener('mousemove',e=>{ if(!drag)return; const p=cpoint(e); drag.x=Math.min(drag._sx,p.x);drag.y=Math.min(drag._sy,p.y);drag.w=Math.abs(p.x-drag._sx);drag.h=Math.abs(p.y-drag._sy); redrawCanvas(); });
   window.addEventListener('mouseup',async()=>{ if(!drag)return; const b={x:drag.x,y:drag.y,w:drag.w,h:drag.h,_ang:state.deskewAngle||0}; drag=null; if(b.w<0.01||b.h<0.008){redrawCanvas();return;}
     if (drawMode==='anchor'){ await captureAnchor(b); return; }
