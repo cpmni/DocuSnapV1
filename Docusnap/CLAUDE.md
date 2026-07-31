@@ -21,7 +21,41 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-07-31) — TEACH clipped-code fix FLIPPED ON — READ `HANDOVER_2026-07-31.md`
+## Current session state (2026-07-31 PM) — issuer name-presence VETO + teach one-step confirm + label pass-2
+**2026-07-31 afternoon (Opus 4.8). HEAD `934df8a`. Dev `npm start` RUNNING (background). Installer `5b5d344`
+predates everything since — rebuild to ship (close dev app first).**
+· **✅ template_fixed name-presence VETO — BUILT+ON** (`20d6be3`, kill `TEMPLATE_FIXED_NAME_PRESENCE_VETO=0`):
+  Ironbridge POs (docs 171/173/180/181) carried supplier "Copperfield Electrical" `template_fixed`@69 — phash
+  collision seeds the template's FROZEN fixed supplier, un-named branding branch kept it. Now: name-printing
+  supplier (payload `supplier_prints_name` ratio≥0.8/n≥3, `templates.js getAll` + `namePresence`) absent from
+  page (C2 floor + `_template_identity_corroborated`) → BLANK+note, never `suggested_supplier`. gary+Oracle
+  W/COND all met; realdoc OFF==ON **byte-identical**; py 17/17 + JS 6/6. **Heal 171/173/180/181 by reprocess.**
+  Residuals in `pendingfeatures.md` (bank-less collision; `_doctype_fixed_supplier` = production DEAD GUARD
+  key-vs-field_key — do NOT fix casually). Memory `project_template_fixed_name_presence_veto_20260731`.
+· **✅ Teach ONE-STEP confirm + label pass-2 re-read** (`934df8a`): value+label confirmed in ONE panel
+  (Redraw value / Redraw label / Left-Above kept); "oe ee No." root = open-loop band decapitates the caption →
+  clip-gated tight re-read (pure helpers in `shared/anchorLabel.js`: `clusterTouchesClipEdge`/`labelRereadRect`/
+  `cropBoxToPageNorm` ds-pinned/`isTypeHeadingLabel` a666b83-belt + fragment belt in `labelLooksSuspicious`).
+  Doc-182 probe (`stress_test/teach_label_reread_probe.js` + `teach_label_probe_crops.py`): all clipped
+  variants recover 'Sales Order No.', tight draw 0 extra OCR, heading never adopted. Renderer-only — REOPEN
+  the teach window. GOTCHA: machine-wide env `TESSERACT`=install DIR (WinError 5 if executed — use own key).
+  Memory `project_teach_label_reread_20260731`.
+
+### Session (2026-07-31, earlier) — TEACH clipped-code (both slices) + UX fixes — READ `HANDOVER_2026-07-31_EVENING.md`
+**HEAD was `9b4e478`, pushed. Installer `5b5d344` predates the 3 renderer UX fixes below.**
+· **✅ Teach preview UX** (`ca90c73`): the draw step now (a) opens at the **TOP** of the doc (not the centred
+  middle — fields sit up top; `tzShowTop`), and (b) **background-renders** the page (`_prefetchTeachPage` fires
+  `getDocumentPages` on doc-pick) so the draw step opens instantly or shows a "Reading document…" overlay. Also
+  fixed a latent stale-image-on-doc-change bug. Renderer-only; parse-checked, NOT visually smoked. NOTE: the import
+  OCR itself still blocks (row created on `file_done`); making import itself instant is DEFERRED (pending-row on
+  `file_begin`).
+· **✅ Logo-suggestion name-presence veto** (`9b4e478`): the Review "Use '<name>' — the logo looks similar" button
+  (renderer `attemptLogoMatch`, raw `matchLogoHash`) suggested off-page companies on phash collisions (e.g.
+  "Saltmarsh Seafoods" on a Copperfield invoice). Now vetoed unless a distinctive name token appears in
+  `currentDoc.ocr_text` (`_supplierNameOnPage`; fail-open on <8 words). Mirrors the engine's abstain-on-positive-
+  disagreement rule; backend branding `Use '<name>'` buttons unaffected.
+
+### Session (2026-07-31, morning) — TEACH clipped-code fix FLIPPED ON (READ `HANDOVER_2026-07-31.md`)
 **2026-07-31 (Opus 4.8). HEAD `c70bae7`, pushed, origin in sync. Dev `npm start` restarted. Installer `2b8bdb2`
 predates everything since.**
 · **✅ Teach/Template mis-read taught CODE fields — FIXED + FLIPPED ON.** A taught delivery docket read `DN-93159`
