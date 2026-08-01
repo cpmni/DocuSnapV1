@@ -124,5 +124,20 @@ section('Branding-blank issuer live fill — narrow exception, everything else w
         merge([vetoRow], { supplier_name: inferred }, new Set(['supplier_name']), ON).length === 0);
 }
 
+section('Known-template pick admission (REEXTRACT_BLANK_REIDENTIFY — the Saltmarsh cold-batch fix)');
+{
+  const { _admitReextractPick: admit } =
+    require(path.join(__dirname, '..', '..', 'src', 'modules', 'processing', 'handler.js'));
+  check('non-blank doc: guarded pick admissible (pre-existing behaviour)',
+        admit(false, null, 21) === true && admit(false, 5, 21) === true);
+  check('no pick → never admissible', admit(false, 5, null) === false && admit(true, 5, null) === false);
+  check('PIN anti-recollision (930842e): blank doc + pick == stale stored id → NOT admissible',
+        admit(true, 5, 5) === false);
+  check('blank doc + pick differs from stale id → admissible (sibling template born since)',
+        admit(true, 5, 21) === true);
+  check('blank doc never linked (stored null) + fresh pick → admissible',
+        admit(true, null, 21) === true);
+}
+
 console.log(`\n${fails ? fails + ' FAILED' : 'All fast re-extract fill-only merge checks passed.'}`);
 process.exit(fails ? 1 : 0);

@@ -315,6 +315,18 @@ function supplierColumnBlanked(mergedRows) {
 //   (c) the field has NO learned anchor in (supplier,type) scope — an anchored empty means
 //       the taught position read nothing on purpose; a text-fallback must not override it.
 // `anchoredKeys` = Set<field_key> the caller built from learning.getTaughtFieldKeys.
+// Admission rule for the fast re-extract's known-template pick (module-level so the unit
+// test can pin it). Non-blank docs: any guarded identifyByFingerprint pick is admissible
+// (unchanged pre-2026-08-01 behaviour). Blank-supplier (unpinned collision-class) docs: the
+// pick is admissible ONLY when it differs from the stale stored link — the same id is the
+// collision re-arriving (the 930842e anti-recollision ruling), a different id is a template
+// born since (the just-confirmed-sibling case).
+function admitReextractPick(unpinBlank, storedTemplateId, pickId) {
+  if (pickId == null) return false;
+  if (!unpinBlank) return true;
+  return pickId !== (storedTemplateId || null);
+}
+
 function mergeReextractRows(existing, newExtractions, anchoredKeys = new Set(), opts = {}) {
   const exMap = {};
   for (const e of (existing || [])) exMap[e.field_key] = e;
@@ -1730,21 +1742,34 @@ function register(ctx) {
     // STALE-COLLISION UNPIN (owner + bob 2026-08-01; kill REEXTRACT_UNPIN_BLANK_SUPPLIER=0):
     // a stored template link with NO resolved supplier is the branding-blank collision class
     // — the veto blanked a wrong fixed-name stamp (doc 218: a Vellum doc pinned to the
-    // Ridgeway template). Re-pinning that template (or re-identifying by the SAME phash that
-    // collided) re-runs the identical collision, so the live re-check could never suggest the
-    // true sender. Pass NO template instead and let the engine's own Stage-0 matcher choose
-    // from the templates file — with warmer learning it separates the siblings (proven:
-    // unpinned doc-218 run resolves the true supplier via template_identity).
+    // Ridgeway template). Re-pinning that template re-runs the identical collision, so the
+    // stale stored id must never be honoured for this class.
+    // BLANK RE-IDENTIFY (owner 2026-08-01 evening; kill REEXTRACT_BLANK_REIDENTIFY=0): the
+    // unpin's original "let the engine's Stage-0 choose" expectation was DEAD imageless —
+    // the engine deliberately SKIPS live Stage-0 with no page image (Oracle C1: the text
+    // arms lack the logo-guard family), so an unpinned blank-supplier doc could never gain
+    // a supplier from the fast path at all (measured: Saltmarsh doc 400, 18-doc batch,
+    // zero suggestions with the sibling template present). Fix at the CALLER, with the
+    // guarded JS identifier this same path already trusts for non-blank docs
+    // (identifyByFingerprint: detail-hash veto + name-presence veto on BOTH arms,
+    // type-scoped): re-identify, and admit the pick as known-id ONLY when it differs from
+    // the stale stored link — a DIFFERENT pick is new information (a sibling template born
+    // since the collision, e.g. the operator just confirmed one of the batch); the SAME id
+    // is the collision re-arriving and stays unpinned. The engine's known-id honour path is
+    // the already-sanctioned imageless route (suggestion-only downstream: fill-only merge +
+    // operator confirm; reextract never auto-files).
     const _unpinBlank = process.env.REEXTRACT_UNPIN_BLANK_SUPPLIER !== '0'
       && !String(doc.supplier_name || '').trim();
     let knownTemplateId = _unpinBlank ? null : (doc.template_id || null);
-    if (!knownTemplateId && !_unpinBlank) {
+    if (!knownTemplateId && (!_unpinBlank || process.env.REEXTRACT_BLANK_REIDENTIFY !== '0')) {
       try {
         const m = templates.identifyByFingerprint(db, {
           logo_phash: doc.logo_phash, ocr_text: doc.ocr_text,
           document_type_slug: doc.document_type_slug, logo_detail_hash: doc.logo_detail_hash,
         });
-        if (m) knownTemplateId = m.template.id;
+        if (m && admitReextractPick(_unpinBlank, doc.template_id, m.template.id)) {
+          knownTemplateId = m.template.id;
+        }
       } catch { /* no match → keyword-only re-extract */ }
     }
 
@@ -3226,4 +3251,5 @@ module.exports = {
   _supplierColumnBlanked: supplierColumnBlanked,
   // Exposed for the fast re-extract fill-only merge unit test (test_reextract_merge.js).
   _mergeReextractRows: mergeReextractRows,
+  _admitReextractPick: admitReextractPick,
 };
