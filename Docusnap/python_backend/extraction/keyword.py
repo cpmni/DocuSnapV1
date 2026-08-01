@@ -420,6 +420,49 @@ def seed_field_labels(patterns: dict, field_defs: "list | None") -> dict:
         if role == "alphanumeric":
             entry["role_caption"] = "ref"
         field_patterns[key] = entry
+
+    # ── DATE-ROLE GENERIC LABEL (owner report 2026-08-01; kill DATE_ROLE_GENERIC_LABEL=0) ──
+    # A SHIPPED date entry that lacks the bare caption "Date" can never read a page that
+    # prints just "Date 07/11/2026" without a taught anchor — the Vellum delivery-docket
+    # class: invoice_date/order_date/po_date all ship bare "Date", delivery_date shipped
+    # only its specific forms, so every COLD delivery scope (and any custom date field with
+    # the same gap) read nothing a human sees instantly. Append "Date" to any date-validated
+    # entry missing it — UNLESS a same-type sibling already hunts the caption (due_date on an
+    # invoice type: invoice_date owns bare "Date"; the established owner keeps it, no
+    # double-fill — the same dedupe doctrine as the RC1 seeding above). Additive + pure;
+    # confidence/directions untouched, so precedence and every downstream guard hold.
+    if os.environ.get("DATE_ROLE_GENERIC_LABEL", "1") != "0":
+        for f in (field_defs or []):
+            key = str((f or {}).get("key") or "").strip()
+            if not key:
+                continue
+            current = field_patterns if field_patterns is not None else shipped
+            entry = current.get(key)
+            if not entry or str(entry.get("validation") or "").lower() != "date":
+                continue
+            def _texts(e):
+                return [str((x.get("text") if isinstance(x, dict) else x) or "").strip().lower()
+                        for x in (e.get("labels") or [])]
+            if "date" in _texts(entry):
+                continue
+            _tid = (f or {}).get("document_type_id")
+            sib_has = False
+            for d in (field_defs or []):
+                sk = str((d or {}).get("key") or "").strip()
+                if not sk or sk == key or (d or {}).get("document_type_id") != _tid:
+                    continue
+                se = current.get(sk)
+                if se and "date" in _texts(se):
+                    sib_has = True
+                    break
+            if sib_has:
+                continue
+            if field_patterns is None:
+                field_patterns = {k: dict(v) for k, v in shipped.items()}
+            e2 = dict(field_patterns.get(key) or entry)
+            e2["labels"] = list(e2.get("labels") or []) + ["Date"]
+            field_patterns[key] = e2
+
     if field_patterns is None:
         return patterns
     return {**patterns, "field_patterns": field_patterns}
