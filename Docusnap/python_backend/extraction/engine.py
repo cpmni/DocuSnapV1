@@ -2496,7 +2496,9 @@ class ExtractionEngine:
     # tests): suffix-reconcile -> S-C -> S-A date flag -> prefix-outlier -> S-B length guard —
     # S-C before S-A so a reconciled value is judged, not the stale date.
     def _reconcile_blind_geometry(self, results, field_defs, supplier_name, document_slug):
-        if os.environ.get('BLIND_GEOM_DISAGREE_RECONCILE', '0') == '0':
+        # Default ON (owner-flipped 2026-08-01 after the full gate ladder: #141/#142 healed on
+        # real pixels, M pinned set zero new members, flags-delta 0). =0 kills.
+        if os.environ.get('BLIND_GEOM_DISAGREE_RECONCILE', '1') == '0':
             return
         try:
             from extraction import suffix_reconcile
