@@ -1726,3 +1726,43 @@ batch** — Set A into the live app (safe), Set B into a COPY DB (per README); r
 `scripts/remove-superstore-invnum-anchor.js --apply` (app-closed, STILL not run). (6) untracked
 `HANDOVER_2026-07-28*.md` + `docs/SECURITY_HARDENING_REPORT_2026-07-28.md` — commit or leave.
 **S1 stays DARK (INERT on two-column, real fix deferred). Prior block ↓**
+
+<!-- moved from CLAUDE.md 2026-08-01 night wrap -->
+### Prior session (2026-07-30) — reextract + worksheet-type-presence FLIPPED ON (READ `HANDOVER_2026-07-30.md`)
+**2026-07-30 (Opus 4.8). HEAD `f3a650a` (+ a CLAUDE.md docs commit); pushed, origin in sync. TWO big flips this session:
+`reextract_fast_enabled` (LIVE DB setting, revert `UNFLIP=1` via `reextract_flip_smoke.js`) + the WORKSHEET TYPE-PRESENCE
+fix (4 CODE kill-switches default ON — kill each with its env =0). Dev `npm start` is STALE — restart to load. Installer
+at `2b8bdb2` predates all this work. Live DB `%APPDATA%\ScanFinder\docusnap.db` — backfill `--apply` WAS RUN (backed up
++ reversible).**
+· **✅ WORKSHEET mis-typed as PO/SO — FIXED + FLIPPED ON.** herald traced: (a) the PO keyword "order to" → `order\s*to`
+  prefix-matched "Order Total" (14 docs); (b) phash noise (a worksheet locks closer to a DIFFERENT supplier than to its
+  OWN template) routed 6 to the UNGUARDED keyword-fingerprint arm → template SO stamped by fingerprint. 4 slices, all ON:
+  1a `f2d18ae` `TYPE_KEYWORD_BOUND` · 1b `2300afb` `TYPE_PRESENCE_GATE` (+ Python `_type_heading_tokens` twin, parity-
+  pinned) · 2 `21519f9` `TYPE_PRESENCE_VETO_KW` (the kw-fingerprint arm) · nudge `85c7f0b` `TYPE_HEADING_NUDGE` (harvest
+  "Worksheet" → Add-type prompt) · flip `f3a650a`. realdoc **BYTE-IDENTICAL 5×** (type 100%, M_type 0, auto-file 82).
+  herald→gary→Oracle SIGN-OFF-W/COND all met. NOT retroactive: the 20 existing rows need Add-"Worksheet"-type + reprocess;
+  de-confirm #120. Memory `project_worksheet_type_presence_20260730`.
+· **Cross-contamination FIXED + FLIPPED ON** (`d9ec7d5`+`2b8bdb2`, kill `SHAPE_WITHHOLD_SUPPLIER_SCOPED`). iris PROVED
+  (isolation, NOT phash/anchor) it was the learned-shape `('')` doc-type aggregate = one supplier's ref convention
+  hard-nulling stranger refs at Stage 4.5. A `('')`-only verdict now FLAGS-not-NULLS; supplier-scoped withhold
+  byte-unchanged. Gate score_demo A warm ref **55→89%**, realdoc **M=0**. Stage-2 residual = **DO-NOTHING** (`23a8f2e`,
+  Oracle-traced narrow/corpus-inert). Memory `project_shape_withhold_supplier_scoped_20260730`.
+· **Slice 1 learn-on-commit FLIPPED ON** (`8c487e4`, kill `template_learn_on_confirm`). Backfill `--apply`'d on the live
+  DB (backup `docusnap.backup-2026-07-30T13-18-45-930Z.db` + snapshot beside it, reversible) — healed the frozen
+  Copperfield templates; PROVEN POs resolve to their PO template (`probe_held_pos.py`).
+· **Security F1+F2** (`0b63794`, + Sammy re-audit): F1 baked the offline-verify licence keys into `pinnedKeys.js`
+  (loose `config/license.json` was forgeable; kill `LICENSE_PINNED_KEYS`); F2 `activate.php` seat-race `FOR UPDATE`;
+  H-1 backup-restore guard + M-1 device_fp + L-5 XML. Detail: gitignored `SECURITY_AUDIT_2026-07-29_LOCAL.md`.
+· **Teach fixes:** label-detect **frame-math fix** (`1ef3e50` — both label-band `ds` now honour `TEACH_NATIVE_CROP`;
+  owner-smoked, labels detect now) · only-current-box overlay + Straighten text button (`c1d128f`) · all-captured
+  header cleanup (`d35f42c`). · **Import "couldn't be read" banner** details+dismiss (`4b40284`).
+· **✅ Fast on-open re-extract (Slice B) — DONE, BOTH GATES PASS, FLIPPED ON.** `reextract_fast_enabled='true'` in the
+  LIVE DB (a DB state, not a commit; revert `UNFLIP=1` via `stress_test/reextract_flip_smoke.js`). B-1 `312674b` (IPC
+  `reextract-fields-fast` in processing/handler.js — where the spawn plumbing lives — + fill-only `mergeReextractRows`;
+  pin `test_reextract_merge.js` 13/13). B-2 `faaf584` (renderer `_selectDoc` → debounced/doc-guarded trigger + ⟳ pill
+  suggestions; `.value`-only, no input event = Oracle C4). Gates: **C2 `39c35d3`** correctness (imageless vs full,
+  80 docs → 40 candidates **100% AGREE**, 0 flips) · **C5 `f79980b`** ~284ms vendor/python cold spawn. **Server smoke
+  PASS `41f71d5`** (gate enabled, 8 forced-empty fills — all supplier_name via template-fixed value; ref/date correctly
+  anchor-abstained). Fire-rate 0 on a stable corpus. LEFT: renderer ⟳-pill VISUAL confirm on next app RESTART (running
+  dev app is stale; a stable-corpus open shows none — force an empty field on a templated doc to see one); Slice C
+  warm worker deferred. Memory `project_reextract_fast_20260730`.

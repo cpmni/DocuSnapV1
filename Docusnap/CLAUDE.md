@@ -21,9 +21,42 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-08-01 DAY wrap) — validation family live + type-refuse deadlock cured
-**2026-08-01 day (Fable 5, owner present). HEAD `4965984`, PUSHED, tree clean. READ
-`HANDOVER_2026-08-01_DAY.md` FIRST** (the overnight handover carries that half). Realdoc at wrap:
+## Current session state (2026-08-01 NIGHT wrap) — D1 live · live-fill fixed · catch-up slice 3 · Chris
+**2026-08-01 evening (Fable 5, owner present). HEAD `8d66041`, PUSHED, tree clean. READ
+`HANDOVER_2026-08-01_NIGHT.md` FIRST — it carries the NEXT-SESSION ORDER (owner-set): (1) vet +
+implement Chris's round-1 cards (triage table in the handover, NOTHING implemented yet), (2) build
+the label-tail crop CLAMP (Oracle SIGNED W/COND, build-ready — `pendingfeatures.md` "Label-tail
+crop CLAMP" has C1-C7 + G1-G6 verbatim), (3) owner eyeballs the 3 GT-poison exhibits → Learning
+Repair, (4) catch-up slice 4 gates → flip.**
+· **D1 digit-disagreement flag ON** (`8c4ddea`, kill `DIGIT_DISAGREE_FLAG`): distinct-stage ledger
+  witness differing by 1-2 digits on an identical skeleton → flag+suggestion, ref-role only, LAST
+  in the pinned note chain; census 300 docs 0.00% false (`stress_test/census_digit_disagree.js`);
+  comparator SHARED with banked D2 (`suffix_reconcile.digit_substitution_diff`). D2 second-render
+  witness REFUTED by bake-off ×2 (5:1 false:true) — banked with revival bars. #86/#154/#285 =
+  GT-POISON (pixels eyeballed twice — pages print the "wrong" values).
+· **Blank-supplier live fill CURED end-to-end** (`ac96929`+`30fb97c`+`5f1bc80`): unpinned blank
+  docs re-identify via the guarded JS identifier (fresh-pick-only admission, anti-recollision
+  pinned); the bb-exception now cracks the anchor-abstain wall (marker widened to BOTH veto
+  copies /(confirm|set) the correct company/); the stale note display-hides while the ⟳
+  suggestion shows. Owner-verified live (18-doc Saltmarsh batch pill-fills; 36 auto-committed).
+· **Catch-up Filing slice 3 BUILT dark** (`78d2fc5`): accept/undo IPCs + consent bar; INTERNAL
+  `{via:'scope_sweep'}` 4th arg (never payload-suppliable); machine confirms skip saveCorrections;
+  undo server-checks `confirmed_via`. Slice 4 gates before any flip; env `SCOPE_SWEEP=1` = trial.
+· **Chris The Customer** advisor + `customer-experience-review` skill (`b357a30`) + working
+  Playwright/CDP driver (launch `npm start -- --remote-debugging-port=9222`, connectOverCDP).
+  Round 1: 100% citation accuracy, found a real grammar bug (renderer.js:2567 "1 field that
+  were"). His suggestions NEVER change code without owner vet.
+· **Label-bleed crop class root-caused** (007: label-blind +20px pad + 141px scan jitter ⇒ 13/16
+  crops intrude the label tail; fate trifurcates; ws09 = near-miss wrong-value class; corpus-wide
+  47 recovered rows / 4+ suppliers). Clamp fix Oracle-signed (C1 frame trap: expected-value-left
+  from the LOCATED label + stored offset, never the taught box). NOT BUILT.
+· GOTCHAS: stale-main-process bit thrice more (restart for main JS; window REOPEN suffices for
+  renderer-only); an Edit once wrote a NUL byte into renderer.js (grep suddenly says "binary
+  file" → scan for \x00, repair via python byte-surgery); `documents` has NO updated_at column.
+
+### Prior session (2026-08-01 DAY) — validation family live + type-refuse deadlock cured
+**2026-08-01 day (Fable 5, owner present). `4965984`, PUSHED. READ
+`HANDOVER_2026-08-01_DAY.md`** (the overnight handover carries that half). Realdoc at wrap:
 299 docs, type/supplier 100%, ref 97.0%, date 99.7%, M=9 (residual = interior stroke substitutions,
 6 exemplars, ALL proven pre-existing — the dominant remaining class; second-witness investigation =
 top accuracy lever).
@@ -106,47 +139,6 @@ morning/afternoon arcs. NEXT AGREED TASK: build Catch-up Filing slice 1 —
 · Gotchas added: machine env `TESSERACT`=install DIR (WinError 5 if executed — own env keys in
   harnesses); `_doctype_fixed_supplier` = production DEAD GUARD (`key` vs `field_key`) — do NOT fix
   casually; `ocr_dpi=200` live was owner speed-testing (fixes proven at 200).
-
-### Prior session (2026-07-30) — reextract + worksheet-type-presence FLIPPED ON (READ `HANDOVER_2026-07-30.md`)
-**2026-07-30 (Opus 4.8). HEAD `f3a650a` (+ a CLAUDE.md docs commit); pushed, origin in sync. TWO big flips this session:
-`reextract_fast_enabled` (LIVE DB setting, revert `UNFLIP=1` via `reextract_flip_smoke.js`) + the WORKSHEET TYPE-PRESENCE
-fix (4 CODE kill-switches default ON — kill each with its env =0). Dev `npm start` is STALE — restart to load. Installer
-at `2b8bdb2` predates all this work. Live DB `%APPDATA%\ScanFinder\docusnap.db` — backfill `--apply` WAS RUN (backed up
-+ reversible).**
-· **✅ WORKSHEET mis-typed as PO/SO — FIXED + FLIPPED ON.** herald traced: (a) the PO keyword "order to" → `order\s*to`
-  prefix-matched "Order Total" (14 docs); (b) phash noise (a worksheet locks closer to a DIFFERENT supplier than to its
-  OWN template) routed 6 to the UNGUARDED keyword-fingerprint arm → template SO stamped by fingerprint. 4 slices, all ON:
-  1a `f2d18ae` `TYPE_KEYWORD_BOUND` · 1b `2300afb` `TYPE_PRESENCE_GATE` (+ Python `_type_heading_tokens` twin, parity-
-  pinned) · 2 `21519f9` `TYPE_PRESENCE_VETO_KW` (the kw-fingerprint arm) · nudge `85c7f0b` `TYPE_HEADING_NUDGE` (harvest
-  "Worksheet" → Add-type prompt) · flip `f3a650a`. realdoc **BYTE-IDENTICAL 5×** (type 100%, M_type 0, auto-file 82).
-  herald→gary→Oracle SIGN-OFF-W/COND all met. NOT retroactive: the 20 existing rows need Add-"Worksheet"-type + reprocess;
-  de-confirm #120. Memory `project_worksheet_type_presence_20260730`.
-· **Cross-contamination FIXED + FLIPPED ON** (`d9ec7d5`+`2b8bdb2`, kill `SHAPE_WITHHOLD_SUPPLIER_SCOPED`). iris PROVED
-  (isolation, NOT phash/anchor) it was the learned-shape `('')` doc-type aggregate = one supplier's ref convention
-  hard-nulling stranger refs at Stage 4.5. A `('')`-only verdict now FLAGS-not-NULLS; supplier-scoped withhold
-  byte-unchanged. Gate score_demo A warm ref **55→89%**, realdoc **M=0**. Stage-2 residual = **DO-NOTHING** (`23a8f2e`,
-  Oracle-traced narrow/corpus-inert). Memory `project_shape_withhold_supplier_scoped_20260730`.
-· **Slice 1 learn-on-commit FLIPPED ON** (`8c487e4`, kill `template_learn_on_confirm`). Backfill `--apply`'d on the live
-  DB (backup `docusnap.backup-2026-07-30T13-18-45-930Z.db` + snapshot beside it, reversible) — healed the frozen
-  Copperfield templates; PROVEN POs resolve to their PO template (`probe_held_pos.py`).
-· **Security F1+F2** (`0b63794`, + Sammy re-audit): F1 baked the offline-verify licence keys into `pinnedKeys.js`
-  (loose `config/license.json` was forgeable; kill `LICENSE_PINNED_KEYS`); F2 `activate.php` seat-race `FOR UPDATE`;
-  H-1 backup-restore guard + M-1 device_fp + L-5 XML. Detail: gitignored `SECURITY_AUDIT_2026-07-29_LOCAL.md`.
-· **Teach fixes:** label-detect **frame-math fix** (`1ef3e50` — both label-band `ds` now honour `TEACH_NATIVE_CROP`;
-  owner-smoked, labels detect now) · only-current-box overlay + Straighten text button (`c1d128f`) · all-captured
-  header cleanup (`d35f42c`). · **Import "couldn't be read" banner** details+dismiss (`4b40284`).
-· **✅ Fast on-open re-extract (Slice B) — DONE, BOTH GATES PASS, FLIPPED ON.** `reextract_fast_enabled='true'` in the
-  LIVE DB (a DB state, not a commit; revert `UNFLIP=1` via `stress_test/reextract_flip_smoke.js`). B-1 `312674b` (IPC
-  `reextract-fields-fast` in processing/handler.js — where the spawn plumbing lives — + fill-only `mergeReextractRows`;
-  pin `test_reextract_merge.js` 13/13). B-2 `faaf584` (renderer `_selectDoc` → debounced/doc-guarded trigger + ⟳ pill
-  suggestions; `.value`-only, no input event = Oracle C4). Gates: **C2 `39c35d3`** correctness (imageless vs full,
-  80 docs → 40 candidates **100% AGREE**, 0 flips) · **C5 `f79980b`** ~284ms vendor/python cold spawn. **Server smoke
-  PASS `41f71d5`** (gate enabled, 8 forced-empty fills — all supplier_name via template-fixed value; ref/date correctly
-  anchor-abstained). Fire-rate 0 on a stable corpus. LEFT: renderer ⟳-pill VISUAL confirm on next app RESTART (running
-  dev app is stale; a stable-corpus open shows none — force an empty field on a templated doc to see one); Slice C
-  warm worker deferred. Memory `project_reextract_fast_20260730`.
-
-
 
 ## Prior session states (2026-07-28 and earlier) — archived, read on demand
 The per-session state blocks used to stack up here and bloated this file past 1800 lines. They are
