@@ -356,6 +356,27 @@ gate); on #291 wrong inline@85 beat CORRECT keyword@85 sitting in the ledger at 
   the poison-free saturated cases; flips recipe-stable); 400-as-primary (fixed 283/299, broke 65
   worse + 285@400 lost PLACEMENT entirely — DPI non-monotone). Substrate fix out of app reach; a
   low-scan-quality import advisory = future barry idea.
+
+### Label-tail crop CLAMP — Oracle SIGNED W/COND 2026-08-01 evening, BUILD-READY (not built)
+**The label-bleed class (007-measured, Saltmarsh 20-doc batch + corpus):** rigid taught crops are
+built label-blind (+20px fixed pad, anchor.py:3282) while scans jitter (141px width spread + skew)
+⇒ 13/16 crops intrude the label tail; fate trifurcates on the tail's OCR (clean→files ·
+≤2-char debris→recovered@85 HOLDS EVERY BATCH · 3+char→inline rescue files · opposite jitter→
+ws09 near-miss WRONG value). 47 recovered rows / 4+ suppliers = corpus-wide tight-gap topology.
+Evidence: scratchpad geom_300.json + traces (session 2026-08-01); oracle_log entry.
+**Fix (dark, kill `ANCHOR_LABEL_LEFT_CLAMP` default OFF):** located-label LEFT-edge clamp at crop
+derivation — (P) caption-band mirror in the LOCATED frame. Conditions C1-C7: C1 expected-value-left
+= located label top-left + STORED OFFSET (:3508 convention), never the taught box (frame trap —
+fixture pin that a taught-frame impl FAILS); C2 authoritative+real-label+direction right+offset
+present+locate+_located_at_taught_position, else byte-identical; C3 structured val_types only
+(free-text ladder re-crop bypasses); C4 all four crop sites (:519/:685/:1076/:861 cross-check) or
+pin the asymmetry; C5 in-crop degenerate reverts to UNCLAMPED (never refuse); C7 reuse the :1391
+locate. Gates G1-G6: OFF==ON byte-identical outside the class · zero recovered rows auto-file-
+eligible · ws09 identical ON/OFF · unit pins (merged-box/tight-gap/no-locate/non-right/(P)-twin/
+C1-frame) · throughput ≤2-3% · total realdoc flag count must not rise · realdoc M=0 zero value
+flips · Saltmarsh 20/20 ref auto-file-eligible 0 recovered. Sequencing: clamp → oscar matte
+(label-aware, bounded by clamp) → full-res re-LOCATE independent; caption-prefix strip stays DARK
+as the no-locate spare.
 - **Cured sub-class (6237398): merged-doubled-digit** — REF_LENGTH_WITNESS_RECONCILE ON heals the
   'WS-1904'-for-'WS-11904' family from the ledger on the artifact's fingerprint (one digit inserted
   adjacent to an identical digit); rollover-drift pinned unadoptable; authoritative winners get

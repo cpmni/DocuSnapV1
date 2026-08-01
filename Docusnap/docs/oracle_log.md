@@ -131,6 +131,22 @@ _(updated as cases accrue — keep/retire recommendation)_
   (worse than briefed), and the 283@300 keyword-agrees-wrong trace = never add a skip-witness-on-
   keyword-agreement optimisation. Main session verified his two load-bearing exhibit reads
   independently — eyes agree. Verdict logged pre-build; census is the next step.
+- 2026-08-01 (label-tail crop clamp, evening): **KEEP.** Vetted 007's measured root cause of the
+  learned-crop label-bleed class (the fixed label-blind +20px pad + 141px scan jitter ⇒ 13/16 crops
+  intrude the label tail; batch fate trifurcates on what the tail OCRs as; the recurring 2-doc hold
+  = the ≤2-char-debris band; worse bleeds auto-file via inline rescue; ws09 = the near-miss
+  wrong-value class). **SIGN OFF W/COND on the located-label left-edge clamp at crop derivation**,
+  dark until gated. His catches: C1 the FRAME TRAP (a taught-box comparison silently no-ops on the
+  worst-drift docs — expected-value-left must derive from the LOCATED label + stored offset, pinned
+  with a fixture a taught-frame implementation fails); C4 the fourth unclamped crop site (:861
+  cross-check — a clamped-clean rigid vs tail-dirty cross-check is a manufactured disagreement);
+  C3 the free-text ladder re-crop bypass (v1 = structured types only); C5 in-crop degenerate must
+  revert to unclamped, never refuse. Confirmed the sub-88 recovered checkpoint shrinks but never
+  lifts (G2 pins it); ws09 mechanically cannot worsen (max() moves the edge rightward only, G3).
+  Sequencing: clamp → oscar's matte (label-aware, bounded by the clamp) → full-res re-LOCATE
+  independent; caption-prefix strip stays DARK as the no-locate spare. Gate = his (realdoc M=0,
+  zero value flips, Saltmarsh 20/20, pins) + G1 OFF==ON outside the class, G5 throughput, G6
+  total flag count must not rise.
 - After case 6 (2026-07-12, PO vendor-caption issuer fix): **KEEP — 6-for-6.** Adjudicating the reggie(flag)
   vs gary(drop) split, he ruled DROP with the *right* reason — not the brief's lead argument (the @40 cap is
   a no-op) but that the value drives the filing/learning SCOPE (engine.py:2259 reads `.value`), so flag
