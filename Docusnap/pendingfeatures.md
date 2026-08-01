@@ -287,20 +287,52 @@ lost) — dismiss is display-only. Needs an app reopen to render.
   summary band instead of under the issuer field (renderer placement; the emit could carry a
   `note_scope: 'type'` marker). Small, UX-only.
 
-### PO-27491→27401 high-conf digit substitution (Oracle-confirmed backlog, 2026-08-01)
-- Fresh traced run of doc 259 read po_number 'PO-27401'@97 via anchor_inline where the page prints
-  'PO-27491' (persisted DB value correct). Same length, same prefix, same shape — invisible BY
-  CONSTRUCTION to S-B length profile, prefix guard, and learned shape (the exact residual the
-  'INV-35900'→'INV-85900' never-lane-A PIN documents). Own investigation; starting evidence:
-  scratchpad slices_259 (slice_7_target.png), the printed/read pair. Candidate lens: 007 (crop
-  geometry / glyph) — a second-witness class (the parked xres territory).
-- **Exemplars 3-6 (2026-08-01 afternoon, realdoc on the 299-corpus):** four freshly-confirmed
-  Vellum worksheets misread with interior digit SUBSTITUTIONS on reprocess (#283 'WS-49769'→
-  'WS-43769' · #285 'WS-49842'→'WS-43842' · #291 'WS-95390'→'WS-95990' · #299 'WS-72055'→
-  'WS-72093') — all same-length, shape-valid, silent, would-auto-file. PROVEN pre-existing
-  (witness-arm ON==OFF byte-identical). The class GROWS with corpus volume: 9 in M now, 6 of them
-  this family. The second-witness investigation (007 crop-geometry lens / the parked xres design)
-  is the highest-value remaining accuracy lever.
+### Interior digit stroke-substitution — INVESTIGATED + ORACLE-VETTED, ready to build (2026-08-01 evening)
+**007 measured pack + Oracle round complete** (oracle_log 2026-08-01 4th round; evidence preserved in
+`stress_test/out/stroke_sub_2026-08-01/` — matrix.json ~30 reads/doc at 150-600dpi, per-stage traces,
+600-dpi glyph exhibits). Axis = READING (placement clean on every exemplar; oscar crop-matte fix
+REFUTED for this class). Substrate: 150-DPI-native JPEG rasters, digits ~10px, JPEG ringing closes
+1px counters (2↔3, 9↔3, 5→8/9/3). THREE read chains flip independently (locate ~133dpi 1100px /
+crop-ladder / full-page keyword — doc-291's one digit read three ways in one run). Tier-A precedence
+commits the error (anchor.py:1037 nulls inline ocr_conf = structurally exempt from the Tier-A garble
+gate); on #291 wrong inline@85 beat CORRECT keyword@85 sitting in the ledger at every DPI.
+- **Class re-drawn (Oracle + main session both eyeballed exhibits): #86/#154/#285 = GT-POISON** —
+  pages print well-formed '24/03/2026'/'DN-38884'/'WS-43842' vs contradicting confirmed values
+  (30/30 unanimous high-conf reads = correct-OCR-vs-wrong-GT fingerprint). True OCR class = #65,
+  #283, #291, #299 + the healed 259 signature. **REMEDIATION FIRST (owner): eyeball the 3 exhibits,
+  then Learning Repair de-confirm → correct to printed value → re-confirm** (confirmed poison feeds
+  live shapes/hints/S-B indexes — gt_overrides alone insufficient). Do BEFORE any gate baselines.
+- **D1 SIGNED W/COND (build first): in-band digit-disagreement flag.** Post-merge, LAST in pinned
+  pass order (after S-B+witness; extend test_validation_pass_order.js); REF-ROLE fields only (date
+  fields = structural false-fire hazard, zero measured heals); trigger = distinct-stage ledger
+  candidate, identical non-digit skeleton (separator-normalised), same length, ≤2 digit positions
+  differing (tighten to 1 if census >3%); witness conf floor from census; FLAG-only (note + cap 69 +
+  suggestion surface; copy directs reviewer to the DOCUMENT, never "pick one" — 65@400 shows both
+  readings can be wrong). **Mandatory pre-build census: predicate offline over the 299 corpus
+  (run8.js scaffolding), false-fire bar ≤3% hard / ≤2% target.** Exempt dominant-value-snapped
+  winners matching an in-scope confirmed literal if census shows any. Gate: OFF byte-identical; ON
+  values byte-identical corpus-wide (notes/conf only), #291 flagged, flag-audit total. Pins: 291 +
+  259-signature fixtures fire; suffix-adopted fuller read does NOT; 3-sub does NOT; date does NOT;
+  flagged would-auto-file doc HOLDS. Heals/flags: #291 now + closes the GT-in-band-loses-to-Tier-A
+  hole. Catches 2 of the 4-doc class; combined with D2 = 4 of 4 flagged or healed.
+- **D2 CONDITIONAL GO (second, after D1's census) — RE-SPECCED by Oracle:** the witness is a second-
+  DOWNSAMPLE-GEOMETRY line-locate + harvest of the known label/value band (400→1100 or 600→1100),
+  NOT a value-box crop re-OCR (matrix PROVES the crop stays wrong at 400/600 — the 283/299 heals came
+  from the locate chain's changed anti-alias kernel; a crop-witness build would measure zero heals
+  and green its gate anyway). Tier-A-won ref fields only; NO skip-on-keyword-agreement (283@300:
+  keyword agreed with the WRONG value — same-substrate agreement is only semi-independent); flag-only
+  through the SAME shared comparator as D1 (one implementation, one pin). Pre-build bake-off between
+  the two chains on 65/283/299 catch + clean-corpus incremental fire-rate ≤3% + latency; fixture PDFs
+  for 283/299 must FLAG under the built witness (pins the locate-chain spec — a crop implementation
+  fails by construction); C3 unit pin (witness can NEVER change a value); throughput bound ~≤15%.
+- **D3 REJECTED (DO NOTHING): never-harvest-values-from-locate-pass** — inverts the July-31 arbiter
+  premise (crop box routinely swallows label tails/clips prefixes — the traces' own anchor_reject
+  lines show it), heals only #291 which D1 already flags, resurrects the clip class. BANKED future
+  path instead: full-res re-LOCATE (solve box precision — 007-A's own revival precondition).
+- Also REFUTED by measurement: global preprocessing/binarisation changes (no recipe at any DPI read
+  the poison-free saturated cases; flips recipe-stable); 400-as-primary (fixed 283/299, broke 65
+  worse + 285@400 lost PLACEMENT entirely — DPI non-monotone). Substrate fix out of app reach; a
+  low-scan-quality import advisory = future barry idea.
 - **Cured sub-class (6237398): merged-doubled-digit** — REF_LENGTH_WITNESS_RECONCILE ON heals the
   'WS-1904'-for-'WS-11904' family from the ledger on the artifact's fingerprint (one digit inserted
   adjacent to an identical digit); rollover-drift pinned unadoptable; authoritative winners get

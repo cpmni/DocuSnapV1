@@ -110,6 +110,27 @@ _(updated as cases accrue — keep/retire recommendation)_
   audit = precisely #141/#142, S-B flood = 0, full stack ref 96.5→97.5%, M pinned set zero new.
   His close: "every slice that ships does so as a flag or a corroborated adoption, never a silent
   rewrite."
+- 2026-08-01 (stroke-substitution fix directions, 4th round of the validation arc): **KEEP.** Vetted
+  007's measured evidence pack (8 exemplars, ~30 reads/doc render matrix, three-chain census) for the
+  interior-digit-substitution residual. Signed **D1 in-band digit-disagreement flag W/COND** (ref-role
+  only — date fields are a structural false-fire hazard, two dates on one page differ only in digits
+  by construction; LAST in the pinned pass order; same-skeleton ≤2-digit-position comparator; census
+  fire-rate bar ≤3% hard/≤2% target BEFORE build); **conditional GO on D2** after catching that its
+  proposed mechanism could not reproduce its own measured heals (the 283/299 heals came from the
+  LOCATE chain at a different downsample geometry, not the value-box crop — matrix.json shows the
+  crop still wrong at 400/600; re-specced as second-downsample line-locate+harvest witness, bake-off
+  between 400→1100 and 600→1100 chains); **DO NOTHING on D3** (locate-chain value ban inverts the
+  July-31 arbiter premise, resurrects the clip class the traces themselves show — banked full-res
+  re-LOCATE as the principled future path). Biggest catch: **re-drew the class boundary** — read the
+  600-DPI exhibits himself and reclassified #154/#285 as GT-poison (pages print well-formed
+  'DN-38884'/'WS-43842'; 30/30 unanimous high-conf reads = correct-OCR-vs-wrong-GT fingerprint, same
+  as #86), shrinking the true OCR class to 4 docs and killing 3 phantom M rows; ruled remediation
+  in-app via Learning Repair (de-confirm → correct → re-confirm) FIRST — "a pixels-mismatching
+  confirmed row is live learning poison, not a scoring nit" — before any gate baselines. Also found
+  anchor.py:1037 nulls ocr_conf on inline harvests = structurally exempt from the Tier-A garble gate
+  (worse than briefed), and the 283@300 keyword-agrees-wrong trace = never add a skip-witness-on-
+  keyword-agreement optimisation. Main session verified his two load-bearing exhibit reads
+  independently — eyes agree. Verdict logged pre-build; census is the next step.
 - After case 6 (2026-07-12, PO vendor-caption issuer fix): **KEEP — 6-for-6.** Adjudicating the reggie(flag)
   vs gary(drop) split, he ruled DROP with the *right* reason — not the brief's lead argument (the @40 cap is
   a no-op) but that the value drives the filing/learning SCOPE (engine.py:2259 reads `.value`), so flag
