@@ -210,6 +210,13 @@
       padding: 9px 16px; font-size: 13px; font-weight: 600;
       box-shadow: 0 2px 8px rgba(0,0,0,.35);
     }
+    /* While a drag-to-select pick is active (#select-hint visible — "Drag to select the …
+       value" + Cancel, an IN-FLOW bar at the same height the floating button occupies), hide
+       Mark Reviewed + its Space hint: the pill was sitting ON TOP of the instruction text
+       (2026-08-01 screenshot), and mid-pick the operator can't act on it anyway — its Space
+       shortcut mid-drag-select would be a misfire. Pure CSS; restores itself on Cancel/done. */
+    #doc-panel:has(#select-hint.visible) #btn-acknowledge,
+    #doc-panel:has(#select-hint.visible) #ack-hint { display: none !important; }
     /* Small hint under Mark Reviewed — shown only while it's actionable (flagged, not yet
        acknowledged). Tells the operator the Space-bar shortcut. */
     #ack-hint {
