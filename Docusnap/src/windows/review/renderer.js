@@ -969,8 +969,14 @@ function renderQueueList() {
       if (open) for (const doc of g.docs) list.appendChild(buildQueueItem(doc));
     }
   } else {
-    for (const doc of queue) list.appendChild(buildQueueItem(doc));
+    for (const doc of _sweepVisibleQueue()) list.appendChild(buildQueueItem(doc));
   }
+}
+
+// Catch-up "Review them" filter: when armed, the queue list (grouped AND flat — both paths
+// route through here) shows only the consent bar's candidates; the bar's own button clears it.
+function _sweepVisibleQueue() {
+  return _sweepFilterIds ? queue.filter(d => _sweepFilterIds.has(d.id)) : queue;
 }
 
 // The review queue's DISPLAY grouping: sender -> its docs, most attention-needing /
@@ -978,7 +984,7 @@ function renderQueueList() {
 // by renderQueueList (DOM) and reviewDisplayOrder (the ↑/↓ nav) so they always agree.
 function reviewDisplayGroups() {
   const groups = new Map();
-  for (const doc of queue) {
+  for (const doc of _sweepVisibleQueue()) {
     const key = (doc.supplier_name || '').trim() || '—';
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(doc);
@@ -4298,6 +4304,7 @@ function showPrefixOutlierHold(detail, idx, supplier) {
     if (r2.error || r2.code) { showToast(r2.error || 'Confirm failed.', 'err'); return; }
     updateTabCounts();
     advanceAfterAction(idx, supplier);
+    _scheduleScopeSweep(supplier, selectedTypeSlug || '');   // catch-up offer after the acknowledged confirm
     try { window.docusnap.markFocusSuspect?.(); } catch {}
     window.docusnap.notifyReviewComplete();
   });
@@ -4313,6 +4320,10 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
   const list = activeTab === 'deferred' ? deferredQueue : reviewDisplayOrder();
   const idx  = list.findIndex(d => d.id === currentDoc?.id);
   const supplier = (currentDoc?.supplier_name || '').trim();   // finish this sender's docs before moving on
+  // Catch-up: capture the scope BEFORE confirm mutates/advances the selection. The confirmed
+  // supplier may differ from the row (operator typed/accepted one) — prefer the on-screen value.
+  const _sweepSupplier = (document.querySelector('#fields-scroll .field-input[data-key="supplier_name"]')?.value || supplier || '').trim();
+  const _sweepSlug     = selectedTypeSlug || currentDoc?.type_slug || '';
   const r = await confirmCurrentDoc();
   if (r.cancelled) return;
   // Slice 1: a suspicious-reference HOLD — surface the note + a "Confirm anyway" affordance on the
@@ -4321,6 +4332,7 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
   if (r.error) { showToast(r.error, 'err'); return; }
   updateTabCounts();
   advanceAfterAction(idx, supplier);
+  _scheduleScopeSweep(_sweepSupplier, _sweepSlug);   // consent-gated catch-up offer (dark unless enabled)
   // FOCUS (eric, 2026-07-10): Confirm & File can desync the RenderWidget's keyboard
   // focus (post-confirm teardown/rebuild of the sidebar + fields pane, snappier since
   // the detached-learning change) WITHOUT a native dialog — and the repair's
@@ -4403,6 +4415,7 @@ async function fileAllReady() {
   barFill.style.width = '0';
 
   let filed = 0, skipped = 0, noType = 0, aborted = false;
+  const _fileAllScopes = new Map();   // JSON([supplier, slug]) -> filed count (catch-up trigger)
 
   try {
     for (let i = 0; i < docs.length; i++) {
@@ -4430,6 +4443,11 @@ async function fileAllReady() {
         const r = await confirmCurrentDoc({ bulk: true, expectId: doc.id });
         if (r.filed) {
           filed++;
+          const _sup = (doc.supplier_name || '').trim(), _slug = doc.type_slug || '';
+          if (_sup && _slug) {
+            const k = JSON.stringify([_sup, _slug]);
+            _fileAllScopes.set(k, (_fileAllScopes.get(k) || 0) + 1);
+          }
           // Drop the row the moment it's filed, so the queue shrinks live.
           document.querySelector(`.queue-item[data-id="${doc.id}"]`)?.remove();
         } else if (r.code === 'license_required') {
@@ -4458,6 +4476,12 @@ async function fileAllReady() {
   // re-renders the list itself, so the explicit renderQueueList above is folded in.)
   advanceAfterAction(0, null);
   if (filed) window.docusnap.notifyReviewComplete();
+  // Catch-up: after a File-All run, offer the sweep for the run's dominant scope (the docs it
+  // just filed are exactly the "you just confirmed" evidence the sweep re-checks against).
+  if (filed && _fileAllScopes.size) {
+    const top = [..._fileAllScopes.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (top) { try { const [sup, slug] = JSON.parse(top[0]); _scheduleScopeSweep(sup, slug); } catch {} }
+  }
 
   // Banner done-state, then auto-dismiss. Already-filed docs stay filed.
   const stoppedNote = _bulkFileStopped ? ' (stopped)' : '';
@@ -4538,6 +4562,160 @@ async function autoCommitFullConfidence() {
     }
   } catch (e) { console.warn('auto-commit 100% failed:', e.message); }
 }
+
+// ── Catch-up Filing slice 3 (design 2026-07-31, dark unless scope_sweep_enabled) ──────
+// After a HUMAN confirm, ask the server whether the same scope's still-queued docs now pass
+// the normal auto-file gate ("checked against the documents you just confirmed") and offer a
+// consent bar: File N · Review them · Not now, with a per-doc untick list. The accept path
+// re-validates EVERYTHING server-side (fingerprint + the same gate) and files through the one
+// shared confirm with confirmed_via='scope_sweep'; Undo all reverses cleanly.
+let _sweepTimer = null, _sweepState = null;
+const _sweepDismissed = new Set();          // per-scope "Not now" (session-only)
+let _sweepFilterIds = null;                 // "Review them" queue filter (Set<docId> | null)
+
+const _SWEEP_REASON_COPY = {
+  'being-viewed':        'being viewed by someone',
+  'changed':             'its fields changed after the offer',
+  'not-queued':          'it was handled in the meantime',
+  'workflow-locked':     'it is in an approval workflow',
+  'scope-mismatch':      'its sender or type changed',
+  'role-empty-fresh':    'a key field read empty on re-check',
+  'role-empty-stored':   'a key field is empty',
+  'role-mismatch':       'a key field read differently on re-check',
+  'contradiction':       'a field read differently on re-check',
+  'fresh-value-on-empty': 'found a new value on re-check',
+  'stored-flagged':      'it is flagged for review',
+  'fresh-flagged':       'the re-check flagged it',
+  'type-flip':           'the document type read differently on re-check',
+};
+function _sweepReason(r) {
+  if (!r) return 'it did not pass the checks';
+  if (_SWEEP_REASON_COPY[r]) return _SWEEP_REASON_COPY[r];
+  if (String(r).startsWith('recheck-')) return 'it needs a full re-read';
+  return 'it did not pass the checks';
+}
+const _sweepScopeKey = (s, t) => `${String(s || '').trim().toLowerCase()}|${String(t || '').toLowerCase()}`;
+
+function _scheduleScopeSweep(supplier, typeSlug) {
+  const sup = String(supplier || '').trim(), slug = String(typeSlug || '').trim();
+  if (!sup || !slug) return;
+  if (_sweepDismissed.has(_sweepScopeKey(sup, slug))) return;
+  clearTimeout(_sweepTimer);
+  _sweepTimer = setTimeout(async () => {
+    if (bulkFiling || _batchActive) return;
+    let res = null;
+    try { res = await window.docusnap.sweepScopeCandidates?.(sup, slug); } catch { return; }
+    if (!res || !res.ok || !Array.isArray(res.candidates) || res.candidates.length < 2) return;
+    if (_sweepDismissed.has(_sweepScopeKey(sup, slug))) return;
+    const byId = new Map(queue.map(d => [d.id, d]));
+    _sweepState = {
+      phase: 'offer', supplier: sup, typeSlug: slug,
+      candidates: res.candidates.filter(c => byId.has(c.docId))
+        .map(c => ({ ...c, filename: byId.get(c.docId)?.original_filename || `#${c.docId}` })),
+      excluded: res.excluded || [], unticked: new Set(), listOpen: false,
+    };
+    if (_sweepState.candidates.length < 2) { _sweepState = null; return; }
+    renderSweepConsentBar();
+  }, 2500);
+}
+
+function renderSweepConsentBar() {
+  const bar = document.getElementById('sweep-consent-bar');
+  if (!bar) return;
+  const s = _sweepState;
+  if (!s) {
+    bar.style.display = 'none'; bar.innerHTML = '';
+    if (_sweepFilterIds) { _sweepFilterIds = null; renderQueueList(); }
+    return;
+  }
+  const typeName = (allDocTypes.find(t => t.slug === s.typeSlug)?.name) || s.typeSlug;
+  if (s.phase === 'offer' || s.phase === 'filing') {
+    const n = s.candidates.length - s.unticked.size;
+    const held = (s.excluded || []).length;
+    const heldLine = held
+      ? `<div class="scb-muted">${held} more from this sender need a closer look — they stay in Review.</div>` : '';
+    const rows = s.listOpen ? `<div class="scb-list">` + s.candidates.map(c =>
+        `<div class="scb-row"><input type="checkbox" data-scb-doc="${c.docId}" ${s.unticked.has(c.docId) ? '' : 'checked'}>`
+      + `<label title="${escHtml(c.filename)}">${escHtml(c.filename)}</label></div>`).join('') + `</div>` : '';
+    bar.innerHTML =
+        `<b>${n}</b> more <b>${escHtml(s.supplier)}</b> ${escHtml(typeName)} document${n === 1 ? '' : 's'} `
+      + `match what you've confirmed and pass the same checks.`
+      + heldLine + rows
+      + `<div class="scb-actions">`
+      + `<button class="scb-btn primary" data-scb="file" ${n === 0 || s.phase === 'filing' ? 'disabled' : ''}>`
+      + (s.phase === 'filing' ? 'Filing…' : `✓ File ${n}`) + `</button>`
+      + `<button class="scb-btn" data-scb="review" ${s.phase === 'filing' ? 'disabled' : ''}>Review them</button>`
+      + `<button class="scb-btn" data-scb="later" ${s.phase === 'filing' ? 'disabled' : ''}>Not now</button>`
+      + `<span class="scb-toggle" data-scb="toggle">${s.listOpen ? 'Hide list' : 'Choose which…'}</span>`
+      + `</div>`;
+    bar.style.display = 'block';
+    return;
+  }
+  if (s.phase === 'done') {
+    const kept = (s.dropped || []).map(d =>
+      `<div class="scb-row scb-muted">kept back — ${escHtml(_sweepReason(d.reason))} (${escHtml((s.candidates.find(c => c.docId === d.docId) || {}).filename || ('#' + d.docId))})</div>`).join('');
+    bar.innerHTML =
+        `<b>✓ Filed ${s.filed.length}</b> from <b>${escHtml(s.supplier)}</b> — checked against the documents you just confirmed. `
+      + `<span class="scb-undo" data-scb="undo">Undo all</span>`
+      + (kept ? `<div class="scb-list">${kept}</div>` : '');
+    bar.style.display = 'block';
+    clearTimeout(s._doneTimer);
+    s._doneTimer = setTimeout(() => { if (_sweepState === s) { _sweepState = null; renderSweepConsentBar(); } }, 20000);
+  }
+}
+
+document.getElementById('sweep-consent-bar')?.addEventListener('click', async (e) => {
+  const s = _sweepState;
+  if (!s) return;
+  const cb = e.target.closest('input[data-scb-doc]');
+  if (cb) {
+    const id = Number(cb.dataset.scbDoc);
+    if (cb.checked) s.unticked.delete(id); else s.unticked.add(id);
+    renderSweepConsentBar();
+    return;
+  }
+  const act = e.target.closest('[data-scb]')?.dataset.scb;
+  if (!act) return;
+  if (act === 'toggle') { s.listOpen = !s.listOpen; renderSweepConsentBar(); return; }
+  if (act === 'later')  { _sweepDismissed.add(_sweepScopeKey(s.supplier, s.typeSlug)); _sweepState = null; renderSweepConsentBar(); return; }
+  if (act === 'review') {
+    _sweepFilterIds = _sweepFilterIds ? null : new Set(s.candidates.map(c => c.docId));
+    renderQueueList();
+    return;
+  }
+  if (act === 'file' && s.phase === 'offer') {
+    const accepts = s.candidates.filter(c => !s.unticked.has(c.docId))
+      .map(c => ({ docId: c.docId, fingerprint: c.fingerprint }));
+    if (!accepts.length) return;
+    s.phase = 'filing'; renderSweepConsentBar();
+    let res = null;
+    try { res = await window.docusnap.sweepScopeAccept?.(s.supplier, s.typeSlug, accepts, [...s.unticked]); } catch {}
+    if (!res || !res.ok) {
+      s.phase = 'offer'; renderSweepConsentBar();
+      showToast('Couldn\'t file those documents — please try again.', 'warn');
+      return;
+    }
+    s.phase = 'done'; s.filed = res.filed || []; s.dropped = res.dropped || [];
+    _sweepFilterIds = null;
+    queue         = await window.docusnap.getReviewQueue();
+    deferredQueue = await window.docusnap.getDeferredQueue();
+    updateTabCounts(); renderQueueList();
+    if (currentDoc && !queue.some(d => d.id === currentDoc.id)) { currentDoc = null; clearDocPanel(); if (queue.length) selectDoc(queue[0]); }
+    renderSweepConsentBar();
+    if (s.filed.length) window.docusnap.notifyReviewComplete();
+    return;
+  }
+  if (act === 'undo' && s.phase === 'done') {
+    let res = null;
+    try { res = await window.docusnap.sweepScopeUndo?.(s.filed); } catch {}
+    _sweepState = null;
+    queue         = await window.docusnap.getReviewQueue();
+    deferredQueue = await window.docusnap.getDeferredQueue();
+    updateTabCounts(); renderQueueList(); renderSweepConsentBar();
+    showToast(res && res.ok ? `Sent ${res.undone.length} document${res.undone.length === 1 ? '' : 's'} back to Review.`
+                            : 'Undo failed — check the queue.', res && res.ok ? 'ok' : 'warn');
+  }
+});
 
 // Cooperative Stop: the in-flight document finishes filing, no new one starts,
 // everything already filed stays filed (this is not an undo). Mirrors Reprocess-All.

@@ -53,12 +53,17 @@ function createReviewService(deps = {}) {
   const counts   = (db) => ({ review: documents.getReviewCount(db), deferred: documents.getDeferredCount(db) });
 
   // ── Confirm / file ────────────────────────────────────────────────────────────
-  async function confirm(db, actor, payload) {
+  async function confirm(db, actor, payload, internal = {}) {
     const {
       document_id,
       corrections, allValues, supplier_name,
       document_type, document_type_slug, taught_fields, bulk,
     } = payload || {};
+    // Catch-up Filing (design 2026-07-31): 'scope_sweep' is set ONLY by the server-side sweep
+    // accept call site via the INTERNAL arg — never from the renderer/client payload (a
+    // compromised client must not be able to label its confirms as machine confirms or vice
+    // versa). Anything but the exact sentinel collapses to null (human/legacy).
+    const _via = internal && internal.via === 'scope_sweep' ? 'scope_sweep' : null;
     const actorName = (actor && actor.username) || null;
     const _t0 = Date.now();   // confirm return-latency probe (logged below when diag logging is on)
 
@@ -154,7 +159,7 @@ function createReviewService(deps = {}) {
     // CLAIM before filing (first-confirm only) so a lost race can't double-file. The loser
     // reads the winner's name off confirmed_by_username and reports it.
     if (!isRefile) {
-      const claim = documents.confirmIfReviewable(db, document_id, { confirmed_by_username: actorName });
+      const claim = documents.confirmIfReviewable(db, document_id, { confirmed_by_username: actorName, confirmed_via: _via });
       if (!claim || claim.changes === 0) {
         const winner = documents.getById(db, document_id)?.confirmed_by_username || 'another user';
         return fail('ALREADY_FILED', `This document was already filed by ${winner}.`, { confirmedBy: winner });
@@ -207,7 +212,15 @@ function createReviewService(deps = {}) {
     // Filter the LEARNING input through the same keep-predicate + switch (FOREIGN_FIELD_DROP);
     // the original `corrections` object still feeds captureRouteContext below, unfiltered.
     const _learn = foreignFields.filterLearningInput(allValues, corrections || {}, dtInfo);
-    learning.saveCorrections(db, document_id, _learn.corrections || {}, supplier_name, document_type_slug, _learn.allValues, taught_fields || []);
+    // Catch-up LEARNING RULING (Oracle, design 2026-07-31): a machine 'scope_sweep' confirm
+    // SKIPS saveCorrections entirely — no hint usage inflation on machine echoes, no
+    // corrections rows, no anchor writes (the sweep files stored values verbatim; there is
+    // nothing human-taught to learn). Live-DERIVED learning (formats/shapes/prefix — computed
+    // from confirmed status at read time) still flows and rolls back cleanly on undo, which is
+    // what makes "Undo all" honest. learnTemplateOnCommit self-guards on confirmed_via.
+    if (!_via) {
+      learning.saveCorrections(db, document_id, _learn.corrections || {}, supplier_name, document_type_slug, _learn.allValues, taught_fields || []);
+    }
 
     // Record the stored location. First-confirm already flipped status/confirmed_at/confirmed_by
     // in the claim; a re-file confirms now (and records who re-filed).
@@ -220,7 +233,8 @@ function createReviewService(deps = {}) {
     audit(db, { action: 'review_confirmed', target_type: 'document', target_id: document_id,
       document_id, outcome: 'success', actor_username: actorName,
       metadata: { type: document_type_slug || null, filed: filingResult.filename,
-                  fields_changed: Object.keys(corrections || {}).join(',') || null } });
+                  fields_changed: Object.keys(corrections || {}).join(',') || null,
+                  ...(_via ? { via: _via } : {}) } });
 
     // Slice 3 (amount routing): capture the total's trust context — its note + confidence — BEFORE the
     // note-clear below wipes it (Oracle A1). No-op (returns null) unless WORKFLOW_AMOUNT_ROUTING is armed,

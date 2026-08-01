@@ -221,6 +221,10 @@ contextBridge.exposeInMainWorld('docusnap', {
   linkDocumentToTemplate:      (data)    => ipcRenderer.invoke('link-document-to-template', data),
   checkTemplateMatch:          (id)      => ipcRenderer.invoke('check-template-match-for-document', id),
   reextractFieldsFast:         (docId)   => ipcRenderer.invoke('reextract-fields-fast', { docId }),
+  // Catch-up Filing (consent-gated scope sweep) — candidates is READ-ONLY; accept is the only writer.
+  sweepScopeCandidates: (supplier, typeSlug)                       => ipcRenderer.invoke('sweep-scope-candidates', { supplier, typeSlug }),
+  sweepScopeAccept:     (supplier, typeSlug, accepts, untickedIds) => ipcRenderer.invoke('sweep-scope-accept', { supplier, typeSlug, accepts, untickedIds }),
+  sweepScopeUndo:       (docIds)                                   => ipcRenderer.invoke('sweep-scope-undo', { docIds }),
   notifyReviewComplete:        ()        => ipcRenderer.send('notify-review-complete'),
 
   // ── Zone OCR & learning ──────────────────────────────────────────────────────

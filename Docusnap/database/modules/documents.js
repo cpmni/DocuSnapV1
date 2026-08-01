@@ -305,8 +305,11 @@ function requeueConfirmedDocsForScope(db, { supplier_name, document_type_slug } 
 // "previously filed" signal that lets reviewService re-file IN PLACE on re-confirm
 // (no -DUPLICATE). Status-guarded: only a currently-confirmed doc moves.
 function deconfirmDocument(db, id) {
+  // Also clears confirmed_via (when the column exists): a doc sent back to the queue is no
+  // longer "confirmed by" anything — a later human re-confirm stamps its own via at claim.
+  const viaClear = _hasConfirmedVia(db) ? ', confirmed_via = NULL' : '';
   return db.prepare(
-    "UPDATE documents SET status = 'needs_review', confirmed_at = NULL, confirmed_by_username = NULL WHERE id = ? AND status = 'confirmed'"
+    `UPDATE documents SET status = 'needs_review', confirmed_at = NULL, confirmed_by_username = NULL${viaClear} WHERE id = ? AND status = 'confirmed'`
   ).run(id);
 }
 
@@ -458,12 +461,19 @@ function confirm(db, id, { stored_filename, stored_path, confirmed_by_username =
 // — for the desktop re-file path — already confirmed when allowRefile is set. stored_* may
 // be null when claiming BEFORE filing (the caller fills them in via update() afterwards).
 function confirmIfReviewable(db, id, { stored_filename = null, stored_path = null,
-                                       confirmed_by_username = null, allowRefile = false } = {}) {
+                                       confirmed_by_username = null, allowRefile = false,
+                                       confirmed_via = null } = {}) {
+  // confirmed_via (mig 57, Catch-up Filing): 'scope_sweep' for a machine batch-file, NULL for a
+  // human confirm. Written AT CLAIM time so every later reader in the same confirm (the
+  // learn-on-commit guard reads it back from the row) sees the truth. Guarded on column
+  // presence for pre-mig-57 fixture DBs (same pattern as trust.js).
+  const hasVia = _hasConfirmedVia(db);
   return db.prepare(`
     UPDATE documents
        SET status                = 'confirmed',
            confirmed_at          = @confirmed_at,
            confirmed_by_username = @confirmed_by_username,
+           ${hasVia ? 'confirmed_via = @confirmed_via,' : ''}
            stored_filename       = @stored_filename,
            stored_path           = @stored_path,
            supplier_pin          = NULL
@@ -475,7 +485,21 @@ function confirmIfReviewable(db, id, { stored_filename = null, stored_path = nul
     stored_filename, stored_path, confirmed_by_username,
     confirmed_at: new Date().toISOString(),
     allowRefile: allowRefile ? 1 : 0,
+    ...(hasVia ? { confirmed_via } : {}),
   });
+}
+
+// Column-presence cache for documents.confirmed_via (mig 57) — WeakMap per DB handle so a
+// pre-migration fixture DB (tests ALTER it in manually or not at all) never throws here.
+const _viaPresence = new WeakMap();
+function _hasConfirmedVia(db) {
+  let has = _viaPresence.get(db);
+  if (has === undefined) {
+    try { has = db.prepare("SELECT 1 FROM pragma_table_info('documents') WHERE name='confirmed_via'").get() != null; }
+    catch { has = false; }
+    _viaPresence.set(db, has);
+  }
+  return has;
 }
 
 // Move a document to deferred ONLY if it is currently needs_review.

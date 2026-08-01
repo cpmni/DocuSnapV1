@@ -65,7 +65,27 @@ lost) — dismiss is display-only. Needs an app reopen to render.
 
 ## UX / product (continued)
 
-### Catch-up filing ("file the rest") — DESIGN SIGNED OFF 2026-07-31, NOT BUILT
+### Catch-up filing ("file the rest") — SLICES 1-3 BUILT (dark), SLICE 4 GATES + FLIP REMAIN
+**2026-08-01 evening: slice 3 BUILT** (server accept/undo + renderer consent UI; all dark behind
+`scope_sweep_enabled` OFF + env `SCOPE_SWEEP`): `sweep-scope-accept` re-validates EVERYTHING
+server-side (status/scope/workflow + candidacy FINGERPRINT + the same `_evaluateSweepDoc`
+re-run) then files through the ONE shared `reviewService.confirm` with INTERNAL
+`{via:'scope_sweep'}` (4th arg — never payload-suppliable; claim stamps `confirmed_via`;
+saveCorrections SKIPPED for machine confirms = no hint inflation; learn-on-commit self-guards) ·
+`sweep-scope-undo` (server-verified `confirmed_via='scope_sweep'` only → deconfirm, via cleared,
+filed copy kept for in-place re-file) · consent bar `#sweep-consent-bar` (offer/filing/done
+states, per-doc untick, Review-them queue filter, Not-now per-scope dismiss, Undo all,
+kept-back reason chips) · triggers: single confirm + prefix-outlier resume + File-All dominant
+scope (debounce 2.5s) · audits scope_sweep_offered/accepted/undone. PINs green:
+`database/modules/test_confirmed_via.js` (claim stamps via / human NULL / deconfirm clears /
+pre-mig-57 guard) + all seam suites (scope_trust, learn_on_commit, sweep_predicate,
+reextract_merge). **SLICE 4 REMAINS before flip: fixture integration gate + demo-corpus gate
+(design §test plan) + realdoc OFF assert, then flip `scope_sweep_enabled` per install. Owner
+can pre-trial with env `SCOPE_SWEEP=1` (harness lever, not the flip).** gary's header-band
+witness design (2026-08-01, awaiting Oracle) slots into `_evaluateSweepDoc` as an AND-only
+exclusion later — not part of slice 4.
+
+Original design record (2026-07-31):
 - Owner idea: after K same-scope manual confirms, remaining queue docs (correct values, stale
   scores) re-gate against the warmer learning and batch-file behind a per-scope consent
   banner+list with per-doc untick. barry (L3, near top of office backlog) → gary (two-tier

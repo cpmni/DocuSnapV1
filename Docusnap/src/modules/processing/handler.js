@@ -1929,50 +1929,182 @@ function register(ctx) {
        ORDER BY d.id LIMIT ?`).all(dtRow.id, sup, SWEEP_CAP);
 
     const candidates = [], excluded = [];
-    let trainingArgs = null, tempFiles = [];
     let aborted = false;
+    const ctx = { trainingArgs: null, tempFiles: [] };
     try {
       for (const doc of docs) {
         // A batch/import starting mid-sweep aborts the remainder (never compete for CPU).
         if (_anyProcessingBusy()) { aborted = true; break; }
-        if (presence.viewers(doc.id).length) { excluded.push({ docId: doc.id, reason: 'being-viewed' }); continue; }
-        const rows = db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(doc.id);
-        const fingerprint = extractionsFingerprint(rows);
-
-        // Tier 1 — stored rows pass the live gate as-is.
-        const t1 = trust.isAutoFileEligible(db, doc);
-        if (t1.eligible) { candidates.push({ docId: doc.id, tier: 1, fingerprint }); continue; }
-
-        // Tier 2 — imageless re-extract consistency + the gate re-asked on the overlay.
-        if (!trainingArgs) ({ args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath, logger));
-        const r = await _reextractFastCore(db, doc.id, { trainingArgs });
-        if (!r.ok) { excluded.push({ docId: doc.id, reason: `recheck-${r.reason}` }); continue; }
-        // Type pinned via --known-doc-slug: assert the echo matches (design: type flip = out).
-        const freshTypeName = String(r.result.document_type || '');
-        const storedTypeName = String(db.prepare('SELECT name FROM document_types WHERE id = ?').get(doc.document_type_id)?.name || '');
-        const verdict = evaluateSweepConsistency({
-          storedRows: rows,
-          freshFields: r.result.extractions || {},
-          roleKeys,
-          storedSlug: storedTypeName,
-          freshSlug: freshTypeName || storedTypeName,
-        });
-        if (!verdict.pass) { excluded.push({ docId: doc.id, reason: verdict.reason, field: verdict.field }); continue; }
-        const synth = { id: doc.id, document_type_id: doc.document_type_id,
-                        supplier_name: doc.supplier_name,
-                        overall_confidence: Number(r.result.overall_confidence) || 0 };
-        const gate = trust.isAutoFileEligible(db, synth, {
-          extractions: verdict.overlay,
-          templateMatched: !!r.templateId,
-        });
-        if (gate.eligible) candidates.push({ docId: doc.id, tier: 2, fingerprint });
-        else excluded.push({ docId: doc.id, reason: gate.reason });
+        const v = await _evaluateSweepDoc(db, doc, roleKeys, ctx);
+        if (v.candidate) candidates.push(v.candidate);
+        else excluded.push(v.excluded);
       }
     } finally {
-      cleanupFiles(tempFiles);
+      cleanupFiles(ctx.tempFiles);
+    }
+    // Consent-trail (design audit): an OFFER only exists at the renderer's ≥2 threshold — log it
+    // here (server-side, same threshold) so the consent flow is reconstructable end-to-end.
+    if (candidates.length >= 2) {
+      try {
+        logAudit(db, { action: 'scope_sweep_offered', target_type: 'scope', outcome: 'offered',
+          metadata: { supplier: sup, type_slug: slug,
+                      doc_ids: candidates.map(c => c.docId).join(','),
+                      tiers: candidates.map(c => c.tier).join(',') } });
+      } catch { /* audit is best-effort */ }
     }
     return { ok: true, scope: { supplier: sup, typeSlug: slug }, aborted,
              candidates, excluded, evaluated: candidates.length + excluded.length };
+  });
+
+  // One doc's sweep evaluation (candidates IPC + the accept path's server-side RE-CHECK share
+  // this — the design's "accept re-runs the gate server-side" is literally the same code).
+  // ctx carries hoisted trainingArgs/tempFiles across a loop; caller owns cleanupFiles.
+  async function _evaluateSweepDoc(db, doc, roleKeys, ctx) {
+    const trust = require('../../../database/modules/trust');
+    const { evaluateSweepConsistency, extractionsFingerprint } = require('../../services/sweepPredicate');
+    const presence = require('../../services/presenceService').shared();
+    if (presence.viewers(doc.id).length) return { excluded: { docId: doc.id, reason: 'being-viewed' } };
+    const rows = db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(doc.id);
+    const fingerprint = extractionsFingerprint(rows);
+
+    // Tier 1 — stored rows pass the live gate as-is.
+    const t1 = trust.isAutoFileEligible(db, doc);
+    if (t1.eligible) return { candidate: { docId: doc.id, tier: 1, fingerprint } };
+
+    // Tier 2 — imageless re-extract consistency + the gate re-asked on the overlay.
+    if (!ctx.trainingArgs) {
+      const built = buildTrainingArgs(db, configPath, logger);
+      ctx.trainingArgs = built.args; ctx.tempFiles = built.tempFiles;
+    }
+    const r = await _reextractFastCore(db, doc.id, { trainingArgs: ctx.trainingArgs });
+    if (!r.ok) return { excluded: { docId: doc.id, reason: `recheck-${r.reason}` } };
+    // Type pinned via --known-doc-slug: assert the echo matches (design: type flip = out).
+    const freshTypeName = String(r.result.document_type || '');
+    const storedTypeName = String(db.prepare('SELECT name FROM document_types WHERE id = ?').get(doc.document_type_id)?.name || '');
+    const verdict = evaluateSweepConsistency({
+      storedRows: rows,
+      freshFields: r.result.extractions || {},
+      roleKeys,
+      storedSlug: storedTypeName,
+      freshSlug: freshTypeName || storedTypeName,
+    });
+    if (!verdict.pass) return { excluded: { docId: doc.id, reason: verdict.reason, field: verdict.field } };
+    const synth = { id: doc.id, document_type_id: doc.document_type_id,
+                    supplier_name: doc.supplier_name,
+                    overall_confidence: Number(r.result.overall_confidence) || 0 };
+    const gate = trust.isAutoFileEligible(db, synth, {
+      extractions: verdict.overlay,
+      templateMatched: !!r.templateId,
+    });
+    if (gate.eligible) return { candidate: { docId: doc.id, tier: 2, fingerprint } };
+    return { excluded: { docId: doc.id, reason: gate.reason } };
+  }
+
+  // ── Catch-up Filing slice 3: consent-gated ACCEPT (the only writer) ─────────────────
+  // Renderer sends the accepted subset of a candidates result: [{docId, fingerprint}] +
+  // untickedIds (audit only). Per doc, server-side: still queued/unlocked, the extraction
+  // FINGERPRINT unchanged since candidacy (SEAM 2 — a pill fill / OCR-enhance / edit between
+  // consent and accept drops the doc with a reason chip), the SAME evaluation re-run and
+  // passing NOW, then reviewService.confirm (bulk) with the INTERNAL via='scope_sweep' —
+  // confirmed_via is stamped server-side at claim; hint/template learning self-skip.
+  // NO second auto-file site: filing goes through the one shared confirm.
+  ipcMain.handle('sweep-scope-accept', async (_event, { supplier, typeSlug, accepts, untickedIds } = {}) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    if (process.env.SCOPE_SWEEP === '0') return { ok: false, reason: 'disabled' };
+    const _sweepOn = process.env.SCOPE_SWEEP === '1'
+      || require('../../../database/modules/learning').getSetting(db, 'scope_sweep_enabled', 'false') === 'true';
+    if (!_sweepOn) return { ok: false, reason: 'disabled' };
+    const licenseDenial = require('../licensing/handler').licenseDenied(db);
+    if (licenseDenial) return { ok: false, reason: 'license' };
+    if (_anyProcessingBusy()) return { ok: false, reason: 'busy' };
+    const sup = String(supplier || '').trim();
+    const slug = String(typeSlug || '').toLowerCase().trim();
+    if (!sup || !slug || !Array.isArray(accepts) || !accepts.length) return { ok: false, reason: 'bad-args' };
+
+    const documents = require('../../../database/modules/documents');
+    const { extractionsFingerprint } = require('../../services/sweepPredicate');
+    const reviewService = require('../review/handler').getReviewService();
+    if (!reviewService) return { ok: false, reason: 'not-ready' };
+    const actor = getCurrentUser() || {};
+    const dtRow = db.prepare('SELECT * FROM document_types WHERE LOWER(slug) = ?').get(slug);
+    if (!dtRow) return { ok: false, reason: 'unknown-type' };
+    const roleKeys = new Set(['supplier_name', dtRow.ref_field_key, dtRow.date_field_key].filter(Boolean));
+
+    const filed = [], dropped = [];
+    const ctx = { trainingArgs: null, tempFiles: [] };
+    try {
+      for (const a of accepts.slice(0, 25)) {
+        const docId = Number(a && a.docId);
+        const doc = docId ? documents.getById(db, docId) : null;
+        if (!doc || doc.status !== 'needs_review') { dropped.push({ docId, reason: 'not-queued' }); continue; }
+        if (['pending', 'claimed'].includes(String(doc.workflow_status || ''))) { dropped.push({ docId, reason: 'workflow-locked' }); continue; }
+        if (String(doc.supplier_name || '').trim().toLowerCase() !== sup.toLowerCase()
+            || Number(doc.document_type_id) !== Number(dtRow.id)) { dropped.push({ docId, reason: 'scope-mismatch' }); continue; }
+        // SEAM 2 — candidacy→accept mutation: any extraction change since the consent list drops it.
+        const rows = db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(docId);
+        if (extractionsFingerprint(rows) !== String(a.fingerprint || '')) { dropped.push({ docId, reason: 'changed' }); continue; }
+        // Re-run the SAME evaluation — must still pass at accept time.
+        const v = await _evaluateSweepDoc(db, doc, roleKeys, ctx);
+        if (!v.candidate) { dropped.push({ docId, reason: (v.excluded && v.excluded.reason) || 'no-longer-eligible' }); continue; }
+        // File through the one shared confirm — stored values verbatim, machine via.
+        const allValues = {};
+        for (const r of rows) allValues[r.field_key] = r.display_value ?? r.raw_value;
+        let res;
+        try {
+          res = await reviewService.confirm(db, actor, {
+            document_id: docId,
+            allValues,
+            corrections: {},
+            taught_fields: [],
+            supplier_name: doc.supplier_name,
+            document_type: dtRow.name,
+            document_type_slug: dtRow.slug,
+            bulk: true,
+          }, { via: 'scope_sweep' });
+        } catch (e) { res = { ok: false, code: 'ERROR', error: e && e.message }; }
+        if (res && res.ok) filed.push(docId);
+        else dropped.push({ docId, reason: (res && res.code) || 'confirm-failed' });
+      }
+    } finally {
+      cleanupFiles(ctx.tempFiles);
+    }
+    try {
+      logAudit(db, { action: 'scope_sweep_accepted', target_type: 'scope', outcome: 'success',
+        metadata: { supplier: sup, type_slug: slug, filed_ids: filed.join(','),
+                    dropped: dropped.map(d => `${d.docId}:${d.reason}`).join(','),
+                    unticked_ids: (Array.isArray(untickedIds) ? untickedIds : []).join(',') } });
+    } catch { /* audit is best-effort */ }
+    return { ok: true, filed, dropped };
+  });
+
+  // ── Catch-up Filing slice 3: Undo all (clean by construction) ───────────────────────
+  // Only docs whose row says confirmed_via='scope_sweep' can be undone here (server-verified —
+  // a human confirm can never be mass-reverted by this path). deconfirmDocument reverses the
+  // live-derived learning by construction (formats/shapes/prefix recompute from confirmed
+  // status) and the sweep skipped hints/template learning, so the undo copy is true. Filed
+  // copies stay on disk; stored_path is kept, so a later re-confirm replaces IN PLACE.
+  ipcMain.handle('sweep-scope-undo', (_event, { docIds } = {}) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const documents = require('../../../database/modules/documents');
+    const ids = (Array.isArray(docIds) ? docIds : []).map(Number).filter(Boolean).slice(0, 25);
+    const undone = [], refused = [];
+    for (const id of ids) {
+      const row = db.prepare('SELECT id, status, confirmed_via FROM documents WHERE id = ?').get(id);
+      if (!row || row.status !== 'confirmed' || row.confirmed_via !== 'scope_sweep') { refused.push(id); continue; }
+      const r = documents.deconfirmDocument(db, id);
+      if (r && r.changes) undone.push(id); else refused.push(id);
+    }
+    try {
+      if (undone.length) logAudit(db, { action: 'scope_sweep_undone', target_type: 'scope', outcome: 'success',
+        metadata: { doc_ids: undone.join(','), refused_ids: refused.join(',') } });
+    } catch { /* audit is best-effort */ }
+    try {
+      notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
+      notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+    } catch { /* count broadcast is best-effort */ }
+    return { ok: true, undone, refused };
   });
 
   // ── Reprocess All (batched) ───────────────────────────────────────────────

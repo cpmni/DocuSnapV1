@@ -81,7 +81,7 @@ function register(ctx) {
   // Transport-agnostic review orchestration — the SAME confirm/defer/restore the detached-client
   // /v1 API will call (Phase 3). The desktop injects its Electron-only steps as hooks so this
   // path stays byte-identical; auth + the workflow lock are enforced at the edge (requireUnlocked).
-  const reviewService = require('../../services/reviewService').createReviewService({
+  const reviewService = _sharedReviewServiceInstance = require('../../services/reviewService').createReviewService({
     documents, learning, doctypes,
     filing: require('../filing/handler'),
     fs, path, logger,
@@ -1005,7 +1005,11 @@ function register(ctx) {
   });
 }
 
-module.exports = { register, _buildTemplateFields, _upsertTemplate };   // _buildTemplateFields + _upsertTemplate exported for tests (test_build_template_fields.js, test_upsert_type_link.js)
+// The ONE shared reviewService instance (set in register) — the Catch-up sweep accept files
+// through it so there is never a second confirm/filing implementation. Null until register runs.
+let _sharedReviewServiceInstance = null;
+module.exports = { register, _buildTemplateFields, _upsertTemplate,   // _buildTemplateFields + _upsertTemplate exported for tests (test_build_template_fields.js, test_upsert_type_link.js)
+                   getReviewService: () => _sharedReviewServiceInstance };
 
 // ── Template create / update ──────────────────────────────────────────────────
 
