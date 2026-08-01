@@ -3801,6 +3801,22 @@ class ExtractionEngine:
                             page_images[0], _alm, template_mapper._ocr_lines)
                     except Exception as e:
                         self.log(f"  Stage 2: landmark fit skipped ({e})", "warn")
+                    # S-D VACUOUS-FIT GATE (Oracle-authorized cheap gate, evidence-met 2026-08-01;
+                    # kill REG_MIN_INLIERS_GATE=0). A similarity fit surviving on n_inliers <= 2 is
+                    # EXACTLY DETERMINED — residual 0.0000 BY CONSTRUCTION (registration.py: at
+                    # n <= sample the fit is scored on the points that produced it), so it carries
+                    # ZERO verification. The S-D audit measured the class live: ~43% of the docket
+                    # fits collapsed to 2 inliers (5 landmarks LOCATED, 2-3 surviving = the located
+                    # correspondences DISAGREE — a landmark matched a wrong instance of a repeated
+                    # word — and RANSAC kept an arbitrary self-consistent pair). Refuse the
+                    # transform -> the rung falls through exactly as a failed fit always has
+                    # (keyword/review — fail toward review, never a blind mapped crop).
+                    if (anchor_page_transform is not None
+                            and os.environ.get('REG_MIN_INLIERS_GATE', '1') != '0'   # default ON (A/B byte-identical — zero collateral); =0 kills
+                            and int(getattr(anchor_page_transform, 'n_inliers', 0) or 0) < 3):
+                        self.log(f"  Stage 2: registration REFUSED — {anchor_page_transform.n_inliers} "
+                                 f"inlier(s) is an unverified exact fit (vacuous-fit gate)")
+                        anchor_page_transform = None
                     if anchor_page_transform is not None:
                         self.log(f"  Stage 2: page registered "
                                  f"({anchor_page_transform.n_inliers}/{len(_alm)} landmarks, "
