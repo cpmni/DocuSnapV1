@@ -361,7 +361,14 @@ gate); on #291 wrong inline@85 beat CORRECT keyword@85 sitting in the ledger at 
 **Status: implemented per the signed design (all of C1-C7); 26 pins green
 (`python_backend/tests/test_label_left_clamp.py`); gates run via
 `stress_test/clamp_gate_diff.js` over two RR_CONSENSUS realdoc runs — see the 2026-08-02
-handover for the G1-G6 results. Flip = set env `ANCHOR_LABEL_LEFT_CLAMP=1` (owner call).
+handover for the G1-G6 results. Oracle ADJUDICATED 2026-08-02: ACCEPT-AS-RESIDUAL, GO on the
+flip. AMENDED GATE LETTER: "zero UNRESIDUALED flips" (in-class + review-bound both runs +
+provably witness-unreachable + logged with watch bars); the one residual = #218 (Vellum
+interior 9→0 on the cleaned crop — page prints SO-68195, 600-DPI-verified,
+zooms/doc218_600_wide.png). Watch bars W1 (auto-filed anchor_crop ref correction with
+1-2-digit same-skeleton diff ⇒ kill pending re-gate) · W2 (stroke-sub residual ~3% revives D2)
+· W3 (stroke-sub scopes nearing graduation: confirm against pixels until ocr_dpi 300).
+Flip = set env `ANCHOR_LABEL_LEFT_CLAMP=1` (owner call).
 Design + conditions kept verbatim below for the record.**
 **The label-bleed class (007-measured, Saltmarsh 20-doc batch + corpus):** rigid taught crops are
 built label-blind (+20px fixed pad, anchor.py:3282) while scans jitter (141px width spread + skew)

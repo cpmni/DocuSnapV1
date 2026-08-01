@@ -147,6 +147,31 @@ _(updated as cases accrue — keep/retire recommendation)_
   independent; caption-prefix strip stays DARK as the no-locate spare. Gate = his (realdoc M=0,
   zero value flips, Saltmarsh 20/20, pins) + G1 OFF==ON outside the class, G5 throughput, G6
   total flag count must not rise.
+- 2026-08-02 (label-tail clamp GATE ADJUDICATION, overnight): **ACCEPT AS RESIDUAL — GO on the
+  flip.** The built clamp met every gate except the "zero value flips" letter — exactly ONE flip
+  (#218 Vellum sales_order: OFF read the correct 'SO-68195'@85 via the recovery rung on the
+  tail-dirty crop; ON reads 'SO-68105'@98 direct — interior 9→0 stroke substitution, deterministic,
+  review-bound BOTH runs). Mechanism-traced (he verified the code, the jsonl rows, and the D2
+  bake-off ABSTAIN on this exact doc): the clamp didn't MANUFACTURE the misread — it removed the
+  defective crop whose accidental rescue was masking the documented Vellum stroke-sub substrate;
+  sending back would preserve a defect so its rescue keeps winning (working-rule-4 inverted).
+  **AMENDED GATE LETTER (recorded so #218 is not blanket precedent): "zero UNRESIDUALED flips" —
+  a flip is acceptable ONLY when (a) in-class, (b) review-bound in both runs, (c) provably
+  unreachable by every live AND banked witness, (d) logged as a named residual with watch bars;
+  the NEXT flip gets its own adjudication.** Watch bars: **W1** any operator correction of an
+  AUTO-FILED ref with winning method anchor_crop and a 1-2-digit same-skeleton diff (D1's
+  comparator, offline over corrections) ⇒ kill the clamp pending re-gate · **W2** stroke-sub
+  silent residual crossing ~3% revives D2 (unchanged; #218 moves it to ~1.0%) · **W3** when a
+  stroke-sub scope (Vellum) nears W=10 graduation, confirms must be checked against PIXELS until
+  ocr_dpi 200→300 lands (a casual confirm of a wrong-at-98-unflagged read teaches the poison).
+  Delta-scoped comparators RATIFIED (M as NEW-vs-OFF set membership, G2 changed-only, Saltmarsh
+  new-only) — valid only over back-to-back same-HEAD runs; the flips comparator stays ABSOLUTE.
+  Post-verdict the main session rendered #218's ref region at 600 DPI (zooms/doc218_600_wide.png)
+  and the page prints a legible 'SO-68195' — GT CONFIRMED, the flip is real, the residual branch
+  stands. Conditions: owner brief carries the #218 line + W1-W3 + the ~36-docs-freed expectation ·
+  #218 exhibit joins the GT-poison eyeball pile · this-week triage of the pre-existing
+  test_anchor_crop_crosscheck.py case-7 RED (re-fixture to the post-07-09 trigger band or retire
+  with a supersession note) · clamp_*.jsonl NUL-scanned (done — clean).
 - After case 6 (2026-07-12, PO vendor-caption issuer fix): **KEEP — 6-for-6.** Adjudicating the reggie(flag)
   vs gary(drop) split, he ruled DROP with the *right* reason — not the brief's lead argument (the @40 cap is
   a no-op) but that the value drives the filing/learning SCOPE (engine.py:2259 reads `.value`), so flag
