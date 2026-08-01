@@ -280,6 +280,24 @@ lost) — dismiss is display-only. Needs an app reopen to render.
 - **Expected residual after S-A+B+C:** {#65, #154, #86} interior stroke-level substitutions — only a
   second-render/second-engine witness could reach (the parked xres design's territory).
 
+### PO-27491→27401 high-conf digit substitution (Oracle-confirmed backlog, 2026-08-01)
+- Fresh traced run of doc 259 read po_number 'PO-27401'@97 via anchor_inline where the page prints
+  'PO-27491' (persisted DB value correct). Same length, same prefix, same shape — invisible BY
+  CONSTRUCTION to S-B length profile, prefix guard, and learned shape (the exact residual the
+  'INV-35900'→'INV-85900' never-lane-A PIN documents). Own investigation; starting evidence:
+  scratchpad slices_259 (slice_7_target.png), the printed/read pair. Candidate lens: 007 (crop
+  geometry / glyph) — a second-witness class (the parked xres territory).
+
+### R2 cohort pick admission — DEFERRED with revival evidence (Oracle 2026-08-01)
+- Banked from the type-refuse deadlock arc (11b7ae9 shipped R1+R3+reword instead). R2 = admit a
+  band-13 _letterhead_cohort member with document_type_slug == detected_slug into the Stage-0 PICK
+  when title_trusted (heals doc #2 of a new type with zero confirms). REVIVAL EVIDENCE: after
+  R1+R3 live, the refuse-note class still recurs materially (more than the expected single
+  teach-window note per new supplier-type pair) on the demo gate or live. Conditions if revived:
+  trusted-title gate only; detail-veto ordering intact; margin-3 untouched for the untrusted path;
+  cohort sibling passes the SAME downstream qualification gates (no gate bypass); cohort anchored
+  on an in-margin member's non-null dominant_supplier.
+
 ### Digital ↔ scanned bleed (same supplier, divergent layout)
 - **Confirmed (Set B warm):** a digital doc reusing a live name inherits the scanned identity (**supplier
   90%**) but the scanned template's field geometry doesn't fit the digital layout (**ref 29%**, held).
