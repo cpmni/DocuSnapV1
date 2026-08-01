@@ -346,6 +346,13 @@ gate); on #291 wrong inline@85 beat CORRECT keyword@85 sitting in the ledger at 
   to anchor_inline, currently pinned OUT to protect the 07-26 re-teach fix — that pin needs its
   own Oracle round before any widening). Segmentation drops ARE decorrelated across reads (keyword
   had it right) unlike pure stroke substitutions.
+- **Third live exemplar (2026-08-01 ~15:42, owner screenshot, Vellum worksheet_01):** page prints
+  'WS-73541'; anchor_inline read 'WS-7354' (TRAILING '1' dropped — the locate-chain 1100px thin-glyph
+  loss, 007-measured mechanism) and won Tier-A over keyword's CORRECT 'WS-73541'@85; anchor_crop had
+  the right digits but swallowed the label tail ('Vo. WS-73541') → credibility-rejected rx 25%. S-B
+  FLAGGED live (4-vs-5 note + WS-73541 suggestion, Accept path used). Correct current behaviour;
+  strengthens the digit-count PREFER arm's revival case (correct value passed the length profile the
+  winner failed, in-band, twice).
 
 ### R2 cohort pick admission — DEFERRED with revival evidence (Oracle 2026-08-01)
 - Banked from the type-refuse deadlock arc (11b7ae9 shipped R1+R3+reword instead). R2 = admit a
