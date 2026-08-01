@@ -2102,15 +2102,21 @@ class ExtractionEngine:
                 if (_stats and _stats[1] >= _min_n and _stats[0] >= _min_r
                         and not _template_identity_corroborated(supplier_name, ocr_text)):
                     _blank = True
-                    # Customer-facing copy (owner 2026-07-31): no "template" jargon; KEEP the
-                    # lookalike hint — on the guard's flip side (a genuine doc with a mangled
-                    # letterhead) it is what lets the operator type the right name in one
-                    # glance. "isn't on this page" + "confirm the correct company" are LOAD-
-                    # BEARING markers (test_template_fixed_name_presence.py + the renderer's
-                    # isBrandingFlag regex) — keep both in any rewording.
-                    note = (f"This document looks similar to paperwork from '{supplier_name}', "
-                            "but that name isn't on this page — so the sender was left blank. "
-                            "Please confirm the correct company.")
+                    # Customer-facing copy (owner + bob 2026-08-01, superseding the 07-31
+                    # lookalike wording): NO rejected-candidate name — printing "looks similar
+                    # to '<supplier>'" under the field ANCHORED the operator toward the very
+                    # name the veto had just refused (a wrong confirm then poisons that
+                    # supplier's learning scope), and read as a confession in the common
+                    # genuinely-new-sender case. Neutral, action-first instead. The NOTE OBJECT
+                    # itself is LOAD-BEARING and must never be dropped (its presence on the
+                    # empty row is the REPROCESS_ANNOTATED_EMPTY_WINS discriminator — a bare
+                    # empty resurrects the stale value on reprocess); "couldn't be confirmed"
+                    # + "confirm the correct company" are the pinned markers
+                    # (test_template_fixed_name_presence.py + the renderer's isBrandingFlag
+                    # regex) — keep both in any rewording.
+                    note = ("The sender's name couldn't be confirmed on this page. Please "
+                            "confirm the correct company — it's usually printed at the top "
+                            "of the document.")
         existing = str(fld.get("validation_note") or "").strip()
         fld["validation_note"] = (existing + " " + note).strip() if existing else note
         fld["confidence"] = min(int(fld.get("confidence") or 100), 69)

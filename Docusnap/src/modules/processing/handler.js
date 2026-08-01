@@ -315,7 +315,7 @@ function supplierColumnBlanked(mergedRows) {
 //   (c) the field has NO learned anchor in (supplier,type) scope — an anchored empty means
 //       the taught position read nothing on purpose; a text-fallback must not override it.
 // `anchoredKeys` = Set<field_key> the caller built from learning.getTaughtFieldKeys.
-function mergeReextractRows(existing, newExtractions, anchoredKeys = new Set()) {
+function mergeReextractRows(existing, newExtractions, anchoredKeys = new Set(), opts = {}) {
   const exMap = {};
   for (const e of (existing || [])) exMap[e.field_key] = e;
   const suggestions = [];
@@ -323,10 +323,25 @@ function mergeReextractRows(existing, newExtractions, anchoredKeys = new Set()) 
     if (!data || typeof data !== 'object') continue;
     const value = data.value != null ? String(data.value) : '';
     if (!value.trim()) continue;                                   // (a) non-empty
-    if (data.validation_note) continue;                            // (a) Stage-4 clean
     const ex = exMap[key];
+    // BRANDING-BLANK LIVE FILL exception (owner + bob 2026-08-01; kill
+    // REEXTRACT_UNPIN_BLANK_SUPPLIER=0 upstream — the caller threads it as
+    // opts.brandingBlankSupplier). The one legitimate crack in the two "flagged" walls
+    // below: a VETO-BLANKED issuer (stored supplier_name EMPTY + the branding note whose
+    // 'confirm the correct company' tail is the pinned marker) re-checked against NOW-warmer
+    // learning that resolves the sender ('Company inferred from previously filed documents…'
+    // — or a clean read). Without this, the live ⟳ pill could never suggest the true sender
+    // on the collision class: the stored flag blocked (b) and the inferred note blocked (a).
+    // Suggestion-only as ever — nothing fills until the operator clicks; the stored flag
+    // stays until they accept.
+    const _bbException = opts.brandingBlankSupplier === true
+      && key === 'supplier_name'
+      && !!ex && !String(ex.display_value || '').trim()
+      && /confirm the correct company/i.test(String(ex.validation_note || ''))
+      && (!data.validation_note || /company inferred/i.test(String(data.validation_note)));
+    if (data.validation_note && !_bbException) continue;           // (a) Stage-4 clean
     if (ex && ex.display_value && String(ex.display_value).trim()) continue;  // (b) stored has a value
-    if (ex && ex.validation_note) continue;                        // (b) flagged empty — keep the flag
+    if (ex && ex.validation_note && !_bbException) continue;       // (b) flagged empty — keep the flag
     if (anchoredKeys && anchoredKeys.has(key)) continue;           // (c) anchor-abstain
     suggestions.push({
       field_key:  key,
@@ -1712,8 +1727,18 @@ function register(ctx) {
     // "newly-found template" gain case) via the SAME type-scoped fingerprint recheck the
     // Teach-this-document CTA uses. Null is fine — a text-only re-extract still re-reads
     // keyword fields from the cached OCR.
-    let knownTemplateId = doc.template_id || null;
-    if (!knownTemplateId) {
+    // STALE-COLLISION UNPIN (owner + bob 2026-08-01; kill REEXTRACT_UNPIN_BLANK_SUPPLIER=0):
+    // a stored template link with NO resolved supplier is the branding-blank collision class
+    // — the veto blanked a wrong fixed-name stamp (doc 218: a Vellum doc pinned to the
+    // Ridgeway template). Re-pinning that template (or re-identifying by the SAME phash that
+    // collided) re-runs the identical collision, so the live re-check could never suggest the
+    // true sender. Pass NO template instead and let the engine's own Stage-0 matcher choose
+    // from the templates file — with warmer learning it separates the siblings (proven:
+    // unpinned doc-218 run resolves the true supplier via template_identity).
+    const _unpinBlank = process.env.REEXTRACT_UNPIN_BLANK_SUPPLIER !== '0'
+      && !String(doc.supplier_name || '').trim();
+    let knownTemplateId = _unpinBlank ? null : (doc.template_id || null);
+    if (!knownTemplateId && !_unpinBlank) {
       try {
         const m = templates.identifyByFingerprint(db, {
           logo_phash: doc.logo_phash, ocr_text: doc.ocr_text,
@@ -1792,7 +1817,8 @@ function register(ctx) {
             document_type: doc.document_type_slug || null,
           }).map(r => r.field_key));
         } catch { /* no anchors → none abstained */ }
-        const suggestions = mergeReextractRows(existing, result.extractions, anchoredKeys);
+        const suggestions = mergeReextractRows(existing, result.extractions, anchoredKeys,
+          { brandingBlankSupplier: process.env.REEXTRACT_UNPIN_BLANK_SUPPLIER !== '0' });
         // `result`/`doc`/`existing` ride along for the scope sweep's consistency predicate;
         // the reextract-fields-fast IPC return shape below is built from the same fields it
         // always returned (byte-identical to the pre-refactor channel).

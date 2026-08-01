@@ -32,8 +32,8 @@ const exRow = (over) => Object.assign({
 const newAnnotatedEmpty = (over) => Object.assign({
   field_key: 'supplier_name', raw_value: null, display_value: null, confidence: 0,
   extraction_method: 'template_fixed',
-  validation_note: "This matched a template belonging to 'Copperfield Electrical', but that "
-    + "name isn't on this page — so nothing was assumed. Please confirm the correct company.",
+  validation_note: "The sender's name couldn't be confirmed on this page. Please confirm the "
+    + "correct company — it's usually printed at the top of the document.",
   corrected_to: null, anchor_label: null, candidates: null, suggested_supplier: null,
 }, over || {});
 const newBareEmpty = (over) => Object.assign({
@@ -60,7 +60,7 @@ console.log('\n§2 Annotated empty WINS (the abstain-speak class lands on reproc
   const out = merge([exRow()], [newAnnotatedEmpty()], null, (f, d) => traces.push(d));
   check('value is NULL (the stale Copperfield is NOT resurrected)', out[0].display_value == null);
   check('the NEW note stands (veto note, not the old letterhead note)',
-        /isn't on this page/.test(out[0].validation_note || ''));
+        /couldn't be confirmed/.test(out[0].validation_note || ''));
   check("distinct trace decision 'used_new_annotated' (Oracle C4)",
         traces.includes('used_new_annotated') && !traces.includes('kept_existing'));
 }

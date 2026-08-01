@@ -105,7 +105,7 @@ def blanked(r):
     return (f.get("value") is None and int(f.get("confidence") or 0) == 0
             and r.get("_supplier_name", "sentinel") is None
             and r.get("_needs_review") is True
-            and "isn't on this page" in (f.get("validation_note") or ""))
+            and "couldn't be confirmed" in (f.get("validation_note") or ""))
 
 
 def kept_flagged(r, value="Copperfield Electrical"):
@@ -157,8 +157,8 @@ print("\n§4 The NAMED branch is untouched (BRANDING_NAMED_BLANK territory):")
 r = run("Copperfield Electrical", THORNBURY_PAGE, templates=[COPPERFIELD_T, THORNBURY_T])
 note = r["supplier_name"].get("validation_note") or ""
 check("rival nameable → the NAMED branch runs (note names 'Thornbury Fasteners'), never the "
-      "un-named veto note ('isn't on this page')",
-      "Thornbury Fasteners" in note and "isn't on this page" not in note)
+      "un-named veto note ('couldn't be confirmed')",
+      "Thornbury Fasteners" in note and "couldn't be confirmed" not in note)
 
 print("\n§5 PIN THE ACCEPTED TRADE-OFF — genuine supplier, degraded letterhead:")
 # A real Copperfield doc whose name OCR'd to mush blanks to review instead of keeping the 69
