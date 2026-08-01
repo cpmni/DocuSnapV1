@@ -96,6 +96,20 @@ _(updated as cases accrue — keep/retire recommendation)_
   byte-identical; ON ref 91.8→94.5%, M 8→7 zero new members. His close: "the class we designed a
   cross-resolution engine to heal turns out to be a read the pipeline already made correctly and threw
   away — the fix was never at a different resolution, it was at the merge."
+- 2026-08-01 (S-A/B/C/D validation slices, 3rd round of the arc): **KEEP.** Vetted gary's four
+  designs with a verification ledger (re-traced Tier-A, located-by-fiat, the shape-resurrect, the
+  n≤sample vacuous-fit) rather than trusting the brief. Signed all four W/COND; ruled the
+  keyword_override asymmetry CORRECT (label authority ≠ value authority); ruled one-witness FLAG
+  right and untouched wrong; tightened ADOPT with distinct-FAMILY witness counting + non-
+  authoritative adoption at witness confidence; caught that S-C-before-S-A ordering is load-bearing
+  (no stale date-flag on a healed value) and demanded the order be PINNED; demanded the authority-
+  invariant narrowing be DOCUMENTED (CLAUDE.md + extraction-pipeline.md) "or a future dev fixes it
+  back"; killed S-B2 with the sharpest observation of the round — +3 on a capped-85 read lands at
+  exactly the 88 floor, a confidence-inflation arm engineered to cross the auto-file bar on
+  population evidence. Built same day (`1411d50`): every gate met exactly as he specified — S-A
+  audit = precisely #141/#142, S-B flood = 0, full stack ref 96.5→97.5%, M pinned set zero new.
+  His close: "every slice that ships does so as a flag or a corroborated adoption, never a silent
+  rewrite."
 - After case 6 (2026-07-12, PO vendor-caption issuer fix): **KEEP — 6-for-6.** Adjudicating the reggie(flag)
   vs gary(drop) split, he ruled DROP with the *right* reason — not the brief's lead argument (the @40 cap is
   a no-op) but that the value drives the filing/learning SCOPE (engine.py:2259 reads `.value`), so flag
