@@ -313,16 +313,21 @@ gate); on #291 wrong inline@85 beat CORRECT keyword@85 sitting in the ledger at 
   diff = EXACTLY #291 silent→flagged, would-auto-file-wrong 9→8, values byte-identical corpus-wide.
   Census predicate kept ≤2 (0.33% fire-rate — no tightening needed). Dominant-snap exemption
   SKIPPED (census showed zero such cases — revisit only if a snap-winner false-fire ever appears).
-- **D2 CONDITIONAL GO (second, after D1's census) — RE-SPECCED by Oracle:** the witness is a second-
-  DOWNSAMPLE-GEOMETRY line-locate + harvest of the known label/value band (400→1100 or 600→1100),
-  NOT a value-box crop re-OCR (matrix PROVES the crop stays wrong at 400/600 — the 283/299 heals came
-  from the locate chain's changed anti-alias kernel; a crop-witness build would measure zero heals
-  and green its gate anyway). Tier-A-won ref fields only; NO skip-on-keyword-agreement (283@300:
-  keyword agreed with the WRONG value — same-substrate agreement is only semi-independent); flag-only
-  through the SAME shared comparator as D1 (one implementation, one pin). Pre-build bake-off between
-  the two chains on 65/283/299 catch + clean-corpus incremental fire-rate ≤3% + latency; fixture PDFs
-  for 283/299 must FLAG under the built witness (pins the locate-chain spec — a crop implementation
-  fails by construction); C3 unit pin (witness can NEVER change a value); throughput bound ~≤15%.
+- **D2 BAKE-OFF RAN ×2 — REFUTED BY MEASUREMENT, BANKED (do not build on today's numbers).** Oracle
+  re-spec (witness = second-downsample-geometry locate read, NOT value-box crop) was probed twice
+  over every Tier-A-won ref winner (234-doc then 296-doc corpus; single-token then line-join
+  harvest — scratchpad bakeoff_d2{,_v2}.py, results in out/stroke_sub_2026-08-01/): **400→1100 =
+  ZERO correct catches** (299 fires with a WRONG third reading 'WS-72098'; 65/283/291 abstain) at
+  2.74-3.04% false fires (at/over the 3% hard bar). **600→1100 = ONE correct catch (#65
+  'PO-24729')** at 1.30-1.71% false fires — 5 spurious review flags per ~300 docs (incl. two on the
+  fresh Thornbury batch: 'PO-95717'→witness 'PO-35717' 9→3 — the substitution physics is chain
+  noise both directions), ~0.7s/doc latency on ~every templated doc. **False:true 5:1 — worse than
+  the needless-flags class the 07-31 session spent a day removing.** The 283/299 abstains are
+  CHAIN-level (the alt-res page genuinely doesn't present the token same-skeleton), not harvest
+  fidelity — measured with both harvests. REVIVAL CONDITIONS: a witness chain with measured ≥2-of-3
+  class catch at ≤1% false (e.g. label-anchored band harvest may cut false fires — but cannot cure
+  the abstains), or the class growing past ~3% of corpus. Honest post-D1 residual: #65/#283/#299
+  silent (3 of 382 ≈ 0.8%), #291 flagged live by D1, #86/#154/#285 = owner Learning Repair.
 - **D3 REJECTED (DO NOTHING): never-harvest-values-from-locate-pass** — inverts the July-31 arbiter
   premise (crop box routinely swallows label tails/clips prefixes — the traces' own anchor_reject
   lines show it), heals only #291 which D1 already flags, resurrects the clip class. BANKED future
