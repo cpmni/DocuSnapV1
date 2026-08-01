@@ -21,7 +21,37 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-08-01 OVERNIGHT wrap) — dpi dig → suffix-reconcile ON + catch-up slices 1+2 + validation designs
+## Current session state (2026-08-01 DAY wrap) — validation family live + type-refuse deadlock cured
+**2026-08-01 day (Fable 5, owner present). HEAD `4965984`, PUSHED, tree clean. READ
+`HANDOVER_2026-08-01_DAY.md` FIRST** (the overnight handover carries that half). Realdoc at wrap:
+299 docs, type/supplier 100%, ref 97.0%, date 99.7%, M=9 (residual = interior stroke substitutions,
+6 exemplars, ALL proven pre-existing — the dominant remaining class; second-witness investigation =
+top accuracy lever).
+· **Validation family ALL ON** (`1411d50`/`6649723`/`570833b`/`6237398`): S-A `DATE_IN_REF_FLAG` ·
+  S-B `REF_LENGTH_OUTLIER_GUARD` (+ `REF_LENGTH_WITNESS_RECONCILE` — heal the doubled-digit merge
+  from the ledger on its mechanical fingerprint; flag-with-suggestion/Accept otherwise) · S-C
+  `BLIND_GEOM_DISAGREE_RECONCILE` (Tier-A NARROWED for anchor_registration — documented in the
+  invariants above + extraction-pipeline.md) · `REG_MIN_INLIERS_GATE` (refuse n_inliers<3 vacuous
+  fits). Engine pass order PINNED: suffix-reconcile → S-C → S-A → prefix-outlier → S-B(+witness).
+· **Type-refuse LEARNING DEADLOCK cured** (`11b7ae9`, herald→Oracle): refuse ⇒ null template_id ⇒
+  learn-on-commit bailed ⇒ young template never warmed ⇒ refused forever. R1
+  `TEMPLATE_LINK_ON_CONFIRM` (confirm resolves+links via reuseByEstablishedName; scope_sweep
+  excluded, pinned) + R3 `FINGERPRINT_COUNTERPARTY_MARKERS` (buyer-issued "Supplier :" truncates
+  harvest, word-boundary) + honest note ("confirming will teach this layout") +
+  `scripts/link-confirmed-templates.js` retro-heal (applied ×2, 37 orphans linked, backups beside
+  DB). R2 cohort admission BANKED (pendingfeatures, revival evidence named).
+· **Live note suppressor repaired** (`cea79ef`): the on-open strip existed; the reword broke its
+  matcher. `_STALE_TYPE_NOTE` = ONE shared regex both copies (test_stale_note_matcher.js). Oracle:
+  display-only SIGNED; persisting a note-clear on open SENT BACK (autoCommitFullConfidence seam).
+· Smaller: graduation banner names the TYPE (`115ba62`) · pick-bar hides the Mark-Reviewed pill
+  (`db9fb18`) · veto-note neutral copy + `REEXTRACT_UNPIN_BLANK_SUPPLIER` branding-blank ⟳ pill
+  (`930842e`) · `DATE_ROLE_GENERIC_LABEL` bare-'Date' for date roles (`d3db1e4`).
+· **GOTCHA (bit twice)**: a running dev app's MAIN process predates same-session JS commits —
+  confirms through a stale app skip new learning arms (python is fresh per spawn). Check app start
+  time vs commit time first.
+· Memories: `project_deadlock_reconcile_20260801` · `project_validation_slices_20260801`.
+
+### Prior session (2026-08-01 OVERNIGHT) — dpi dig → suffix-reconcile ON + catch-up slices 1+2 + validation designs
 **2026-08-01 overnight (Fable 5, autonomous while owner slept). PUSHED, origin in sync. READ
 `HANDOVER_2026-08-01_OVERNIGHT.md` FIRST.** Arc: the owner's "Worksh Eet" garbled-nudge screenshot →
 dpi sweep (150/200/240/250/260/275 all garble a heading somewhere; only 225/280/300 clean; NO flawless
