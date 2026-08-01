@@ -114,6 +114,37 @@ def doubled_digit_fingerprint(winner_value, witness_value):
     return ins == left or ins == right
 
 
+_WS_RE = re.compile(r'\s+')
+
+
+def digit_substitution_diff(winner_value, witness_value):
+    """The INTERIOR-DIGIT-SUBSTITUTION comparator SHARED by the D1 in-band
+    digit-disagreement flag and the (future) D2 second-render witness — ONE
+    implementation, one pin (Oracle 2026-08-01: this comparator is the load-bearing
+    safety of both arms; a garbage witness must compare as NOT-this-shape, never as
+    a disagreement). Census-validated predicate (stress_test/census_digit_disagree.js
+    — keep the two in lockstep): after uppercasing + stripping ALL whitespace, the two
+    values must have the SAME length, be IDENTICAL at every non-digit position, digit
+    positions aligned (digit opposite digit) — i.e. an identical non-digit skeleton —
+    and differ ONLY at digit positions. Returns the count of differing digit positions,
+    or -1 when the pair is not this shape (length/skeleton mismatch). 0 = same value.
+    Substitutions can NEVER silently adopt (the C3 pin) — callers flag only."""
+    a = _WS_RE.sub('', str(winner_value or '').upper())
+    b = _WS_RE.sub('', str(witness_value or '').upper())
+    if not a or not b or len(a) != len(b):
+        return -1
+    diff = 0
+    for ca, cb in zip(a, b):
+        da, db = ca.isdigit(), cb.isdigit()
+        if da and db:
+            if ca != cb:
+                diff += 1
+            continue
+        if ca != cb:
+            return -1
+    return diff
+
+
 def classify(winner_value, candidate_value, clean_candidate, prefix_rec,
              prefix_confirmed_fn, code_prefix_fn):
     """Classify one (winner, candidate) pair. The CALLER has already established:

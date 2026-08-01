@@ -2769,6 +2769,78 @@ class ExtractionEngine:
         except Exception:
             pass   # advisory guard — must never break extraction
 
+    # ── D1: IN-BAND DIGIT-DISAGREEMENT FLAG (Oracle SIGN-OFF-W/COND 2026-08-01; kill
+    # DIGIT_DISAGREE_FLAG, default ON — census gate passed same day: 300 docs, 1 fire,
+    # the #291 true catch, 0.00% false fires vs the ≤3% bar). The interior-digit-
+    # substitution class (WS-95390 read WS-95990) is same-length + shape-valid +
+    # prefix-valid — invisible BY CONSTRUCTION to S-A/S-B/prefix-outlier/learned shape.
+    # But the pipeline sometimes already READ the true value and discarded it on tier
+    # (#291: wrong anchor_inline@85 beat keyword's correct WS-95390@85 — Tier-A outranks):
+    # when a distinct-stage candidate-ledger read differs from the winner ONLY by 1-2
+    # substituted digits on an identical non-digit skeleton, FLAG for review (cap 69 +
+    # both readings named + corrected_to suggestion). FLAG-ONLY — a digit substitution
+    # may NEVER silently adopt (the XRES C3 pin: unlike segmentation drops, substitutions
+    # are only semi-decorrelated across chains, and both readings can be wrong — #65@400).
+    # REF-ROLE field only (census predicate; date fields are a structural false-fire
+    # hazard: two dates on one page legitimately differ only in digits). Runs LAST in the
+    # pinned note chain (after S-B): note-if-empty only. Comparator SHARED with the future
+    # D2 second-render witness: suffix_reconcile.digit_substitution_diff (one impl, one pin).
+    def _flag_digit_disagreement(self, results, field_defs, supplier_name,
+                                 document_slug, ref_field_key):
+        if os.environ.get('DIGIT_DISAGREE_FLAG', '1') == '0' or not ref_field_key:
+            return
+        try:
+            from extraction import suffix_reconcile as _sr
+            data = results.get(ref_field_key)
+            if not isinstance(data, dict):
+                return
+            val = data.get('value')
+            if not val:
+                return
+            method = str(data.get('method') or '')
+            if any(m in method for m in ('override', 'manual', 'template_fixed')):
+                return                  # human-set literal / label-authority — S-B parity
+            if str(data.get('validation_note') or '').strip():
+                return                  # one note per field — every earlier guard outranks
+            _norm = lambda s: re.sub(r'\s+', '', str(s or '').upper())
+            w_norm = _norm(val)
+            cands = self._field_candidates.get(ref_field_key) or []
+            # the winner's own producing stage: the ledger entry matching value+method
+            win_stage = next((c.get('stage') for c in cands
+                              if _norm(c.get('value')) == w_norm
+                              and c.get('method') == data.get('method')), None)
+            best = None
+            for c in cands:
+                if win_stage and c.get('stage') == win_stage:
+                    continue            # witness must come from a DISTINCT stage
+                if int(c.get('confidence') or 0) < 60:
+                    continue            # credibility floor (census witness read @85)
+                cv = str(c.get('value') or '').strip()
+                if not cv or _norm(cv) == w_norm:
+                    continue
+                diff = _sr.digit_substitution_diff(val, cv)
+                if diff < 1 or diff > 2:
+                    continue            # 1-2 substituted digits, identical skeleton only
+                rank = (int(c.get('confidence') or 0), -diff)
+                if best is None or rank > best[0]:
+                    best = (rank, cv, c, diff)
+            if not best:
+                return
+            _, wit_val, wit, diff = best
+            data['confidence'] = min(int(data.get('confidence') or 0), 69)
+            data['corrected_to'] = wit_val
+            data['validation_note'] = (
+                f"read '{val}' here, but another check read '{wit_val}' — the two "
+                f"disagree on {diff} digit{'s' if diff > 1 else ''}. Please check the "
+                f"document for the right value.")
+            self._t('digit_disagree_flag', field=ref_field_key, value=str(val),
+                    method=method, witness=wit_val, witness_stage=wit.get('stage'),
+                    witness_conf=int(wit.get('confidence') or 0), diff=diff)
+            self.log(f"  Digit-disagreement guard: {ref_field_key} '{val}' ({method}) vs "
+                     f"'{wit_val}' ({wit.get('stage')}) — flagged for review")
+        except Exception:
+            pass   # advisory guard — must never break extraction
+
     def _flag_taught_field_ownership(self, results, field_defs, supplier_name,
                                      anchors, hints, document_slug, caption_vocab):
         """TAUGHT-FIELD OWNERSHIP GUARD (flag-only — Oracle-signed 2026-07-11, DIRECTION_SUPREMACY
@@ -5290,6 +5362,11 @@ class ExtractionEngine:
         # it (cap 69 + note) so it can't silently file + poison learning. Flag-only, before the boost.
         self._flag_prefix_outlier(results, field_defs, supplier_name, document_slug)
         self._flag_ref_length_outlier(results, field_defs, supplier_name, document_slug)
+        # D1 digit-disagreement flag — LAST in the note chain (Oracle 2026-08-01): it must
+        # see every earlier arm's adoption/note (a suffix-adopted winner now EQUALS its
+        # keyword ancestor -> structurally can't fire; an S-B-noted field is skipped).
+        self._flag_digit_disagreement(results, field_defs, supplier_name,
+                                      document_slug, ref_field_key)
         # ── Identity rescue (slice 1; Oracle-signed 2026-07-10) ── AFTER the guard
         # (it overwrites the guard's note with its own provenance note when the
         # corroboration holds; no corroboration => the guard's behaviour survives

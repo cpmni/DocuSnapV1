@@ -302,19 +302,17 @@ gate); on #291 wrong inline@85 beat CORRECT keyword@85 sitting in the ledger at 
   #283, #291, #299 + the healed 259 signature. **REMEDIATION FIRST (owner): eyeball the 3 exhibits,
   then Learning Repair de-confirm → correct to printed value → re-confirm** (confirmed poison feeds
   live shapes/hints/S-B indexes — gt_overrides alone insufficient). Do BEFORE any gate baselines.
-- **D1 SIGNED W/COND (build first): in-band digit-disagreement flag.** Post-merge, LAST in pinned
-  pass order (after S-B+witness; extend test_validation_pass_order.js); REF-ROLE fields only (date
-  fields = structural false-fire hazard, zero measured heals); trigger = distinct-stage ledger
-  candidate, identical non-digit skeleton (separator-normalised), same length, ≤2 digit positions
-  differing (tighten to 1 if census >3%); witness conf floor from census; FLAG-only (note + cap 69 +
-  suggestion surface; copy directs reviewer to the DOCUMENT, never "pick one" — 65@400 shows both
-  readings can be wrong). **Mandatory pre-build census: predicate offline over the 299 corpus
-  (run8.js scaffolding), false-fire bar ≤3% hard / ≤2% target.** Exempt dominant-value-snapped
-  winners matching an in-scope confirmed literal if census shows any. Gate: OFF byte-identical; ON
-  values byte-identical corpus-wide (notes/conf only), #291 flagged, flag-audit total. Pins: 291 +
-  259-signature fixtures fire; suffix-adopted fuller read does NOT; 3-sub does NOT; date does NOT;
-  flagged would-auto-file doc HOLDS. Heals/flags: #291 now + closes the GT-in-band-loses-to-Tier-A
-  hole. Catches 2 of the 4-doc class; combined with D2 = 4 of 4 flagged or healed.
+- **D1 BUILT + ON (same day): in-band digit-disagreement flag** — kill `DIGIT_DISAGREE_FLAG`.
+  `engine._flag_digit_disagreement` LAST in the pinned note chain; comparator =
+  `suffix_reconcile.digit_substitution_diff` (SHARED with future D2 — one impl, one pin;
+  census-lockstep with `stress_test/census_digit_disagree.js`). Ref-role only; distinct-stage
+  witness conf ≥60; 1-2 digit diffs on identical skeleton; flag-only cap 69 + corrected_to + copy
+  directing to the DOCUMENT. **Gates all met:** census 300 docs → 1 fire = the #291 true catch,
+  0.00% false (bar ≤3%); 31 pins green (`tests/test_digit_disagree.py` — C3 value-never-changed,
+  S-B-territory exclusion, suffix-adopt interplay, ref-role-only, order pin); realdoc OFF-vs-ON
+  diff = EXACTLY #291 silent→flagged, would-auto-file-wrong 9→8, values byte-identical corpus-wide.
+  Census predicate kept ≤2 (0.33% fire-rate — no tightening needed). Dominant-snap exemption
+  SKIPPED (census showed zero such cases — revisit only if a snap-winner false-fire ever appears).
 - **D2 CONDITIONAL GO (second, after D1's census) — RE-SPECCED by Oracle:** the witness is a second-
   DOWNSAMPLE-GEOMETRY line-locate + harvest of the known label/value band (400→1100 or 600→1100),
   NOT a value-box crop re-OCR (matrix PROVES the crop stays wrong at 400/600 — the 283/299 heals came
