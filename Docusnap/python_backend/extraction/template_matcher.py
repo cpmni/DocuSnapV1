@@ -865,11 +865,24 @@ def extract_keyword_fingerprint(ocr_text: str, max_words: int = 10) -> list:
     — layout-independent and reusable.
     """
     RECIPIENT_MARKERS = ('bill to', 'ship to', 'invoice to', 'sold to', 'customer')
+    # R3 COUNTERPARTY MARKERS for BUYER-ISSUED docs (herald→Oracle SIGN-OFF-W/COND 2026-08-01;
+    # kill FINGERPRINT_COUNTERPARTY_MARKERS=0). A purchase order introduces its counterparty
+    # with "Supplier :" / "Vendor :" — neither was a marker, so the harvest sailed past into
+    # the per-document counterparty name, which then entered the template's PERMANENT identity
+    # ('Halcyon Leisure Group' inside the Vellum PO template — the doc-259 deadlock's poison).
+    # WORD-BOUNDARY regex, not substring (Oracle's load-bearing sharpening: the existing tuple
+    # is substring-matched, and 'supplier' as a substring would truncate an "Office Suppliers
+    # Direct" letterhead at line 1 — a shorter fingerprint is safe, a gutted one is not).
+    # Harvest-side only, never retroactive — R1's intersect heals frozen fingerprints.
+    _CPTY_RE = re.compile(r'\b(?:supplier|vendor)\b', re.IGNORECASE) \
+        if os.environ.get('FINGERPRINT_COUNTERPARTY_MARKERS', '1') != '0' else None
     header_lines = []
     for line in ocr_text.split('\n')[:20]:
         low = line.lower()
         if any(m in low for m in RECIPIENT_MARKERS):
             break  # stop before the per-document recipient/customer block
+        if _CPTY_RE is not None and _CPTY_RE.search(line):
+            break  # buyer-issued counterparty block ("Supplier : <name>") — same rule
         header_lines.append(line)
     header_text = ' '.join(header_lines)
     # FINGERPRINT_HYGIENE (slice 3 of the distinctive-token train, 2026-07-20): a ref-prefix

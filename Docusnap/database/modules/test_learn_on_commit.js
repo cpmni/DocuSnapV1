@@ -128,10 +128,44 @@ function main() {
   f += !check('C-B: zero template_logo_hashes rows (withheld logo not re-planted)', templates.getLogoHashes(db, KW).length === 0);
   f += !check('C-B: fingerprint STILL heals (intersect runs)', JSON.stringify(fpOf(db, KW)) === JSON.stringify(HEALED));
 
-  // ── ON: no template_id ⇒ NO-OP ───────────────────────────────────────────────
-  const orphan = commitDoc(db, { tid: null, supplier: 'Copperfield Electrical Ltd', logo: H0, fp: CLEANDOC });
-  templates.learnTemplateOnCommit(db, orphan, { document_type_slug: 'purchase_order', supplier_name: 'Copperfield Electrical Ltd' });
-  f += !check('ON no-template: no throw, no-op', true);
+  // ── R1 LINK-ON-CONFIRM (herald→Oracle 2026-08-01, kill TEMPLATE_LINK_ON_CONFIRM):
+  // a null-template confirm now RESOLVES the id via the name-primary reuse and falls
+  // through the existing arm — the learning-deadlock cure (refuse ⇒ null id ⇒ nothing
+  // warmed ⇒ refused forever). Resolution-only: every enrichment safety property is
+  // the arm's own.
+  {
+    const orphan = commitDoc(db, { tid: null, supplier: 'Copperfield Electrical Ltd', logo: H9, fp: CLEANDOC });
+    templates.learnTemplateOnCommit(db, orphan, { document_type_slug: 'purchase_order', supplier_name: 'Copperfield Electrical Ltd' });
+    const linked = db.prepare('SELECT template_id FROM documents WHERE id = ?').get(orphan).template_id;
+    const linkedRow = linked && db.prepare('SELECT document_type_slug FROM templates WHERE id = ?').get(linked);
+    f += !check('R1: null-template confirm RESOLVES + LINKS to a same-identity SAME-TYPE template',
+                !!linked && linkedRow && linkedRow.document_type_slug === 'purchase_order');
+
+    process.env.TEMPLATE_LINK_ON_CONFIRM = '0';
+    const orphan2 = commitDoc(db, { tid: null, supplier: 'Copperfield Electrical Ltd', logo: H9, fp: CLEANDOC });
+    templates.learnTemplateOnCommit(db, orphan2, { document_type_slug: 'purchase_order', supplier_name: 'Copperfield Electrical Ltd' });
+    f += !check('R1 kill OFF: legacy bail — no link, no enrich',
+                db.prepare('SELECT template_id FROM documents WHERE id = ?').get(orphan2).template_id == null);
+    delete process.env.TEMPLATE_LINK_ON_CONFIRM;
+
+    const stranger = commitDoc(db, { tid: null, supplier: 'Totally Different Co', logo: H9, fp: CLEANDOC });
+    templates.learnTemplateOnCommit(db, stranger, { document_type_slug: 'purchase_order', supplier_name: 'Totally Different Co' });
+    f += !check('R1: no same-identity sibling → stays unlinked (mints nothing)',
+                db.prepare('SELECT template_id FROM documents WHERE id = ?').get(stranger).template_id == null);
+
+    const wrongType = commitDoc(db, { tid: null, supplier: 'Copperfield Electrical Ltd', logo: H9, fp: CLEANDOC });
+    templates.learnTemplateOnCommit(db, wrongType, { document_type_slug: 'quote', supplier_name: 'Copperfield Electrical Ltd' });
+    f += !check('R1: same identity but NO sibling of the requested type → no cross-type link, mints nothing',
+                db.prepare('SELECT template_id FROM documents WHERE id = ?').get(wrongType).template_id == null);
+
+    // Catch-up seam (Oracle condition i): a machine scope_sweep confirm drives NOTHING here.
+    db.exec('ALTER TABLE documents ADD COLUMN confirmed_via TEXT');
+    const sweep = commitDoc(db, { tid: null, supplier: 'Copperfield Electrical Ltd', logo: H9, fp: CLEANDOC });
+    db.prepare("UPDATE documents SET confirmed_via = 'scope_sweep' WHERE id = ?").run(sweep);
+    templates.learnTemplateOnCommit(db, sweep, { document_type_slug: 'purchase_order', supplier_name: 'Copperfield Electrical Ltd' });
+    f += !check("R1 seam PIN: a 'scope_sweep' confirm neither links nor enriches",
+                db.prepare('SELECT template_id FROM documents WHERE id = ?').get(sweep).template_id == null);
+  }
 
   setEnv(null);
   db.close();

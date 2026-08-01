@@ -1099,7 +1099,35 @@ function learnTemplateOnCommit(db, document_id, { document_type_slug, supplier_n
   const doc = db.prepare(
     'SELECT template_id, logo_phash, logo_detail_hash, keyword_fingerprint FROM documents WHERE id = ?'
   ).get(document_id);
-  const tid = doc && doc.template_id;
+  // Catch-up Filing seam (named NOW so the two signed designs never cross — Oracle 2026-08-01):
+  // a machine 'scope_sweep' confirm must not drive template learning OR the link below; only an
+  // operator-reviewed confirm is the trust anchor. Guarded read — pre-mig-57 fixtures lack the column.
+  let _via = null;
+  try { _via = (db.prepare('SELECT confirmed_via FROM documents WHERE id = ?').get(document_id) || {}).confirmed_via; } catch {}
+  if (_via === 'scope_sweep') return;
+  let tid = doc && doc.template_id;
+  if (!tid) {
+    // ── R1: LINK-ON-CONFIRM (herald→Oracle SIGN-OFF-W/COND 2026-08-01; kill
+    // TEMPLATE_LINK_ON_CONFIRM=0). The learning DEADLOCK cure: a type-refused doc carries
+    // template_id NULL, this function bailed here, so the young same-type template never
+    // gained hashes and its minted fingerprint (poisoned with a counterparty name the
+    // harvest didn't truncate) was never intersect-flushed — every subsequent doc of the
+    // type refused again, forever (doc 259 / the 13-doc Vellum PO class, measured).
+    // Resolution ONLY — resolve the id via the Oracle-signed name-primary reuse (EXACT
+    // normalised established identity + same slug + plausibility, reuseByEstablishedName)
+    // and REVERSIBLE-link the doc, then fall through the EXISTING arm body unchanged, so
+    // every safety property is inherited: type-scope guard, supplier-disjoint validation,
+    // intersect floor, hash append band, collision-suppressed logo seeding. N=1 by ruling:
+    // the confirm is the same trust anchor every other learning lever acts on at one
+    // confirm; a single mis-confirm is bounded by those floors and reversible via
+    // de-confirm + Learning Repair. Mirrors review/handler.js:1153 (the :1152 TODO).
+    if (process.env.TEMPLATE_LINK_ON_CONFIRM !== '0' && supplier_name && document_type_slug) {
+      tid = safe(() => reuseByEstablishedName(db, supplier_name, document_type_slug, document_id), null);
+      if (tid) {
+        db.prepare('UPDATE documents SET template_id = ? WHERE id = ?').run(tid, document_id);
+      }
+    }
+  }
   if (!tid) return;                          // no resolved template on this doc → nothing to enrich
 
   const tmpl = db.prepare('SELECT document_type_slug FROM templates WHERE id = ?').get(tid);

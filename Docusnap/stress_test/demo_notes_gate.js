@@ -113,7 +113,7 @@ function runPass(folder, names, snapArgs, env, label) {
 const NOTE_CLASS = [
   ['fill', /Company inferred from/i],
   ['ambiguity', /used for several document types/i],
-  ['refuse', /heading on this page names a document type/i],
+  ['refuse', /heading on this page names a document type|match this document to (?:the supplier's|a) saved/i],
   ['branding', /confirm the correct company/i],
   ['other', /./],
 ];

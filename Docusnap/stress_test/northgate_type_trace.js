@@ -67,7 +67,7 @@ const TYPE_GUARD = m => {
   for (const e of Object.values((m && m.extractions) || {})) {
     const n = (e && typeof e === 'object' && e.validation_note) ? String(e.validation_note) : '';
     if (n.includes('used for several document types')) return 'ambiguity';
-    if (n.includes("names a document type that doesn't match")) return 'refuse';
+    if (n.includes("names a document type that doesn't match") || n.includes("match this document to")) return 'refuse';
   }
   return null;
 };

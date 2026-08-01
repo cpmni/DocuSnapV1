@@ -225,7 +225,7 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
         for (const e of Object.values(m.extractions || {})) {
           const n = (e && typeof e === 'object' && e.validation_note) ? String(e.validation_note) : '';
           if (n.includes('used for several document types')) guard = 'ambiguity';
-          else if (n.includes("names a document type that doesn't match")) guard = guard || 'refuse';
+          else if (n.includes("names a document type that doesn't match") || n.includes("match this document to")) guard = guard || 'refuse';
           else if (n.includes("couldn't be confirmed anywhere else")) guard = guard || 'g1';
         }
         fs.appendFileSync(process.env.RR_TYPE_ENUM, JSON.stringify({

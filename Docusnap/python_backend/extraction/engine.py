@@ -5541,10 +5541,18 @@ class ExtractionEngine:
         # match and set _type_ambiguous — either way the doc is HELD, so the ambiguity note winning
         # the tie is fine (both compose after the branding/prefix notes applied above).
         elif getattr(self, '_type_refused', False):
+            # Reworded (owner + herald + Oracle 2026-08-01, shipped WITH the R1 link-on-confirm cure —
+            # the promise "confirming will teach it" is only TRUE now that a plain confirm resolves the
+            # template link and warms the young template). On the refuse path the COMMITTED type equals
+            # the trusted heading's type by construction, so the old copy ("heading … doesn't match
+            # this supplier's saved layout") read as a contradiction on a correctly-typed doc; say what
+            # actually happened + what fixes it. The type NAME is threaded when known.
+            _tn = str(document_type or '').strip()
             self._flag_type_ambiguity(
                 results, ref_field_key,
-                note=("The heading on this page names a document type that doesn't match this "
-                      "supplier's saved layout — please check the document type is correct before filing."))
+                note=((f"Couldn't match this document to the supplier's saved {_tn} layout"
+                       if _tn else "Couldn't match this document to a saved layout for the supplier")
+                      + " — please check the document type; confirming will teach this layout."))
 
         # G1 (VETO-FALLTHROUGH corroboration guard — gary design + Oracle SIGN-OFF-W/COND 2026-07-26).
         # On a doc whose template match arrived via the identity-veto FALL-THROUGH, the anchor family

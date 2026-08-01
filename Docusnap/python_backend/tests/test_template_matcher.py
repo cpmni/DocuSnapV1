@@ -207,6 +207,38 @@ def main():
                  'inv' in fp_ref_v0):
         failures += 1
 
+    # ── R3 COUNTERPARTY MARKERS (2026-08-01, kill FINGERPRINT_COUNTERPARTY_MARKERS): a
+    # buyer-issued PO's "Supplier :" block is per-document counterparty, not branding —
+    # the doc-259 deadlock's poison ('Halcyon Leisure Group' inside the Vellum PO template).
+    section("extract_keyword_fingerprint: buyer-issued 'Supplier'/'Vendor' blocks truncate; 'Suppliers' letterheads do not")
+    fp_po = [w.lower() for w in template_matcher.extract_keyword_fingerprint(
+        "VELLUM & CRANE STATIONERS\n8 Paternoster Court\nPurchase Order\n"
+        "Supplier : Pemberton Joinery\nOld Sawmill, Beech Road")]
+    if not check("harvest stops at 'Supplier :' — counterparty name never enters the identity",
+                 'pemberton' not in fp_po and 'joinery' not in fp_po and 'sawmill' not in fp_po):
+        failures += 1
+    if not check('branding above the marker still harvests',
+                 'vellum' in fp_po and 'paternoster' in fp_po):
+        failures += 1
+    fp_shop = [w.lower() for w in template_matcher.extract_keyword_fingerprint(
+        "OFFICE SUPPLIERS DIRECT\nUnit 4 Trading Estate\nBolton BL1 2AB\nTax Invoice")]
+    if not check("PIN (word boundary): an 'Office Suppliers Direct' LETTERHEAD is not truncated",
+                 'suppliers' in fp_shop and 'bolton' in fp_shop):
+        failures += 1
+    _old_cm = _os.environ.get('FINGERPRINT_COUNTERPARTY_MARKERS')
+    _os.environ['FINGERPRINT_COUNTERPARTY_MARKERS'] = '0'
+    try:
+        fp_po_off = [w.lower() for w in template_matcher.extract_keyword_fingerprint(
+            "VELLUM & CRANE STATIONERS\nPurchase Order\nSupplier : Pemberton Joinery")]
+    finally:
+        if _old_cm is None:
+            _os.environ.pop('FINGERPRINT_COUNTERPARTY_MARKERS', None)
+        else:
+            _os.environ['FINGERPRINT_COUNTERPARTY_MARKERS'] = _old_cm
+    if not check("kill switch =0 restores the legacy harvest ('pemberton' captured — revert pin)",
+                 'pemberton' in fp_po_off):
+        failures += 1
+
     # ── extract_keyword_fingerprint: per-document variable tokens must not pollute it ──
     # Two near-duplicate invoices from the SAME supplier - everything that
     # differs between them (ref, date, customer, totals) is exactly what must
