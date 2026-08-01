@@ -459,7 +459,7 @@ async function refreshAutoCommittedBar() {
   _autoFiledDocs = res.docs || [];
   if (_autoFiledDocs.length) {
     bar.innerHTML = `<span class="acb-dismiss" title="Dismiss this notice" aria-label="Dismiss">×</span>`
-      + `<b>✓ ${_autoFiledDocs.length}</b> document${_autoFiledDocs.length === 1 ? '' : 's'} auto-committed on the last pass — `
+      + `<b>✓ ${_autoFiledDocs.length}</b> document${_autoFiledDocs.length === 1 ? '' : 's'} filed automatically on the last pass — `
       + `<span class="acb-back">click here to review them</span>`;
     bar.style.display = 'block';
   } else {
@@ -1782,13 +1782,15 @@ function renderExtractionStatus(doc) {
 
   const recheck = doc._templateRecheck;
 
-  let idLabel, idCls;
-  if (hasTemplate && hasLogo && hasKw)  { idLabel = 'Logo & keyword';    idCls = 'ok'; }
-  else if (hasTemplate && hasLogo)      { idLabel = 'Logo match';         idCls = 'info'; }
-  else if (hasTemplate && hasKw)        { idLabel = 'Keyword match';      idCls = 'info'; }
-  else if (hasTemplate)                 { idLabel = 'Template match';     idCls = 'info'; }
-  else if (recheck?.matched)            { idLabel = `Template available: ${recheck.templateName}`; idCls = 'info'; }
-  else                                  { idLabel = 'No template match';  idCls = 'warn'; }
+  // Plain words on the chip, technical term in the tooltip (Chris, card 4): a standard
+  // user reads "Recognised by: its logo and wording"; the hover keeps the admin detail.
+  let idLabel, idCls, idTip;
+  if (hasTemplate && hasLogo && hasKw)  { idLabel = 'Its logo and wording'; idCls = 'ok';   idTip = 'Matched a saved template by logo & keyword fingerprint'; }
+  else if (hasTemplate && hasLogo)      { idLabel = 'Its logo';             idCls = 'info'; idTip = 'Matched a saved template by its logo'; }
+  else if (hasTemplate && hasKw)        { idLabel = 'Its wording';          idCls = 'info'; idTip = 'Matched a saved template by its keyword fingerprint'; }
+  else if (hasTemplate)                 { idLabel = 'A saved layout';       idCls = 'info'; idTip = 'Matched a saved template'; }
+  else if (recheck?.matched)            { idLabel = `Layout available: ${recheck.templateName}`; idCls = 'info'; idTip = 'A saved template matches this layout — reprocess to apply it'; }
+  else                                  { idLabel = 'Not seen before';      idCls = 'warn'; idTip = 'No saved template matched this document'; }
 
   // ── Extraction method summary ──────────────────────────────────────────────
   // Strip +corrected/+denoised suffixes, then categorise each field's method.
@@ -1801,19 +1803,20 @@ function renderExtractionStatus(doc) {
   const keywordN  = baseMethods.filter(m => m === 'keyword').length;
   const knownN    = baseMethods.filter(m => m && m !== 'unknown').length;
 
-  let extLabel, extCls;
-  if (knownN === 0)                              { extLabel = 'Unknown';          extCls = 'muted'; }
+  let extLabel, extCls, extTip;
+  if (knownN === 0)                              { extLabel = 'Unknown';              extCls = 'muted'; extTip = ''; }
   else if (mappingN > 0 && mappingN >= Math.max(anchorN, keywordN)) {
-                                                   extLabel = 'Template mappings'; extCls = 'ok'; }
-  else if (anchorN > 0 && anchorN >= keywordN)  { extLabel = 'Learned anchors';   extCls = 'info'; }
-  else if (keywordN > 0)                         { extLabel = 'Keyword patterns';  extCls = 'info'; }
-  else                                           { extLabel = 'Mixed methods';     extCls = 'info'; }
+                                                   extLabel = 'Taught positions';     extCls = 'ok';   extTip = 'Template mappings — the boxes drawn when this layout was taught'; }
+  else if (anchorN > 0 && anchorN >= keywordN)  { extLabel = 'Remembered positions'; extCls = 'info'; extTip = 'Learned anchors — positions learned from your confirmations'; }
+  else if (keywordN > 0)                         { extLabel = 'Printed labels';       extCls = 'info'; extTip = 'Keyword patterns — values found beside their printed labels'; }
+  else                                           { extLabel = 'A mix of methods';     extCls = 'info'; extTip = ''; }
 
   // ── Render ─────────────────────────────────────────────────────────────────
-  const pill = (text, cls) => {
+  const pill = (text, cls, tip) => {
     const s = document.createElement('span');
     s.className   = `method-pill ${cls}`;
     s.textContent = text;
+    if (tip) s.title = tip;
     return s;
   };
   const row = (labelText, ...pills) => {
@@ -1830,10 +1833,10 @@ function renderExtractionStatus(doc) {
     return d;
   };
 
-  el.appendChild(row('ID:', pill(idLabel, idCls)));
-  const extPills = [pill(extLabel, extCls)];
-  if (mappingN > 0) extPills.push(pill(`${mappingN} mapping${mappingN === 1 ? '' : 's'}`, 'ok'));
-  el.appendChild(row('Extraction:', ...extPills));
+  el.appendChild(row('Recognised by:', pill(idLabel, idCls, idTip)));
+  const extPills = [pill(extLabel, extCls, extTip)];
+  if (mappingN > 0) extPills.push(pill(`${mappingN} taught field${mappingN === 1 ? '' : 's'}`, 'ok', 'Fields read from the taught template mapping'));
+  el.appendChild(row('Fields read by:', ...extPills));
 
   renderTeachCta(doc);   // the "Teach this document" CTA above the preview keys off the SAME id state
 }
@@ -2067,13 +2070,13 @@ function renderCleanHoldReason(el, doc) {
       // below already says the confidence setting can't file it.
       'weak-critical-field': fieldName
         ? `<strong>${escHtml(fieldName)}</strong> was read at lower confidence than automatic `
-          + `filing requires, so this one is waiting for your eye. Teaching this field `
-          + `(&#8853;) usually fixes it for good.`
+          + `filing requires, so this one is waiting for your eye. If the value is wrong, `
+          + `teaching it (&#8853;) usually fixes it for good — if it's right, just confirm.`
         : 'a filing field was read at lower confidence than automatic filing requires.',
     }[v.kind] || 'an automatic check didn\'t pass.';
     el.classList.add('rr-calm');
     el.innerHTML = `<div class="rr-lead">Nothing looks wrong — ${why}</div>`
-                 + `<div class="rr-cues"><span class="rr-cue info">${escHtml(conf)}% · checked by you</span></div>`
+                 + `<div class="rr-cues"><span class="rr-cue info">${Number.isFinite(conf) ? `Overall ${conf}% · checked by you` : 'Checked by you'}</span></div>`
                  + `<div class="rr-hint">Confirm it and it files. This isn't the confidence setting — `
                  + `changing that won't file this one.</div>`;
     el.hidden = false;
@@ -2086,7 +2089,7 @@ function renderCleanHoldReason(el, doc) {
   } else if (Number.isFinite(conf) && conf < thr) {
     lead = `Nothing was flagged — this was read at ${conf}%, just below the ${thr}% you've set for `
          + 'filing without a check, so it\'s waiting for you.';
-    cue  = `${conf}% · your setting ${thr}%`;
+    cue  = `Read at ${conf}% · your setting ${thr}%`;
     hint = `If documents like this are consistently right, lower the threshold in Settings → Processing.`;
   } else {
     lead = 'Nothing was flagged on this document — check the values and confirm to file it.';
@@ -2511,8 +2514,8 @@ function _prefillGenericScanDate(doc, scroll) {
 function _fieldIsTaught(key) { return taughtFieldKeys.has(key) || !!pendingAnchors[key]; }
 function _taughtDotTitle(taught) {
   return taught
-    ? 'Taught — a learned position is saved for this field on this supplier + document type'
-    : 'Not taught for this document type yet — click ⊕ to teach it (a position taught on a different type doesn’t apply here)';
+    ? 'Taught — Scan Finder knows where this field sits on this supplier’s documents of this type'
+    : 'Not taught for this document type yet — click ⊕ and draw a box to show Scan Finder where it lives (a spot taught on a different document type doesn’t apply here)';
 }
 // Re-fetch the taught-field set for the CURRENT supplier + selected type and repaint every dot.
 // The dots are TYPE-scoped, so changing the document type must re-query — a field taught on the
@@ -2564,7 +2567,7 @@ function _clearSuspectReadsForNewIssuer() {
     if (row) { try { dismissServerNote(row, key); } catch {} try { clearFieldWarning(row, input); } catch {} }
     cleared++;
   });
-  if (cleared) { validateConfirm(); try { showToast(`Cleared ${cleared} field${cleared > 1 ? 's' : ''} that were read from the previous supplier — teach them for ${issuer}.`, 'ok'); } catch {} }
+  if (cleared) { validateConfirm(); try { showToast(cleared > 1 ? `Cleared ${cleared} fields that were read from the previous supplier — teach them for ${issuer}.` : `Cleared 1 field that was read from the previous supplier — teach it for ${issuer}.`, 'ok'); } catch {} }
 }
 
 async function _refreshTaughtForType() {
@@ -2629,7 +2632,10 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     : confWord === 'Check'
       ? `Read at ${conf}% — worth a glance, but the value may well be right. Only teach this field (⊕) if the value shown is actually WRONG.`
       : `Low confidence (${conf}%) — please check this value and correct it if it's wrong. Teaching (⊕) only helps if the app can't read the value here.`;
-  const confLabel = conf !== null
+  // No badge on an EMPTY field: the % describes a read that put nothing in the box —
+  // "High · 87%" beside a "Not found" placeholder (or "Low · 0%" under a later ⟳
+  // suggestion fill) reads as nonsense to a non-technical reviewer (Chris, card 3).
+  const confLabel = (conf !== null && String(val ?? '').trim())
     ? `<span class="conf-badge ${confClass}" title="${confTitle}">${confWord} · ${conf}%</span>`
     : '';
   // A correction that was ALREADY APPLIED to the value (Stage 4.5 strong auto-fix:
@@ -2640,10 +2646,13 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   // which the engine guarantees (value/display_value/corrected_to all set to the
   // repair on auto-apply).
   const isApplied = !!correctedTo && val === correctedTo;
-  // An "Accept" button is shown ONLY for unapplied correction CANDIDATES. The button
-  // copies the suggestion into the input; it never confirms or persists.
+  // Correction CANDIDATES get two value-labelled buttons (explicit consent — the operator
+  // sees exactly what each click keeps; Chris, card 1): "Use <suggestion>" copies it into
+  // the input; "Keep <current>" hides the note display-side. Neither confirms or persists.
+  const _btnVal = (s) => { const t = String(s ?? ''); return escHtml(t.length > 18 ? t.slice(0, 17) + '…' : t); };
   const acceptHtml = (correctedTo && !isApplied)
-    ? ` <button type="button" class="accept-btn" data-key="${key}">Accept</button>`
+    ? ` <button type="button" class="accept-btn" data-key="${key}" title="Replace the value with ${escHtml(correctedTo)} — saved when you confirm">Use “${_btnVal(correctedTo)}”</button>`
+      + ` <button type="button" class="keep-btn" data-key="${key}" title="Keep the value as it is and hide this note">${String(val ?? '').trim() ? `Keep “${_btnVal(val)}”` : 'Leave as is'}</button>`
     : '';
   // "This name is correct" — for a NAME field flagged by the wordness/truncation signal
   // (a legitimate acronym-bearing company like "Cloud VPS" reads low on the character
@@ -2844,6 +2853,17 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
       input.dispatchEvent(new Event('input', { bubbles: true }));
       acceptBtn.disabled = true;
       acceptBtn.textContent = 'Applied';
+      row.querySelector('.keep-btn')?.remove();   // the choice is made — drop the alternative
+    });
+  }
+
+  // "Keep <current>" — explicit dismissal of the suggestion. Display-only: hides the note
+  // (the DB note is untouched; Confirm keeps the on-screen value and clears it server-side).
+  const keepBtn = row.querySelector('.keep-btn');
+  if (keepBtn) {
+    keepBtn.addEventListener('click', () => {
+      const note = keepBtn.closest('.field-note');
+      if (note) note.style.display = 'none';
     });
   }
 
@@ -5737,7 +5757,7 @@ function _applyReextractSuggestions(suggestions) {
     if (String(inp.value || '').trim()) continue;              // only ever fill a STILL-empty input
     inp.value = s.value;                                        // NO input event, NO corrections[] (Oracle C4)
     inp.classList.add('reextract-suggested');
-    inp.title = 'Suggested from a re-read of the cached text — check it, then Confirm to keep.';
+    inp.title = 'Scan Finder took another look at this document and suggests this value — check it, then Confirm to keep.';
     inp.style.borderColor = 'var(--accent2)';                  // subtle "this is a suggestion" cue
     const row = inp.closest('.field-row');
     // DISPLAY-ONLY supersede (owner 2026-08-01: "why am I still seeing the messages"): a
@@ -5750,7 +5770,7 @@ function _applyReextractSuggestions(suggestions) {
     if (row && !row.querySelector('.reextract-pill')) {
       const pill = document.createElement('div');
       pill.className = 'field-note reextract-pill';
-      pill.textContent = '⟳ Suggested from a cached-text re-read — check it, then Confirm to keep.';
+      pill.textContent = '⟳ Found on a second look — check it, then Confirm to keep.';
       Object.assign(pill.style, { fontSize: '11px', color: 'var(--accent2)', marginTop: '3px' });
       row.appendChild(pill);
     }

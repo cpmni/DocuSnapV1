@@ -476,7 +476,7 @@
     .add-template-lbl { display: block; }
     #extraction-status { display: flex; flex-direction: column; gap: 4px; }
     .ext-status-row { display: flex; align-items: flex-start; gap: 6px; flex-wrap: nowrap; }
-    .ext-status-lbl { font-size: 10px; color: var(--muted); white-space: nowrap; width: 74px; flex-shrink: 0; padding-top: 3px; }
+    .ext-status-lbl { font-size: 10px; color: var(--muted); white-space: nowrap; width: 90px; flex-shrink: 0; padding-top: 3px; }
     .ext-status-pills { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
     .method-pill {
       font-size: 10px; font-family: var(--mono); padding: 1px 7px;
@@ -564,6 +564,14 @@
     }
     .accept-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-bg); }
     .accept-btn:disabled { color: var(--muted); cursor: default; border-color: var(--border); }
+    /* "Keep <current>" — the explicit no-change twin of .accept-btn, in the muted key. */
+    .keep-btn {
+      font-size: 10px; font-family: var(--sans); line-height: 1;
+      padding: 1px 6px; margin-left: 4px; vertical-align: baseline;
+      border: 1px solid var(--border2); border-radius: 4px;
+      background: transparent; color: var(--muted); cursor: pointer;
+    }
+    .keep-btn:hover { border-color: var(--border2); background: var(--surface2); color: var(--text); }
     /* "Resolve" opens the disambiguation picker — the PRIMARY action on a flagged name field, so it's
        slightly larger + FILLED (accent-tinted) to stand out from the other note actions, with a crisp
        stroke "route into two arrows" icon (not the old fork glyph). Fills solid accent on hover. */
