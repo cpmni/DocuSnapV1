@@ -446,6 +446,26 @@ process_docs.py → ExtractionEngine.extract()
            clean keyword), while a clean/inline read (ocr_min_conf None) still wins.
            Guarded by tests/test_precedence.py (garbled yields / clean still wins) +
            the fence that a passive anchor_crop can't displace keyword_override.
+           ── 2026-08-01 NARROWING (Oracle-signed S-C, kill BLIND_GEOM_DISAGREE_RECONCILE,
+           DARK until owner flip): Tier-A's outright win is RECONCILABLE post-merge for
+           method == anchor_registration EXACTLY — the fiat-located rung (located_ok by
+           membership, ocr_min_conf None for structured fields, coverage patterns admit
+           dates) whose #141 win ('21/07/2026'@83 over keyword_override 'DN-24408'@93 +
+           template_mapping@90) proved a registration-resolved authoritative read can
+           overrule the very witnesses the corroboration lift rules it INADMISSIBLE to
+           join. When such a winner FAILS its own-supplier learned shape: ≥2 distinct-
+           stage witnesses (0_template/0.5_mapping/1_keyword) agreeing on one shape-
+           passing value → ADOPT that value NON-authoritatively at the witness's own
+           confidence; exactly 1 witness → FLAG (cap 69, both values named). anchor_inline
+           / anchor_crop_relocated winners are UNTOUCHED (pinned — the re-teach fix (1)
+           above depends on it). Sibling deterministic flags at the same seam, both ON:
+           S-A DATE_IN_REF_FLAG (a ref-role value that fully parses as a calendar date →
+           cap 69 + note, floor-independent, scope self-disarms via its own learned class)
+           and S-B REF_LENGTH_OUTLIER_GUARD (per-scope digit-run profile dominance with
+           the prefix guard's self-heal bars — the axis the length-folded shape is blind
+           to by design). Pass order pinned: suffix-reconcile → S-C → S-A → prefix-outlier
+           → S-B (tests/test_blind_geom_reconcile.py §4). Guards: test_date_in_ref_flag.py
+           + test_ref_length_outlier.py + test_blind_geom_reconcile.py.
            ── 2026 RELIABILITY PASS (find → follow → read, across doc types) ──
            PREVIEW-SCALE FREE-TEXT READ (anchor._noise_smooth_retry + the
            _ocr_crop_laddered fast-path, 2026-06 — "read it the way the draw tool does"):

@@ -15,6 +15,7 @@ Usage:
 """
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -920,6 +921,16 @@ def _identity_corroborated_strict(value: str | None, band: str | None) -> bool:
     return present == len(toks)
 
 
+# S-A date-in-ref belt regexes (module-level — compiled once). A guard value must be a
+# FULL-STRING numeric 3-component date with the SAME separator repeated, or a month-name
+# date, AND parse via validator.parse_date — the pair keeps '20260731' / '21/07' /
+# 'DN-24/07/26' out of reach (pinned in tests/test_date_in_ref_flag.py).
+_NUM_DATE_RE  = re.compile(r'^\d{1,4}([/\-.])\d{1,2}\1\d{1,4}$')
+_NAME_DATE_RE = re.compile(
+    r'^\d{1,2}(?:st|nd|rd|th)?[\s\-.]+[A-Za-z]{3,9}\.?,?[\s\-.]+\d{2,4}$'
+    r'|^[A-Za-z]{3,9}\.?,?[\s\-.]+\d{1,2}(?:st|nd|rd|th)?,?[\s\-.]+\d{2,4}$')
+
+
 def _is_ref_field(key: str) -> bool:
     """Reference-number-style fields, by naming convention (no supplier/doc
     specifics): invoice_number / po_number / sales_order_number (..._number),
@@ -1187,6 +1198,7 @@ class ExtractionEngine:
         self.dominant_index      = {}   # Stage 2.5d dominant-value snap (populated by set_formats)
         self.known_index         = {}   # confirmed values per scope — guards try_correct (set_formats)
         self.prefix_index        = {}   # dominant ref-code prefix per scope — prefix-outlier guard (set_formats)
+        self.length_index        = {}   # dominant ref digit-run profile per scope — S-B length guard (set_formats)
         self.noise_profile_index = {}   # populated by set_formats()
         self.format_class_index  = {}   # populated by set_formats()
         self.label_overrides     = []   # populated by set_label_overrides()
@@ -1785,6 +1797,7 @@ class ExtractionEngine:
         self.dominant_index      = ocr_corrector.build_dominant_index(formats_data)
         self.known_index         = ocr_corrector.build_known_index(formats_data)
         self.prefix_index        = ocr_corrector.build_prefix_index(formats_data)
+        self.length_index        = ocr_corrector.build_length_index(formats_data)   # S-B ref digit-run profiles
         self.format_class_index  = format_anomaly_checker.build_format_class_index(formats_data)
         n = len([k for k in self.format_index if k != '_fallback'])
         m = len(self.noise_profile_index)
@@ -2458,6 +2471,219 @@ class ExtractionEngine:
                                                        'seen; please verify'}
         except Exception:
             pass   # advisory reconciliation — must never break extraction
+
+    # ── S-C: BLIND-GEOMETRY DISAGREEMENT RECONCILIATION (Oracle SIGN-OFF-W/COND 2026-08-01;
+    # kill BLIND_GEOM_DISAGREE_RECONCILE, ships DARK =0 — flip is the OWNER's call after gates).
+    # The #141 class: an operator-taught anchor resolved via the REGISTRATION rung wins Tier-A
+    # by fiat (`located` by method membership, confidence never consulted, ocr_min_conf None for
+    # structured fields) even though the label evidence contradicted the geometry — '21/07/2026'
+    # @83 beat keyword_override '. DN-24408'@93 AND template_mapping 'DN-24408'@90. This pass is
+    # the symmetric completion of two signed doctrines: KEYWORD_ANCHOR_CORROB already rules
+    # anchor_registration INADMISSIBLE as a corroboration witness ("blind geometry — an
+    # independence fraud"), and the prefix guard already refuses taught-anchor exemption ("the
+    # teach fixed the position, not the value"). A method inadmissible as a witness cannot
+    # silently OVERRULE two admissible witnesses.
+    #   ADOPT: >=2 DISTINCT-stage-family witnesses (0_template / 0.5_mapping / 1_keyword —
+    #   pinned: two same-family candidates never count) agree normalise-equal on one
+    #   shape-PASSING value -> restore that value NON-authoritatively (witness method +
+    #   blind_geom_reconciled marker, confidence <= max witness conf, never boosted).
+    #   FLAG: exactly one witness -> keep the winner's value, cap 69 + a note naming BOTH
+    #   values (fail toward review with a reason; untouched would preserve a silent wrong file).
+    # v1 scope: winner method == 'anchor_registration' EXACTLY. PINNED EXCLUSIONS: anchor_inline
+    # / anchor_crop_relocated winners are untouched (their label was genuinely found on-page —
+    # the 2026-07-26 Tier-A re-teach fix depends on it); rigid anchor_crop is already
+    # shape-gated. Fill-empty stays intact (no disagreeing candidate -> inert). ORDER (pinned in
+    # tests): suffix-reconcile -> S-C -> S-A date flag -> prefix-outlier -> S-B length guard —
+    # S-C before S-A so a reconciled value is judged, not the stale date.
+    def _reconcile_blind_geometry(self, results, field_defs, supplier_name, document_slug):
+        if os.environ.get('BLIND_GEOM_DISAGREE_RECONCILE', '0') == '0':
+            return
+        try:
+            from extraction import suffix_reconcile
+            from extraction import text_normalise as _tn
+            from extraction.value_quality import is_name_like_field
+            _skip_types = {'date', 'currency', 'number', 'percentage', 'email', 'iban', 'vat_gb',
+                           'postcode_uk', 'ip_address', 'mac_address', 'currency_code', 'website'}
+            type_by_key = {f.get('key'): (f.get('type') or '').lower() for f in (field_defs or [])}
+            s_lower  = (supplier_name or '').lower().strip()
+            dt_lower = (document_slug or '').lower().strip()
+            if not s_lower:
+                return                  # own-supplier shapes only
+            _WITNESS_STAGES = {'0_template', '0.5_mapping', '1_keyword'}
+            for key, data in results.items():
+                if key.startswith('_') or not isinstance(data, dict):
+                    continue
+                val = data.get('value')
+                if not val or is_name_like_field(key) or type_by_key.get(key) in _skip_types:
+                    continue
+                if str(data.get('method') or '') != 'anchor_registration':
+                    continue            # v1: the fiat-located method EXACTLY (pinned)
+                if str(data.get('validation_note') or '').strip() or data.get('corrected_to'):
+                    continue            # one note per field
+                fmt_entry = self.format_class_index.get((s_lower, dt_lower, key))
+                if not fmt_entry or not fmt_entry.get('shapes'):
+                    continue
+                if not format_anomaly_checker.check_value(str(val), fmt_entry):
+                    continue            # winner passes its own scope shape — nothing to arbitrate
+                win_norm = _tn.normalise_for_tokens(str(val))
+                # Gather shape-PASSING, normalise-DIFFERING witnesses by normalised value.
+                by_value = {}
+                for cand in (self._field_candidates.get(key) or []):
+                    stage = str(cand.get('stage') or '')
+                    if stage not in _WITNESS_STAGES:
+                        continue
+                    cv = suffix_reconcile.edge_strip(str(cand.get('value') or ''))
+                    if not cv:
+                        continue
+                    cn = _tn.normalise_for_tokens(cv)
+                    if not cn or cn == win_norm:
+                        continue
+                    if format_anomaly_checker.check_value(cv, fmt_entry):
+                        continue        # witness must itself pass the scope shape
+                    ent = by_value.setdefault(cn, {'families': set(), 'best': None})
+                    ent['families'].add(stage)
+                    c = int(cand.get('confidence') or 0)
+                    if ent['best'] is None or c > int(ent['best'].get('confidence') or 0):
+                        ent['best'] = {'value': cv, 'method': cand.get('method'), 'confidence': c}
+                if not by_value:
+                    continue
+                # Prefer the value with the MOST distinct families, then highest witness conf.
+                cn, ent = max(by_value.items(),
+                              key=lambda kv: (len(kv[1]['families']),
+                                              int(kv[1]['best'].get('confidence') or 0)))
+                w = ent['best']
+                if len(ent['families']) >= 2:
+                    self._t('blind_geom_reconcile', field=key, was=str(val), now=w['value'],
+                            families=sorted(ent['families']))
+                    self.log(f"  Blind-geometry reconcile: {key} '{val}' -> '{w['value']}' "
+                             f"({len(ent['families'])} independent reads agree)")
+                    results[key] = {
+                        **data,
+                        'value':         w['value'],
+                        'display_value': w['value'],
+                        'method':        w.get('method') or data.get('method'),
+                        # Oracle tightening: the adopted confidence is the best WITNESS's own —
+                        # never synthetically boosted above what any witness actually scored.
+                        'confidence':    int(w.get('confidence') or 0),
+                        'authoritative': False,
+                        'blind_geom_reconciled': True,
+                    }
+                else:
+                    self._t('blind_geom_flag', field=key, value=str(val), witness=w['value'])
+                    results[key] = {
+                        **data,
+                        'confidence':      min(int(data.get('confidence') or 0), 69),
+                        'validation_note': (f"this read '{val}', but another check read "
+                                            f"'{w['value']}' — please pick the right value"),
+                    }
+        except Exception:
+            pass   # advisory reconciliation — must never break extraction
+
+    # ── S-A: DATE-SHAPED VALUE IN A REFERENCE FIELD (Oracle SIGN-OFF-W/COND 2026-08-01;
+    # kill DATE_IN_REF_FLAG — default ON after its gate). Deterministic content-nature check,
+    # the #141/#142 backstop for ANY source: a ref-role/code field whose committed value FULLY
+    # parses as a calendar date is evidence the read landed on the wrong row. Flag-only (cap 69
+    # + note — the validation_note is the ONLY floor-independent auto-file block, incl. at 100),
+    # NEVER null. Belt: parse_date alone is too permissive an anchor for a guard, so the value
+    # must ALSO be a full-string numeric 3-component date (SAME separator repeated) or a
+    # month-name date — '20260731', '21/07' and 'DN-24/07/26' stay safe (pinned).
+    # Exempt: manual/template_fixed methods (human-set literals) and a scope whose OWN learned
+    # shape accepts the value (a supplier whose refs genuinely look like dates self-disarms as
+    # history accrues — the '12.05.11' pinned trade-off flags only until confirmed).
+    # DELIBERATE ASYMMETRY (Oracle-ruled, pinned): keyword_override is NOT exempt — unlike
+    # _flag_prefix_outlier's exemption set, because the override is authority over the LABEL
+    # position; the VALUE is still an OCR read. Do not "harmonise" the two exemption sets.
+    def _flag_date_shaped_ref(self, results, field_defs, supplier_name, document_slug):
+        # Default ON (flipped 2026-08-01 after its realdoc gate: EXACTLY #141/#142 silent→flagged,
+        # zero other deltas, accuracy identical). =0 kills.
+        if os.environ.get('DATE_IN_REF_FLAG', '1') == '0':
+            return
+        try:
+            from extraction.value_quality import is_name_like_field
+            type_by_key = {f.get('key'): (f.get('type') or '').lower() for f in (field_defs or [])}
+            s_lower  = (supplier_name or '').lower().strip()
+            dt_lower = (document_slug or '').lower().strip()
+            for key, data in results.items():
+                if key.startswith('_') or not isinstance(data, dict):
+                    continue
+                val = str(data.get('value') or '').strip()
+                if not val or is_name_like_field(key):
+                    continue
+                ftype = type_by_key.get(key)
+                if ftype == 'date' or key.endswith('_date') or key == 'date':
+                    continue            # date roles/fields are exactly where dates belong
+                if not (_is_ref_field(key) or ftype in ('reference_code', 'reference')):
+                    continue
+                method = str(data.get('method') or '')
+                if 'manual' in method or 'template_fixed' in method:
+                    continue            # human-set literal — not an OCR read
+                if str(data.get('validation_note') or '').strip():
+                    continue            # one note per field (S-C spoke first if it fired)
+                if not (_NUM_DATE_RE.match(val) or _NAME_DATE_RE.match(val)):
+                    continue
+                if validator.parse_date(val) is None:
+                    continue            # belt AND parser must both agree it is a real date
+                fmt_entry = self.format_class_index.get((s_lower, dt_lower, key)) if s_lower else None
+                if fmt_entry and not format_anomaly_checker.check_value(val, fmt_entry):
+                    continue            # the scope's OWN learned class/shape accepts this — a
+                                        # supplier whose refs genuinely look like dates self-disarms
+                data['confidence'] = min(int(data.get('confidence') or 0), 69)
+                data['validation_note'] = ('this looks like a date, but this field expects a '
+                                           'reference — please check which value belongs here')
+                self._t('date_in_ref_flag', field=key, value=val, method=method)
+                self.log(f"  Date-in-ref guard: {key} read {val!r} ({method}) — flagged for review")
+        except Exception:
+            pass   # advisory guard — must never break extraction
+
+    # ── S-B: REF DIGIT-RUN LENGTH PROFILE GUARD (Oracle SIGN-OFF-W/COND 2026-08-01; kill
+    # REF_LENGTH_OUTLIER_GUARD, default ON since the flood-audit gate passed same day). The
+    # length-folded learned shape is BLIND to digit accretion ('INV-121' -> 'INV-12110') and
+    # duplication ('PO-64334' -> 'PO-643224') BY DESIGN (the fold cured the rollover withhold —
+    # untouched, pinned). The per-scope digit-run PROFILE model (ocr_corrector.build_length_index
+    # — dominance + the same weight-aware self-heal bars as the prefix guard) sees exactly that
+    # axis. Flag-only, cap 69 + note; value NEVER touched. A genuine rollover ('INV-999' ->
+    # 'INV-1000') flags its first ~3 docs then self-heals as confirms accrue — the accepted,
+    # PINNED trade-off (exempting +1-length would reopen the accretion hole). Skip set + method
+    # exemptions mirror _flag_prefix_outlier (taught anchors deliberately NOT exempt). Runs LAST
+    # in the note chain (S-A > prefix-outlier > S-B): note-if-empty only.
+    def _flag_ref_length_outlier(self, results, field_defs, supplier_name, document_slug):
+        # Default ON (flipped 2026-08-01 after its flood-audit gate: ZERO corpus flags — no live
+        # accretion/dup at 300 today; the guard exists for the class the fold can't see). =0 kills.
+        if os.environ.get('REF_LENGTH_OUTLIER_GUARD', '1') == '0' or not self.length_index:
+            return
+        try:
+            from extraction.value_quality import is_name_like_field
+            _skip_types = {'date', 'currency', 'number', 'percentage', 'email', 'iban', 'vat_gb',
+                           'postcode_uk', 'ip_address', 'mac_address', 'currency_code', 'website'}
+            type_by_key = {f.get('key'): (f.get('type') or '').lower() for f in (field_defs or [])}
+            for key, data in results.items():
+                if key.startswith('_') or not isinstance(data, dict):
+                    continue
+                val = data.get('value')
+                if not val or is_name_like_field(key) or type_by_key.get(key) in _skip_types:
+                    continue
+                method = str(data.get('method') or '')
+                if any(m in method for m in ('override', 'manual', 'template_fixed')):
+                    continue
+                if str(data.get('validation_note') or '').strip():
+                    continue            # S-A / prefix-outlier spoke first — one note per field
+                rec = ocr_corrector.lookup_length(self.length_index, key, supplier_name, document_slug)
+                if not rec:
+                    continue
+                p = ocr_corrector.digit_run_profile(val)
+                if not p or not ocr_corrector.is_length_outlier(p, rec):
+                    continue
+                dom = rec.get('dominant') or ()
+                data['confidence'] = min(int(data.get('confidence') or 0), 69)
+                data['validation_note'] = (
+                    f"this has {'+'.join(str(n) for n in p)} digits where this sender's usually "
+                    f"have {'+'.join(str(n) for n in dom)} — possibly an extra or missing digit. "
+                    f"Please check.")
+                self._t('ref_length_flag', field=key, value=str(val), profile=list(p),
+                        dominant=list(dom))
+                self.log(f"  Ref-length guard: {key} profile {p} vs dominant {dom} — flagged")
+        except Exception:
+            pass   # advisory guard — must never break extraction
 
     def _flag_taught_field_ownership(self, results, field_defs, supplier_name,
                                      anchors, hints, document_slug, caption_vocab):
@@ -4953,10 +5179,17 @@ class ExtractionEngine:
         # expose it. Adopt-or-flag from the candidate ledger, no new OCR. BEFORE the
         # prefix-outlier guard so that guard judges the healed value.
         self._reconcile_clipped_suffix(results, field_defs, supplier_name, document_slug)
+        # ORDER PINNED (Oracle 2026-08-01, tests/test_validation_pass_order.py): suffix-reconcile
+        # -> S-C blind-geometry -> S-A date-in-ref -> prefix-outlier -> S-B length guard.
+        # S-C before S-A is load-bearing: on the #141 class S-C adopts the witnesses' 'DN-24408'
+        # and S-A then sees a non-date (no stale date-flag on a healed value).
+        self._reconcile_blind_geometry(results, field_defs, supplier_name, document_slug)
+        self._flag_date_shaped_ref(results, field_defs, supplier_name, document_slug)
         # PREFIX-OUTLIER GUARD (2026-07-12): a shape-valid single-glyph misread of a ref field's
         # dominant code prefix (DN->IN) evades every format gate + auto-files at 95%+ on import; flag
         # it (cap 69 + note) so it can't silently file + poison learning. Flag-only, before the boost.
         self._flag_prefix_outlier(results, field_defs, supplier_name, document_slug)
+        self._flag_ref_length_outlier(results, field_defs, supplier_name, document_slug)
         # ── Identity rescue (slice 1; Oracle-signed 2026-07-10) ── AFTER the guard
         # (it overwrites the guard's note with its own provenance note when the
         # corroboration holds; no corroboration => the guard's behaviour survives

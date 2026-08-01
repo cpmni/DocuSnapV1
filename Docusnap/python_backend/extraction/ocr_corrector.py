@@ -556,6 +556,84 @@ def is_prefix_outlier(read_prefix, rec):
     return not (c >= _PREFIX_ACCEPT_ABS or c >= thr)
 
 
+# ── S-B: per-scope ref digit-run LENGTH profile (Oracle SIGN-OFF-W/COND 2026-08-01;
+# kill REF_LENGTH_OUTLIER_GUARD in the engine, built OFF, flip on its realdoc gate) ──────────
+# The learned-SHAPE model folds the digit-run LENGTH of any single-run shape BY DESIGN
+# ('@@-#####' -> '@@-#', format_anomaly_checker._fold_shape — do NOT revert: length-invariance
+# is what cured the INV999->INV1000 rollover withhold). That leaves digit ACCRETION
+# ('INV-121' read 'INV-12110') and glyph DUPLICATION ('PO-64334' read 'PO-643224') invisible
+# to every shape gate. This model sees exactly that axis: the per-scope digit-run length
+# PROFILE — ('DN-24408')->(5,), ('7602-1354-4')->(4,4,1) — with the SAME dominance and
+# weight-aware self-heal bars as the prefix model, so a legitimately-new length confirms in
+# (~_PREFIX_ACCEPT_MIN docs flag during a genuine rollover — the accepted, pinned trade-off)
+# and a mixed-length scope (>=20% share) never presents a dominant profile at all.
+
+def digit_run_profile(v):
+    """Tuple of consecutive-digit-run lengths in the value ('DN-24408' -> (5,)), or None
+    when the value carries no digits. Exact-tuple comparisons only — run COUNT and each
+    run's length both matter ('7602-1354-4' -> (4,4,1))."""
+    runs = re.findall(r'\d+', str(v or ''))
+    return tuple(len(r) for r in runs) if runs else None
+
+
+def build_length_index(formats_data):
+    """Per (supplier, doctype, field): the DOMINANT digit-run profile + per-profile confirmed
+    counts. Mirrors build_prefix_index: count-weighted over ALL confirmed values, dominant
+    requires DOMINANT_MIN_COUNT and DOMINANT_MIN_SHARE; supplier+doctype scope only (length
+    conventions are per-supplier; no cross-supplier fallback)."""
+    index = {}
+    for entry in (formats_data or []):
+        field_key = entry.get('field_key', '')
+        counts    = entry.get('value_counts') or {}
+        if not field_key or not counts:
+            continue
+        total_all = sum(max(1, int(c or 1)) for c in counts.values())
+        prof_counts = {}
+        for value, c in counts.items():
+            p = digit_run_profile(value)
+            if p is None:
+                continue
+            prof_counts[p] = prof_counts.get(p, 0) + max(1, int(c or 1))
+        if not prof_counts or total_all <= 0:
+            continue
+        dom_p, dom_n = max(prof_counts.items(), key=lambda kv: kv[1])
+        if dom_n < DOMINANT_MIN_COUNT or dom_n < DOMINANT_MIN_SHARE * total_all:
+            continue                                # no trustworthy profile -> scope disarmed
+        supplier = (entry.get('supplier_name') or '').lower().strip()
+        doc_type = (entry.get('document_type') or '').lower().strip()
+        if supplier and doc_type:
+            index[(supplier, doc_type, field_key)] = {'dominant': dom_p,
+                                                      'counts': dict(prof_counts),
+                                                      'total': total_all}
+    return index
+
+
+def lookup_length(length_index, field_key, supplier_name, doc_type):
+    """Exact (supplier, doctype, field) lookup — no fallback (same contract as lookup_prefix)."""
+    if not length_index:
+        return None
+    s  = (supplier_name or '').lower().strip()
+    dt = (doc_type or '').lower().strip()
+    return length_index.get((s, dt, field_key))
+
+
+def is_length_outlier(read_profile, rec):
+    """True when the read's digit-run profile differs from the scope's dominant AND its own
+    confirmed count is below the SAME weight-aware accept bar the prefix guard uses — so a
+    genuinely-new convention self-heals (confirm it ~_PREFIX_ACCEPT_MIN times and it stops
+    flagging) while a stray misread that self-poisoned the counts is still caught."""
+    if not read_profile or not rec:
+        return False
+    dom = rec.get('dominant')
+    if not dom or read_profile == dom:
+        return False
+    counts = rec.get('counts') or {}
+    total  = int(rec.get('total') or 0)
+    c = int(counts.get(read_profile, 0) or 0)
+    thr = max(_PREFIX_ACCEPT_MIN, math.ceil(_PREFIX_ACCEPT_RATIO * total))
+    return not (c >= _PREFIX_ACCEPT_ABS or c >= thr)
+
+
 def prefix_confirmed(read_prefix, rec):
     """True when read_prefix is a CONFIRMED in-scope code prefix with real support — the
     dominant prefix, or any known prefix whose confirmed count clears the SAME weight-aware
