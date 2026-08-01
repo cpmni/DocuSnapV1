@@ -85,6 +85,35 @@ def clip_completion(winner_value, candidate_value):
     return p
 
 
+def doubled_digit_fingerprint(winner_value, witness_value):
+    """The MERGED-DOUBLED-DIGIT artifact fingerprint (Oracle W/COND 2026-08-01, the
+    length-witness arm): True iff the witness's alnum form equals the winner's with exactly
+    ONE digit INSERTED ADJACENT TO AN IDENTICAL DIGIT — the mechanical signature of a
+    doubled glyph merging under a thin crop ('WS-1904' read where 'WS-11904' prints:
+    '1904' -> '11904'). Direction is fixed (witness longer by one): the winner LOST one of
+    a doubled pair. Anything else — substitutions, multi-edits ('PO-64334'/'PO-643224'),
+    non-adjacent or alpha insertions, winner-longer — is NOT this artifact and must route
+    to the flag lane at most. Adoption on the defect's fingerprint, never on statistical
+    plausibility (the rollover-drift false-adopt: a stale 'INV-999' witness "passing the
+    profile" against a correct novel 'INV-1000' fails this structurally)."""
+    a = _alnum(winner_value)
+    b = _alnum(witness_value)
+    if not a or not b or len(b) != len(a) + 1:
+        return False
+    i = 0
+    while i < len(a) and a[i] == b[i]:
+        i += 1
+    # b = a[:i] + b[i] + a[i:] — a single insertion at i, digit-only, adjacent-identical.
+    if b[:i] + b[i + 1:] != a:
+        return False
+    ins = b[i]
+    if not ins.isdigit():
+        return False
+    left  = b[i - 1] if i > 0 else None
+    right = b[i + 1] if i + 1 < len(b) else None
+    return ins == left or ins == right
+
+
 def classify(winner_value, candidate_value, clean_candidate, prefix_rec,
              prefix_confirmed_fn, code_prefix_fn):
     """Classify one (winner, candidate) pair. The CALLER has already established:

@@ -2682,13 +2682,89 @@ class ExtractionEngine:
                 if not p or not ocr_corrector.is_length_outlier(p, rec):
                     continue
                 dom = rec.get('dominant') or ()
+                # ── LENGTH-WITNESS RECONCILIATION (owner + Oracle W/COND 2026-08-01; kill
+                # REF_LENGTH_WITNESS_RECONCILE=0; structurally inert unless THIS guard fired).
+                # Before writing the flag, consult the always-on candidate ledger: the pipeline
+                # may already hold the correct read it discarded on tier (doc 297: inline read
+                # 'WS-1904' won the @85 tie over keyword's correct 'WS-11904'; the slice reads
+                # correctly at EVERY dpi — the defect is the inline band's thin crop, not the
+                # pixels). ADOPT only on the artifact's mechanical FINGERPRINT (witness = winner
+                # + ONE digit inserted adjacent to an identical digit — the merged-doubled-glyph
+                # signature) AND a PASSIVE winner AND the witness passing the length profile,
+                # the scope shape, prefix membership (where a record exists) and not parsing as
+                # a date; adopted at the WITNESS'S OWN confidence (a keyword witness is capped 85
+                # by design — below the 88 critical floor, so this arm alone cannot auto-file),
+                # non-authoritative. An AUTHORITATIVE winner (⊕ re-teach) or a non-fingerprint
+                # disagreement gets FLAG-WITH-SUGGESTION: the S-B cap 69 + corrected_to =
+                # witness + a note naming both readings — the 07-26 Tier-A pin stays unpierced
+                # for silent replacement; the right answer is one click away. Rollover-drift
+                # PIN (never "generalise" the fingerprint to profile-only): a stale profile-
+                # passing witness against a correct length-novel read NEVER adopts.
+                _witness = None
+                if os.environ.get('REF_LENGTH_WITNESS_RECONCILE', '1') != '0':
+                    try:
+                        from extraction import suffix_reconcile as _sr
+                        from extraction import text_normalise as _tn
+                        _fmt = self.format_class_index.get(
+                            ((supplier_name or '').lower().strip(),
+                             (document_slug or '').lower().strip(), key))
+                        _prec = ocr_corrector.lookup_prefix(self.prefix_index, key,
+                                                            supplier_name, document_slug)
+                        _wnorm = _tn.normalise_for_tokens(str(val))
+                        for _cand in (self._field_candidates.get(key) or []):
+                            if str(_cand.get('stage') or '') not in ('0_template', '0.5_mapping', '1_keyword'):
+                                continue
+                            _cv = _sr.edge_strip(str(_cand.get('value') or ''))
+                            if not _cv or _tn.normalise_for_tokens(_cv) == _wnorm:
+                                continue
+                            _cp = ocr_corrector.digit_run_profile(_cv)
+                            if not _cp or ocr_corrector.is_length_outlier(_cp, rec):
+                                continue        # witness must PASS the profile the winner failed
+                            if _fmt and format_anomaly_checker.check_value(_cv, _fmt):
+                                continue        # …and the scope shape (when learned)
+                            if _prec:
+                                _pfx = ocr_corrector.code_prefix(_cv)
+                                if not _pfx or not ocr_corrector.prefix_confirmed(_pfx, _prec):
+                                    continue    # …and prefix membership where a record exists
+                            if (_NUM_DATE_RE.match(_cv) or _NAME_DATE_RE.match(_cv)) \
+                                    and validator.parse_date(_cv) is not None:
+                                continue        # a date-shaped witness is never a ref repair
+                            _witness = {'value': _cv,
+                                        'confidence': int(_cand.get('confidence') or 0),
+                                        'method': _cand.get('method'),
+                                        'fingerprint': _sr.doubled_digit_fingerprint(val, _cv)}
+                            if _witness['fingerprint']:
+                                break           # the artifact signature — best possible witness
+                    except Exception:
+                        _witness = None
+                if _witness and _witness['fingerprint'] and not data.get('authoritative'):
+                    self._t('ref_length_adopt', field=key, was=str(val), now=_witness['value'],
+                            method=_witness.get('method'))
+                    self.log(f"  Ref-length reconcile: {key} '{val}' -> '{_witness['value']}' "
+                             f"(doubled-digit merge; independent read had it whole)")
+                    results[key] = {
+                        **data,
+                        'value':         _witness['value'],
+                        'display_value': _witness['value'],
+                        'method':        _witness.get('method') or data.get('method'),
+                        'confidence':    _witness['confidence'],
+                        'authoritative': False,
+                        'length_reconciled': True,
+                    }
+                    continue
                 data['confidence'] = min(int(data.get('confidence') or 0), 69)
                 data['validation_note'] = (
                     f"this has {'+'.join(str(n) for n in p)} digits where this sender's usually "
                     f"have {'+'.join(str(n) for n in dom)} — possibly an extra or missing digit. "
                     f"Please check.")
+                if _witness:
+                    data['corrected_to'] = _witness['value']
+                    data['validation_note'] = (
+                        f"read '{val}' here, but another check read '{_witness['value']}' — "
+                        f"this sender's references usually have "
+                        f"{'+'.join(str(n) for n in dom)} digits. Please pick the right value.")
                 self._t('ref_length_flag', field=key, value=str(val), profile=list(p),
-                        dominant=list(dom))
+                        dominant=list(dom), suggestion=(_witness or {}).get('value'))
                 self.log(f"  Ref-length guard: {key} profile {p} vs dominant {dom} — flagged")
         except Exception:
             pass   # advisory guard — must never break extraction
