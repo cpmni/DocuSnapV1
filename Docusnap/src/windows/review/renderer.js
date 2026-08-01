@@ -5562,6 +5562,13 @@ function _applyReextractSuggestions(suggestions) {
     inp.title = 'Suggested from a re-read of the cached text — check it, then Confirm to keep.';
     inp.style.borderColor = 'var(--accent2)';                  // subtle "this is a suggestion" cue
     const row = inp.closest('.field-row');
+    // DISPLAY-ONLY supersede (owner 2026-08-01: "why am I still seeing the messages"): a
+    // stale stored flag ("couldn't confirm which company…") above a field the suggestion
+    // just filled reads as a contradiction. Hide the note element while the suggestion is
+    // showing — the DB note is untouched (the flag legally stays until the operator's
+    // Confirm clears it server-side; any re-render without a suggestion brings it back).
+    // Oracle precedent: display-only note handling SIGNED, persisted clears SENT BACK.
+    row?.querySelectorAll('.field-note:not(.reextract-pill)')?.forEach(n => { n.style.display = 'none'; });
     if (row && !row.querySelector('.reextract-pill')) {
       const pill = document.createElement('div');
       pill.className = 'field-note reextract-pill';
