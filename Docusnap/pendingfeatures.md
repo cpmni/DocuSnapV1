@@ -280,6 +280,13 @@ lost) — dismiss is display-only. Needs an app reopen to render.
 - **Expected residual after S-A+B+C:** {#65, #154, #86} interior stroke-level substitutions — only a
   second-render/second-engine witness could reach (the parked xres design's territory).
 
+### Type-note placement — twice-misread as a supplier failure (2026-08-01)
+- The type-refuse/ambiguity note attaches to the SUPPLIER row (engine `_flag_type_ambiguity`), so
+  it renders under DOCUMENT ISSUER — the owner twice read a fully-resolved issuer@98 as "can't
+  resolve the supplier". Follow-up: surface type-level notes beside the TYPE selector / in the
+  summary band instead of under the issuer field (renderer placement; the emit could carry a
+  `note_scope: 'type'` marker). Small, UX-only.
+
 ### PO-27491→27401 high-conf digit substitution (Oracle-confirmed backlog, 2026-08-01)
 - Fresh traced run of doc 259 read po_number 'PO-27401'@97 via anchor_inline where the page prints
   'PO-27491' (persisted DB value correct). Same length, same prefix, same shape — invisible BY
