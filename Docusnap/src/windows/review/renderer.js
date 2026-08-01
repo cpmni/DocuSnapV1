@@ -1289,7 +1289,14 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
   // newer doc); only removes THIS note, never a value.
   try {
     const _exs = renderedDoc.extractions || [];
-    const _STALE_TYPE_NOTE = /doesn't match this supplier's saved layout/i;
+    // ONE shared refuse-class matcher (Oracle cond 2, 2026-08-01): covers the LEGACY copy
+    // ("…doesn't match this supplier's saved layout") AND the reworded copy shipped with the
+    // R1 deadlock cure ("Couldn't match this document to the supplier's saved <Type> layout…").
+    // The reword silently broke this live suppressor for an hour (matcher knew only the old
+    // wording) — keep the two in lockstep with the gate matchers (demo_notes_gate et al).
+    // Class-scoped by design: this must never widen into a generic "hide notes the re-check
+    // disagrees with" mechanism (that would be the SENT-BACK Option B one note at a time).
+    const _STALE_TYPE_NOTE = /doesn't match this supplier's saved layout|match this document to (?:the supplier's|a) saved/i;
     if (_exs.some(e => e.validation_note && _STALE_TYPE_NOTE.test(e.validation_note))
         && currentDoc?.supplier_name && selectedTypeSlug) {
       const _n = await window.docusnap.scopeConfirmedCount?.({
