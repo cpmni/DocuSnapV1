@@ -294,6 +294,17 @@ lost) — dismiss is display-only. Needs an app reopen to render.
   'INV-35900'→'INV-85900' never-lane-A PIN documents). Own investigation; starting evidence:
   scratchpad slices_259 (slice_7_target.png), the printed/read pair. Candidate lens: 007 (crop
   geometry / glyph) — a second-witness class (the parked xres territory).
+- **Exemplars 3-6 (2026-08-01 afternoon, realdoc on the 299-corpus):** four freshly-confirmed
+  Vellum worksheets misread with interior digit SUBSTITUTIONS on reprocess (#283 'WS-49769'→
+  'WS-43769' · #285 'WS-49842'→'WS-43842' · #291 'WS-95390'→'WS-95990' · #299 'WS-72055'→
+  'WS-72093') — all same-length, shape-valid, silent, would-auto-file. PROVEN pre-existing
+  (witness-arm ON==OFF byte-identical). The class GROWS with corpus volume: 9 in M now, 6 of them
+  this family. The second-witness investigation (007 crop-geometry lens / the parked xres design)
+  is the highest-value remaining accuracy lever.
+- **Cured sub-class (6237398): merged-doubled-digit** — REF_LENGTH_WITNESS_RECONCILE ON heals the
+  'WS-1904'-for-'WS-11904' family from the ledger on the artifact's fingerprint (one digit inserted
+  adjacent to an identical digit); rollover-drift pinned unadoptable; authoritative winners get
+  flag-with-suggestion only.
 - **Second live exemplar + a cheaper sub-class (2026-08-01, Vellum worksheet_18):** page prints
   'WS-11904'; anchor_inline read 'WS-1904' (doubled '1' merged — segmentation, not substitution)
   and WON the tie over keyword's CORRECT 'WS-11904' (both @85, anchor tier outranks). S-B FLAGGED
