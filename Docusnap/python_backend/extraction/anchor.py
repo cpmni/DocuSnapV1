@@ -497,6 +497,7 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
         # and it SAVES the heavy rigid + registration crop OCR when the skip fires. Passive anchors are
         # untouched (authoritative-only, this slice).
         _xsup_absolute_ok = True
+        _plc = None   # the cross-supplier placement locate, reused by the left clamp below
         if (_named_cross_supplier(anchor, supplier_name)
                 and anchor.get("last_authoritative_at")
                 and (anchor.get("anchor_label") or "").strip() and page0 is not None):
@@ -516,7 +517,26 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
             _cap = ((lambda c: slice_capture(field_key, "anchor_crop", 0,
                        (x_norm, y_norm, w_norm, h_norm), c, "target")) if slice_capture else None)
             _m = {}
-            crop_value = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm, val_type, capture=_cap, verify_fn=_verify, meta=_m, continuation=continuation, max_w_norm=anchor.get("max_w_norm"))
+            # ANCHOR_LABEL_LEFT_CLAMP at the RIGID site (C2 full gate): the rigid crop reads
+            # the TAUGHT box, so a LOCATED-frame boundary is only coherent when the located
+            # caption sits AT the taught position (frames coincide) — a drifted page keeps
+            # the rigid read unclamped (the drift rung's located-frame crop clamps instead).
+            # The locate is paid ONLY when the switch is armed and the preconditions hold
+            # (OFF ⇒ byte-identical, no extra OCR); line_cache makes the later :1391
+            # authoritative-locate verification a cache hit, not a second page OCR (C7).
+            _lclamp = None
+            if (os.environ.get("ANCHOR_LABEL_LEFT_CLAMP", "0") != "0"
+                    and direction == "right" and val_type in _LEFT_CLAMP_TYPES
+                    and anchor.get("last_authoritative_at")
+                    and (anchor.get("anchor_label") or "").strip()):
+                _cloc = _plc if _plc is not None else _locate_for_relocation(
+                    page0, (anchor.get("anchor_label") or "").strip(), direction,
+                    (x_norm, y_norm, w_norm, h_norm), page_text_lines, line_cache=line_cache)
+                if _cloc and _located_at_taught_position(
+                        _cloc, x_norm, y_norm,
+                        anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")):
+                    _lclamp = _label_left_limit(_cloc, anchor, direction, val_type)
+            crop_value = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm, val_type, capture=_cap, verify_fn=_verify, meta=_m, continuation=continuation, max_w_norm=anchor.get("max_w_norm"), left_limit_norm=_lclamp)
             # CAPTION-PREFIX STRIP (kill ANCHOR_CAPTION_PREFIX_STRIP, DEFAULT OFF => byte-identical).
             # A rigid crop can capture its own caption ("Date 22/07/2026", "No. DN-36457"), which then
             # fails the credibility / learned-format gate below (the correct value is DISCARDED) OR — on a
@@ -680,9 +700,13 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                         if _drelo:
                             _drelo = _widen_relocated_crop(_drelo, val_type)
                             _tl = _caption_top_limit(_dlb, direction, _drelo)   # (P) exclude the located caption band
+                            # Left clamp (C4): this rung's types (free-text/currency) are DISJOINT from
+                            # _LEFT_CLAMP_TYPES today, so the helper returns None here — passed anyway so
+                            # a future type-set widening can't silently leave this site unclamped (pinned).
                             _drv = _crop_and_ocr(page0, _drelo[0], _drelo[1], _drelo[2], _drelo[3],
                                                  val_type, verify_fn=_verify, meta=_dm, continuation=continuation,
-                                                 top_limit_norm=_tl, max_w_norm=anchor.get("max_w_norm"))
+                                                 top_limit_norm=_tl, max_w_norm=anchor.get("max_w_norm"),
+                                                 left_limit_norm=_label_left_limit(_dloc, anchor, direction, val_type))
                             if _drv and not _name_field_code_reject(_drv, field_key) \
                                     and _crop_is_credible(_drv, val_type, validation_patterns, label):
                                 _dq = _qualify_against_format(_drv, field_key, format_lookup, text_field_keys)
@@ -861,7 +885,8 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                     _gv = (_crop_and_ocr(page0, _gbox[0], _gbox[1], _gbox[2], _gbox[3], val_type,
                                          verify_fn=_verify, continuation=continuation,
                                          top_limit_norm=_caption_top_limit(_xloc.get("label_box"),
-                                                                           direction, _gbox)) if _gbox else None)
+                                                                           direction, _gbox),
+                                         left_limit_norm=_label_left_limit(_xloc, anchor, direction, val_type)) if _gbox else None)
                     _gc = (_clean_text_fallback(_gv, val_type, validation_patterns)
                            or clean_crop_segment(_gv, val_type)) if _gv else None
                     if _gc and _crop_is_credible(_gc, val_type, validation_patterns, label) \
@@ -1074,7 +1099,8 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                         rval = _crop_and_ocr(page0, relo[0], relo[1], relo[2], relo[3],
                                              val_type, capture=_rcap, verify_fn=_verify, meta=_mr,
                                              continuation=continuation, top_limit_norm=_rtl,
-                                             max_w_norm=anchor.get("max_w_norm"))
+                                             max_w_norm=anchor.get("max_w_norm"),
+                                             left_limit_norm=_label_left_limit(located, anchor, direction, val_type))
                         _xfield = bool(rval) and _name_field_code_reject(rval, field_key)
                         if rval and (_xfield or not _crop_is_credible(rval, val_type, validation_patterns, label)):
                             _rec = None if _xfield else _recover_clean_token(rval, val_type, validation_patterns, label)
@@ -3235,7 +3261,8 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
                   val_type: str | None = None, capture = None,
                   verify_fn = None, meta = None, continuation = None,
                   top_limit_norm: float | None = None,
-                  max_w_norm: float | None = None) -> str | None:
+                  max_w_norm: float | None = None,
+                  left_limit_norm: float | None = None) -> str | None:
     """
     Crop a tight region centred on the stored value coordinates and re-OCR it.
     Uses the exact selection dimensions saved by the ⊕ tool (w_norm/h_norm) so
@@ -3326,6 +3353,19 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
             y1 = max(y1, int(top_limit_norm * h))
             if y1 >= y2 - 1:
                 return None
+
+        # ANCHOR_LABEL_LEFT_CLAMP (007+Oracle 2026-08-01) — the horizontal mirror of (P):
+        # the ±20px pad is label-blind, so a direction-right crop swallows the located
+        # label's tail and the read trifurcates on tail debris. The caller passes the
+        # expected value LEFT edge derived in the LOCATED frame (never the taught box —
+        # C1); the edge only ever moves RIGHTWARD (G3: a clamp can exclude left content,
+        # never admit more), a small guard keeps the first glyph column intact, and a
+        # clamp that would collapse the crop reverts to UNCLAMPED (C5 — never refuse:
+        # unlike the caption clamp above, an over-tight left edge must not erase the read).
+        if left_limit_norm is not None:
+            _clx = int(left_limit_norm * w) - _LEFT_CLAMP_GUARD_PX
+            if _clx > x1 and _clx < x2 - 1:
+                x1 = _clx
 
         # The taught row's band, in CROP px from the FINAL y1 (after grace + clamp), so the
         # per-line chooser judges against the un-padded taught box, not the padded crop.
@@ -3508,6 +3548,49 @@ def _located_at_taught_position(located, vx, vy, offset_dx, offset_dy,
     exp_lx = float(vx) - float(offset_dx)              # expected label TOP-LEFT
     exp_ly = float(vy) - float(offset_dy)
     return abs(float(lx) - exp_lx) <= tol_x and abs(float(ly) - exp_ly) <= tol_y
+
+
+_LEFT_CLAMP_TYPES = _CAPTION_STRIP_TYPES   # structured, non-currency (C3) — one source with the strip
+_LEFT_CLAMP_GUARD_PX = 3                   # keep the value's first glyph column intact on a hairline offset error
+
+
+def _label_left_limit(located, anchor, direction, val_type):
+    """ANCHOR_LABEL_LEFT_CLAMP (kill switch, DEFAULT OFF) — the label-tail crop clamp
+    (007+Oracle SIGN-OFF-W/COND 2026-08-01). Expected value LEFT edge (normalised x) in
+    the LOCATED frame: located label top-left + stored offset (the convention above —
+    offset = value_centre − label_top_left) gives the value CENTRE on THIS page; minus
+    half the taught width gives its left edge. The rigid crop's fixed +20px pad is
+    label-blind while scans jitter, so a direction-right crop swallows the label TAIL
+    ("Vo. WS-73541") and the read trifurcates on what the tail OCRs as (clean · ≤2-char
+    debris recovered@85 · 3+char rescue · near-miss wrong value). Clamping the crop's
+    left edge to where the value actually STARTS — drift-corrected by the locate —
+    excludes the tail for every future supplier with the same tight-gap topology.
+    C1 (frame trap): NEVER derived from the taught box — on a drifted page the taught
+    frame computes a boundary that silently no-ops exactly on the worst-drift docs.
+    C2: returns None (no clamp) unless the switch is ON, the anchor is AUTHORITATIVE
+    with a real stored offset (same bar as _located_at_taught_position), direction is
+    'right', and a real located label_box exists.
+    C3: structured val_types only — free-text keeps its ladder/preview regime (its
+    page re-crops never see this clamp and must not); currency already skips the
+    rigid crop entirely (_skip_rigid).
+    The consumer (_crop_and_ocr) moves the crop's left edge RIGHTWARD ONLY and reverts
+    to unclamped when degenerate (C5 — never refuse)."""
+    if os.environ.get("ANCHOR_LABEL_LEFT_CLAMP", "0") == "0":
+        return None
+    if direction != "right" or val_type not in _LEFT_CLAMP_TYPES:
+        return None
+    if not (anchor or {}).get("last_authoritative_at"):
+        return None
+    odx, ody = anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")
+    if odx is None or ody is None or (not odx and not ody):
+        return None                          # no offset → the value can't be placed from the label
+    w_norm = anchor.get("w_norm") or 0.0
+    if w_norm <= 0:
+        return None
+    lb = (located or {}).get("label_box")
+    if not lb or lb.get("x_norm") is None:
+        return None
+    return _clamp01(float(lb["x_norm"]) + float(odx) - w_norm / 2.0)
 
 
 def _reads_disagree(a, b, val_type) -> bool:

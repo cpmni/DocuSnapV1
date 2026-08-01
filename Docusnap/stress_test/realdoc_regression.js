@@ -198,7 +198,7 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
     // opportunity (and its M-safety) can be analysed offline vs the stored page OCR. Read-only.
     if (process.env.RR_CONSENSUS) {
       try {
-        const _cf = (k, ok) => { if (!k) return null; const e = m.extractions && m.extractions[k]; return { key: k, val: ef(m, k), conf: (e && typeof e === 'object') ? e.confidence : null, note: (e && typeof e === 'object') ? (e.validation_note || null) : null, correct: ok }; };
+        const _cf = (k, ok) => { if (!k) return null; const e = m.extractions && m.extractions[k]; return { key: k, val: ef(m, k), conf: (e && typeof e === 'object') ? e.confidence : null, note: (e && typeof e === 'object') ? (e.validation_note || null) : null, method: (e && typeof e === 'object') ? (e.method || e.extraction_method || null) : null, correct: ok }; };
         fs.appendFileSync(process.env.RR_CONSENSUS, JSON.stringify({ id: g.id, type: g.type_slug, wouldFile, reason: afReason, ref: _cf(rk, s.ref), date: _cf(dk, s.date) }) + '\n');
       } catch {}
     }

@@ -357,7 +357,12 @@ gate); on #291 wrong inline@85 beat CORRECT keyword@85 sitting in the ledger at 
   worse + 285@400 lost PLACEMENT entirely — DPI non-monotone). Substrate fix out of app reach; a
   low-scan-quality import advisory = future barry idea.
 
-### Label-tail crop CLAMP — Oracle SIGNED W/COND 2026-08-01 evening, BUILD-READY (not built)
+### Label-tail crop CLAMP — BUILT DARK 2026-08-02 (kill `ANCHOR_LABEL_LEFT_CLAMP` default OFF)
+**Status: implemented per the signed design (all of C1-C7); 26 pins green
+(`python_backend/tests/test_label_left_clamp.py`); gates run via
+`stress_test/clamp_gate_diff.js` over two RR_CONSENSUS realdoc runs — see the 2026-08-02
+handover for the G1-G6 results. Flip = set env `ANCHOR_LABEL_LEFT_CLAMP=1` (owner call).
+Design + conditions kept verbatim below for the record.**
 **The label-bleed class (007-measured, Saltmarsh 20-doc batch + corpus):** rigid taught crops are
 built label-blind (+20px fixed pad, anchor.py:3282) while scans jitter (141px width spread + skew)
 ⇒ 13/16 crops intrude the label tail; fate trifurcates on the tail's OCR (clean→files ·
