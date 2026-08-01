@@ -294,6 +294,15 @@ lost) — dismiss is display-only. Needs an app reopen to render.
   'INV-35900'→'INV-85900' never-lane-A PIN documents). Own investigation; starting evidence:
   scratchpad slices_259 (slice_7_target.png), the printed/read pair. Candidate lens: 007 (crop
   geometry / glyph) — a second-witness class (the parked xres territory).
+- **Second live exemplar + a cheaper sub-class (2026-08-01, Vellum worksheet_18):** page prints
+  'WS-11904'; anchor_inline read 'WS-1904' (doubled '1' merged — segmentation, not substitution)
+  and WON the tie over keyword's CORRECT 'WS-11904' (both @85, anchor tier outranks). S-B FLAGGED
+  it live (4-vs-5 digit note — the guard's first real catch). The trace shows the cure candidate:
+  an inline-vs-independent-read DIGIT-COUNT disagreement arm — when a same-field ledger candidate
+  PASSES the scope's length profile that the winner FAILS, prefer/flag (the S-C pattern extended
+  to anchor_inline, currently pinned OUT to protect the 07-26 re-teach fix — that pin needs its
+  own Oracle round before any widening). Segmentation drops ARE decorrelated across reads (keyword
+  had it right) unlike pure stroke substitutions.
 
 ### R2 cohort pick admission — DEFERRED with revival evidence (Oracle 2026-08-01)
 - Banked from the type-refuse deadlock arc (11b7ae9 shipped R1+R3+reword instead). R2 = admit a
