@@ -920,13 +920,31 @@ async function checkGraduationAnnounce() {
 function showGradAnnounce(scopes) {
   const b = document.getElementById('grad-announce');
   if (!b) return;
-  const names = [...new Set(scopes.map(s => s.supplier))];
-  const who = names.length === 1
-    ? `<b>${_gaEsc(names[0])}</b>`
-    : `<b>${_gaEsc(names[0])}</b> and ${names.length - 1} other supplier${names.length > 2 ? 's' : ''}`;
+  // Graduation is PER (supplier, DOCUMENT TYPE) scope — say so (owner 2026-08-01: the old
+  // supplier-only wording implied ALL of a supplier's documents would auto-file). One scope
+  // names both plainly; a same-supplier pair lists the types; a mixed batch lists
+  // "Supplier (Type)" pairs, first two + a count.
+  const bySupplier = new Map();
+  for (const s of scopes) {
+    const list = bySupplier.get(s.supplier) || [];
+    list.push(s.doctype || s.slug || 'documents');
+    bySupplier.set(s.supplier, list);
+  }
+  let who, what;
+  if (bySupplier.size === 1) {
+    const [sup, types] = [...bySupplier.entries()][0];
+    who = `<b>${_gaEsc(sup)}</b>`;
+    const t = types.map(x => `<b>${_gaEsc(x)}</b>`);
+    what = `their clean ${t.length === 1 ? t[0] : t.slice(0, -1).join(', ') + ' and ' + t[t.length - 1]} documents`;
+  } else {
+    const pairs = scopes.map(s => `<b>${_gaEsc(s.supplier)}</b> (${_gaEsc(s.doctype || s.slug)})`);
+    who = pairs.slice(0, 2).join(' and ')
+      + (pairs.length > 2 ? ` and ${pairs.length - 2} more` : '');
+    what = 'their clean documents of these types';
+  }
   b.innerHTML = `<span class="af-ico">★</span>`
-    + `<span>Scan Finder has learned ${who} — it will now file their clean documents automatically. `
-    + `You can still open any filed doc, or turn this off per supplier in Settings.</span>`
+    + `<span>Scan Finder has learned ${who} — ${what} will now file automatically. `
+    + `You can still open any filed doc, or turn this off in Settings.</span>`
     + `<a href="#" class="af-link" id="grad-manage">Manage</a>`
     + `<span class="grad-dismiss" id="grad-dismiss" title="Dismiss">×</span>`;
   b.style.display = 'flex';
