@@ -120,8 +120,25 @@ section('Branding-blank issuer live fill — narrow exception, everything else w
   check('other field keys never use the exception',
         merge([exrow('invoice_number', null, BB)],
               { invoice_number: inferred }, new Set(), ON).length === 0);
-  check('anchor-abstain still wins over the exception',
-        merge([vetoRow], { supplier_name: inferred }, new Set(['supplier_name']), ON).length === 0);
+  // FLIPPED 2026-08-01 evening (was: "anchor-abstain still wins over the exception"): every
+  // confirm writes an authoritative supplier_name anchor for its scope, so the old
+  // composition killed the exception's ONE target case (a sibling batch after the first
+  // confirm — measured live on the 18-doc Saltmarsh queue). The branding-note marker the
+  // exception requires can never appear on an anchored INTENTIONAL empty, so ordinary
+  // abstains keep their wall (next check).
+  check('branding-blank exception cracks the anchor-abstain wall (the sibling-batch case)',
+        merge([vetoRow], { supplier_name: inferred }, new Set(['supplier_name']), ON).length === 1);
+  // BOTH live veto-class copies carry the marker (the no-name blank ends 'confirm the
+  // correct company', the logo-conflict blank ends 'set the correct company' — a one-copy
+  // matcher missed 6 of 17 live Saltmarsh docs, and broke once before: cea79ef).
+  check("…'set the correct company' (logo-conflict copy) also admits the exception",
+        merge([exrow('supplier_name', null, { validation_note:
+                "Couldn't confirm which company sent this — the logo matched another company but the page text doesn't agree. Please set the correct company.",
+                confidence: 0 })],
+              { supplier_name: inferred }, new Set(['supplier_name']), ON).length === 1);
+  check('…but a NON-exception anchored field still abstains (ordinary wall intact)',
+        merge([exrow('invoice_number', null, { validation_note: null, confidence: 0 })],
+              { invoice_number: fast('INV-123') }, new Set(['invoice_number']), ON).length === 0);
 }
 
 section('Known-template pick admission (REEXTRACT_BLANK_REIDENTIFY — the Saltmarsh cold-batch fix)');

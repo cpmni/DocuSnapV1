@@ -340,7 +340,9 @@ function mergeReextractRows(existing, newExtractions, anchoredKeys = new Set(), 
     // REEXTRACT_UNPIN_BLANK_SUPPLIER=0 upstream — the caller threads it as
     // opts.brandingBlankSupplier). The one legitimate crack in the two "flagged" walls
     // below: a VETO-BLANKED issuer (stored supplier_name EMPTY + the branding note whose
-    // 'confirm the correct company' tail is the pinned marker) re-checked against NOW-warmer
+    // '(confirm|set) the correct company' tail is the pinned marker, BOTH veto-class copies —
+    // the no-name blank ends 'confirm…', the logo-conflict blank ends 'set…'; one-copy
+    // matchers have broken twice before, cea79ef) re-checked against NOW-warmer
     // learning that resolves the sender ('Company inferred from previously filed documents…'
     // — or a clean read). Without this, the live ⟳ pill could never suggest the true sender
     // on the collision class: the stored flag blocked (b) and the inferred note blocked (a).
@@ -349,12 +351,22 @@ function mergeReextractRows(existing, newExtractions, anchoredKeys = new Set(), 
     const _bbException = opts.brandingBlankSupplier === true
       && key === 'supplier_name'
       && !!ex && !String(ex.display_value || '').trim()
-      && /confirm the correct company/i.test(String(ex.validation_note || ''))
+      && /(confirm|set) the correct company/i.test(String(ex.validation_note || ''))
       && (!data.validation_note || /company inferred/i.test(String(data.validation_note)));
     if (data.validation_note && !_bbException) continue;           // (a) Stage-4 clean
     if (ex && ex.display_value && String(ex.display_value).trim()) continue;  // (b) stored has a value
     if (ex && ex.validation_note && !_bbException) continue;       // (b) flagged empty — keep the flag
-    if (anchoredKeys && anchoredKeys.has(key)) continue;           // (c) anchor-abstain
+    // (c) anchor-abstain — EXCEPT for the branding-blank issuer (2026-08-01 evening, the
+    // Saltmarsh sibling-batch measurement): EVERY confirm writes an authoritative
+    // supplier_name anchor for its scope, so after the FIRST sibling confirm the scope is
+    // always "anchored" and the wall killed the exception's one target case by
+    // construction. The abstain rationale ("the taught position read nothing on purpose")
+    // does not apply here: the imageless run never attempts anchors, the suggestion comes
+    // from template_identity (Stage 0), and the stored blank PREDATES the scope's anchor
+    // (it is the import-time collision veto, proven by the note marker the exception
+    // already requires). An anchored INTENTIONAL empty never carries that marker, so the
+    // marker keeps ordinary anchor-abstains intact.
+    if (anchoredKeys && anchoredKeys.has(key) && !_bbException) continue;
     suggestions.push({
       field_key:  key,
       value,
