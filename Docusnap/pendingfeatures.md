@@ -114,6 +114,32 @@ Original design record (2026-07-31):
   `docs/designs/CATCHUP_FILING_2026-07-31.md`.** Build in a fresh session, slice 1 first
   (migration + scopeTrust rework — feature-independent).
 
+### Child-window minimise → a visible, pronounced dock (not the lost corner box) — OWNER 2026-08-02
+**Owner ask:** re-enable minimise on the child windows (Review/Settings/Search/Teach/dev-inspector).
+They used to minimise to a tiny stub at the desktop's bottom-left that vanished into the background and
+was hard to find. Want: minimise them to the **bottom-left of the MAIN app**, staying **visible and
+pronounced** so they're easy to spot and reopen.
+**Why it's off today (repro/root):** parented child windows are created with `minimizable:false` FORCED
+(`src/main.js:583` — `...(parentWin ? { minimizable:false } : {})`) precisely BECAUSE they are
+`skipTaskbar:true` (`main.js:585`), so a native minimise sends them to the legacy Windows corner stub
+with no taskbar entry — "an easy way to 'lose' the window" (comment `main.js:581-583`; same hazard noted
+for the main window at `main.js:475-477`). So the feature was deliberately disabled, not missing.
+**Leads / design direction (eric to vet; NOT built):**
+- Don't use native minimise for a `skipTaskbar` child. Instead `win.hide()` and render an in-app
+  **restore dock** — a pronounced pill/chip anchored bottom-left of the MAIN window (`#topbar`/main
+  renderer), one per hidden child, click to `show()`+`focus()`. A restore path already exists:
+  `createWindow` restores+focuses an existing window when its launcher is clicked (`main.js:548`,
+  `475-477`).
+- **Modality wrinkle:** most children open MODAL to the parent (`modal=!NON_MODAL_CHILD.has(name)`,
+  `main.js:574`) — a modal child blocks the parent, so "minimise and go use the main app" only makes
+  sense if minimising also drops modality (or the feature is limited to non-modal children). Decide
+  which.
+- Alternative already half-built: the **system tray** minimise-to-background path (`main.js:630-697`,
+  Stage 1/2) — could dock hidden children there instead of/as well as an in-app dock. Owner wants
+  IN-APP + pronounced, so the bottom-left dock is the primary; tray is the fallback discussion.
+- New IPC: `window-minimise` currently exists (`main.js:1386`) for the main window; a child variant
+  would hide + notify the main renderer to add/remove its restore chip.
+
 ## Extraction / accuracy
 
 ### Cross-contamination residual — Stage-2 `_qualify_against_format` — DO-NOTHING (gary+Oracle, 2026-07-30)
