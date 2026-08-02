@@ -811,12 +811,18 @@ function register(ctx) {
 
   // Opening a filed document in Explorer/its default app is part of "search/view
   // documents" — available to every signed-in role, including Read Only.
+  // AUDITED (owner 2026-08-02): once a file leaves through the shell there is no control
+  // over what happens to it — so the act of handing it out is itself the audit event.
   ipcMain.on('show-in-explorer', (_e, filePath) => {
     if (!getCurrentUser()) return;
     if (!_isOpenablePath(getDb(), filePath)) {
       logger?.warn?.('[security] blocked show-in-explorer for a disallowed path');
       return;
     }
+    try {
+      logAudit(getDb(), { action: 'file_shown_in_explorer', action_category: 'document',
+        target_type: 'file', outcome: 'success', metadata: { file: path.basename(String(filePath || '')) } });
+    } catch { /* audit best-effort */ }
     shell.showItemInFolder(filePath);
   });
   ipcMain.on('open-file', (_e, filePath) => {
@@ -825,6 +831,10 @@ function register(ctx) {
       logger?.warn?.('[security] blocked open-file for a disallowed path');
       return;
     }
+    try {
+      logAudit(getDb(), { action: 'file_opened_externally', action_category: 'document',
+        target_type: 'file', outcome: 'success', metadata: { file: path.basename(String(filePath || '')) } });
+    } catch { /* audit best-effort */ }
     shell.openPath(filePath);
   });
   // Open a FOLDER (not a file) — the file allowlist requires an extension, so folders

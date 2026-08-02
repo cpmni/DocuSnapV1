@@ -70,7 +70,7 @@ function freshDb() {
     CREATE TABLE document_routes (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, from_user_id INTEGER,
       from_username TEXT, to_user_id INTEGER, to_username TEXT, action_required TEXT, state TEXT DEFAULT 'pending',
       comment TEXT, resolution_comment TEXT, claimed_by_id INTEGER, claimed_by_username TEXT, claimed_at TEXT,
-      resolved_at TEXT, matched_rule_summary TEXT, version INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')));
+      resolved_at TEXT, matched_rule_summary TEXT, stamped_path TEXT, version INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')));
     CREATE TABLE workflow_route_rules (id INTEGER PRIMARY KEY AUTOINCREMENT, document_type_id INTEGER,
       min_amount_pennies INTEGER NOT NULL DEFAULT 0, max_amount_pennies INTEGER, target_role TEXT,
       target_user_id INTEGER, action_required TEXT NOT NULL DEFAULT 'approve', step_order INTEGER NOT NULL DEFAULT 1,
@@ -84,7 +84,7 @@ function freshDb() {
   return db;
 }
 
-function main() {
+async function main() {
   let fail = 0;
   const db = freshDb();
   const H = {};
@@ -178,9 +178,39 @@ function main() {
   fail += !check('admin-cancel over IPC -> recalled with the Cancelled-by comment',
     cancelled.state === 'recalled' && /^Cancelled by /.test(cancelled.resolution_comment || ''));
 
+  // ── Decision history + secure-viewer seams (Chris r4 card 2 + the stamped viewer) ────
+  // History: CLOSED routes only, projected — no stamped_path, no sender comment (OC4);
+  // has_stamped BOOLEAN feeds the in-app viewer (the renderer never sees a path).
+  session = { id: 1, username: 'admin', role: 'admin' };
+  const hist = H['workflow-doc-history']({}, { documentId: 1 });
+  fail += !check('doc-history returns the cancelled route (closed states only)',
+    Array.isArray(hist) && hist.some(x => x.id === e1r.id && x.state === 'recalled'));
+  fail += !check('doc-history is PROJECTED: no stamped_path, no sender comment, has_stamped boolean',
+    hist.every(x => !('stamped_path' in x) && !('comment' in x) && (x.has_stamped === 0 || x.has_stamped === 1)));
+  fail += !check('doc-history ships resolution_comment (the decision record — deliberate, owner-noted)',
+    hist.some(x => x.id === e1r.id && /^Cancelled by /.test(x.resolution_comment || '')));
+  session = { id: 3, username: 'reader', role: 'readonly' };
+  fail += !check('doc-history rejects readonly (same gate as doc-routes)',
+    threwCode(() => H['workflow-doc-history']({}, { documentId: 1 }), 'FORBIDDEN'));
+  // Box lists: stamped_path is SWAPPED for has_stamped before crossing to any renderer.
+  session = { id: 1, username: 'admin', role: 'admin' };
+  db.prepare(`UPDATE document_routes SET stamped_path='C:/somewhere/stamp.pdf' WHERE id=?`).run(e1r.id);
+  const sentRows = H['workflow-sent']({});
+  fail += !check('box lists carry has_stamped=true and NEVER the raw stamped_path',
+    sentRows.some(x => x.id === e1r.id && x.has_stamped === true)
+    && sentRows.every(x => !('stamped_path' in x)));
+  // Stamped-pages authorization: a NON-party, non-admin session is FORBIDDEN even when
+  // logged in + entitled (the viewer's real gate lives server-side; async handler → the
+  // rejection must be awaited, never try/caught synchronously).
+  session = { id: 9, username: 'outsider', role: 'edit' };
+  const stampedForbidden = await H['workflow-stamped-pages']({}, { routeId: e1r.id })
+    .then(() => false).catch((err) => err && err.code === 'FORBIDDEN');
+  fail += !check('stamped-pages FORBIDDEN for a non-party non-admin (party-or-admin gate)',
+    stampedForbidden === true);
+
   db.close();
   console.log(fail ? `\n${fail} check(s) FAILED` : '\nAll workflow-IPC checks passed.');
   return fail ? 1 : 0;
 }
 
-process.exit(main());
+main().then((code) => process.exit(code));

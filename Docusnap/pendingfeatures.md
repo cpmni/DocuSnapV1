@@ -410,6 +410,16 @@ as the no-locate spare.
   strengthens the digit-count PREFER arm's revival case (correct value passed the length profile the
   winner failed, in-band, twice).
 
+### Workflow due dates + pending nudges — BANKED 2026-08-02 (Chris r4 card 7, bob-vetted)
+Chris's "what paper never managed": a due date on a route ("needs an answer by Friday") + a
+gentle nudge for items sitting pending. Full build = `due_at` schema + a scheduler + overdue
+surfaces + NEW workflowNotify event types (the toast event list is PINNED — extending it needs
+its own Oracle pass). NOT night-sized; product value real but roadmap-tier (his switch-week
+conditions were the Reject fix + the approval record, both done/underway).
+**Night-sized appetiser (no schema, no scheduler): an ageing chip on open rows/banners —
+"waiting 6 days" computed from `document_routes.created_at`, shown past ~3 days.** Roughly half
+the nudge value for an evening.
+
 ### R2 cohort pick admission — DEFERRED with revival evidence (Oracle 2026-08-01)
 - Banked from the type-refuse deadlock arc (11b7ae9 shipped R1+R3+reword instead). R2 = admit a
   band-13 _letterhead_cohort member with document_type_slug == detected_slug into the Stage-0 PICK

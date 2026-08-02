@@ -250,6 +250,9 @@
     .wf-sub { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
     .wf-assign select.search-input, .wf-assign input.search-input { width: 100%; }
     .wf-err { font-size: 11px; color: var(--err); }
+    .wf-ok  { font-size: 11px; color: var(--ok); }   /* transient completion feedback (Chris r4 card 3) */
+    .wf-history { display: flex; flex-direction: column; gap: 3px; }
+    .wf-hist-row { font-size: 11px; color: var(--text); line-height: 1.45; }
 
     .spinner { width: 18px; height: 18px; border: 2px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; margin: auto; }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -348,7 +351,12 @@
       <div id="mailbox-tabs" style="display:none">
         <button class="mb-tab active" data-box="inbox">Inbox</button>
         <button class="mb-tab" data-box="sent">Sent</button>
-        <button class="mb-tab" data-box="assigned">Assigned</button>
+        <!-- "Assigned" (= routes YOU have CLAIMED but not resolved) is HIDDEN on the desktop:
+             the desktop decision bar resolves straight from pending and never claims, so this
+             box is structurally always empty here — it only fills via the detached client's
+             claim flow (Chris r4 card 6 + eric A6; bob's honest-cut ruling). Un-hide when
+             desktop claiming exists. -->
+        <button class="mb-tab" data-box="assigned" style="display:none;">Assigned</button>
         <button class="mb-tab" data-box="completed">Completed</button>
       </div>
       <div id="results-body">

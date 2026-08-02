@@ -55,7 +55,11 @@ function renderActions(doc) {
         if (confirm('Send this document back to the Review queue? It stays filed until you re-confirm it.'))
           _afterChange(window.docusnap.repairDeconfirm(doc.id));
       }, true);
-      if (doc.stored_path) {
+      // Escape hatches to the real file — deliberately kept (round-2 Chris fix restored
+      // them) but EDIT/ADMIN only now: a Read Only user keeps the in-app preview and loses
+      // uncontrolled shell access to filed originals (eric Q3; main-side role gate on the
+      // open-file channel is a named follow-up — this hides the door, it doesn't lock it).
+      if (doc.stored_path && canEdit) {
         _btn(docSection, 'Open in Explorer', () => window.docusnap.showInExplorer(doc.stored_path));
         _btn(docSection, 'Open File',        () => window.docusnap.openFile(doc.stored_path));
       }

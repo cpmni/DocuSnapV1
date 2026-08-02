@@ -67,8 +67,15 @@ function register(ctx) {
   });
 
   // List views (logged-in + entitled; each list is already scoped to the actor).
+  // stamped_path is SWAPPED for a has_stamped boolean before crossing to the renderer —
+  // the in-app viewer fetches pages by route id, so no renderer ever needs (or gets) the
+  // filesystem path (the owner's Edge-address-bar disclosure, closed at the source).
   for (const box of ['inbox', 'sent', 'assigned', 'completed']) {
-    ipcMain.handle(`workflow-${box}`, () => { requireLogin(); assertEntitled(); return workflow[box](getDb(), actor()); });
+    ipcMain.handle(`workflow-${box}`, () => {
+      requireLogin(); assertEntitled();
+      return (workflow[box](getDb(), actor()) || []).map(({ stamped_path, ...r }) =>
+        ({ ...r, has_stamped: !!stamped_path }));
+    });
   }
 
   // Assignable recipients — only roles that can route may list them.
@@ -111,6 +118,77 @@ function register(ctx) {
   ipcMain.handle('workflow-open-routes', () => {
     requireRole('admin'); assertEntitled();
     return require('../../../database/modules/workflow').listAllOpenRoutes(getDb());
+  });
+  // DECISION HISTORY for one document (Chris r4 card 2) — CLOSED routes, projected in the
+  // SQL (no stamped_path — has_stamped + route id feed the in-app viewer; no sender comment
+  // per OC4; resolution_comment ships BY DESIGN, it is the decision record). Same gate as
+  // doc-routes: admin/edit + entitled + accessService (SEC-03). NEW IPC, not a widening —
+  // doc-routes' OPEN-only shape is pinned and its consumer branches on it (eric A2).
+  ipcMain.handle('workflow-doc-history', (_e, { documentId } = {}) => {
+    const sess = requireRole('admin', 'edit'); assertEntitled();
+    const db = getDb();
+    const acc = require('../../services/accessService').canAccessDocument(db, sess, Number(documentId));
+    if (!acc.allow) throw Object.assign(new Error('Document not found.'), { code: 'NOT_FOUND' });
+    return require('../../../database/modules/workflow').listClosedRoutesForDocument(db, Number(documentId));
+  });
+  // STAMPED-COPY PAGES by route id (the secure in-app viewer; owner 2026-08-02 — the shell
+  // open leaked the real path into Edge's address bar). Desktop twin of the /v1 stamped read
+  // (api/handler.js GET /workflow/routes/:id/stamped): the path resolves SERVER-SIDE from
+  // the route row, party-or-admin gated, and only page IMAGES cross to the renderer — never
+  // bytes-as-PDF, never a path.
+  const _routeParty = (route) => {
+    const u = actor();
+    if (!(u.userId === route.to_user_id || u.userId === route.from_user_id || u.role === 'admin')) {
+      throw Object.assign(new Error('Not permitted.'), { code: 'FORBIDDEN' });
+    }
+  };
+  ipcMain.handle('workflow-stamped-pages', async (_e, { routeId } = {}) => {
+    requireLogin(); assertEntitled();
+    const db = getDb();
+    const route = require('../../../database/modules/workflow').getRoute(db, Number(routeId));
+    if (!route) throw Object.assign(new Error('Route not found.'), { code: 'NOT_FOUND' });
+    _routeParty(route);
+    const fs = require('fs'), path = require('path');
+    if (!route.stamped_path || !fs.existsSync(route.stamped_path)) {
+      return { ok: false, reason: 'stamped_missing' };
+    }
+    const previewService = require('../../services/previewService');
+    const pages = await previewService.getDocumentPages(db, {
+      docId: route.document_id, folderPath: path.dirname(route.stamped_path),
+      filename: path.basename(route.stamped_path), exact: true,
+    }, {
+      fs, path, spawn: require('child_process').spawn,
+      pythonExe: ctx.pythonExe, pythonArgs: ctx.pythonArgs,
+      renderScript: ctx.resourcePath('python_backend', 'render', 'pages.py'),
+    });
+    return { ok: true, pages, state: route.state, routeId: route.id };
+  });
+  // AUDITED "Save a copy" for a stamped decision PDF (the viewer's only file-egress path).
+  ipcMain.handle('workflow-export-stamped', async (e, { routeId } = {}) => {
+    requireLogin(); assertEntitled();
+    const db = getDb();
+    const route = require('../../../database/modules/workflow').getRoute(db, Number(routeId));
+    if (!route) throw Object.assign(new Error('Route not found.'), { code: 'NOT_FOUND' });
+    _routeParty(route);
+    const fs = require('fs');
+    if (!route.stamped_path || !fs.existsSync(route.stamped_path)) {
+      return { ok: false, reason: 'stamped_missing' };
+    }
+    const { dialog, BrowserWindow } = require('electron');
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const r = await dialog.showSaveDialog(win, {
+      defaultPath: `Stamped-copy.route-${route.id}.pdf`,
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    });
+    const outcome = (r.canceled || !r.filePath) ? 'cancelled' : 'success';
+    if (outcome === 'success') fs.copyFileSync(route.stamped_path, r.filePath);
+    try {
+      logAudit(getDb(), { action: 'document_exported', action_category: 'document',
+        target_type: 'document', target_id: route.document_id, document_id: route.document_id,
+        outcome, metadata: { route_id: route.id, kind: 'stamped_copy',
+                             ...(outcome === 'success' ? { destination: require('path').basename(r.filePath) } : {}) } });
+    } catch { /* audit best-effort */ }
+    return { ok: outcome === 'success', reason: outcome };
   });
 
   // ── Routing rules — the Workflow settings area (admin + entitled; every mutation audited) ─────

@@ -34,6 +34,16 @@ try {
   if (fs.existsSync(_legacyDataDir)) _resolvedUserData = _legacyDataDir;
 }
 app.setPath('userData', _resolvedUserData);
+// DEV-ONLY SANDBOX OVERRIDE (owner 2026-08-02): DOCUSNAP_USERDATA points the WHOLE data
+// world (DB, inbox copies, debug logs, window-state) at an isolated folder, so a second,
+// fully-sandboxed instance can run beside the real app without touching its data. Ignored
+// in packaged builds — a customer install can never be re-pointed by an env var.
+if (!app.isPackaged && process.env.DOCUSNAP_USERDATA) {
+  try {
+    fs.mkdirSync(process.env.DOCUSNAP_USERDATA, { recursive: true });
+    app.setPath('userData', process.env.DOCUSNAP_USERDATA);
+  } catch { /* fall through to the normal userData */ }
+}
 // Brand the app name so native JS dialogs (confirm/alert) are headed "ScanFinder", not the
 // package name "docusnap". Safe: userData is explicitly setPath'd above, so this never
 // moves the on-disk data folder.
@@ -466,8 +476,8 @@ function launchStartupWindow() {
 // click its toolbar button to bring it back. Non-modal keeps the main window usable, and
 // createWindow() already restores + focuses the existing window when its button is clicked
 // again. (A future window can still opt INTO modal by being a CHILD_WINDOW not listed here.)
-const CHILD_WINDOWS   = new Set(['review', 'settings', 'search', 'teach', 'dev-inspector', 'welcome', 'tutorial']);
-const NON_MODAL_CHILD = new Set(['dev-inspector', 'review', 'settings', 'search', 'teach', 'welcome', 'tutorial']);
+const CHILD_WINDOWS   = new Set(['review', 'settings', 'search', 'teach', 'dev-inspector', 'welcome', 'tutorial', 'stamped-viewer']);
+const NON_MODAL_CHILD = new Set(['dev-inspector', 'review', 'settings', 'search', 'teach', 'welcome', 'tutorial', 'stamped-viewer']);
 // Top-level "primary" windows that hide to the tray on a user close (the app then
 // fully quits ONLY via tray Exit). Their programmatic transitions destroy them
 // via destroyWindow(). Child windows close normally.
@@ -834,6 +844,9 @@ function notifyAllWindows(channel, ...args) {
 // Single instance: relaunching (e.g. the shortcut while the app is hidden in the
 // tray) must re-show the running instance, NOT spawn a second core that would
 // double-bind the API/watch. The loser quits; the winner re-shows on 'second-instance'.
+// NOTE: this lock is naturally PER-userData-dir (Electron keys it on the userData path,
+// which the sandbox override above re-points before we get here) — so a DOCUSNAP_USERDATA
+// sandbox instance runs beside the real app without fighting over one lock.
 const _gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!_gotSingleInstanceLock) app.quit();
 app.on('second-instance', () => revealAppGated());
@@ -1527,6 +1540,21 @@ app.whenReady().then(() => {
   ipcMain.on('open-teach-window', () => {
     if (!authModule.hasRole('admin', 'edit')) return;
     createWindow('teach', { width: 1200, height: 820, minWidth: 960, minHeight: 640 });
+  });
+  // Secure stamped-copy viewer (owner 2026-08-02): in-app page-image viewing of a workflow
+  // decision copy — no shell open, no path in any renderer. Any logged-in user may OPEN the
+  // window; the pages IPC enforces the real party-or-admin + entitlement gate server-side.
+  let pendingStampedRouteId = null;
+  ipcMain.on('open-stamped-viewer', (_e, routeId) => {
+    if (!authModule.hasRole('admin', 'edit', 'readonly')) return;   // any signed-in role; the pages IPC re-gates for real
+    const alreadyOpen = !!windows['stamped-viewer'] && !windows['stamped-viewer'].isDestroyed();
+    pendingStampedRouteId = Number(routeId) || null;
+    createWindow('stamped-viewer', { width: 900, height: 950, minWidth: 640, minHeight: 480 });
+    if (alreadyOpen) safeSend(windows['stamped-viewer']?.webContents, 'stamped-viewer-load', pendingStampedRouteId);
+  });
+  ipcMain.handle('get-stamped-viewer-target', () => {
+    const id = pendingStampedRouteId;
+    return id;
   });
   ipcMain.on('open-teach-window-at', (_e, docId) => {
     if (!authModule.hasRole('admin', 'edit')) return;

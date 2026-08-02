@@ -1044,10 +1044,10 @@ function confLevel(c) { return c == null ? '' : c >= 85 ? '' : c >= 60 ? 'warn' 
 // A context banner + decision bar shown when the open document is routed TO me.
 function decisionBar(route) {
   const wrap = document.createElement('div'); wrap.className = 'wf decision';
-  const kind = route.action_required === 'approve' ? 'Approval requested' : 'For your information';
+  const kind = route.action_required === 'approve' ? "they'd like your approval" : 'just for information';
   const canAct = route.action_required === 'approve' && canDecide();
   wrap.innerHTML = `
-    <div class="dec-banner">${ico('inbox')}<span>Routed to you by <strong>${esc(route.from_username)}</strong> — ${kind}${route.comment ? ': “' + esc(route.comment) + '”' : ''}</span></div>
+    <div class="dec-banner">${ico('inbox')}<span>Sent to you by <strong>${esc(route.from_username)}</strong> — ${kind}${route.comment ? ': “' + esc(route.comment) + '”' : ''}</span></div>
     ${canAct ? `<input class="dec-note" placeholder="Add a note (optional — required to reject)" />` : ''}
     <div class="dec-acts"></div>`;
   const acts = wrap.querySelector('.dec-acts');
@@ -1224,23 +1224,23 @@ async function assignControl(docId, preselectUsername, extra = {}) {
     return `<option value="${u.id}"${pre ? ' selected' : ''}>${esc(u.displayName || u.username)} (${esc(u.role)})${pre ? ` — ${esc(extra.tag || 'sender')}` : ''}</option>`;
   }).join('');
   wrap.innerHTML = `
-    <h3>${ico('assign')}${esc(extra.title || (preselectUsername ? 'Forward / route onward' : 'Route for approval / for information'))}</h3>
+    <h3>${ico('assign')}${esc(extra.title || (preselectUsername ? 'Send on to someone else' : 'Send to a colleague'))}</h3>
     <div class="wf-row">
       <select class="a-to">${opts}</select>
-      <select class="a-action"><option value="approve">Approve</option><option value="acknowledge">For information</option></select>
+      <select class="a-action"><option value="approve">Needs their approval</option><option value="acknowledge">Just for information</option></select>
       <input class="a-comment" placeholder="Note (optional)" />
       <span class="msg"></span>
     </div>`;
   if (extra.actionRequired) wrap.querySelector('.a-action').value = extra.actionRequired;
-  const btn = mkBtn({ label: 'Assign', icon: 'assign', variant: 'primary', sm: false, onClick: async () => {
+  const btn = mkBtn({ label: 'Send', icon: 'assign', variant: 'primary', sm: false, onClick: async () => {
     const toUserId = Number(wrap.querySelector('.a-to').value);
     const action = wrap.querySelector('.a-action').value;
     const comment = wrap.querySelector('.a-comment').value.trim() || undefined;
     const msg = wrap.querySelector('.msg');
     if (!toUserId) { msg.className = 'msg err'; msg.textContent = 'Pick a recipient.'; return; }
     const res = await api.workflow.assign(docId, toUserId, action, comment, extra.resubmitOf);
-    if (res.status === 200) { msg.className = 'msg ok'; msg.textContent = 'Routed.'; refreshBadges(); }
-    else { msg.className = 'msg err'; msg.textContent = (res.json && res.json.error) || 'Could not route.'; }
+    if (res.status === 200) { msg.className = 'msg ok'; msg.textContent = 'Sent.'; refreshBadges(); }
+    else { msg.className = 'msg err'; msg.textContent = (res.json && res.json.error) || 'Could not send.'; }
   } });
   wrap.querySelector('.wf-row').appendChild(btn);
   return wrap;

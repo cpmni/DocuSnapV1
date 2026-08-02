@@ -130,6 +130,8 @@ contextBridge.exposeInMainWorld('docusnap', {
   openTeachWindowAt:   (docId)  => ipcRenderer.send('open-teach-window-at', docId),
   getTeachTarget:      ()       => ipcRenderer.invoke('get-teach-target'),
   onTeachLoadDoc:      (cb)     => ipcRenderer.on('teach-load-doc', (_e, id) => cb(id)),
+  getStampedViewerTarget: ()    => ipcRenderer.invoke('get-stamped-viewer-target'),
+  onStampedViewerLoad:  (cb)    => ipcRenderer.on('stamped-viewer-load', (_e, id) => cb(id)),
   createDocTypeWithFields: (data) => ipcRenderer.invoke('create-doc-type-with-fields', data),
 
   // First-run setup wizard
@@ -303,6 +305,10 @@ contextBridge.exposeInMainWorld('docusnap', {
     adminCancel: (id, version, reason) => ipcRenderer.invoke('workflow-admin-cancel', { id, version, reason }),
     docRoutes:   (documentId)  => ipcRenderer.invoke('workflow-doc-routes', { documentId }),
     openRoutes:  ()            => ipcRenderer.invoke('workflow-open-routes'),
+    docHistory:  (documentId)  => ipcRenderer.invoke('workflow-doc-history', { documentId }),
+    stampedPages:  (routeId)   => ipcRenderer.invoke('workflow-stamped-pages', { routeId }),
+    exportStamped: (routeId)   => ipcRenderer.invoke('workflow-export-stamped', { routeId }),
+    openStampedViewer: (routeId) => ipcRenderer.send('open-stamped-viewer', routeId),
     // Routing rules — the Workflow settings area (admin)
     rulesList:  ()           => ipcRenderer.invoke('workflow-rules-list'),
     ruleCreate: (p)          => ipcRenderer.invoke('workflow-rule-create', p),

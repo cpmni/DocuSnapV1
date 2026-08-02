@@ -272,6 +272,25 @@ function listAllOpenRoutes(db) {
     ORDER BY r.created_at ASC`).all();
 }
 
+// DECISION HISTORY for a document (Chris r4 card 2 — "who approved this and when?"):
+// CLOSED routes only, newest decision first. PROJECTED IN THE SQL like listAllOpenRoutes
+// (pinned in test_workflow_ipc.js): no stamped_path (has_stamped BOOLEAN instead — the
+// viewer fetches by route id, the renderer never sees a path) and no sender `comment`
+// (OC4: the private request note). resolution_comment IS shipped — it is the decision
+// record (a rejection reason exists to be read); this is a DELIBERATE widening to any
+// admin/edit doc viewer, noted to the owner. Resolver identity: to_username is sound for
+// approved/rejected/acknowledged (only the recipient can resolve); 'recalled' rows render
+// state + comment verbatim, never a guessed actor (OC2 — three producers share the state).
+function listClosedRoutesForDocument(db, documentId) {
+  return db.prepare(`
+    SELECT r.id, r.state, r.action_required, r.to_username, r.from_username,
+           r.resolution_comment, r.resolved_at, r.created_at,
+           CASE WHEN r.stamped_path IS NOT NULL AND r.stamped_path <> '' THEN 1 ELSE 0 END AS has_stamped
+    FROM document_routes r
+    WHERE r.document_id = ? AND r.state IN ('approved','rejected','acknowledged','recalled')
+    ORDER BY COALESCE(r.resolved_at, r.created_at) DESC`).all(documentId);
+}
+
 // True when `userId` is a PARTY (sender or recipient) on an OPEN route for this
 // document — the per-document visibility grant used by accessService.canAccessDocument
 // (docs/designs/WORKFLOW_SUITE_2026-07-18.md §3, Oracle C3: OPEN routes only, so the
@@ -290,7 +309,7 @@ module.exports = {
   insertRoute, getRoute, listInbox, listSent, listAssigned, listCompleted,
   countInbox, countSent, countOpenSent, countAssigned, countCompleted,
   updateState, setDocWorkflowStatus, setStampedPath, hasActiveRoute, hasActiveApprovalRoute,
-  listOpenRoutesForDocument, listAllOpenRoutes, isOpenRouteParty,
+  listOpenRoutesForDocument, listAllOpenRoutes, listClosedRoutesForDocument, isOpenRouteParty,
   insertRouteDecision, listRouteDecisions,
   insertRouteRule, listActiveRouteRules, listAllRouteRules, getRouteRule, updateRouteRule,
   setRouteRuleActive, deleteRouteRule, summarizeRule,

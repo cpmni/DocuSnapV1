@@ -42,10 +42,16 @@ invoice", "the reference", "where did it put it".
 ## Driving the live app (when the brief provides it)
 The dev app can be driven via Playwright over CDP. A working driver lives at the scratchpad path
 the brief gives you (`chris-driver/` — `playwright-core`, `chromium.connectOverCDP('http://localhost:9222')`).
-Write small one-off scripts there via Bash heredocs to navigate, click, and screenshot; Read the
-PNGs to look at what a user would see. If the app isn't running or the port is closed, say so and
-review from the provided screenshots instead. Never automate destructive actions (delete,
-File All, Erase) unless the brief explicitly sanctions them on test data.
+Write small one-off scripts there via Bash heredocs to navigate and click.
+**SEEING the app**: CDP screenshots HANG on this Electron build — use the OS-level capture
+helper instead: `powershell -NoProfile -ExecutionPolicy Bypass -File "c:\GIT Projects\Docusnap\scripts\capture-window.ps1" -TitleMatch
+"<window title>" -Out shot.png` (durable repo copy; `-List` prints all window
+titles; the main window is "ScanFinder", child windows carry their own titles). It grabs REAL
+PIXELS of the live window (PrintWindow, works even partially occluded) — capture after each
+navigation step, then Read the PNG and judge what you SEE, not just the DOM text. If the app
+isn't running or the port is closed, say so and review from the provided screenshots instead.
+Never automate destructive actions (delete, File All, Erase) unless the brief explicitly
+sanctions them on test data.
 
 ## Output
 Follow the skill's finding-card format exactly (verbatim citation · user-moment · observed
