@@ -410,6 +410,17 @@ as the no-locate spare.
   strengthens the digit-count PREFER arm's revival case (correct value passed the length profile the
   winner failed, in-band, twice).
 
+### Home "Open Mailbox" deep-link — OWNER 2026-08-02
+**Owner:** "the open mailbox button in home just opens the search window, not the mailbox."
+The WAITING-ON-YOU card's button (main/index.html:~842) opens the Search window cold; the
+user then has to find and click the Mailbox toggle themselves — the button promises a place
+it doesn't take you.
+**Fix shape (the open-review-window-at pattern):** a pending "open at mailbox" target —
+`open-search-window-at('mailbox')` (main stores the target; the search renderer consumes it
+once on load via a `get-search-target` read, or receives a `search-goto` event when the
+window is already open) → toggles the Mailbox view (`SearchMailbox` toggle path) on arrival.
+Same mechanism generalises later ("open at recycle bin", "open at doc N").
+
 ### Search preview error-state hardening (eternal spinner) — OWNER 2026-08-02 (live repro)
 **Owner:** "when i click a doc in search i see a spinning icon but the doc doesnt load."
 **Immediate cause (that session):** stale-main — the running app predated `b747676`'s new
