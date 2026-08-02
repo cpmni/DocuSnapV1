@@ -18,6 +18,8 @@ cards) + `53513cf` (clamp + slice-4 gates), **both PUSHED**. Dev app left RUNNIN
    `SCOPE_SWEEP=1`. Consent bar + accept/undo all live behind it.
 5. Still owner-pending from yesterday: the 3 GT-poison exhibits
    (`stress_test/out/stroke_sub_2026-08-01/zooms/doc{86,154,285}_600_wide.png`) → Learning Repair.
+6. **Template-system fine-tuning = your declared next major arc** — §9 below + the
+   pendingfeatures entry (two live exhibits from the teaching run, "all methods, then verify").
 
 ## 1 · Chris round-1 cards — SHIPPED (`29c4927`)
 All green-lit cards built (renderer + CSS only, all review contract tests green):
@@ -243,6 +245,23 @@ below when it lands). What shipped:
   a global strip breaks it). He also verified: bin has_file semantics exact, /v1 untouched,
   no readonly caller broken, the empty-issuer hold copy can never fire on a hidden identity
   field (structural roles refuse hiding server-side).
+
+## 9 · Template-system FINE-TUNING — owner-declared NEXT MAJOR ARC (2026-08-02 evening)
+Owner, live during the Customer Doc Test teaching run: **"We will work on fine tuning the
+template system soon"** — banked in `pendingfeatures.md` → "Template-system FINE-TUNING +
+'all methods, then verify'" with TWO live exhibits and the investigation list. Short form:
+- **Exhibit A (SFDEV reprocess):** trace shows only `template_mapping` + `keyword`, no
+  taught/anchor rows despite green dots, and the mapping reads get anchors AND values wrong.
+- **Exhibit B (`NorthgateTextiles_purchase_order_02.pdf`):** the opposite — `anchor_inline`
+  wins (anchor_crop candidate `'No. PO-2590!'` rejected not_credible — label-tail class),
+  NO template_mapping at all, NO keyword candidate; value CORRECT at 97% yet flagged
+  "couldn't be confirmed anywhere else on the page".
+- **Owner's design direction:** all methods applied, then the data VERIFIED (cross-method
+  consensus) — not first-authority-wins. Mechanism note for the next session: the engine is
+  precedence-first-win with skip-if-credible fast paths, so each doc shows a different winner
+  chain — wizard teaches surface AS `template_mapping` (no separate "taught" label), ⊕ teaches
+  as `anchor_*`; nothing runs everything every time. Full detail + design questions in the
+  pendingfeatures entry.
 
 ## Verification state (honest)
 - Chris cards: parse clean, no NUL bytes, all 7 review contract suites green. NOT eyeballed in

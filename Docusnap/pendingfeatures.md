@@ -541,6 +541,36 @@ the nudge value for an evening.
   cohort sibling passes the SAME downstream qualification gates (no gate bypass); cohort anchored
   on an in-margin member's non-null dominant_supplier.
 
+### Template-system FINE-TUNING + "all methods, then verify" — OWNER 2026-08-02 (two live exhibits)
+Owner-declared next major arc: "We will work on fine tuning the template system soon." Two live
+exhibits from the Customer Doc Test teaching run show the per-doc method mix swinging wildly:
+- **Exhibit A (SFDEV reprocess):** trace shows ONLY `template_mapping` + `keyword` — no taught/anchor
+  methods despite green dots — and the mapping reads are "getting the anchors and the values wrong".
+- **Exhibit B (NorthgateTextiles_purchase_order_02.pdf):** the OPPOSITE mix — po_number/po_date won by
+  `anchor_inline` (the `anchor_crop` candidate read `'No. PO-2590!'` and was rejected not_credible —
+  the label-tail intrusion class), supplier via `hint_t…`; NO template_mapping row at all (identity
+  pill says "Remembered positions") and NO keyword candidate in the trace. Value ends CORRECT at 97%
+  yet still carries the "couldn't be confirmed anywhere else on the page" flag.
+**Why the mix swings (mechanism, partially verified):** the engine is precedence-first-win with
+skip-if-credible fast paths — Stage 0.5 only produces when a template MATCHED with mappings for the
+field; anchor rungs skip when an earlier read is already credible (anchor.py "already found by
+higher-priority anchor" / `_skip_rigid` / fast-happy-path comments); keyword rows appear only when a
+pattern produced a candidate. So each doc shows a different winner chain — nothing runs "everything,
+every time". A wizard teach lands as Stage-0.5 mappings, so its reads surface AS `template_mapping`
+(there is no separate "taught" label); ⊕ Review teaches surface as `anchor_*`.
+**Owner's design direction (the banked feature): ALL methods applied, then the data VERIFIED** —
+cross-method consensus instead of first-authority-wins. Foundation already exists: the always-on
+candidate ledger, 2.6b located corroboration, S-C distinct-stage witness, suffix/length reconcile.
+Design questions for the session: full-run cost (every rung every field = real OCR spend — probably
+verify-on-disagree or verify-on-flag, not brute force), how consensus interacts with authority
+precedence, and whether the corroboration flag should stand down when methods AGREE (Exhibit B's
+correct-but-flagged read).
+**Investigation list:** why Stage 0.5 missed on Northgate _02 (template match failure on the scan
+rendition? mappings not covering the fields? scope key?) · why keyword produced nothing there ·
+whether an authoritative ⊕ anchor properly outranks a wrong template_mapping read when both exist
+(Exhibit A's complaint) · dev-inspector labelling — surface "taught (wizard)" vs "taught (⊕)" so
+green dots and trace rows reconcile for the owner.
+
 ### Digital ↔ scanned bleed (same supplier, divergent layout)
 - **Confirmed (Set B warm):** a digital doc reusing a live name inherits the scanned identity (**supplier
   90%**) but the scanned template's field geometry doesn't fit the digital layout (**ref 29%**, held).
