@@ -68,12 +68,35 @@ so the gate proved zero-regression but nothing about the heal. The chop-class li
 - NOT verified: live visual of the re-skin (Chris round in flight); the SAME_SUPPLIER_LAYOUT_GATE ON
   behaviour (dark, deferred to Oracle+gate).
 
-## christest (in flight at write time)
+## christest — DONE (full report `docs/CHRIS_FULL_APP_REVIEW_2026-08-02.md`)
 Sandbox: `<scratchpad>/chris-sandbox` (userData + Output + Demo Docs copy), CDP 9223, PID 22296, driver
-`<scratchpad>/chris-driver` (playwright-core, connectOverCDP). Chris briefed for a THOROUGH app+Settings
-walkthrough with extra focus on the re-skin, the preview error state, the Open-Mailbox deep-link, and the
-theme quick-flip. His report appends to `docs/CHRIS_FULL_APP_REVIEW_2026-08-02.md` + a triage summary
-here; IMPLEMENT NOTHING from it without the owner's go. Sandbox left running for the owner to poke.
+`<scratchpad>/chris-driver` (screenshots stepNN-*.png). Thorough app+Settings walkthrough done.
+**Verdict: "would keep using — yes."** IMPLEMENT NOTHING below without the owner's go.
+
+**Tonight's work VERIFIED by Chris (live):** Search re-skin looks modern + holds together (tinted type
+chips, amber Needs-Review chips, pill buttons, magnifying-glass lead box); Home "Open Mailbox" lands
+straight on the Mailbox; theme quick-flip round-trips to the chosen theme (Nordic Slate) via BOTH the
+rail toggle + account menu; preview no longer spins forever. Every destructive warning told the truth
+(9/9 truth-table). Approval + auto-stamped-copy flow = the standout.
+
+**Chris's 7 finding cards (OWNER VET — nothing implemented):**
+1. **Terms screen is the DRAFT** ("NOT YET IN FORCE" + 9 [SOLICITOR:] notes) — HIGH. KNOWN: LEGAL.txt
+   is a draft (CLAUDE.md). Ship the finalised text before release; the accept mechanism is fine.
+2. **Company "Not found" cold-start** on a brand-new supplier (all 20 invoices) — HIGH, TOP friction.
+   KNOWN gap: pendingfeatures "Letterhead cold-start supplier reader" (designed, NOT built). Chris
+   confirms it learns fast after ONE teach (offers "Use 'Copperfield Electrical'" on the rest).
+3. **Recycle bin preview mismatch** (list shows invoice_16, details pane shows a different filed doc
+   until you click) — MEDIUM, NEW. Fix: auto-select first bin item / blank preview on bin open.
+4. **"63% confidence" shown on CONFIRMED docs** — MEDIUM/LOW, NEW. Drop the score once confirmed.
+5. **Computer codes leak** (`needs_review`, `document_open`, `(supplier_name)` bracket keys) — LOW, NEW.
+6. **Missing-file preview = "No preview available", no retry** — LOW, NEW. NOTE: my `bf9fe90` honest
+   error state covers the FETCH-FAILURE path; Chris hit the separate MISSING-FILE branch. Small
+   follow-on: give that branch the same message + Try-again (same search-preview.js).
+7. **Admin Settings jargon** ("anchor→target zone mappings", "extraction pipeline") — LOW, polish.
+Smaller notes: stale "Document Issuer box is still empty" hint after teaching; two "Back to search"
+buttons in the bin; "reserved device names are defused" copy.
+
+Sandbox left RUNNING (CDP 9223, PID 22296) for the owner to poke; next /christest rebuilds it.
 
 ## Gotchas re-confirmed
 - The realdoc harness does NOT read the DB crop settings — it toggles via ENV. To gate the LIVE both-ON
