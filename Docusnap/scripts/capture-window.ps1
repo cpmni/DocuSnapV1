@@ -5,6 +5,7 @@
 param(
   [string]$TitleMatch = "ScanFinder",
   [string]$Out = "shot.png",
+  [int]$OwnerPid = 0,      # restrict to windows of this process id (two ScanFinder instances)
   [switch]$List
 )
 Add-Type @"
@@ -19,6 +20,7 @@ public class W {
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdc, uint flags);
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
   public struct RECT { public int Left, Top, Right, Bottom; }
 }
 "@
@@ -31,12 +33,14 @@ $cb = {
   $sb = New-Object System.Text.StringBuilder 512
   [void][W]::GetWindowText($h, $sb, 512)
   $t = $sb.ToString()
-  if ($t.Length -gt 0) { [void]$found.Add(@{ H = $h; T = $t }) }
+  $procId = [uint32]0
+  [void][W]::GetWindowThreadProcessId($h, [ref]$procId)
+  if ($t.Length -gt 0) { [void]$found.Add(@{ H = $h; T = $t; P = [int]$procId }) }
   return $true
 }
 [void][W]::EnumWindows($cb, [IntPtr]::Zero)
-if ($List) { $found | ForEach-Object { Write-Output $_.T }; exit 0 }
-$win = $found | Where-Object { $_.T -match $TitleMatch } | Select-Object -First 1
+if ($List) { $found | ForEach-Object { Write-Output ("{0}  [pid {1}]" -f $_.T, $_.P) }; exit 0 }
+$win = $found | Where-Object { $_.T -match $TitleMatch -and ($OwnerPid -eq 0 -or $_.P -eq $OwnerPid) } | Select-Object -First 1
 if (-not $win) { Write-Error "no visible window matching '$TitleMatch'"; exit 1 }
 $r = New-Object W+RECT
 [void][W]::GetWindowRect($win.H, [ref]$r)

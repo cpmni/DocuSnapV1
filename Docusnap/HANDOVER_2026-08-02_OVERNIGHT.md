@@ -158,6 +158,39 @@ recorded in the commit) · the two near-identical confidence sliders in Settings
 userData working copy (eric side-find, minor disk leak) · badge-supersede on held fields was
 REJECTED by both advisors (would relabel a true "High" read by doc-level hold state).
 
+## 6 · Day session (owner present, then out) — workflow trial, corpus, viewer, sandbox
+Commits `63315a6` + `d359557`, pushed. In order:
+- **Flips (owner-ordered):** clamp env `ANCHOR_LABEL_LEFT_CLAMP=1` (setx, durable) ·
+  `scope_sweep_enabled=true` (live DB) · **workflow suite ON** (`WORKFLOW_FEATURE_ENABLED=true`;
+  your signed license already carried the seats; flip the one const back to re-hide).
+- **Chris r4 (workflow live run)**: verdict "not yet — but we'd want to"; dead-Reject was a real
+  silent no-op (fixed, inline error) + the cap-note leaked into the Mailbox (fixed). His DESIGN
+  cards were then owner-approved ("I agree with Chris"), panel-vetted (bob+eric) and IMPLEMENTED
+  (`d359557`): Send-to-a-colleague wording (core+client) · completion feedback (.wf-ok) ·
+  mailbox rows (ref + note + sent-date) · Assigned tab hidden on desktop (structurally dead —
+  never claims) + teaching empty-states · **decision HISTORY on the document**
+  (`workflow-doc-history`, closed routes, "Approved by chris on 02-08-2026 — …"; NOTE:
+  resolution_comment is now visible to admin/edit doc viewers — deliberate, flagged) · due
+  dates/nudges BANKED (pendingfeatures, with the schema-free "waiting N days" chip named).
+- **Secure stamped-copy viewer** (your Edge/path concern): new `stamped-viewer` window shows
+  page IMAGES by route id — path resolved server-side, party-or-admin gated, no PDF bytes or
+  paths in any renderer; "Save a copy…" = audited export; box lists carry `has_stamped` only.
+  Also: `open-file`/`show-in-explorer` now write AUDIT rows; Search's Open buttons hidden from
+  Read Only (renderer-level; main-side role gate = named follow-up). Deferred+named: stamped
+  PRINT (Print-Slice 2 stub is waiting), search-row de-pathing, /v1 client parity.
+- **Customer Doc Test corpus** on your Desktop: 11,000 PDFs — TWO full renditions (Digital set +
+  Scanned set, ~70% skewed) of 5,500 docs · 10 unique issuers + Bramblewood Joinery (your co,
+  one PO house-layout) · ground_truth.json per file · serials/VAT/account/PO-ref extras.
+  Generator `stress_test/gen_customer_test.py` (deterministic).
+- **Diag-log completeness** (main.js+preload): startup context block, main-crash monitors, every
+  IPC throw logged, renderer errors forwarded (cap 50/window). ACTIVE ON NEXT APP START — your
+  live app predates it; the sandbox instance runs it now.
+- **Chris sandbox** (owner-ordered): dev-only `DOCUSNAP_USERDATA` hook + per-userData instance
+  lock → a second, fully-isolated instance (fresh DB + your license token copied — same machine
+  fingerprint — + Demo Docs copy + own Output) on CDP 9223. Chris round 5 runs there with FULL
+  destructive freedom + REAL SCREENSHOTS (`scripts/capture-window.ps1` PrintWindow capture,
+  -OwnerPid disambiguates the two instances; CDP capture hangs on this Electron build).
+
 ## Verification state (honest)
 - Chris cards: parse clean, no NUL bytes, all 7 review contract suites green. NOT eyeballed in
   the live UI overnight (renderer loads on your next Review-window open).
