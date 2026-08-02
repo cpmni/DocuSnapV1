@@ -306,6 +306,9 @@
     ::-webkit-scrollbar { width: 5px; }
     ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
   </style>
+  <!-- Graphical component layer ported from the detached client (re-skin only; loaded
+       AFTER the inline styles so its treatments win on equal specificity). -->
+  <link rel="stylesheet" href="search-components.css" />
 </head>
 <body>
 <div id="app">
@@ -319,7 +322,10 @@
   </div>
 
   <div id="search-bar">
-    <input class="search-input" id="inp-fulltext"  type="text" placeholder="Search anything…" title="Searches everything on the document — text, references, amounts, dates and codes. Numbers ignore commas (1137 finds 1,137)." data-help-key="fulltext">
+    <span class="lead-wrap">
+      <svg class="lead-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input class="search-input" id="inp-fulltext"  type="text" placeholder="Search anything…" title="Searches everything on the document — text, references, amounts, dates and codes. Numbers ignore commas (1137 finds 1,137)." data-help-key="fulltext">
+    </span>
     <span style="font-size:11px; color:var(--muted); white-space:nowrap;">From</span>
     <input class="search-input" id="inp-date-from" data-help-key="date-from" type="date" title="From date">
     <span style="font-size:11px; color:var(--muted);">to</span>
