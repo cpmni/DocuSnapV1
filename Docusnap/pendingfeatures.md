@@ -410,6 +410,32 @@ as the no-locate spare.
   strengthens the digit-count PREFER arm's revival case (correct value passed the length profile the
   winner failed, in-band, twice).
 
+### Focus-fix FIELD SWEEP + forward convention — OWNER 2026-08-02 (live repro on the workflow note)
+**Repro (owner, live):** typing "I approve" into the workflow note field (`.wf-note`,
+search-workflow.js `_decisionBar`) on a doc routed to them hit the keyboard-focus desync
+(no caret / keystrokes dead until clicking out of the app and back).
+**Why it slipped past the systemic cure:** the universal repair is a PRELOAD `pointerdown`
+chokepoint (preload.js ~:454 — heals every `input/textarea/[contenteditable]` PRESS in every
+window). It cannot fire when a field gains focus PROGRAMMATICALLY — and the workflow note does
+exactly that (`note.focus()` on the empty-note Reject path), as do other `.focus()` call sites
+around the app. Second suspect class: native `confirm()`/`alert()` sites that don't call
+`markFocusSuspect()` afterwards (the suspect flag is what forces the deterministic
+blurWebView→wc.focus edge on the NEXT press — main.js ~:943-976).
+**The sweep (build later):**
+1. Enumerate every programmatic `.focus()` on a text control across all window renderers;
+   route each through a shared helper that performs the repair edge first (invoke
+   `ensure-window-focus` then focus — the same (A)+(B) sequence the chokepoint does), or
+   simulate the chokepoint by dispatching through it.
+2. Enumerate every native `confirm()`/`alert()` site; ensure each calls
+   `window.docusnap.markFocusSuspect()` on return (several new dialogs landed 08-02 —
+   delete-all rewords, counted Empty-bin, split guards — verify all).
+3. A source-scan PIN (contract-test style): every `confirm(`/`alert(` in a window renderer
+   must have a `markFocusSuspect` within N lines, and every programmatic `.focus(` on an
+   input must go through the shared helper — so the class can't regrow.
+**Forward convention (owner rule): every NEW field or native dialog ships wired to the focus
+repair as part of its implementation — reviewers treat a bare `.focus()`/`confirm()` as a
+defect.** Memory: `project_focus_repair_mechanism` carries the original design.
+
 ### Document-detail DTO (finish the de-pathing) — NAMED 2026-08-02 (Oracle C3)
 The search ROW surface is de-pathed (`a58bc10`), but `get-document-with-extractions` →
 `previewService.getDocumentDetail` → `getById` `SELECT *` still ships the SELECTED doc's
