@@ -1069,7 +1069,7 @@ function register(ctx) {
       outcome: 'success', metadata: { folder: folderPath } });
     const diagOn = _diagEnabled(db);
     if (diagOn) { diaglog.enable(); diaglog.write({ ev: 'batch_start', folder: folderPath }); }
-    _drainedThisBatch = 0;   // per-batch tally (watch-folder drains between runs must not inflate it)
+    _takeDrainTally(folderPath);   // clear any stale tally for THIS folder (prior runs); watch folders untouched
     let trainingArgs, tempFiles;
     try {
       ({ args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath, logger));
@@ -1300,12 +1300,14 @@ function register(ctx) {
     // Truthful post-run line (Chris r5 card 2): originals move at IMPORT, and the emptied
     // source folder then looked like a mistake ("No documents found directly in this
     // folder…"). Say what actually happened, once, where the run's log lines render.
-    if (_drainedThisBatch > 0) {
-      mirror(event.sender, 'process-progress', {
-        type: 'log',
-        text: `✓ ${_drainedThisBatch} original scan${_drainedThisBatch === 1 ? '' : 's'} moved out of the source folder — Scan Finder now works from its own copies.`,
-      });
-      _drainedThisBatch = 0;
+    {
+      const _drained = _takeDrainTally(folderPath);   // THIS folder's drains only (Oracle C1)
+      if (_drained > 0) {
+        mirror(event.sender, 'process-progress', {
+          type: 'log',
+          text: `✓ ${_drained} original scan${_drained === 1 ? '' : 's'} moved out of the source folder — Scan Finder now works from its own copies.`,
+        });
+      }
     }
     cleanupFiles(tempFiles);
     cleanupFiles(shardFiles);
@@ -2859,7 +2861,25 @@ function drainOriginalToFolder(fs, path, srcPath, destDir, originalFilename, opt
 // Try to move an original NOW (the worker closes each PDF as it finishes it, so the
 // handle is usually free by file_done → the file moves live, "as processed"). If it is
 // still momentarily locked, queue it for the post-worker flush instead of blocking.
-let _drainedThisBatch = 0;   // per-batch tally for the truthful post-run line (Chris r5 card 2)
+// Per-SOURCE-FOLDER drain tally for the truthful post-run line (Chris r5 card 2; Oracle C1):
+// a plain per-batch counter was contaminated by concurrent WATCH drains (watch messages run
+// through the same _drainNowOrDefer while a manual import is mid-flight — watch defers its
+// batch behind a manual one, but not the reverse). Keying on the item's source folder means
+// the manual emit reads ONLY its own folder's tally; watch drains sit under the watch
+// folder's key and never leak into the manual line. Pure helpers exported for the pin test.
+const _drainTally = new Map();   // lower-cased source folder -> drains completed
+function _drainTallyKey(p) { try { return path.dirname(path.resolve(p)).toLowerCase(); } catch { return ''; } }
+function _recordDrain(srcPath) {
+  const k = _drainTallyKey(srcPath);
+  if (k) _drainTally.set(k, (_drainTally.get(k) || 0) + 1);
+}
+function _takeDrainTally(folder) {
+  let k = '';
+  try { k = path.resolve(folder).toLowerCase(); } catch { return 0; }
+  const n = _drainTally.get(k) || 0;
+  _drainTally.delete(k);
+  return n;
+}
 
 function _drainNowOrDefer(db, logger, item) {
   try {
@@ -2872,7 +2892,7 @@ function _drainNowOrDefer(db, logger, item) {
         db.prepare('UPDATE documents SET original_filename = ? WHERE id = ?').run(moved.filename, item.docId);
       }
       logger?.log(`Drained to ${item.kind}: ${item.originalFilename} → ${moved.folder}`);
-      _drainedThisBatch++;
+      _recordDrain(item.srcPath);
       return;
     }
   } catch (e) {
@@ -2895,7 +2915,7 @@ function _flushPendingDrains(db, logger) {
           db.prepare('UPDATE documents SET original_filename = ? WHERE id = ?').run(moved.filename, item.docId);
         }
         logger?.log(`Drained to ${item.kind}: ${item.originalFilename} → ${moved.folder}`);
-        _drainedThisBatch++;
+        _recordDrain(item.srcPath);
       } else if (fs.existsSync(item.srcPath)) {
         keep.push(item);   // still locked → retry on the next flush
       }
@@ -3434,6 +3454,7 @@ module.exports = {
   _reprocessGenericAdopt,
   _autoTitleEnv,             // Auto-Title spawn env (shared with the watch batch)
   drainOriginalToFolder,
+  _recordDrain, _takeDrainTally,   // drain-tally pins (test_drain_tally.js — Oracle C1)
   ensureWorkingCopy,
   ensureWorkingCopyAsync,
   reconcileHolding,

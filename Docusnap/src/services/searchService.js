@@ -53,7 +53,11 @@ function searchDocuments({ db, params, role }, deps = {}) {
 
   // Confirmed documents — what "search/view documents" means for every role.
   // PROJECTED after filterExisting (LOAD-BEARING ORDER: the existence filter needs the
-  // paths; the renderer must never see them).
+  // paths; the search ROW surface must never carry them). Honest scope (Oracle C3): the
+  // single-doc click path (get-document-with-extractions → getById SELECT *) still ships
+  // the selected doc's paths + ocr_text — its caller-aware projection is a named follow-up
+  // (pendingfeatures "Document-detail DTO"), because Review consumes folder_path/ocr_text
+  // from the SAME IPC and a global strip would break it.
   const confirmed = onlyExisting(documents.search(db, { ...common, status: 'confirmed' })).map(projectSearchRow);
 
   if (!includeUncommitted || !canSeeUncommitted(role)) {

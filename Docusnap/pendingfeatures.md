@@ -410,6 +410,19 @@ as the no-locate spare.
   strengthens the digit-count PREFER arm's revival case (correct value passed the length profile the
   winner failed, in-band, twice).
 
+### Document-detail DTO (finish the de-pathing) — NAMED 2026-08-02 (Oracle C3)
+The search ROW surface is de-pathed (`a58bc10`), but `get-document-with-extractions` →
+`previewService.getDocumentDetail` → `getById` `SELECT *` still ships the SELECTED doc's
+stored/working/folder paths + full ocr_text to the search renderer on every row click (and to
+the mailbox click + resubmit flows). Fix = a caller-aware `dto.projectDocumentDetail` in
+previewService. **ORACLE'S EXPLICIT WARNING — this must be CALLER-AWARE, not a global strip:
+Review consumes `doc.folder_path` (review/renderer.js:~1261 page fetch) and `doc.ocr_text`
+(~2489, ~5099 name-presence) from the SAME IPC — a blanket strip breaks Review's page preview
+and name-presence check.** Same class, lower priority: get-review-queue / get-deferred-queue /
+getByIds ship `SELECT d.*` into the (admin/edit-only) Review window. Also the true end-state
+for the raw shell channels: a main-side `open-filing-slips-pack` IPC, then DELETE
+open-file/show-in-explorer (the slips round-trip is their last legitimate caller).
+
 ### Workflow due dates + pending nudges — BANKED 2026-08-02 (Chris r4 card 7, bob-vetted)
 Chris's "what paper never managed": a due date on a route ("needs an answer by Friday") + a
 gentle nudge for items sitting pending. Full build = `due_at` schema + a scheduler + overdue

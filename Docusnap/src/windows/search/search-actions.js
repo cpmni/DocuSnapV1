@@ -56,11 +56,19 @@ function renderActions(doc) {
           _afterChange(window.docusnap.repairDeconfirm(doc.id));
       }, true);
       // Escape hatches to the real file — deliberately kept (round-2 Chris fix restored
-      // them), EDIT/ADMIN only, and now DOC-ID-RESOLVED: the row carries has_file, never a
-      // path; the main process resolves + audits + role-gates (the de-pathing slice).
+      // them), EDIT/ADMIN only, and now DOC-ID-RESOLVED: the search ROW surface carries
+      // has_file, never a path; the main process resolves + audits + role-gates (the
+      // de-pathing slice; the single-doc detail IPC's projection is a named follow-up).
+      // The result is CONSUMED (Oracle C2): a refusal (file vanished since load, containment)
+      // shows its reason instead of being a dead click.
+      const _openVia = (fn) => async () => {
+        let r = null;
+        try { r = await fn(doc.id); } catch (e) { r = { success: false, error: e && e.message }; }
+        if (!r || !r.success) _flashNote(docSection, r && r.error ? r.error : 'Couldn’t open the file.');
+      };
       if (doc.has_file && canEdit) {
-        _btn(docSection, 'Open in Explorer', () => window.docusnap.showDocumentInExplorer(doc.id));
-        _btn(docSection, 'Open File',        () => window.docusnap.openDocumentFile(doc.id));
+        _btn(docSection, 'Open in Explorer', _openVia(window.docusnap.showDocumentInExplorer));
+        _btn(docSection, 'Open File',        _openVia(window.docusnap.openDocumentFile));
       }
     } else {
       // Edit in Review: admin/edit only — enforced in main.js open-review-window-at handler.
@@ -118,6 +126,19 @@ function _afterChange(p) {
       if (window.SearchQuery) window.SearchQuery.doSearch();
     })
     .catch((e) => console.error('document action failed:', e));
+}
+
+// Transient inline note inside an actions section (refusals from the doc-open IPCs).
+function _flashNote(section, msg) {
+  let n = section.querySelector('.ap-flash-note');
+  if (!n) {
+    n = document.createElement('span');
+    n.className = 'ap-flash-note';
+    n.style.cssText = 'font-size:11px;color:var(--err);';
+    section.appendChild(n);
+  }
+  n.textContent = msg;
+  setTimeout(() => { if (n.isConnected) n.remove(); }, 6000);
 }
 
 function _section(title) {
