@@ -410,6 +410,27 @@ as the no-locate spare.
   strengthens the digit-count PREFER arm's revival case (correct value passed the length profile the
   winner failed, in-band, twice).
 
+### Core Search re-skin to the detached-client design — OWNER 2026-08-02
+**Owner:** "the search dialog in the search client looks a lot more modern and graphical than
+the search feature in the core app — replicate the design of the search client in the core
+app — it looks more robust."
+**What the client has that core lacks** (client/renderer/index.html): a designed component
+system — tinted state CHIPS (`.chip.confirmed/.pending/.rejected…` pill + rgba state tints),
+`.rolechip`, count `.badge`/`.seg-badge`, `.chip-btn` filter pills, `.segmented` control
+groups, SVG icon buttons (`mkBtn`+`ico()`), meters — where core's Search window renders a
+plainer list (`.result-item` rows, text badges). Both already share theme.css tokens, so this
+is a COMPONENT + LAYOUT port, not a palette job.
+**Shape of the work:** (1) port the client's component CSS into the core Search window (or a
+shared `search-components.css` both import — preferred, stops future drift); (2) markup pass
+over the ~8 core search renderers (search-results/preview/actions/mailbox/workflow/query
+inline-render their class names — logic and IPCs UNTOUCHED, re-skin only); (3) load the
+`scan-finder-frontend-design` skill for the design pass; (4) keep every contract suite +
+test_no_global_collisions green; (5) a Chris VISUAL round after (he can screenshot now —
+capture-window.ps1) to judge it as a customer.
+**Guardrails:** don't fork behaviour between the two apps — where the client's affordance is
+better (chips, segmented boxes), core adopts it; where core is ahead (cap note, de-pathed
+rows, secure viewer, teaching empty-states), the client inherits LATER (named follow-up).
+
 ### Focus-fix FIELD SWEEP + forward convention — OWNER 2026-08-02 (live repro on the workflow note)
 **Repro (owner, live):** typing "I approve" into the workflow note field (`.wf-note`,
 search-workflow.js `_decisionBar`) on a doc routed to them hit the keyboard-focus desync
