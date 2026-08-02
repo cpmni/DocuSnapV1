@@ -409,3 +409,84 @@ what paper never managed."
 *(Driver scripts: scratchpad chris-driver/r4_*.js; the Reject repro is r4_reject.js /
 r4_reject2.js — real mouse click, no console errors, no state change.)*
 
+
+
+---
+
+# Round 5 — the sandbox: Chris's first fortnight, hands on the keys (2026-08-02)
+
+> The owner ordered a FULLY SANDBOXED second instance (fresh DB, own userData, copied Demo
+> Docs, own Output — `DOCUSNAP_USERDATA` dev hook, CDP 9223) with full destructive freedom and,
+> for the first time, REAL SCREENSHOTS (`scripts/capture-window.ps1` OS-level capture; his
+> shots r5_step01–38 in the session scratchpad). Per the owner's standing rule for this round,
+> NOTHING below is implemented — every finding queues for the owner's vet.
+
+## His TL;DR
+- "I set up alone, taught it one supplier with one drawn box, filed 19 documents, found them
+  again, sent/approved/rejected/recalled paperwork to myself, deleted everything and got it
+  back — **nothing was ever lost and I always eventually knew where my paper was.**"
+- "The scary buttons **tell the truth** — the delete dialogs are the best-written words in the
+  product. The worst problem is the opposite corner: the setup wizard tells me a filing story
+  ('by type') that the real app (Company/Year/Month) contradicts."
+- "**I'd keep it, and I'd say so at the pub.**"
+
+## The whole arc, witnessed
+Create-account → recovery code ("scared me exactly the right amount") → terms → wizard →
+tour → practice run → import Ridgeway (20 docs) → ⊕ teach ONE box (two mis-aims self-recovered
+on screen) → Reprocess → "Reprocess 19 from 'Ridgeway Plant Hire'" → the pile heals to 94% →
+File All Ready files 13 → shelf on disk exactly as promised → Search finds INV-73448 first try
+→ Home: "1 supplier now file automatically" (his grammar catch: "files"). Workflow round-trip:
+send/approve/reject-with-coaching/recall; Sent tab "a proper ledger"; History lines present;
+the NEW stamped viewer "like a real rubber stamp… no browser, no path".
+
+## His verify lines (earlier rounds, seen in the flesh)
+⊕ hover FIXED · Unknown-Company honesty FIXED ("excellent") · dead Reject FIXED (note box +
+coaching line) · mailbox rows FIXED · stamped viewer FIXED (two niggles below) · queue "Not
+yet identified" BETTER · mailbox empty-states GOOD · NEW small: "1 supplier now file
+automatically" grammar.
+
+## His 8 cards (ranked, ALL awaiting owner vet — none implemented)
+1. **Two different filing stories in setup** — wizard step 2 + practice doc 3 say "by type";
+   step 3 / tour / reality say Company›Year›Month. "A filing app being fuzzy about filing" on
+   day one. Fix = align the two stray sentences.
+2. **Originals move at IMPORT, not at filing, and the aftermath reads like an error** — wizard
+   says "after they're filed"; the emptied source folder then shows "No documents found
+   directly in this folder — pick the folder that contains the scans". Proposes a truthful
+   post-run line ("✓ 20 originals moved into 'Processed'…").
+3. **Approve-with-note exists in the Mailbox but not the Search panel** — same buttons, no note
+   box there; one-click Approve stamps permanently with no confirm/undo. (CONFUSION +
+   QUESTION: is one-click intended?)
+4. **The 63%-vs-100% hold sentence fibs three ways** — "just below" (it isn't), no hint the
+   score comes from the empty issuer, "threshold" jargon. Proposes naming the empty box.
+5. **Stamped save-dialog filename is machine bookkeeping** — "Stamped-copy.route-1.pdf";
+   proposes "Invoice.09-05-2026.INV-30650 — APPROVED.pdf". (Also noted: dialog opened in the
+   OTHER instance's last save folder — shared-machine artefact, not carded.)
+6. **Post-destruction screens fib a little** — emptied-by-delete queue says "All documents
+   reviewed ✓"; purged doc lingers in the side panel with a live Restore; "EVERYTHING" purge
+   dialog has no count and doesn't say whether disk files are touched (QUESTION).
+7. **✂ Split silently no-ops on a 1-page document** — fierce warning, then nothing. Proposes
+   "This document is only one page — there's nothing to split."
+8. **Jargon stragglers** — wizard finale "Offline OCR", "EXTRACTION CONFIDENCE" header,
+   "Reprocess with Learned Data". Proposes plain twins.
+One-liners: terms gate shows "WORKING DRAFT… NOT YET IN FORCE" (QUESTION — solicitor-pending) ·
+"The default." on unselected theme card / "A good default" beside pre-picked Fast · practice
+run refuses the TYPED correction it asked for ("Correct it, then confirm" vs "Draw a box…") ·
+"Draw a box to read it" under already-read fields · Home "Last run: 20 filed" when queued ·
+wizard step-3 preview didn't refresh after changing the folder · stamped page renders softer
+than Review's · batch reprocess showed no visible progress/done (uncertainty: his tool may
+have eaten a toast).
+
+## The truth table (scary buttons, actually pressed)
+Delete → bin → Restore: **TRUE end to end** · Delete All Review (21): **TRUE — "best dialog in
+the app"** · File All Ready: **TRUE** · Reprocess one/batch: TRUE (batch feedback quiet) ·
+Split: warning honest, behaviour mute on 1-pager · Empty bin: TRUE (thinner words) · Practice
+run isolation: TRUE.
+
+**His confession (calibration note for all rounds):** his driver was silently CANCELLING native
+confirm() dialogs for half the session — he nearly reported File All Ready as a dead button; it
+isn't. In-page findings (like round 4's Reject) stand; any past "silent native dialog" claim
+should be re-weighed.
+
+## Verdict
+"**Yes — and this time I've done the work, not just read the screens.** … The findings above
+are wording and seams, not cracks in the floor."

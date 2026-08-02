@@ -191,6 +191,24 @@ Commits `63315a6` + `d359557`, pushed. In order:
   destructive freedom + REAL SCREENSHOTS (`scripts/capture-window.ps1` PrintWindow capture,
   -OwnerPid disambiguates the two instances; CDP capture hangs on this Electron build).
 
+## 7 · Chris round 5 — the sandbox run (NOTHING implemented; your vet queue)
+Full report appended to `docs/CHRIS_FULL_APP_REVIEW_2026-08-02.md` (round-5 section, with his
+screenshot references). Verdict: **"I'd keep it, and I'd say so at the pub"** — every scary
+button pressed, every warning TRUE, nothing lost across delete-all + purge + restore. His 8
+cards await you (per your rule, none implemented): (1) setup's "by type" filing story vs the
+real Company/Year/Month — his top harm; (2) originals move at IMPORT not filing + the emptied
+source folder shows an error-looking line; (3) Search-panel Approve lacks the Mailbox's note
+box + one-click permanence; (4) the "just below 100%" hold sentence; (5) stamped save filename
+"Stamped-copy.route-1.pdf" → wants the filing-style name; (6) post-destruction copy fibs
+("All reviewed ✓" after a delete-all; purge dialog count/disk-silence); (7) Split silent
+no-op on 1-page docs; (8) jargon stragglers ("Offline OCR", "EXTRACTION CONFIDENCE",
+"Reprocess with Learned Data"). Plus one-liners incl. the terms gate showing "WORKING DRAFT —
+NOT YET IN FORCE" to a customer.
+CALIBRATION: his driver silently cancelled native confirm() dialogs half the session — File
+All Ready was NEARLY mis-reported dead; in-page findings stand, past native-dialog claims
+re-weigh. The sandbox stays reproducible: seed script + DOCUSNAP_USERDATA recipe in the
+memory file; his sandbox instance may still be running on CDP 9223.
+
 ## Verification state (honest)
 - Chris cards: parse clean, no NUL bytes, all 7 review contract suites green. NOT eyeballed in
   the live UI overnight (renderer loads on your next Review-window open).
