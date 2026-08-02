@@ -571,6 +571,24 @@ whether an authoritative ⊕ anchor properly outranks a wrong template_mapping r
 (Exhibit A's complaint) · dev-inspector labelling — surface "taught (wizard)" vs "taught (⊕)" so
 green dots and trace rows reconcile for the owner.
 
+### SFDEV EVERY-STEP trace — OWNER 2026-08-02 (next session, NO code this session)
+**Owner rule: the dev inspector must show the RESULT OF EVERY STEP so an error can be read
+without re-running — "so I know exactly what the system was dealing with". That is the point
+of the dev feature.** Today's trace shows the winner chain + competitive candidates; the
+skip-if-credible fast paths are mostly SILENT — a stage that never attempted looks identical
+to a stage that attempted and lost, which is exactly the confusion behind Exhibit A/B above.
+**Build (next session):**
+1. Emit a trace event for EVERY stage/rung per field — attempted (candidate + accept/reject +
+   reason, as now) AND skipped (`{stage, rung, field, skip_reason}` — "already credible from
+   template_mapping", "no template matched", "no anchors in scope", "no keyword pattern hit",
+   "cross_supplier_placement_skip", …). The skip REASON is the data.
+2. Inspector renders the full per-field ladder: every stage in pipeline order with its
+   outcome — produced/won, produced/lost-to-X, rejected(reason), skipped(reason).
+3. Cost guard unchanged: events only under `--trace` (inspector/console open or diag logging) —
+   normal processing stays byte-identical; skip events are cheap strings, no extra OCR.
+4. Pairs with the fine-tuning arc above: the every-step ladder is the observability that the
+   "all methods, then verify" design will be judged against.
+
 ### Digital ↔ scanned bleed (same supplier, divergent layout)
 - **Confirmed (Set B warm):** a digital doc reusing a live name inherits the scanned identity (**supplier
   90%**) but the scanned template's field geometry doesn't fit the digital layout (**ref 29%**, held).

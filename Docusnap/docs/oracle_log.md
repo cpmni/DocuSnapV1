@@ -172,6 +172,35 @@ _(updated as cases accrue — keep/retire recommendation)_
   #218 exhibit joins the GT-poison eyeball pile · this-week triage of the pre-existing
   test_anchor_crop_crosscheck.py case-7 RED (re-fixture to the post-07-09 trigger band or retire
   with a supersession note) · clamp_*.jsonl NUL-scanned (done — clean).
+- 2026-08-02 (teach-first flow, barry+gary consensus vet): **SIGN OFF on the reframe + slices,
+  with surgery.** Premise ruling: "teach-on-first-encounter, import-first stays" is not advisor
+  drift — it is STRUCTURALLY FORCED (the wizard's doc-picker reads the review queue,
+  teach/renderer.js:1034; literal teach-before-import is impossible), and the plan must say so in
+  one honest sentence rather than offer a dead option. Three corrections, one per party: (1) gary's
+  S4 (mappings as 2.6b vouchers) = DO NOTHING — assumption (i) wrong at the guard that matters: the
+  MAIN ownership-corroboration already admits Stage-0.5 reads (`_is_stage05_located` in the voucher
+  predicate, engine.py:2952-2954); the 2.6b LATE path is anchors-only by structural necessity (it
+  re-runs anchors precisely because no template matched — no frame for a mapping to run in). S4
+  deleted ⇒ the whole programme is EXTRACTION-INERT. (2) barry's auto-reprocess-on-wizard-commit
+  flagship = SEND BACK: bypasses the reprocess-discards-edits guard (renderer-side confirm on
+  Review's own buttons, docs/history.md:18-19 — a main-fired reprocess wipes staged edits with no
+  dialog); rebuilt as S1.5 operator-triggered consent-gated "Re-read the N similar" (skip
+  open/claimed, pending-edits check, honest heal count). (3) barry's de-jargon precondition =
+  STALE (wizard copy already clean — grepped; downgrade to audit). His own find both advisors
+  missed: the owner's "targets add validation" layering is ALREADY shipped and EXCLUSIVE to the ⊕
+  path — the ownership cap arms only off field_anchors rows (engine.py:2890-2896), the wizard never
+  writes one ⇒ "wizard teaches reading; a ⊕ fix arms the check". New seam: S1's batch-end surface
+  collides with Catch-up Filing's consent bar (two consent idioms from one trigger class) —
+  sequence after slice 4, reuse its pattern. New guard C2: wizard step 2 badges/preselects the
+  DETECTED type + mismatch confirm (wrong-type pick = the one new-harm path steering creates;
+  verified no guard exists today, teach/renderer.js:192-206,250; Back/Cancel verified truly safe —
+  zero persistence pre-doCommit). Conditions C1 (S1 routes through the EXISTING CTA tier predicate,
+  Tier-B no-card PIN), C3 (S1.5 shape above), C4 (S2 surfacing-only, keep-both default, retire =
+  explicit Learning-Recovery semantics, never touch last_authoritative_at silently — auto-retire
+  would disable the Tier-A supremacy the 07-26 re-teach fix depends on). Concurs on all three
+  rejections (gate-first · teach>1-toward-W [mig-57 seam from the other side] · fourth positional
+  validator). Build order: S0 corpus two-arm gate → C2 → S1 dark+PIN → S3 → S2 → S1.5. Plan:
+  docs/designs/TEACH_FIRST_FLOW_2026-08-02.md.
 - After case 6 (2026-07-12, PO vendor-caption issuer fix): **KEEP — 6-for-6.** Adjudicating the reggie(flag)
   vs gary(drop) split, he ruled DROP with the *right* reason — not the brief's lead argument (the @40 cap is
   a no-op) but that the value drives the filing/learning SCOPE (engine.py:2259 reads `.value`), so flag
