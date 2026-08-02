@@ -222,7 +222,7 @@ function _decisionBar(route) {
       // NEVER a silent no-op (Chris r4 — "the Reject button silently does nothing"): the
       // note is required for a rejection, so SAY so where the user is looking.
       _err(wrap, 'Add a short note first — the sender needs to know why it was rejected.');
-      note.focus();
+      focusField(note);   // programmatic focus → repair the widget-focus edge first (shared/dialogFocus)
       return;
     }
     _run(window.docusnap.workflow.resolve(route.id, decision, n || null, route.version),

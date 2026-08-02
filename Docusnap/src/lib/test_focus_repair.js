@@ -129,8 +129,13 @@ const makeWc = (destroyed = false) => {
   // field, deterministically re-establish focus: sync input.focus() (so the input is the
   // activeElement when the page-focus edge runs) + the proactive ensureWindowFocus bridge +
   // the double-rAF caret belt. Pinned so a "cleanup" can't quietly drop the cure.
-  const zoneFill = renderer.slice(renderer.indexOf('async function runZoneOcr'),
-                                  renderer.indexOf('async function runZoneOcr') + 3000);
+  // Scan the WHOLE runZoneOcr body (bounded at the next function), not a fixed 3000-char
+  // window — the function has since grown past that, pushing its focus cure out of view and
+  // reporting false failures even though the cure (input.focus + ensureWindowFocus +
+  // markFocusSuspect + repairModalInputFocus) is intact ~78 lines in.
+  const _zoneStart = renderer.indexOf('async function runZoneOcr');
+  const _zoneEnd   = renderer.indexOf('async function ', _zoneStart + 25);
+  const zoneFill = renderer.slice(_zoneStart, _zoneEnd > _zoneStart ? _zoneEnd : _zoneStart + 8000);
   check('runZoneOcr focuses the filled input', /input\.focus\(\)/.test(zoneFill));
   check('runZoneOcr drives the proactive focus transition (ensureWindowFocus)',
         /ensureWindowFocus/.test(zoneFill));
@@ -178,6 +183,24 @@ const makeWc = (destroyed = false) => {
         /win\.on\(['"]close['"][\s\S]{0,400}getParentWindow[\s\S]{0,200}__focusSuspect\s*=\s*true/.test(mainSrc));
   check('main handle returns the repair result (edgeRan reply)',
         /ipcMain\.handle\(['"]ensure-window-focus['"][^\n]*runEnsureFocus/.test(mainSrc));
+
+  // Programmatic-focus sweep (slice 1, 2026-08-02) — the pointerdown chokepoint can't fire on a
+  // code-driven el.focus(), so a shared focusField() drives the widget edge first. Pin the plumbing
+  // + the first converted live site (the workflow Reject note) + the newly-armed dialog windows.
+  const win = f => fs.readFileSync(path.join(__dirname, '..', 'windows', f), 'utf8');
+  check('preload exposes the awaitable ensureWindowFocusAsync (invoke) variant',
+        /ensureWindowFocusAsync\s*:\s*\(\)\s*=>\s*ipcRenderer\.invoke\(['"]ensure-window-focus['"]/.test(preload));
+  const dialogFocus = win('shared/dialogFocus.js');
+  check('shared/dialogFocus defines focusField (programmatic-focus repair)',
+        /async function focusField/.test(dialogFocus) && /ensureWindowFocusAsync/.test(dialogFocus));
+  check('shared/dialogFocus arms native confirm()/alert() idempotently',
+        /window\.confirm\s*=/.test(dialogFocus) && /window\.alert\s*=/.test(dialogFocus) && /__dsDialogFocusInstrumented/.test(dialogFocus));
+  check('the workflow Reject note routes programmatic focus through focusField (not bare .focus())',
+        /focusField\(note\)/.test(win('search/search-workflow.js')));
+  check('previously-unarmed dialog windows now load shared/dialogFocus.js (search/main/teach)',
+        /shared\/dialogFocus\.js/.test(win('search/index.html'))
+        && /shared\/dialogFocus\.js/.test(win('main/index.html'))
+        && /shared\/dialogFocus\.js/.test(win('teach/index.html')));
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nAll focus-repair checks passed');

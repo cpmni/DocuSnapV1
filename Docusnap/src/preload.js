@@ -218,6 +218,10 @@ contextBridge.exposeInMainWorld('docusnap', {
   // just-filled input BEFORE the user clicks — the click's own repair races the Python-spawn
   // desync and loses (eric, 2026-07-10).
   ensureWindowFocus:           ()        => ipcRenderer.send('ensure-window-focus', { pageHasFocus: document.hasFocus() }),
+  // Awaitable variant of the same widget-focus edge — lets a PROGRAMMATIC el.focus() be
+  // ordered AFTER the edge (the fire-and-forget send above can't be sequenced, which is the
+  // exact race the pointerdown chokepoint warns about). Used by shared/dialogFocus focusField.
+  ensureWindowFocusAsync:      ()        => ipcRenderer.invoke('ensure-window-focus', { pageHasFocus: document.hasFocus() }),
   getDocumentWithExtractions:  (id)      => ipcRenderer.invoke('get-document-with-extractions', id),
   // Projected detail (no paths/ocr_text — the /v1 DTO shape): the Search/mailbox surfaces' read.
   getDocumentDetail:           (id)      => ipcRenderer.invoke('get-document-detail', id),
