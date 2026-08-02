@@ -1169,7 +1169,7 @@ function renderDocTypeDetail(type) {
         <span class="toggle-slider"></span>
       </label>
       <span id="dt-enable-lbl" class="field-label-small">${type.enabled ? 'Enabled' : 'Disabled'}</span>
-      <button class="btn" id="dt-fix-type" title="Reset what's been learned for this type if it's reading documents wrong" style="padding:4px 10px; font-size:12px;">Fix this type…</button>
+      <button class="btn" id="dt-fix-type" title="Opens Learning Repair for this type — see what it's learned and send a badly-read document back to Review. Nothing changes until you choose there." style="padding:4px 10px; font-size:12px;">Repair learning…</button>
       ${type.built_in ? '' : '<button class="btn-icon" id="dt-hide" title="Hide this type">&#215;</button>'}
     </div>
     <div id="dt-editor-host"></div>`;

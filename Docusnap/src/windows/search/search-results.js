@@ -32,6 +32,20 @@ function renderResults({ confirmed = [], uncommitted = [], deleted = [] }) {
 
   if (deleted.length)     { scroll.appendChild(_sectionHeader('RECYCLE BIN', deleted.length)); deleted.forEach(d => scroll.appendChild(_resultItem(d))); }
   if (confirmed.length)   { scroll.appendChild(_sectionHeader('CONFIRMED', confirmed.length));  confirmed.forEach(d => scroll.appendChild(_resultItem(d))); }
+  // The server caps each search at 200 rows (database/modules/documents.js search `limit = 200`).
+  // Without this line, a user whose home screen says "481 filed this week" sees "CONFIRMED 200"
+  // and concludes 281 documents are MISSING (Chris card 3 — "that five minutes is the whole
+  // ballgame for a filing app"). Renderer-side heuristic on >= cap by design: threading the cap
+  // through the response would break the frozen {confirmed, uncommitted} shape pinned by
+  // test_search_contract.js (eric). Known benign edges: exactly-200-total shows the note; a
+  // missing-file filter can hide it on a truncated set.
+  if (confirmed.length >= _SEARCH_CAP) {
+    const cap = document.createElement('div');
+    cap.className = 'section-capped-note';
+    cap.style.cssText = 'padding:4px 14px 8px; font-size:11px; color:var(--muted);';
+    cap.textContent = `Showing the first ${_SEARCH_CAP} matches — narrow the search (a word, a date range, a type) to see the rest.`;
+    scroll.appendChild(cap);
+  }
   if (uncommitted.length) { scroll.appendChild(_sectionHeader('UNCONFIRMED', uncommitted.length)); uncommitted.forEach(d => scroll.appendChild(_resultItem(d))); }
 
   const { selectedDoc } = window.SearchState;
@@ -42,6 +56,8 @@ function renderResults({ confirmed = [], uncommitted = [], deleted = [] }) {
   _refreshSelStyles();
   _renderToolbar();
 }
+
+const _SEARCH_CAP = 200;   // mirrors database/modules/documents.js search() `limit = 200`
 
 function _sectionHeader(label, count) {
   const el = document.createElement('div');

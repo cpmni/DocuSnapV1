@@ -16,7 +16,7 @@
   //    pass via open-help-window(section); each maps to the page that covers it. ──
   const PAGES = [
     { file: 'index.html',           title: 'Home',                  sections: ['overview', 'home', 'quick-start'] },
-    { file: 'getting-started.html', title: 'Getting Started',       sections: ['main', 'console', 'getting-started', 'login', 'first-run', 'mode'] },
+    { file: 'getting-started.html', title: 'Getting Started',       sections: ['main', 'console', 'getting-started', 'login', 'first-run'] },
     { file: 'importing.html',       title: 'Importing Documents',   sections: ['import', 'importing', 'begin-import', 'process', 'source-folder'] },
     { file: 'review.html',          title: 'Review Window',         sections: ['review', 'confidence', 'statuses', 'actions'] },
     { file: 'templates.html',       title: 'Templates & Learning',  sections: ['teach', 'templates', 'learning', 'template-wizard', 'which-tool', 'tab-learning', 'tab-templates', 'template-manager', 'anchor-wizard'] },
@@ -40,7 +40,6 @@
     ['Opening the app and signing in',                  'getting-started.html', 'login',            'Getting Started'],
     ['First-time setup',                                'getting-started.html', 'first-run',        'Getting Started'],
     ['The home screen',                                 'getting-started.html', 'console',          'Getting Started'],
-    ['Processing mode: Fast or Smart',                  'getting-started.html', 'mode',             'Getting Started'],
     ['Importing Documents',                             'importing.html',       'importing',        'Importing Documents'],
     ['Two folders, two different jobs',                 'importing.html',       'folders',          'Importing Documents'],
     ['How to import and process',                       'importing.html',       'import',           'Importing Documents'],
@@ -82,7 +81,7 @@
     ['Settings & Help',                                 'settings.html',        'settings',         'Settings & Help'],
     ['The settings you’ll actually use',                'settings.html',        'common',           'Settings & Help'],
     ['Folders: output, processed & watch',              'settings.html',        'common',           'Settings & Help'],
-    ['Processing mode & name checks',                   'settings.html',        'common',           'Settings & Help'],
+    ['Processing & name checks',                        'settings.html',        'common',           'Settings & Help'],
     ['Colour theme & appearance',                       'settings.html',        'common',           'Settings & Help'],
     ['Advanced settings',                               'settings.html',        'advanced',         'Settings & Help'],
     ['Backup & Restore',                                'settings.html',        'advanced',         'Settings & Help'],

@@ -214,8 +214,8 @@ async function renderDashboardExtra() {
 
   const af = document.getElementById('dash-autofile-body');
   if (af) af.innerHTML = (x.autoFiled && x.autoFiled.total > 0)
-    ? `<div class="big-num">${x.autoFiled.pct}%</div><div class="dash-card-note">filed automatically this week — ${x.autoFiled.auto} of ${x.autoFiled.total} documents.</div>`
-    : `<div class="dash-card-note">No documents filed yet this week.</div>`;
+    ? `<div class="big-num">${x.autoFiled.pct}%</div><div class="dash-card-note">filed automatically in the last 7 days — ${x.autoFiled.auto} of ${x.autoFiled.total} documents.</div>`
+    : `<div class="dash-card-note">No documents filed in the last 7 days.</div>`;
 
   const st = document.getElementById('dash-storage-body');
   if (st) {
@@ -704,7 +704,7 @@ const HELP_TEXTS = {
   'buy-licence':   'Open the Scan Finder website to purchase a licence.',
   'setup-checklist':'First-time setup steps still to do — this card disappears once you’re set up.',
   'attention':     'What needs you: documents waiting in Review, set aside (deferred), or that couldn’t be read.',
-  'pulse':         'How many documents you’ve filed today, this week and this month.',
+  'pulse':         'How many documents you’ve filed today, in the last 7 days and this calendar month. (The 7-day count can exceed the month figure just after a new month starts.)',
   'dash-import':   'Your last source folder and a shortcut to the Import screen.',
   'auto-import':   'Watch a folder and import any scans dropped into it automatically (admin).',
   'learning':      'How many suppliers now file automatically (the graduation roster), plus the layouts learned.',
@@ -1506,6 +1506,12 @@ window.docusnap.onWelcomeGotoImport?.(() => showView('import'));
 document.getElementById('about-legal')?.addEventListener('click', () => window.docusnap.openLegal?.());
 document.getElementById('about-close')?.addEventListener('click', closeAbout);
 aboutOverlay?.addEventListener('click', (e) => { if (e.target === aboutOverlay) closeAbout(); });
+// Escape closes the About overlay (Chris round 2 — "pressed Escape twice like a man rattling a
+// locked door"). Gate POSITIVELY on 'flex' (what openAbout sets): before first open the inline
+// style is '' and this must not fire.
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && aboutOverlay && aboutOverlay.style.display === 'flex') closeAbout();
+});
 document.getElementById('about-licenses')?.addEventListener('click', async () => {
   const r = await window.docusnap.openThirdPartyLicenses();
   if (r && !r.ok) console.warn('Could not open the licenses file:', r.error);

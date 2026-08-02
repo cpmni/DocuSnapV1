@@ -8,7 +8,11 @@
 let _active = false;
 let _box = 'inbox';
 
-function init() {
+// _mbInit, not `init`: search-workflow.js also declares a top-level `init` in this window's
+// shared global scope — benign today only because each namespace export captures its own
+// binding at eval time, but one bare call or load-order change flips it. Unique names only
+// (pinned by test_no_global_collisions.js).
+function _mbInit() {
   if (!window.SearchState.workflowEntitled) return;
   const btn = document.getElementById('btn-mailbox');
   if (!btn) return;
@@ -97,4 +101,4 @@ function _routeItem(r) {
 // Called by search-workflow after an action resolves, so the list stays current.
 function refreshIfActive() { if (_active) render(); }
 
-window.SearchMailbox = { init, refreshIfActive };
+window.SearchMailbox = { init: _mbInit, refreshIfActive };

@@ -812,7 +812,7 @@
                 <path d="M5 15a7 7 0 0 0 14 0"/>
               </svg>
             </button>
-            <button class="queue-tool-btn" id="btn-enhance-toggle" title="OCR Enhancement" data-help-key="enhance">
+            <button class="queue-tool-btn" id="btn-enhance-toggle" title="Clean up a hard-to-read scan (brightness, contrast, noise) and read it again — affects reads only; the filed file is unchanged." data-help-key="enhance">
               <svg class="enhance-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
                 <line x1="3" y1="7" x2="21" y2="7"/>
                 <line x1="3" y1="12" x2="21" y2="12"/>
@@ -851,6 +851,7 @@
             <!-- Flyouts anchored to the rail (shown by the existing handlers; IDs preserved) -->
             <div id="split-bar" class="rail-flyout" style="display:none;">
               <div class="rail-flyout-title">Split PDF</div>
+              <div style="font-size:10px; color:var(--muted); line-height:1.35;">Splitting replaces this document: the parts go to Review as separate documents, and the original PDF is permanently removed (not to the recycle bin) once the parts are safely created.</div>
               <select id="split-mode" style="font-size:11px; padding:4px 8px; background:var(--surface2); border:1px solid var(--border2); color:var(--text); border-radius:4px; width:100%; min-width:0;">
                 <option value="ranges">By page range</option>
                 <option value="each">Every page (1 file per page)</option>
@@ -869,7 +870,7 @@
             </div>
 
             <div id="enhance-controls" class="rail-flyout">
-              <div class="rail-flyout-title">OCR Enhancement</div>
+              <div class="rail-flyout-title">Scan clean-up (OCR Enhancement)</div>
               <div class="enh-row">
                 <label class="enh-opt"><input type="checkbox" id="enh-grayscale"> Grayscale</label>
                 <label class="enh-opt"><input type="checkbox" id="enh-autocontrast"> Auto-contrast</label>
@@ -907,13 +908,13 @@
       <div id="review-actions">
         <div class="ra-row">
           <button class="btn skip" id="btn-skip" data-help-key="skip">Skip</button>
-          <button class="btn skip" id="btn-defer" style="color:var(--warn)" data-help-key="defer">&#8635; Defer</button>
+          <button class="btn skip" id="btn-defer" style="color:var(--warn)" data-help-key="defer" title="Set this one aside for later — it moves to the Deferred tab. Nothing is filed or deleted.">&#8635; Defer</button>
         </div>
         <button id="btn-file-all-review" data-help-key="file-all" title="File every document whose type and required fields are filled in. Documents still missing details are left for manual review.">&#10003; File All Ready</button>
-        <button id="btn-delete-all-review" data-help-key="delete-all">&#128465; Delete All Review</button>
+        <button id="btn-delete-all-review" data-help-key="delete-all" title="Deletes every document in this list — they go to the recycle bin, restorable from Search.">&#128465; Delete All Review</button>
       </div>
       <div id="deferred-footer">
-        <button id="btn-delete-all">&#128465; Delete All Deferred</button>
+        <button id="btn-delete-all" title="Deletes every document in this list — they go to the recycle bin, restorable from Search.">&#128465; Delete All Deferred</button>
       </div>
     </div>
 

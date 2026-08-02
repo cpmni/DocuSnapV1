@@ -62,7 +62,13 @@ function _err(wrap, msg) {
   if (!n) { n = document.createElement('div'); n.className = 'wf-err'; wrap.appendChild(n); }
   n.textContent = msg;   // textContent, never innerHTML — the message can echo user input
 }
-function _btn(label, primary, onClick) {
+// _wfBtn, NOT _btn: these are classic scripts sharing ONE global scope, and search-actions.js
+// already owns _btn (different signature - container-appending). This file loading LAST meant
+// its 3-arg _btn silently shadowed the panel's, and every Document-Actions button (Open in
+// Explorer / Open File / Send back / Delete / Restore) appended NOTHING - the section-drop
+// guard then hid the whole panel. Pinned by test_no_global_collisions.js - never redeclare
+// another file's top-level helper name.
+function _wfBtn(label, primary, onClick) {
   const b = document.createElement('button');
   b.className = 'action-btn' + (primary ? ' primary' : '');
   b.textContent = label; b.addEventListener('click', onClick);
@@ -117,7 +123,7 @@ function _routedBanner(r) {
     // Two-step inline confirm (NO native confirm() — the Search window is an unarmed
     // focus-desync site). First click arms, ~5s auto-revert; second click cancels. A stale
     // cancel lands as a truthful INVALID/CONFLICT that _run re-shows on the fresh panel.
-    const btn = _btn('Cancel route', false, () => {
+    const btn = _wfBtn('Cancel route', false, () => {
       if (btn.dataset.armed) { _run(window.docusnap.workflow.adminCancel(r.id, r.version)); return; }
       btn.dataset.armed = '1'; btn.textContent = `Confirm — remove from ${r.to_username}'s inbox`;
       btn.classList.add('danger');
@@ -150,16 +156,16 @@ function _decisionBar(route) {
 
   if (route.action_required === 'acknowledge') {
     // Display copy only — the resolve decision string stays 'acknowledge' (DB/IPC contract).
-    acts.appendChild(_btn('Got it', true, () =>
+    acts.appendChild(_wfBtn('Got it', true, () =>
       _run(window.docusnap.workflow.resolve(route.id, 'acknowledge', null, route.version))));
   } else if (_canDecide()) {
-    acts.appendChild(_btn('Approve', true, () => decide('approve')));
-    acts.appendChild(_btn('Reject', false, () => decide('reject')));
+    acts.appendChild(_wfBtn('Approve', true, () => decide('approve')));
+    acts.appendChild(_wfBtn('Reject', false, () => decide('reject')));
   }
   // Disposition: route back to the sender or on to another user (reuses the assign form,
   // with the sender pre-selected for a route-back). Admin/edit only.
   if (_canDecide()) {
-    acts.appendChild(_btn('Forward…', false, () => {
+    acts.appendChild(_wfBtn('Forward…', false, () => {
       if (wrap.querySelector('.wf-assign')) return;
       wrap.appendChild(_assignForm({ id: route.document_id }, route.from_username));
     }));
@@ -186,7 +192,7 @@ function _assignForm(doc, preselectUsername, opts = {}) {
   [['approve', 'Approve'], ['acknowledge', 'For information']].forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; act.appendChild(o); });
   if (opts.actionRequired) act.value = opts.actionRequired;
   const note = document.createElement('input'); note.className = 'search-input'; note.placeholder = 'Note (optional)';
-  const go = _btn('Route…', true, () =>
+  const go = _wfBtn('Route…', true, () =>
     _run(window.docusnap.workflow.assign(doc.id, Number(sel.value), act.value, note.value.trim() || undefined, opts.resubmitOf)));
   wrap.append(sub, sel, act, note, go);
   return wrap;

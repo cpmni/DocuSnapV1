@@ -460,7 +460,7 @@ async function refreshAutoCommittedBar() {
   if (_autoFiledDocs.length) {
     bar.innerHTML = `<span class="acb-dismiss" title="Dismiss this notice" aria-label="Dismiss">×</span>`
       + `<b>✓ ${_autoFiledDocs.length}</b> document${_autoFiledDocs.length === 1 ? '' : 's'} filed automatically on the last pass — `
-      + `<span class="acb-back">click here to review them</span>`;
+      + `<span class="acb-back">click to see the list — they stay filed; nothing is changed</span>`;
     bar.style.display = 'block';
   } else {
     bar.style.display = 'none';
@@ -922,7 +922,12 @@ function renderQueueList() {
   list.innerHTML = '';
 
   if (queue.length === 0) {
-    empty.style.display = '';
+    // 'block', NOT '' — clearing the inline style falls back to the stylesheet's
+    // `#queue-empty { display:none }`, so this message NEVER showed (Chris card 2;
+    // verified live). The text is re-set per tab because the deferred branch
+    // overwrites the shared element (the latent copy-clobber both advisors named).
+    empty.style.display = 'block';
+    empty.textContent = '✓ All reviewed';
     reviewActions.style.display = 'none';
     const vb0 = document.getElementById('queue-view-bar');
     if (vb0) vb0.style.display = 'none';
@@ -1067,7 +1072,7 @@ function buildQueueItem(doc) {
   const confBadge = conf == null ? '' :
     sev === 'mid'
       ? `<span class="conf-badge mid" style="flex-shrink:0;" title="${sevWord} — overall ${conf}%, but a field needs a look">Check</span>`
-      : `<span class="conf-badge ${sev}" style="flex-shrink:0;" title="${sevWord} — ${conf}% confidence">${conf}%</span>`;
+      : `<span class="conf-badge ${sev}" style="flex-shrink:0;" title="${sevWord} — ${conf}% confidence${sev === 'high' ? ' · waiting for your OK' : ''}">${conf}%</span>`;
   // Lead with the actual blocker (the missing field), not the reassuring score.
   const blockerLine = blocked
     ? `<div class="qi-blocker" title="Can’t be filed until this is filled in"
@@ -1111,8 +1116,8 @@ function renderDeferredList() {
   list.innerHTML = '';
 
   if (deferredQueue.length === 0) {
-    empty.style.display = '';
-    empty.textContent = 'No deferred documents';
+    empty.style.display = 'block';   // 'block', not '' — see renderQueueList's empty branch
+    empty.textContent = 'Nothing set aside. Documents you press "↻ Defer" on wait here until you come back to them.';
     footer.style.display = 'none';
     setQueueWrapVisible(false);
     return;
@@ -1155,7 +1160,7 @@ function renderDeferredList() {
     });
     el.querySelector('.qi-delete').addEventListener('click', async (e) => {
       e.stopPropagation();
-      if (!confirm(`Delete "${doc.original_filename}"? This cannot be undone.`)) return;
+      if (!confirm(`Delete "${doc.original_filename}"?\n\nIt goes to the app's recycle bin — you can restore it from Search.`)) return;
       const filePath = doc.folder_path ? `${doc.folder_path}\\${doc.original_filename}` : null;
       await window.docusnap.deleteDocument(doc.id, filePath);
       deferredQueue = deferredQueue.filter(d => d.id !== doc.id);
@@ -2069,14 +2074,14 @@ function renderCleanHoldReason(el, doc) {
       // threshold advice (the floor applies at every threshold — Oracle C7); the shared hint
       // below already says the confidence setting can't file it.
       'weak-critical-field': fieldName
-        ? `<strong>${escHtml(fieldName)}</strong> was read at lower confidence than automatic `
-          + `filing requires, so this one is waiting for your eye. If the value is wrong, `
+        ? `<strong>${escHtml(fieldName)}</strong> wasn't read certainly enough for automatic `
+          + `filing, so this one is waiting for your eye. If the value is wrong, `
           + `teaching it (&#8853;) usually fixes it for good — if it's right, just confirm.`
-        : 'a filing field was read at lower confidence than automatic filing requires.',
+        : "a filing field wasn't read certainly enough for automatic filing.",
     }[v.kind] || 'an automatic check didn\'t pass.';
     el.classList.add('rr-calm');
     el.innerHTML = `<div class="rr-lead">Nothing looks wrong — ${why}</div>`
-                 + `<div class="rr-cues"><span class="rr-cue info">${Number.isFinite(conf) ? `Overall ${conf}% · checked by you` : 'Checked by you'}</span></div>`
+                 + `<div class="rr-cues"><span class="rr-cue info">${Number.isFinite(conf) ? `Overall ${conf}% · waiting for your check` : 'Waiting for your check'}</span></div>`
                  + `<div class="rr-hint">Confirm it and it files. This isn't the confidence setting — `
                  + `changing that won't file this one.</div>`;
     el.hidden = false;
@@ -4892,9 +4897,13 @@ document.getElementById('btn-defer').addEventListener('click', async () => {
 // ── Delete All Review (admin only) ────────────────────────────────────────────
 document.getElementById('btn-delete-all-review').addEventListener('click', async () => {
   if (!isAdmin || queue.length === 0) return;
+  // Truthful copy (Chris card 1 + bob): _deleteQueue SOFT-deletes — recycle bin, restorable,
+  // files kept. The old "permanently removed / cannot be undone" was FALSE and devalued the
+  // app's real cannot-be-undone warnings (purge/restore/template-delete, which stay accurate).
   if (!confirm(`Delete ALL ${queue.length} document(s) in the Review queue?\n\n` +
-               `Their files and extracted data are permanently removed. Confirmed and deferred ` +
-               `documents are NOT affected. This cannot be undone.`)) return;
+               `They go to the app's recycle bin — you can restore them any time from ` +
+               `Search → Show the recycle bin. Files on disk are kept. Confirmed and ` +
+               `deferred documents are NOT affected.`)) return;
 
   let res;
   try { res = await window.docusnap.deleteAllReview(); }
@@ -4913,7 +4922,8 @@ document.getElementById('btn-delete-all-review').addEventListener('click', async
 document.getElementById('btn-delete-all').addEventListener('click', async () => {
   if (!isAdmin || deferredQueue.length === 0) return;
   if (!confirm(`Delete ALL ${deferredQueue.length} deferred document(s)?\n\n` +
-               `Their files and extracted data are permanently removed. This cannot be undone.`)) return;
+               `They go to the app's recycle bin — you can restore them any time from ` +
+               `Search → Show the recycle bin. Files on disk are kept.`)) return;
 
   let res;
   try { res = await window.docusnap.deleteAllDeferred(); }
@@ -4931,7 +4941,7 @@ document.getElementById('btn-delete-all').addEventListener('click', async () => 
 // ── Delete ────────────────────────────────────────────────────────────────────
 document.getElementById('btn-delete').addEventListener('click', async () => {
   if (!currentDoc) return;
-  if (!confirm(`Delete "${currentDoc.original_filename}"? This cannot be undone.`)) return;
+  if (!confirm(`Delete "${currentDoc.original_filename}"?\n\nIt goes to the app's recycle bin — you can restore it from Search.`)) return;
 
   const filePath = currentDoc.folder_path
     ? `${currentDoc.folder_path}\\${currentDoc.original_filename}`
@@ -4954,7 +4964,7 @@ document.getElementById('btn-delete').addEventListener('click', async () => {
 // server-side). Reuses the same delete flow as the action-bar Delete button.
 async function deleteFromQueue(doc) {
   if (!doc) return;
-  if (!confirm(`Delete "${doc.original_filename}"? This cannot be undone.`)) return;
+  if (!confirm(`Delete "${doc.original_filename}"?\n\nIt goes to the app's recycle bin — you can restore it from Search.`)) return;
   const filePath = doc.folder_path ? `${doc.folder_path}\\${doc.original_filename}` : null;
   await window.docusnap.deleteDocument(doc.id, filePath);
   queue         = queue.filter(d => d.id !== doc.id);
