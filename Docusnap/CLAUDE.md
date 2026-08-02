@@ -21,9 +21,40 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-08-01 NIGHT wrap) — D1 live · live-fill fixed · catch-up slice 3 · Chris
+## Current session state (2026-08-02 wrap) — Chris fix cycle · clamp+sweep+workflow ON · de-pathing · teach-first PLAN
+**2026-08-02 (Fable 5, overnight autonomous + owner day/evening). HEAD `5652487`, PUSHED, tree
+clean. READ `HANDOVER_2026-08-02_NIGHT.md` FIRST (wrap + NEXT-SESSION ORDER), then
+`HANDOVER_2026-08-02_OVERNIGHT.md` (overnight/day detail). NEXT ARC (owner-set): (1)
+template-system FINE-TUNING + SFDEV every-step trace (pendingfeatures entries — two live
+exhibits; build the trace FIRST, it is the arc's observability), (2) teach-first plan owner
+go/no-go, then S0 corpus gate (`docs/designs/TEACH_FIRST_FLOW_2026-08-02.md`).**
+· **Chris fix cycle**: r1 cards SHIPPED (`29c4927`) · r2 panel-vetted fixes (`ac2d924` — dead
+  Document-Actions panel = global `_btn` collision, pinned `test_no_global_collisions.js`;
+  invisible empty-states `display:''` class; truthful soft-delete dialogs) · r4/r5 via the FULL
+  SANDBOX (`/christest` skill; `DOCUSNAP_USERDATA` dev-only hook, CDP 9223, seeded license,
+  PrintWindow capture `scripts/capture-window.ps1` — CDP screenshots hang on this build).
+· **Flips (owner-ordered)**: label-tail clamp BUILT+ON (`53513cf`, `ANCHOR_LABEL_LEFT_CLAMP`;
+  Oracle ACCEPT-AS-RESIDUAL on #218, amended letter "zero UNRESIDUALED flips", W1-W3 watch bars)
+  · catch-up slice-4 gates GREEN + `scope_sweep_enabled` ON · workflow suite ON
+  (`WORKFLOW_FEATURE_ENABLED=true`) + two-step Approve arm (`32b4c38`) + secure stamped viewer
+  (route-id, party-or-admin) + doc history + audited export.
+· **De-pathing**: search ROWS projected + has_file, raw shell channels admin/edit (`a58bc10`);
+  Document-detail DTO BUILT (`b747676`) — `get-document-detail` = `dto.projectDocumentDetail`
+  (/v1 shape verbatim), full read Review-only; pins `test_search_detail_depathed.js`.
+· **Customer Doc Test corpus** on Desktop (10 unique issuers + Bramblewood owner co, 5 types,
+  Digital+Scanned renditions, ground_truth.json; generator `stress_test/gen_customer_test.py`).
+  The teaching run surfaced the two template exhibits that named the fine-tuning arc.
+· **Teach-first PLAN signed** (barry+gary → Oracle; EXTRACTION-INERT — S4 deleted, auto-reprocess
+  flagship → S1.5 consent heal; the sell: ⊕ path EXCLUSIVELY arms the ownership validation cap).
+· Diag-log completeness shipped (startup context · uncaughtExceptionMonitor · ipc-handle wrap ·
+  renderer-error sink cap 50) — "check log and know exactly what the problem is".
+· GOTCHAS: stale-main bit AGAIN (new IPC missing in running main = eternal spinner — restart for
+  main-JS commits) · PS5.1 `-replace`/Set-Content mojibakes UTF-8 (python for text surgery) ·
+  `git commit -F <file>`, never `-m @'…'@` here-strings.
+
+### Prior session (2026-08-01 NIGHT) — D1 live · live-fill fixed · catch-up slice 3 · Chris
 **2026-08-01 evening (Fable 5, owner present). HEAD `8d66041`, PUSHED, tree clean. READ
-`HANDOVER_2026-08-01_NIGHT.md` FIRST — it carries the NEXT-SESSION ORDER (owner-set): (1) vet +
+`HANDOVER_2026-08-01_NIGHT.md` FIRST — it carries the NEXT-SESSION ORDER (owner-set, EXECUTED 2026-08-02): (1) vet +
 implement Chris's round-1 cards (triage table in the handover, NOTHING implemented yet), (2) build
 the label-tail crop CLAMP (Oracle SIGNED W/COND, build-ready — `pendingfeatures.md` "Label-tail
 crop CLAMP" has C1-C7 + G1-G6 verbatim), (3) owner eyeballs the 3 GT-poison exhibits → Learning
@@ -53,92 +84,6 @@ Repair, (4) catch-up slice 4 gates → flip.**
 · GOTCHAS: stale-main-process bit thrice more (restart for main JS; window REOPEN suffices for
   renderer-only); an Edit once wrote a NUL byte into renderer.js (grep suddenly says "binary
   file" → scan for \x00, repair via python byte-surgery); `documents` has NO updated_at column.
-
-### Prior session (2026-08-01 DAY) — validation family live + type-refuse deadlock cured
-**2026-08-01 day (Fable 5, owner present). `4965984`, PUSHED. READ
-`HANDOVER_2026-08-01_DAY.md`** (the overnight handover carries that half). Realdoc at wrap:
-299 docs, type/supplier 100%, ref 97.0%, date 99.7%, M=9 (residual = interior stroke substitutions,
-6 exemplars, ALL proven pre-existing — the dominant remaining class; second-witness investigation =
-top accuracy lever).
-· **Validation family ALL ON** (`1411d50`/`6649723`/`570833b`/`6237398`): S-A `DATE_IN_REF_FLAG` ·
-  S-B `REF_LENGTH_OUTLIER_GUARD` (+ `REF_LENGTH_WITNESS_RECONCILE` — heal the doubled-digit merge
-  from the ledger on its mechanical fingerprint; flag-with-suggestion/Accept otherwise) · S-C
-  `BLIND_GEOM_DISAGREE_RECONCILE` (Tier-A NARROWED for anchor_registration — documented in the
-  invariants above + extraction-pipeline.md) · `REG_MIN_INLIERS_GATE` (refuse n_inliers<3 vacuous
-  fits). Engine pass order PINNED: suffix-reconcile → S-C → S-A → prefix-outlier → S-B(+witness).
-· **Type-refuse LEARNING DEADLOCK cured** (`11b7ae9`, herald→Oracle): refuse ⇒ null template_id ⇒
-  learn-on-commit bailed ⇒ young template never warmed ⇒ refused forever. R1
-  `TEMPLATE_LINK_ON_CONFIRM` (confirm resolves+links via reuseByEstablishedName; scope_sweep
-  excluded, pinned) + R3 `FINGERPRINT_COUNTERPARTY_MARKERS` (buyer-issued "Supplier :" truncates
-  harvest, word-boundary) + honest note ("confirming will teach this layout") +
-  `scripts/link-confirmed-templates.js` retro-heal (applied ×2, 37 orphans linked, backups beside
-  DB). R2 cohort admission BANKED (pendingfeatures, revival evidence named).
-· **Live note suppressor repaired** (`cea79ef`): the on-open strip existed; the reword broke its
-  matcher. `_STALE_TYPE_NOTE` = ONE shared regex both copies (test_stale_note_matcher.js). Oracle:
-  display-only SIGNED; persisting a note-clear on open SENT BACK (autoCommitFullConfidence seam).
-· Smaller: graduation banner names the TYPE (`115ba62`) · pick-bar hides the Mark-Reviewed pill
-  (`db9fb18`) · veto-note neutral copy + `REEXTRACT_UNPIN_BLANK_SUPPLIER` branding-blank ⟳ pill
-  (`930842e`) · `DATE_ROLE_GENERIC_LABEL` bare-'Date' for date roles (`d3db1e4`).
-· **GOTCHA (bit twice)**: a running dev app's MAIN process predates same-session JS commits —
-  confirms through a stale app skip new learning arms (python is fresh per spawn). Check app start
-  time vs commit time first.
-· Memories: `project_deadlock_reconcile_20260801` · `project_validation_slices_20260801`.
-
-### Prior session (2026-08-01 OVERNIGHT) — dpi dig → suffix-reconcile ON + catch-up slices 1+2 + validation designs
-**2026-08-01 overnight (Fable 5, autonomous while owner slept). PUSHED, origin in sync. READ
-`HANDOVER_2026-08-01_OVERNIGHT.md` FIRST.** Arc: the owner's "Worksh Eet" garbled-nudge screenshot →
-dpi sweep (150/200/240/250/260/275 all garble a heading somewhere; only 225/280/300 clean; NO flawless
-res exists) → cross-res escalation designed then Oracle-PARKED (its trigger provably unreachable for
-the class — label-confirmed reads are shape-exempt) → the real fixes shipped instead.
-· **`36a4a32` CLIPPED-SUFFIX RECONCILIATION ON** (kill `CANDIDATE_SUFFIX_RECONCILE`): label-confirmed
-  clip 'V-69523' healed by adopting the discarded fuller keyword read from the always-on candidate
-  ledger (suffix + digit-identity + shape-pass + confirmed-prefix). ref 91.8→94.5%, M 8→7 zero new.
-  NO corrected_to emitted (reprocess-merge operator-grade seam deliberately dodged).
-· **`15e9846` garbled-anchor remediation**: `scripts/sweep-garbled-anchors.js` purged the 07-30
-  'Inwotce No.' row (backup beside live DB). Then **#141 re-met the registration audit condition on
-  CLEAN landmarks** — see THE BIG FINDING in the handover (Tier-A fiat-located quality-blind win).
-· **Catch-up Filing slices 1+2 built** (design signed 07-31): `376ed23` mig 57 `confirmed_via` +
-  human-only trust window / corrections-SPAN (byte-identical gate vs mig-applied DB copy) ·
-  `621a105` `_reextractFastCore` + `sweep-scope-candidates` READ-ONLY IPC + `sweepPredicate.js`
-  (DARK — `scope_sweep_enabled` OFF). **Slices 3 (renderer consent UI) + 4 (gates+flip) = next
-  owner-present session.**
-· **`0495458` template hardening**: mapping geometry validation (anchor==target PINNED allowed —
-  teach issuer mapping), reassign target-missing refusal, HONEST audit outcomes + adversarial suite.
-· **BANKED awaiting Oracle (do NOT build unvetted): gary's S-A/B/C/D validation slices** —
-  `pendingfeatures.md` "Validation slices S-A/B/C/D" (date-in-ref flag · ref length profile ·
-  blind-geometry disagreement reconciliation · registration fit audit + S-B2 confidence lever).
-· Realdoc at wrap: 202 docs, ref 96.5%, type/supplier 100%, M=5 (all GT-poison-suspect class).
-· Owner in-app TODO: `ocr_dpi` 200→300 (still speed-test value = the original garble source);
-  teach one-step visual smoke. Memory `project_overnight_20260801`.
-
-### Prior session (2026-07-31 NIGHT) — veto + merge fix + teach + needless-flags + catch-up design
-**2026-07-31 (Opus 4.8, three sessions). HEAD `a308e0b`, PUSHED, origin in sync. Dev app may be running
-(owner `npm start`). Installer `5b5d344` predates the WHOLE day — rebuild to ship. READ
-`HANDOVER_2026-07-31_NIGHT.md` first (night); `_EVENING.md` + `HANDOVER_2026-07-31.md` carry the
-morning/afternoon arcs. NEXT AGREED TASK: build Catch-up Filing slice 1 —
-`docs/designs/CATCHUP_FILING_2026-07-31.md` is the SIGNED design (do not re-litigate its rulings).**
-· **Issuer collision cured end-to-end**: `20d6be3` TEMPLATE_FIXED_NAME_PRESENCE_VETO (un-named branding
-  branch BLANKS an off-page name-printing supplier stamp; templates.js threads `supplier_prints_name`)
-  + `72fe746` REPROCESS_ANNOTATED_EMPTY_WINS (reprocess merge resurrected engine-blanked values —
-  annotated empty now WINS; operator `corrected_to` outranks; doc column mirrored; realdoc is BLIND to
-  this merge, gate = `test_reprocess_annotated_empty.js`) + `ea4101a` customer-plain note copy.
-  Memory `project_template_fixed_name_presence_veto_20260731`.
-· **Teach**: `934df8a` ONE-step value+label confirm + clip-gated label pass-2 re-read (the "oe ee No."
-  decapitation garble; pure helpers in `shared/anchorLabel.js`; probes green). Memory
-  `project_teach_label_reread_20260731`.
-· **Needless flags — 3 slices ON** (`0f33e20` TYPE_AMBIG_COHESION · `4a058a6` HEADING_BAND_REREAD ·
-  `d8768fe` TEMPLATE_IDENTITY_GEOM_WITNESS): cross-supplier phash band can't manufacture "several
-  document types"; rung-2 single-pass title re-read cures the PSM-3+supp-merge DOUBLED-heading garble
-  (doc-180 SO@65→PO@95 on same pixels); "Company inferred…" note sheds when `pick_issuer_geometry`
-  agrees. Combined gate `stress_test/demo_notes_gate.js` ALL PASS (Desktop\Demo Docs sample). NOT
-  retroactive — heal queue via Reprocess all. Memory `project_needless_flags_20260731`.
-· **Catch-up Filing DESIGN SIGNED OFF, NOT BUILT** (barry→gary→Oracle W/COND): consent-gated batch
-  filing of stale-scored queue docs after same-scope confirms. Key rulings: `confirmed_via` migration —
-  sweep confirms EXCLUDED from graduation; corrections-SPAN revocation; candidacy fingerprint;
-  banner+list+untick v1. Memory `project_catchup_filing_design_20260731`.
-· Gotchas added: machine env `TESSERACT`=install DIR (WinError 5 if executed — own env keys in
-  harnesses); `_doctype_fixed_supplier` = production DEAD GUARD (`key` vs `field_key`) — do NOT fix
-  casually; `ocr_dpi=200` live was owner speed-testing (fixes proven at 200).
 
 ## Prior session states (2026-07-28 and earlier) — archived, read on demand
 The per-session state blocks used to stack up here and bloated this file past 1800 lines. They are

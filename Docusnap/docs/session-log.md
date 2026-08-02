@@ -1766,3 +1766,92 @@ at `2b8bdb2` predates all this work. Live DB `%APPDATA%\ScanFinder\docusnap.db` 
   anchor-abstained). Fire-rate 0 on a stable corpus. LEFT: renderer ⟳-pill VISUAL confirm on next app RESTART (running
   dev app is stale; a stable-corpus open shows none — force an empty field on a templated doc to see one); Slice C
   warm worker deferred. Memory `project_reextract_fast_20260730`.
+
+## ARCHIVE: CLAUDE.md 2026-08-01 DAY + OVERNIGHT and 2026-07-31 NIGHT prior-session blocks (moved out 2026-08-02 NIGHT to keep CLAUDE.md lean)
+
+### Prior session (2026-08-01 DAY) — validation family live + type-refuse deadlock cured
+**2026-08-01 day (Fable 5, owner present). `4965984`, PUSHED. READ
+`HANDOVER_2026-08-01_DAY.md`** (the overnight handover carries that half). Realdoc at wrap:
+299 docs, type/supplier 100%, ref 97.0%, date 99.7%, M=9 (residual = interior stroke substitutions,
+6 exemplars, ALL proven pre-existing — the dominant remaining class; second-witness investigation =
+top accuracy lever).
+· **Validation family ALL ON** (`1411d50`/`6649723`/`570833b`/`6237398`): S-A `DATE_IN_REF_FLAG` ·
+  S-B `REF_LENGTH_OUTLIER_GUARD` (+ `REF_LENGTH_WITNESS_RECONCILE` — heal the doubled-digit merge
+  from the ledger on its mechanical fingerprint; flag-with-suggestion/Accept otherwise) · S-C
+  `BLIND_GEOM_DISAGREE_RECONCILE` (Tier-A NARROWED for anchor_registration — documented in the
+  invariants above + extraction-pipeline.md) · `REG_MIN_INLIERS_GATE` (refuse n_inliers<3 vacuous
+  fits). Engine pass order PINNED: suffix-reconcile → S-C → S-A → prefix-outlier → S-B(+witness).
+· **Type-refuse LEARNING DEADLOCK cured** (`11b7ae9`, herald→Oracle): refuse ⇒ null template_id ⇒
+  learn-on-commit bailed ⇒ young template never warmed ⇒ refused forever. R1
+  `TEMPLATE_LINK_ON_CONFIRM` (confirm resolves+links via reuseByEstablishedName; scope_sweep
+  excluded, pinned) + R3 `FINGERPRINT_COUNTERPARTY_MARKERS` (buyer-issued "Supplier :" truncates
+  harvest, word-boundary) + honest note ("confirming will teach this layout") +
+  `scripts/link-confirmed-templates.js` retro-heal (applied ×2, 37 orphans linked, backups beside
+  DB). R2 cohort admission BANKED (pendingfeatures, revival evidence named).
+· **Live note suppressor repaired** (`cea79ef`): the on-open strip existed; the reword broke its
+  matcher. `_STALE_TYPE_NOTE` = ONE shared regex both copies (test_stale_note_matcher.js). Oracle:
+  display-only SIGNED; persisting a note-clear on open SENT BACK (autoCommitFullConfidence seam).
+· Smaller: graduation banner names the TYPE (`115ba62`) · pick-bar hides the Mark-Reviewed pill
+  (`db9fb18`) · veto-note neutral copy + `REEXTRACT_UNPIN_BLANK_SUPPLIER` branding-blank ⟳ pill
+  (`930842e`) · `DATE_ROLE_GENERIC_LABEL` bare-'Date' for date roles (`d3db1e4`).
+· **GOTCHA (bit twice)**: a running dev app's MAIN process predates same-session JS commits —
+  confirms through a stale app skip new learning arms (python is fresh per spawn). Check app start
+  time vs commit time first.
+· Memories: `project_deadlock_reconcile_20260801` · `project_validation_slices_20260801`.
+
+### Prior session (2026-08-01 OVERNIGHT) — dpi dig → suffix-reconcile ON + catch-up slices 1+2 + validation designs
+**2026-08-01 overnight (Fable 5, autonomous while owner slept). PUSHED, origin in sync. READ
+`HANDOVER_2026-08-01_OVERNIGHT.md` FIRST.** Arc: the owner's "Worksh Eet" garbled-nudge screenshot →
+dpi sweep (150/200/240/250/260/275 all garble a heading somewhere; only 225/280/300 clean; NO flawless
+res exists) → cross-res escalation designed then Oracle-PARKED (its trigger provably unreachable for
+the class — label-confirmed reads are shape-exempt) → the real fixes shipped instead.
+· **`36a4a32` CLIPPED-SUFFIX RECONCILIATION ON** (kill `CANDIDATE_SUFFIX_RECONCILE`): label-confirmed
+  clip 'V-69523' healed by adopting the discarded fuller keyword read from the always-on candidate
+  ledger (suffix + digit-identity + shape-pass + confirmed-prefix). ref 91.8→94.5%, M 8→7 zero new.
+  NO corrected_to emitted (reprocess-merge operator-grade seam deliberately dodged).
+· **`15e9846` garbled-anchor remediation**: `scripts/sweep-garbled-anchors.js` purged the 07-30
+  'Inwotce No.' row (backup beside live DB). Then **#141 re-met the registration audit condition on
+  CLEAN landmarks** — see THE BIG FINDING in the handover (Tier-A fiat-located quality-blind win).
+· **Catch-up Filing slices 1+2 built** (design signed 07-31): `376ed23` mig 57 `confirmed_via` +
+  human-only trust window / corrections-SPAN (byte-identical gate vs mig-applied DB copy) ·
+  `621a105` `_reextractFastCore` + `sweep-scope-candidates` READ-ONLY IPC + `sweepPredicate.js`
+  (DARK — `scope_sweep_enabled` OFF). **Slices 3 (renderer consent UI) + 4 (gates+flip) = next
+  owner-present session.**
+· **`0495458` template hardening**: mapping geometry validation (anchor==target PINNED allowed —
+  teach issuer mapping), reassign target-missing refusal, HONEST audit outcomes + adversarial suite.
+· **BANKED awaiting Oracle (do NOT build unvetted): gary's S-A/B/C/D validation slices** —
+  `pendingfeatures.md` "Validation slices S-A/B/C/D" (date-in-ref flag · ref length profile ·
+  blind-geometry disagreement reconciliation · registration fit audit + S-B2 confidence lever).
+· Realdoc at wrap: 202 docs, ref 96.5%, type/supplier 100%, M=5 (all GT-poison-suspect class).
+· Owner in-app TODO: `ocr_dpi` 200→300 (still speed-test value = the original garble source);
+  teach one-step visual smoke. Memory `project_overnight_20260801`.
+
+### Prior session (2026-07-31 NIGHT) — veto + merge fix + teach + needless-flags + catch-up design
+**2026-07-31 (Opus 4.8, three sessions). HEAD `a308e0b`, PUSHED, origin in sync. Dev app may be running
+(owner `npm start`). Installer `5b5d344` predates the WHOLE day — rebuild to ship. READ
+`HANDOVER_2026-07-31_NIGHT.md` first (night); `_EVENING.md` + `HANDOVER_2026-07-31.md` carry the
+morning/afternoon arcs. NEXT AGREED TASK: build Catch-up Filing slice 1 —
+`docs/designs/CATCHUP_FILING_2026-07-31.md` is the SIGNED design (do not re-litigate its rulings).**
+· **Issuer collision cured end-to-end**: `20d6be3` TEMPLATE_FIXED_NAME_PRESENCE_VETO (un-named branding
+  branch BLANKS an off-page name-printing supplier stamp; templates.js threads `supplier_prints_name`)
+  + `72fe746` REPROCESS_ANNOTATED_EMPTY_WINS (reprocess merge resurrected engine-blanked values —
+  annotated empty now WINS; operator `corrected_to` outranks; doc column mirrored; realdoc is BLIND to
+  this merge, gate = `test_reprocess_annotated_empty.js`) + `ea4101a` customer-plain note copy.
+  Memory `project_template_fixed_name_presence_veto_20260731`.
+· **Teach**: `934df8a` ONE-step value+label confirm + clip-gated label pass-2 re-read (the "oe ee No."
+  decapitation garble; pure helpers in `shared/anchorLabel.js`; probes green). Memory
+  `project_teach_label_reread_20260731`.
+· **Needless flags — 3 slices ON** (`0f33e20` TYPE_AMBIG_COHESION · `4a058a6` HEADING_BAND_REREAD ·
+  `d8768fe` TEMPLATE_IDENTITY_GEOM_WITNESS): cross-supplier phash band can't manufacture "several
+  document types"; rung-2 single-pass title re-read cures the PSM-3+supp-merge DOUBLED-heading garble
+  (doc-180 SO@65→PO@95 on same pixels); "Company inferred…" note sheds when `pick_issuer_geometry`
+  agrees. Combined gate `stress_test/demo_notes_gate.js` ALL PASS (Desktop\Demo Docs sample). NOT
+  retroactive — heal queue via Reprocess all. Memory `project_needless_flags_20260731`.
+· **Catch-up Filing DESIGN SIGNED OFF, NOT BUILT** (barry→gary→Oracle W/COND): consent-gated batch
+  filing of stale-scored queue docs after same-scope confirms. Key rulings: `confirmed_via` migration —
+  sweep confirms EXCLUDED from graduation; corrections-SPAN revocation; candidacy fingerprint;
+  banner+list+untick v1. Memory `project_catchup_filing_design_20260731`.
+· Gotchas added: machine env `TESSERACT`=install DIR (WinError 5 if executed — own env keys in
+  harnesses); `_doctype_fixed_supplier` = production DEAD GUARD (`key` vs `field_key`) — do NOT fix
+  casually; `ocr_dpi=200` live was owner speed-testing (fixes proven at 200).
+
