@@ -6,6 +6,59 @@
 
 ---
 
+## 2026-08-02 OVERNIGHT (autonomous, owner asleep) — SHIPPED / DARK / DEFERRED
+Owner directive: build everything buildable, commit each, push at end, flip ON when the advisor+Oracle
++ gate pass green. Then a christest walkthrough. Advisors used: eric (search/UX cluster), reggie
+(ref-completion), gary (type-note + bleed). All fixes gated; each commit self-contained.
+
+**SHIPPED + FLIPPED ON (gate-green):**
+- **Crop right-grow `ANCHOR_VALUE_RIGHT_GROW`** — `13dbe44`. Proven heal on the Northgate PO demo
+  (`stress_test/demo_rightgrow_ab.js`): PO-5898→PO-58987 (HEAL vs GT), 0 collateral. Setting-bridge
+  `_anchorCropEnv` (4 spawn sites) + Settings→Processing toggle. Flipped ON in the live DB.
+- **Label-tail clamp `ANCHOR_LABEL_LEFT_CLAMP`** — `336585a`. Oracle had already GO'd the flip;
+  demo-verified (Saltmarsh PO9974A9C→PO-27425 HEAL, 0 collateral). Same bridge + toggle. Flipped ON.
+  NOTE: the harness can't test the LIVE combination of both crop settings ON (it reads env, not the DB
+  settings); the corpus reads are crop-OFF. #499 (PO-58987 chop) surfaced crop-OFF in the harness — it
+  is the right-grow class and heals with the live flip. Watch W1-W3 (see the clamp section below).
+- **Light⇄Dark quick-flip remembers the selected theme** — `418cf80`. theme.js records a per-family
+  anchor; the flip round-trips (slate⇄midnight⇄slate, warm⇄dark⇄warm).
+- **Search preview honest error state (eternal-spinner cure)** — `bf9fe90`. selectDoc guarded +
+  stale-selection token; mailbox/workflow pre-fetches dropped; "No handler registered" → restart msg.
+  Pin `test_preview_error_state.js`.
+- **Home "Open Mailbox" lands on the mailbox** — `b67688a`. New open-search-window-at channel
+  (NOT the taken get-search-target); SearchMailbox.open() set-true idempotent.
+- **Core Search re-skin to the client look** — `d7ab2e2`. New `search-components.css` (tinted chips,
+  segmented mailbox, lead search icon, pill buttons) over the existing class hooks — no logic/IPC/id
+  change. Chris visual round pending (christest).
+- **Focus-repair sweep SLICE 1** — `01a2a43`. `shared/dialogFocus.js` (focusField + idempotent
+  confirm/alert wrapper); preload `ensureWindowFocusAsync`; workflow Reject note routed; Search/Main/
+  Teach armed (were unarmed). Pin extended (+recovered 4 drifted runZoneOcr checks). Full 42-site
+  `.focus()` audit + regrow-proof static pin = MULTI-SESSION (per eric).
+- **delivery_number breadth + Service Worksheet preset** — `b4105b7`. ~25 delivery-specific captions
+  (excludes greedy Note No/Ref No); type-scoped worksheet preset. realdoc M=0, zero new delivery
+  regression.
+
+**BUILT DARK (flip pending):**
+- **Digital↔scanned bleed — `SAME_SUPPLIER_LAYOUT_GATE`** — `5af13cf`, default OFF, byte-identical.
+  gary-designed elif on the same-supplier authoritative rigid read (require caption at taught position,
+  looser relocate budget + offset-present precondition; demotion-only). Pin
+  `test_same_supplier_layout_gate.py`. **FLIP PRECONDITION: Oracle round (narrows a Tier-A invariant)
+  + realdoc M=0 with the switch ON + gary's two-direction integration pin. Do NOT flip yet.**
+
+**DEFERRED with a vetted design (build-ready, owner-gated or needs a live test):**
+- **Type-note placement under Document Issuer** (gary): Route 1 (renderer-only display relocation to a
+  `.type-scope-note` band by `#doctype-select`, keeps the persisted note on the carrier for the
+  auto-file hold, copy-lockstep pin) OR Route 2 (a `note_scope:'type'` marker + migration). Route 1
+  recommended for its zero-migration safety. NOT built (budget). engine.py:5889 `_flag_type_ambiguity`.
+- **Child-window minimise → in-app dock** (eric): PREMISE CORRECTION — NO current child is modal
+  (main.js:480), so no modality surgery. Slice 1 = dock infra + child-minimise/restore-child IPC +
+  the trigger (prototype the createWindow `minimize` intercept; fall back to an in-app control if the
+  skipTaskbar stub flashes — needs a live Windows test). SEAM: main-hides-to-tray orphans a docked
+  child — handle first. restore-child must verify sender===main + name∈CHILD_WINDOWS. NOT built (the
+  trigger needs a live flash-test I can't run headlessly).
+
+---
+
 ## UX / product
 
 ### Light⇄dark quick-flip forgets the selected theme — OWNER 2026-08-02 (next session)
