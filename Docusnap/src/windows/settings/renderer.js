@@ -543,6 +543,17 @@ document.getElementById('auto-rotate-toggle').addEventListener('change', async (
   await api.setSetting('auto_rotate_enabled', e.target.checked ? 'true' : 'false');
 });
 
+// ── Recover long refs the crop cuts off (ANCHOR_VALUE_RIGHT_GROW, default OFF) ──
+(async () => {
+  try {
+    const v = await api.getSetting('anchor_value_right_grow');
+    document.getElementById('right-grow-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('right-grow-toggle').checked = false; }
+})();
+document.getElementById('right-grow-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('anchor_value_right_grow', e.target.checked ? 'true' : 'false');
+});
+
 // ── Faster field reads via a warm OCR helper pool (default ON) ─────────────────
 (async () => {
   try {

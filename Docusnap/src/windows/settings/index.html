@@ -601,6 +601,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Recover long reference numbers cut off by the crop</div>
+                <div class="threshold-sub">When a taught reference is longer than the example it was taught on, the reader can clip the last character (e.g. “PO-58987” read as “PO-5898”). Turn this on to extend the read to the full value. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="right-grow-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Faster field reads (warm OCR helper)</div>
                 <div class="threshold-sub">Keeps a small OCR helper warm in the background so drawing a box around a value reads in a fraction of a second instead of a couple of seconds. Reads work either way — turn this off only if you ever notice extra background activity.</div>
               </div>

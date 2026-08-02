@@ -372,9 +372,10 @@ async function _processBatch(db, filenames) {
       ...trainingArgs,
     ];
     // AUTO_TITLE env rides the watch batch too (slice 4 — the engine seam still only
-    // fires for detection-None docs, so typed watch imports are untouched).
+    // fires for detection-None docs, so typed watch imports are untouched). The crop
+    // right-grow opt-in rides here too (both default OFF → byte-identical env).
     const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
-      { windowsHide: true, env: { ...process.env, ...processing._autoTitleEnv(db) } });
+      { windowsHide: true, env: { ...process.env, ...processing._autoTitleEnv(db), ...processing._anchorRightGrowEnv(db) } });
     _liveProcs.add(proc);   // track for quit-time kill (untracked on close below)
     let buf = '';
 

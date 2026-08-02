@@ -97,6 +97,19 @@ function _ocrDpiEnv(db) {
   } catch { return {}; }
 }
 
+// Crop RIGHT-GROW spawn env (ANCHOR_VALUE_RIGHT_GROW). The anchor crop otherwise sizes from the
+// TAUGHT box width + a fixed pad, so a ref value LONGER than the taught sample chops on the right
+// (e.g. PO-58987 read as PO-5898). When on, the crop's right edge extends to the value's MEASURED
+// inline_box edge (anchor.py _label_right_limit) — grow-only, ref-like keys with a validation
+// pattern. DEFAULT OFF → {} → byte-identical env. Proven to heal the chop-class with 0 collateral
+// on the Northgate PO demo set (stress_test/demo_rightgrow_ab.js). Owner opt-in like ocr_dpi.
+function _anchorRightGrowEnv(db) {
+  try {
+    const learning = require('../../../database/modules/learning');
+    return learning.getSetting(db, 'anchor_value_right_grow', 'false') === 'true' ? { ANCHOR_VALUE_RIGHT_GROW: '1' } : {};
+  } catch { return {}; }
+}
+
 // Coerce the stored processing_mode to a value the backend accepts. A stale/legacy value
 // (e.g. an old "light", or one from a restored settings backup) must never reach
 // process_docs.py's --mode and break the whole batch on an arg-parse error.
@@ -1136,6 +1149,7 @@ function register(ctx) {
         ...(threadCap > 0 ? { OMP_THREAD_LIMIT: String(threadCap) } : {}),
         ..._autoTitleEnv(db),
         ..._ocrDpiEnv(db),
+        ..._anchorRightGrowEnv(db),
       };
       const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
         { windowsHide: true, env });
@@ -1685,7 +1699,7 @@ function register(ctx) {
       // Gated by a setting, DEFAULT OFF; passed ONLY here on the single-reprocess spawn, NEVER the
       // batch/import/shard path (those already parallelise ACROSS docs with their own OMP cap, so
       // nesting a per-doc pool inside them would oversubscribe). The python side caps OMP to 1.
-      let spawnEnv = { ...process.env, ..._ocrDpiEnv(db) };   // honour the ocr_dpi setting on reprocess too (default 300 = byte-identical)
+      let spawnEnv = { ...process.env, ..._ocrDpiEnv(db), ..._anchorRightGrowEnv(db) };   // honour the ocr_dpi setting + right-grow opt-in on reprocess too (both default = byte-identical)
       try {
         if (require('../../../database/modules/learning').getSetting(db, 'ocr_parallel_reprocess_enabled', 'false') === 'true') {
           // B = parallel full-page OCR passes (straighten/enhance/first-import); C = parallel per-field
@@ -2312,6 +2326,7 @@ function register(ctx) {
         ...(threadCap > 0 ? { OMP_THREAD_LIMIT: String(threadCap) } : {}),
         ..._autoTitleEnv(db),
         ..._ocrDpiEnv(db),
+        ..._anchorRightGrowEnv(db),
       };
       const proc = spawn(pythonExe(), pythonArgs(backendScript(), ...scriptArgs), { windowsHide: true, env });
       _currentBatchProcs.push(proc);
@@ -3453,6 +3468,7 @@ module.exports = {
   _resolveDetectedType,      // mig-51 detected-type-nudge pins (test_detected_type_nudge.js)
   _reprocessGenericAdopt,
   _autoTitleEnv,             // Auto-Title spawn env (shared with the watch batch)
+  _anchorRightGrowEnv,       // crop right-grow spawn env (shared with the watch batch)
   drainOriginalToFolder,
   _recordDrain, _takeDrainTally,   // drain-tally pins (test_drain_tally.js — Oracle C1)
   ensureWorkingCopy,
