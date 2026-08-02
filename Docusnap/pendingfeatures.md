@@ -140,6 +140,34 @@ for the main window at `main.js:475-477`). So the feature was deliberately disab
 - New IPC: `window-minimise` currently exists (`main.js:1386`) for the main window; a child variant
   would hide + notify the main renderer to add/remove its restore chip.
 
+### Teach "Confirm what I read" bar — two filled buttons, ambiguous accept — DESIGN PLAN (OWNER 2026-08-02)
+**Owner repro (screenshot):** after drawing a field value in the teach wizard the confirm bar shows
+TWO large filled-orange buttons — "Looks right →" (accept) AND the selected direction toggle "← Left"
+— so it isn't obvious which one accepts-and-moves-on. Owner wants a sleek, smooth redesign.
+**Root (verified):** `src/windows/teach/renderer.js` — the Left/Above direction toggle renders the
+SELECTED direction as `btn primary` (`:687-688`, `dir==='left'?'primary':'ghost'`), i.e. the same
+filled-primary style as the accept button `rb-yes` "Looks right →" (`:692`). All controls sit in one
+flat row (`:686-694`: accept · Redraw value · Redraw label · "Label is:" Left/Above) with no visual
+separation of VERIFY controls from the single ACCEPT action → two primaries compete for the eye.
+**Owner's desired flow:** keep the confirm LABEL + VALUE on the same header (`setPrompt('Confirm what I
+read for', f.label)` `:671`, and the "Value: … · Label: … (left of the value)" readout). Make it an
+obvious **check-FIRST-then-accept**: (1) check the VALUE is right, (2) check the anchor is LEFT or
+ABOVE, (3) THEN one clearly-primary click if you agree.
+**Design plan (to vet, NOT built):**
+- **Exactly ONE filled primary** on the bar = the accept ("Looks right →" / "Yes, save this field →").
+  Everything else steps down to secondary/ghost/segmented.
+- **Left/Above = a SEGMENTED TOGGLE** (one pill control, two segments, selected segment softly
+  highlighted — NOT `btn primary`). It reads as a CHOICE, not a competing action. Drop the arrow-key
+  orange fill.
+- **Two zones, ordered check → confirm:** a VERIFY group (value read-back + label + the direction
+  toggle + subtle "Redraw value / Redraw label" as text-links or small ghost buttons) then, visually
+  set apart (right-aligned or full-width below), the single ACCEPT CTA — so the eye flows value →
+  direction → accept.
+- Keep label+value in the header per owner. Sleek: quiet secondaries, one confident primary, a little
+  breathing room between the verify group and the CTA; consider a faint "① check  ② confirm" cue.
+- **Advisor gate before build:** chris-the-customer (his exact domain — decision ambiguity / which
+  button) + barry (UX shape) → eric (teach renderer) → Oracle. Renderer-only; no extraction impact.
+
 ## Extraction / accuracy
 
 ### Cross-contamination residual — Stage-2 `_qualify_against_format` — DO-NOTHING (gary+Oracle, 2026-07-30)
