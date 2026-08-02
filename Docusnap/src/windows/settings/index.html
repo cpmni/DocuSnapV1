@@ -608,6 +608,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Trim the label off the start of a read value</div>
+                <div class="threshold-sub">On slightly shifted scans the reader can pick up the label text just before a value (e.g. “PO-27425” read as “PO9974A9C”). Turn this on to clamp the read to just the value. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="left-clamp-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Faster field reads (warm OCR helper)</div>
                 <div class="threshold-sub">Keeps a small OCR helper warm in the background so drawing a box around a value reads in a fraction of a second instead of a couple of seconds. Reads work either way — turn this off only if you ever notice extra background activity.</div>
               </div>

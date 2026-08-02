@@ -97,16 +97,23 @@ function _ocrDpiEnv(db) {
   } catch { return {}; }
 }
 
-// Crop RIGHT-GROW spawn env (ANCHOR_VALUE_RIGHT_GROW). The anchor crop otherwise sizes from the
-// TAUGHT box width + a fixed pad, so a ref value LONGER than the taught sample chops on the right
-// (e.g. PO-58987 read as PO-5898). When on, the crop's right edge extends to the value's MEASURED
-// inline_box edge (anchor.py _label_right_limit) — grow-only, ref-like keys with a validation
-// pattern. DEFAULT OFF → {} → byte-identical env. Proven to heal the chop-class with 0 collateral
-// on the Northgate PO demo set (stress_test/demo_rightgrow_ab.js). Owner opt-in like ocr_dpi.
-function _anchorRightGrowEnv(db) {
+// Anchor-crop opt-in spawn env — two independent, owner-flippable crop fixes, each DEFAULT OFF so
+// an unset install yields {} → byte-identical spawn env. Both proven to heal their class with 0
+// collateral on the demo set (stress_test/demo_rightgrow_ab.js). Owner opt-ins like ocr_dpi.
+//  • ANCHOR_VALUE_RIGHT_GROW — the crop sizes from the TAUGHT box width + a fixed pad, so a ref
+//    value LONGER than the taught sample chops on the RIGHT (PO-58987 read as PO-5898). On →
+//    the crop's right edge extends to the value's MEASURED inline_box edge (anchor.py
+//    _label_right_limit); grow-only, ref-like keys with a validation pattern.
+//  • ANCHOR_LABEL_LEFT_CLAMP — a label-blind rigid crop intrudes the label tail on jittered scans,
+//    so debris prepends the value (PO-27425 read as PO9974A9C). On → clamp the crop's LEFT edge to
+//    the LOCATED label's expected-value-left (anchor.py); reverts to unclamped on a degenerate box.
+function _anchorCropEnv(db) {
   try {
     const learning = require('../../../database/modules/learning');
-    return learning.getSetting(db, 'anchor_value_right_grow', 'false') === 'true' ? { ANCHOR_VALUE_RIGHT_GROW: '1' } : {};
+    const env = {};
+    if (learning.getSetting(db, 'anchor_value_right_grow', 'false') === 'true') env.ANCHOR_VALUE_RIGHT_GROW = '1';
+    if (learning.getSetting(db, 'anchor_label_left_clamp', 'false') === 'true') env.ANCHOR_LABEL_LEFT_CLAMP = '1';
+    return env;
   } catch { return {}; }
 }
 
@@ -1149,7 +1156,7 @@ function register(ctx) {
         ...(threadCap > 0 ? { OMP_THREAD_LIMIT: String(threadCap) } : {}),
         ..._autoTitleEnv(db),
         ..._ocrDpiEnv(db),
-        ..._anchorRightGrowEnv(db),
+        ..._anchorCropEnv(db),
       };
       const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
         { windowsHide: true, env });
@@ -1699,7 +1706,7 @@ function register(ctx) {
       // Gated by a setting, DEFAULT OFF; passed ONLY here on the single-reprocess spawn, NEVER the
       // batch/import/shard path (those already parallelise ACROSS docs with their own OMP cap, so
       // nesting a per-doc pool inside them would oversubscribe). The python side caps OMP to 1.
-      let spawnEnv = { ...process.env, ..._ocrDpiEnv(db), ..._anchorRightGrowEnv(db) };   // honour the ocr_dpi setting + right-grow opt-in on reprocess too (both default = byte-identical)
+      let spawnEnv = { ...process.env, ..._ocrDpiEnv(db), ..._anchorCropEnv(db) };   // honour the ocr_dpi setting + crop opt-ins on reprocess too (all default = byte-identical)
       try {
         if (require('../../../database/modules/learning').getSetting(db, 'ocr_parallel_reprocess_enabled', 'false') === 'true') {
           // B = parallel full-page OCR passes (straighten/enhance/first-import); C = parallel per-field
@@ -2326,7 +2333,7 @@ function register(ctx) {
         ...(threadCap > 0 ? { OMP_THREAD_LIMIT: String(threadCap) } : {}),
         ..._autoTitleEnv(db),
         ..._ocrDpiEnv(db),
-        ..._anchorRightGrowEnv(db),
+        ..._anchorCropEnv(db),
       };
       const proc = spawn(pythonExe(), pythonArgs(backendScript(), ...scriptArgs), { windowsHide: true, env });
       _currentBatchProcs.push(proc);
@@ -3468,7 +3475,7 @@ module.exports = {
   _resolveDetectedType,      // mig-51 detected-type-nudge pins (test_detected_type_nudge.js)
   _reprocessGenericAdopt,
   _autoTitleEnv,             // Auto-Title spawn env (shared with the watch batch)
-  _anchorRightGrowEnv,       // crop right-grow spawn env (shared with the watch batch)
+  _anchorCropEnv,            // crop opt-in spawn env: right-grow + label left-clamp (shared with the watch batch)
   drainOriginalToFolder,
   _recordDrain, _takeDrainTally,   // drain-tally pins (test_drain_tally.js — Oracle C1)
   ensureWorkingCopy,

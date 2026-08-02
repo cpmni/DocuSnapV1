@@ -554,6 +554,17 @@ document.getElementById('right-grow-toggle').addEventListener('change', async (e
   await api.setSetting('anchor_value_right_grow', e.target.checked ? 'true' : 'false');
 });
 
+// ── Trim a label off the start of a read value (ANCHOR_LABEL_LEFT_CLAMP, default OFF) ──
+(async () => {
+  try {
+    const v = await api.getSetting('anchor_label_left_clamp');
+    document.getElementById('left-clamp-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('left-clamp-toggle').checked = false; }
+})();
+document.getElementById('left-clamp-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('anchor_label_left_clamp', e.target.checked ? 'true' : 'false');
+});
+
 // ── Faster field reads via a warm OCR helper pool (default ON) ─────────────────
 (async () => {
   try {

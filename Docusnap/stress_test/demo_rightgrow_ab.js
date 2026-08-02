@@ -26,6 +26,9 @@ const TESS = 'C:/Program Files/Tesseract-OCR/tesseract.exe';
 const LIVE_DB = process.env.RR_DB || path.join(process.env.APPDATA, 'ScanFinder', 'docusnap.db');
 const DEFAULT_FOLDER = 'C:/Users/cmccu/Desktop/Demo Docs/Northgate Textiles/purchase_order';
 const FOLDER = process.argv[2] || DEFAULT_FOLDER;
+// Which crop kill-switch to A/B (default the right-grow). Generalised so the sibling clamp
+// (ANCHOR_LABEL_LEFT_CLAMP) can be smoked the same way: AB_FLAG=ANCHOR_LABEL_LEFT_CLAMP.
+const AB_FLAG = process.env.AB_FLAG || 'ANCHOR_VALUE_RIGHT_GROW';
 
 const learning = require(path.join(REPO, 'database', 'modules', 'learning.js'));
 const templates = require(path.join(REPO, 'database', 'modules', 'templates.js'));
@@ -66,7 +69,7 @@ function snap(db) {
 function runArm(folder, snapArgs, files, arm) {
   const N = 4; const shards = Array.from({ length: N }, () => []); files.forEach((f, i) => shards[i % N].push(f));
   const sf = shards.filter(x => x.length).map(names => w('shard', names));
-  const childEnv = { ...process.env, ANCHOR_VALUE_RIGHT_GROW: arm };
+  const childEnv = { ...process.env, [AB_FLAG]: arm };
   const one = shardFile => new Promise(res => {
     const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', folder, '--files-file', shardFile, '--mode', 'fast', '--tesseract', TESS, ...snapArgs],
       { windowsHide: true, env: childEnv });
@@ -130,7 +133,7 @@ function runArm(folder, snapArgs, files, arm) {
   }
 
   const out = [];
-  out.push(`# Right-grow targeted A/B — ${FOLDER}`);
+  out.push(`# Crop-flag targeted A/B (${AB_FLAG}) — ${FOLDER}`);
   out.push(`(${files.length} docs; flag OFF vs ON; GT = owner-confirmed ref from the live DB where present.)`);
   out.push('');
   out.push('| file | type | GT ref | OFF | ON | diff |');
