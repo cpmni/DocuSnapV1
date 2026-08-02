@@ -209,6 +209,41 @@ All Ready was NEARLY mis-reported dead; in-page findings stand, past native-dial
 re-weigh. The sandbox stays reproducible: seed script + DOCUSNAP_USERDATA recipe in the
 memory file; his sandbox instance may still be running on CDP 9223.
 
+## 8 · De-pathing + role gate + Chris r5 agreed set (`a58bc10`, owner-ordered)
+bob+eric panel-vetted, then built; Oracle's final pass pending at write time (verdict appended
+below when it lands). What shipped:
+- **De-pathing**: search rows (+ the bin) carry NO paths/ocr_text/hashes — display fields +
+  `has_file` only; pages/thumbnails fetch by docId (server always resolved anyway); Open
+  buttons are new admin/edit, row-resolved, audited IPCs returning visible errors. Absence
+  PINNED in test_search_contract. Named deferred: getDocumentWithExtractions projection
+  (the single-doc click still carries paths — Review+mailbox consumer audit needed).
+- **Role gate**: raw open-file/show-in-explorer/open-folder refuse non-admin/edit
+  (non-throwing — send channels), open-folder audited, Home "Open folder" hidden for
+  readonly. Readonly now has ZERO shell-out paths.
+- **Chris r5 agreed set**: both setup filing-story sentences aligned · truthful post-run
+  "originals moved" line (per-batch drain counter) · hold sentence names an empty issuer +
+  gap-aware "just below" · stamped export named like the shelf ("… — APPROVED.pdf") ·
+  counted Empty-bin dialog that admits it deletes PDFs + preview clears after
+  delete/restore/purge · "Queue cleared — N moved to the recycle bin" placeholder ·
+  split guards (1-page toast, empty-range toast) · jargon sweep (drifted "Reprocess with
+  Learned Data" reset labels restored, "Reading confidence", wizard finale de-OCR'd) ·
+  grammar/last-run/wizard-default-labels/wizard-preview-refresh/practice-run copy.
+- **NOT built (panel rulings)**: card-3 approve-note discrepancy = reproduce-first (same
+  _decisionBar renders both surfaces — likely his driver's state artefact) · **approve
+  two-step arm = YOUR FLAG** (bob recommends the arm — permanent, stamped, no undo; the
+  trade is boss-clearing-twenty-a-morning throughput) · batch-reprocess feedback exists
+  (verify, don't build) · terms WORKING-DRAFT gate = yours/solicitor.
+- **Oracle verdict on the batch: SIGN OFF W/COND — all three conditions applied (`4c80ac9`)**:
+  C1 the drain counter really was contaminable by concurrent WATCH drains (he traced the
+  missing reverse-guard) → per-source-folder tally, pinned in test_drain_tally.js · C2 the
+  Open buttons were discarding their own {success,error} → refusals now flash their reason ·
+  C3 the "renderer never sees paths" claim narrowed to the ROW surface (the single-doc click
+  still ships paths — the caller-aware Document-detail DTO follow-up is filed in
+  pendingfeatures WITH his warning: Review consumes folder_path/ocr_text from the same IPC,
+  a global strip breaks it). He also verified: bin has_file semantics exact, /v1 untouched,
+  no readonly caller broken, the empty-issuer hold copy can never fire on a hidden identity
+  field (structural roles refuse hiding server-side).
+
 ## Verification state (honest)
 - Chris cards: parse clean, no NUL bytes, all 7 review contract suites green. NOT eyeballed in
   the live UI overnight (renderer loads on your next Review-window open).
