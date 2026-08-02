@@ -1450,7 +1450,19 @@ function refreshThemeMenuLabel() {
     isDarkMode() ? 'Switch to light theme' : 'Switch to dark theme';
   if (railDarkToggle) railDarkToggle.checked = isDarkMode();
 }
-async function setLightDark(next) {   // canonical light/dark flip (shared by menu + rail toggle)
+// Resolve which theme a light/dark flip lands on: the remembered theme of that family
+// (last one the user actually selected) so the flip round-trips back to their choice —
+// e.g. Nordic Slate ⇄ chosen dark ⇄ Nordic Slate — not the base 'light'/'dark'. Falls
+// back to the base theme of the family on first use. Anchors are kept current by
+// theme.js applyTheme() on every theme change (menu flip, rail toggle, Settings pick).
+function _themeForFamily(family) {
+  const key = family === 'dark' ? 'docusnap_theme_dark' : 'docusnap_theme_light';
+  const fallback = family === 'dark' ? 'dark' : 'warm';
+  let t = null; try { t = localStorage.getItem(key); } catch {}
+  return t || fallback;
+}
+async function setLightDark(family) {   // canonical light/dark flip (shared by menu + rail toggle)
+  const next = _themeForFamily(family);
   applyTheme(next);
   refreshThemeMenuLabel();
   try { await window.docusnap.setSetting('theme', next); } catch {}
