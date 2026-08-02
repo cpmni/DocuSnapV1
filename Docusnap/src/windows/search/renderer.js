@@ -125,12 +125,24 @@ async function _init() {
     if (q) { const el = document.getElementById('inp-fulltext'); if (el) el.value = q; }
   } catch { /* no target */ }
   window.SearchQuery.doSearch();
+
+  // Deep-link: Home's "Open Mailbox" asks the Search window to LAND on the mailbox view.
+  // Consumed once on load (after doSearch, so the mailbox list wins the results pane).
+  try {
+    const view = await window.docusnap.getSearchViewTarget?.();
+    if (view === 'mailbox') window.SearchMailbox?.open?.();
+  } catch { /* no view target */ }
 }
 
 // If Search is ALREADY open when Quick-find fires, fill the full-text box + re-run live.
 window.docusnap.onSearchSetQuery?.((q) => {
   const el = document.getElementById('inp-fulltext');
   if (el) { el.value = q || ''; window.SearchQuery.doSearch(); }
+});
+
+// If Search is ALREADY open when a "go to view" deep-link fires (Home Open Mailbox).
+window.docusnap.onSearchGoto?.((v) => {
+  if (v === 'mailbox') window.SearchMailbox?.open?.();
 });
 
 _init();

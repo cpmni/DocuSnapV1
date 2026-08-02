@@ -130,4 +130,15 @@ function _routeItem(r) {
 // Called by search-workflow after an action resolves, so the list stays current.
 function refreshIfActive() { if (_active) render(); }
 
-window.SearchMailbox = { init: _mbInit, refreshIfActive };
+window.SearchMailbox = {
+  init: _mbInit,
+  refreshIfActive,
+  // Deep-link entry (Home "Open Mailbox"): LAND on the mailbox view. Set-true, never a
+  // toggle — a repeated deep-link must not flip it back off. No-op when the workflow
+  // add-on is unlicensed. Defined as a method (not a top-level `function open`) so it
+  // neither shadows window.open nor trips the global-collision pin.
+  open() {
+    if (!window.SearchState.workflowEntitled) return;
+    if (!_active) toggle();
+  },
+};

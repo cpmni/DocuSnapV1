@@ -153,6 +153,7 @@ let pendingReviewDocId = null;
 // Full-text query to pre-fill when the Search window opens via the Home "Quick find" card.
 // Pulled by the search renderer via get-search-target, or pushed if the window is already open.
 let pendingSearchQuery = null;
+let pendingSearchView = null;   // Search window's initial view target (e.g. 'mailbox' from Home)
 // Same pattern for "open Settings focused on a template" (from Review's "Add to
 // Template Manager") — pulled by the settings renderer after loadTemplates(), or
 // delivered immediately if the settings window is already open.
@@ -1633,6 +1634,28 @@ app.whenReady().then(() => {
     const q = pendingSearchQuery;
     pendingSearchQuery = null;
     return q;
+  });
+
+  // Open the Search window LANDED on a named view (Home "Open Mailbox" → 'mailbox').
+  // Independent of the Quick-find query channel above (do NOT overload get-search-target).
+  // A view toggle carries no privileged mutation, so it matches open-search-window's trust
+  // level; the mailbox view itself is entitlement-gated in the renderer (a no-op if the
+  // add-on is off), and the Home card is hidden unless licensed.
+  ipcMain.on('open-search-window-at', (_e, view) => {
+    if (!authModule.getCurrentUser()) return;
+    const alreadyOpen = !!windows['search'];
+    pendingSearchView = (view === 'mailbox') ? 'mailbox' : null;
+    createWindow('search', { width: 1200, height: 780, minWidth: 1000, minHeight: 600 });
+    if (alreadyOpen && pendingSearchView) {
+      safeSend(windows['search']?.webContents, 'search-goto', pendingSearchView);
+      pendingSearchView = null;
+    }
+  });
+  // The search renderer pulls this once on load to land on its initial view (else null).
+  ipcMain.handle('get-search-view-target', () => {
+    const v = pendingSearchView;
+    pendingSearchView = null;
+    return v;
   });
 
   // All IPC handlers are registered — now serialize the startup windows: the

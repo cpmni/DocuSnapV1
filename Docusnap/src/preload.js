@@ -121,8 +121,11 @@ contextBridge.exposeInMainWorld('docusnap', {
   getSettingsSectionTarget:     ()           => ipcRenderer.invoke('get-settings-section-target'),
   onNavigateToSection:          (cb)         => ipcRenderer.on('navigate-to-section', (_e, s) => cb(s)),
   openSearchWindow:    (q)      => ipcRenderer.send('open-search-window', q),
+  openSearchWindowAt:  (view)   => ipcRenderer.send('open-search-window-at', view),
   getSearchTarget:     ()       => ipcRenderer.invoke('get-search-target'),
+  getSearchViewTarget: ()       => ipcRenderer.invoke('get-search-view-target'),
   onSearchSetQuery:    (cb)     => ipcRenderer.on('search-set-query', (_e, q) => cb(q)),
+  onSearchGoto:        (cb)     => ipcRenderer.on('search-goto', (_e, v) => cb(v)),
   getReviewTarget:     ()       => ipcRenderer.invoke('get-review-target'),
   onNavigateToDoc:     (cb)     => ipcRenderer.on('navigate-to-doc', (_e, id) => cb(id)),
   // User-guide / help window (optional section to jump to, e.g. 'review')

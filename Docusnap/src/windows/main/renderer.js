@@ -267,7 +267,9 @@ async function renderWorkflowCard() {
   applyDashboardCardPrefs();
 }
 document.getElementById('dash-workflow-open')?.addEventListener('click', () => {
-  window.docusnap.openSearchWindow();   // the mailbox lives in the Search window
+  // The mailbox lives in the Search window — land the user ON the mailbox view, not a cold
+  // search (the button promised a place it wasn't taking them to).
+  window.docusnap.openSearchWindowAt('mailbox');
 });
 // Repaint on the workflow invalidation ping, debounced (a bulk /v1 assign of 20 docs
 // must coalesce, mirroring the _dashRefreshTimer idiom).
