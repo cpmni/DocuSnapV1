@@ -1446,6 +1446,26 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                                 _loc, x_norm, y_norm,
                                 anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")):
                             located_ok = False
+                    # SAME_SUPPLIER_LAYOUT_GATE (gary-designed, Oracle-pending; DARK, default OFF) —
+                    # a SAME-supplier authoritative rigid ABSOLUTE read is certified Tier-A on caption
+                    # PRESENCE alone (located_ok = bool(_loc) above), so a digital doc that reuses a
+                    # scanned template's geometry reads the WRONG region and, if it OCRs credibly, can
+                    # auto-file silently. When on, require the caption at the TAUGHT position too — the
+                    # looser relocate budget (_RELOC_TOL) + an offset-present precondition so legacy
+                    # no-offset anchors (pre-mig-21) are NEVER vetoed. A displaced caption drops through
+                    # to conf<=50 + review (value still commits capped / loses to a better read, never
+                    # blanked). Own-layout reads keep winning (the caption IS at the taught position).
+                    # OFF -> byte-identical. Flip only after Oracle + realdoc M=0 with the switch ON.
+                    elif (located_ok
+                          and os.environ.get("SAME_SUPPLIER_LAYOUT_GATE", "0") != "0"
+                          and anchor.get("offset_dx_norm") is not None
+                          and anchor.get("offset_dy_norm") is not None
+                          and (anchor.get("offset_dx_norm") or anchor.get("offset_dy_norm"))
+                          and not _located_at_taught_position(
+                                  _loc, x_norm, y_norm,
+                                  anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm"),
+                                  tol_x=_RELOC_TOL_X, tol_y=_RELOC_TOL_Y)):
+                        located_ok = False
             # HEADING-GARBLE NAME DEMOTION (Oracle 2026-07-12) — the DN-82792 customer_name class.
             # A relocated/placed read on a NAME field that lands on a document CAPTION garble
             # ("Deliver lo", "Deliver To RRS") is marked located BY METHOD (anchor_crop_relocated is
