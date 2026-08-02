@@ -8,6 +8,22 @@
 
 ## UX / product
 
+### Light⇄dark quick-flip forgets the selected theme — OWNER 2026-08-02 (next session)
+**Repro (owner, live):** with a non-default theme selected, the quick Light⇄Dark toggle (account
+menu + rail-foot) goes dark, then flipping back lands on the DEFAULT theme (Warm Paper) — the
+user's chosen theme is lost. **Expected: the toggle alternates between the CURRENTLY SELECTED
+theme and a dark theme, round-tripping back to the selection.**
+**Likely mechanism (unverified — verify at source):** the flip handler writes a literal theme name
+both ways (`set-setting('theme', 'dark')` / back to the default constant) instead of remembering
+the pre-flip selection. Leads: `src/windows/shared/theme.js` (sets `data-theme` + `data-mode`,
+`DARK_THEMES` gates the family), the account-menu + rail-foot toggle wiring, `theme-changed`
+broadcast.
+**Fix shape (design in-session):** remember the last LIGHT theme and last DARK theme
+(settings-persisted pair) so the flip maps selection⇄dark-counterpart and back — e.g. Nordic
+Slate ⇄ chosen dark, seasonal themes included; minimum bar = flipping back restores the pre-flip
+theme exactly. Respect the existing `data-theme`+`data-mode` split (memory
+`project_theme_system_gotchas`).
+
 ### ✓ DONE — Teach clipped-code reconcile, Slice 2 (the DRIFTED-sibling path)  (2026-07-31, `a4fa107`, ON)
 - Slice 1 (`f2e5ee3`/`c70bae7`, `TEMPLATE_INLINE_CODE_RECONCILE`) fixed the FAST path; Slice 2 (`a4fa107`,
   `TEMPLATE_INLINE_CODE_RECONCILE_DRIFT` default ON) extends the reconcile to the DRIFT/relocate path
