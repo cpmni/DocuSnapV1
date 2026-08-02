@@ -410,6 +410,24 @@ as the no-locate spare.
   strengthens the digit-count PREFER arm's revival case (correct value passed the length profile the
   winner failed, in-band, twice).
 
+### Search preview error-state hardening (eternal spinner) — OWNER 2026-08-02 (live repro)
+**Owner:** "when i click a doc in search i see a spinning icon but the doc doesnt load."
+**Immediate cause (that session):** stale-main — the running app predated `b747676`'s new
+`get-document-detail` IPC while the reopened search renderer already called it; the invoke
+rejected ("No handler registered") and NOTHING catches it. Cleared by an app restart.
+**The real defect it exposed:** `search-preview.js selectDoc()` has NO error handling — both
+awaits (`getDocumentDetail`, then `getDocumentPages`) are bare, so ANY fetch failure (missing
+handler, DB hiccup, doc deleted mid-click, IPC error) leaves the placeholder spinner forever
+with zero feedback — the exact silent-failure class Chris keeps catching.
+**Fix shape:** wrap selectDoc's fetch sequence in try/catch → on failure replace the spinner
+with an honest state ("Couldn't load this document — try again or reopen Search." + the
+short error) and clear it on the next selection; same guard on the mailbox row click and
+resubmit (they share the fetch). Bonus hardening: a renderer-side "handler missing" message
+that says "the app was updated — restart to finish" (the stale-main class keeps producing
+exactly this symptom after main-process commits; a truthful message turns a mystery into a
+one-line instruction). The renderer-error diag forwarders (08-02) already log the rejection —
+the log line exists; the SCREEN state is what's missing.
+
 ### Custom approval stamp: placement, resize, and the decision note ON the stamp — OWNER 2026-08-02
 **Owner:** "can we make the approval stamp custom in that you choose where it goes and can
 resize it to fit a blank area on the page. Can we also add the notes from the approval to
