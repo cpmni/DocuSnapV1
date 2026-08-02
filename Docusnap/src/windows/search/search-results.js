@@ -15,7 +15,10 @@ let _docById  = {};   // id → doc (for preview on single click)
 function renderResults({ confirmed = [], uncommitted = [], deleted = [] }) {
   const scroll = document.getElementById('results-scroll');
   const empty  = document.getElementById('results-empty');
-  scroll.querySelectorAll('.section-header, .result-item').forEach(el => el.remove());
+  // The capped-note MUST be in this removal selector: the clear is selective, so any class
+  // rendered into the scroll and left off this list STACKS across searches and goes stale
+  // (Chris round 3 — five copies of "Showing the first 200" over an 80-row list).
+  scroll.querySelectorAll('.section-header, .result-item, .section-capped-note').forEach(el => el.remove());
 
   const all = [...deleted, ...confirmed, ...uncommitted];
   _rowOrder = all.map(d => d.id);

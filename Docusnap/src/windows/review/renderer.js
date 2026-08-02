@@ -459,7 +459,7 @@ async function refreshAutoCommittedBar() {
   _autoFiledDocs = res.docs || [];
   if (_autoFiledDocs.length) {
     bar.innerHTML = `<span class="acb-dismiss" title="Dismiss this notice" aria-label="Dismiss">×</span>`
-      + `<b>✓ ${_autoFiledDocs.length}</b> document${_autoFiledDocs.length === 1 ? '' : 's'} filed automatically on the last pass — `
+      + `<b>✓ ${_autoFiledDocs.length}</b> document${_autoFiledDocs.length === 1 ? '' : 's'} filed automatically in the last run — `
       + `<span class="acb-back">click to see the list — they stay filed; nothing is changed</span>`;
     bar.style.display = 'block';
   } else {
@@ -939,8 +939,10 @@ function renderQueueList() {
   setQueueWrapVisible(true);
   // The whole left action block (Skip/Defer · File All · Delete All) is shown on
   // the review tab; the destructive "Delete All Review" stays admin-only (also
-  // enforced server-side).
-  reviewActions.style.display = 'flex';
+  // enforced server-side). HIDDEN in the auto-filed view (Oracle A1): there `queue`
+  // holds CONFIRMED docs, so "Delete All Review" would show the wrong count over the
+  // wrong list while the server deletes the real needs_review set it re-derives.
+  reviewActions.style.display = _viewingAutoFiled ? 'none' : 'flex';
   document.getElementById('btn-delete-all-review').style.display = isAdmin ? '' : 'none';
 
   // View toggle: grouped by sender (default) vs newest-first. Grouping turns a long
@@ -1072,7 +1074,7 @@ function buildQueueItem(doc) {
   const confBadge = conf == null ? '' :
     sev === 'mid'
       ? `<span class="conf-badge mid" style="flex-shrink:0;" title="${sevWord} — overall ${conf}%, but a field needs a look">Check</span>`
-      : `<span class="conf-badge ${sev}" style="flex-shrink:0;" title="${sevWord} — ${conf}% confidence${sev === 'high' ? ' · waiting for your OK' : ''}">${conf}%</span>`;
+      : `<span class="conf-badge ${sev}" style="flex-shrink:0;" title="${sevWord} — ${conf}% confidence${sev === 'high' && doc.status !== 'confirmed' ? ' · waiting for your OK' : ''}">${conf}%</span>`;
   // Lead with the actual blocker (the missing field), not the reassuring score.
   const blockerLine = blocked
     ? `<div class="qi-blocker" title="Can’t be filed until this is filled in"
@@ -5598,7 +5600,7 @@ function _clearPreviewState() {
   const banner = document.getElementById('preview-banner');
   if (banner) banner.classList.remove('visible');
   const btn = document.getElementById('btn-preview-ocr');
-  if (btn) { btn.innerHTML = '&#9658; Preview OCR'; btn.classList.remove('active'); }
+  if (btn) { btn.innerHTML = '&#9658; Preview the read'; btn.classList.remove('active'); }
   hidePreviewCta();   // a real doc is being shown (or the panel cleared) → drop the pick-a-doc CTA
 }
 

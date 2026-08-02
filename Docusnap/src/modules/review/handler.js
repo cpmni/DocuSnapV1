@@ -796,9 +796,11 @@ function register(ctx) {
   // ── Bulk delete of a whole queue (Admin only) ───────────────────────────────
   // Permanent deletion of scanned documents is Admin-exclusive, like the
   // single-doc delete above. Each helper is scoped to exactly one status so it
-  // can never reach confirmed documents; source files are unlinked best-effort
-  // first, then the rows (and their cascaded extractions) are removed in one
-  // statement. Returning the deleted count lets the renderer report it.
+  // can never reach confirmed documents. SOFT delete: every row goes to the recycle
+  // bin (status='deleted' + deleted_at; restorable from Search; files on disk KEPT) —
+  // the renderer's dialogs promise exactly that recoverability, so this must NEVER be
+  // "restored" to a hard delete without rewriting those dialogs in the same commit.
+  // Returning the deleted count lets the renderer report it.
   function _deleteQueue(status, rows, countEvent, deletedByName) {
     const db = getDb();
     let n = 0;

@@ -20,15 +20,19 @@ const path = require('path');
 let fails = 0;
 const check = (label, cond) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`); if (!cond) fails++; };
 
-// The script files the window loads (from index.html), in order.
+// The script files the window loads (from index.html), in order. shared/ scripts load
+// into the SAME global scope (Oracle A3) — they are scanned too, but a dupe only fails
+// when it crosses shared↔local or local↔local (the shared files are common to every
+// window and own their names).
 const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
-const files = [...html.matchAll(/<script src="([^"]+\.js)"><\/script>/g)].map(m => m[1])
-  .filter(f => !f.includes('/') || f.startsWith('search'));   // window-local scripts only (shared/ files load in every window by design)
+const all = [...html.matchAll(/<script src="([^"]+\.js)"><\/script>/g)].map(m => m[1]);
+const files = all.filter(f => !f.includes('/') || f.startsWith('search'));
+const sharedFiles = all.filter(f => !files.includes(f));
 
 check(`found the window's local scripts in index.html (${files.join(', ')})`, files.length >= 4);
 
 const decls = {};   // name -> [file, ...]
-for (const f of files) {
+for (const f of [...files, ...sharedFiles]) {
   let src = '';
   try { src = fs.readFileSync(path.join(__dirname, f), 'utf8'); } catch { continue; }
   // async functions included (`async function init` collided with a plain `function init`
@@ -40,8 +44,11 @@ for (const f of files) {
     (decls[name] || (decls[name] = [])).push(f);
   }
 }
+// Fail on local↔local dupes AND shared↔local dupes; a name repeated only across the
+// shared files themselves is impossible here (each shared file is unique), so any
+// multi-file entry is a genuine collision in this window's scope.
 const dupes = Object.entries(decls).filter(([, fs2]) => new Set(fs2).size > 1);
-check('no top-level name is declared in more than one search-window script'
+check('no top-level name is declared in more than one script in this window\'s shared scope'
       + (dupes.length ? ` — DUPES: ${dupes.map(([n, fs2]) => `${n} (${[...new Set(fs2)].join(' + ')})`).join('; ')}` : ''),
       dupes.length === 0);
 
