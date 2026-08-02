@@ -525,7 +525,15 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
             # (OFF ⇒ byte-identical, no extra OCR); line_cache makes the later :1391
             # authoritative-locate verification a cache hit, not a second page OCR (C7).
             _lclamp = None
-            if (os.environ.get("ANCHOR_LABEL_LEFT_CLAMP", "0") != "0"
+            _rlim = None
+            # Arm the located frame for EITHER the left clamp OR the right grow (C-frame + arming-OR,
+            # Oracle 2026-08-02): both boundaries are only coherent when the located caption sits AT
+            # the taught position (frames coincide), so a drifted page keeps the rigid read
+            # unclamped/ungrown. Extend the arming to RIGHT_GROW so flipping it alone still computes
+            # the locate (else the right grow is silently inert on the rigid rung).
+            _want_lclamp = os.environ.get("ANCHOR_LABEL_LEFT_CLAMP", "0") != "0"
+            _want_rgrow  = os.environ.get("ANCHOR_VALUE_RIGHT_GROW", "0") != "0"
+            if ((_want_lclamp or _want_rgrow)
                     and direction == "right" and val_type in _LEFT_CLAMP_TYPES
                     and anchor.get("last_authoritative_at")
                     and (anchor.get("anchor_label") or "").strip()):
@@ -535,8 +543,11 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                 if _cloc and _located_at_taught_position(
                         _cloc, x_norm, y_norm,
                         anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")):
-                    _lclamp = _label_left_limit(_cloc, anchor, direction, val_type)
-            crop_value = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm, val_type, capture=_cap, verify_fn=_verify, meta=_m, continuation=continuation, max_w_norm=anchor.get("max_w_norm"), left_limit_norm=_lclamp)
+                    if _want_lclamp:
+                        _lclamp = _label_left_limit(_cloc, anchor, direction, val_type)
+                    if _want_rgrow:
+                        _rlim = _label_right_limit(field_key, _cloc, anchor, direction, val_type, validation_patterns)
+            crop_value = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm, val_type, capture=_cap, verify_fn=_verify, meta=_m, continuation=continuation, max_w_norm=anchor.get("max_w_norm"), left_limit_norm=_lclamp, right_limit_norm=_rlim)
             # CAPTION-PREFIX STRIP (kill ANCHOR_CAPTION_PREFIX_STRIP, DEFAULT OFF => byte-identical).
             # A rigid crop can capture its own caption ("Date 22/07/2026", "No. DN-36457"), which then
             # fails the credibility / learned-format gate below (the correct value is DISCARDED) OR — on a
@@ -700,13 +711,15 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                         if _drelo:
                             _drelo = _widen_relocated_crop(_drelo, val_type)
                             _tl = _caption_top_limit(_dlb, direction, _drelo)   # (P) exclude the located caption band
-                            # Left clamp (C4): this rung's types (free-text/currency) are DISJOINT from
-                            # _LEFT_CLAMP_TYPES today, so the helper returns None here — passed anyway so
-                            # a future type-set widening can't silently leave this site unclamped (pinned).
+                            # Left clamp + right grow (C4): this rung's types (free-text/currency) are
+                            # DISJOINT from _LEFT_CLAMP_TYPES / the ref-like|date right-grow scope today, so
+                            # both helpers return None here — passed anyway so a future type-set widening
+                            # can't silently leave this site unclamped/ungrown (rung-discipline pin).
                             _drv = _crop_and_ocr(page0, _drelo[0], _drelo[1], _drelo[2], _drelo[3],
                                                  val_type, verify_fn=_verify, meta=_dm, continuation=continuation,
                                                  top_limit_norm=_tl, max_w_norm=anchor.get("max_w_norm"),
-                                                 left_limit_norm=_label_left_limit(_dloc, anchor, direction, val_type))
+                                                 left_limit_norm=_label_left_limit(_dloc, anchor, direction, val_type),
+                                                 right_limit_norm=_label_right_limit(field_key, _dloc, anchor, direction, val_type, validation_patterns))
                             if _drv and not _name_field_code_reject(_drv, field_key) \
                                     and _crop_is_credible(_drv, val_type, validation_patterns, label):
                                 _dq = _qualify_against_format(_drv, field_key, format_lookup, text_field_keys)
@@ -1100,7 +1113,8 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                                              val_type, capture=_rcap, verify_fn=_verify, meta=_mr,
                                              continuation=continuation, top_limit_norm=_rtl,
                                              max_w_norm=anchor.get("max_w_norm"),
-                                             left_limit_norm=_label_left_limit(located, anchor, direction, val_type))
+                                             left_limit_norm=_label_left_limit(located, anchor, direction, val_type),
+                                             right_limit_norm=_label_right_limit(field_key, located, anchor, direction, val_type, validation_patterns))
                         _xfield = bool(rval) and _name_field_code_reject(rval, field_key)
                         if rval and (_xfield or not _crop_is_credible(rval, val_type, validation_patterns, label)):
                             _rec = None if _xfield else _recover_clean_token(rval, val_type, validation_patterns, label)
@@ -3262,7 +3276,8 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
                   verify_fn = None, meta = None, continuation = None,
                   top_limit_norm: float | None = None,
                   max_w_norm: float | None = None,
-                  left_limit_norm: float | None = None) -> str | None:
+                  left_limit_norm: float | None = None,
+                  right_limit_norm: float | None = None) -> str | None:
     """
     Crop a tight region centred on the stored value coordinates and re-OCR it.
     Uses the exact selection dimensions saved by the ⊕ tool (w_norm/h_norm) so
@@ -3293,7 +3308,7 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
         # only at the rigid + label-lock/drift RELOCATE rungs (the caller passes it there, NOT at the
         # cross-check or registration rungs — Oracle). y/h are untouched, so the (P) caption clamp and
         # vertical geometry are unchanged.
-        if (max_w_norm and w_norm > 0 and h_norm > 0
+        if (max_w_norm and w_norm > 0 and h_norm > 0 and right_limit_norm is None
                 and os.environ.get("ANCHOR_MAX_CROP_WIDTH", "0") != "0"):
             eff_w = max(w_norm, min(float(max_w_norm), _MAX_CROP_WIDTH_CAP))
             if eff_w > w_norm:
@@ -3366,6 +3381,15 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
             _clx = int(left_limit_norm * w) - _LEFT_CLAMP_GUARD_PX
             if _clx > x1 and _clx < x2 - 1:
                 x1 = _clx
+
+        # ANCHOR_VALUE_RIGHT_GROW (007/oscar/gary + Oracle 2026-08-02) — the right-edge twin of the
+        # left clamp. right_limit_norm is the value's MEASURED right edge (inline_box, column-bounded
+        # by cluster_value_words), so a value longer than the taught box is no longer chopped. Extend
+        # x2 RIGHTWARD ONLY (+guard for the coarse ~120-DPI locate edge), never shrink, never past the
+        # page. Grow-only + left edge/crop body untouched is what avoids the ANCHOR_INLINE_FULLRES_
+        # REREAD regression (Oracle C-grow-only). GUARD is right-grow-specific, not _LEFT_CLAMP_GUARD_PX.
+        if right_limit_norm is not None:
+            x2 = min(w, max(x2, int(right_limit_norm * w) + _RIGHT_GROW_GUARD_PX))
 
         # The taught row's band, in CROP px from the FINAL y1 (after grace + clamp), so the
         # per-line chooser judges against the un-padded taught box, not the padded crop.
@@ -3552,6 +3576,9 @@ def _located_at_taught_position(located, vx, vy, offset_dx, offset_dy,
 
 _LEFT_CLAMP_TYPES = _CAPTION_STRIP_TYPES   # structured, non-currency (C3) — one source with the strip
 _LEFT_CLAMP_GUARD_PX = 3                   # keep the value's first glyph column intact on a hairline offset error
+_RIGHT_GROW_GUARD_PX = 10                  # cover the ~120-DPI locate-pass quantisation of inline_box's RIGHT edge
+                                           # (a few full-res px) without reaching the next column — well below the
+                                           # med_h*1.2 cluster gap cluster_value_words split on (Oracle GUARD condition)
 
 
 def _label_left_limit(located, anchor, direction, val_type):
@@ -3591,6 +3618,52 @@ def _label_left_limit(located, anchor, direction, val_type):
     if not lb or lb.get("x_norm") is None:
         return None
     return _clamp01(float(lb["x_norm"]) + float(odx) - w_norm / 2.0)
+
+
+def _label_right_limit(field_key, located, anchor, direction, val_type, validation_patterns):
+    """ANCHOR_VALUE_RIGHT_GROW (kill switch, DEFAULT OFF) — the RIGHT-edge twin of the label-tail
+    left clamp (007/oscar/gary + Oracle SIGN-OFF-W/COND 2026-08-02). The rigid crop is sized from
+    the TAUGHT box width, so a value LONGER than the taught sample chops on the right ("PO-25909" →
+    the crop reads "PO-2590!"). Return the value's REAL right edge (normalised x) MEASURED on THIS
+    page from the located value box — inline_box.x_norm + inline_box.w_norm — so the crop grows
+    rightward to the actual value end. inline_box is the cluster-selected value column
+    (template_mapper.cluster_value_words, gap-split at med_h*1.2), so it is next-column-excluded BY
+    CONSTRUCTION — the grown crop cannot reach the neighbour. Sourced from the MEASURED box, NEVER
+    the taught box (C1 frame trap), like the left clamp.
+
+    Oracle conditions (2026-08-02), all ship-blocking:
+    - C-scope: SLICE 1 fires ONLY for a REFERENCE-like key that ALSO carries a validation pattern →
+      the value then rides the STRICT _pattern_coverage>=0.8 credibility branch, which REJECTS a
+      merged-column read ('PO-25909 Qty' scores 0.67) so the clean-token recovery runs. SEAM A: the
+      label-lock rung commits anchor_crop_relocated, which bypasses the shape veto AND has no
+      crop_fullpage_disagree cross-check — the strict credibility branch is the SOLE guard there, so
+      a non-ref alphanumeric or an untyped ref (lenient free-text branch) must NOT arm.
+    - DATE is DEFERRED to slice 1b (Oracle anomaly #2, VERIFIED): date credibility is a SUBSTRING
+      match, so a merged 'DD/MM/YYYY Qty' PASSES the gate, and the downstream salvage does NOT strip
+      the trailing token (validator.parse_date('12/05/2026 Qty') → None, normalise_date leaves it
+      dirty) — so a merged date would commit dirty. Date needs its own clean-token step before the
+      right grow can arm on it. Do NOT add `or val_type=='date'` here until that lands + is pinned.
+    - Same authority bar as the left clamp: switch ON, authoritative anchor with a real stored
+      offset, direction 'right', and a real located inline_box.
+    The consumer (_crop_and_ocr) extends x2 RIGHTWARD ONLY (+_RIGHT_GROW_GUARD_PX) and never past
+    the page edge; OFF ⇒ returns None ⇒ byte-identical."""
+    if os.environ.get("ANCHOR_VALUE_RIGHT_GROW", "0") == "0":
+        return None
+    if direction != "right":
+        return None
+    if not _is_ref_like_key(field_key):
+        return None                          # slice 1: ref-like only (date deferred — see docstring)
+    if not (validation_patterns or {}).get(val_type):
+        return None                          # no pattern → lenient credibility branch → NOT backstopped
+    if not (anchor or {}).get("last_authoritative_at"):
+        return None
+    odx, ody = anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")
+    if odx is None or ody is None or (not odx and not ody):
+        return None                          # same authority bar as _label_left_limit
+    ib = (located or {}).get("inline_box")
+    if not ib or ib.get("x_norm") is None or ib.get("w_norm") is None:
+        return None
+    return _clamp01(float(ib["x_norm"]) + float(ib["w_norm"]))
 
 
 def _reads_disagree(a, b, val_type) -> bool:

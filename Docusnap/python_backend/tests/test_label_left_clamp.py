@@ -131,9 +131,11 @@ check('C4: all FOUR crop sites pass left_limit_norm (rigid + label-lock + cross-
       and _src.count('left_limit_norm=_label_left_limit(_dloc') == 1
       and _src.count('left_limit_norm=_label_left_limit(_xloc') == 1
       and _src.count('left_limit_norm=_label_left_limit(located') == 1)
-check('OFF pays no locate: the env check is the FIRST condition of the rigid-site gate',
-      'if (os.environ.get("ANCHOR_LABEL_LEFT_CLAMP", "0") != "0"\n'
-      '                    and direction == "right"' in _src)
+check('OFF pays no locate: the rigid-site locate is gated on (_want_lclamp or _want_rgrow), '
+      'each read from env first — both OFF => no locate (arming-OR, 2026-08-02 right-grow twin)',
+      '_want_lclamp = os.environ.get("ANCHOR_LABEL_LEFT_CLAMP", "0") != "0"' in _src
+      and 'if ((_want_lclamp or _want_rgrow)\n'
+          '                    and direction == "right"' in _src)
 check('label-lock rung types stay DISJOINT from the clamp set (the pinned C4 asymmetry: '
       'text/currency rung, structured clamp)',
       not (set(A._LEFT_CLAMP_TYPES) & {None, "text", "multiline_text", "currency"}))
