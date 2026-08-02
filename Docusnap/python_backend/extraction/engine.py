@@ -1635,14 +1635,78 @@ class ExtractionEngine:
             self._t("candidate", stage=stage, field=key, method=cand.get("method"),
                     value=cand.get("value"), confidence=cand.get("confidence"))
             after = results.get(key)
-            won = bool(after and after.get("value") == cand.get("value")
-                       and after.get("method") == cand.get("method"))
+            won = (self._merge_outcome(cand, after) == "won")
             self._t("merge", stage=stage, field=key,
                     decision=("win" if won else "lose"),
                     method=cand.get("method"), value=cand.get("value"),
                     confidence=cand.get("confidence"),
                     vs=(pre.get(key) if won else after))
         self._t("stage_end", stage=stage)
+
+    # ── Static merge-outcome predicate (SHARED by _trace_stage + _trace_steps) ──
+    # SINGLE source of the win/lose decision so the every-step ladder can NEVER
+    # disagree with the per-stage `merge` event. Caller MUST test cand truthiness
+    # FIRST: Stage 0 copies template seeds BY REFERENCE (results[key] IS the seed),
+    # so for a {value:None} seed `after IS cand` and this returns 'won' trivially —
+    # the None value must be filtered by the caller before this is consulted.
+    @staticmethod
+    def _merge_outcome(cand, after):
+        won = bool(after and after.get("value") == cand.get("value")
+                   and after.get("method") == cand.get("method"))
+        return "won" if won else "lost"
+
+    # Per-stage no-candidate / skip reason strings — constants, not f-strings built
+    # at the call site. The SKIP reason is the diagnostic datum the owner asked for
+    # ("show the RESULT OF EVERY STEP so an error can be read without re-running").
+    _STEP_SKIP_NO_TEMPLATE   = "no template matched this document"
+    _STEP_SKIP_NO_MAPPINGS   = "this template has no field mappings"
+    _STEP_SKIP_NO_PAGE_IMAGE = "no page image available to crop"
+    _STEP_SKIP_NO_ANCHORS    = "no anchors learned for this supplier + type"
+    _STEP_NO_CAND_REASON = {
+        "0_template":  "template matched but produced no value for this field",
+        "0.5_mapping": "no anchor→target mapping for this field",
+        "1_keyword":   "no keyword pattern matched this field",
+        "2_anchor":    "no anchor produced a value for this field",
+    }
+
+    def _trace_steps(self, stage, ran, skip_reason, stage_results, pre, results, field_keys):
+        """Dev-only every-step ladder: emit ONE `step` event per CONFIGURED field
+        for a read stage, so the inspector can render the outcome of EVERY stage —
+        not just the winners. outcome in
+        won | lost | no_candidate | already_resolved | skipped.
+
+        Pure observation — NEVER writes results/pre/stage_results. No-op unless
+        tracing (byte-identical off path). Discriminator is value-TRUTHINESS FIRST
+        (a {value:None} seed is `no_candidate`, never a false `won`), then the
+        shared `_merge_outcome`. `ran=False` emits a `skipped` row for every field
+        with the gate's reason — call it from OUTSIDE the stage gate so a gated-OFF
+        stage is visible on the ladder instead of silently absent. `already_resolved`
+        states STATE ("already held a value from X before this stage"), never a
+        DECISION this vantage cannot see ("skipped because credible")."""
+        if not self._trace:
+            return
+        for f in field_keys:
+            if not ran:
+                self._t("step", stage=stage, field=f, outcome="skipped", reason=skip_reason)
+                continue
+            cand = stage_results.get(f)
+            cand_v = (cand or {}).get("value")
+            if cand_v:                                   # value-truthiness FIRST (SEAM 3b)
+                self._t("step", stage=stage, field=f,
+                        outcome=self._merge_outcome(cand, results.get(f)),
+                        value=cand_v, method=cand.get("method"),
+                        confidence=cand.get("confidence"))
+                continue
+            pre_f = pre.get(f) or {}
+            pre_v = pre_f.get("value")
+            if pre_v:
+                by = pre_f.get("method") or "an earlier stage"
+                self._t("step", stage=stage, field=f, outcome="already_resolved",
+                        value=pre_v, by=pre_f.get("method"),
+                        reason=f"already held a value from {by} before this stage")
+            else:
+                self._t("step", stage=stage, field=f, outcome="no_candidate",
+                        reason=self._STEP_NO_CAND_REASON.get(stage, "no candidate produced"))
 
     def _capture_slice(self, field, stage, page, bbox, pil_img, kind="target"):
         """Dev-only: save the exact crop used for an OCR attempt to the session
@@ -3493,6 +3557,11 @@ class ExtractionEngine:
                 for key, data in tmpl_results.items():
                     results[key] = data
                 self._trace_stage('0_template', tmpl_results, _pre_s0, results)
+                # Stage 0 RAN — every-step ladder outcome per configured field,
+                # computed against results AS OF right after the Stage-0 merge
+                # (before Stage 0.5 refines anything).
+                self._trace_steps('0_template', True, None, tmpl_results,
+                                  _pre_s0, results, field_keys)
                 # Promote supplier from the template's own resolved supplier_name
                 # field (a fixed_value learned from confirmed documents) — NOT
                 # from the template's auto-generated display name. Templates
@@ -3594,8 +3663,29 @@ class ExtractionEngine:
                             results[key] = data
                             applied += 1
                     self._trace_stage('0.5_mapping', mapping_results, _pre_s05, results)
+                    self._trace_steps('0.5_mapping', True, None, mapping_results,
+                                      _pre_s05, results, field_keys)
                     if applied:
                         self.log(f"  Stage 0.5: {applied} field(s) refined via anchor/target mapping")
+                else:
+                    # SEAM 3a: template matched but Stage 0.5 was skipped — emit skip
+                    # rows from OUTSIDE the gate (distinct reason: no-mappings vs no-page-image)
+                    # so the ladder shows Stage 0.5 as skipped rather than silently absent.
+                    self._trace_steps('0.5_mapping', False,
+                                      (self._STEP_SKIP_NO_MAPPINGS if not tmpl_mappings
+                                       else self._STEP_SKIP_NO_PAGE_IMAGE),
+                                      {}, {}, results, field_keys)
+
+        # SEAM 3a: Stage 0 (and 0.5, when no template) never ran — emit their skip
+        # rows from OUTSIDE the `if templates:` gate, covering BOTH no-templates and
+        # no-match (matched_tmpl stays None in both). This is the exhibit-A class:
+        # fields greened by keyword/anchor with no template/mapping rows. (A matched-
+        # but-no-mappings Stage 0.5 skip is emitted inline above with its own reason.)
+        if matched_tmpl is None:
+            self._trace_steps('0_template',  False, self._STEP_SKIP_NO_TEMPLATE,
+                              {}, {}, results, field_keys)
+            self._trace_steps('0.5_mapping', False, self._STEP_SKIP_NO_TEMPLATE,
+                              {}, {}, results, field_keys)
 
         # ── OPERATOR SUPPLIER PIN (Resolve button, Part B) — highest precedence ──
         # The operator RESOLVED the issuer (the branding cross-check detected the true name and they
@@ -3922,6 +4012,8 @@ class ExtractionEngine:
                     or data.get("confidence", 0) > existing.get("confidence", 0)):
                 results[key] = data
         self._trace_stage('1_keyword', kw_results, _pre_s1, results)
+        # Stage 1 always runs — every-step ladder outcome per configured field.
+        self._trace_steps('1_keyword', True, None, kw_results, _pre_s1, results, field_keys)
         found = _count_valued_fields(results)
         self.log(f"  Stage 1: {found}/{len(field_keys)} fields found")
 
@@ -3931,7 +4023,14 @@ class ExtractionEngine:
         # identity is a different, riskier class and stays deliberately out of scope.
         _s2_supplier = supplier_name
 
-        # ── Stage 2: Anchor extraction (always runs) ──────────────────────────
+        # SEAM 3a: no anchors in scope → the whole Stage-2 block below is skipped;
+        # emit its skip rows FROM OUTSIDE the gate so Stage 2 is visible on the
+        # ladder (the exhibit-A "green dots, no anchor rows" case). _trace_steps
+        # self-guards on --trace, so this is a no-op off the trace path.
+        if not anchors:
+            self._trace_steps('2_anchor', False, self._STEP_SKIP_NO_ANCHORS,
+                              {}, {}, results, field_keys)
+        # ── Stage 2: Anchor extraction ────────────────────────────────────────
         if anchors:
             self.log("  Stage 2: anchor extraction…")
             # "Register, then read" for Stage 2: fit ONE page-0 transform from the
@@ -4284,6 +4383,8 @@ class ExtractionEngine:
                 if not existing or is_taught_override or data["confidence"] > existing["confidence"]:
                     results[key] = data
             self._trace_stage('2_anchor', anchor_results, _pre_s2, results)
+            self._trace_steps('2_anchor', True, None, anchor_results,
+                              _pre_s2, results, field_keys)
             new_found = _count_valued_fields(results)
             self.log(f"  Stage 2: +{new_found - found} fields from anchors")
             found = new_found
