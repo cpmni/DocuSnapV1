@@ -660,6 +660,23 @@ const PRESET_CATALOG = [
     ],
   },
   {
+    // Service/job worksheet. ref keyed to reference_number (the live convention) so the
+    // type-scoped "Worksheet No"/"Job No" captions raise its ~30% recall without touching the
+    // global _REF_ROLE_CAPTIONS seed (which would collide with the dedicated job_no field and
+    // blast every custom ref type — reggie). No supplier/customer label seeds: name fields are
+    // format-ungated, and "Engineer"/"Site" would grab a person/site, not the issuer (Oracle C2).
+    name: 'Service Worksheet', ref_field_key: 'reference_number', date_field_key: 'worksheet_date',
+    company_key: 'supplier_name',
+    fields: [
+      { key: 'supplier_name',    label: 'Document Issuer',  type: 'text', required: 1 },
+      { key: 'reference_number', label: 'Worksheet Number', type: 'text', required: 1,
+        labels: ['Worksheet No', 'Worksheet Number', 'Worksheet Ref', 'Job Sheet No',
+                 'Job Sheet Number', 'Job No', 'Job Number', 'Job Ref', 'Job Card No', 'WS No'] },
+      { key: 'worksheet_date',   label: 'Worksheet Date',   type: 'date', required: 1,
+        labels: ['Job Date', 'Service Date', 'Date of Work', 'Attendance Date'] },
+    ],
+  },
+  {
     // The "just file this, I'll find it later" FALLBACK type (docs/designs/
     // GENERIC_DOCTYPE_2026-07-18.md): arbitrary paperwork retrieved by full-text search +
     // the Auto-Title. No reference role (first-class; a forced ref trains junk-typing).
