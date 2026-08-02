@@ -120,6 +120,20 @@ function main() {
   fail += !check(`row exposes all essential detached-client fields [${ESSENTIAL.join(', ')}]`,
     ESSENTIAL.every(k => k in sample));
   fail += !check('row carries joined type_name/type_slug', sample.type_name === 'Invoice' && sample.type_slug === 'invoice');
+  // ── DE-PATHING pins (owner 2026-08-02): search rows must NEVER carry filesystem paths,
+  // the full ocr_text, or the learning hashes — they were the sequential-filename browsing
+  // surface and a 200-doc payload per keystroke. has_file replaces stored_path truthiness.
+  const FORBIDDEN = ['stored_path', 'working_path', 'folder_path', 'ocr_text', 'keyword_fingerprint', 'logo_phash'];
+  fail += !check(`confirmed row carries NONE of [${FORBIDDEN.join(', ')}]`,
+    FORBIDDEN.every(k => !(k in sample)));
+  fail += !check('confirmed row carries has_file as a boolean', typeof sample.has_file === 'boolean');
+  {
+    _session = { role: 'admin' };
+    const u = search({ includeUncommitted: true }).uncommitted[0] || {};
+    fail += !check('uncommitted row is projected identically (no paths/ocr_text)',
+      FORBIDDEN.every(k => !(k in u)) && typeof u.has_file === 'boolean');
+    _session = { role: 'read' };
+  }
 
   // ── Auth shaping of uncommitted ─────────────────────────────────────────────
   _session = { role: 'read' };

@@ -176,8 +176,20 @@ function register(ctx) {
     }
     const { dialog, BrowserWindow } = require('electron');
     const win = BrowserWindow.fromWebContents(e.sender);
+    // Human filename (Chris r5 card 5): "Stamped-copy.route-1.pdf" is machine bookkeeping on
+    // an artifact whose whole life is being emailed onward. Use the doc's own shelf name +
+    // the decision; fall back original_filename → route id (doc purged).
+    let base = null;
+    try {
+      const d = db.prepare('SELECT stored_filename, original_filename FROM documents WHERE id = ?').get(route.document_id);
+      base = (d && (d.stored_filename || d.original_filename)) || null;
+    } catch { /* fall through */ }
+    const decision = route.state === 'approved' ? 'APPROVED' : route.state === 'rejected' ? 'REJECTED' : String(route.state || '').toUpperCase();
+    const defName = base
+      ? `${base.replace(/\.pdf$/i, '')} — ${decision}.pdf`
+      : `Stamped-copy.route-${route.id}.pdf`;
     const r = await dialog.showSaveDialog(win, {
-      defaultPath: `Stamped-copy.route-${route.id}.pdf`,
+      defaultPath: defName,
       filters: [{ name: 'PDF', extensions: ['pdf'] }],
     });
     const outcome = (r.canceled || !r.filePath) ? 'cancelled' : 'success';

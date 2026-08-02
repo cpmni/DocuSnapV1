@@ -102,7 +102,9 @@ async function refreshDashboard() {
   }
   const dashLast = document.getElementById('dash-last-run');
   if (dashLast) dashLast.textContent = _lastRunSummary
-    ? `Last run: ${_lastRunSummary.ok} filed${_lastRunSummary.err ? `, ${_lastRunSummary.err} with errors` : ''}.`
+    ? `Last run: ${_lastRunSummary.ok} processed`
+      + (_lastRunSummary.filed != null ? ` — ${_lastRunSummary.filed} filed, ${_lastRunSummary.review} to review` : '')
+      + (_lastRunSummary.err ? `, ${_lastRunSummary.err} with errors` : '') + '.'
     : '';
 
   // One confirmed-docs fetch feeds BOTH recent activity and the throughput strip.
@@ -185,7 +187,7 @@ async function renderLearning(confirmed) {
   const lay = layouts == null ? ''
     : ` · learned <span class="n">${layouts}</span> ${layouts === 1 ? 'layout' : 'layouts'}`;
   body.innerHTML = na > 0
-    ? `<span class="n">${na}</span> ${na === 1 ? 'supplier' : 'suppliers'} now file automatically${lay}.`
+    ? `<span class="n">${na}</span> ${na === 1 ? 'supplier now files' : 'suppliers now file'} automatically${lay}.`
     : `No suppliers file automatically yet — they graduate after a run of clean confirmations${lay}.`;
 }
 
@@ -837,7 +839,9 @@ async function startProcessing() {
   // this run for the dashboard's "last run" line.
   if (batch.done > 0) {
     if (_userCanReview) btnReviewDocs.classList.add('visible');
-    _lastRunSummary = { ok: batch.ok, err: batch.err };
+    // filed/review split kept for the dashboard line — "20 filed" was FALSE when the run
+    // only QUEUED them (Chris r5: processing ≠ filing).
+    _lastRunSummary = { ok: batch.ok, err: batch.err, filed, review };
   }
 }
 
@@ -1422,6 +1426,11 @@ function applyCurrentUser(user) {
   // nothing visible (§4a #1). Hide it so the rail reflects what the role can actually do.
   const btnImport = document.getElementById('btn-import');
   if (btnImport) btnImport.style.display = (user.role === 'readonly') ? 'none' : '';
+  // "Open folder" on the output card shells into the output tree — now admin/edit only
+  // (the main-side open-folder gate refuses readonly; hide the button so it isn't a
+  // silent dead control).
+  const btnOpenOut = document.getElementById('dash-open-output');
+  if (btnOpenOut) btnOpenOut.style.display = (user.role === 'readonly') ? 'none' : '';
   refreshDashboard();   // reflect role in the dashboard's Open Review visibility
 }
 

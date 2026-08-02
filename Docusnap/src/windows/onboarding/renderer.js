@@ -42,6 +42,11 @@ function paintSelections() {
 
 function render() {
   panels.forEach(p => p.classList.toggle('show', Number(p.dataset.step) === state.step));
+  // Refresh the filing preview whenever its step shows — it must reflect a folder chosen
+  // one step earlier (setupOrganization only ran once at boot).
+  if (panels.some(p => Number(p.dataset.step) === state.step && p.querySelector('#ob-output-preview'))) {
+    try { obUpdatePreview(); } catch { /* preview is best-effort */ }
+  }
   $$('#steps .dot').forEach((d, i) => {
     d.classList.toggle('active', i === state.step);
     d.classList.toggle('done', i < state.step);
@@ -112,7 +117,10 @@ async function obUpdatePreview() {
   const pEl = $('#ob-output-preview');
   if (!pEl || !folderEditor || !filenameEditor) return;
   try {
-    const root = (await D.getSetting('output_folder')) || state.outputFolder || 'Output folder';
+    // The WIZARD'S chosen folder wins over the saved setting (which is only written at
+    // finish) — the old order kept showing the stale saved root after the user changed
+    // the folder on the previous step (Chris r5).
+    const root = state.outputFolder || (await D.getSetting('output_folder')) || 'Output folder';
     const r = await D.previewOutputPath(folderEditor.getValue().trim(), filenameEditor.getValue().trim());
     pEl.textContent = [root, ...(r.segments || []), r.filename].join('  ›  ');
   } catch {}

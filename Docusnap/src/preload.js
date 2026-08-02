@@ -105,6 +105,10 @@ contextBridge.exposeInMainWorld('docusnap', {
   showInExplorer:     (p) => ipcRenderer.send('show-in-explorer', p),
   openFile:           (p) => ipcRenderer.send('open-file', p),
   openFolder:         (p) => ipcRenderer.send('open-folder', p),
+  // De-pathed opens: the main process resolves the filed copy from the doc row —
+  // no renderer ever supplies a path (returns {success,error}).
+  openDocumentFile:        (docId) => ipcRenderer.invoke('open-document-file', docId),
+  showDocumentInExplorer:  (docId) => ipcRenderer.invoke('show-document-in-explorer', docId),
 
   // ── Window navigation ────────────────────────────────────────────────────────
   openReviewWindow:    ()       => ipcRenderer.send('open-review-window'),

@@ -52,7 +52,9 @@ function searchDocuments({ db, params, role }, deps = {}) {
   const common = { company, reference, dateFrom, dateTo, docType, fullText, total, totalOp };
 
   // Confirmed documents — what "search/view documents" means for every role.
-  const confirmed = onlyExisting(documents.search(db, { ...common, status: 'confirmed' }));
+  // PROJECTED after filterExisting (LOAD-BEARING ORDER: the existence filter needs the
+  // paths; the renderer must never see them).
+  const confirmed = onlyExisting(documents.search(db, { ...common, status: 'confirmed' })).map(projectSearchRow);
 
   if (!includeUncommitted || !canSeeUncommitted(role)) {
     return { confirmed, uncommitted: [] };
@@ -62,7 +64,28 @@ function searchDocuments({ db, params, role }, deps = {}) {
   const review   = documents.search(db, { ...common, status: 'needs_review' });
   const deferred = documents.search(db, { ...common, status: 'deferred' });
 
-  return { confirmed, uncommitted: onlyExisting([...review, ...deferred]) };
+  return { confirmed, uncommitted: onlyExisting([...review, ...deferred]).map(projectSearchRow) };
 }
 
-module.exports = { searchDocuments, canSeeUncommitted, UNCOMMITTED_ROLES };
+// ── DE-PATHING projection (owner 2026-08-02) ─────────────────────────────────────
+// documents.search ships SELECT d.* — stored_path/working_path/folder_path, the FULL
+// ocr_text of every row (200 rows × whole documents over IPC per keystroke), and the
+// learning hashes. None of it is renderable; the paths were the sequential-filename
+// browsing surface and ocr_text was pure payload. Every row a search RENDERER receives
+// goes through this projection: the display fields + `has_file` (the Boolean the Open
+// buttons used stored_path's truthiness for — same column, same semantics; opens now
+// resolve server-side by docId). test_search_contract.js pins the ABSENCE of the
+// stripped fields; getReviewQueue/getByIds and the internal callers are untouched.
+const SEARCH_ROW_FIELDS = [
+  'id', 'supplier_name', 'reference_number', 'doc_date', 'status',
+  'type_name', 'type_slug', 'overall_confidence', 'original_filename', 'stored_filename',
+  'page_count', 'deleted_at', 'document_type_id', 'confirmed_at', 'processed_at', 'template_id',
+];
+function projectSearchRow(row) {
+  const out = {};
+  for (const k of SEARCH_ROW_FIELDS) out[k] = row[k] !== undefined ? row[k] : null;
+  out.has_file = !!row.stored_path;
+  return out;
+}
+
+module.exports = { searchDocuments, canSeeUncommitted, projectSearchRow, UNCOMMITTED_ROLES };

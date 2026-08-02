@@ -63,8 +63,17 @@ function initInputs() {
   });
   const emptyBtn = document.getElementById('btn-empty-bin');
   if (emptyBtn) emptyBtn.addEventListener('click', async () => {
-    if (!confirm('Permanently delete EVERYTHING in the recycle bin? This cannot be undone.')) return;
+    // Counted + explicit (Chris r5 card 6): purge REALLY deletes the PDF files from disk
+    // (handler unlinks working + resolved copies) — unlike Delete All's soft delete, so
+    // this dialog must say so, with the number, not "EVERYTHING".
+    const n = document.querySelectorAll('#results-scroll .result-item').length;
+    const what = n ? `all ${n} document${n === 1 ? '' : 's'}` : 'everything';
+    if (!confirm(`Permanently delete ${what} in the recycle bin, including their PDF files? This cannot be undone.`)) return;
     try { await window.docusnap.purgeAllDeleted(); } catch (e) { console.error('empty bin:', e); }
+    // The purged doc must not linger in the preview with a live Restore button.
+    if (window.SearchState) window.SearchState.selectedDoc = null;
+    const pe = document.getElementById('preview-empty'); if (pe) pe.style.display = '';
+    const pd = document.getElementById('preview-doc');  if (pd) pd.style.display = 'none';
     doSearch();
   });
 }

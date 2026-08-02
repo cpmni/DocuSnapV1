@@ -86,7 +86,7 @@ function _resultItem(doc) {
   let confPip = '';
   if (window.SearchState.entitled && doc.overall_confidence != null && doc.status !== 'confirmed') {
     const w = Math.max(4, Math.min(100, doc.overall_confidence));
-    confPip = `<span class="result-conf ${confLevel(doc.overall_confidence)}" title="Extraction confidence ${doc.overall_confidence}%">
+    confPip = `<span class="result-conf ${confLevel(doc.overall_confidence)}" title="Read at ${doc.overall_confidence}% confidence">
       <span class="rc-meter"><i style="width:${w}%"></i></span><span class="rc-val">${doc.overall_confidence}%</span></span>`;
   }
 
@@ -106,10 +106,10 @@ function _resultItem(doc) {
       </div>
     </div>
   `;
-  if (window.Thumbs && window.SearchPreview && window.SearchPreview.fileArgs) {
-    const { folderPath, filename } = window.SearchPreview.fileArgs(doc);
-    window.Thumbs.lazy(el.querySelector('.result-thumb'),
-      { id: doc.id, folder_path: folderPath, original_filename: filename });
+  if (window.Thumbs) {
+    // DE-PATHED: the thumbnail handler resolves the file server-side by docId; rows no
+    // longer carry paths at all.
+    window.Thumbs.lazy(el.querySelector('.result-thumb'), { id: doc.id });
   }
 
   el.addEventListener('click', (e) => _onRowClick(e, doc));

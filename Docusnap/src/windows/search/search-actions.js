@@ -56,12 +56,11 @@ function renderActions(doc) {
           _afterChange(window.docusnap.repairDeconfirm(doc.id));
       }, true);
       // Escape hatches to the real file — deliberately kept (round-2 Chris fix restored
-      // them) but EDIT/ADMIN only now: a Read Only user keeps the in-app preview and loses
-      // uncontrolled shell access to filed originals (eric Q3; main-side role gate on the
-      // open-file channel is a named follow-up — this hides the door, it doesn't lock it).
-      if (doc.stored_path && canEdit) {
-        _btn(docSection, 'Open in Explorer', () => window.docusnap.showInExplorer(doc.stored_path));
-        _btn(docSection, 'Open File',        () => window.docusnap.openFile(doc.stored_path));
+      // them), EDIT/ADMIN only, and now DOC-ID-RESOLVED: the row carries has_file, never a
+      // path; the main process resolves + audits + role-gates (the de-pathing slice).
+      if (doc.has_file && canEdit) {
+        _btn(docSection, 'Open in Explorer', () => window.docusnap.showDocumentInExplorer(doc.id));
+        _btn(docSection, 'Open File',        () => window.docusnap.openDocumentFile(doc.id));
       }
     } else {
       // Edit in Review: admin/edit only — enforced in main.js open-review-window-at handler.
@@ -106,11 +105,18 @@ function renderActions(doc) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-// After a delete/restore/purge, refresh the result list so the document moves in/out
-// of view, and clear the now-stale preview.
+// After a delete/restore/purge, refresh the result list AND clear the preview — the acted-on
+// document must never linger in the panel with now-stale actions (Chris r5: a PURGED docket
+// still offered a live "Restore" button). Trade-off accepted: the preview also clears after
+// a Restore; the user just acted on it and the fresh list is one click away.
 function _afterChange(p) {
   Promise.resolve(p)
-    .then(() => { if (window.SearchQuery) window.SearchQuery.doSearch(); })
+    .then(() => {
+      if (window.SearchState) window.SearchState.selectedDoc = null;
+      const pe = document.getElementById('preview-empty'); if (pe) pe.style.display = '';
+      const pd = document.getElementById('preview-doc');  if (pd) pd.style.display = 'none';
+      if (window.SearchQuery) window.SearchQuery.doSearch();
+    })
     .catch((e) => console.error('document action failed:', e));
 }
 

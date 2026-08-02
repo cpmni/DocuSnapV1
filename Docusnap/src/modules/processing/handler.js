@@ -717,7 +717,7 @@ function register(ctx) {
     diaglog.write(msg);
   };
 
-  const { requireRole, requireLogin, getCurrentUser, logAudit } = require('../auth/handler');
+  const { requireRole, requireLogin, getCurrentUser, hasRole, logAudit } = require('../auth/handler');
 
   // ── Folder picker ───────────────────────────────────────────────────────────
   const { dialog, shell } = require('electron');
@@ -809,12 +809,14 @@ function register(ctx) {
     return r.canceled ? null : r.filePaths[0];
   });
 
-  // Opening a filed document in Explorer/its default app is part of "search/view
-  // documents" — available to every signed-in role, including Read Only.
-  // AUDITED (owner 2026-08-02): once a file leaves through the shell there is no control
-  // over what happens to it — so the act of handing it out is itself the audit event.
+  // ROLE-GATED admin/edit (owner 2026-08-02, supersedes the old "every signed-in role"
+  // rule): a shell hand-out is uncontrolled access to the file — Read Only keeps the
+  // in-app preview and loses the hatch. NON-THROWING guard (these are send channels —
+  // a requireRole throw here would be an uncaught main-process exception).
+  // AUDITED: once a file leaves through the shell there is no control over what happens
+  // to it — so the act of handing it out is itself the audit event.
   ipcMain.on('show-in-explorer', (_e, filePath) => {
-    if (!getCurrentUser()) return;
+    if (!hasRole('admin', 'edit')) { logger?.warn?.('[security] show-in-explorer refused for role'); return; }
     if (!_isOpenablePath(getDb(), filePath)) {
       logger?.warn?.('[security] blocked show-in-explorer for a disallowed path');
       return;
@@ -826,7 +828,7 @@ function register(ctx) {
     shell.showItemInFolder(filePath);
   });
   ipcMain.on('open-file', (_e, filePath) => {
-    if (!getCurrentUser()) return;
+    if (!hasRole('admin', 'edit')) { logger?.warn?.('[security] open-file refused for role'); return; }
     if (!_isOpenablePath(getDb(), filePath)) {
       logger?.warn?.('[security] blocked open-file for a disallowed path');
       return;
@@ -837,10 +839,39 @@ function register(ctx) {
     } catch { /* audit best-effort */ }
     shell.openPath(filePath);
   });
+  // ── DOC-ID-RESOLVED opens (the de-pathing slice, owner 2026-08-02) ─────────────────
+  // The Search renderer no longer holds ANY filesystem path; these resolve the filed
+  // copy SERVER-SIDE from the doc row (stored_path only — the same semantics the old
+  // renderer guard had), re-run the containment policy, audit with the document id, and
+  // return {success,error} so a refusal is visible instead of a silently dropped send.
+  const _openResolvedDoc = (docId, mode) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const row = db.prepare('SELECT id, stored_path FROM documents WHERE id = ?').get(Number(docId));
+    if (!row) return { success: false, error: 'Document not found.' };
+    if (!row.stored_path || !fs.existsSync(row.stored_path)) return { success: false, error: 'This document has no filed copy on disk.' };
+    if (!_isOpenablePath(db, row.stored_path)) {
+      logger?.warn?.(`[security] blocked ${mode} for a disallowed resolved path`);
+      return { success: false, error: 'This file sits outside the app’s allowed folders.' };
+    }
+    try {
+      logAudit(db, { action: mode === 'open' ? 'file_opened_externally' : 'file_shown_in_explorer',
+        action_category: 'document', target_type: 'document', target_id: row.id, document_id: row.id,
+        outcome: 'success', metadata: { file: path.basename(row.stored_path) } });
+    } catch { /* audit best-effort */ }
+    if (mode === 'open') shell.openPath(row.stored_path);
+    else shell.showItemInFolder(row.stored_path);
+    return { success: true };
+  };
+  ipcMain.handle('open-document-file',        (_e, docId) => _openResolvedDoc(docId, 'open'));
+  ipcMain.handle('show-document-in-explorer', (_e, docId) => _openResolvedDoc(docId, 'show'));
+
   // Open a FOLDER (not a file) — the file allowlist requires an extension, so folders
   // need their own check: must be an app-managed root (e.g. the output folder), no UNC.
   ipcMain.on('open-folder', (_e, dir) => {
-    if (!getCurrentUser()) return;
+    // Same admin/edit gate: shell-browsing the output tree is uncontrolled access to EVERY
+    // filed document — strictly worse than the per-doc buttons Read Only already lost.
+    if (!hasRole('admin', 'edit')) { logger?.warn?.('[security] open-folder refused for role'); return; }
     let resolved;
     try { resolved = path.resolve(dir); } catch { return; }
     if (!dir || typeof dir !== 'string' || /^[\\/]{2}/.test(dir) || /^[\\/]{2}/.test(resolved)) return;
@@ -848,6 +879,10 @@ function register(ctx) {
       logger?.warn?.('[security] blocked open-folder for a disallowed path');
       return;
     }
+    try {
+      logAudit(getDb(), { action: 'folder_opened_externally', action_category: 'document',
+        target_type: 'folder', outcome: 'success', metadata: { folder: path.basename(resolved) } });
+    } catch { /* audit best-effort */ }
     shell.openPath(resolved);
   });
 
@@ -1034,6 +1069,7 @@ function register(ctx) {
       outcome: 'success', metadata: { folder: folderPath } });
     const diagOn = _diagEnabled(db);
     if (diagOn) { diaglog.enable(); diaglog.write({ ev: 'batch_start', folder: folderPath }); }
+    _drainedThisBatch = 0;   // per-batch tally (watch-folder drains between runs must not inflate it)
     let trainingArgs, tempFiles;
     try {
       ({ args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath, logger));
@@ -1261,6 +1297,16 @@ function register(ctx) {
     // exited, so the source PDFs are unlocked and the moves into Processed/ now succeed.
     await Promise.allSettled(pendingFileIo.splice(0));
     _flushPendingDrains(db, logger);
+    // Truthful post-run line (Chris r5 card 2): originals move at IMPORT, and the emptied
+    // source folder then looked like a mistake ("No documents found directly in this
+    // folder…"). Say what actually happened, once, where the run's log lines render.
+    if (_drainedThisBatch > 0) {
+      mirror(event.sender, 'process-progress', {
+        type: 'log',
+        text: `✓ ${_drainedThisBatch} original scan${_drainedThisBatch === 1 ? '' : 's'} moved out of the source folder — Scan Finder now works from its own copies.`,
+      });
+      _drainedThisBatch = 0;
+    }
     cleanupFiles(tempFiles);
     cleanupFiles(shardFiles);
     // Remove any *_ocr.txt plaintext artifacts left by earlier versions of the
@@ -2813,6 +2859,8 @@ function drainOriginalToFolder(fs, path, srcPath, destDir, originalFilename, opt
 // Try to move an original NOW (the worker closes each PDF as it finishes it, so the
 // handle is usually free by file_done → the file moves live, "as processed"). If it is
 // still momentarily locked, queue it for the post-worker flush instead of blocking.
+let _drainedThisBatch = 0;   // per-batch tally for the truthful post-run line (Chris r5 card 2)
+
 function _drainNowOrDefer(db, logger, item) {
   try {
     // retry:false → a single non-blocking attempt on the main thread; a locked file is
@@ -2824,6 +2872,7 @@ function _drainNowOrDefer(db, logger, item) {
         db.prepare('UPDATE documents SET original_filename = ? WHERE id = ?').run(moved.filename, item.docId);
       }
       logger?.log(`Drained to ${item.kind}: ${item.originalFilename} → ${moved.folder}`);
+      _drainedThisBatch++;
       return;
     }
   } catch (e) {
@@ -2846,6 +2895,7 @@ function _flushPendingDrains(db, logger) {
           db.prepare('UPDATE documents SET original_filename = ? WHERE id = ?').run(moved.filename, item.docId);
         }
         logger?.log(`Drained to ${item.kind}: ${item.originalFilename} → ${moved.folder}`);
+        _drainedThisBatch++;
       } else if (fs.existsSync(item.srcPath)) {
         keep.push(item);   // still locked → retry on the next flush
       }

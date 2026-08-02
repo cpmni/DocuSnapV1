@@ -2094,10 +2094,20 @@ function renderCleanHoldReason(el, doc) {
     cue  = 'Ready to file';
     hint = 'Turn it on in Settings → Processing to let clean documents file themselves.';
   } else if (Number.isFinite(conf) && conf < thr) {
-    lead = `Nothing was flagged — this was read at ${conf}%, just below the ${thr}% you've set for `
-         + 'filing without a check, so it\'s waiting for you.';
+    // Chris r5 card 4: "just below" only when it IS (gap ≤5); and when the identity field
+    // is empty, SAY SO — an empty required box dragging the overall down while every visible
+    // field reads High was the confusing case. "Pulls the score down", never "so it scores
+    // N%" — we don't compute the counterfactual, so we don't claim the arithmetic (bob).
+    const _issuerEmpty = !String(doc.supplier_name || '').trim();
+    lead = _issuerEmpty
+      ? `The Document Issuer box is still empty — an empty box pulls the overall score down. `
+        + `Read at ${conf}%, below the ${thr}% you've set for filing without a check, so it's waiting for you.`
+      : `Nothing was flagged — this was read at ${conf}%, ${thr - conf <= 5 ? 'just below' : 'below'} the ${thr}% you've set for `
+        + 'filing without a check, so it\'s waiting for you.';
     cue  = `Read at ${conf}% · your setting ${thr}%`;
-    hint = `If documents like this are consistently right, lower the threshold in Settings → Processing.`;
+    hint = _issuerEmpty
+      ? 'Filling it in usually fixes this — type the company name, or use ⊕ to teach where it sits.'
+      : `If documents like this are consistently right, lower the auto-file bar in Settings → Processing.`;
   } else {
     lead = 'Nothing was flagged on this document — check the values and confirm to file it.';
     cue  = 'Ready to file';
@@ -4913,7 +4923,12 @@ document.getElementById('btn-delete-all-review').addEventListener('click', async
   if (!res?.success) { showToast(res?.error || 'Delete failed.', 'err'); return; }
   const hadCurrent = queue.some(d => d.id === currentDoc?.id);
   queue = [];
-  if (hadCurrent) { currentDoc = null; clearDocPanel(); }
+  if (hadCurrent) {
+    currentDoc = null;
+    // A delete is not a review — the emptied panel says what actually happened (Chris r5).
+    // Set the one-shot BEFORE renderQueueList: its empty branch performs the clear.
+    _placeholderMsg = `Queue cleared — ${res.deleted} document${res.deleted === 1 ? '' : 's'} moved to the recycle bin. You can bring them back from Search → Recycle bin.`;
+  }
   updateTabCounts();
   renderQueueList();
   window.docusnap.notifyReviewComplete();
@@ -5891,13 +5906,13 @@ document.getElementById('btn-reprocess').addEventListener('click', async (e) => 
     btn.style.borderColor = 'var(--ok)';
     setTimeout(() => {
       btn.disabled = false;
-      btn.innerHTML = '&#9654;&#9654; Reprocess with Learned Data';
+      btn.innerHTML = '&#9654;&#9654; Reprocess';
       btn.style.color = '';
       btn.style.borderColor = '';
     }, 3000);
   } else {
     btn.disabled = false;
-    btn.innerHTML = '&#9654;&#9654; Reprocess with Learned Data';
+    btn.innerHTML = '&#9654;&#9654; Reprocess';
     btn.style.color = 'var(--err)';
     setTimeout(() => { btn.style.color = ''; }, 2000);
     // Surface WHY (e.g. "A reprocess is already running") instead of a silent red flash.
@@ -6202,6 +6217,12 @@ document.getElementById('split-mode').addEventListener('change', () => {
 });
 
 document.getElementById('btn-split-pdf').addEventListener('click', () => {
+  // 1-page guard (Chris r5 card 7): a valid split of a 1-pager "succeeds" — it deletes the
+  // original and re-imports an identical doc behind the "permanently removed" warning.
+  // STRICT === 1: pages array is authoritative when loaded; page_count fallback is
+  // NULL-tolerant (pre-mig-37 unknown must never block).
+  const _pc = (Array.isArray(pageImages) && pageImages.length) ? pageImages.length : currentDoc?.page_count;
+  if (_pc === 1) { showToast('This document is only one page — there\'s nothing to split.', 'warn'); return; }
   const bar = document.getElementById('split-bar');
   bar.style.display = 'flex';
   document.getElementById('split-mode').value = 'ranges';
@@ -6227,7 +6248,12 @@ async function doSplitPdf() {
   } else {
     const input = document.getElementById('split-ranges-input');
     ranges = input.value.trim();
-    if (!ranges) { input.focus(); return; }
+    if (!ranges) {
+      // Never a silent no-op after a destructive-sounding warning (Chris r5 card 7).
+      showToast('Type a page range first — e.g. 1-2,3.', 'warn');
+      input.focus();
+      return;
+    }
   }
 
   const filePath  = currentDoc.folder_path + '\\' + currentDoc.original_filename;
@@ -6269,6 +6295,7 @@ document.getElementById('split-ranges-input').addEventListener('keydown', (e) =>
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+let _placeholderMsg = null;   // one-shot override for the cleared-panel message (cause-aware)
 function clearDocPanel() {
   _clearPreviewState();
   const _rsBtn = document.getElementById('btn-reprocess-supplier');
@@ -6276,7 +6303,11 @@ function clearDocPanel() {
   docImgWrap.style.display = 'none';
   const ph = document.getElementById('doc-placeholder');
   ph.style.display = '';
-  ph.textContent   = 'All documents reviewed ✓';
+  // Per-cause placeholder (Chris r5 card 6): "All documents reviewed ✓" was shown for EVERY
+  // road to an empty queue — including a Delete All, which is not a review. Callers with a
+  // different truth pass it; the reviewed-it-all default stays for everyone else.
+  ph.textContent   = _placeholderMsg || 'All documents reviewed ✓';
+  _placeholderMsg  = null;
   document.getElementById('doc-name').textContent = '—';
   document.getElementById('fields-scroll').innerHTML = '';
   document.getElementById('doctype-select').value = '';

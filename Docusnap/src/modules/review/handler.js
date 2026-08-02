@@ -752,7 +752,13 @@ function register(ctx) {
   });
 
   // Recycle bin: list, restore, and permanently remove deleted documents.
-  ipcMain.handle('get-deleted-queue', () => { requireRole('admin', 'edit'); return documents.getDeletedQueue(getDb()); });
+  // Same de-pathing projection as the search rows — the bin renders in the SAME window
+  // (getDeletedQueue is SELECT d.*; the search renderer is its only consumer).
+  ipcMain.handle('get-deleted-queue', () => {
+    requireRole('admin', 'edit');
+    const { projectSearchRow } = require('../../services/searchService');
+    return documents.getDeletedQueue(getDb()).map(projectSearchRow);
+  });
 
   ipcMain.handle('restore-document', (_e, docId) => {
     requireRole('admin', 'edit');

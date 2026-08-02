@@ -20,8 +20,11 @@
 
   function fetchThumb(doc) {
     if (cache.has(doc.id)) return cache.get(doc.id);
-    const p = (typeof api.getDocumentThumbnail === 'function' && doc.folder_path && doc.original_filename)
-      ? api.getDocumentThumbnail(doc.id, doc.folder_path, doc.original_filename).catch(() => null)
+    // Guard on the ID only — the handler resolves the file server-side and ignores any
+    // client paths (de-pathed search rows carry none; Review/teach rows still may, and
+    // passing them stays harmless).
+    const p = (typeof api.getDocumentThumbnail === 'function' && doc.id)
+      ? api.getDocumentThumbnail(doc.id, doc.folder_path || null, doc.original_filename || null).catch(() => null)
       : Promise.resolve(null);
     cache.set(doc.id, p);
     return p;

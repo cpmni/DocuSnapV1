@@ -14,7 +14,7 @@ function renderPreviewFields(doc) {
     const w   = Math.max(4, Math.min(100, doc.overall_confidence));
     const band = document.createElement('div');
     band.className = `pf-confband ${lvl}`;
-    band.innerHTML = `<span class="pf-label">Extraction confidence</span>
+    band.innerHTML = `<span class="pf-label">Reading confidence</span>
       <span class="cb-meter"><i style="width:${w}%"></i></span><span class="cb-val">${doc.overall_confidence}%</span>`;
     scroll.appendChild(band);
   }
@@ -168,10 +168,10 @@ async function selectDoc(doc) {
   renderPreviewFields({ ...doc, ...(full || {}) });
   window.SearchActions.renderActions(doc);
 
-  const { folderPath, filename } = _fileArgs(doc);
-  s.currentPages = (folderPath && filename)
-    ? await window.docusnap.getDocumentPages(doc.id, folderPath, filename)
-    : [];
+  // DE-PATHED (owner 2026-08-02): rows no longer carry paths; the pages handler always
+  // resolved server-side from the doc row anyway (client args were decorative), so fetch
+  // by docId alone — an unresolvable file simply yields [].
+  s.currentPages = await window.docusnap.getDocumentPages(doc.id, null, null);
   s.currentPage = 0;
 
   if (s.currentPages.length > 0) {
@@ -183,12 +183,4 @@ async function selectDoc(doc) {
   }
 }
 
-function _fileArgs(doc) {
-  if (doc.status === 'confirmed' && doc.stored_path && doc.stored_filename) {
-    const sep = Math.max(doc.stored_path.lastIndexOf('\\'), doc.stored_path.lastIndexOf('/'));
-    return { folderPath: doc.stored_path.substring(0, sep), filename: doc.stored_filename };
-  }
-  return { folderPath: doc.folder_path, filename: doc.original_filename };
-}
-
-window.SearchPreview = { selectDoc, renderPreviewFields, initPageNav, fileArgs: _fileArgs };
+window.SearchPreview = { selectDoc, renderPreviewFields, initPageNav };
