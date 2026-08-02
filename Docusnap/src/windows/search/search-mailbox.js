@@ -40,7 +40,7 @@ function setBox(box) {
 async function render() {
   const scroll = document.getElementById('results-scroll');
   const empty  = document.getElementById('results-empty');
-  scroll.querySelectorAll('.section-header, .result-item').forEach(el => el.remove());
+  scroll.querySelectorAll('.section-header, .result-item, .section-capped-note').forEach(el => el.remove());   // capped-note too — a leftover "first 200 matches" line above a 4-item Inbox (Chris r4)
   let routes = [];
   try { routes = await window.docusnap.workflow[_box](); } catch { routes = []; }
   if (!routes.length) { empty.style.display = ''; empty.textContent = `Nothing in ${_box}`; return; }

@@ -974,6 +974,57 @@ app.whenReady().then(() => {
   logger.init(logFile, fs);
   diaglog.init(app);   // deep diagnostic log target (enabled lazily when the flag is on)
 
+  // ── Diagnostic completeness (owner ask 2026-08-02: "check log → know the problem") ──────
+  // Four always-on, zero-behaviour-change taps. Everything below is log-only and guarded.
+  // 1. STARTUP CONTEXT BLOCK — versions, armed kill-switch envs, key settings — so every
+  //    later line has its context without asking the owner what state the app was in.
+  try {
+    const pkg = require('../package.json');
+    logger.log(`startup: ScanFinder ${pkg.version}${pkg.buildRev ? ` (${pkg.buildRev})` : ''} · electron ${process.versions.electron} · node ${process.versions.node} · packaged=${app.isPackaged}`);
+    const armed = Object.keys(process.env)
+      .filter(k => /^(ANCHOR_|SCOPE_|DIGIT_|REEXTRACT_|CANDIDATE_|REG_|TEMPLATE_|PREFIX_|DATE_IN_|REF_LENGTH|BLIND_|DOCUSNAP_|SNAP_|NAME_|TYPE_|HEADING_|GATE_|CROSSCHECK_|SUPPLIER_|LETTERHEAD_|WORKFLOW_)/.test(k))
+      .map(k => `${k}=${process.env[k]}`);
+    if (armed.length) logger.log(`startup: armed env switches: ${armed.join(' ')}`);
+    try {
+      const learning = require('../database/modules/learning');
+      const db = getDb();
+      const snap = ['processing_mode', 'ocr_dpi', 'auto_file_threshold', 'critical_field_conf_floor',
+                    'scope_sweep_enabled', 'auto_rotate_enabled', 'registration_enabled',
+                    'born_digital_enabled', 'diagnostic_logging', 'auto_file_enabled']
+        .map(k => `${k}=${learning.getSetting(db, k, '(default)')}`).join(' ');
+      const mig = db.prepare('SELECT MAX(version) v FROM migrations').get();
+      logger.log(`startup: settings: ${snap} · migrations=${mig && mig.v}`);
+    } catch (e) { logger.warn(`startup settings snapshot failed: ${e.message}`); }
+  } catch { /* context block is best-effort */ }
+  // 2. MAIN-PROCESS crash visibility — MONITOR hooks only (default exit/warning semantics
+  //    are preserved exactly; these never swallow anything).
+  process.on('uncaughtExceptionMonitor', (e) => { try { logger.err(`uncaughtException: ${e && (e.stack || e.message || e)}`); } catch {} });
+  process.on('unhandledRejection', (r) => { try { logger.err(`unhandledRejection: ${r && (r.stack || r.message || r)}`); } catch {} });
+  // 3. IPC failure visibility — every ipcMain.handle registered after this point logs its
+  //    thrown errors (message the renderer already received, now also in the log) and
+  //    RETHROWS unchanged, so behaviour is byte-identical.
+  try {
+    const _origHandle = ipcMain.handle.bind(ipcMain);
+    ipcMain.handle = (channel, fn) => _origHandle(channel, async (...args) => {
+      try { return await fn(...args); }
+      catch (e) { try { logger.err(`ipc ${channel}: ${e && (e.stack || e.message || e)}`); } catch {} throw e; }
+    });
+  } catch { /* wrap is best-effort */ }
+  // 4. RENDERER error sink — preload forwards window errors/unhandled rejections here (the
+  //    "screenshot the red text" class now lands in the log by itself). Per-sender cap so a
+  //    render-loop error can't flood the file.
+  const _rendererErrCount = new Map();
+  ipcMain.on('renderer-error', (e, info) => {
+    try {
+      const id = e.sender.id;
+      const n = (_rendererErrCount.get(id) || 0) + 1;
+      _rendererErrCount.set(id, n);
+      if (n > 50) return;                                   // cap per window per session
+      const where = (info && info.href ? String(info.href).split('/').slice(-2).join('/') : 'unknown');
+      logger.err(`renderer[${where}]: ${info && info.message}${info && info.stack ? `\n${String(info.stack).slice(0, 1200)}` : ''}${n === 50 ? ' (further errors from this window suppressed)' : ''}`);
+    } catch { /* sink must never throw */ }
+  });
+
   // Best-effort: clean up any crash-orphaned managed import copies. Never blocks
   // startup (fully guarded inside the helper).
   sweepInboxOrphans();

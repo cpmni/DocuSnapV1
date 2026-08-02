@@ -150,7 +150,13 @@ function _decisionBar(route) {
   const acts = document.createElement('div'); acts.className = 'wf-acts'; wrap.appendChild(acts);
   const decide = (decision) => {
     const n = note ? note.value.trim() : '';
-    if (decision === 'reject' && !n) { note.focus(); return; }
+    if (decision === 'reject' && !n) {
+      // NEVER a silent no-op (Chris r4 — "the Reject button silently does nothing"): the
+      // note is required for a rejection, so SAY so where the user is looking.
+      _err(wrap, 'Add a short note first — the sender needs to know why it was rejected.');
+      note.focus();
+      return;
+    }
     _run(window.docusnap.workflow.resolve(route.id, decision, n || null, route.version));
   };
 

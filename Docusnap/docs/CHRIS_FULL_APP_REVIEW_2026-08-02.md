@@ -355,3 +355,57 @@ unprompted") · "Repair learning…" FIXED ("makes it safe to press just to look
 Residual niceties he named (owner's list): Document-Actions button order (Open File first,
 Delete further away) · home card order or "since 1 Aug" label · "on the last pass" wording
 (already changed to "in the last run").
+
+
+---
+
+# Round 4 — the workflow feature (send-for-approval / Mailbox), same night
+
+> The owner flipped the pre-release WORKFLOW feature on (`WORKFLOW_FEATURE_ENABLED=true`,
+> seats already licensed) and sanctioned a hands-on run: Chris routed documents to himself,
+> approved, acknowledged, recalled, and attempted a rejection. Saved verbatim below.
+> Post-round: his #1 card (dead Reject) was root-caused — an empty rejection note SILENTLY
+> no-ops (`search-workflow.js` decide(): `if (reject && !note) return;` with the requirement
+> hidden in placeholder text) — and fixed with a visible inline error; his #7 (the search
+> cap-note above the Mailbox) was the same selective-clear class as round 3 and is fixed.
+> The DESIGN cards (approval record on the document, silent completions, mailbox row content,
+> "Assigned" empty-state, Route→Send wording, sent-date display, due dates/nudges) are
+> NOT implemented — owner vets.
+
+## TL;DR (his)
+1. The boss's "Reject" button does nothing — no message, no change; the sender is never told.
+2. Approve / "Got it" / Recall all work but finish in silence, and afterwards the document
+   carries no visible record of who approved it or when.
+3. The good bones are genuinely good: the note travels word for word, Recall really works,
+   and the Home card counts both directions.
+
+## His walkthrough (condensed quotes)
+- Home: **"WAITING ON YOU / 0 waiting for you / Open Mailbox"** — "sensible, I'd spot that."
+- Panel: **"ROUTE FOR APPROVAL / FOR INFORMATION"** with person/kind pickers, "Note
+  (optional)", **"Route…"**. His note "Please approve - over 500 pounds" arrived quoted
+  word-for-word in the receiving banner — "like a post-it stapled to the invoice."
+- Mailbox: **Inbox / Sent / Assigned / Completed**; rows like "Saltmarsh Seafoods · pending ·
+  Approval · from chris · 20-02-2026" — no reference, and the date is the document's, not
+  the send. Approve/Got-it: silent vanish, panel resets. **Recall: "exactly the undo I
+  wanted, and it leaves a paper trail"** (row flips to "recalled").
+- **Reject: pressed twice, dead-centre — nothing.** (Root-caused post-round, above.)
+- "View stamped copy" opened outside his test chair — unverified.
+- The round-3 cap-note sentence sat above his four-item Inbox (fixed).
+
+## His cards, ranked: 1 dead Reject (fixed) · 2 no approval record on the document ·
+3 silent completions + "Route…" promises a step it doesn't have · 4 mailbox rows lack
+reference/note/sent-date · 5 "Route" jargon + sender-side "Approve" reads backwards
+(proposes "SEND TO A COLLEAGUE" / "Needs their approval" / "Sent to you by…") ·
+6 "Assigned" pile unexplained · 7 cap-note leak (fixed).
+
+## His verdict
+"**Would our office USE the send-for-approval feature? Not yet — but we'd want to.** Yes to
+the idea… No to this build, because the boss's Reject does nothing and an approval leaves no
+dated, named record on the document — the two things paper does give us (a scribbled 'no,
+because…' and initials with a date). Fix those two and I'd switch the same week. A due date
+('needs an answer by Friday') and a gentle nudge for things sitting 'pending' would complete
+what paper never managed."
+
+*(Driver scripts: scratchpad chris-driver/r4_*.js; the Reject repro is r4_reject.js /
+r4_reject2.js — real mouse click, no console errors, no state change.)*
+

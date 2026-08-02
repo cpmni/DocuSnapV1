@@ -14,6 +14,21 @@ try {
   window.addEventListener('drop', (e) => e.preventDefault(), false);
 } catch { /* window unavailable in an odd context — the main-process guard still applies */ }
 
+// Diagnostic completeness (2026-08-02): forward every window's uncaught errors and unhandled
+// promise rejections to the main-process log, so "the red text in a screenshot" is in
+// processing.log by itself. Fire-and-forget send; main caps per-window volume. The preload
+// runs in every window, so no per-window wiring is needed. Never throws.
+try {
+  const _fwd = (message, stack) => {
+    try { ipcRenderer.send('renderer-error', { message: String(message).slice(0, 500), stack: stack ? String(stack).slice(0, 1500) : null, href: location && location.href }); } catch {}
+  };
+  window.addEventListener('error', (e) => _fwd(e.message || e.type, e.error && e.error.stack), true);
+  window.addEventListener('unhandledrejection', (e) => {
+    const r = e.reason;
+    _fwd(`unhandledrejection: ${r && (r.message || r)}`, r && r.stack);
+  });
+} catch { /* diagnostics must never break a window */ }
+
 contextBridge.exposeInMainWorld('docusnap', {
 
   // ── Authentication ───────────────────────────────────────────────────────────
