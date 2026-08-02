@@ -118,6 +118,46 @@ small print · Search speed (20 seconds to the March Thornbury invoice).
 Round-2 citation spot-checks: 3/3 verified. His screenshot-capture driver note is in the
 report's footer (CDP `Page.captureScreenshot` hangs on this build — worth a look someday).
 
+## 5 · Chris round-2 → FIXES IMPLEMENTED (`ac2d924`, second overnight pass, panel-vetted)
+Owner directive: each Chris suggestion agent-vetted (bob CX + eric mechanism), agreed ones
+implemented, ambiguity flagged. Everything live-verified over CDP + all contract suites green
++ a NEW pin (test_no_global_collisions.js). Two REAL bugs found under his cards:
+- **The Search Document-Actions panel was DEAD** (global `_btn` collision between
+  search-actions.js and search-workflow.js — classic scripts, one scope, last-loads-wins).
+  "Open in Explorer / Open File / Send back / Delete" existed all along and rendered nothing.
+  Fixed by rename + pinned; the pin also caught a second latent dupe (`init` ×2).
+- **The Review empty-state messages never displayed** (`style.display=''` vs stylesheet
+  `display:none`) — "✓ All reviewed" and the deferred message were invisible since birth.
+Plus: five delete dialogs were FALSE (claimed permanent; actually recycle-bin soft-delete) —
+now truthful; "Fix this type…" tooltip falsely claimed reset (it opens Learning Repair) —
+relabelled "Repair learning…"; the full copy batch (card 5 wording, tooltips, teach de-jargon,
+split-PDF honesty, About Esc, "last 7 days" tiles, search cap note, guide residues).
+
+**F1 RESOLVED by the Oracle** (was flagged as an advisor split): eric wanted the right pane
+cleared on the empty Deferred tab; bob ruled keep-it; the Oracle's final pass sided with bob
+("keep-the-pane is right — no further action"). Implemented: the empty-list message only; the
+pane stays. Override any time if you disagree — one small renderer change either way.
+
+**Third overnight commit `334e004` — Oracle conditions + Chris round 3:**
+- Oracle SIGNED-W/COND on the batch; conditions applied same night: C1 the "waiting for your
+  OK" badge suffix is status-gated (it was contradicting the auto-filed bar's "nothing is
+  changed" on the same screen — pinned in test_queue_badge_copy.js) · C2 the _deleteQueue
+  comment no longer describes the old HARD delete over a soft-delete body · A1 the review
+  action block (incl. Delete All Review) hides in the auto-filed view (it showed the wrong
+  count over a CONFIRMED list) · A3 the collision pin now scans shared/ scripts too.
+- **Chris round 3 (appended to his MD): 8/9 FIXED, verdict "yes, nervously" → "yes".** His one
+  new catch was REAL — my cap note stacked across searches + went stale (renderResults' clear
+  is selective; the new class wasn't in the removal selector). Fixed + live-verified (1 note
+  capped / 0 under cap / no stacking). Also per his notes: "Preview OCR" → "Preview the read",
+  bar copy "in the last run". His residual niceties (button order, home-card order at
+  month-start) are on your list, not built.
+**Noted, not actioned (for the backlog):** Print/Email buttons in Search (feature, not copy) ·
+a true "200 of 481" count needs a deliberate response-contract evolution (eric's recipe
+recorded in the commit) · the two near-identical confidence sliders in Settings → Processing
+(Chris: "confusable twins" — a rename/regroup design question) · split-PDF orphans the
+userData working copy (eric side-find, minor disk leak) · badge-supersede on held fields was
+REJECTED by both advisors (would relabel a true "High" read by doc-level hold state).
+
 ## Verification state (honest)
 - Chris cards: parse clean, no NUL bytes, all 7 review contract suites green. NOT eyeballed in
   the live UI overnight (renderer loads on your next Review-window open).

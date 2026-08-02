@@ -329,3 +329,29 @@ I'm one made-up bloke, not a study — don't let anyone report this as "users fo
 ---
 
 *Driver note for the owner: `chromium.connectOverCDP('http://localhost:9222')` connects and reads/clicks fine, but every screenshot route (`page.screenshot`, `Page.captureScreenshot` with and without `fromSurface`/`captureBeyondViewport`, and `Page.startScreencast`) hangs with no frame produced, even though the page reports `visibilityState: "visible"` at 1084×711. `Browser.getWindowForTarget` isn't available in this build. This whole review was done off the live DOM instead — every quote above is text that was actually rendered and visible on screen at the time.*
+
+---
+
+# Round 3 — verification walk (same night, after the fixes landed)
+
+> Appended verbatim. Chris re-walked the nine changed surfaces against the LIVE app
+> (post-`ac2d924`). His one new catch (the stacking search cap-note — a bug in that
+> night's own fix) was confirmed, fixed and live-verified in `334e004`.
+
+**TL;DR (his):** eight of nine fixes read right; the new Search count line stacked and went
+stale (fixed since); the week/month card is honest now but still makes you think at month-start.
+
+Item verdicts: Search action buttons FIXED (found in seconds — "accountant-on-the-phone test
+passed") · cap note NEW-PROBLEM (since fixed) · Deferred empty message FIXED · all three hovers
+FIXED ("tells me the worst case AND the way back before I ever click") · green stripe FIXED
+(he clicked it this time — "the promise held") · reason panel FIXED ("that's one story, and it
+blames my setting, not me") · home card BETTER-BUT (order/labels at month-start) · About Esc
+FIXED · Split warning FIXED ("the most honest sentence in the app — it told me the bad part
+unprompted") · "Repair learning…" FIXED ("makes it safe to press just to look").
+
+**His verdict moved:** "Would I keep using this after two weeks? **Yes** — last round it was
+'yes, nervously'; now the app answers my fears before I ask."
+
+Residual niceties he named (owner's list): Document-Actions button order (Open File first,
+Delete further away) · home card order or "since 1 Aug" label · "on the last pass" wording
+(already changed to "in the last run").
