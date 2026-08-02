@@ -170,22 +170,24 @@ body.mailbox-mode .lead-wrap { display: none !important; }
   border-color: rgba(59,125,240,.22);
 }
 
-/* ── Honest load / error state for the preview (shared with the spinner) ─────── */
-#preview-error {
-  flex: 1;
+/* ── Honest load / error state for the preview (rendered into the spinner host) ─
+   Replaces the eternal spinner when a document's detail/pages fetch fails — the
+   silent-failure class Chris keeps catching. */
+.pv-load-error {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  padding: 32px 24px;
+  padding: 24px;
   text-align: center;
   color: var(--muted);
   font-size: 13px;
+  max-width: 44ch;
 }
-#preview-error .pe-title { font-weight: 600; color: var(--text); }
-#preview-error .pe-detail { font-size: 11px; font-family: var(--mono); color: var(--muted); max-width: 40ch; word-break: break-word; }
-#preview-error .pe-retry {
+.pv-load-error .pe-title { font-weight: 600; color: var(--text); font-size: 14px; }
+.pv-load-error .pe-detail { font-size: 11px; font-family: var(--mono); color: var(--muted); word-break: break-word; }
+.pv-load-error .pe-retry {
   margin-top: 4px;
   padding: 7px 16px;
   border-radius: var(--r-pill);
@@ -196,4 +198,4 @@ body.mailbox-mode .lead-wrap { display: none !important; }
   font-weight: 600;
   cursor: pointer;
 }
-#preview-error .pe-retry:hover { border-color: var(--accent); color: var(--accent); }
+.pv-load-error .pe-retry:hover { border-color: var(--accent); color: var(--accent); }

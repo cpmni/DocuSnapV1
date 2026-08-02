@@ -98,11 +98,13 @@ function _routeItem(r) {
     <div class="result-filename wf-reason" title="${escHtml(r.resolution_comment)}">Reason: ${escHtml(r.resolution_comment)}</div>` : ''}
     <div class="result-footer"><span class="result-date">${escHtml(sentWord)} ${escHtml(_wfDate(r.created_at))}</span>${rowActs}${
       r.has_stamped ? `<button class="wf-stamp-link wf-stamp" type="button">View stamped copy</button>` : ''}</div>`;
-  el.addEventListener('click', async () => {
+  el.addEventListener('click', () => {
     document.querySelectorAll('.result-item').forEach(n => n.classList.remove('active'));
     el.classList.add('active');
-    const full = await window.docusnap.getDocumentDetail(r.document_id);   // PROJECTED (Document-detail DTO)
-    if (full) window.SearchPreview.selectDoc(full);
+    // selectDoc fetches the detail itself (guarded) and shows an honest error on failure —
+    // don't pre-fetch here (it was an unguarded double fetch: a rejection left the row
+    // highlighted with nothing loading).
+    window.SearchPreview.selectDoc({ id: r.document_id });
   });
   // Row buttons must never trigger the row's open-document click (stamp-link precedent).
   // SECURE VIEWER (owner 2026-08-02): the stamped copy opens in the in-app viewer by ROUTE

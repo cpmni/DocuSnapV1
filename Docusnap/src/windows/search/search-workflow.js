@@ -304,13 +304,14 @@ function recallRoute(route) {
 }
 // "Send again" on a REJECTED sent route: load the doc into the preview; the next action
 // panel render consumes the one-shot prefill (original recipient + action + lineage).
-async function queueResubmit(route) {
+function queueResubmit(route) {
   _pendingResubmit = {
     docId: route.document_id, toUsername: route.to_username,
     actionRequired: route.action_required, resubmitOf: route.id,
   };
-  const full = await window.docusnap.getDocumentDetail(route.document_id);   // PROJECTED (Document-detail DTO)
-  if (full) window.SearchPreview.selectDoc(full);
+  // selectDoc fetches the detail itself (guarded, honest error on failure) — the old
+  // unguarded pre-fetch left the doc un-loaded with no feedback if it rejected.
+  window.SearchPreview.selectDoc({ id: route.document_id });
 }
 
 window.SearchWorkflow = { init, refresh, recallRoute, queueResubmit };

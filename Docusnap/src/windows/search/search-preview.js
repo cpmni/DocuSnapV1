@@ -147,6 +147,8 @@ function initPageNav() {
 async function selectDoc(doc) {
   const s = window.SearchState;
   s.selectedDoc = doc;
+  const mine = doc;   // stale-selection guard: a newer click reassigns s.selectedDoc, so a
+                      // late-resolving fetch for THIS doc must not clobber the newer render.
 
   document.querySelectorAll('.result-item').forEach(el =>
     el.classList.toggle('active', parseInt(el.dataset.id) === doc.id));
@@ -161,26 +163,59 @@ async function selectDoc(doc) {
   ph.innerHTML       = '<div class="spinner"></div>';
   resetPreviewView();                        // each new document opens at 100%, un-panned
 
-  const full = await window.docusnap.getDocumentDetail(doc.id);   // PROJECTED — no paths/ocr_text (Document-detail DTO)
-  // `full` (getWithExtractions → getById) carries the extractions but NOT type_name (no
-  // join to document_types), while the search-result `doc` DOES — so merge, keeping doc's
-  // type_name/type_slug (otherwise the preview "Type" always shows "-").
-  renderPreviewFields({ ...doc, ...(full || {}) });
-  window.SearchActions.renderActions(doc);
+  // The fetch sequence is wrapped so ANY failure (a missing IPC handler after a stale-main
+  // update, a DB hiccup, the doc deleted mid-click, an IPC error) shows an honest state
+  // instead of leaving the spinner forever — the silent-failure class Chris keeps catching.
+  try {
+    const full = await window.docusnap.getDocumentDetail(doc.id);   // PROJECTED — no paths/ocr_text (Document-detail DTO)
+    if (s.selectedDoc !== mine) return;   // a newer selection now owns the preview pane
+    // `full` (getWithExtractions → getById) carries the extractions but NOT type_name (no
+    // join to document_types), while the search-result `doc` DOES — so merge, keeping doc's
+    // type_name/type_slug (otherwise the preview "Type" always shows "-").
+    renderPreviewFields({ ...doc, ...(full || {}) });
+    window.SearchActions.renderActions(doc);
 
-  // DE-PATHED (owner 2026-08-02): rows no longer carry paths; the pages handler always
-  // resolved server-side from the doc row anyway (client args were decorative), so fetch
-  // by docId alone — an unresolvable file simply yields [].
-  s.currentPages = await window.docusnap.getDocumentPages(doc.id, null, null);
-  s.currentPage = 0;
+    // DE-PATHED (owner 2026-08-02): rows no longer carry paths; the pages handler always
+    // resolved server-side from the doc row anyway (client args were decorative), so fetch
+    // by docId alone — an unresolvable file simply yields [].
+    s.currentPages = await window.docusnap.getDocumentPages(doc.id, null, null);
+    if (s.selectedDoc !== mine) return;
+    s.currentPage = 0;
 
-  if (s.currentPages.length > 0) {
-    _showPage(0);
-  } else {
-    ph.style.display = '';
-    ph.innerHTML = 'No preview available';
-    document.getElementById('page-nav').style.display = 'none';
+    if (s.currentPages.length > 0) {
+      _showPage(0);
+    } else {
+      ph.style.display = '';
+      ph.innerHTML = 'No preview available';
+      document.getElementById('page-nav').style.display = 'none';
+    }
+  } catch (err) {
+    if (s.selectedDoc !== mine) return;   // don't overwrite a newer selection's state
+    _showPreviewLoadError(ph, doc, err);
   }
+}
+
+// Honest, recoverable failure state in place of the eternal spinner. A missing IPC handler
+// is the stale-main class (main-process code updated, app not yet restarted) — say so
+// plainly; everything else gets a generic retry. Always falls back to the generic message
+// so a changed Electron error string can never reintroduce a blank/misleading pane.
+function _showPreviewLoadError(ph, doc, err) {
+  const msg = String((err && err.message) || err || '');
+  const staleMain = /No handler registered/i.test(msg);
+  const title  = staleMain ? 'The app was updated — restart to finish'
+                           : "Couldn't load this document";
+  const detail = staleMain ? 'Close and reopen Scan Finder to load the latest update.'
+                           : (msg || 'Try again, or reopen Search.');
+  ph.style.display = '';
+  ph.innerHTML = `<div class="pv-load-error">
+      <div class="pe-title">${escHtml(title)}</div>
+      <div class="pe-detail">${escHtml(detail)}</div>
+      <button type="button" class="pe-retry">Try again</button>
+    </div>`;
+  document.getElementById('preview-img-wrap').style.display = 'none';
+  document.getElementById('page-nav').style.display = 'none';
+  const retry = ph.querySelector('.pe-retry');
+  if (retry) retry.addEventListener('click', () => selectDoc(doc));
 }
 
 window.SearchPreview = { selectDoc, renderPreviewFields, initPageNav };
