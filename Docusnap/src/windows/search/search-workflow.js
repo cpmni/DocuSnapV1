@@ -237,7 +237,20 @@ function _decisionBar(route) {
       _run(window.docusnap.workflow.resolve(route.id, 'acknowledge', null, route.version),
            'Noted — moved to Completed.')));
   } else if (_canDecide()) {
-    acts.appendChild(_wfBtn('Approve', true, () => decide('approve')));
+    // TWO-STEP ARM on Approve (owner-approved, Chris r5 card 3 / bob's ruling): an approval
+    // is permanent, audited, and stamped with your name — a mis-click has no undo. Same
+    // inline-arm idiom as Cancel-route above (NO native confirm() — focus-desync site):
+    // first click arms with the consequence spelled out, ~5s auto-revert, second click
+    // commits. "Got it" (acknowledge) stays one-click; Reject already has the note friction.
+    const approveBtn = _wfBtn('Approve', true, () => {
+      if (approveBtn.dataset.armed) { decide('approve'); return; }
+      approveBtn.dataset.armed = '1';
+      approveBtn.textContent = 'Confirm — approve and stamp with your name';
+      setTimeout(() => {
+        if (approveBtn.isConnected) { delete approveBtn.dataset.armed; approveBtn.textContent = 'Approve'; }
+      }, 5000);
+    });
+    acts.appendChild(approveBtn);
     acts.appendChild(_wfBtn('Reject', false, () => decide('reject')));
   }
   // Disposition: route back to the sender or on to another user (reuses the assign form,
