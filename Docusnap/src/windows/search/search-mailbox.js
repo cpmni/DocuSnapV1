@@ -101,7 +101,7 @@ function _routeItem(r) {
   el.addEventListener('click', async () => {
     document.querySelectorAll('.result-item').forEach(n => n.classList.remove('active'));
     el.classList.add('active');
-    const full = await window.docusnap.getDocumentWithExtractions(r.document_id);
+    const full = await window.docusnap.getDocumentDetail(r.document_id);   // PROJECTED (Document-detail DTO)
     if (full) window.SearchPreview.selectDoc(full);
   });
   // Row buttons must never trigger the row's open-document click (stamp-link precedent).

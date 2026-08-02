@@ -410,6 +410,28 @@ as the no-locate spare.
   strengthens the digit-count PREFER arm's revival case (correct value passed the length profile the
   winner failed, in-band, twice).
 
+### Custom approval stamp: placement, resize, and the decision note ON the stamp — OWNER 2026-08-02
+**Owner:** "can we make the approval stamp custom in that you choose where it goes and can
+resize it to fit a blank area on the page. Can we also add the notes from the approval to
+the stamp?"
+**Today:** `src/services/pdfStamp.js` `stampWorkflowDecision` draws a FIXED stamp (position/
+size hardcoded) on the decision copy; the resolution note (`resolution_comment`) is recorded
+on the route + shown in History/Sent but not printed on the stamp.
+**Shape of the work:**
+1. **Note on the stamp** — cheap first slice: render `resolution_comment` (wrapped, truncated
+   ~2-3 lines) under the APPROVED/REJECTED / By / Date block in pdfStamp. Escape/measure text;
+   long notes elide with "…" (full note stays on the route + History).
+2. **Placement + resize** — an interactive step at decision time (or a per-install default in
+   Settings → a "stamp position" picker): show page 1 in the stamped-viewer-style pane, drag
+   the stamp rectangle to a blank area, resize by corner; persist per-install default
+   (settings key) + optional per-decision override. pdfStamp takes {x,y,w,h} normalised.
+3. Consider auto-suggest: pick the largest whitespace region on page 1 (cheap raster scan)
+   as the default landing spot — "fit a blank area" without the user dragging every time.
+**Watch-outs:** the stamped file is a DERIVATIVE (original untouched) — no learning/extraction
+impact; the known wart that two approvals on one doc share a stamped path (second overwrite
+wins — eric 2026-08-02) should be fixed alongside (per-route stamped filenames); Print-Slice 2
+(stamped printing) consumes whatever pdfStamp writes, so land this before/with it.
+
 ### Core Search re-skin to the detached-client design — OWNER 2026-08-02
 **Owner:** "the search dialog in the search client looks a lot more modern and graphical than
 the search feature in the core app — replicate the design of the search client in the core

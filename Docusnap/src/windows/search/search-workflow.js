@@ -309,7 +309,7 @@ async function queueResubmit(route) {
     docId: route.document_id, toUsername: route.to_username,
     actionRequired: route.action_required, resubmitOf: route.id,
   };
-  const full = await window.docusnap.getDocumentWithExtractions(route.document_id);
+  const full = await window.docusnap.getDocumentDetail(route.document_id);   // PROJECTED (Document-detail DTO)
   if (full) window.SearchPreview.selectDoc(full);
 }
 

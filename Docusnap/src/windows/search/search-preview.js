@@ -161,7 +161,7 @@ async function selectDoc(doc) {
   ph.innerHTML       = '<div class="spinner"></div>';
   resetPreviewView();                        // each new document opens at 100%, un-panned
 
-  const full = await window.docusnap.getDocumentWithExtractions(doc.id);
+  const full = await window.docusnap.getDocumentDetail(doc.id);   // PROJECTED — no paths/ocr_text (Document-detail DTO)
   // `full` (getWithExtractions → getById) carries the extractions but NOT type_name (no
   // join to document_types), while the search-result `doc` DOES — so merge, keeping doc's
   // type_name/type_slug (otherwise the preview "Type" always shows "-").

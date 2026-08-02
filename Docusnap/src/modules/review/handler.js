@@ -471,11 +471,15 @@ function register(ctx) {
     return { changed };
   });
 
-  // get-document-with-extractions / get-document-pages are shared with the
-  // Search window (Read Only previews filed documents there too) — gate to
-  // "any signed-in user", not a specific role.
+  // get-document-with-extractions is the FULL detail (paths + ocr_text ride along via
+  // getById SELECT *) — REVIEW-ONLY since the Document-detail DTO follow-up (owner
+  // 2026-08-02, Oracle C3): Review genuinely consumes doc.folder_path (page fetch) and
+  // doc.ocr_text (name-presence), and the Review window is admin/edit by construction.
+  // Every OTHER surface (Search preview, mailbox click, resubmit — incl. Read Only)
+  // uses the PROJECTED get-document-detail below. get-document-pages stays any-role
+  // (it returns page images, never fields or paths).
   ipcMain.handle('get-document-with-extractions', (_e, id) => {
-    const sess = requireLogin();
+    const sess = requireRole('admin', 'edit');
     const db  = getDb();
     _assertDocAccess(db, sess, id);
     // Pure data assembly (doc + extractions + resolved slug + digit-only fields)
@@ -519,6 +523,25 @@ function register(ctx) {
       }
     }
     return doc;
+  });
+
+  // PROJECTED single-document detail (the Document-detail DTO follow-up, Oracle C3): what
+  // the Search/mailbox/resubmit surfaces actually render — display fields + extractions —
+  // through the /v1 trust-boundary shape (dto.projectDocumentDetail) REUSED VERBATIM, so
+  // the desktop and wire projections cannot drift. No paths, no ocr_text, no hashes cross
+  // to those renderers on the single-doc click any more (the row surface was de-pathed in
+  // the prior slice). Same access gate + document_open audit as the full read.
+  ipcMain.handle('get-document-detail', (_e, id) => {
+    const sess = requireLogin();
+    const db = getDb();
+    _assertDocAccess(db, sess, id);
+    const doc = previewService.getDocumentDetail(db, id, { learning });
+    if (doc) {
+      logAudit(db, { action: 'document_open', target_type: 'document', target_id: id,
+        document_id: id, outcome: 'success',
+        metadata: { type: doc.type_slug || null, status: doc.status || null, via: 'detail' } });
+    }
+    return require('../../services/dto').projectDocumentDetail(doc);
   });
 
   // Renderer-driven presence refresh: the open Review window beats every ~25s so a desktop

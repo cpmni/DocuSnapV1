@@ -216,6 +216,8 @@ contextBridge.exposeInMainWorld('docusnap', {
   // desync and loses (eric, 2026-07-10).
   ensureWindowFocus:           ()        => ipcRenderer.send('ensure-window-focus', { pageHasFocus: document.hasFocus() }),
   getDocumentWithExtractions:  (id)      => ipcRenderer.invoke('get-document-with-extractions', id),
+  // Projected detail (no paths/ocr_text — the /v1 DTO shape): the Search/mailbox surfaces' read.
+  getDocumentDetail:           (id)      => ipcRenderer.invoke('get-document-detail', id),
   notifyDocClosed:             (id)      => ipcRenderer.send('notify-doc-closed', id),
   reviewHeartbeat:             (id)      => ipcRenderer.invoke('review-heartbeat', id),
   getDocumentPages:            (id, fp, fn, scale) => ipcRenderer.invoke('get-document-pages', id, fp, fn, scale),
