@@ -45,8 +45,18 @@ db.close();
 const sliceDir = fs.mkdtempSync(path.join(os.tmpdir(), 't1slice-'));
 const filesFile = w('files', [FILE]);
 const deskew = process.env.DESKEW ? ['--deskew-pages', '--deskew-min-angle', String(process.env.DESKEW_MIN || '0.5')] : [];
+// The app's reprocess passes the KNOWN template via --reprocess-manifest (basename ->
+// {known_template_id, known_doc_slug}) so Stage 0.5 applies it directly; a fresh --folder import
+// re-matches from scratch and, when the logo/fingerprint match fails, SKIPS Stage 0.5 (the
+// harness-fidelity gap). Set KNOWN_TEMPLATE to reproduce the app's reprocess faithfully.
+const known = [];
+if (process.env.KNOWN_TEMPLATE) {
+  const manifest = { [FILE]: { known_template_id: parseInt(process.env.KNOWN_TEMPLATE, 10),
+                               known_doc_slug: process.env.KNOWN_SLUG || null } };
+  known.push('--reprocess-manifest', w('manifest', manifest));
+}
 const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', FOLDER, '--files-file', filesFile,
-  '--mode', 'fast', '--tesseract', TESS, '--trace', '--slice-dir', sliceDir, ...deskew, ...snapArgs], { windowsHide: true });
+  '--mode', 'fast', '--tesseract', TESS, '--trace', '--slice-dir', sliceDir, ...deskew, ...known, ...snapArgs], { windowsHide: true });
 let out = '';
 p.stdout.on('data', d => out += d); p.stderr.on('data', () => {});
 p.on('close', () => {

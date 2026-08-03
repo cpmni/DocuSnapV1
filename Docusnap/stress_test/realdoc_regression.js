@@ -76,11 +76,16 @@ function snap(db) {
     '--config-file', CFG, '--registration', '--born-digital', '--multiline'] };
 }
 
-function runP(folder, snapArgs, files) {
+function runP(folder, snapArgs, files, manifest) {
   const N = 8; const shards = Array.from({ length: N }, () => []); files.forEach((f, i) => shards[i % N].push(f));
   const sf = shards.filter(x => x.length).map(names => w('shard', names));
+  // FAITHFUL REPROCESS (2026-08-03): pass the per-doc known template/type like the app's
+  // Reprocess All (--reprocess-manifest), so Stage 0.5 template_mapping fires on docs whose logo
+  // no longer self-matches — WITHOUT this the harness silently skips Stage 0.5 and is blind to the
+  // whole template_mapping-garble class (the Northgate PO-17039 gap). All shards share the manifest.
+  const manifestArgs = (manifest && Object.keys(manifest).length) ? ['--reprocess-manifest', w('manifest', manifest)] : [];
   const one = shardFile => new Promise(res => {
-    const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', folder, '--files-file', shardFile, '--mode', 'fast', '--tesseract', TESS, ...snapArgs], { windowsHide: true });
+    const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', folder, '--files-file', shardFile, '--mode', 'fast', '--tesseract', TESS, ...manifestArgs, ...snapArgs], { windowsHide: true });
     let out = ''; p.stdout.on('data', d => out += d); p.stderr.on('data', () => {}); p.on('close', () => res(out)); p.on('error', () => res(''));
   });
   return Promise.all(sf.map(one)).then(outs => {
@@ -96,7 +101,7 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   const nameToSlug = {}; for (const r of db.prepare('SELECT name, slug FROM document_types').all()) nameToSlug[r.name] = r.slug;
   const roles = {}; for (const r of db.prepare('SELECT slug, ref_field_key, date_field_key FROM document_types').all()) roles[r.slug] = { ref: r.ref_field_key, date: r.date_field_key };
   const slugToId = {}; for (const r of db.prepare('SELECT id, slug FROM document_types').all()) slugToId[r.slug] = r.id;
-  const conf = db.prepare(`SELECT d.id, d.supplier_name, d.reference_number, d.doc_date, d.original_filename, d.stored_path, d.working_path, dt.slug type_slug
+  const conf = db.prepare(`SELECT d.id, d.supplier_name, d.reference_number, d.doc_date, d.original_filename, d.stored_path, d.working_path, d.template_id, dt.slug type_slug
     FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id WHERE d.status = 'confirmed'`).all();
   const exByDoc = {};
   for (const e of db.prepare(`SELECT e.document_id, e.field_key, e.display_value FROM extractions e JOIN documents d ON d.id = e.document_id WHERE d.status = 'confirmed'`).all())
@@ -107,10 +112,12 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   const resolveFile = d => (d.working_path && fs.existsSync(d.working_path)) ? d.working_path
                          : (d.stored_path && fs.existsSync(d.stored_path)) ? d.stored_path : null;
   const gt = {}; const files = []; let noFile = 0; const gtOverrideSkipped = [];
+  const manifest = {};   // per-doc known template/type — makes Stage 0.5 fire faithfully (see runP)
   for (const d of conf) {
     const src = resolveFile(d); if (!src) { noFile++; continue; }
     const fname = `doc${d.id}${path.extname(src) || '.pdf'}`;
     try { fs.copyFileSync(src, path.join(RR, fname)); } catch { noFile++; continue; }
+    manifest[fname] = { known_template_id: d.template_id || null, known_doc_slug: d.type_slug || null };
     files.push(fname);
     const ex = exByDoc[d.id] || {};
     gt[fname] = { id: d.id, type_slug: d.type_slug, supplier: d.supplier_name, ref: d.reference_number, date: d.doc_date,
@@ -147,7 +154,7 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   }
   const gtOverrideN = Object.values(gt).filter(g => g._overridden).length;
   const snapObj = snap(db);
-  const res = await runP(RR, snapObj.args, files);
+  const res = await runP(RR, snapObj.args, files, manifest);
 
   const F = ['type', 'supplier', 'ref', 'date', 'total', 'subtotal'];
   const acc = {}; for (const f of F) acc[f] = { ok: 0, n: 0 };
