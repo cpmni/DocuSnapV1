@@ -936,7 +936,9 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
     # against a full-res, label-anchored inline read and prefer the fuller value. Placed
     # AFTER drift/registration so genuine drift still uses the full-res _geometric path;
     # scoped to code val_types so the free-text box-first seam (:742-750) is untouched.
-    # Off by default (TEMPLATE_INLINE_CODE_RECONCILE=1); OFF → this block is skipped.
+    # ON by default (kill TEMPLATE_INLINE_CODE_RECONCILE=0); OFF → this block is skipped. (Comment
+    # corrected 2026-08-03 per Oracle — it read "Off by default" but _INLINE_CODE_RECONCILE_ON
+    # defaults '1'. This reconcile is the Stage-0.5 garble's last review backstop; keep it ON.)
     if (abs_text and _INLINE_CODE_RECONCILE_ON and anchor_text
             and val_type in _CODE_CROSSCHECK_TYPES):
         rc = _inline_code_reconcile(page, abs_text, anchor_box, target_box, val_type,

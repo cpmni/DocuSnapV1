@@ -83,6 +83,26 @@ def _looks_unreadable_sliver(img):
         return False
 
 
+def _ink_band_height(img):
+    """The pixel HEIGHT of the crop's ink band (first inked row → last), using the SAME dark rule as
+    _looks_unreadable_sliver. Drives the STRUCT_CODE_READ cap-height upscale (2026-08-03): a wide
+    ~13px code crop otherwise reads at native height and starves Tesseract's line model ('PO'→'»0').
+    Rows with <2 dark px are ignored as speckle. Fail-safe: any error / no ink -> 0 (the caller then
+    falls back to a fixed scale)."""
+    try:
+        import numpy as np
+        a = np.asarray(img.convert('L'))
+        if a.ndim != 2 or a.size == 0:
+            return 0
+        dark = a < max(80, int(a.mean()) - 25)
+        rows = np.flatnonzero(dark.sum(axis=1) >= 2)
+        if rows.size == 0:
+            return 0
+        return int(rows[-1] - rows[0] + 1)
+    except Exception:
+        return 0
+
+
 def _ink_band_count(img):
     """Slice 1 helper: count SEPARATED horizontal ink bands (runs of inked rows split by blank
     rows). <=1 band => the crop is a single text line, so the PSM-6 multi-line re-segmentation

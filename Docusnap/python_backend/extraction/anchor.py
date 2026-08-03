@@ -2740,6 +2740,43 @@ def _clean_text_fallback(value: str | None, val_type: str | None,
     return clean_crop_segment(value, val_type)
 
 
+_STRUCT_READ_TYPES = frozenset({"alphanumeric", "reference_code", "date"})   # job_reference (spaces) excluded
+
+
+def _struct_prep(crop):
+    """STRUCT_CODE_READ (Oracle SIGN-OFF-WITH-CONDITIONS 2026-08-03, slice 1 — PREP ONLY): read a
+    tight structured code/date crop cleanly, curing the '»0-17039'/'09-06-2026' garble at the READ.
+    Three prep changes, no whitelist:
+      • CAP-HEIGHT-DRIVEN UPSCALE — a WIDE ~13px code crop gets NO upscale on the light rung
+        (_light_prep only upscales width<300px) → native-13px starvation. Scale so cap height lands
+        in Tesseract's ~30-40px comfort band (target 34), from the measured ink-band height.
+      • SYNTHETIC READ-TIME QUIET ZONE — a median-grey border (paper luminance) so the leading glyph
+        has left context + ascender/descender headroom. This is a border on the PIXELS FED to
+        Tesseract, NOT a wider crop-window — it feeds no neighbouring ink (the 007 seam distinction).
+      • NO SHARPEN — the heavy rung's Laplacian SHARPEN is what manufactures the '»' on the
+        unsupported leading glyph.
+    Deliberately NO char whitelist — that is a separately-gated slice 2: the gateless Stage-0.5
+    absolute path has no learned-shape backstop, so a whitelist could snap a mis-segmented glyph to a
+    clean-SHAPED wrong code that auto-files (Oracle seam 2). Prep-only preserves fail-toward-review:
+    a genuinely ambiguous glyph still garbles → credibility fails / the reads disagree → review."""
+    from PIL import ImageOps
+    import numpy as np
+    g = crop.convert("L")
+    try:
+        from ocr.region_core import _ink_band_height
+        ib = _ink_band_height(g)
+        scale = min(4.0, max(1.0, 34.0 / max(ib, 1)))
+    except Exception:
+        scale = 2.0                                    # fail-safe = today's heavy upscale floor
+    if scale > 1.0:
+        g = g.resize((max(1, int(g.width * scale)), max(1, int(g.height * scale))), Image.LANCZOS)
+    try:
+        bg = int(np.median(np.asarray(g)))
+    except Exception:
+        bg = 255
+    return ImageOps.expand(g, border=12, fill=bg)      # synthetic quiet zone, not a wider window
+
+
 def _light_prep(image):
     """LIGHT crop prep for the first OCR rung: greyscale, plus an upscale ONLY for
     a small crop (tiny numeric tokens need ~300px to read). No autocontrast and no
@@ -3070,17 +3107,28 @@ def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None, page=None
 
     light = _light_prep(crop)
     heavy = None
+    struct = None
     best_seg, best_conf, best_min = None, -1.0, 0.0
+    # STRUCT_CODE_READ (slice 1, default OFF → byte-identical): for structured code/date crops,
+    # try a cleaner PREP (cap-height upscale + quiet-zone + no-sharpen) FIRST; a gate-passing struct
+    # read returns early, a sub-floor one FALLS THROUGH to today's light/heavy rungs unchanged
+    # (Oracle C2 — the SHARPEN fallback for tight degraded serials must survive). Per-call env read.
+    _struct_on = (val_type in _STRUCT_READ_TYPES
+                  and os.environ.get("STRUCT_CODE_READ", "0") != "0")
     # ANCHOR_LINE_SELECT (per-call env read — the :2825/:1453 convention). The recheck of
     # scope here is belt-and-braces: _crop_and_ocr only passes row_band when in scope, and
     # the gateless Stage-0.5 caller (verify_fn None) never passes one.
     _line_select = (row_band is not None and verify_fn is not None
                     and val_type in _LINE_SELECT_TYPES
                     and os.environ.get("ANCHOR_LINE_SELECT", "0") != "0")
-    for _src, _psm in (("light", 7), ("light", 6), ("heavy", 7), ("heavy", 6)):
+    _rungs = ((("struct", 7), ("struct", 6)) if _struct_on else ()) \
+             + (("light", 7), ("light", 6), ("heavy", 7), ("heavy", 6))
+    for _src, _psm in _rungs:
         if _src == "heavy" and heavy is None:
             heavy = _tm._prep(crop)            # Rung 3 = today's recipe verbatim
-        rimg = light if _src == "light" else heavy
+        elif _src == "struct" and struct is None:
+            struct = _struct_prep(crop)        # cleaner prep for structured code/date (slice 1)
+        rimg = struct if _src == "struct" else (light if _src == "light" else heavy)
         rtext, rconf, rmin, rlines = _read_lines_full(rimg, _psm)
         if _line_select and rlines:
             # Per-line chooser — wrapped WHOLE (Oracle cond 1): any exception ⇒ the exact
