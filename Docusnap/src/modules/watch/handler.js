@@ -375,7 +375,7 @@ async function _processBatch(db, filenames) {
     // fires for detection-None docs, so typed watch imports are untouched). The crop
     // right-grow opt-in rides here too (both default OFF → byte-identical env).
     const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
-      { windowsHide: true, env: { ...process.env, ...processing._autoTitleEnv(db), ...processing._anchorCropEnv(db) } });
+      { windowsHide: true, env: { ...process.env, ...processing._autoTitleEnv(db), ...processing._anchorCropEnv(db), ...processing._reconcileEnv(db) } });
     _liveProcs.add(proc);   // track for quit-time kill (untracked on close below)
     let buf = '';
 

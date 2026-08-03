@@ -117,6 +117,17 @@ function _anchorCropEnv(db) {
   } catch { return {}; }
 }
 
+// Extraction-reconcile opt-in spawn env. PREFIX_GARBLE_ADOPT (the Northgate PO-17039 class): when
+// on, a garbled leading code-prefix (a tight Stage-0.5 crop reads 'PO-17039' as '»0-17039') is
+// healed from a confirmed-prefix distinct-stage peer in the S-B length-witness arm. DEFAULT OFF ->
+// {} -> byte-identical. Owner opt-in; flip after the realdoc M=0 gate + a live doc-18 heal (Oracle).
+function _reconcileEnv(db) {
+  try {
+    const learning = require('../../../database/modules/learning');
+    return learning.getSetting(db, 'prefix_garble_adopt', 'false') === 'true' ? { PREFIX_GARBLE_ADOPT: '1' } : {};
+  } catch { return {}; }
+}
+
 // Coerce the stored processing_mode to a value the backend accepts. A stale/legacy value
 // (e.g. an old "light", or one from a restored settings backup) must never reach
 // process_docs.py's --mode and break the whole batch on an arg-parse error.
@@ -1157,6 +1168,7 @@ function register(ctx) {
         ..._autoTitleEnv(db),
         ..._ocrDpiEnv(db),
         ..._anchorCropEnv(db),
+        ..._reconcileEnv(db),
       };
       const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
         { windowsHide: true, env });
@@ -1706,7 +1718,7 @@ function register(ctx) {
       // Gated by a setting, DEFAULT OFF; passed ONLY here on the single-reprocess spawn, NEVER the
       // batch/import/shard path (those already parallelise ACROSS docs with their own OMP cap, so
       // nesting a per-doc pool inside them would oversubscribe). The python side caps OMP to 1.
-      let spawnEnv = { ...process.env, ..._ocrDpiEnv(db), ..._anchorCropEnv(db) };   // honour the ocr_dpi setting + crop opt-ins on reprocess too (all default = byte-identical)
+      let spawnEnv = { ...process.env, ..._ocrDpiEnv(db), ..._anchorCropEnv(db), ..._reconcileEnv(db) };   // ocr_dpi + crop + reconcile opt-ins on reprocess (all default = byte-identical)
       try {
         if (require('../../../database/modules/learning').getSetting(db, 'ocr_parallel_reprocess_enabled', 'false') === 'true') {
           // B = parallel full-page OCR passes (straighten/enhance/first-import); C = parallel per-field
@@ -2334,6 +2346,7 @@ function register(ctx) {
         ..._autoTitleEnv(db),
         ..._ocrDpiEnv(db),
         ..._anchorCropEnv(db),
+        ..._reconcileEnv(db),
       };
       const proc = spawn(pythonExe(), pythonArgs(backendScript(), ...scriptArgs), { windowsHide: true, env });
       _currentBatchProcs.push(proc);
@@ -3476,6 +3489,7 @@ module.exports = {
   _reprocessGenericAdopt,
   _autoTitleEnv,             // Auto-Title spawn env (shared with the watch batch)
   _anchorCropEnv,            // crop opt-in spawn env: right-grow + label left-clamp (shared with the watch batch)
+  _reconcileEnv,             // extraction-reconcile opt-in spawn env: prefix-garble adopt (shared with the watch batch)
   drainOriginalToFolder,
   _recordDrain, _takeDrainTally,   // drain-tally pins (test_drain_tally.js — Oracle C1)
   ensureWorkingCopy,

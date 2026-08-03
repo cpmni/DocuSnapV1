@@ -615,6 +615,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Recover a reference whose prefix was misread</div>
+                <div class="threshold-sub">When a reference's letter prefix is garbled to a symbol (e.g. “PO-17039” read as “0-17039”) but another read on the page has it right, use the correct one automatically — only for a sender whose references all share that prefix. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="prefix-garble-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Faster field reads (warm OCR helper)</div>
                 <div class="threshold-sub">Keeps a small OCR helper warm in the background so drawing a box around a value reads in a fraction of a second instead of a couple of seconds. Reads work either way — turn this off only if you ever notice extra background activity.</div>
               </div>

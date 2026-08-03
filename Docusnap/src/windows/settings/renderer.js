@@ -565,6 +565,17 @@ document.getElementById('left-clamp-toggle').addEventListener('change', async (e
   await api.setSetting('anchor_label_left_clamp', e.target.checked ? 'true' : 'false');
 });
 
+// ── Recover a misread reference prefix (PREFIX_GARBLE_ADOPT, default OFF) ──────
+(async () => {
+  try {
+    const v = await api.getSetting('prefix_garble_adopt');
+    document.getElementById('prefix-garble-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('prefix-garble-toggle').checked = false; }
+})();
+document.getElementById('prefix-garble-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('prefix_garble_adopt', e.target.checked ? 'true' : 'false');
+});
+
 // ── Faster field reads via a warm OCR helper pool (default ON) ─────────────────
 (async () => {
   try {
