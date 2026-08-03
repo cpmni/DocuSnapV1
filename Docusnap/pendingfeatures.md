@@ -6,6 +6,33 @@
 
 ---
 
+## 2026-08-03 — Crosscheck-outlier reconcile (SHIPPED+ON) + Slice-2 universal verify (DEFERRED)
+
+**SHIPPED + FLIPPED ON — `CROSSCHECK_OUTLIER_RECONCILE` (`09685d9`, setting
+`crosscheck_outlier_reconcile`).** Symptom: a correct ref (crop+keyword+mapping agree) lost to a lone
+fresh-locate garble because `anchor.py`'s authoritative-crop cross-check flips on disagreement ALONE
+(doc-09 = NorthgateTextiles_purchase_order_09, GT PO-83150). Fix: post-merge
+`engine._reconcile_crosscheck_outlier` restores a ≥2-independent-family (≥1 crop-family) + page-present
+alternative over an UNcorroborated flip (re-base anchor_inline@90, drop flag). Oracle
+SIGN-OFF-W/COND, conditions C1 (pre-flip crop preserved as `_crosscheck_original`, gated) + C2 (finer
+`_crosscheck_witness_bucket` excludes registration/bare-anchor/the-flip, requires a crop leg) MET. Gate
+(faithful realdoc 522 docs): ref 96.2→96.6% (+2 heals #344/#353), M=12==12, zero drop. Pin
+`test_crosscheck_outlier_reconcile.py`. Advisors 007+reggie+gary. See `HANDOVER_2026-08-03.md`.
+
+**DEFERRED — Slice-2: UNIVERSAL post-merge verify (owner go/no-go next).** Slice-1 only reaches the
+crosscheck fire-gate (`_is_ref_like_key` = `*_number`/`*_no`/`*reference*` + date). The owner's ask is
+"all types where possible" (custom text/numeric/ref/date). Slice-2 = ONE reusable post-merge pass over
+EVERY field's winner using the LEDGER (`self._field_candidates`) + raw `ocr_text`, per-type predicate
+(ref→alnum-core; date→calendar; numeric→digit match w/ WHOLE-NUMBER boundary — reggie: `1600` must not
+match inside `116000`; text→name-core with TOLERANCE), **lone-absence NEVER vetoes**. Reaches all
+custom types WITHOUT arming more independent-OCR crosschecks. Same `value_in_raw_ocr` primitive; Slice-1
+is a special case Slice-2 subsumes. MUST pass advisors→Oracle before build (changes value-selection for
+every field). Owner caveat: re-test doc-09 LIVE with the setting ON — on the cold path it reads a CHOP
+`PO-160` (clamp/right-grow territory), not the crosscheck flip, so grab the SFDEV `po_number` lineage
+if it still misreads to tell the two classes apart.
+
+---
+
 ## 2026-08-02 OVERNIGHT (autonomous, owner asleep) — SHIPPED / DARK / DEFERRED
 Owner directive: build everything buildable, commit each, push at end, flip ON when the advisor+Oracle
 + gate pass green. Then a christest walkthrough. Advisors used: eric (search/UX cluster), reggie

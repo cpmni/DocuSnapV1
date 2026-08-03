@@ -262,3 +262,36 @@ Case: tight ~13px Stage-0.5 mapping crop mis-reads codes/dates (PO-17039→»0-1
   accuracy drop, no new regressions. #494 unhealed but UNCHANGED (fall-through, not cleaner-but-wrong).
   Flipped ON — strictly-safe net improvement. Slice 2 (whitelist) + #494 (second-render/harder digit-sub)
   deferred. Pins: test_struct_code_read.py.
+
+---
+
+## 2026-08-03 — Crosscheck-outlier reconcile (doc-09: a correct ref lost to a lone fresh-locate garble)
+**VERDICT: SIGN OFF WITH CONDITIONS.** Consult: 007 + reggie (proposed in-crosscheck Layer A) + gary
+(proposed post-merge Layer B) → Oracle. Case: `anchor.py` authoritative-crop cross-check does a FRESH
+full-page locate-OCR that can ITSELF garble a valid ref, then flips the correct value to that lone
+outlier on `_reads_disagree` ALONE (doc-09 = NorthgateTextiles_purchase_order_09, GT PO-83150). E2 only
+owns the opposite (flip-corroborated / City-Office) direction.
+- **Fork RULED: Layer B (post-merge engine), NOT Layer A (in-crosscheck).** The raw `ocr_text` shares
+  source pixels with the crop (correlated, weak witness); the distinct-stage LEDGER (0.5_mapping,
+  1_keyword) is the genuinely-independent one and is engine-only. Post-merge is the designated seam
+  (engine.py:4332) + the established G1/Fix-A pattern.
+- **C1 (SHIP-BLOCKER, MET):** the crosscheck OVERWRITES value/method in place → the ledger's 2_anchor
+  becomes the post-flip garble, so B-as-specified only heals mapping-backed docs; a ⊕-anchor-only
+  sibling stays broken (a document fix). Preserve the pre-flip crop as an independent crop-family
+  witness (`anchor.py` stashes `_crosscheck_original`, GATED; consumed+popped by the pass).
+- **C2 (MET):** `_method_family` folds every `anchor*` into one bucket → bare-anchor/registration would
+  falsely count. New `_crosscheck_witness_bucket` excludes registration/bare-anchor/the-flip + requires
+  ≥1 crop-family leg; page-presence a separate AND. So a silent drop-flag never rests on two correlated
+  full-page reads.
+- **Silent-keep (drop flag) APPROVED** (given C2) — restore fires only on ≥2 independent families +
+  page-present, honouring oscar's "two independent reads agree" bar; mirrors E2's re-base to 90.
+- **Phasing ENDORSED:** ship Slice-1 = Layer B at the current crosscheck scope; do NOT widen the fire-
+  gate (that arms more independent-OCR flips). Slice-2 = a UNIVERSAL post-merge verify (ledger +
+  ocr_text, per-type predicate, lone-absence-never-vetoes) reaches text/numeric/all-custom with NO new
+  OCR. Residual §4C (crop+mapping+keyword+page all share one misread) ACCEPTED — same class G1/Fix-A
+  already accept; pinned as HYPOTHESIS.
+- **BUILD + GATE OUTCOME:** shipped `09685d9` (`CROSSCHECK_OUTLIER_RECONCILE`). Faithful
+  --reprocess-manifest realdoc (522 docs) OFF-vs-ON: ref 96.2%→96.6% (+2 heals #344/#353, both
+  anchor_crop_crosscheck→anchor_inline, corr False→True), M=12==12 (silent-auto-file set IDENTICAL),
+  zero accuracy drop, exactly 2 docs changed, City-Office untouched. Flipped ON. Slice-2 deferred to
+  owner go/no-go. Pins: test_crosscheck_outlier_reconcile.py.

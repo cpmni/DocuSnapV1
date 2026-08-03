@@ -21,7 +21,32 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-08-02 wrap) — Chris fix cycle · clamp+sweep+workflow ON · de-pathing · teach-first PLAN
+## Current session state (2026-08-03 wrap) — crosscheck-outlier reconcile SHIPPED + ON
+**2026-08-03 (Opus 4.8, continued fine-tuning arc). HEAD `09685d9`, PUSHED, tree clean. READ
+`HANDOVER_2026-08-03.md` FIRST.** Built + gated + flipped ON `CROSSCHECK_OUTLIER_RECONCILE` (setting
+`crosscheck_outlier_reconcile`): the authoritative-crop cross-check (`anchor.py` ~:852) does a FRESH
+full-page locate-OCR that can ITSELF garble a valid ref and flip the correct value to that lone
+outlier on disagreement ALONE (doc-09 = `NorthgateTextiles_purchase_order_09`). New post-merge pass
+`engine._reconcile_crosscheck_outlier` (before G1) OWNS the flip-REFUTED direction (E2 owns
+flip-corroborated / City-Office): restore a ≥2-independent-family (≥1 crop-family) + page-present
+alternative over an UNcorroborated flip → re-base `anchor_inline@90`, drop flag (mirrors E2). **Oracle
+SIGN-OFF-W/COND, both MET:** C1 — `anchor.py` stashes the pre-flip crop (`_crosscheck_original`, GATED)
+as an independent crop-family witness so a mapping-less ⊕-only doc heals (SYSTEM fix, not doc fix);
+C2 — new `_crosscheck_witness_bucket` (finer than `_method_family`, which folds all `anchor*` into one)
+excludes registration/bare-anchor/the-flip + requires a crop-family leg. Gate (faithful
+`--reprocess-manifest` realdoc, 522 docs): ref 96.2%→96.6% (+2 heals #344/#353, both
+`anchor_crop_crosscheck`→`anchor_inline`, corr False→True), **M=12==12** (never touched the silent
+auto-file set), zero drop, City-Office untouched. advisors 007+reggie+gary; pin
+`test_crosscheck_outlier_reconcile.py`. Slice-1 covers only `*_number`/`*_no`/`*reference*`+date.
+**NEXT = Slice-2 owner go/no-go:** a UNIVERSAL post-merge verify (ledger `_field_candidates` + raw
+`ocr_text`, per-type predicate — ref/date/numeric-whole-number/text-tolerant — lone-absence NEVER
+vetoes) covering text/numeric/ALL custom fields (the owner's "all types where possible" ask); reaches
+them WITHOUT arming more independent-OCR crosschecks. GOTCHA: run harnesses via
+`node_modules/electron/dist/electron.exe`, NOT `electron.cmd` (the `.cmd` shim breaks on the space in
+"c:/GIT Projects"); setting flips write the live DB via a script (require better-sqlite3 by ABSOLUTE
+path from a scratchpad file).
+
+### Prior session (2026-08-02 wrap) — Chris fix cycle · clamp+sweep+workflow ON · de-pathing · teach-first PLAN
 **2026-08-02 (Fable 5, overnight autonomous + owner day/evening). HEAD `5652487`, PUSHED, tree
 clean. READ `HANDOVER_2026-08-02_NIGHT.md` FIRST (wrap + NEXT-SESSION ORDER), then
 `HANDOVER_2026-08-02_OVERNIGHT.md` (overnight/day detail). NEXT ARC (owner-set): (1)
