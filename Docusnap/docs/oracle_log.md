@@ -295,3 +295,39 @@ owns the opposite (flip-corroborated / City-Office) direction.
   anchor_crop_crosscheck→anchor_inline, corr False→True), M=12==12 (silent-auto-file set IDENTICAL),
   zero accuracy drop, exactly 2 docs changed, City-Office untouched. Flipped ON. Slice-2 deferred to
   owner go/no-go. Pins: test_crosscheck_outlier_reconcile.py.
+
+---
+
+## 2026-08-03 — Slice-2: UNIVERSAL post-merge verify (owner GO; all field types "where possible")
+**VERDICT: SIGN OFF WITH CONDITIONS.** Consult: gary (two-tier design) + reggie (per-type predicates)
++ 007 (OCR-divergence ground-truth) → Oracle. Design: ONE post-merge pass beside Slice-1 (after :5980,
+before G1), Slice-1's 4-condition gate skeleton verbatim, per-tier AGREE/PRESENT primitives.
+Tier R (RESTORE): ref/code (+all-digit cores via numeric presence — reggie traced a REAL shipped gap:
+`250000` falsely "present" on a page printing `1,250,000`), date (locate-and-parse presence), numeric
+whole-number + percentage. Tier F (FLAG-only, note names the disagreeing value): text (token AGREE,
+total edit budget 1; per-token presence — whole-value 48-cap is a polarity bug on long values),
+email/website (structural @/. — core-join falsely assembles `johndoeacmeco` from a letterhead),
+postcode/vat/iban. EXCLUDED: currency (totals-maths pass owns; invoices repeat amounts → wrong-but-
+corroborated is the NORM), supplier_name (identity lane). 007's constant: same-pixels-different-
+postprocess witnesses are 5:1 false:true (D2 bake-off) — Tier-III never counts.
+- **Fork D-1 RULED: reggie** — restore emits `anchor_inline@90` + a trace transform event carrying the
+  true witness method + deposed value. Emitting the witness's REAL method would MINT authority (a
+  mapping witness ⇒ `template_*` ⇒ `_is_stage05_located` ⇒ authoritative-band it never earned).
+- **Fork D-2 RULED: currency exclusion CONFIRMED**; corollary — numeric restores WHOLE-NUMBER canonicals
+  only (decimal-tailed alternatives flag at most): keeps qty/count, excludes money-shaped `number`.
+- **S-1 (SHIP-BLOCKER):** Stage-2.5b learned-misread correction (:5026) sets NEITHER `was_corrected`
+  NOR a note — only a `+corrected` method suffix — so the consensus eligibility list would let Tier R
+  UN-FIX a correction (corrected value page-ABSENT by construction; the garble page-present + "agreed"
+  by correlated glyph misreads). Exclude `+corrected`/`+snapped` winners.
+- **S-2 (SHIP-BLOCKER):** gary's D1-ordering seam was STALE — D1/content-nature flags run at :5603,
+  BEFORE post-merge; a restored value gets ZERO content-nature vetting. Mandatory: (a) confusable-
+  substitution demotion (identical skeleton, ≤2 confusable digit subs via D1's shared comparator →
+  never restore, flag only); (b) re-run deterministic content-nature checks (date-in-ref, ref-length,
+  prefix-outlier) on the restored value or flag instead.
+- **S-3:** the D-1 witness-method hazard above (authority minting) — why reggie's emit wins.
+- **C6:** the 522-doc realdoc GT covers ref/date only — it CANNOT FAIL on 2b/2c. Gate needs a
+  numeric/text GT arm (Customer Doc Test corpus ground_truth.json) + hand-verify every census hit.
+- **C7 (owner premise):** "all types where possible" ships with currency + supplier_name deliberately
+  excluded — the go/no-go must SAY so (stated to owner 2026-08-03).
+- Census-first endorsed; staged dark flips 2a (ref-widen) → 2b (numeric) → 2c (flag tier);
+  switches `UNIVERSAL_VERIFY_RESTORE` / `UNIVERSAL_VERIFY_FLAG`.

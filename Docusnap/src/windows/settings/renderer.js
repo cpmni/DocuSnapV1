@@ -587,6 +587,18 @@ document.getElementById('crosscheck-reconcile-toggle').addEventListener('change'
   await api.setSetting('crosscheck_outlier_reconcile', e.target.checked ? 'true' : 'false');
 });
 
+// ── Double-check references and dates against the whole document (Slice-2 stage 2a,
+// UNIVERSAL_VERIFY_RESTORE, default OFF; numeric/text stages keep their own switches) ──
+(async () => {
+  try {
+    const v = await api.getSetting('universal_verify_restore');
+    document.getElementById('universal-verify-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('universal-verify-toggle').checked = false; }
+})();
+document.getElementById('universal-verify-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('universal_verify_restore', e.target.checked ? 'true' : 'false');
+});
+
 // ── Read small reference/date print more clearly (STRUCT_CODE_READ, default OFF) ──
 (async () => {
   try {

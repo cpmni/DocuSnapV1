@@ -130,12 +130,18 @@ function _anchorCropEnv(db) {
 //    check's fresh full-page locate can ITSELF garble and flip a correct value to a lone outlier;
 //    post-merge, an uncorroborated flip is restored to a >=2-independent-family + page-present
 //    alternative (arms anchor.py's pre-flip stash + engine._reconcile_crosscheck_outlier together).
+//  • UNIVERSAL_VERIFY_RESTORE / UNIVERSAL_VERIFY_FLAG (Slice-2, Oracle SIGN-OFF-W/COND 2026-08-03):
+//    the universal post-merge verify over every field's winner — RESTORE tier (ref/date/whole-number
+//    numeric/percentage) and FLAG tier (text/structured, note-only), each independently gated.
 function _reconcileEnv(db) {
   try {
     const learning = require('../../../database/modules/learning');
     const env = {};
     if (learning.getSetting(db, 'prefix_garble_adopt', 'false') === 'true') env.PREFIX_GARBLE_ADOPT = '1';
     if (learning.getSetting(db, 'crosscheck_outlier_reconcile', 'false') === 'true') env.CROSSCHECK_OUTLIER_RECONCILE = '1';
+    if (learning.getSetting(db, 'universal_verify_restore', 'false') === 'true') env.UNIVERSAL_VERIFY_RESTORE = '1';
+    if (learning.getSetting(db, 'universal_verify_flag', 'false') === 'true') env.UNIVERSAL_VERIFY_FLAG = '1';
+    if (learning.getSetting(db, 'universal_verify_numeric', 'false') === 'true') env.UNIVERSAL_VERIFY_NUMERIC = '1';
     return env;
   } catch { return {}; }
 }

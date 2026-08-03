@@ -214,6 +214,30 @@ INLINE_HARVEST_ABSENCE_HOLD = os.environ.get('INLINE_HARVEST_ABSENCE_HOLD', '0')
 # *_number/*_no/*reference*/date, custom included); text/numeric are Slice-2 (universal post-merge verify).
 CROSSCHECK_OUTLIER_RECONCILE = os.environ.get('CROSSCHECK_OUTLIER_RECONCILE', '0') != '0'
 
+# Slice-2 UNIVERSAL post-merge verify (gary+reggie+007 → Oracle SIGN-OFF-W/COND 2026-08-03; see
+# docs/oracle_log.md). ONE reusable pass over every field's winner using the always-on candidate
+# ledger + raw ocr_text — the owner's "all types where possible" ask. Two independently-gated tiers:
+#   RESTORE (ref/code · date · whole-number numeric · percentage) — Slice-1's 4-condition gate
+#     skeleton with per-tier AGREE/PRESENT primitives; a restore is DEMOTED to a flag by the
+#     Oracle's S-2 checks (confusable digit-substitution, date-shaped ref, prefix/length outlier,
+#     decimal-tailed numeric, credibility) because the content-nature flag chain (D1 etc.) runs
+#     BEFORE this pass and cannot re-examine a restored value.
+#   FLAG (text/name minus supplier_name · email/website/postcode_uk/vat_gb/iban) — note-only,
+#     names the disagreeing value; never changes a value (007: text divergence is bimodal —
+#     structural-substring vs unbounded garble — no tolerance restores safely; repair is Stage 4.5's
+#     jurisdiction). EXCLUDED entirely: currency/amount (the totals-reconciliation pass + Stage-4
+#     maths own amounts; invoices REPEAT amounts so a wrong-but-corroborated alternative is the
+#     NORM) and supplier_name (identity lane). Lone absence NEVER acts — only a corroborated
+#     DISAGREEING alternative can. Both switches default OFF = byte-identical; CENSUS mode logs
+#     would-fire decisions without mutating (mutation is governed SOLELY by the R/F switches).
+UNIVERSAL_VERIFY_RESTORE = os.environ.get('UNIVERSAL_VERIFY_RESTORE', '0') != '0'
+UNIVERSAL_VERIFY_FLAG    = os.environ.get('UNIVERSAL_VERIFY_FLAG', '0') != '0'
+UNIVERSAL_VERIFY_CENSUS  = os.environ.get('UNIVERSAL_VERIFY_CENSUS', '0') != '0'
+# Stage 2b sub-switch (Oracle C6): the 522-doc realdoc GT covers ref/date ONLY — a numeric restore
+# cannot FAIL that gate, so numeric/percentage stay dark behind their own switch until the
+# numeric/text GT arm (Customer Doc Test corpus) exists. RESTORE alone arms ref+date (stage 2a).
+UNIVERSAL_VERIFY_NUMERIC = os.environ.get('UNIVERSAL_VERIFY_NUMERIC', '0') != '0'
+
 
 def _late_rescue_applicable(s2_supplier, supplier_name):
     """Stage-2.6 gate (pure, unit-pinned): rescue ONLY when Stage 2 ran with NO supplier
@@ -1124,6 +1148,386 @@ def _crosscheck_corroborated_alternative(winner, cands, ocr_text, is_date):
             if best is None or len(slot["fams"]) > len(best["fams"]):
                 best = slot
     return best["raw"] if best else None
+
+
+# ── Slice-2 universal post-merge verify — pure per-tier primitives ────────────────────────────
+# (gary+reggie+007 → Oracle SIGN-OFF-W/COND 2026-08-03.) The Slice-1 gate skeleton generalised:
+# per-tier AGREE (when do two candidate values corroborate each other) and PRESENT (when is a
+# value credibly printed on the page). Precision-first: a false AGREE/PRESENT can RESTORE a wrong
+# value, so every tier's failure mode errs toward "not a witness" (fail-toward-review).
+
+_UV_STRUCTURED_TYPES = {'email', 'website', 'postcode_uk', 'vat_gb', 'iban'}
+_UV_RESTORE_TIERS    = {'ref', 'date', 'numeric', 'percentage'}
+
+
+def _uv_tier(key, ftype, ref_field_key, date_field_keys):
+    """Slice-2 tier dispatch by field TYPE + structural role (type-keyed, never name-keyed beyond
+    the shipped _is_ref_field naming convention — a system rule, not a doc rule). None = EXCLUDED:
+    currency/amount (totals pass owns), supplier_name (identity lane), precise network types
+    (mac/ip machinery owns), unknown types (no safe predicate)."""
+    k = str(key or '')
+    t = str(ftype or '').lower()
+    if k == 'supplier_name':
+        return None
+    if t in ('currency', 'amount', 'currency_code'):
+        return None
+    if t == 'date' or k in (date_field_keys or ()):
+        return 'date'
+    if t in _UV_STRUCTURED_TYPES:
+        return 'structured'
+    if t == 'number':
+        return 'numeric'
+    if t == 'percentage':
+        return 'percentage'
+    if t in ('reference', 'reference_code', 'alphanumeric', 'job_reference') \
+            or (ref_field_key and k == ref_field_key) or _is_ref_field(k):
+        return 'ref'
+    if t in ('', 'text', 'multiline_text'):
+        return 'text'
+    return None
+
+
+# Strict numeric grammar (reggie): comma/NBSP thousands only, optional 1-2 digit decimal tail.
+# A value failing the grammar (garbled grouping, comma-decimal '1.600,50', lakh '1,60,000') is
+# NOT a witness. Space grouping deliberately rejected: row-rebuilt ocr_text merges adjacent
+# columns onto one line, so 'Qty 1 600.00' must never assemble '1600'.
+_UV_NUM_RE = re.compile('^[+-]?(\\d{1,3}(?:[, ]\\d{3})+|\\d+)(?:\\.(\\d{1,2}))?$')
+
+
+def _uv_numeric_canon(value, pct=False):
+    """(int_digits, decimal_tail_rstripped) or None. Leading zeros are SIGNIFICANT (a zero-led
+    'number' is really a code — exact-string equality keeps '042' != '42')."""
+    s = str(value or '').strip()
+    if pct:
+        s = re.sub('\\s*%$', '', s).strip()
+    m = _UV_NUM_RE.match(s)
+    if not m:
+        return None
+    ints = m.group(1).replace(',', '').replace(' ', '')
+    dec = (m.group(2) or '').rstrip('0')
+    return (ints, dec)
+
+
+def _uv_numeric_agree(a, b, pct=False) -> bool:
+    ca, cb = _uv_numeric_canon(a, pct), _uv_numeric_canon(b, pct)
+    return ca is not None and ca == cb
+
+
+def _uv_numeric_page_present(value, ocr_text, min_int_digits=4, pct=False) -> bool:
+    """Grouped-render presence for a numeric value (reggie + Oracle). Builds the comma/NBSP
+    grouped pattern from the canonical int digits with TWO extra guards over the generic
+    presence primitive: fixed-width lookbehind (?<![0-9][,. ]) kills the grouped-tail steal
+    ('250000' must not match inside '1,250,000'); lookahead (?![.,][0-9]) kills the decimal
+    interior ('1250' must not match inside '1,250.75'). A whole-number winner accepts a
+    zero-cents render ('1,600.00' corroborates 1600); '16.00' can never corroborate '1600'
+    (a digit cannot be skipped). min_int_digits=1 is the WINNER-DEFENCE mode (gary's symmetry
+    trap: a correct short winner '42' must be defensible even though it is never a restore
+    target); the ALTERNATIVE leg keeps the >=4 floor. Percentage mode requires the printed
+    '%' anchor, which makes even 1-2 digit percentages safely locatable."""
+    c = _uv_numeric_canon(value, pct=pct)
+    if not c or not ocr_text:
+        return False
+    ints, dec = c
+    if len(ints) < (1 if pct else min_int_digits):
+        return False
+    parts = []
+    for i, ch in enumerate(ints):
+        parts.append(re.escape(ch))
+        rem = len(ints) - 1 - i
+        if rem and rem % 3 == 0:
+            parts.append('[, ]?')
+    body = ''.join(parts)
+    if dec:
+        tail = '\\.' + re.escape(dec) + ('0?' if len(dec) == 1 else '')
+    else:
+        tail = '(?:\\.0{1,2})?'
+    lead = '(?<![0-9A-Za-z])(?<![0-9][,.  ])'
+    trail = '(?![0-9A-Za-z])(?![.,][0-9])'
+    pat = lead + body + tail + ('\\s?%' if pct else trail)
+    try:
+        return re.search(pat, ocr_text) is not None
+    except re.error:
+        return False
+
+
+def _uv_date_agree(a, b) -> bool:
+    """Calendar equality with BOTH sides parse-gated (the documented _values_normalise_equal
+    date-arm fail-open makes an ungated call unsafe — never 'simplify' to that helper here)."""
+    da = validator.parse_date(str(a or ''))
+    db = validator.parse_date(str(b or ''))
+    return bool(da and db and da.date() == db.date())
+
+
+def _uv_date_page_present(value, ocr_text) -> bool:
+    """Locate-and-parse presence (reggie): run the shipped salvage LOCATORS over the page text,
+    parse each hit, present iff some hit calendar-equals the target. Inherits salvage's guarantees:
+    a locator hit needs real separators or a month name (a bare ref '41026' can never corroborate a
+    date), and greedy leftmost matching means a page '14/10/2026' yields 14-Oct — never an interior
+    '4/10/2026' — so the collapsed-core trap can't arise by construction."""
+    tgt = validator.parse_date(str(value or ''))
+    if not tgt or not ocr_text:
+        return False
+    try:
+        for m in validator._NUMERIC_DATE_RE.finditer(ocr_text):
+            d = validator.parse_date(re.sub('\\s+', '', m.group(0)))
+            if d and d.date() == tgt.date():
+                return True
+        for m in validator._MONTH_NAME_DATE_RE.finditer(ocr_text):
+            d = validator.parse_date(re.sub('\\s{2,}', ' ', m.group(0)).strip())
+            if d and d.date() == tgt.date():
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def _uv_text_tokens_agree(a, b) -> bool:
+    """Tolerant text AGREE — FLAG tier only, NEVER feeds a restore (007: text divergence is
+    bimodal; the tolerance that admits OCR jitter also admits one-letter-different real names).
+    Normalised content tokens; ONE adjacent-pair join allowed on either side (absorbs a
+    'North gate'/'Northgate' split); pairwise exact, or len>=5 Levenshtein<=1 under a TOTAL
+    budget of 1 across the whole value (deliberately NOT name_match._close — its budget-2 arm
+    passes northgate/northdale, which must disagree)."""
+    try:
+        from extraction import text_normalise as _tn
+        from extraction import name_match as _nm
+        ta = [t for t in _tn.tokenise(a) if _nm._is_content(t)]
+        tb = [t for t in _tn.tokenise(b) if _nm._is_content(t)]
+        if not ta or not tb:
+            return False
+
+        def _variants(toks):
+            yield toks
+            for i in range(len(toks) - 1):
+                yield toks[:i] + [toks[i] + toks[i + 1]] + toks[i + 2:]
+
+        for xa in _variants(ta):
+            for xb in _variants(tb):
+                if len(xa) != len(xb):
+                    continue
+                budget = 1
+                ok = True
+                for p, q in zip(xa, xb):
+                    if p == q:
+                        continue
+                    if len(p) >= 5 and len(q) >= 5:
+                        d = _nm._levenshtein(p, q)
+                        if d <= budget:
+                            budget -= d
+                            continue
+                    ok = False
+                    break
+                if ok:
+                    return True
+    except Exception:
+        return False
+    return False
+
+
+def _uv_text_page_present(value, ocr_text) -> bool:
+    """Per-token containment (007's polarity catch): every QUALIFYING content token (alnum core
+    4..48) must be present via the shipped boundary-guarded primitive. Tokenising — instead of one
+    whole-value mega-join — stops the 48-char cap systematically failing long correct values.
+    Short tokens (core <4, e.g. 'Ltd') are skipped as unverifiable; a value with NO qualifying
+    token is simply not page-verifiable → False (which only ever suppresses a flag/restore)."""
+    try:
+        from extraction import text_normalise as _tn
+        from extraction import name_match as _nm
+        toks = [t for t in _tn.tokenise(value) if _nm._is_content(t)]
+    except Exception:
+        return False
+    qual = [t for t in toks if 4 <= len("".join(c for c in t if c.isalnum())) <= 48]
+    if not qual:
+        return False
+    return all(_page_presence_corroborated(t, ocr_text) for t in qual)
+
+
+def _uv_structured_canon(ftype, value) -> str:
+    v = str(value or '').strip()
+    if ftype == 'email':
+        return v.lower().replace(' ', '')
+    if ftype == 'website':
+        v = re.sub('^https?://', '', v.lower()).rstrip('/')
+        return re.sub('^www\\.', '', v)
+    if ftype == 'postcode_uk':
+        return v.upper().replace(' ', '')
+    if ftype == 'vat_gb':
+        v = v.upper().replace(' ', '')
+        return v[2:] if v.startswith('GB') else v
+    if ftype == 'iban':
+        return v.upper().replace(' ', '')
+    return v
+
+
+def _uv_structured_agree(ftype, a, b) -> bool:
+    ca, cb = _uv_structured_canon(ftype, a), _uv_structured_canon(ftype, b)
+    return bool(ca) and ca == cb
+
+
+def _uv_structured_page_present(ftype, value, ocr_text) -> bool:
+    """Structure-anchored presence (reggie): the '@' and each '.' are REQUIRED literals with only
+    optional whitespace around them — the generic alnum-core join would falsely assemble
+    'johndoeacmeco' out of a letterhead line 'John Doe, Acme Co' that never prints the email."""
+    if not value or not ocr_text:
+        return False
+    try:
+        if ftype == 'email':
+            v = _uv_structured_canon(ftype, value)
+            if '@' not in v or '.' not in v.split('@', 1)[1]:
+                return False
+            pat = re.escape(v).replace('@', '\\s?@\\s?').replace('\\.', '\\s?\\.\\s?')
+        elif ftype == 'website':
+            v = _uv_structured_canon(ftype, value)
+            if '.' not in v:
+                return False
+            pat = '(?:www\\s?\\.\\s?)?' + re.escape(v).replace('\\.', '\\s?\\.\\s?')
+        elif ftype == 'postcode_uk':
+            v = _uv_structured_canon(ftype, value)
+            if len(v) < 5:
+                return False
+            pat = re.escape(v[:-3]) + '\\s?' + re.escape(v[-3:])
+        elif ftype == 'vat_gb':
+            v = _uv_structured_canon(ftype, value)
+            if not v.isdigit() or len(v) < 9:
+                return False
+            pat = '(?:GB\\s?)?' + '\\s?'.join(re.escape(c) for c in v)
+        elif ftype == 'iban':
+            v = _uv_structured_canon(ftype, value)
+            if len(v) < 15:
+                return False
+            pat = '[ ]?'.join(re.escape(c) for c in v)
+        else:
+            return False
+        pat = '(?<![A-Za-z0-9])' + pat + '(?![A-Za-z0-9])'
+        return re.search(pat, ocr_text, re.IGNORECASE) is not None
+    except re.error:
+        return False
+
+
+def _uv_agree(tier, ftype, a, b) -> bool:
+    """Tier-dispatched AGREE."""
+    if tier == 'date':
+        return _uv_date_agree(a, b)
+    if tier == 'numeric':
+        return _uv_numeric_agree(a, b)
+    if tier == 'percentage':
+        return _uv_numeric_agree(a, b, pct=True)
+    if tier == 'text':
+        return _uv_text_tokens_agree(a, b)
+    if tier == 'structured':
+        return _uv_structured_agree(ftype, a, b)
+    return _values_normalise_equal(a, b, False)          # ref: shipped alnum-core equality
+
+
+def _uv_present(tier, ftype, value, ocr_text, defending=False) -> bool:
+    """Tier-dispatched PRESENT. `defending=True` = the WINNER-defence leg (symmetric, floor-free
+    for numerics so a correct '42' is defensible); the ALTERNATIVE leg keeps every floor (a
+    restore target must clear the full bar). An all-digit ref core routes through the numeric
+    predicate (reggie's traced gap: the generic lookbehind lets '250000' match inside
+    '1,250,000' — Slice-2 path only, the shipped/gated Slice-1+G1 primitives stay untouched)."""
+    if tier == 'date':
+        return _uv_date_page_present(value, ocr_text)
+    if tier == 'numeric':
+        return _uv_numeric_page_present(value, ocr_text, min_int_digits=(1 if defending else 4))
+    if tier == 'percentage':
+        return _uv_numeric_page_present(value, ocr_text, pct=True)
+    if tier == 'text':
+        return _uv_text_page_present(value, ocr_text)
+    if tier == 'structured':
+        return _uv_structured_page_present(ftype, value, ocr_text)
+    core = "".join(c for c in str(value or '') if c.isalnum())
+    if core.isdigit():
+        return _uv_numeric_page_present(core, ocr_text, min_int_digits=(1 if defending else 4))
+    return _page_presence_corroborated(value, ocr_text)
+
+
+def _uv_winner_corroborated(winner, cands, ocr_text, tier, ftype) -> bool:
+    """Tier-aware WINNER defence (the Slice-2 analogue of _fallthrough_critical_corroborated):
+    a different-family rail tier-AGREEs with the winner, OR the winner is tier-PRESENT
+    (floor-free — the symmetric defence). Dates also try raw own-family rail captures through
+    the same present matcher (the shipped C2 route: Stage 4 rewrites '4/10/2026'→'04-10-2026')."""
+    wv = str((winner or {}).get('value') or '')
+    if not wv:
+        return False
+    wfam = _method_family((winner or {}).get('method'))
+    for c in (cands or []):
+        cv = str((c or {}).get('value') or '')
+        if not cv or _method_family((c or {}).get('method')) == wfam:
+            continue
+        if _uv_agree(tier, ftype, wv, cv):
+            return True
+    if _uv_present(tier, ftype, wv, ocr_text, defending=True):
+        return True
+    if tier == 'date':
+        for c in (cands or []):
+            if _method_family((c or {}).get('method')) != wfam:
+                continue
+            rv = str((c or {}).get('value') or '')
+            if rv and rv != wv and _uv_date_page_present(rv, ocr_text):
+                return True
+    return False
+
+
+def _uv_corroborated_alternative(winner, cands, ocr_text, tier, ftype, require_crop):
+    """Slice-2 alternative selection — the Slice-1 bucket loop with per-tier AGREE grouping and
+    per-tier PRESENT on the alternative leg. require_crop=True for the RESTORE tiers (>=1
+    crop-family leg, Oracle C2's independence bar); the FLAG tiers need >=2 distinct families
+    but no crop leg (a text field whose only witnesses are keyword+hint may still FLAG — the
+    cost of a false flag is a review note, not a wrong file). Grouping key per tier is the
+    tier-canonical form; an UNparseable/ungrammatical read is NOT a witness."""
+    wv = str((winner or {}).get('value') or '')
+    if not wv:
+        return None
+    buckets = {}
+
+    def _group_key(v):
+        if tier == 'date':
+            d = validator.parse_date(str(v or ''))
+            return d.date().isoformat() if d else None
+        if tier in ('numeric', 'percentage'):
+            c = _uv_numeric_canon(v, pct=(tier == 'percentage'))
+            return ('%s|%s' % c) if c else None
+        if tier == 'structured':
+            return _uv_structured_canon(ftype, v) or None
+        if tier == 'text':
+            try:
+                from extraction import text_normalise as _tn
+                from extraction import name_match as _nm
+                toks = [t for t in _tn.tokenise(v) if _nm._is_content(t)]
+                return ' '.join(toks) or None       # exact-normalised grouping: two witnesses
+            except Exception:                        # must genuinely agree (conservative — a
+                return None                          # tolerant grouping is non-transitive)
+        key = "".join(c for c in _cmp_norm(v) if c.isalnum())
+        return key or None
+
+    for c in (cands or []):
+        fam_tuple = _crosscheck_witness_bucket((c or {}).get('stage'), (c or {}).get('method'))
+        if fam_tuple is None:
+            continue
+        v = str((c or {}).get('value') or '').strip()
+        if not v or _uv_agree(tier, ftype, v, wv):
+            continue                                 # only DISAGREEING alternatives
+        gk = _group_key(v)
+        if gk is None:
+            continue                                 # unparseable → not a witness
+        slot = buckets.setdefault(gk, {'raw': v, 'fams': set(), 'crop': False,
+                                       'crop_method': None})
+        fam, is_crop = fam_tuple
+        slot['fams'].add(fam)
+        if is_crop:
+            slot['crop'] = True
+            if not slot['crop_method']:
+                slot['crop_method'] = (c or {}).get('method')
+
+    best = None
+    for slot in buckets.values():
+        if len(slot['fams']) < 2 or (require_crop and not slot['crop']):
+            continue
+        if not _uv_present(tier, ftype, slot['raw'], ocr_text, defending=False):
+            continue
+        if best is None or len(slot['fams']) > len(best['fams']):
+            best = slot
+    return best
 
 
 def _inline_absence_should_hold(winner, cands, ocr_text, is_date) -> bool:
@@ -3043,6 +3447,188 @@ class ExtractionEngine:
                      f"'{wit_val}' ({wit.get('stage')}) — flagged for review")
         except Exception:
             pass   # advisory guard — must never break extraction
+
+    def _uv_restore_demotion(self, key, tier, winner_val, alt_val, supplier_name,
+                             document_slug, field_patterns, validation_patterns):
+        """Oracle S-2/D-2 restore-DEMOTION checks (Slice-2). The content-nature flag chain (S-A
+        date-in-ref, prefix-outlier, S-B length, D1 digit-disagree) runs at Stage 4.5 — BEFORE the
+        post-merge tail — so a restored value would receive ZERO content-nature vetting. Rather than
+        re-run those side-effectful passes, apply their deterministic predicates to the ALTERNATIVE:
+        any hit means the restore is demoted to a FLAG (fail-toward-review; never a silent value
+        change). Returns the demotion reason or None.
+          digit_substitution — identical skeleton, 1-2 differing digit positions (D1's SHARED
+            comparator): exactly the confusable-garble class where two OCR reads of the same glyph
+            are CORRELATED, not independent — never restore on it (Oracle C2 pin).
+          date_shaped_ref   — a ref-tier alternative that is a full-string calendar date (S-A's belt:
+            regex AND parser must both agree).
+          prefix_outlier / length_outlier — the alternative fails the scope's confirmed prefix/
+            digit-run profile (S-B mirrors).
+          decimal_tail      — numeric restores are WHOLE-NUMBER only (Oracle D-2: keeps qty/count,
+            excludes money-shaped values typed `number`).
+          not_credible      — the alternative fails the field's seeded credibility pattern."""
+        try:
+            from extraction import suffix_reconcile as _sr
+            d = _sr.digit_substitution_diff(winner_val, alt_val)
+            if 1 <= d <= 2:
+                return 'digit_substitution'
+        except Exception:
+            pass
+        if tier == 'ref':
+            try:
+                if (_NUM_DATE_RE.match(str(alt_val)) or _NAME_DATE_RE.match(str(alt_val))) \
+                        and validator.parse_date(str(alt_val)) is not None:
+                    return 'date_shaped_ref'
+            except Exception:
+                pass
+            try:
+                if self.prefix_index:
+                    rec = ocr_corrector.lookup_prefix(self.prefix_index, key, supplier_name, document_slug)
+                    p = ocr_corrector.code_prefix(str(alt_val)) if rec else None
+                    if p and ocr_corrector.is_prefix_outlier(p, rec):
+                        return 'prefix_outlier'
+            except Exception:
+                pass
+            try:
+                if self.length_index:
+                    rec = ocr_corrector.lookup_length(self.length_index, key, supplier_name, document_slug)
+                    prof = ocr_corrector.digit_run_profile(str(alt_val)) if rec else None
+                    if prof and ocr_corrector.is_length_outlier(prof, rec):
+                        return 'length_outlier'
+            except Exception:
+                pass
+        if tier in ('numeric', 'percentage'):
+            c = _uv_numeric_canon(alt_val, pct=(tier == 'percentage'))
+            if not c or c[1]:
+                return 'decimal_tail'
+        try:
+            vk = (field_patterns.get(key) or {}).get('validation') if field_patterns else None
+            pats = (validation_patterns or {}).get(vk)
+            if pats and not keyword._validate(str(alt_val), pats):
+                return 'not_credible'
+        except Exception:
+            pass
+        return None
+
+    def _universal_postmerge_verify(self, results, field_defs, ref_field_key,
+                                    date_field_keys, ocr_text, supplier_name, document_slug):
+        """Slice-2 UNIVERSAL post-merge verify (gary+reggie+007 → Oracle SIGN-OFF-W/COND
+        2026-08-03; docs/oracle_log.md 2026-08-03 entry has the full condition set). Runs BESIDE
+        Slice-1 (immediately after it, before G1 — a restored value is then subject to G1/Fix-A
+        like any winner). For every ELIGIBLE field winner whose tier has a safe predicate:
+        when the winner is tier-UNcorroborated and a DISAGREEING alternative is agreed by >=2
+        independent witness families (RESTORE tiers: >=1 crop-family leg) AND tier-present on the
+        page, act — RESTORE (re-based anchor_inline@90, Oracle D-1: NEVER the witness's real
+        method, which would mint Stage-0.5 authority; the trace event carries the true witness
+        method + deposed value) or FLAG (cap 69 + a note NAMING the disagreeing value). Restores
+        are demoted to flags by _uv_restore_demotion (S-2). Lone absence NEVER acts.
+        INELIGIBLE (skipped): authoritative/Stage-0.5-located/keyword_override winners
+        (_override_eligible — no Slice-1-style exception: no Slice-2 class carries the
+        "winner method IS the suspect" justification), anchor_crop_crosscheck (Slice-1 owns it,
+        and its declined restore is a DECIDED fail-toward-review outcome), '+corrected'/'+snapped'
+        winners (Oracle S-1: Stage-2.5b sets neither was_corrected nor a note — the corrected
+        value is page-ABSENT by construction while the garble it fixed is page-present and
+        correlated-agreed; Slice-2 must never un-fix a correction), was_corrected winners,
+        manual/override/template_fixed literals, shadow components, and ANY winner already
+        carrying a validation_note (Slice-2 NEVER drops or composes a note — stricter than
+        Slice-1, whose dropped note was the flip's own flag). CENSUS mode logs would-fire
+        decisions; mutation is governed solely by the R/F switches (OFF = byte-identical)."""
+        if not (UNIVERSAL_VERIFY_RESTORE or UNIVERSAL_VERIFY_FLAG or UNIVERSAL_VERIFY_CENSUS):
+            return
+        try:
+            type_by_key = {f.get('key'): (f.get('type') or '').lower() for f in (field_defs or [])}
+            field_patterns = _seed_field_patterns(self.patterns.get('field_patterns') or {}, field_defs)
+            validation_patterns = self.patterns.get('validation_patterns') or {}
+            for key, data in list(results.items()):
+                if key.startswith('_') or not isinstance(data, dict):
+                    continue
+                wv = str(data.get('value') or '').strip()
+                if not wv:
+                    continue
+                ftype = type_by_key.get(key)
+                tier = _uv_tier(key, ftype, ref_field_key, date_field_keys)
+                if tier is None:
+                    continue
+                m = str(data.get('method') or '')
+                if not self._override_eligible(data):
+                    continue
+                if m == 'anchor_crop_crosscheck':
+                    continue
+                if '+corrected' in m or '+snapped' in m or data.get('was_corrected'):
+                    continue
+                if any(x in m for x in ('manual', 'override', 'template_fixed', 'shadow')):
+                    continue
+                if str(data.get('validation_note') or '').strip():
+                    continue
+                cands = (self._field_candidates or {}).get(key) or []
+                restore_tier = tier in _UV_RESTORE_TIERS
+                # Stage-2b sub-gate (Oracle C6): numeric/percentage act only under their own
+                # switch; census still measures them (its counts are the flip evidence).
+                _tier_armed = (tier not in ('numeric', 'percentage')) or UNIVERSAL_VERIFY_NUMERIC
+                if not _tier_armed and not UNIVERSAL_VERIFY_CENSUS:
+                    continue
+                if _uv_winner_corroborated(data, cands, ocr_text, tier, ftype):
+                    continue
+                slot = _uv_corroborated_alternative(data, cands, ocr_text, tier, ftype,
+                                                    require_crop=restore_tier)
+                if not slot:
+                    continue
+                alt = slot['raw']
+                demote = None
+                if restore_tier:
+                    demote = self._uv_restore_demotion(key, tier, wv, alt, supplier_name,
+                                                       document_slug, field_patterns,
+                                                       validation_patterns)
+                if UNIVERSAL_VERIFY_CENSUS:
+                    verb = ('would-flag(' + demote + ')' if demote
+                            else ('would-restore' if restore_tier else 'would-flag'))
+                    self.log(f"  UV census: {key} [{tier}] winner '{wv}' ({m}) vs "
+                             f"alt '{alt}' — {verb}")
+                    self._t('universal_verify_census', field=key, tier=tier, value=wv,
+                            method=m, alt=str(alt), action=verb)
+                    _cf = os.environ.get('UNIVERSAL_VERIFY_CENSUS_FILE')
+                    if _cf:                     # harness sink (log lines are dropped by the
+                        try:                    # realdoc harness — file is the census record)
+                            import json as _json
+                            with open(_cf, 'a', encoding='utf-8') as _fh:
+                                _fh.write(_json.dumps({'field': key, 'tier': tier, 'winner': wv,
+                                                       'method': m, 'alt': str(alt),
+                                                       'action': verb}) + '\n')
+                        except Exception:
+                            pass
+                if restore_tier and not demote:
+                    if not (UNIVERSAL_VERIFY_RESTORE and _tier_armed):
+                        continue
+                    restored = {**data,
+                                'value':      alt,
+                                'method':     'anchor_inline',
+                                'confidence': max(int(data.get('confidence') or 0),
+                                                  _CROSSCHECK_CORROB_CONF)}
+                    if 'display_value' in restored:
+                        restored['display_value'] = alt
+                    results[key] = restored
+                    self._t('transform', field=key, stage='uv_restore', method='anchor_inline',
+                            confidence=restored['confidence'],
+                            witness=str(slot.get('crop_method') or ''),
+                            **{'from': wv, 'to': alt})
+                    self.log(f"  Universal verify: {key} [{tier}] '{wv}' uncorroborated — "
+                             f"restored corroborated '{alt}'")
+                else:
+                    # FLAG lane: tier-F fields under the FLAG switch; a demoted restore under the
+                    # RESTORE switch (it is the R tier's own fail-toward-review arm — Oracle S-2).
+                    if not ((UNIVERSAL_VERIFY_FLAG if not restore_tier
+                             else UNIVERSAL_VERIFY_RESTORE) and _tier_armed):
+                        continue
+                    data['confidence'] = min(int(data.get('confidence') or 0), 69)
+                    data['validation_note'] = (
+                        f"this read '{wv}', but other checks on this page read '{alt}' — "
+                        f"please check which is right")
+                    results['_needs_review'] = True
+                    self._t('universal_verify_flag', field=key, tier=tier, value=wv,
+                            alt=str(alt), reason=(demote or 'uncorroborated_vs_alternative'))
+                    self.log(f"  Universal verify: {key} [{tier}] '{wv}' vs corroborated "
+                             f"'{alt}'{' (' + demote + ')' if demote else ''} — flagged for review")
+        except Exception:
+            pass   # advisory pass — must never break extraction
 
     def _flag_taught_field_ownership(self, results, field_defs, supplier_name,
                                      anchors, hints, document_slug, caption_vocab):
@@ -5978,6 +6564,14 @@ class ExtractionEngine:
                 results[_xk] = _restored
                 self.log(f"  Crosscheck-outlier reconcile: {_xk} flip '{_xd.get('value')}' refuted by "
                          f"corroborated '{_alt}' — restored + flag dropped")
+
+        # Slice-2 universal post-merge verify (gary+reggie+007 → Oracle SIGN-OFF-W/COND 2026-08-03).
+        # Runs AFTER Slice-1 (an anchor_crop_crosscheck winner is Slice-1's decided territory —
+        # skipped inside) and BEFORE G1/Fix-A so a restored value is subject to their holds like any
+        # other winner. Gated UNIVERSAL_VERIFY_RESTORE / UNIVERSAL_VERIFY_FLAG (+ CENSUS log-only);
+        # all three unset = byte-identical (the method returns immediately).
+        self._universal_postmerge_verify(results, field_defs, ref_field_key,
+                                         date_field_keys, ocr_text, supplier_name, document_slug)
 
         # G1 (VETO-FALLTHROUGH corroboration guard — gary design + Oracle SIGN-OFF-W/COND 2026-07-26).
         # On a doc whose template match arrived via the identity-veto FALL-THROUGH, the anchor family

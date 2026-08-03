@@ -130,8 +130,12 @@ check("ALWAYS pops the transient _crosscheck_original stash", '_xd.pop("_crossch
 check("re-bases to _CROSSCHECK_CORROB_CONF + anchor_inline", "_CROSSCHECK_CORROB_CONF" in pblk and '"anchor_inline"' in pblk)
 check("drops the flag (validation_note/was_corrected/corrected_to)",
       all(k in pblk for k in ("validation_note", "was_corrected", "corrected_to")))
-check("pass runs immediately BEFORE the G1 veto-fallthrough block",
-      pj != -1 and eng.find("# G1 (VETO-FALLTHROUGH corroboration guard", pj) - pj < 1600)
+# Slice-2 (2026-08-03) sits BETWEEN this pass and G1 (Oracle-sanctioned: after Slice-1 — an
+# anchor_crop_crosscheck winner is Slice-1's decided territory — and before G1 so a restored
+# value is subject to the holds). Pin the ORDER, not adjacency.
+check("pass runs BEFORE the Slice-2 universal verify, which runs BEFORE G1",
+      pj != -1 and pj < eng.find("self._universal_postmerge_verify(", pj)
+              < eng.find("# G1 (VETO-FALLTHROUGH corroboration guard", pj))
 bf = eng.find("def _crosscheck_witness_bucket")
 bblk = eng[bf:bf + 900] if bf != -1 else ""
 check("bucket EXCLUDES registration + bare anchor + the flip (C2 in source)",

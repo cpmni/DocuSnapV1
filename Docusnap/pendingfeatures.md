@@ -19,17 +19,27 @@ SIGN-OFF-W/COND, conditions C1 (pre-flip crop preserved as `_crosscheck_original
 (faithful realdoc 522 docs): ref 96.2→96.6% (+2 heals #344/#353), M=12==12, zero drop. Pin
 `test_crosscheck_outlier_reconcile.py`. Advisors 007+reggie+gary. See `HANDOVER_2026-08-03.md`.
 
-**DEFERRED — Slice-2: UNIVERSAL post-merge verify (owner go/no-go next).** Slice-1 only reaches the
-crosscheck fire-gate (`_is_ref_like_key` = `*_number`/`*_no`/`*reference*` + date). The owner's ask is
-"all types where possible" (custom text/numeric/ref/date). Slice-2 = ONE reusable post-merge pass over
-EVERY field's winner using the LEDGER (`self._field_candidates`) + raw `ocr_text`, per-type predicate
-(ref→alnum-core; date→calendar; numeric→digit match w/ WHOLE-NUMBER boundary — reggie: `1600` must not
-match inside `116000`; text→name-core with TOLERANCE), **lone-absence NEVER vetoes**. Reaches all
-custom types WITHOUT arming more independent-OCR crosschecks. Same `value_in_raw_ocr` primitive; Slice-1
-is a special case Slice-2 subsumes. MUST pass advisors→Oracle before build (changes value-selection for
-every field). Owner caveat: re-test doc-09 LIVE with the setting ON — on the cold path it reads a CHOP
-`PO-160` (clamp/right-grow territory), not the crosscheck flip, so grab the SFDEV `po_number` lineage
-if it still misreads to tell the two classes apart.
+**Slice-2: UNIVERSAL post-merge verify — BUILT 2026-08-03 (owner GO; gary+reggie+007 → Oracle
+SIGN-OFF-W/COND, docs/oracle_log.md).** ONE pass (`engine._universal_postmerge_verify`, after Slice-1,
+before G1) over every eligible winner: RESTORE tiers ref/code+date (stage 2a, switch
+`UNIVERSAL_VERIFY_RESTORE`/setting `universal_verify_restore`) and whole-number numeric/percentage
+(stage 2b, sub-switch `UNIVERSAL_VERIFY_NUMERIC` — Oracle C6: DARK until a numeric/text GT gate
+exists); FLAG tier text/structured (stage 2c, `UNIVERSAL_VERIFY_FLAG` — DARK). EXCLUDED: currency
+(totals pass owns) + supplier_name (identity lane). Oracle blockers built in: S-1 `+corrected`/
+`+snapped` winners untouchable; S-2 restore-demotion (digit-substitution via D1's shared comparator,
+date-shaped-ref, prefix/length outlier, decimal-tail, credibility) — demoted restores FLAG with the
+alternative NAMED; never drops an existing note. Pins `test_universal_postmerge_verify.py` (60
+checks). Census mode `UNIVERSAL_VERIFY_CENSUS`(+`_FILE`): 522-doc realdoc census = ZERO would-fires
+(clean corpus — matches the D1 0.00% precedent); OFF-arm byte-identical to baseline.
+
+**REMAINING (next sessions):**
+- **2b/2c flip gate (Oracle C6)** — build a Customer Doc Test corpus scorer (Desktop corpus +
+  `ground_truth.json` carries total/vat_no/account_no/po_ref: the numeric/structured/text GT the
+  522-doc realdoc lacks — its GT is ref/date-only, so a numeric/text gate CANNOT FAIL there). Then
+  census + 3-arm gate → flip 2b, then 2c. Generator `stress_test/gen_customer_test.py`.
+- Owner caveat (unchanged): re-test doc-09 LIVE — on the cold path it reads a CHOP `PO-160`
+  (clamp/right-grow territory), not the crosscheck flip; grab SFDEV `po_number` lineage if it still
+  misreads.
 
 ---
 
