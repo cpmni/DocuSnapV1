@@ -212,3 +212,29 @@ _(updated as cases accrue — keep/retire recommendation)_
   process_docs threading (C2), and specified breadcrumb-to-trace-not-UI (C3). Every condition was a real
   defect or a genuine improvement. Pattern holds: he verifies at the mechanism level and adjudicates on the
   fail-safe axis, not the surface argument.
+
+---
+
+## 2026-08-03 — Prefix-garble adopt (Northgate PO-17039) + SFDEV lost-reason
+**VERDICT: SIGN OFF WITH CONDITIONS.** The consult: 007 (read-vs-placement), reggie (shape/prefix),
+gary (engine seam + SFDEV) → Oracle. Case: a tight Stage-0.5 template_mapping crop reads 'PO-17039'
+as '»0-17039'@90 and WINS over the correct keyword 'PO-17039'@93 (Stage-0.5 shape-exempt); Stage-4.5
+strips to '0-17039', S-B flags it. Verified LIVE in the diag log (not just the harness).
+- **Fork ruling:** reggie's S-B length-witness arm is the right layer (a SECOND adopt fingerprint in an
+  arm that already single-witness-adopts on a mechanical fingerprint); do NOT co-ship gary's S-C
+  Stage-0.5 extension — S-C runs before S-B and its single-witness FLAG would pre-empt the heal (order
+  collision). Adjudicated: ship reggie's alone (C4).
+- **Premise correction Oracle caught:** the "keyword capped 85 so can't auto-file" claim is FALSE for a
+  strong labelled read — keyword@93 commits at 93 and AUTO-FILES, so the adopt DOES remove a working
+  human checkpoint; a false-heal is a silent misfile. Accepted only because corroboration is
+  distinct-stage + confirmed-prefix + `all_prefixed` + default-OFF. Comment fixed (C3).
+- **Verify-at-source gate (flip-flippable):** the keyword ledger conf must be ≥88 — confirmed 93 in the
+  live diag. `all_prefixed` is the SOLE separator (a garbled 'PO-'→'0-' is mechanically identical to a
+  genuine numeric-leading ref once 4.5 strips the debris) — pinned both directions (C2).
+- Conditions C1 (tight fingerprint + digit belt), C2 (dominance guard), C3 (comment), C4 (no S-C
+  co-ship), C5 (kill switch default OFF) all applied. Pins: test_suffix_reconcile §4, test_ref_length_
+  outlier §7. Realdoc OFF-vs-ON byte-identical (zero regression). Shipped 0d747d0; flipped ON after gate.
+- Piece 2 (SFDEV lost-reason): SIGN OFF — state-derived ("kept 'X' from <method>"), no-overclaim pinned.
+- **Oracle-surfaced follow-up (not his ruling, my finding):** the realdoc/trace harness does NOT fire
+  Stage-0.5 template_mapping, so the corpus gate is BLIND to the template_mapping-garble class — the heal
+  is only observable in the live app. Harness fidelity is a real gap (see pendingfeatures).

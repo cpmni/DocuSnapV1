@@ -57,6 +57,40 @@ Owner directive: build everything buildable, commit each, push at end, flip ON w
   child — handle first. restore-child must verify sender===main + name∈CHILD_WINDOWS. NOT built (the
   trigger needs a live flash-test I can't run headlessly).
 
+## 2026-08-03 (day, owner present) — template fine-tune SLICE 1 SHIPPED + two follow-ups
+**SHIPPED + FLIPPED ON:** the Northgate PO-17039 class (template_mapping tight-crop reads 'PO-17039'
+as '»0-17039'@90, WINS over correct keyword 'PO-17039'@93, → '0-17039'@69 flagged). Verified LIVE in
+the diag log. 007+reggie+gary → Oracle SIGN-OFF-W/COND (oracle_log 2026-08-03).
+- **`PREFIX_GARBLE_ADOPT`** (`0d747d0`, setting `prefix_garble_adopt`, flipped ON) — a SECOND adopt
+  fingerprint in the S-B length-witness arm: `suffix_reconcile.prefix_garble_fingerprint` (garbled
+  leading prefix, exact tail preserved) gated by `engine._strong_single_prefix` (`all_prefixed` +
+  ≥0.90 + ≥5). Adopts the confirmed-prefix peer's value. Pins: test_suffix_reconcile §4 +
+  test_ref_length_outlier §7. Realdoc OFF==ON byte-identical. Bridge `_reconcileEnv` + Settings toggle
+  (`4f29fc0`). Do NOT co-ship gary's S-C Stage-0.5 extension (Oracle C4, order collision).
+- **SFDEV lost-reason** (`45de1af`) — a LOST rung now names the incumbent ("kept 'X' from
+  template_mapping"); state-only, no-overclaim pinned.
+
+### HARNESS-FIDELITY GAP — the corpus gate is BLIND to the template_mapping-garble class (2026-08-03)
+`stress_test/realdoc_regression.js` + `trace_one.js` do NOT fire Stage-0.5 `template_mapping` — on the
+Northgate PO-17039 working copy they read the ⊕ anchor (anchor_inline@97) while the LIVE app fires
+template_mapping and garbles (@90, confirmed in the diag). So EVERY corpus gate this session proved
+"no regression on what the harness sees" but is blind to template_mapping heals/regressions — those
+are only observable live. Root cause UNKNOWN (template match/registration state? working-copy render
+vs raw? the app reprocess passes something the harness snap() doesn't). FIX DIRECTION: make the harness
+faithfully reproduce the app's Stage-0.5 (diff the app reprocess spawn args in processing/handler.js vs
+the harness snap()), so the template fine-tune arc can be gated by the corpus, not just the live app.
+High value — this blind spot undermines every template-class gate.
+
+### oscar crop-fix B — the ROOT fix for the tight-crop garble (007-recommended, incl. po_date)
+The garble is a READING failure (007): a ~13px target crop with no left quiet-zone + over-sharpen reads
+'PO'→'»0' AND '19'→'09' (doc-18 po_date is ALSO wrong: 09-06-2026 vs 19/06/2026 — same class, but a
+date has no prefix so PREFIX_GARBLE_ADOPT can't touch it). Fix B (oscar owns the recipe): cap-height
+upscale (~3× for a 13px crop, target ~30-40px), a READ-TIME quiet zone (pad the pixels fed to
+Tesseract, NOT the stored box), a char whitelist for structured code types ('»' becomes impossible).
+ORDERING SEAM (007): B lands BEFORE any crop-window/geometry change, measured on the IDENTICAL box. B
+is the root (cures every code crop incl. no-peer + date cases); PREFIX_GARBLE_ADOPT is the net. Bring
+in oscar → Oracle.
+
 ---
 
 ## UX / product
