@@ -70,6 +70,19 @@ the diag log. 007+reggie+gary → Oracle SIGN-OFF-W/COND (oracle_log 2026-08-03)
 - **SFDEV lost-reason** (`45de1af`) — a LOST rung now names the incumbent ("kept 'X' from
   template_mapping"); state-only, no-overclaim pinned.
 
+### ✓ RESOLVED (for the batch gate) — harness now fires Stage 0.5 via the reprocess manifest (2026-08-03)
+`realdoc_regression.js` now passes the per-doc `--reprocess-manifest` (`17d7480`), so the gate fires
+Stage-0.5 template_mapping like the app. PROVEN: the `PO-2590`/`PO-5898` chops (template_mapping tight-
+crop) now appear where the blind harness read the ⊕ anchor. **This immediately re-validated the crop
+flips** (right-grow+clamp) that were meaninglessly "byte-identical" on the blind harness: on the
+faithful harness, crop-ON vs crop-OFF (both manifest + prefix-garble ON, 503 docs) = **+3 ref heals
+(#483/#499/#503), ZERO new regressions**, ref 96.4%→97.0%. Honest re-baseline (previously masked): ref
+96.4% base, 12 would-auto-file-wrong. RESIDUAL (minor): single-doc `trace_one` still reads the anchor
+(the batch path fires template_mapping, the single-doc filed-copy path doesn't — a state/path quirk, not
+the gate). NEW FINDING (fine-tune arc): the diag's `doc_context` shows the app matching a **"Stonegate
+Property Mgmt" template to Northgate docs** — a cross-supplier logo-phash collision; the wrong
+template's mapping box is a prime garble source. Investigate under the template fine-tune arc.
+
 ### HARNESS-FIDELITY GAP — the corpus gate is BLIND to the template_mapping-garble class (2026-08-03)
 `stress_test/realdoc_regression.js` + `trace_one.js` do NOT fire Stage-0.5 `template_mapping` — on the
 Northgate PO-17039 working copy they read the ⊕ anchor (anchor_inline@97) while the LIVE app fires
