@@ -114,6 +114,44 @@ def doubled_digit_fingerprint(winner_value, witness_value):
     return ins == left or ins == right
 
 
+def prefix_garble_fingerprint(winner_value, witness_value, dominant_prefix):
+    """The LEADING-PREFIX-CORRUPTION artifact fingerprint (Oracle SIGN-OFF-W/COND 2026-08-03 —
+    the prefix-garble adopt lane of the length-witness arm): True iff the winner is the witness
+    with its confirmed leading code-prefix mis-read into a SHORT NON-ALPHA garble, the value's
+    identity preserved. Signature ('PO-17039' printed; a tight Stage-0.5 crop reads '»0-17039',
+    Stage-4.5 strips it to '0-17039'):
+      - witness alnum starts with the DOMINANT confirmed prefix `dom`      ('po' + '17039');
+      - winner alnum ENDS WITH the witness's EXACT post-prefix tail        (...'17039');
+      - the winner's leading garble (what replaced `dom`) is entirely NON-ALPHA and no longer
+        than `dom` — OCR corrupts a prefix glyph-for-glyph and may drop some, it never
+        manufactures a new alpha run                                       ('0', <= len 'po');
+      - PIN belt: the winner keeps the witness's identity DIGITS (no body digit changed).
+    An ALPHA lead ('XO-17039') = a genuinely DIFFERENT code, not a garble -> False. An EMPTY lead
+    ('17039') = the clean-clip class (clip_completion owns it) -> False. A body-digit change
+    ('0-17038') -> False. Pure string geometry; the confirmed-prefix DOMINANCE + no-numeric-leading
+    -precedent guards live with the caller (engine._strong_single_prefix) — those are what make
+    the SINGLE-witness adopt safe (a keyword peer can otherwise match a different PO-#### on the
+    page). Direction is fixed: the winner LOST its prefix, the witness carries it."""
+    dom = _alnum(dominant_prefix)
+    b   = _alnum(witness_value)
+    if not dom or not b or not b.startswith(dom):
+        return False
+    tail = b[len(dom):]                              # 'po17039' -> '17039'  (the witness identity)
+    if not tail or not any(c.isdigit() for c in tail):
+        return False                                # the witness must carry real post-prefix identity
+    a = _alnum(winner_value)                          # '»0-17039' / '0-17039' -> '017039'
+    if a == b or not a.endswith(tail):
+        return False                                # winner must DIFFER but keep the witness's EXACT tail
+    lead = a[: len(a) - len(tail)]                    # '0'
+    if not lead or any(c.isalpha() for c in lead):
+        return False                                # empty lead = clip class; alpha lead = a different code
+    if len(lead) > len(dom):
+        return False                                # garble no longer than the prefix it replaced
+    if not _digits(a).endswith(_digits(tail)):       # belt-and-braces PIN: identity digits preserved
+        return False
+    return True
+
+
 _WS_RE = re.compile(r'\s+')
 
 

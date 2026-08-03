@@ -73,9 +73,10 @@ print('§4 engine pass')
 
 
 def run(value, method='anchor_crop', note=None, env_on=True, fmts=None,
-        cands=None, authoritative=False, witness_on=True):
+        cands=None, authoritative=False, witness_on=True, pg_on=False):
     os.environ['REF_LENGTH_OUTLIER_GUARD'] = '1' if env_on else '0'
     os.environ['REF_LENGTH_WITNESS_RECONCILE'] = '1' if witness_on else '0'
+    os.environ['PREFIX_GARBLE_ADOPT'] = '1' if pg_on else '0'
     eng = ExtractionEngine(config_path=CONFIG)
     eng.set_formats(fmts if fmts is not None else formats(UNI))
     if cands:
@@ -143,6 +144,34 @@ check('witness kill OFF -> plain S-B flag, no suggestion',
 r9 = run('DN-2408', cands=[{'stage': '2.6_late_anchor', 'value': 'DN-24408', 'method': 'anchor', 'confidence': 90}])
 check('same-eye stages are no witness (plain flag)',
       r9['confidence'] == 69 and not r9.get('corrected_to'))
+
+print('§7 prefix-garble adopt lane (Oracle SIGN-OFF-W/COND 2026-08-03; the Northgate PO-17039 class)')
+# Winner = the confirmed prefix mis-read into a short non-alpha garble ('DN-24408' -> tight-crop
+# '0-24408'); the distinct-stage keyword peer carries the confirmed prefix + exact tail @93.
+PG_WIT = {'stage': '1_keyword', 'value': 'DN-24408', 'method': 'keyword', 'confidence': 93}
+r10 = run('0-24408', method='template_mapping', cands=[PG_WIT], fmts=formats(UNI), pg_on=True)
+check('ADOPT: prefix-garble winner + confirmed-prefix witness (all_prefixed scope) -> healed @ witness conf',
+      r10['value'] == 'DN-24408' and r10['confidence'] == 93
+      and r10.get('length_reconciled') is True and 'validation_note' not in r10)
+# LOAD-BEARING negative: ONE numeric-leading confirmed value flips all_prefixed False -> DECLINE.
+MIXED_LEAD = {**UNI, '0-55555': 1}
+r11 = run('0-24408', method='template_mapping', cands=[PG_WIT], fmts=formats(MIXED_LEAD), pg_on=True)
+check('DECLINE (all_prefixed False — a numeric-leading ref was confirmed) -> FLAG-WITH-SUGGESTION',
+      r11['value'] == '0-24408' and r11['confidence'] == 69 and r11.get('corrected_to') == 'DN-24408')
+# kill OFF -> byte-identical (plain S-B flag + suggestion, no adopt).
+r12 = run('0-24408', method='template_mapping', cands=[PG_WIT], fmts=formats(UNI), pg_on=False)
+check('PREFIX_GARBLE_ADOPT OFF -> no adopt (flag + suggestion only)',
+      r12['value'] == '0-24408' and r12['confidence'] == 69 and r12.get('corrected_to') == 'DN-24408')
+# AUTHORITATIVE winner (⊕ re-teach) declines the adopt -> FLAG (07-26 Tier-A pin preserved).
+r13 = run('0-24408', method='template_mapping', cands=[PG_WIT], fmts=formats(UNI), pg_on=True, authoritative=True)
+check('AUTHORITATIVE winner declines prefix-garble adopt -> FLAG (07-26 Tier-A pin)',
+      r13['value'] == '0-24408' and r13['confidence'] == 69 and r13.get('corrected_to') == 'DN-24408')
+# A DIFFERENT-tail witness is NOT the same token -> never adopted (identity guard).
+r14 = run('0-24408', method='template_mapping',
+          cands=[{'stage': '1_keyword', 'value': 'DN-99999', 'method': 'keyword', 'confidence': 93}],
+          fmts=formats(UNI), pg_on=True)
+check('different-tail witness is NOT a prefix-garble adopt (winner kept, flagged)',
+      r14['value'] == '0-24408' and r14['confidence'] == 69)
 
 print()
 if fails:

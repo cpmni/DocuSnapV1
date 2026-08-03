@@ -931,6 +931,25 @@ _NAME_DATE_RE = re.compile(
     r'|^[A-Za-z]{3,9}\.?,?[\s\-.]+\d{1,2}(?:st|nd|rd|th)?,?[\s\-.]+\d{2,4}$')
 
 
+def _strong_single_prefix(rec) -> bool:
+    """Dominance guard for the prefix-garble adopt lane (Oracle C2, 2026-08-03). Once Stage-4.5
+    strips the '»' debris, a garbled 'PO-17039'->'0-17039' is MECHANICALLY indistinguishable from
+    a genuine numeric-leading '0-17039'; the ONLY separator is that this scope has never confirmed
+    a numeric-leading ref. So require: `all_prefixed` (every confirmed ref carries an alpha prefix —
+    load-bearing, DO NOT drop), dominant share >= 0.90 (stricter than the 0.80 index-arming bar),
+    and >= DOMINANT_MIN_COUNT confirmations. Reads the prefix rec from ocr_corrector.lookup_prefix
+    ({dominant, counts, total})."""
+    counts = (rec or {}).get('counts') or {}
+    total  = int((rec or {}).get('total') or 0)
+    dom    = (rec or {}).get('dominant')
+    if not dom or total <= 0:
+        return False
+    all_prefixed = (sum(counts.values()) == total)   # NO numeric-leading ref was ever confirmed
+    return (all_prefixed
+            and counts.get(dom, 0) / total >= 0.90
+            and counts.get(dom, 0) >= ocr_corrector.DOMINANT_MIN_COUNT)
+
+
 def _is_ref_field(key: str) -> bool:
     """Reference-number-style fields, by naming convention (no supplier/doc
     specifics): invoice_number / po_number / sales_order_number (..._number),
@@ -2756,9 +2775,17 @@ class ExtractionEngine:
                 # + ONE digit inserted adjacent to an identical digit — the merged-doubled-glyph
                 # signature) AND a PASSIVE winner AND the witness passing the length profile,
                 # the scope shape, prefix membership (where a record exists) and not parsing as
-                # a date; adopted at the WITNESS'S OWN confidence (a keyword witness is capped 85
-                # by design — below the 88 critical floor, so this arm alone cannot auto-file),
-                # non-authoritative. An AUTHORITATIVE winner (⊕ re-teach) or a non-fingerprint
+                # a date; adopted at the WITNESS'S OWN confidence, non-authoritative. NOTE
+                # (Oracle C3 2026-08-03): a strong DIRECTLY-LABELLED witness is NOT capped (the 85
+                # cap is only the seeded/override/late-rescue paths) — a keyword read like
+                # 'PO-17039'@93 commits at 93 and CAN auto-file. So this arm DOES remove a working
+                # human checkpoint on adopt; the justification is corroboration strength (a
+                # distinct-stage witness matching the confirmed dominant length/prefix while the
+                # winner fails its own shape), NOT a confidence cap. Two adopt fingerprints:
+                # doubled_digit (the merged-glyph artifact, always) and — only when PREFIX_GARBLE_
+                # ADOPT is on AND _strong_single_prefix holds (all_prefixed) — prefix_garble (a
+                # confirmed leading code-prefix mis-read into a short non-alpha garble). An
+                # AUTHORITATIVE winner (⊕ re-teach) or a non-fingerprint
                 # disagreement gets FLAG-WITH-SUGGESTION: the S-B cap 69 + corrected_to =
                 # witness + a note naming both readings — the 07-26 Tier-A pin stays unpierced
                 # for silent replacement; the right answer is one click away. Rollover-drift
@@ -2793,19 +2820,32 @@ class ExtractionEngine:
                             if (_NUM_DATE_RE.match(_cv) or _NAME_DATE_RE.match(_cv)) \
                                     and validator.parse_date(_cv) is not None:
                                 continue        # a date-shaped witness is never a ref repair
+                            _dd_fp = _sr.doubled_digit_fingerprint(val, _cv)
+                            # PREFIX-GARBLE adopt lane (Oracle SIGN-OFF-W/COND 2026-08-03; kill
+                            # PREFIX_GARBLE_ADOPT, default OFF -> byte-identical). Only when the
+                            # scope is strongly single-prefixed (all_prefixed + >=0.90 + >=5) does a
+                            # confirmed-prefix mis-read into a short non-alpha garble license the
+                            # single-witness adopt — the caller-side dominance guard is what keeps a
+                            # keyword peer matching a DIFFERENT PO-#### on the page from being adopted.
+                            _pg_fp = False
+                            if (not _dd_fp
+                                    and os.environ.get('PREFIX_GARBLE_ADOPT', '0') != '0'
+                                    and _prec and _strong_single_prefix(_prec)):
+                                _pg_fp = _sr.prefix_garble_fingerprint(val, _cv, _prec.get('dominant'))
                             _witness = {'value': _cv,
                                         'confidence': int(_cand.get('confidence') or 0),
                                         'method': _cand.get('method'),
-                                        'fingerprint': _sr.doubled_digit_fingerprint(val, _cv)}
+                                        'fingerprint': _dd_fp or _pg_fp,
+                                        'kind': ('doubled_digit' if _dd_fp else 'prefix_garble' if _pg_fp else None)}
                             if _witness['fingerprint']:
                                 break           # the artifact signature — best possible witness
                     except Exception:
                         _witness = None
                 if _witness and _witness['fingerprint'] and not data.get('authoritative'):
                     self._t('ref_length_adopt', field=key, was=str(val), now=_witness['value'],
-                            method=_witness.get('method'))
+                            method=_witness.get('method'), kind=_witness.get('kind'))
                     self.log(f"  Ref-length reconcile: {key} '{val}' -> '{_witness['value']}' "
-                             f"(doubled-digit merge; independent read had it whole)")
+                             f"({_witness.get('kind') or 'artifact'}; independent read had it whole)")
                     results[key] = {
                         **data,
                         'value':         _witness['value'],

@@ -88,6 +88,19 @@ check('absent prefix not confirmed', not oc.prefix_confirmed('PO', REC))
 check('1-of-15 stray not confirmed', not oc.prefix_confirmed('IN', REC_STRAY))
 check('empty/None safe', not oc.prefix_confirmed('', REC) and not oc.prefix_confirmed('INV', None))
 
+print('§4 prefix_garble_fingerprint — leading-prefix corruption (Oracle C1 2026-08-03):')
+pg = sr.prefix_garble_fingerprint
+check("the Northgate case: '0-17039' is a garble of 'PO-17039'", pg('0-17039', 'PO-17039', 'PO'))
+check("robust to pre-4.5 debris: '»0-17039' too", pg('»0-17039', 'PO-17039', 'PO'))
+check("a body-digit change is NOT a garble ('0-17038' vs 'PO-17039')", not pg('0-17038', 'PO-17039', 'PO'))
+check("an ALPHA lead is a DIFFERENT code, not a garble ('XO-17039')", not pg('XO-17039', 'PO-17039', 'PO'))
+check("an EMPTY lead is the clip class (clip_completion owns it) — '17039'", not pg('17039', 'PO-17039', 'PO'))
+check("witness must carry the DOMINANT prefix ('SO-17039' witness, 'PO' dominant)", not pg('0-17039', 'SO-17039', 'PO'))
+check("a doubled-digit pair is not a prefix garble ('WS-1904'/'WS-11904')", not pg('WS-1904', 'WS-11904', 'WS'))
+check("an interior substitution is not ('PO-34729'/'PO-24729')", not pg('PO-34729', 'PO-24729', 'PO'))
+check("PIN: lead longer than the prefix rejected ('999-17039' vs 'PO-17039')", not pg('999-17039', 'PO-17039', 'PO'))
+check('empty/None safe', not pg('', 'PO-17039', 'PO') and not pg('0-17039', '', 'PO') and not pg('0-17039', 'PO-17039', ''))
+
 print()
 if fails:
     print(f'{fails} CHECK(S) FAILED')
