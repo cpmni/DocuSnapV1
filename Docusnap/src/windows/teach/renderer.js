@@ -246,6 +246,7 @@ async function commitTypeChoice(){
     let types=[]; try{ types=await D.getAllDocTypes()||[]; }catch{}
     state.typeHeadingNames=_collectTypeHeadingNames(types, state.docTypeName);
     const t=types.find(x=>x.slug===state.docTypeSlug);
+    state.refFieldKey=(t&&t.ref_field_key)||null; state.dateFieldKey=(t&&t.date_field_key)||null;
     state.fields=(t&&t.fields?t.fields:[]).filter(f=>f.enabled!==0).map(f=>({key:f.key,label:f.label,type:f.type,required:!!f.required}));
     if (!state.fields.length){ toast('That type has no fields to teach.'); return false; }
     return true;
@@ -260,11 +261,32 @@ async function commitTypeChoice(){
   state.docTypeName = t ? t.name : '';
   { let types=[]; try{ types=await D.getAllDocTypes()||[]; }catch{}
     state.typeHeadingNames=_collectTypeHeadingNames(types, state.docTypeName); }
+  state.refFieldKey=(t&&t.ref_field_key)||null; state.dateFieldKey=(t&&t.date_field_key)||null;
   state.fields=(t&&t.fields?t.fields:[]).map(f=>({
     key:f.key, label:f.label, type:f.type,
     required:(f.key===t.ref_field_key || f.key===t.date_field_key),
   }));
   return true;
+}
+
+// Role-aware ocr_type seeding (Oracle NIGHT 2026-08-03, item c — the :999 'text'-default bug).
+// Role beats type (structural ref/date roles are frequently typed 'text' in the DB — the
+// engine._seed_field_patterns docstring case); vocabulary mirrors _TYPE2VAL so the stored value
+// is directly consumable. Flag-only supplementary types deliberately stay 'text' (they are
+// review-not-reject by design — do not invent gates for them). NOTE: ocr_type is currently
+// production-INERT for extraction (val_type comes from field_patterns) — this buys harness/
+// display truth and a correct value for any future consumer.
+const OCR_TYPE_BY_FIELD_TYPE = {
+  date:'date', currency:'currency', amount:'currency', number:'currency',
+  alphanumeric:'alphanumeric', reference:'alphanumeric',
+  reference_code:'reference_code', job_reference:'job_reference',
+  currency_code:'currency_code',
+};
+function ocrTypeFor(f){
+  if (f.key === state.dateFieldKey) return 'date';
+  if (f.key === state.refFieldKey)
+    return (String(f.type||'').toLowerCase()==='reference_code') ? 'reference_code' : 'alphanumeric';
+  return OCR_TYPE_BY_FIELD_TYPE[String(f.type||'').toLowerCase()] || 'text';
 }
 
 // ── Step 3: region selection ─────────────────────────────────────────────────
@@ -996,7 +1018,7 @@ async function doCommit(){
         field_key:f.key, page_number:0, anchor_text:r.anchor_text||null,
         anchor_x_norm:a.x, anchor_y_norm:a.y, anchor_w_norm:a.w, anchor_h_norm:a.h,
         target_x_norm:r.target.x, target_y_norm:r.target.y, target_w_norm:r.target.w, target_h_norm:r.target.h,
-        ocr_type: (f.type==='date'?'date':(f.type==='currency'?'currency':'text')),
+        ocr_type: ocrTypeFor(f),
         search_expansion:0.04, enabled:1,
       });
     }

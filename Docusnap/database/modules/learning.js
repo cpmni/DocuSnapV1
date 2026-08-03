@@ -1275,10 +1275,18 @@ function getFieldFormats(db) {
   // by definition have <3 distinct values (mirrors ocr_corrector.MIN_CONFIRMED_FOR_SINGLE_SHAPE=3).
   // confirmed_count (total confirmed instances, not deduped) is carried so consumers can
   // apply their own stricter thresholds (e.g. the noise-profile gate needs 10+).
+  // PROVISIONAL channel (Oracle NIGHT 2026-08-03, S2): groups BELOW the ≥3 bar are now
+  // emitted too, tagged `provisional: true`. Python keeps them OUT of the main format
+  // index (build_format_class_index skips the tag — the ≥3-confirm VETO direction is
+  // preserved verbatim) and builds a SEPARATE consent-only skeleton index from them,
+  // consumed exclusively by the mapper's clean-commit consent ladder. This is what lets
+  // sibling #1 of a freshly-taught template corroborate against the TAUGHT value's
+  // skeleton instead of a cold "usual format".
   return Object.values(groups)
-    .filter(g => g._values.size >= 3 || g._count >= 3)
-    .map(({ _values, _valueCounts, _count, ...rest }) => ({
+    .map(g => ({ ...g, _ok: g._values.size >= 3 || g._count >= 3 }))
+    .map(({ _values, _valueCounts, _count, _ok, ...rest }) => ({
       ...rest,
+      ...(_ok ? {} : { provisional: true }),
       sample_values:   [..._values].slice(0, 20),
       confirmed_count: _count,
       // Per-value confirmed-document counts (newest distinct first, capped) so

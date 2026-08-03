@@ -1713,6 +1713,7 @@ class ExtractionEngine:
         self.length_index        = {}   # dominant ref digit-run profile per scope — S-B length guard (set_formats)
         self.noise_profile_index = {}   # populated by set_formats()
         self.format_class_index  = {}   # populated by set_formats()
+        self.provisional_shape_index = {}   # consent-only taught skeletons (set_formats)
         self.label_overrides     = []   # populated by set_label_overrides()
         self.field_rules_index   = {}   # populated by set_field_rules()
         self._multiline_index    = {}   # populated by set_field_rules() (multiline_continue)
@@ -2287,6 +2288,22 @@ class ExtractionEngine:
                    or self.format_class_index.get(('', d, fk))
         return lookup
 
+    def _make_provisional_lookup(self, supplier_name, document_slug):
+        """CONSENT-ONLY provisional-skeleton lookup (Oracle NIGHT 2026-08-03, S2): closure
+        (field_key, value) -> bool, True iff the value's canonical skeleton matches a
+        provisionally-taught (sub-≥3-confirm) skeleton for the scope. Consumed EXCLUSIVELY
+        by template_mapper._shape_consents' ladder — never by any veto/flag path."""
+        if not self.provisional_shape_index or not document_slug:
+            return None
+        s = (supplier_name or '').lower().strip()
+        d = document_slug.lower().strip()
+
+        def lookup(fk, value):
+            sks = (self.provisional_shape_index.get((s, d, fk)) if s else None) \
+                  or self.provisional_shape_index.get(('', d, fk))
+            return format_anomaly_checker.provisional_shape_accepts(value, sks)
+        return lookup
+
     def set_field_rules(self, rules: list):
         """Operator-taught field cleanup rules (Review right-click toolkit). Index
         by (supplier_lower, doctype_lower, field_key) → [rule, …] so the Stage 4.5
@@ -2378,13 +2395,21 @@ class ExtractionEngine:
 
     def set_formats(self, formats_data: list):
         """Pre-build all format indexes from confirmed value data."""
-        self.format_index        = ocr_corrector.build_format_index(formats_data)
-        self.noise_profile_index = ocr_corrector.build_noise_profile_index(formats_data)
-        self.dominant_index      = ocr_corrector.build_dominant_index(formats_data)
-        self.known_index         = ocr_corrector.build_known_index(formats_data)
-        self.prefix_index        = ocr_corrector.build_prefix_index(formats_data)
-        self.length_index        = ocr_corrector.build_length_index(formats_data)   # S-B ref digit-run profiles
-        self.format_class_index  = format_anomaly_checker.build_format_class_index(formats_data)
+        # PROVISIONAL rows (below the ≥3-confirm bar, tagged by learning.js — Oracle NIGHT
+        # 2026-08-03 S2) are stripped BEFORE any established builder sees them: every veto/
+        # correct/snap index keeps its exact pre-provisional input. They feed ONLY the
+        # separate consent-only skeleton index (provisional_shape_index), consumed solely by
+        # the mapper's clean-commit consent ladder. Pinned in test_template_frag_clip.py.
+        _solid = [e for e in (formats_data or [])
+                  if not (isinstance(e, dict) and e.get('provisional'))]
+        self.format_index        = ocr_corrector.build_format_index(_solid)
+        self.noise_profile_index = ocr_corrector.build_noise_profile_index(_solid)
+        self.dominant_index      = ocr_corrector.build_dominant_index(_solid)
+        self.known_index         = ocr_corrector.build_known_index(_solid)
+        self.prefix_index        = ocr_corrector.build_prefix_index(_solid)
+        self.length_index        = ocr_corrector.build_length_index(_solid)   # S-B ref digit-run profiles
+        self.format_class_index  = format_anomaly_checker.build_format_class_index(_solid)
+        self.provisional_shape_index = format_anomaly_checker.build_provisional_shape_index(formats_data)
         n = len([k for k in self.format_index if k != '_fallback'])
         m = len(self.noise_profile_index)
         p = len(self.format_class_index)
@@ -4338,6 +4363,7 @@ class ExtractionEngine:
                         field_patterns=field_patterns,
                         validation_patterns=self.patterns.get("validation_patterns", {}),
                         format_lookup=_fmt_lookup,
+                        provisional_lookup=self._make_provisional_lookup(supplier_name, document_slug),
                         slice_capture=(self._capture_slice if (self._trace and self._slice_dir) else None),
                         template_landmarks=_landmarks,
                         registration_enabled=self.registration_enabled,

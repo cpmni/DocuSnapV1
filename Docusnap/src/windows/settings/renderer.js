@@ -611,6 +611,18 @@ document.getElementById('edge-clean-toggle').addEventListener('change', async (e
   await api.setSetting('template_code_edge_clean', e.target.checked ? 'true' : 'false');
 });
 
+// ── Snap taught boxes to the printed text (Slice B word-snap, TEMPLATE_TARGET_WORD_SNAP,
+// default OFF) ──
+(async () => {
+  try {
+    const v = await api.getSetting('template_target_word_snap');
+    document.getElementById('word-snap-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('word-snap-toggle').checked = false; }
+})();
+document.getElementById('word-snap-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('template_target_word_snap', e.target.checked ? 'true' : 'false');
+});
+
 // ── Read small reference/date print more clearly (STRUCT_CODE_READ, default OFF) ──
 (async () => {
   try {

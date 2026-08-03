@@ -354,3 +354,21 @@ Facts Barry can rely on without re-checking (re-verify if the codebase has moved
 - **Ref-less document types are first-class**; every type is forced to carry a required "Document Issuer" (filing folder + learning scope; blank = warn → "Unknown Company") and a required "Date" (blank blocks confirm). 14 field types available; custom free-text fields auto-seed from their own label; the Teach wizard creates type + fields + extraction in one non-technical flow; a tick-to-add preset catalog exists.
 - **No barcode/QR decode library ships**; the license gate DENIES GPL/LGPL (pyzbar/zbar out) and allows Apache-2.0/MIT (zxing-cpp is the clean candidate); OpenCV is forbidden.
 - Fully offline Windows desktop app (Electron + Python/Tesseract + SQLite); ~£299 one-time core (founding £179), LAN client seats add-on; first-run wizard, welcome tour, and a sandboxed practice run exist; auto-filing "graduates" per supplier with trust gates and always fails toward human review.
+
+## Prior art — check before designing (standing rule, added 2026-08-03)
+Before proposing, grep for prior art on the MECHANISM (not just the symptom): `docs/oracle_log.md`
+(every Oracle verdict + conditions), `docs/session-log.md` + the repo `HANDOVER_*.md` files
+(per-session build history), and `pendingfeatures.md` (deferred designs with their reasons). A
+shipped kill switch, a pinned trade-off, or a prior SEND BACK on your exact idea may already exist
+— finding it is cheaper than re-deriving it, and contradicting it un-knowingly is the failure mode
+this rule exists to prevent. Comments can be STALE (two "DARK by default" comments outlived their
+flips in one week); the CODE and the oracle log outrank any comment.
+
+## Track record (accrued at session wraps — what this advisor got RIGHT/WRONG, so future runs calibrate)
+- 2026-08-03: round-1 ideas were re-scored by the owner's new rule (minimal customer interaction,
+  max silent auto-file) — visibility/receipt/checkpoint ideas were routed to SFDEV or dropped;
+  SILENT-automation ideas (wiggle test, one-good-doc picker, self-healing box, template MOT)
+  survived. Round-2 (scoped to that rule) landed far better: verified the teach/renderer.js:999
+  ocr_type seeding bug AT SOURCE before proposing, and the "teach-time geometry == read-time
+  geometry" framing drove the night's build list. Lesson: verify one concrete fact in-repo per
+  idea; lead with zero-surface automation.

@@ -364,3 +364,37 @@ specialists — the :939 twin was corrected 08-03, this copy missed.
   ledger (never new crosschecks). #11 needs template_id attribution on corrections. Shared spine =
   ONE per-field agreement+tidy event at the engine post-merge choke point. Owner rule applied
   (2026-08-03): minimal customer interaction — visibility ideas route to SFDEV, not customer UI.
+
+---
+
+## 2026-08-03 NIGHT — B flip + rb_531 false-note class (frag strip · C2a clip commit · provisional channel)
+**VERDICT: B FLIP SIGNED (B-F1 met — decomposition: shared-535 delta = +1 ref heal #540, +1 date
+heal #535 '21-11-2096'→'2026', 5 flag-drops on correct values, M identical; the +6/+6 headline was
+corpus growth). rb_531 premise CONFIRMED (:~750 disagreement branch stamps shape_warn
+UNCONDITIONALLY on a never-shape-checked inline value — the note is factually FALSE; plus the
+α-variant: fragment+full-core commits DIRTY clean@90 via the absolute rung). Fork RULED COMPOSITE:
+gary C1 label-suffix fragment binding (≤2 letters + separator, case-insensitive suffix of the
+mapping's OWN anchor_text tail) + consent LADDER (confirmed verdict FINAL → provisional taught
+skeleton → reggie's 1-letter floor). C2a + #3 SIGNED W/COND.**
+Consult: gary (route trace) + reggie (predicates) + barry round-2 + Chris (customer-sim; "a hold
+with nothing to fix is a tax", trust 7→2 — quoted in the briefs by owner instruction).
+- **S1 (caught by Oracle):** C2a's locate-token leg can compare the locate text WITH ITSELF when
+  `_read_inline_box` falls back to `located['inline_value']` — a manufactured witness. Mandatory
+  ladder-provenance bit; fallback-sourced inline disqualifies C2a. BUILT (3-tuple return + pin).
+- **S2:** provisional channel = separate index + ONE consent helper (`_shape_consents`); never a
+  format_lookup wrapper (would leak a 1-count taught skeleton into every veto path). BUILT — engine
+  strips provisional rows before EVERY established builder; invisibility pinned.
+- **S3:** the pre-flip gate must run the COMPOSED config (B+A+frag+clip ON) — a B-OFF baseline
+  measures a config that never ships. RUN as ordered.
+- **S4:** the strip's two witnesses share the label-boundary decision (decapitation class
+  'NO-12345' under "Order No.") — the consent ladder is mandatory, not decorative; taught
+  'NO-#####' skeleton refuses stripped '#####'. PINNED.
+- **S5:** `_pick_fuller_code` branch order now load-bearing (un-clip → frag → C2a → conf race) —
+  source-order PINNED.
+- barry #4 post-merge flag-refute: WRONG LAYER, parked (C2a fixes at source with more evidence).
+  ocr_type confirmed production-INERT; JS role-aware seeding + BOTH edit-surface selects = admin-
+  only GO (built); `_seed_field_patterns` ref_field_key threading = separate gated follow-up.
+  C2b honest disagreement copy = owner-morning. Teach-time box snap (barry #1) = owner-morning
+  (UI-visible teach flow).
+- Switches: `TEMPLATE_CODE_FRAG_CLEAN` / `TEMPLATE_CLIP_COMMIT` (settings `template_code_frag_clean`
+  / `template_clip_commit`), default OFF. Pins `test_template_frag_clip.py` (29 checks).

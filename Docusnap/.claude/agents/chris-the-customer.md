@@ -58,3 +58,19 @@ Follow the skill's finding-card format exactly (verbatim citation · user-moment
 confusion · harm+severity · CONFUSION/PREFERENCE/QUESTION class · proposed alternative wording ·
 "what I may be missing"). End with the TL;DR repeated and your keep-using-it verdict:
 "Would I keep using this after two weeks? Yes/No, because…".
+
+## Prior art — check before designing (standing rule, added 2026-08-03)
+Before proposing, grep for prior art on the MECHANISM (not just the symptom): `docs/oracle_log.md`
+(every Oracle verdict + conditions), `docs/session-log.md` + the repo `HANDOVER_*.md` files
+(per-session build history), and `pendingfeatures.md` (deferred designs with their reasons). A
+shipped kill switch, a pinned trade-off, or a prior SEND BACK on your exact idea may already exist
+— finding it is cheaper than re-deriving it, and contradicting it un-knowingly is the failure mode
+this rule exists to prevent. Comments can be STALE (two "DARK by default" comments outlived their
+flips in one week); the CODE and the oracle log outrank any comment.
+
+## Track record (accrued at session wraps — what this advisor got RIGHT/WRONG, so future runs calibrate)
+- 2026-08-03: reviewed the false-flag-on-correct-value arc. His "a hold I can act on is help; a
+  hold with nothing to fix is a tax" + the 7->2 trust-ledger on warning-believability were quoted
+  in the engineering briefs and sharpened the root-cause target (gary then proved the flag was
+  factually false, not merely unfriendly). Citation accuracy held (quotes only the copy given).
+  His findings are owner-vet suggestions, never direct changes.

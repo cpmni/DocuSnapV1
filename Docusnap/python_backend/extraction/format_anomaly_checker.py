@@ -753,6 +753,13 @@ def build_format_class_index(formats_data: list) -> dict:
         # still looked fine). Keep supplier-scoped entries too.
         if not doc_type or not field_key:
             continue
+        # PROVISIONAL entries (below the ≥3-confirm bar, tagged by learning.js) must NEVER
+        # enter the MAIN index (Oracle NIGHT 2026-08-03 S2: a 1-count taught skeleton must
+        # not veto legitimate sibling variation pipeline-wide). They feed ONLY the separate
+        # consent-only index below. The <3 length check would drop most of them anyway —
+        # this is the explicit, pinned guarantee.
+        if entry.get('provisional'):
+            continue
         if len(samples) < 3:
             continue
 
@@ -822,3 +829,46 @@ def build_format_class_index(formats_data: list) -> dict:
         index[(supplier, doc_type, field_key)] = fmt
 
     return index
+
+
+# ── PROVISIONAL taught-skeleton index (Oracle NIGHT 2026-08-03, gary #3 + S2) ─────────────────
+# Day-one shape witness for a freshly-taught template: the taught/early-confirmed values' shape
+# skeletons, from the `provisional: true` groups learning.js now emits for BELOW-the-≥3-bar
+# scopes. CONSENT-ONLY by construction — a SEPARATE index consumed exclusively by the mapper's
+# clean-commit consent ladder (template_mapper._shape_consents). It must NEVER be visible to
+# _format_rejects / check_value / _gate_value (the ≥3-confirm VETO principle stays verbatim;
+# pinned in tests). Lone-skeleton corroboration can only LICENSE a heal that already carries an
+# independent witness — it can never reject or flag anything.
+
+def build_provisional_shape_index(formats_data: list) -> dict:
+    """(supplier_lower, doc_type_lower, field_key) -> set of canonical shape skeletons."""
+    idx: dict[tuple, set] = {}
+    for entry in (formats_data or []):
+        if not isinstance(entry, dict) or not entry.get('provisional'):
+            continue
+        supplier = (entry.get('supplier_name') or '').lower().strip()
+        doc_type = (entry.get('document_type') or '').lower().strip()
+        field_key = entry.get('field_key', '')
+        if not doc_type or not field_key:
+            continue
+        sks = set()
+        for v in (entry.get('sample_values') or []):
+            if v:
+                try:
+                    sks.add(_shape_canonical(shape_signature(str(v))))
+                except Exception:
+                    pass
+        if sks:
+            idx.setdefault((supplier, doc_type, field_key), set()).update(sks)
+    return idx
+
+
+def provisional_shape_accepts(value, skeleton_set) -> bool:
+    """Does `value`'s canonical skeleton match a provisionally-taught skeleton? Pure;
+    False on any doubt (consent-only — a False here only declines a heal)."""
+    if not value or not skeleton_set:
+        return False
+    try:
+        return _shape_canonical(shape_signature(str(value))) in skeleton_set
+    except Exception:
+        return False

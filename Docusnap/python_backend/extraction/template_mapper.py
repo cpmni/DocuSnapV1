@@ -131,6 +131,60 @@ def _strip_code_edges(s):
     return _CODE_EDGE_DEBRIS.sub('', s or '')
 
 
+# Slice A2/C1 composite — ALNUM label-tail FRAGMENT strip (Oracle NIGHT 2026-08-03, fork RULED
+# composite: gary's label-suffix binding is the base predicate, reggie's strictness survives as
+# the consent LADDER below). The class Slice A can't reach: the crop grabs an ALNUM fragment of
+# the label tail ('o. DN-67428' — the 'o' of "Delivery Note No."), which _strip_code_edges can't
+# touch and whose core breaks the agree branch. Heal only when the fragment is a case-insensitive
+# SUFFIX of the mapping's OWN anchor_text alnum tail (doc evidence, not a lexicon), the remainder
+# equals the inline witness VERBATIM, and the consent ladder passes. Kill TEMPLATE_CODE_FRAG_CLEAN
+# (default OFF = byte-identical).
+_CODE_FRAG_CLEAN_ON = os.environ.get('TEMPLATE_CODE_FRAG_CLEAN', '0') != '0'
+# 1-2 LETTERS (digits are value-material — excluded) + a BOUNDED 1-4 char separator run, with an
+# alnum value-core ahead (never consumed). Anchored, bounded, no nesting.
+_CODE_FRAG_TAIL = re.compile(r'^[A-Za-z]{1,2}[^A-Za-z0-9\r\n]{1,4}(?=[A-Za-z0-9])')
+
+# C2a — right-clip clean commit (gary, Oracle S1/S3 conditions). A truncated rigid whose core is a
+# STRICT PREFIX of the inline read used to lose the conf race into a shapewarn'd commit whose note
+# ("manually mapped value differs from the usual format") was factually FALSE — the inline value
+# passes the learned shape and was simply never shape-checked (the :~750 disagreement branch stamps
+# shape_warn unconditionally). Three corroboration legs replace the false flag; ANY leg failing →
+# today's flagged path byte-identical. Kill TEMPLATE_CLIP_COMMIT (default OFF).
+_CLIP_COMMIT_ON = os.environ.get('TEMPLATE_CLIP_COMMIT', '0') != '0'
+_CLIP_COMMIT_MIN_PREFIX = 4        # rigid must corroborate >=4 core chars ('d' prefixing everything is noise)
+
+
+def _anchor_alnum_tail(anchor_text):
+    """Lowercased alnum fold of the label text ('Delivery Note No.' -> 'deliverynoteno')."""
+    return ''.join(c for c in str(anchor_text or '') if c.isalnum()).lower()
+
+
+def _shape_consents(value, field_key, format_lookup, provisional_lookup):
+    """The ONE consent ladder shared by the fragment strip and C2a (Oracle S2 — single helper,
+    provisional index consulted NOWHERE else). Returns:
+      'confirmed'   — a >=3-confirm learned entry EXISTS and ACCEPTS the value;
+      'refused'     — an entry EXISTS and REJECTS it (FINAL — never falls through to provisional);
+      'provisional' — no confirmed entry, but the taught-doc skeleton index accepts;
+      'none'        — no evidence either way."""
+    if format_lookup is not None:
+        try:
+            entry = format_lookup(field_key)
+        except Exception:
+            entry = None
+        if entry:
+            try:
+                return 'confirmed' if _check_learned_format(str(value), entry) is None else 'refused'
+            except Exception:
+                return 'none'
+    if provisional_lookup is not None:
+        try:
+            if provisional_lookup(field_key, str(value)):
+                return 'provisional'
+        except Exception:
+            pass
+    return 'none'
+
+
 # Slice B — TARGET WORD-SNAP (fork design + Oracle SIGN-OFF-W/COND B-C1..C5, 2026-08-03 evening —
 # docs/oracle_log.md). On the DERIVED rungs only (drift `_geometric` re-seat + registration
 # transform) the seated value box is snapped to the page's word geometry before the crop OCR, so a
@@ -147,7 +201,8 @@ _SNAP_VAL_TYPES = frozenset(_CODE_CROSSCHECK_TYPES | {'date'})
 def extract_with_mappings(page_images, mappings, field_patterns=None,
                           ocr_lines_fn=None, ocr_text_fn=None, slice_capture=None,
                           validation_patterns=None, format_lookup=None,
-                          template_landmarks=None, registration_enabled=False):
+                          template_landmarks=None, registration_enabled=False,
+                          provisional_lookup=None):
     """
     Run every enabled mapping against `page_images` and return resolved fields.
 
@@ -224,7 +279,8 @@ def extract_with_mappings(page_images, mappings, field_patterns=None,
                                page_transform=page_transform.get(page_idx),
                                slice_capture=slice_capture, page_idx=page_idx,
                                validation_patterns=validation_patterns,
-                               format_lookup=format_lookup, line_cache=line_cache)
+                               format_lookup=format_lookup, line_cache=line_cache,
+                               provisional_lookup=provisional_lookup)
         if outcome:
             results[field_key] = outcome
     return results
@@ -586,10 +642,15 @@ def _read_inline_box(page, located, val_type, ocr_text_fn, field_key,
     """Full-res OCR-ladder re-read of the located label's INLINE value column (Seam B — the
     value's own box, isolated by cluster_value_words; never the ~120-DPI locate text, which is
     only a fallback when the re-read yields nothing). One-token code trim + the shared gate.
-    Returns (value, ocr_conf) or (None, None). Shared by Slice 1 (fast path) and Slice 2 (drift)."""
+    Returns (value, ocr_conf, from_ladder). `from_ladder` is the S1 PROVENANCE bit (Oracle
+    NIGHT 2026-08-03): True only when the value came from the full-res ladder re-read — a
+    fallback to the locate-pass text sets it False, and the C2a clean-commit's leg (iii)
+    (locate-token corroboration) DISQUALIFIES such a value, else it would compare the locate
+    text with itself (a manufactured witness)."""
     inline_box = located.get("inline_box")
     inline_val = None
     inline_conf = None
+    from_ladder = False
     if inline_box:
         _pad = _expand_box(inline_box, 0.005)                 # guard against clipping edge glyphs
         _icap = ((lambda c: slice_capture(field_key, "template_mapping", page_idx,
@@ -598,17 +659,19 @@ def _read_inline_box(page, located, val_type, ocr_text_fn, field_key,
         _imeta = {}
         inline_val = _crop_and_ocr(page, _pad, val_type, ocr_text_fn, capture=_icap, meta=_imeta)
         inline_conf = _imeta.get('conf')
+        from_ladder = bool(inline_val)
     if not inline_val:                                        # fallback: the locate-pass text
         inline_val = _clean_value(located.get("inline_value"), val_type)
     if inline_val and " " in inline_val:                      # a code column is one token
         inline_val = inline_val.split()[0]
     inline_val, _, _ = _gate_value(inline_val, val_type, field_key, validation_patterns,
                                    format_lookup, shape_mode='ignore')
-    return inline_val, inline_conf
+    return inline_val, inline_conf, from_ladder
 
 
 def _pick_fuller_code(rigid_text, rigid_conf, inline_val, inline_conf, anchor, val_type, inline_geom,
-                      field_key=None, format_lookup=None):
+                      field_key=None, format_lookup=None, provisional_lookup=None,
+                      locate_token=None, inline_from_ladder=False):
     """Reconcile a clip-prone rigid CODE read against a label-anchored inline read; return the
     Stage 0.5 result to COMMIT, or None to keep the rigid read. The single decision shared by
     Slice 1 (rigid = the absolute drawn box) and Slice 2 (rigid = the drift-relocated geometric
@@ -643,10 +706,64 @@ def _pick_fuller_code(rigid_text, rigid_conf, inline_val, inline_conf, anchor, v
                     healed["edge_cleaned_from"] = rigid_text   # normal result dict byte-identical
                 return healed
         return None
+    # ⚠ BRANCH ORDER IS LOAD-BEARING (Oracle S5, pinned): un-clip → fragment-strip (inside
+    # rigid-fuller) → C2a → conf race. Reordering silently restores either the α-variant
+    # (dirty fragment+full-core committing clean @90) or the false-note class.
     if ni.endswith(na):
         return _mapping_result(inline_val, True, False, False, anchor, val_type=val_type, geom=inline_geom)
     if na.endswith(ni):
+        # Slice A2/C1 composite (gated): ALNUM label-tail fragment. Fragment must be a
+        # case-insensitive suffix of the mapping's own anchor label tail; the remainder must
+        # equal the inline witness VERBATIM; consent ladder: a confirmed entry's verdict is
+        # FINAL (accept→heal / reject→refuse), else a provisional taught skeleton accepts,
+        # else only a 1-LETTER fragment heals (reggie's floor — 2-letter fragments collide
+        # with genuine PO/SO/DN prefixes and need shape evidence).
+        if _CODE_FRAG_CLEAN_ON and field_key is not None:
+            _r = (rigid_text or '').strip()
+            _iv = (inline_val or '').strip()
+            _m = _CODE_FRAG_TAIL.match(_r)
+            if _m:
+                _frag = ''.join(c for c in _m.group(0) if c.isalnum()).lower()
+                _tail = _anchor_alnum_tail(anchor)
+                if _frag and _tail and _tail.endswith(_frag):
+                    _stripped = _r[_m.end():]
+                    if _stripped and _stripped == _iv:
+                        _consent = _shape_consents(_stripped, field_key, format_lookup,
+                                                   provisional_lookup)
+                        if _consent in ('confirmed', 'provisional') \
+                                or (_consent == 'none' and len(_frag) == 1):
+                            healed = _mapping_result(_stripped, True, False, False, anchor,
+                                                     val_type=val_type, geom=inline_geom)
+                            if inline_geom is not None:          # diag-only trace marker
+                                healed["frag_cleaned_from"] = rigid_text
+                            return healed
         return None
+    # C2a — right-clip clean commit (gated): the rigid read corroborates a STRICT PREFIX of
+    # the inline core (interior digit mismatches fail startswith — D1's class untouched); the
+    # consent ladder corroborates the SKELETON (the un-witnessed tail's length); the ~120-DPI
+    # locate-pass token corroborates the GLYPHS — and leg (iii) requires the inline value to
+    # be a genuine full-res LADDER read (Oracle S1: a locate-fallback inline would compare the
+    # locate text with itself). Any leg fails → today's flagged path below, byte-identical.
+    if _CLIP_COMMIT_ON and field_key is not None:
+        _r2 = _strip_code_edges((rigid_text or '').strip())
+        _m2 = _CODE_FRAG_TAIL.match(_r2)
+        if _m2:
+            _f2 = ''.join(c for c in _m2.group(0) if c.isalnum()).lower()
+            _t2 = _anchor_alnum_tail(anchor)
+            if _f2 and _t2 and _t2.endswith(_f2):
+                _r2 = _r2[_m2.end():]
+        _core2 = _code_norm(_r2)
+        if (inline_from_ladder
+                and len(_core2) >= _CLIP_COMMIT_MIN_PREFIX
+                and ni.startswith(_core2) and ni != _core2
+                and _code_norm(locate_token) == ni
+                and _shape_consents(inline_val, field_key, format_lookup,
+                                    provisional_lookup) in ('confirmed', 'provisional')):
+            committed = _mapping_result(inline_val, True, False, False, anchor,
+                                        val_type=val_type, geom=inline_geom)
+            if inline_geom is not None:                          # diag-only trace marker
+                committed["clip_committed_from"] = rigid_text
+            return committed
     if rigid_conf is not None and inline_conf is not None and inline_conf <= rigid_conf:
         return None
     return _mapping_result(inline_val, True, False, False, anchor, shape_warn=True,
@@ -656,7 +773,7 @@ def _pick_fuller_code(rigid_text, rigid_conf, inline_val, inline_conf, anchor, v
 def _inline_code_reconcile(page, rigid_text, anchor_box, target_box, val_type, field_key,
                            anchor_text, ocr_lines_fn, ocr_text_fn, validation_patterns,
                            format_lookup, line_cache, slice_capture, page_idx,
-                           abs_ocr_conf=None):
+                           abs_ocr_conf=None, provisional_lookup=None):
     """Cross-check a single-token CODE field's absolute drawn-box read (`rigid_text`) against
     the label-anchored INLINE read, and prefer the fuller value when the box read is a clipped
     subset of it (a fixed narrow box drifts off the value's prefix under per-scan offset/scale:
@@ -688,18 +805,23 @@ def _inline_code_reconcile(page, rigid_text, anchor_box, target_box, val_type, f
                              min_search=_ANCHOR_SEARCH_MIN, line_cache=line_cache)
     if not located or located.get("matched_text") is None:
         return None
-    inline_val, inline_conf = _read_inline_box(page, located, val_type, ocr_text_fn, field_key,
-                                               validation_patterns, format_lookup, slice_capture, page_idx)
+    inline_val, inline_conf, inline_from_ladder = _read_inline_box(
+        page, located, val_type, ocr_text_fn, field_key,
+        validation_patterns, format_lookup, slice_capture, page_idx)
     inline_geom = (_box_list(located.get("inline_box"))
                    if (slice_capture and located.get("inline_box")) else None)
     return _pick_fuller_code(rigid_text, abs_ocr_conf, inline_val, inline_conf,
                              anchor_text or field_key, val_type, inline_geom,
-                             field_key=field_key, format_lookup=format_lookup)
+                             field_key=field_key, format_lookup=format_lookup,
+                             provisional_lookup=provisional_lookup,
+                             locate_token=located.get("inline_value"),
+                             inline_from_ladder=inline_from_ladder)
 
 
 def _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
                        ocr_text_fn, expansion, validation_patterns, format_lookup,
-                       slice_capture, page_idx, field_key, ocr_lines_fn=None, line_cache=None):
+                       slice_capture, page_idx, field_key, ocr_lines_fn=None, line_cache=None,
+                       provisional_lookup=None):
     """Derive the value crop from where the anchor label ACTUALLY landed
     (located + drift-invariant stored offset, inset-corrected) and read it. Shared
     by the early drift branch and the late single-label fallback in _extract_one.
@@ -781,7 +903,8 @@ def _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
             picked = _inline_code_reconcile(page, text, anchor_box, target_box, val_type, field_key,
                                             mapping.get("anchor_text"), ocr_lines_fn, ocr_text_fn,
                                             validation_patterns, format_lookup, line_cache,
-                                            slice_capture, page_idx, abs_ocr_conf=_d_meta.get('conf'))
+                                            slice_capture, page_idx, abs_ocr_conf=_d_meta.get('conf'),
+                                            provisional_lookup=provisional_lookup)
             if picked is not None:
                 return picked
         return _mapping_result(
@@ -893,7 +1016,8 @@ def _read_registration(page, mapping, target_box, val_type, ocr_text_fn, expansi
 def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
                  located=_UNSET, page_transform=None,
                  slice_capture=None, page_idx=0,
-                 validation_patterns=None, format_lookup=None, line_cache=None):
+                 validation_patterns=None, format_lookup=None, line_cache=None,
+                 provisional_lookup=None):
     anchor_box = _norm_box(mapping, "anchor")
     target_box = _norm_box(mapping, "target")
     if not anchor_box or not target_box:
@@ -974,7 +1098,8 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
                                            drift_located, val_type, ocr_text_fn,
                                            expansion, validation_patterns,
                                            format_lookup, slice_capture, page_idx,
-                                           field_key, ocr_lines_fn, line_cache)
+                                           field_key, ocr_lines_fn, line_cache,
+                                           provisional_lookup=provisional_lookup)
             if relocated:
                 return relocated
         elif drift_located:
@@ -1015,7 +1140,8 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
         rc = _inline_code_reconcile(page, abs_text, anchor_box, target_box, val_type,
                                     field_key, anchor_text, ocr_lines_fn, ocr_text_fn,
                                     validation_patterns, format_lookup, line_cache,
-                                    slice_capture, page_idx, abs_ocr_conf=_abs_meta.get('conf'))
+                                    slice_capture, page_idx, abs_ocr_conf=_abs_meta.get('conf'),
+                                    provisional_lookup=provisional_lookup)
         if rc is not None:
             return rc
     if abs_text:
@@ -1054,7 +1180,8 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
         relocated = _relocate_and_read(page, mapping, anchor_box, target_box, located,
                                        val_type, ocr_text_fn, expansion, validation_patterns,
                                        format_lookup, slice_capture, page_idx, field_key,
-                                       ocr_lines_fn, line_cache)
+                                       ocr_lines_fn, line_cache,
+                                       provisional_lookup=provisional_lookup)
         if relocated:
             return relocated
 

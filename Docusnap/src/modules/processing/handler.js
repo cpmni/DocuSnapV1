@@ -144,8 +144,12 @@ function _reconcileEnv(db) {
     if (learning.getSetting(db, 'universal_verify_numeric', 'false') === 'true') env.UNIVERSAL_VERIFY_NUMERIC = '1';
     // Slice A edge-debris heal (Oracle 2026-08-03 evening; label-tail '. DN-60902' class).
     if (learning.getSetting(db, 'template_code_edge_clean', 'false') === 'true') env.TEMPLATE_CODE_EDGE_CLEAN = '1';
-    // Slice B target word-snap (BUILT DARK — own gate + flip window per Oracle; no UI toggle yet).
+    // Slice B target word-snap (gated GREEN + flipped ON 2026-08-03 night; Oracle B-F1 met).
     if (learning.getSetting(db, 'template_target_word_snap', 'false') === 'true') env.TEMPLATE_TARGET_WORD_SNAP = '1';
+    // NIGHT round (Oracle 2026-08-03): A2/C1 alnum label-tail fragment strip + C2a right-clip
+    // clean commit (both dark until their composed gate).
+    if (learning.getSetting(db, 'template_code_frag_clean', 'false') === 'true') env.TEMPLATE_CODE_FRAG_CLEAN = '1';
+    if (learning.getSetting(db, 'template_clip_commit', 'false') === 'true') env.TEMPLATE_CLIP_COMMIT = '1';
     return env;
   } catch { return {}; }
 }
