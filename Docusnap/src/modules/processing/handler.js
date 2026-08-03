@@ -113,6 +113,10 @@ function _anchorCropEnv(db) {
     const env = {};
     if (learning.getSetting(db, 'anchor_value_right_grow', 'false') === 'true') env.ANCHOR_VALUE_RIGHT_GROW = '1';
     if (learning.getSetting(db, 'anchor_label_left_clamp', 'false') === 'true') env.ANCHOR_LABEL_LEFT_CLAMP = '1';
+    // STRUCT_CODE_READ (slice 1, prep-only): read tight code/date crops cleaner (cap-height upscale
+    // + quiet-zone + no-sharpen) so 'PO-17039' stops garbling to '»0-17039'. Default OFF; a
+    // sub-floor struct read falls through to today's rungs, so it heals where it can, never worse.
+    if (learning.getSetting(db, 'struct_code_read', 'false') === 'true') env.STRUCT_CODE_READ = '1';
     return env;
   } catch { return {}; }
 }

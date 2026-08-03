@@ -576,6 +576,17 @@ document.getElementById('prefix-garble-toggle').addEventListener('change', async
   await api.setSetting('prefix_garble_adopt', e.target.checked ? 'true' : 'false');
 });
 
+// ── Read small reference/date print more clearly (STRUCT_CODE_READ, default OFF) ──
+(async () => {
+  try {
+    const v = await api.getSetting('struct_code_read');
+    document.getElementById('struct-code-read-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('struct-code-read-toggle').checked = false; }
+})();
+document.getElementById('struct-code-read-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('struct_code_read', e.target.checked ? 'true' : 'false');
+});
+
 // ── Faster field reads via a warm OCR helper pool (default ON) ─────────────────
 (async () => {
   try {
