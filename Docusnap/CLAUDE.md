@@ -21,30 +21,35 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-08-03 wrap) — crosscheck-outlier reconcile SHIPPED + ON
-**2026-08-03 (Opus 4.8, continued fine-tuning arc). HEAD `09685d9`, PUSHED, tree clean. READ
-`HANDOVER_2026-08-03.md` FIRST.** Built + gated + flipped ON `CROSSCHECK_OUTLIER_RECONCILE` (setting
-`crosscheck_outlier_reconcile`): the authoritative-crop cross-check (`anchor.py` ~:852) does a FRESH
-full-page locate-OCR that can ITSELF garble a valid ref and flip the correct value to that lone
-outlier on disagreement ALONE (doc-09 = `NorthgateTextiles_purchase_order_09`). New post-merge pass
-`engine._reconcile_crosscheck_outlier` (before G1) OWNS the flip-REFUTED direction (E2 owns
-flip-corroborated / City-Office): restore a ≥2-independent-family (≥1 crop-family) + page-present
-alternative over an UNcorroborated flip → re-base `anchor_inline@90`, drop flag (mirrors E2). **Oracle
-SIGN-OFF-W/COND, both MET:** C1 — `anchor.py` stashes the pre-flip crop (`_crosscheck_original`, GATED)
-as an independent crop-family witness so a mapping-less ⊕-only doc heals (SYSTEM fix, not doc fix);
-C2 — new `_crosscheck_witness_bucket` (finer than `_method_family`, which folds all `anchor*` into one)
-excludes registration/bare-anchor/the-flip + requires a crop-family leg. Gate (faithful
-`--reprocess-manifest` realdoc, 522 docs): ref 96.2%→96.6% (+2 heals #344/#353, both
-`anchor_crop_crosscheck`→`anchor_inline`, corr False→True), **M=12==12** (never touched the silent
-auto-file set), zero drop, City-Office untouched. advisors 007+reggie+gary; pin
-`test_crosscheck_outlier_reconcile.py`. Slice-1 covers only `*_number`/`*_no`/`*reference*`+date.
-**NEXT = Slice-2 owner go/no-go:** a UNIVERSAL post-merge verify (ledger `_field_candidates` + raw
-`ocr_text`, per-type predicate — ref/date/numeric-whole-number/text-tolerant — lone-absence NEVER
-vetoes) covering text/numeric/ALL custom fields (the owner's "all types where possible" ask); reaches
-them WITHOUT arming more independent-OCR crosschecks. GOTCHA: run harnesses via
-`node_modules/electron/dist/electron.exe`, NOT `electron.cmd` (the `.cmd` shim breaks on the space in
-"c:/GIT Projects"); setting flips write the live DB via a script (require better-sqlite3 by ABSOLUTE
-path from a scratchpad file).
+## Current session state (2026-08-03 NIGHT wrap) — perfect-catch arc: SIX flips live, all Oracle-gated
+**2026-08-03 day+evening+overnight (Opus 4.8 → autonomous night). HEAD `1ab4606`, PUSHED. READ
+`HANDOVER_2026-08-03_NIGHT.md` FIRST (owner-morning list + the night's engineering story), then
+`HANDOVER_2026-08-03.md` (the morning crosscheck-outlier arc).** Owner goal locked: teach once →
+perfect catch on CLEAN siblings for ALL anchored values, silently (rule: minimal customer
+interaction, max auto-file — memory `feedback_minimal_interaction_autofile`).
+**LIVE flips (all advisor→Oracle→gate, Settings→Processing toggles):** `crosscheck_outlier_reconcile`
+(morning, `09685d9`) · `universal_verify_restore` (Slice-2 2a ref/date universal verify, `eb2834f`;
+2b numeric + 2c flag DARK behind `UNIVERSAL_VERIFY_NUMERIC`/`_FLAG` pending the Customer-corpus GT
+scorer — Oracle C6) · `template_code_edge_clean` (punctuation label-tail heal, `5e78a8d`, fork RULED
+reggie witness-equality) · `template_target_word_snap` (Slice B — derived rungs snap the seated box
+to word geometry; own gate +1 ref/+1 date heal + 5 false-flag drops, M identical) ·
+`template_code_frag_clean` + `template_clip_commit` (`df80601`/`1ab4606` — the rb_531 class:
+`_pick_fuller_code`'s disagreement branch stamped a FACTUALLY FALSE "manually mapped value differs"
+note on a never-shape-checked clean value, + the α-variant silent dirty commit; healed via
+label-suffix fragment strip + 3-leg clip commit + the PROVISIONAL consent channel — taught-doc
+skeletons in a SEPARATE index, S2-isolated from every veto path, consumed only by
+`_shape_consents`). `_pick_fuller_code` branch order is LOAD-BEARING (un-clip → frag → C2a → conf
+race; pinned). Pins: `test_template_frag_clip.py`(29) + `test_template_target_word_snap.py`(18) +
+`test_template_code_edge_clean.py`(24) + `test_universal_postmerge_verify.py`(61).
+**OWNER-MORNING (pendingfeatures NIGHT entry):** RESTART app then reprocess Northgate dockets ·
+C2b honest disagreement copy (owner voice) · teach-time box word-snap (UI-visible, gary-designed) ·
+`_seed_field_patterns` ref_field_key threading (gated follow-up) · rehearsal-read + annealing
+designs · Slice-2 2b/2c GT scorer. Chris the customer-sim rated KEEP (priority+framing impact).
+**GOTCHAS:** harnesses via `node_modules/electron/dist/electron.exe` NEVER `electron.cmd`; never
+edit `template_mapper.py` while a realdoc arm runs (workers import per shard); `git add -A` from
+repo ROOT stages the untracked `Backup/` tree — stage explicitly; dev diagnostic logs =
+`repo/Debug/diagnostic_<UTC>.jsonl` NOT userData; advisor files now carry prior-art rule + track
+records — keep accruing at wraps.
 
 ### Prior session (2026-08-02 wrap) — Chris fix cycle · clamp+sweep+workflow ON · de-pathing · teach-first PLAN
 **2026-08-02 (Fable 5, overnight autonomous + owner day/evening). HEAD `5652487`, PUSHED, tree
