@@ -238,3 +238,27 @@ strips to '0-17039', S-B flags it. Verified LIVE in the diag log (not just the h
 - **Oracle-surfaced follow-up (not his ruling, my finding):** the realdoc/trace harness does NOT fire
   Stage-0.5 template_mapping, so the corpus gate is BLIND to the template_mapping-garble class — the heal
   is only observable in the live app. Harness fidelity is a real gap (see pendingfeatures).
+
+---
+
+## 2026-08-03 — oscar fix B: structured crop-OCR (cap-height + quiet-zone + drop-SHARPEN + whitelist)
+**VERDICT: SIGN OFF WITH CONDITIONS.** Consult: oscar (recipe) + 007 (geometry) + gary (seam) → Oracle.
+Case: tight ~13px Stage-0.5 mapping crop mis-reads codes/dates (PO-17039→»0-17039; 19/06/2026→09-06-2026;
+#494 PO-66063→PO-68063). Shipped adopt heals prefix-from-peer only; digit-sub + date uncured → fix the READ.
+- **Fork ruled: whitelist OUT of slice 1** (prep-only: cap-height upscale + read-time quiet-zone + drop
+  SHARPEN). Whitelist = a separately-gated slice 2 that must add its OWN corroboration checkpoint.
+- **Seam 2 traced (the catch):** the Stage-0.5 absolute path is GATELESS at the ladder (verify_fn=None,
+  template_mapper.py:1504) AND shape_mode='ignore' (:863) skips _format_rejects; structured exempt from the
+  ocr_conf cap (:449) → a whitelist-snapped valid-shaped WRONG code commits at 90 → auto-file. The only
+  backstop (inline reconcile) reads the SAME whitelisted crop → both snap identically = same-pixel agreement,
+  not corroboration. Shared ladder inherits the WEAKEST downstream gate. Prep-only preserves fail-toward-review.
+- Premise fixes: date parse/salvage only normalise (can't correct 19→09 — heal depends on the prep);
+  stale comment template_mapper.py:939 "Off by default" → reconcile defaults ON (fixed). Baseline = current
+  HEAD (crop-flips ON), do NOT revert them.
+- Conditions C1 prep-only/no-whitelist · C2 preserve SHARPEN fallback rung · C3 reconcile ON + comment · C4
+  whitelist=gated slice 2 · C5 kill switch default OFF per-call.
+- **BUILD + GATE OUTCOME:** slice 1 shipped (fe? see git), STRUCT_CODE_READ. Faithful realdoc OFF-vs-ON:
+  +1 ref heal (#218 SO-68195 digit-sub read RIGHT), would-auto-file-wrong set IDENTICAL (true M=0), zero
+  accuracy drop, no new regressions. #494 unhealed but UNCHANGED (fall-through, not cleaner-but-wrong).
+  Flipped ON — strictly-safe net improvement. Slice 2 (whitelist) + #494 (second-render/harder digit-sub)
+  deferred. Pins: test_struct_code_read.py.

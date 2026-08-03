@@ -94,6 +94,21 @@ faithfully reproduce the app's Stage-0.5 (diff the app reprocess spawn args in p
 the harness snap()), so the template fine-tune arc can be gated by the corpus, not just the live app.
 High value — this blind spot undermines every template-class gate.
 
+### ✓ SHIPPED slice 1 (prep-only, ON) — oscar crop-fix B; slice 2 (whitelist) + #494 deferred (2026-08-03)
+`STRUCT_CODE_READ` (`d2b8937`, setting `struct_code_read`, flipped ON). oscar+007+gary → Oracle
+SIGN-OFF-W/COND (oracle_log 2026-08-03). Slice 1 = PREP ONLY: cap-height upscale
+(`region_core._ink_band_height` → scale clamp(34/ib,1,4)) + synthetic read-time quiet-zone (median-grey
+border, NOT a wider window) + DROP SHARPEN, in a struct rung PREPENDED to the shared ladder that falls
+through to today's rungs on a sub-floor read (Oracle C2). NO whitelist (Oracle fork-ruled it out — the
+gateless Stage-0.5 path would auto-file a whitelist-snapped clean-shaped WRONG code). Gate (faithful
+manifest harness, OFF vs ON, crop-flips-ON baseline): +1 ref heal (#218 digit-sub read RIGHT),
+would-auto-file-wrong set IDENTICAL (true M=0), zero accuracy drop, no new regressions; #494 unhealed but
+UNCHANGED (fall-through). Pins test_struct_code_read.py.
+**DEFERRED:** (1) **slice 2 = the char whitelist** — must carry its OWN checkpoint (a differently-prepped
+non-whitelisted corroboration OR the learned-shape check), NOT committable on shape_mode='ignore' alone
+(Oracle C4). (2) **#494 'PO-66063'→'PO-68063'** interior digit-sub — prep alone can't cure; slice-2
+whitelist or a second-render witness. (3) **real-asset functional PIN** — capture a ~13px garbling crop.
+
 ### oscar crop-fix B — the ROOT fix for the tight-crop garble (007-recommended, incl. po_date)
 The garble is a READING failure (007): a ~13px target crop with no left quiet-zone + over-sharpen reads
 'PO'→'»0' AND '19'→'09' (doc-18 po_date is ALSO wrong: 09-06-2026 vs 19/06/2026 — same class, but a
