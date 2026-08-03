@@ -599,6 +599,18 @@ document.getElementById('universal-verify-toggle').addEventListener('change', as
   await api.setSetting('universal_verify_restore', e.target.checked ? 'true' : 'false');
 });
 
+// ── Tidy stray marks from taught reference reads (Slice A edge-debris heal,
+// TEMPLATE_CODE_EDGE_CLEAN, default OFF) ──
+(async () => {
+  try {
+    const v = await api.getSetting('template_code_edge_clean');
+    document.getElementById('edge-clean-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('edge-clean-toggle').checked = false; }
+})();
+document.getElementById('edge-clean-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('template_code_edge_clean', e.target.checked ? 'true' : 'false');
+});
+
 // ── Read small reference/date print more clearly (STRUCT_CODE_READ, default OFF) ──
 (async () => {
   try {

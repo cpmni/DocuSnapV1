@@ -108,6 +108,41 @@ _INLINE_CODE_RECONCILE_ON = os.environ.get('TEMPLATE_INLINE_CODE_RECONCILE', '1'
 # + 3 real drift-garble fixes, realdoc DRIFT==baseline (0 new), 4 drift unit/PIN. =0: byte-identical.
 _INLINE_CODE_RECONCILE_DRIFT_ON = os.environ.get('TEMPLATE_INLINE_CODE_RECONCILE_DRIFT', '1') != '0'
 
+# Slice A — agree-branch EDGE-DEBRIS heal (reggie+gary → Oracle SIGN-OFF-W/COND, fork RULED
+# reggie/witness-equality, 2026-08-03 evening — docs/oracle_log.md). The label-tail bleed class:
+# a value box drawn a few px off the label ("Delivery Note No.") catches its trailing "." on
+# slightly-rotated siblings → every read commits '. DN-60902' (flagged on the drift rung; SILENT
+# clean@90 on the absolute rung). The reconcile's inline read holds the clean 'DN-60902' but the
+# agree branch (cores equal) discarded it. Heal ONLY when the rigid read with leading/trailing
+# NON-alnum runs stripped equals the inline surface VERBATIM (an independent-geometry witness read
+# EXACTLY the cleaned string) AND the learned shape does not reject the cleaned value. Interior
+# debris / spaced or em-dashed inline / inline-carrying-the-debris / sigil-with-shape-history all
+# refuse → today's behaviour verbatim (fail-toward-review). Named-deliberate trade-off (Oracle
+# A-C1): a COLD supplier's '#12345' heals to '12345' when inline read it sigil-less — bounded
+# (core preserved), convergent with the keyword/Stage-4 canonical form, and self-correcting once
+# shape history forms. Default OFF (=1 arms) until the realdoc gate; OFF = byte-identical.
+_CODE_EDGE_CLEAN_ON = os.environ.get('TEMPLATE_CODE_EDGE_CLEAN', '0') != '0'
+
+_CODE_EDGE_DEBRIS = re.compile(r'^[^A-Za-z0-9]+|[^A-Za-z0-9]+$')   # bounded, anchored — no nesting
+
+
+def _strip_code_edges(s):
+    """Leading+trailing NON-alnum runs stripped; interior untouched by construction."""
+    return _CODE_EDGE_DEBRIS.sub('', s or '')
+
+
+# Slice B — TARGET WORD-SNAP (fork design + Oracle SIGN-OFF-W/COND B-C1..C5, 2026-08-03 evening —
+# docs/oracle_log.md). On the DERIVED rungs only (drift `_geometric` re-seat + registration
+# transform) the seated value box is snapped to the page's word geometry before the crop OCR, so a
+# few-px seat error can never chop the value on x or y (the owner's rule: the box snaps to the FULL
+# text). The ABSOLUTE rung is untouched (teach-time WYSIWYG contract). CORE INVARIANT: the snap
+# only FINISHES words the seated box already touches (majority-inside admission) — it never reaches
+# out to new tokens, so a deliberately-narrow taught box keeps excluding its neighbour. Scope =
+# CODE types + date (free-text/multiline stay box-first — the over-grab class). Default OFF;
+# =1 arms. OFF → helper returns its input, byte-identical.
+_TARGET_WORD_SNAP_ON = os.environ.get('TEMPLATE_TARGET_WORD_SNAP', '0') != '0'
+_SNAP_VAL_TYPES = frozenset(_CODE_CROSSCHECK_TYPES | {'date'})
+
 
 def extract_with_mappings(page_images, mappings, field_patterns=None,
                           ocr_lines_fn=None, ocr_text_fn=None, slice_capture=None,
@@ -572,12 +607,19 @@ def _read_inline_box(page, located, val_type, ocr_text_fn, field_key,
     return inline_val, inline_conf
 
 
-def _pick_fuller_code(rigid_text, rigid_conf, inline_val, inline_conf, anchor, val_type, inline_geom):
+def _pick_fuller_code(rigid_text, rigid_conf, inline_val, inline_conf, anchor, val_type, inline_geom,
+                      field_key=None, format_lookup=None):
     """Reconcile a clip-prone rigid CODE read against a label-anchored inline read; return the
     Stage 0.5 result to COMMIT, or None to keep the rigid read. The single decision shared by
     Slice 1 (rigid = the absolute drawn box) and Slice 2 (rigid = the drift-relocated geometric
     crop):
-      • agree / rigid fuller (inline is a suffix of rigid) → keep rigid (None);
+      • agree with IDENTICAL surfaces / rigid fuller (inline is a suffix of rigid) → keep rigid (None);
+      • agree on the CORE but rigid carries EDGE debris the inline lacks (Slice A, gated
+        _CODE_EDGE_CLEAN_ON): heal iff strip_edges(rigid) == inline VERBATIM and the learned shape
+        does not reject the cleaned value → commit CLEAN (no shapewarn — the shape check judged the
+        cleaned surface). Witness-equality is the whole safety: the committed string is
+        simultaneously "rigid minus edge debris" and "the token an independent-geometry read
+        produced". Interior disagreements (DN 60902 / em-dash) fail verbatim equality → review path;
       • rigid is a SUFFIX of inline → the drawn box clipped the LEFT (prefix); the glyph overlap
         corroborates the same token un-clipped (a right-side over-read is a PREFIX, not a suffix,
         and is deliberately NOT clean-committed) → un-clip, commit CLEAN;
@@ -588,6 +630,18 @@ def _pick_fuller_code(rigid_text, rigid_conf, inline_val, inline_conf, anchor, v
         return None
     na, ni = _code_norm(rigid_text), _code_norm(inline_val)
     if not na or not ni or na == ni:
+        # Slice A (Oracle A-C3): heal only when the strip actually removed something, the stripped
+        # string is non-empty, it equals the inline surface VERBATIM, and the learned shape
+        # consents. Anything else falls through to None = today's behaviour byte-identical.
+        if _CODE_EDGE_CLEAN_ON and na and na == ni:
+            stripped = _strip_code_edges(rigid_text)
+            if (stripped and stripped != rigid_text and stripped == (inline_val or '').strip()
+                    and not _format_rejects(stripped, field_key, format_lookup)):
+                healed = _mapping_result(stripped, True, False, False, anchor,
+                                         val_type=val_type, geom=inline_geom)
+                if inline_geom is not None:      # diag/preview mode only (A-C6): trace marker,
+                    healed["edge_cleaned_from"] = rigid_text   # normal result dict byte-identical
+                return healed
         return None
     if ni.endswith(na):
         return _mapping_result(inline_val, True, False, False, anchor, val_type=val_type, geom=inline_geom)
@@ -639,7 +693,8 @@ def _inline_code_reconcile(page, rigid_text, anchor_box, target_box, val_type, f
     inline_geom = (_box_list(located.get("inline_box"))
                    if (slice_capture and located.get("inline_box")) else None)
     return _pick_fuller_code(rigid_text, abs_ocr_conf, inline_val, inline_conf,
-                             anchor_text or field_key, val_type, inline_geom)
+                             anchor_text or field_key, val_type, inline_geom,
+                             field_key=field_key, format_lookup=format_lookup)
 
 
 def _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
@@ -691,6 +746,11 @@ def _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
             "w_norm": target_box["w_norm"],
             "h_norm": target_box["h_norm"],
         }
+        # Slice B: snap the seated box to the word geometry underneath (B-C1: the cut frame is
+        # the LOCATED label_box — same frame as the seat; None on a label-less locate → no cut,
+        # majority-inside still applies). OFF/out-of-scope → returns the box unchanged.
+        derived_target = _snap_box_to_words(page, derived_target, val_type, ocr_lines_fn,
+                                            line_cache, label_box=located.get("label_box"))
         _cap = ((lambda c: slice_capture(field_key, "template_mapping", page_idx,
                    (derived_target["x_norm"], derived_target["y_norm"],
                     derived_target["w_norm"], derived_target["h_norm"]), c, "target")) if slice_capture else None)
@@ -712,8 +772,10 @@ def _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
         # fast path (Slice 1). Reuse Slice 1's reconcile WHOLESALE with the geometric read as the
         # rigid input — its OWN page-wide locate (the drift-branch `located` handed in can be a
         # clipped LOCAL locate — Oracle Seam A), its `_target_inline_with_anchor` guard, and the
-        # full-res Seam-B re-read. DARK by default (TEMPLATE_INLINE_CODE_RECONCILE_DRIFT=1); OFF →
-        # skipped, byte-identical. (ocr_lines_fn absent on a legacy direct call → skip safely.)
+        # full-res Seam-B re-read. Default ON since the forced-drift gate (see :104-109) — kill with
+        # TEMPLATE_INLINE_CODE_RECONCILE_DRIFT=0 → skipped, byte-identical. (Stale "DARK by default"
+        # wording here cost a diagnosis hour on 2026-08-03 — Oracle A-C4; the :939 twin was corrected
+        # the same day.) (ocr_lines_fn absent on a legacy direct call → skip safely.)
         if (_INLINE_CODE_RECONCILE_DRIFT_ON and val_type in _CODE_CROSSCHECK_TYPES
                 and ocr_lines_fn is not None):
             picked = _inline_code_reconcile(page, text, anchor_box, target_box, val_type, field_key,
@@ -775,7 +837,8 @@ def _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
 
 def _read_registration(page, mapping, target_box, val_type, ocr_text_fn, expansion,
                        page_transform, validation_patterns, format_lookup,
-                       slice_capture, page_idx, field_key):
+                       slice_capture, page_idx, field_key,
+                       ocr_lines_fn=None, line_cache=None):
     """"Register, then read": map the taught target box THROUGH the fitted page
     transform and read there, so the value follows the page's actual geometry
     (translation+scale+rotation), not a single-label guess. Returns a Stage 0.5
@@ -786,6 +849,13 @@ def _read_registration(page, mapping, target_box, val_type, ocr_text_fn, expansi
     Confidence reflects the fit quality. DERIVED rung → shape_mode='flag' (a learned
     -shape mismatch is kept+capped+noted for review, not dropped or silently kept)."""
     reg_box = page_transform.apply_box(target_box)
+    # Slice B: snap the transformed box to the word geometry underneath. B-C1 frame trap: the
+    # label cut must live in the SAME (transformed) frame as reg_box — apply_box(anchor) here,
+    # NEVER the taught anchor box against a transformed target.
+    _reg_anchor = _norm_box(mapping, "anchor")
+    _reg_label = page_transform.apply_box(_reg_anchor) if _reg_anchor else None
+    reg_box = _snap_box_to_words(page, reg_box, val_type, ocr_lines_fn,
+                                 line_cache, label_box=_reg_label)
     _rcap = ((lambda c: slice_capture(field_key, "template_registration", page_idx,
                (reg_box["x_norm"], reg_box["y_norm"], reg_box["w_norm"], reg_box["h_norm"]),
                c, "target")) if slice_capture else None)
@@ -925,7 +995,8 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
                 > max(target_box["h_norm"] * 0.5, _DRIFT_FLOOR)):
         reg = _read_registration(page, mapping, target_box, val_type, ocr_text_fn,
                                  expansion, page_transform, validation_patterns,
-                                 format_lookup, slice_capture, page_idx, field_key)
+                                 format_lookup, slice_capture, page_idx, field_key,
+                                 ocr_lines_fn=ocr_lines_fn, line_cache=line_cache)
         if reg:
             return reg
     # ── INLINE CODE RECONCILE (single-token code, taught inline) — DARK ──────────
@@ -994,7 +1065,8 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
     if page_transform is not None:
         reg = _read_registration(page, mapping, target_box, val_type, ocr_text_fn,
                                  expansion, page_transform, validation_patterns,
-                                 format_lookup, slice_capture, page_idx, field_key)
+                                 format_lookup, slice_capture, page_idx, field_key,
+                                 ocr_lines_fn=ocr_lines_fn, line_cache=line_cache)
         if reg:
             return reg
     return None
@@ -1093,6 +1165,97 @@ def cluster_value_words(words, expect_x=None):
                      key=lambda cl: (0 if cl[0][0] >= expect_x else 1,
                                      abs(cl[0][0] - expect_x)))
     return [t[3] for t in chosen]
+
+
+def _snap_box_to_words(page, seated_box, val_type, ocr_lines_fn, line_cache, label_box=None):
+    """Slice B: snap a DERIVED-rung seated value box to the page word geometry (see the flag
+    block above for the contract). Word source = the page-wide locate's `line_cache` full-page
+    entry (already present on every doc that reached a derived rung → zero extra OCR in the
+    common case); a registration-only path without a prior locate pays one page-wide pass,
+    amortised via the same cache. Every failure path returns `seated_box` UNCHANGED (today's
+    behaviour): switch off, out-of-scope type, no geometry, no admitted words, or an over-4x
+    union (a tiny box nicking a huge word is not a snap licence — B-C3 cap).
+    `label_box` MUST already be in the SAME frame as `seated_box` (drift rung: the LOCATED
+    label_box; registration rung: the TRANSFORMED anchor box — Oracle B-C1, the clamp arc's
+    frame trap): words at/left of its right edge are cut so the label tail is never re-absorbed
+    (majority-inside already excludes most of it; the cut is the backstop)."""
+    if not _TARGET_WORD_SNAP_ON or val_type not in _SNAP_VAL_TYPES:
+        return seated_box
+    if page is None or not isinstance(seated_box, dict):
+        return seated_box
+    lines = None
+    key = (id(page), 0.0, 0.0, 1.0, 1.0)
+    if line_cache is not None and key in line_cache:
+        lines = line_cache[key]
+    elif ocr_lines_fn is not None:
+        try:
+            crop = _crop(page, {"x_norm": 0.0, "y_norm": 0.0, "w_norm": 1.0, "h_norm": 1.0})
+            if crop is None:
+                return seated_box
+            lines = ocr_lines_fn(crop)
+            if line_cache is not None and lines is not None:
+                line_cache[key] = lines
+        except Exception:
+            return seated_box
+    if not lines:
+        return seated_box
+    try:
+        sx1 = float(seated_box["x_norm"]); sy1 = float(seated_box["y_norm"])
+        sw = float(seated_box["w_norm"]);  sh = float(seated_box["h_norm"])
+    except (KeyError, TypeError, ValueError):
+        return seated_box
+    sx2, sy2 = sx1 + sw, sy1 + sh
+    scy = sy1 + sh / 2.0
+    admitted = []
+    for ln in lines:
+        for wd in (ln.get("words") or ()):
+            try:
+                wx1 = float(wd["x_norm"]); wy1 = float(wd["y_norm"])
+                ww = float(wd["w_norm"]);  wh = float(wd["h_norm"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if ww <= 0 or wh <= 0:
+                continue
+            # Row band: single-token derived fields live on one row — a word whose centre
+            # is more than ~0.6 heights off the box centre is another row's word.
+            if abs((wy1 + wh / 2.0) - scy) > max(wh, sh) * 0.6:
+                continue
+            ix = max(0.0, min(sx2, wx1 + ww) - max(sx1, wx1))
+            iy = max(0.0, min(sy2, wy1 + wh) - max(sy1, wy1))
+            if ix <= 0 or iy <= 0:
+                continue                             # CORE INVARIANT: untouched → never admitted
+            if (ix * iy) / (ww * wh) < 0.5:
+                continue                             # majority-inside (>=50% of the WORD's area)
+            admitted.append(wd)
+    if not admitted:
+        return seated_box
+    lre = None
+    if isinstance(label_box, dict):
+        try:
+            lre = float(label_box["x_norm"]) + float(label_box["w_norm"])
+        except (KeyError, TypeError, ValueError):
+            lre = None
+    if lre is not None:
+        admitted = [w for w in admitted
+                    if float(w["x_norm"]) + float(w["w_norm"]) / 2.0 >= lre]
+        if not admitted:
+            return seated_box
+    admitted = cluster_value_words(admitted, expect_x=lre)
+    if not admitted:
+        return seated_box
+    try:
+        x1 = min(float(w["x_norm"]) for w in admitted)
+        x2 = max(float(w["x_norm"]) + float(w["w_norm"]) for w in admitted)
+        y1 = min(float(w["y_norm"]) for w in admitted)
+        y2 = max(float(w["y_norm"]) + float(w["h_norm"]) for w in admitted)
+    except (KeyError, TypeError, ValueError):
+        return seated_box
+    pad = 0.004
+    snapped = _clamp_box({"x_norm": x1 - pad, "y_norm": y1 - pad,
+                          "w_norm": (x2 - x1) + 2 * pad, "h_norm": (y2 - y1) + 2 * pad})
+    if snapped["w_norm"] * snapped["h_norm"] > 4.0 * max(sw * sh, 1e-9):
+        return seated_box
+    return snapped
 
 
 def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,

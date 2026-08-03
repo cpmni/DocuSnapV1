@@ -331,3 +331,36 @@ postprocess witnesses are 5:1 false:true (D2 bake-off) — Tier-III never counts
   excluded — the go/no-go must SAY so (stated to owner 2026-08-03).
 - Census-first endorsed; staged dark flips 2a (ref-widen) → 2b (numeric) → 2c (flag tier);
   switches `UNIVERSAL_VERIFY_RESTORE` / `UNIVERSAL_VERIFY_FLAG`.
+
+---
+
+## 2026-08-03 (evening) — Teach-mapping edge-debris heal (Slice A) + word-snap (Slice B) + barry screen
+**VERDICT: A = SIGN OFF W/COND, fork RULED reggie (witness-equality); B = SIGN OFF W/COND (design,
+build after A, SEPARATE flip window); barry ideas screened per-idea.** Consult: reggie + gary
+(parallel) + barry (product) → Oracle. Incident: teach-wizard template 26 value box ~7px right of
+label "Delivery Note No."; +1.3-1.5° siblings bleed the label-tail dot → `'. DN-60902'` class;
+`_pick_fuller_code` agree branch (:590) discards the computed clean inline read; drift path commits
+`template_mapping_shapewarn`@70 + note; under-tolerance rotation = SILENT clean@90 commit on the
+absolute path. Stale ":715 DARK by default" comment (drift reconcile defaults ON) caught by both
+specialists — the :939 twin was corrected 08-03, this copy missed.
+- **Fork ruling (reggie over gary):** (1) the :593 un-clip branch already commits inline surfaces
+  COLD on weaker evidence — cold-inert would be incoherent in the same function; (2) gary's
+  shape-arbitration has a BOOTSTRAP seam — cold-inert lets dotted confirms become the ≥3-confirm
+  shape his predicate needs; (3) the strip is bounded (committed string must verbatim-equal an
+  independent-geometry read); (4) internal-separator disagreements still route to review.
+- **A conditions:** A-C1 pin cold `#12345`→`12345` as named-deliberate; A-C2 pin spaced/em-dash/
+  sigil-with-history/dotted-inline/absolute-silent-class; A-C3 strip-nonempty + verbatim-only
+  commit; A-C4 fix the stale comment in-commit, switch default OFF; A-C5 gate enumerates every doc
+  LEAVING the hold set (M-unchanged alone is the wrong phrasing when the fix releases holds);
+  A-C6 heal trace event (diag-only), no method-string change.
+- **B conditions:** B-C1 label-cut in the LOCATED frame per rung (the clamp frame-trap); B-C2
+  wrong-row pins + enumerate fail-through→commit conversions; B-C3 invariant pins (majority-inside,
+  narrow-box exclusion, 4× union cap, geometry-absent byte-identical); B-C4 `TEMPLATE_TARGET_WORD_SNAP`
+  OFF + SFDEV seated→snapped; B-C5 A stays permanently beside B.
+- **barry screen:** #4 tidy-files-without-review SAFE RULE = verbatim independent-geometry
+  corroboration (the A bar) or located-at-taught + ≥3-confirm shape; enforced by the MAPPER not
+  attaching the note (never a trust.js note-class bypass); receipt persists to audit regardless.
+  #5 self-heal refit = located-frame + versioned + ≥N distinct docs. #7 dots read the EXISTING
+  ledger (never new crosschecks). #11 needs template_id attribution on corrections. Shared spine =
+  ONE per-field agreement+tidy event at the engine post-merge choke point. Owner rule applied
+  (2026-08-03): minimal customer interaction — visibility ideas route to SFDEV, not customer UI.

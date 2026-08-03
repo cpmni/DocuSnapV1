@@ -43,6 +43,40 @@ checks). Census mode `UNIVERSAL_VERIFY_CENSUS`(+`_FILE`): 522-doc realdoc census
 
 ---
 
+## 2026-08-03 (evening) — teach-mapping edge-debris heal (Slice A BUILT) + word-snap (Slice B designed)
+
+**Incident:** teach-wizard template 26 (Northgate delivery_note) value box ~7px right of label
+"Delivery Note No."; +1.3-1.5deg siblings bleed the label-tail dot; every read commits '. DN-60902'
+(drift rung: template_mapping_shapewarn@70 + "manually mapped value differs" note; under-tolerance
+rotation: SILENT clean@90 on the absolute rung). The reconcile's clean inline read was computed then
+DISCARDED by _pick_fuller_code's agree branch. Full diagnosis via Debug/diagnostic_*.jsonl.
+
+**Slice A BUILT (dark):** agree-branch edge-debris heal, kill TEMPLATE_CODE_EDGE_CLEAN (default OFF),
+setting template_code_edge_clean bridged. Oracle SIGN-OFF-W/COND, fork RULED reggie (witness-equality:
+heal iff strip_edges(rigid)==inline VERBATIM + learned shape consents; COLD suppliers heal — the
+named-deliberate '#12345'->'12345' pin). Pins test_template_code_edge_clean.py ALL PASS + full mapper
+suite green. GATE GREEN (535 docs, OFF==ON byte-identical: M 10==10, ref 515/535 both, zero hold-set leavers) — FLIPPED ON (template_code_edge_clean=true) + Settings toggle "Tidy stray marks from taught reference reads". Heal evidence = unit pins + the traced rb_539 lineage (the harness renders dont reproduce the live dot-bleed).
+
+**Slice B BUILT (dark, 2026-08-03 late):** pins test_template_target_word_snap.py ALL PASS; setting template_target_word_snap bridged (no UI toggle until its flip). REMAINING: its OWN 535-doc gate window (never share As — Oracle) + flip. Design: _snap_box_to_words on derived rungs (drift+registration) — majority-
+inside word admission, cluster gap discipline, located-frame label cut (B-C1 frame trap), never admits
+untouched words; absolute rung WYSIWYG untouched. Switch TEMPLATE_TARGET_WORD_SNAP. Build AFTER A
+ships, SEPARATE flip window (both release the same shapewarn hold). Oracle conditions B-C1..C5 in
+docs/oracle_log.md.
+
+**barry ideas (owner rule: minimal interaction, max auto-file — visibility goes to SFDEV):** survive
+as silent automation: Wiggle Test (teach-time tilt probe, SFDEV verdict), One-Good-Doc picker,
+Self-Healing Box (located-frame + versioned refit + >=N distinct docs), Template MOT (needs
+template_id attribution on corrections). SFDEV-only: agreement dots / provenance / tidy receipts
+(receipts MUST persist to audit regardless). Kernel rule from #4: a tidy files without review only
+when verbatim-corroborated by an independent-GEOMETRY read — enforced by the mapper not attaching
+the note, NEVER a trust.js note-class bypass. Shared spine = ONE per-field agreement+tidy event at
+the engine post-merge choke point.
+
+**Also spotted (unfixed):** teach wizard seeded ocr_type=text on a reference-role field (template 26
+delivery_number) — teach-time type seeding should map the field's real type; separate small fix.
+
+---
+
 ## 2026-08-02 OVERNIGHT (autonomous, owner asleep) — SHIPPED / DARK / DEFERRED
 Owner directive: build everything buildable, commit each, push at end, flip ON when the advisor+Oracle
 + gate pass green. Then a christest walkthrough. Advisors used: eric (search/UX cluster), reggie
