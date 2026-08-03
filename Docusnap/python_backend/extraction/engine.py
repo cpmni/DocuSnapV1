@@ -200,6 +200,20 @@ TAUGHT_OWNERSHIP_TYPE_SCOPED_LABEL = os.environ.get('TAUGHT_OWNERSHIP_TYPE_SCOPE
 # while clearing the agree-case. Force on with =1. Kill/default: =0 (byte-identical off).
 INLINE_HARVEST_ABSENCE_HOLD = os.environ.get('INLINE_HARVEST_ABSENCE_HOLD', '0') != '0'
 
+# Crosscheck-outlier reconcile (Slice-1 — gary design + Oracle SIGN-OFF-W/COND 2026-08-03). anchor.py's
+# authoritative-crop cross-check flips a crop-vs-fullpage DISAGREEMENT to a FRESH full-page locate-OCR
+# ('anchor_crop_crosscheck', capped 70 + "please verify") which then wins Tier-A over the clean keyword/
+# mapping incumbent. But that fresh locate can ITSELF garble a valid-shaped digit (doc-09: correct
+# crop+keyword+mapping 'PO-83150', lone fresh-locate flip 'PO-83160') — so on disagreement ALONE the flip
+# can be the OUTLIER and discard the corroborated truth. E2 (_crosscheck_keyword_corroborated) only owns
+# the OPPOSITE direction (keyword==flip, the City-Office crop-mangled class). This pass owns the flip-
+# REFUTED direction: restore a >=2-independent-family (>=1 crop-family) + page-present alternative over an
+# UNcorroborated flip, re-based to anchor_inline@90 with the flag dropped (mirrors E2). Kill
+# CROSSCHECK_OUTLIER_RECONCILE=0 (byte-identical off: anchor.py never stashes _crosscheck_original, this
+# pass never runs). Slice-1 scope = the current crosscheck fire-gate (_is_ref_like_key OR date =
+# *_number/*_no/*reference*/date, custom included); text/numeric are Slice-2 (universal post-merge verify).
+CROSSCHECK_OUTLIER_RECONCILE = os.environ.get('CROSSCHECK_OUTLIER_RECONCILE', '0') != '0'
+
 
 def _late_rescue_applicable(s2_supplier, supplier_name):
     """Stage-2.6 gate (pure, unit-pinned): rescue ONLY when Stage 2 ran with NO supplier
@@ -1035,6 +1049,81 @@ def _fallthrough_critical_corroborated(winner, cands, ocr_text, is_date) -> bool
             if rv and rv != wv and _page_presence_corroborated(rv, ocr_text):
                 return True
     return False
+
+
+def _crosscheck_witness_bucket(stage, method):
+    """Read-provenance bucket for the crosscheck-outlier reconcile — FINER than _method_family, which
+    folds every anchor* into ONE bucket (Oracle C2: a crop OCR and the full-page text pass would then
+    both count as 'independent' when they are the same pixels). Returns (family, is_crop) or None to
+    EXCLUDE the read. EXCLUDED entirely: anchor_registration (located-by-fiat — an independence fraud),
+    bare 'anchor' (the same full-page line the keyword pass reads), and the crosscheck flip itself.
+    CROP-family = a drawn-box / located crop OCR, genuinely independent of the full-page text pass."""
+    st = str(stage or "")
+    m = str(method or "")
+    if m in ("anchor_registration", "anchor", "anchor_crop_crosscheck"):
+        return None
+    if st == "0.5_mapping" or m.startswith("template"):
+        return ("mapping", True)      # Stage-0.5 drawn-box crop OCR — different region AND recipe
+    if st == "1_keyword" or m.startswith("keyword"):
+        return ("keyword", False)     # regex over the full-page text — NOT crop-independent
+    if m in ("anchor_crop", "anchor_inline", "anchor_crop_relocated"):
+        return ("crop", True)
+    if m.startswith("hint"):
+        return ("hint", False)
+    return None                       # unknown / weak → not counted toward the family total
+
+
+def _crosscheck_corroborated_alternative(winner, cands, ocr_text, is_date):
+    """Slice-1 crosscheck-outlier reconcile predicate (pure). The WINNER is an 'anchor_crop_crosscheck'
+    flip. Return a DISTINCT-value alternative to RESTORE, or None (fail-toward-review — flip stays).
+    Fires ONLY when:
+      (0) the flip is itself UNcorroborated — _fallthrough_critical_corroborated False (reuses E2/G1's
+          different-family + page-presence test; City-Office's page-present flip returns True → bail); AND
+      an alternative value V (disagreeing with the flip, calendar-aware for dates) is:
+      (1) agreed by >=2 INDEPENDENT method families (per _crosscheck_witness_bucket), AND
+      (2) supported by >=1 CROP-family read (so the two legs are never both the full-page text — C2), AND
+      (3) present in the page text (_page_presence_corroborated — a SEPARATE AND, never a family).
+    The winner's own pre-flip crop read (_crosscheck_original, preserved by anchor.py under the same kill
+    switch — Oracle C1) is admitted as a crop-family witness, so a keyword+crop (NO-mapping) ⊕-taught doc
+    heals — not only a mapping-backed one (else this is a document fix, not a system fix)."""
+    if not isinstance(winner, dict):
+        return None
+    if str(winner.get("method") or "") != "anchor_crop_crosscheck":
+        return None                                  # only a live crosscheck flip is reconcilable
+    flip = str(winner.get("value") or "")
+    if not flip:
+        return None
+    if _fallthrough_critical_corroborated(winner, cands, ocr_text, is_date):
+        return None                                  # (0) the flip IS corroborated → never override it
+    buckets = {}   # alnum_key -> {"raw": str, "fams": set(), "crop": bool}
+
+    def _admit(value, fam_tuple):
+        if fam_tuple is None:
+            return
+        v = str(value or "").strip()
+        if not v or _values_normalise_equal(v, flip, is_date):
+            return                                   # only DISAGREEING alternatives are restore targets
+        key = "".join(c for c in _cmp_norm(v) if c.isalnum())
+        if not key:
+            return
+        slot = buckets.setdefault(key, {"raw": v, "fams": set(), "crop": False})
+        fam, is_crop = fam_tuple
+        slot["fams"].add(fam)
+        if is_crop:
+            slot["crop"] = True
+
+    for c in (cands or []):
+        _admit((c or {}).get("value"),
+               _crosscheck_witness_bucket((c or {}).get("stage"), (c or {}).get("method")))
+    _admit(winner.get("_crosscheck_original"), ("crop", True))   # C1 — pre-flip crop as a crop-family leg
+
+    best = None
+    for slot in buckets.values():
+        if len(slot["fams"]) >= 2 and slot["crop"] \
+                and _page_presence_corroborated(slot["raw"], ocr_text):
+            if best is None or len(slot["fams"]) > len(best["fams"]):
+                best = slot
+    return best["raw"] if best else None
 
 
 def _inline_absence_should_hold(winner, cands, ocr_text, is_date) -> bool:
@@ -5857,6 +5946,38 @@ class ExtractionEngine:
                 note=((f"Couldn't match this document to the supplier's saved {_tn} layout"
                        if _tn else "Couldn't match this document to a saved layout for the supplier")
                       + " — please check the document type; confirming will teach this layout."))
+
+        # Crosscheck-outlier reconcile (Slice-1 — gary + Oracle SIGN-OFF-W/COND 2026-08-03). Owns the
+        # flip-REFUTED direction of anchor.py's authoritative-crop cross-check (E2 at :4180 owns flip-
+        # corroborated). Placed BEFORE G1/Fix-A so a restored value is then subject to their holds like
+        # any other winner. Iterates EVERY field the crosscheck fired on (method=='anchor_crop_crosscheck'
+        # — the current crosscheck scope: *_number/*_no/*reference*/date, custom included) and, when the
+        # flip is an uncorroborated outlier vs a >=2-independent-family (>=1 crop-family) + page-present
+        # alternative, restores that alternative (re-base anchor_inline@90, drop the flag — mirrors E2).
+        # ALWAYS pops the transient _crosscheck_original stash so it never persists. Kill switch OFF =
+        # byte-identical (anchor.py never stashes the key; this whole block is skipped).
+        if CROSSCHECK_OUTLIER_RECONCILE:
+            for _xk, _xd in results.items():
+                if _xk.startswith("_") or not isinstance(_xd, dict):
+                    continue
+                if _xd.get("method") != "anchor_crop_crosscheck":
+                    _xd.pop("_crosscheck_original", None)      # not a live flip here — just housekeep
+                    continue
+                _xis_d = _xk in (date_field_keys or ())
+                _alt = _crosscheck_corroborated_alternative(
+                    _xd, (self._field_candidates or {}).get(_xk) or [], ocr_text, _xis_d)
+                _xd.pop("_crosscheck_original", None)          # consumed — never persist the stash
+                if not _alt:
+                    continue
+                _restored = {**_xd,
+                             "value":      _alt,
+                             "method":     "anchor_inline",
+                             "confidence": max(int(_xd.get("confidence") or 0), _CROSSCHECK_CORROB_CONF)}
+                for _k in ("validation_note", "was_corrected", "corrected_to"):
+                    _restored.pop(_k, None)
+                results[_xk] = _restored
+                self.log(f"  Crosscheck-outlier reconcile: {_xk} flip '{_xd.get('value')}' refuted by "
+                         f"corroborated '{_alt}' — restored + flag dropped")
 
         # G1 (VETO-FALLTHROUGH corroboration guard — gary design + Oracle SIGN-OFF-W/COND 2026-07-26).
         # On a doc whose template match arrived via the identity-veto FALL-THROUGH, the anchor family

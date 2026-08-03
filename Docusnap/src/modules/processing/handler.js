@@ -121,14 +121,22 @@ function _anchorCropEnv(db) {
   } catch { return {}; }
 }
 
-// Extraction-reconcile opt-in spawn env. PREFIX_GARBLE_ADOPT (the Northgate PO-17039 class): when
-// on, a garbled leading code-prefix (a tight Stage-0.5 crop reads 'PO-17039' as '»0-17039') is
-// healed from a confirmed-prefix distinct-stage peer in the S-B length-witness arm. DEFAULT OFF ->
-// {} -> byte-identical. Owner opt-in; flip after the realdoc M=0 gate + a live doc-18 heal (Oracle).
+// Extraction-reconcile opt-in spawn env. Two independent kill-switched fixes, each DEFAULT OFF (absent
+// key -> byte-identical), owner opt-in after its realdoc M=0 gate:
+//  • PREFIX_GARBLE_ADOPT (the Northgate PO-17039 class): a garbled leading code-prefix (a tight
+//    Stage-0.5 crop reads 'PO-17039' as '»0-17039') is healed from a confirmed-prefix distinct-stage
+//    peer in the S-B length-witness arm.
+//  • CROSSCHECK_OUTLIER_RECONCILE (the doc-09 PO-83150->PO-83160 class): the authoritative-crop cross-
+//    check's fresh full-page locate can ITSELF garble and flip a correct value to a lone outlier;
+//    post-merge, an uncorroborated flip is restored to a >=2-independent-family + page-present
+//    alternative (arms anchor.py's pre-flip stash + engine._reconcile_crosscheck_outlier together).
 function _reconcileEnv(db) {
   try {
     const learning = require('../../../database/modules/learning');
-    return learning.getSetting(db, 'prefix_garble_adopt', 'false') === 'true' ? { PREFIX_GARBLE_ADOPT: '1' } : {};
+    const env = {};
+    if (learning.getSetting(db, 'prefix_garble_adopt', 'false') === 'true') env.PREFIX_GARBLE_ADOPT = '1';
+    if (learning.getSetting(db, 'crosscheck_outlier_reconcile', 'false') === 'true') env.CROSSCHECK_OUTLIER_RECONCILE = '1';
+    return env;
   } catch { return {}; }
 }
 

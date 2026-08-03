@@ -576,6 +576,17 @@ document.getElementById('prefix-garble-toggle').addEventListener('change', async
   await api.setSetting('prefix_garble_adopt', e.target.checked ? 'true' : 'false');
 });
 
+// ── Correct a reference that lost a cross-check (CROSSCHECK_OUTLIER_RECONCILE, default OFF) ──
+(async () => {
+  try {
+    const v = await api.getSetting('crosscheck_outlier_reconcile');
+    document.getElementById('crosscheck-reconcile-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('crosscheck-reconcile-toggle').checked = false; }
+})();
+document.getElementById('crosscheck-reconcile-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('crosscheck_outlier_reconcile', e.target.checked ? 'true' : 'false');
+});
+
 // ── Read small reference/date print more clearly (STRUCT_CODE_READ, default OFF) ──
 (async () => {
   try {

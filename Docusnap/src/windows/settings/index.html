@@ -622,6 +622,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Correct a reference that lost a cross-check</div>
+                <div class="threshold-sub">When ScanFinder re-checks a taught reference against a fresh read of the whole page and the two disagree, it can occasionally trust a mis-read of the page over the correct value. When the correct value is backed by the document's other reads and is present on the page, ScanFinder keeps it instead of the mis-read. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="crosscheck-reconcile-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Read small reference/date print more clearly</div>
                 <div class="threshold-sub">Enlarges a tightly-cropped reference or date before reading it and drops an over-sharpen step, so small print (e.g. “PO-17039” misread as “»0-17039”) reads correctly. Only helps where it can, never changes a read it can't improve. Off by default.</div>
               </div>

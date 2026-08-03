@@ -849,6 +849,7 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
         # The date disagreement compares CALENDAR dates (parse_date), so a format-only difference
         # (29/05/2026 vs 29-05-2026) is NOT a flip. Reuses line_cache — one locate per label per page.
         _xcheck_note = None   # flag-only note (value-below-label false-locate); set below, applied at the result build
+        _xcheck_preflip = None  # C1: credible PRE-FLIP crop read, stashed (gated) as an independent crop-family witness for the engine's post-merge crosscheck-outlier reconcile
         if value and method == "anchor_crop" and (_is_ref_like_key(field_key) or val_type == "date") \
                 and anchor.get("last_authoritative_at") \
                 and (anchor.get("anchor_label") or "").strip() and page0 is not None:
@@ -871,6 +872,15 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                         # can't win silently: prefer the full-page native read + flag for review.
                         if on_reject:
                             on_reject(field_key, "anchor_crop", value, "crop_fullpage_disagree")
+                        if os.environ.get("CROSSCHECK_OUTLIER_RECONCILE", "0") != "0":
+                            # Oracle C1: the fresh full-page locate can ITSELF be the garbler (doc-09:
+                            # correct crop PO-83150 flipped to a lone-outlier PO-83160). Preserve the
+                            # credible pre-flip CROP read so the engine's post-merge reconcile has an
+                            # independent crop-family witness — WITHOUT it the fix only heals mapping-
+                            # backed docs and leaves the ⊕-anchor-only sibling broken (a document fix,
+                            # not a system fix). Gated: the OFF path never adds the key (byte-identical,
+                            # ledger included). Consumed + popped in engine._reconcile_crosscheck_outlier.
+                            _xcheck_preflip = value
                         value  = _xc.strip()             # prefer the full-page native read
                         method = "anchor_crop_crosscheck"
                         ocr_conf, ocr_min = None, None
@@ -1569,6 +1579,10 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                 "taught_box": ((x_norm, y_norm, anchor.get("w_norm") or 0.0, anchor.get("h_norm") or 0.0)
                                if method in _CROP_FAMILY_METHODS else None),
             }
+            if _xcheck_preflip is not None:
+                # C1 (gated): carry the pre-flip crop read to the engine as a transient private
+                # key — read + popped by _reconcile_crosscheck_outlier, never persisted.
+                results[field_key]["_crosscheck_original"] = _xcheck_preflip
             if method == "anchor_crop_slipfix":
                 # Recover-and-flag: surface as an auto-correction (value==corrected_to) routed to
                 # review, the same posture as a salvaged date / weak name-repair.
