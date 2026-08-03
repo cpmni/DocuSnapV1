@@ -208,6 +208,15 @@ def test_lost_retains_value():
                  s2 and s2.get("outcome") == "lost" and s2.get("value") == "a"
                  and s2.get("method") == "anchor_crop"):
         failures += 1
+    # A lost rung NAMES the incumbent that beat it (state), so "my taught read lost to X" is
+    # visible — but STATE only, never a claimed cause (Oracle no-overclaim 2026-08-03).
+    lreason = (s2.get("reason") or "").lower() if s2 else ""
+    if not check("lost step reason names the incumbent (kept 'job-123' from keyword)",
+                 "kept" in lreason and "job-123" in lreason and "keyword" in lreason):
+        failures += 1
+    if not check("lost reason free of overclaim words (no credible/validated/higher-confidence/skipped-because)",
+                 all(b not in lreason for b in ("credible", "validated", "higher confidence", "skipped because"))):
+        failures += 1
     print()
     return failures
 

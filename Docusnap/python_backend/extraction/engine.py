@@ -1711,10 +1711,20 @@ class ExtractionEngine:
             cand = stage_results.get(f)
             cand_v = (cand or {}).get("value")
             if cand_v:                                   # value-truthiness FIRST (SEAM 3b)
-                self._t("step", stage=stage, field=f,
-                        outcome=self._merge_outcome(cand, results.get(f)),
+                _out = self._merge_outcome(cand, results.get(f))
+                _kw = {}
+                if _out == "lost":
+                    # STATE, not a CAUSE (Oracle no-overclaim 2026-08-03): name what currently
+                    # HOLDS the field so the ladder shows why this rung didn't win — the owner's
+                    # "the taught anchor read PO-17039 but lost" case — without asserting a reason
+                    # (higher confidence / authority) this vantage can't verify.
+                    _held = results.get(f) or {}
+                    _hv = _held.get("value")
+                    if _hv:
+                        _kw["reason"] = f"kept '{_hv}' from {_held.get('method') or 'an earlier stage'}"
+                self._t("step", stage=stage, field=f, outcome=_out,
                         value=cand_v, method=cand.get("method"),
-                        confidence=cand.get("confidence"))
+                        confidence=cand.get("confidence"), **_kw)
                 continue
             pre_f = pre.get(f) or {}
             pre_v = pre_f.get("value")

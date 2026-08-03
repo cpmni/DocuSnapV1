@@ -162,7 +162,10 @@ function ladderHtml(m) {
     if (st.outcome === 'won' || st.outcome === 'lost') {
       detail = `<span class="lval">${escapeHtml(shownVal(st.value))}</span>`
              + (st.method ? `<span class="conf">${escapeHtml(st.method)}</span>` : '')
-             + (st.confidence != null ? confBar(st.confidence) : '');
+             + (st.confidence != null ? confBar(st.confidence) : '')
+             // A LOST rung names what currently holds the field (state, not a claimed cause) so
+             // "the taught anchor read X but lost to Y" is visible without re-running.
+             + (st.outcome === 'lost' && st.reason ? `<span class="lreason">${escapeHtml(st.reason)}</span>` : '');
     } else if (st.outcome === 'already_resolved') {
       detail = `<span class="lval muted">${escapeHtml(shownVal(st.value))}</span>`
              + (st.by ? `<span class="conf">by ${escapeHtml(st.by)}</span>` : '')
