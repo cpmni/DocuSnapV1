@@ -19,11 +19,16 @@ function renderPreviewFields(doc) {
     scroll.appendChild(band);
   }
 
-  _field(scroll, 'Company',   doc.supplier_name);
-  _field(scroll, 'Type',      doc.type_name);
-  _field(scroll, 'Reference', doc.reference_number);
-  _field(scroll, 'Date',      doc.doc_date);
-  _field(scroll, 'Status',    doc.status);
+  // Fields render as one bordered TABLE — label left, value right (owner 2026-08-03: match
+  // the client's tabular field panel). The .pf-fields container gives the table its frame; the
+  // per-row layout is CSS. Core identity/role fields first, then any extra extracted fields.
+  const fields = document.createElement('div');
+  fields.className = 'pf-fields';
+  _field(fields, 'Company',   doc.supplier_name);
+  _field(fields, 'Type',      doc.type_name);
+  _field(fields, 'Reference', doc.reference_number);
+  _field(fields, 'Date',      doc.doc_date);
+  _field(fields, 'Status',    doc.status);
 
   if (Array.isArray(doc.extractions) && doc.extractions.length) {
     // Skip keys surfaced as core fields above; show all others with a value.
@@ -32,13 +37,9 @@ function renderPreviewFields(doc) {
     const extras = doc.extractions
       .filter(ex => !coreKeys.has(ex.field_key) && ex.display_value)
       .sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
-    if (extras.length) {
-      const div = document.createElement('div');
-      div.className = 'pf-divider';
-      scroll.appendChild(div);
-      for (const ex of extras) _field(scroll, _keyLabel(ex.field_key), ex.display_value, ex.confidence, ex.validation_note);
-    }
+    for (const ex of extras) _field(fields, _keyLabel(ex.field_key), ex.display_value, ex.confidence, ex.validation_note);
   }
+  scroll.appendChild(fields);
 }
 
 function _field(container, label, value, confidence, note) {

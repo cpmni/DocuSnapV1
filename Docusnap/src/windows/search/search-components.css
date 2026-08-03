@@ -152,7 +152,57 @@ body.mailbox-mode .lead-wrap { display: none !important; }
   border-left: 3px solid var(--accent);
   padding-left: 11px;
 }
-.result-supplier { font-size: 12.5px; font-weight: 600; }
+.result-header { margin-bottom: 2px; }
+.result-supplier { font-size: 13px; font-weight: 600; }
+
+/* Field-data detail line (reference · date · type) in MONOSPACE — replaces the raw
+   filename the row used to show (owner 2026-08-03: match the client's row). */
+.result-detail {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.result-status-badge.confirmed {
+  color: var(--ok); background: rgba(62,207,142,.12); border-color: rgba(62,207,142,.40);
+}
+
+/* ── Preview: TABULAR field panel (label left · value right · bordered card) ──── */
+.pf-fields {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  background: var(--surface);
+}
+.pf-fields .pf-row {              /* override the inline flex-column stack → a table row */
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding: 8px 11px;
+  border-bottom: 1px solid var(--border);
+}
+.pf-fields .pf-row:last-child { border-bottom: none; }
+.pf-fields .pf-label {            /* sentence-case label on the left, like the client */
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+.pf-fields .pf-value {            /* monospace value, right-aligned */
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+.pf-fields .pf-note { flex-basis: 100%; text-align: left; margin-top: 2px; }
+.pf-fields .pf-tint { padding-left: 8px; }   /* keep the per-field confidence rail */
 
 /* ── Preview action buttons — rounder, primary gets an accent lift ───────────── */
 .action-btn { border-radius: var(--r-sm); }

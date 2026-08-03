@@ -74,13 +74,18 @@ function _resultItem(doc) {
   el.className  = 'result-item';
   el.dataset.id = doc.id;
 
-  const name     = doc.stored_filename || doc.original_filename || '—';
+  const name     = doc.stored_filename || doc.original_filename || '—';   // thumb alt only
   const supplier = doc.supplier_name || '—';
   const typeName = doc.type_name || '';
   const date     = doc.doc_date || '';
+  const ref      = doc.reference_number || '';
+  // The row shows the FIELD DATA (reference · date · type) in monospace — not the raw
+  // filename (owner 2026-08-03: match the client's row; the filename is noise to a reader).
+  const detail   = [ref, date, typeName].filter(Boolean).map(escHtml).join('  ·  ') || '—';
 
   let statusBadge = '';
-  if      (doc.status === 'needs_review') statusBadge = `<span class="result-status-badge review">Needs Review</span>`;
+  if      (doc.status === 'confirmed')    statusBadge = `<span class="result-status-badge confirmed">Confirmed</span>`;
+  else if (doc.status === 'needs_review') statusBadge = `<span class="result-status-badge review">Needs Review</span>`;
   else if (doc.status === 'deferred')     statusBadge = `<span class="result-status-badge deferred">Deferred</span>`;
 
   let confPip = '';
@@ -89,20 +94,18 @@ function _resultItem(doc) {
     confPip = `<span class="result-conf ${confLevel(doc.overall_confidence)}" title="Read at ${doc.overall_confidence}% confidence">
       <span class="rc-meter"><i style="width:${w}%"></i></span><span class="rc-val">${doc.overall_confidence}%</span></span>`;
   }
+  const footer = confPip ? `<div class="result-footer"><span class="result-footer-right">${confPip}</span></div>` : '';
 
   el.innerHTML = `
     <div class="result-row">
-      <img class="result-thumb" alt="">
+      <img class="result-thumb" alt="${escHtml(name)}">
       <div class="result-main">
         <div class="result-header">
           <span class="result-supplier" title="${escHtml(supplier)}">${escHtml(supplier)}</span>
-          ${typeName ? `<span class="result-type-badge">${escHtml(typeName)}</span>` : ''}
+          ${statusBadge}
         </div>
-        <div class="result-filename" title="${escHtml(name)}">${escHtml(name)}</div>
-        <div class="result-footer">
-          <span class="result-date">${escHtml(date)}</span>
-          <span class="result-footer-right">${statusBadge}${confPip}</span>
-        </div>
+        <div class="result-detail" title="${escHtml([ref, date, typeName].filter(Boolean).join(' · '))}">${detail}</div>
+        ${footer}
       </div>
     </div>
   `;
