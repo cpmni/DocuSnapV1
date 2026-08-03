@@ -43,6 +43,37 @@ checks). Census mode `UNIVERSAL_VERIFY_CENSUS`(+`_FILE`): 522-doc realdoc census
 
 ---
 
+## 2026-08-03 NIGHT (autonomous, owner asleep) — perfect-catch arc: 4 flips, all Oracle-gated
+
+**Owner mandate:** "hash it out between yous, have the oracle vet it and implement when there is
+agreement." Goal: teach once -> perfect catch on CLEAN siblings, silently. Full verdicts in
+docs/oracle_log.md (NIGHT entry); commits `df80601` + the wrap commit.
+
+**FLIPPED ON tonight (all gated):** `template_target_word_snap` (Slice B — own gate: +1 ref heal,
++1 date heal incl. a century garble, 5 false-flag drops, M identical) · `template_code_frag_clean`
+(A2/C1 alnum label-tail fragment strip, consent ladder) · `template_clip_commit` (C2a right-clip
+clean commit, 3 corroboration legs incl. the S1 ladder-provenance bit). Composed gate
+byte-identical (M 10==10, zero drop). Settings toggles shipped for all three. PLUS the provisional
+consent channel (taught-doc skeletons, S2-isolated) + role-aware ocr_type seeding + both
+edit-surface selects + advisor prior-art/track-record memory.
+
+**OWNER-MORNING list:**
+- **C2b copy** — the SURVIVING disagreement note still reads "manually mapped value differs from
+  the usual format" (Chris: blame-shaped, nothing to verify against). Oracle-approved direction:
+  name both reads ("the taught box and its anchored re-read disagreed ('o. DN-6742' vs
+  'DN-67428')"). User-facing copy -> owner vet.
+- **Teach-time box word-snap** (barry #1, gary-designed): snap the STORED boxes at readBack so
+  teach geometry == read geometry; owner sees the snapped box before commit. UI-visible teach
+  flow -> owner first. Frame trap: ocrRegionBoxes words are crop-px.
+- **`_seed_field_patterns` ref_field_key threading** — the REAL production hole for
+  unconventional-key ref roles (free-text-gated today). Separate gated follow-up (gate: M
+  unchanged; candidate selection can shift when a gate starts withholding).
+- **Rehearsal read + template annealing** (barry #3/#6) — design-only, the durability pair.
+- Live re-test: reprocess the Northgate dockets after RESTARTING the app (main-JS changed
+  tonight — the stale-main gotcha bit once already this evening).
+
+---
+
 ## 2026-08-03 (evening) — teach-mapping edge-debris heal (Slice A BUILT) + word-snap (Slice B designed)
 
 **Incident:** teach-wizard template 26 (Northgate delivery_note) value box ~7px right of label

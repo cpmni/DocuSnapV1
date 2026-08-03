@@ -398,3 +398,11 @@ with nothing to fix is a tax", trust 7→2 — quoted in the briefs by owner ins
   (UI-visible teach flow).
 - Switches: `TEMPLATE_CODE_FRAG_CLEAN` / `TEMPLATE_CLIP_COMMIT` (settings `template_code_frag_clean`
   / `template_clip_commit`), default OFF. Pins `test_template_frag_clip.py` (29 checks).
+- **NIGHT BUILD + GATE OUTCOME:** all conditions built (S1 provenance bit, S2 separate-index +
+  single consent helper + engine-side provisional strip before every established builder, S4
+  decapitation pin, S5 source-order pin — `test_template_frag_clip.py`, 29 checks). B FLIPPED ON
+  (`template_target_word_snap=true`). Composed gate (B+A+frag+clip ON, 540 docs) vs the B+A
+  baseline: BYTE-IDENTICAL (M 10==10, zero changed docs, zero drop) → frag+clip FLIPPED ON
+  (`template_code_frag_clean` / `template_clip_commit` = true) per the standing instruction; the
+  corpus's derived-rung instances were already healed by B, so frag/clip guard the ABSOLUTE rung
+  (live-jitter class) with unit-pinned heal evidence. Settings toggles shipped for all three.

@@ -650,6 +650,20 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Remove label fragments from taught reads</div>
+                <div class="threshold-sub">When a taught box catches the tail of its own label (e.g. the “o.” of “No.” read as “o. DN-67428”), and an independent read of the same spot shows the value without it, ScanFinder files the clean value. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="frag-clean-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Complete a cut-short taught read</div>
+                <div class="threshold-sub">When a taught box cuts a reference short (e.g. “DN-6742” for “DN-67428”) and two further reads of the same spot agree on the full value in the sender's usual format, ScanFinder files the full value instead of asking you to verify. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="clip-commit-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Read small reference/date print more clearly</div>
                 <div class="threshold-sub">Enlarges a tightly-cropped reference or date before reading it and drops an over-sharpen step, so small print (e.g. “PO-17039” misread as “»0-17039”) reads correctly. Only helps where it can, never changes a read it can't improve. Off by default.</div>
               </div>

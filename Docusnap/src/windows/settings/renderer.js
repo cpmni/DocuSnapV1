@@ -623,6 +623,21 @@ document.getElementById('word-snap-toggle').addEventListener('change', async (e)
   await api.setSetting('template_target_word_snap', e.target.checked ? 'true' : 'false');
 });
 
+// ── Remove label fragments / complete cut-short taught reads (NIGHT round 2026-08-03:
+// TEMPLATE_CODE_FRAG_CLEAN + TEMPLATE_CLIP_COMMIT, both default OFF) ──
+for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
+                         ['clip-commit-toggle', 'template_clip_commit']]) {
+  (async () => {
+    try {
+      const v = await api.getSetting(key);
+      document.getElementById(id).checked = (v === 'true');   // unset → off
+    } catch { document.getElementById(id).checked = false; }
+  })();
+  document.getElementById(id).addEventListener('change', async (e) => {
+    await api.setSetting(key, e.target.checked ? 'true' : 'false');
+  });
+}
+
 // ── Read small reference/date print more clearly (STRUCT_CODE_READ, default OFF) ──
 (async () => {
   try {
