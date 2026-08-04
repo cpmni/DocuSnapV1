@@ -444,3 +444,53 @@ with nothing to fix is a tax", trust 7→2 — quoted in the briefs by owner ins
   instrumentation. NAME_UNCLIP flip: **HOLD** — jitter shows the lever is the substrate, not
   more heals; also the corpus has NO non-supplier name field, so unclip is structurally
   unexercisable there until customer-name GT exists.
+
+## 2026-08-05 — Jitter-crater reframe: premise overturn + A/B/C/D slices (gary + 007 → Oracle)
+
+**Consensus in:** the 08-04 charter ("born-digital word-box synthesis = arc #1; the text-layer path
+yields NO word boxes") was investigated at rung level and REFRAMED: (1) the crater's binding
+mechanism = ABSOLUTE-RUNG CLIPPED-CLEAN-READ COMMITS (cut taught box reads a clean partial on crisp
+pages → passes `_gate_value` shape_mode='ignore' → commits template_mapping 78-90, no note; the whole
+heal ladder keys on page-vs-taught DISAGREEMENT and this class is stored-box damage on an UNDAMAGED
+page, so nothing fires — armed-env rerun j120armed == j120s byte-identical); (2) digital-worse-than-
+scanned = crisp renders make clean partials that PASS the gate while scan garble FAILS it and falls
+through to label/keyword heals (j120s wrong-answer classes: digital ref 33/49 clean-prefix-of-GT,
+issuer 44/56); (3) 34% of harness taught mappings had poisoned/absent anchor labels
+(teach_from_gt.find_label picks neighbouring VALUES as labels — the live wizard's anchorLabel.js is
+defended) — the crater partly measured harness infidelity; (4) date validation + parse_date accept
+3-digit/cut years → Stage-4 expands fragments to confidently-wrong dates. Slices: A harness label
+fidelity · B date-clip gate + parse_date year floor · C TEMPLATE_ABS_EDGE_GUARD (read-time word-edge
+predicate + word-bounded GROW + re-read + per-type comparator + _shape_consents ladder, abs rung,
+codes+dates, names excluded) · D _label_score digit-exactness guard. Fork: gary demote-to-ladder vs
+007 grow.
+
+**Oracle verdict:** premise overturn UPHELD (born-digital synthesis demoted to follow-up; every claim
+traced — template_mapper has no born-digital branch, word geometry obtainable at Stage 0.5 on digital
+renders; only real text-layer hole = `_page0_geom` letterhead, disproven as the crater by t300 issuer
+90.3% digital). **A SIGN OFF · B SIGN OFF W/COND · C SIGN OFF W/COND · D SIGN OFF W/COND.** Fork
+RULED for 007's GROW on code (:881-882 derived rung re-seats at DRAWN width → demote re-clips for
+position-only mappings and silently demotes taught authority ignore→flag).
+
+**Added value? YES — ship-blocker class.** (1) Found the WYSIWYG pin at
+`test_template_target_word_snap.py:108` is a DEAD GUARD — `asrc.find('FAST PATH…')` >
+`asrc.find('def _read_registration')` (markers at :1044 vs :974) → empty slice → the "absolute rung
+untouched" assertion passes VACUOUSLY forever (the CLAUDE.md dead-guard trap; C-C0 = rebuild it
+behaviourally before touching the fast path). (2) Caught TWO seams the consensus missed: B-starves-C
+composition (date-clip rejecting abs_text first means C's abs-rung predicate never runs — C's
+predicate must be gate-outcome-independent, grown text re-gated through B) and B over-rejecting
+complete dates with trailing debris ('07-01-2026.' — B-C1 4-digit-year exemption). (3) Marked the
+<0.1% clean false-fire estimate HYPOTHESIS (legacy pre-snap teaches fire more; realdoc M=0 is the
+real guard, not t300 zero-fires).
+
+**Conditions:** A-C1..C3 (sanitizer parity · value_as_label ≤2/310 pin · re-baseline BEFORE
+attribution, retire old crater numbers) · B-C1..C4 (4-digit exemption · raw-text predicate, no
+salvage resurrection · pins incl. '07-01-20' stays ACCEPTED · kill switch TEMPLATE_DATE_CLIP_GATE
+default OFF, parse_date floor unswitched but rides realdoc gate) · C-C0..C5 (dead-pin rebuild first ·
+gate-independent predicate · left-grow bound = located label_box right edge + 0.002, right ≤2.0×
+drawn · never mutate stored coords (pin) · names excluded, issuer lane declared out of scope ·
+rb_531 + frag/edge-clean pins green) · D-C1..C3 (own kill switch default OFF · wrong-date-lock +
+"VAT No 1" pins · _match_label_run reach named in tests). **Sequencing approved: A → re-baseline →
+D+B → C.** Gates: t300 byte-identical + ZERO predicate fires (counted) · jitter ref/date/po_ref climb
+BOTH renditions + digital/scanned asymmetry narrows · LEFT-cut jitter variant · realdoc 535 M=0.
+
+**Outcome:** building this session (each slice kill-switched dark, committed separately).

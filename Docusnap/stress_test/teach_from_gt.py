@@ -14,6 +14,7 @@ Pure/deterministic; page-norm coords; never writes anywhere.
 """
 import argparse
 import json
+import re
 import sys
 
 import pypdfium2 as pdfium
@@ -90,9 +91,45 @@ def find_value(rows, gt_value):
     return None
 
 
-def find_label(rows, hit):
+def _clean_label_run(run, gt_norms=()):
+    """Label-quality discipline — MIRRORS the live wizard's rules (src/windows/shared/
+    anchorLabel.js sanitizeAnchorLabel + the value-shape strip) so the harness can never
+    store a neighbouring VALUE as an anchor label. Without this, 48/310 taught mappings
+    anchored on another field's value (a date field anchored on 'VXC4484'), so the whole
+    label-anchored heal family was structurally dead in the taught arm — the harness
+    measured its own teach infidelity, not the app (Oracle 2026-08-05, Slice A).
+    Rules: reject the WHOLE run when its normalised join equals one of the teach doc's
+    OWN GT values; keep a standalone '#' ('#.'/'#:'); drop tokens with no letter (bare
+    number / ref / date); drop code-like tokens carrying >=3 digits; a surviving label
+    must still carry a letter and must not itself normalise to a GT value.
+    Returns the kept words (anchor box unions ONLY these) or None (position-only)."""
+    if not run:
+        return None
+    if norm(" ".join(w["text"] for w in run)) in gt_norms:
+        return None
+    kept = []
+    for w in run:
+        t = (w.get("text") or "").strip()
+        if re.fullmatch(r"#[.:]?", t):
+            kept.append(w)
+            continue
+        if not re.search(r"[a-zA-Z]", t):
+            continue
+        if len(re.findall(r"\d", t)) >= 3:
+            continue
+        kept.append(w)
+    if not any(re.search(r"[a-zA-Z]", w["text"]) for w in kept):
+        return None
+    if norm(" ".join(w["text"] for w in kept)) in gt_norms:
+        return None
+    return kept
+
+
+def find_label(rows, hit, gt_norms=()):
     """Nearest same-row LEFT run (contiguous words ending before the value, gap-bounded), else
-    the nearest run on the row above overlapping the value's x. None → position-only anchor."""
+    the nearest run on the row above overlapping the value's x. None → position-only anchor.
+    Each candidate passes _clean_label_run; a rejected LEFT candidate falls to the ABOVE
+    branch (mirroring the wizard's left→above ladder), never further left past the gap."""
     run, row = hit["run"], hit["row"]
     vx = run[0]["x"]
     left = [w for w in row["words"] if w["x"] + w["w"] <= vx + 1e-6 and norm(w["text"])]
@@ -105,7 +142,9 @@ def find_label(rows, hit):
             else:
                 break
         if vx - (tail[-1]["x"] + tail[-1]["w"]) < row["h"] * 6:      # label near the value
-            return tail
+            tail = _clean_label_run(tail, gt_norms)
+            if tail:
+                return tail
     # row above, x-overlapping the value
     above = [r for r in rows if r["c"] < row["c"] - row["h"] * 0.5]
     if above:
@@ -113,7 +152,9 @@ def find_label(rows, hit):
         ov = [w for w in r2["words"]
               if w["x"] < run[-1]["x"] + run[-1]["w"] and w["x"] + w["w"] > vx and norm(w["text"])]
         if ov and (row["c"] - r2["c"]) < row["h"] * 3:
-            return ov
+            ov = _clean_label_run(ov, gt_norms)
+            if ov:
+                return ov
     return None
 
 
@@ -125,6 +166,9 @@ def main():
     job = json.load(open(args.job, encoding="utf-8"))
     words = words_from_page(job["pdf"], args.tesseract)
     rows = rows_of(words)
+    # The teach doc's own GT values — a label candidate must never BE one of these
+    # (value-as-label poisons every label-anchored heal on sibling docs).
+    gt_norms = {norm(v) for v in (job.get("fields") or {}).values() if norm(v)}
     mappings, misses = [], []
     for key, val in (job.get("fields") or {}).items():
         hit = find_value(rows, val)
@@ -132,7 +176,7 @@ def main():
             misses.append(key)
             continue
         target = union(hit["run"])
-        label = find_label(rows, hit)
+        label = find_label(rows, hit, gt_norms)
         if label:
             anchor = union(label)
             anchor_text = " ".join(w["text"] for w in label).strip()
