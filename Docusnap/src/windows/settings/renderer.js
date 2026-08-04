@@ -624,9 +624,15 @@ document.getElementById('word-snap-toggle').addEventListener('change', async (e)
 });
 
 // ── Remove label fragments / complete cut-short taught reads (NIGHT round 2026-08-03:
-// TEMPLATE_CODE_FRAG_CLEAN + TEMPLATE_CLIP_COMMIT, both default OFF) ──
+// TEMPLATE_CODE_FRAG_CLEAN + TEMPLATE_CLIP_COMMIT, both default OFF) + the jitter-crater
+// arc trio (Oracle 2026-08-05, gates green: TEMPLATE_ABS_EDGE_GUARD word-edge grow ·
+// TEMPLATE_DATE_CLIP_GATE cut-date reject · TEMPLATE_LABEL_DIGIT_EXACT locate digit
+// exactness — all default OFF until the owner flip) ──
 for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
-                         ['clip-commit-toggle', 'template_clip_commit']]) {
+                         ['clip-commit-toggle', 'template_clip_commit'],
+                         ['edge-guard-toggle', 'template_abs_edge_guard'],
+                         ['date-clip-toggle', 'template_date_clip_gate'],
+                         ['label-digit-toggle', 'template_label_digit_exact']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);

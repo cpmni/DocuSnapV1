@@ -664,6 +664,27 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Grow a taught box that cuts through the printed value</div>
+                <div class="threshold-sub">When a taught reading spot's edge lands mid-word on a document (a longer reference than the one it was taught on, or a shifted scan), ScanFinder widens just that read to the full word and files it only when an independent check of the same spot agrees — otherwise the shortened reading is sent for review instead of filing silently. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="edge-guard-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Catch cut-short dates</div>
+                <div class="threshold-sub">A date read with its year cut off (e.g. “07-01-20-” from “07-01-2026”) is no longer accepted as-is — ScanFinder retries the read or sends the document for review, so a shortened date can't be filed as the wrong year. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="date-clip-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Stricter matching for number-like reading spots</div>
+                <div class="threshold-sub">A taught reading spot identified by a number (rather than a printed label) must match that number exactly — so a different date or reference nearby can never be mistaken for it. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="label-digit-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Read small reference/date print more clearly</div>
                 <div class="threshold-sub">Enlarges a tightly-cropped reference or date before reading it and drops an over-sharpen step, so small print (e.g. “PO-17039” misread as “»0-17039”) reads correctly. Only helps where it can, never changes a read it can't improve. Off by default.</div>
               </div>

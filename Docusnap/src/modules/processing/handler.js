@@ -152,6 +152,12 @@ function _reconcileEnv(db) {
     if (learning.getSetting(db, 'template_clip_commit', 'false') === 'true') env.TEMPLATE_CLIP_COMMIT = '1';
     // Name-unclip reconcile (Oracle 2026-08-04 — DARK until the customer-corpus name gate).
     if (learning.getSetting(db, 'name_unclip_reconcile', 'false') === 'true') env.NAME_UNCLIP_RECONCILE = '1';
+    // Jitter-crater arc (Oracle 2026-08-05, all gates green — docs/oracle_log.md): the abs-rung
+    // word-edge guard (grow a cut taught box's READ to the full word, witness-corroborated), the
+    // date-clip fragment gate + the locate digit-exactness guard. Dark until the owner flip.
+    if (learning.getSetting(db, 'template_abs_edge_guard', 'false') === 'true') env.TEMPLATE_ABS_EDGE_GUARD = '1';
+    if (learning.getSetting(db, 'template_date_clip_gate', 'false') === 'true') env.TEMPLATE_DATE_CLIP_GATE = '1';
+    if (learning.getSetting(db, 'template_label_digit_exact', 'false') === 'true') env.TEMPLATE_LABEL_DIGIT_EXACT = '1';
     return env;
   } catch { return {}; }
 }

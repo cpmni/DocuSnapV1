@@ -79,9 +79,12 @@ realdoc 535 M=0. Old crater numbers (70→22 etc.) RETIRED — quote only re-bas
 all four slices dark. Final gates: clean arm ZERO T→F + 21 pure heals (ref 70.1→74.7, date
 91.3→93.4) · right-jitter ref 85.7/66.1 · date 91.1/83.9 · po_ref 100/78.6 · job_ref 100/100 ·
 left-jitter ref 69.6/62.5 · realdoc 543 baseline==armed (M unchanged 11==11 standing, silent
-14==14, M_type 0, +1 auto-file gained). **NEXT: settings-bridge (handler.js env bridge + Settings
-→ Processing toggles) for TEMPLATE_ABS_EDGE_GUARD / TEMPLATE_DATE_CLIP_GATE /
-TEMPLATE_LABEL_DIGIT_EXACT, then owner flip.** Known residuals: left-cut DATE lane digital 46.4%
+14==14, M_type 0, +1 auto-file gained). **Settings-bridge BUILT (same session): `_reconcileEnv`
+carries all three switches (all 4 spawn sites) + Settings→Processing toggles (edge-guard-toggle ·
+date-clip-toggle · label-digit-toggle), div-balance + ID-pairing checked. NEXT: OWNER FLIP only
+(tick the three toggles, or set template_abs_edge_guard / template_date_clip_gate /
+template_label_digit_exact = true; RESTART the app first — main-JS changed, the stale-main
+gotcha).** Known residuals: left-cut DATE lane digital 46.4%
 (day-digit cut fragments — suffix date discipline is weaker than codes'); issuer lane 0 under
 jitter BY DESIGN (names excluded v1 — the NAME_UNCLIP flip decision owns it); the scorer's
 "Heal/verify fires captured (0)" header is stale — fires now counted via jsonl `methods`
