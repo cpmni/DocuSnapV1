@@ -21,24 +21,31 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-08-04 wrap) — C6 scorer + jitter finding; NEXT = born-digital word boxes
-**2026-08-04 day (Opus 4.8). HEAD `81a3a83`, PUSHED, tree clean. READ `HANDOVER_2026-08-04.md`
-FIRST.** SFDEV chord fixed (`d642117` — Ctrl+Shift never text entry; Ctrl+Shift+I never existed).
-Teach-time word-snap ON (`698ddec`, `teach_box_word_snap` default ON — read-back display is the
-gate). `NAME_UNCLIP_RECONCILE` built DARK (`c9f253f` — cut-glyph rule + 4.5-starvation pin; flip
-HELD). S2 leak fixed (`5f9f0d5` — getFieldFormats excludes provisional by default; training file
-opts in). **Customer-corpus GT scorer SHIPPED** (`stress_test/customer_corpus_score.js` +
-`teach_from_gt.py`): cold/TEACH/TEACH_JITTER arms, 9 GT lanes, deterministic sample. **Slice-2
-2b+2c FLIPPED** (`universal_verify_numeric`/`_flag` — zero fires, zero flag noise across all
-arms). Teach-once quantified: cold→taught ref 45→70 · date 68→92 · issuer 0→75 · type 83→100.
-**THE JITTER CRATER (next arc's charter):** 18% right-cut taught boxes → ref 70→22, date 92→21,
-heal stack rescues ~nothing; provisional-seeding parity (`81a3a83`) DISPROVED consent as the
-cause; **born-digital word-geometry gap = suspect #1** (digital 12.5% vs scanned 32.1% under
-damage — the text-layer path yields NO word boxes; synthesize them from pypdfium2 char positions).
-Dependency-ordered list: `pendingfeatures.md` 2026-08-04 entry. Owner live checks pending: teach-
-snap feel · docket_10 `clip_decline` trace · C2b copy vet. GOTCHAS: electron.exe never .cmd ·
-never edit mapper py mid-arm · `git add -A` from repo ROOT stages `Backup/` · dev diag logs live
-in `repo/Debug/diagnostic_<UTC>.jsonl` · advisor files carry prior-art rule + track records.
+## Current session state (2026-08-05 wrap) — jitter-crater arc CLOSED (A/B/C/D dark, gates green); NEXT = settings-bridge + owner flip
+**2026-08-05 (Fable 5, autonomous). Commits `b63bd86`·`8f631b8`·`2ddd5fa`·`fafd8b4`, PUSHED. READ
+`HANDOVER_2026-08-05.md` FIRST.** The 08-04 born-digital charter was OVERTURNED (Oracle UPHELD,
+`docs/oracle_log.md` 2026-08-05): the crater = ABSOLUTE-RUNG CLIPPED-CLEAN-READ COMMITS (cut
+taught box reads a clean partial → passes shape_mode='ignore' → commits 78-90 silently; every
+shipped heal keys on page-vs-taught DISAGREEMENT so nothing fires — armed rerun byte-identical);
+digital-worse = crisp partials PASS the gate, scan garble FAILS into the heal ladder; PLUS 34% of
+harness taught mappings had value-as-label poisoned anchors (harness-only; wizard defended).
+**BUILT DARK + GATED GREEN:** A harness label fidelity (audit 48→0 value-as-label) · B
+`TEMPLATE_DATE_CLIP_GATE` (date-clip fragments rejected pre-salvage; '07-01-20' 2-digit PINNED
+accepted) + UNSWITCHED parse_date year<1000 floor (live) · C `TEMPLATE_ABS_EDGE_GUARD` (word-edge
+predicate on the abs rung → word-bounded GROW → edge-directional comparator → independent-WITNESS
+(cut word's locate text ⊂ grown) → consent ladder → defer-cap fall-through floor; stored mapping
+never mutated; names EXCLUDED — NAME_UNCLIP owns them) · D `TEMPLATE_LABEL_DIGIT_EXACT` (digit
+needles can't fuzzy-lock a different value). **GATES:** clean arm ZERO T→F + 21 pure heals (ref
+70.1→74.7, date 91.3→93.4) · right-jitter ref 85.7/66.1 · date 91.1/83.9 · po_ref 100/78.6 ·
+job_ref 100/100 (dark: 12.5/19.6 · 3.6/26.8 · 14.3 · 0/57) · left-jitter ref 69.6/62.5 · realdoc
+543 baseline==armed (silent 14==14, M_type 0). Oracle caught the DEAD WYSIWYG pin
+(test_template_target_word_snap.py:108 empty slice — rebuilt behaviourally). **NEXT: handler.js
+env-bridge + Settings toggles for the 3 switches → owner flip.** Owner checks pending: teach-snap
+feel · docket_10 `clip_decline` · C2b copy. Residuals: left-cut DATE digital 46.4 · issuer-under-
+jitter 0 by design · test_template_rescue(1) pre-existing. GOTCHAS: electron.exe never .cmd ·
+never edit mapper py mid-arm · `git add -A` from ROOT stages `Backup/` · no inline `py -c` · the
+edge-clean wiring pin inspects the module prefix before the first `def` — mapper kill-switch
+getenv lines stay in the top flag zone, functions below.
 
 ## Prior session state (2026-08-03 NIGHT wrap) — perfect-catch arc: SIX flips live, all Oracle-gated
 **2026-08-03 day+evening+overnight (Opus 4.8 → autonomous night). HEAD `1ab4606`, PUSHED. READ

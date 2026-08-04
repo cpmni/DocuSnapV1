@@ -1855,3 +1855,19 @@ morning/afternoon arcs. NEXT AGREED TASK: build Catch-up Filing slice 1 —
   harnesses); `_doctype_fixed_supplier` = production DEAD GUARD (`key` vs `field_key`) — do NOT fix
   casually; `ocr_dpi=200` live was owner speed-testing (fixes proven at 200).
 
+
+## 2026-08-04 (day) — C6 scorer + jitter finding [moved verbatim from CLAUDE.md at the 08-05 wrap]
+**2026-08-04 day (Opus 4.8). HEAD `81a3a83`, PUSHED, tree clean. READ `HANDOVER_2026-08-04.md`
+FIRST.** SFDEV chord fixed (`d642117` — Ctrl+Shift never text entry; Ctrl+Shift+I never existed).
+Teach-time word-snap ON (`698ddec`, `teach_box_word_snap` default ON — read-back display is the
+gate). `NAME_UNCLIP_RECONCILE` built DARK (`c9f253f` — cut-glyph rule + 4.5-starvation pin; flip
+HELD). S2 leak fixed (`5f9f0d5` — getFieldFormats excludes provisional by default; training file
+opts in). **Customer-corpus GT scorer SHIPPED** (`stress_test/customer_corpus_score.js` +
+`teach_from_gt.py`): cold/TEACH/TEACH_JITTER arms, 9 GT lanes, deterministic sample. **Slice-2
+2b+2c FLIPPED** (`universal_verify_numeric`/`_flag` — zero fires, zero flag noise across all
+arms). Teach-once quantified: cold→taught ref 45→70 · date 68→92 · issuer 0→75 · type 83→100.
+**THE JITTER CRATER (next arc's charter):** 18% right-cut taught boxes → ref 70→22, date 92→21,
+heal stack rescues ~nothing; provisional-seeding parity (`81a3a83`) DISPROVED consent as the
+cause; **born-digital word-geometry gap = suspect #1** (digital 12.5% vs scanned 32.1% under
+damage — the text-layer path yields NO word boxes; synthesize them from pypdfium2 char positions).
+[NOTE 2026-08-05: the born-digital suspect was OVERTURNED next session — see the 08-05 block.]

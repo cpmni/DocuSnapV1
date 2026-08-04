@@ -493,4 +493,13 @@ rb_531 + frag/edge-clean pins green) · D-C1..C3 (own kill switch default OFF ·
 D+B → C.** Gates: t300 byte-identical + ZERO predicate fires (counted) · jitter ref/date/po_ref climb
 BOTH renditions + digital/scanned asymmetry narrows · LEFT-cut jitter variant · realdoc 535 M=0.
 
-**Outcome:** building this session (each slice kill-switched dark, committed separately).
+**Outcome:** ALL FOUR SLICES BUILT + GATED GREEN same session (commits b63bd86 A · 8f631b8 B+D ·
+2ddd5fa C · fafd8b4 C-v2). C's first contract regressed the clean arm (18 T→F) — three probed root
+causes fixed in v2 (defer-cap fall-through so the floor never pre-empts the inline reconcile ·
+edge-directional comparator (left cut = suffix discipline) · independent-witness corroboration of
+the grown read against the cut word's locate-pass text · junk-wrapped complete-4-digit-year date
+skip). FINAL GATES: clean t300s→t300c3 ZERO True→False + 21 pure heals (ref 70.1→74.7%, date
+91.3→93.4%) · right-jitter j120n3 ref 85.7/66.1 date 91.1/83.9 po_ref 100/78.6 job_ref 100/100
+(dark baselines 12.5/19.6 · 3.6/26.8 · 14.3 · 0/57) · left-jitter j120L3 ref 69.6/62.5 (was
+3.6/17.9) · realdoc 543-doc baseline==armed on every axis (ref 95.6, date 99.3, silent 14==14,
+wrong-auto-file 11==11 standing, M_type 0). Switches DARK pending settings-bridge + owner flip.

@@ -75,6 +75,18 @@ letterhead ranking, disproven as the crater by t300 digital issuer 90.3%).
 predicate fires counted · jitter climbs BOTH renditions + asymmetry narrows · LEFT-cut variant ·
 realdoc 535 M=0. Old crater numbers (70→22 etc.) RETIRED — quote only re-baselined ones.
 
+**BUILT + GATED GREEN same session (2026-08-05, commits b63bd86 · 8f631b8 · 2ddd5fa · fafd8b4):**
+all four slices dark. Final gates: clean arm ZERO T→F + 21 pure heals (ref 70.1→74.7, date
+91.3→93.4) · right-jitter ref 85.7/66.1 · date 91.1/83.9 · po_ref 100/78.6 · job_ref 100/100 ·
+left-jitter ref 69.6/62.5 · realdoc 543 baseline==armed (M unchanged 11==11 standing, silent
+14==14, M_type 0, +1 auto-file gained). **NEXT: settings-bridge (handler.js env bridge + Settings
+→ Processing toggles) for TEMPLATE_ABS_EDGE_GUARD / TEMPLATE_DATE_CLIP_GATE /
+TEMPLATE_LABEL_DIGIT_EXACT, then owner flip.** Known residuals: left-cut DATE lane digital 46.4%
+(day-digit cut fragments — suffix date discipline is weaker than codes'); issuer lane 0 under
+jitter BY DESIGN (names excluded v1 — the NAME_UNCLIP flip decision owns it); the scorer's
+"Heal/verify fires captured (0)" header is stale — fires now counted via jsonl `methods`
+(HEAL_RE log capture remains for engine-side heals).
+
 Still live from 08-04: mapper-heal census instrumentation (#2) · customer-name GT (#4) · vat_no
 teach-locator + custom-field alias seeding (#5) · C2b copy vet · ref_field_key threading ·
 rehearsal read + annealing · born-digital `_page0_geom` letterhead synthesis (demoted follow-up).
