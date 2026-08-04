@@ -744,6 +744,7 @@ def _pick_fuller_code(rigid_text, rigid_conf, inline_val, inline_conf, anchor, v
     # locate-pass token corroborates the GLYPHS — and leg (iii) requires the inline value to
     # be a genuine full-res LADDER read (Oracle S1: a locate-fallback inline would compare the
     # locate text with itself). Any leg fails → today's flagged path below, byte-identical.
+    _clip_decline = None
     if _CLIP_COMMIT_ON and field_key is not None:
         _r2 = _strip_code_edges((rigid_text or '').strip())
         _m2 = _CODE_FRAG_TAIL.match(_r2)
@@ -753,12 +754,21 @@ def _pick_fuller_code(rigid_text, rigid_conf, inline_val, inline_conf, anchor, v
             if _f2 and _t2 and _t2.endswith(_f2):
                 _r2 = _r2[_m2.end():]
         _core2 = _code_norm(_r2)
-        if (inline_from_ladder
-                and len(_core2) >= _CLIP_COMMIT_MIN_PREFIX
-                and ni.startswith(_core2) and ni != _core2
-                and _code_norm(locate_token) == ni
-                and _shape_consents(inline_val, field_key, format_lookup,
-                                    provisional_lookup) in ('confirmed', 'provisional')):
+        # Evaluate legs INDIVIDUALLY so a decline is diagnosable from the SFDEV trace
+        # (2026-08-04 morning: a live decline was invisible — the every-step-trace rule).
+        if not (ni.startswith(_core2) and ni != _core2):
+            _clip_decline = 'not_a_strict_prefix'
+        elif len(_core2) < _CLIP_COMMIT_MIN_PREFIX:
+            _clip_decline = 'prefix_too_short'
+        elif not inline_from_ladder:
+            _clip_decline = 'inline_not_from_ladder'
+        elif _code_norm(locate_token) != ni:
+            _clip_decline = 'locate_token_disagrees:%r' % (locate_token,)
+        else:
+            _consent = _shape_consents(inline_val, field_key, format_lookup, provisional_lookup)
+            if _consent not in ('confirmed', 'provisional'):
+                _clip_decline = 'shape_consent:%s' % _consent
+        if _clip_decline is None:
             committed = _mapping_result(inline_val, True, False, False, anchor,
                                         val_type=val_type, geom=inline_geom)
             if inline_geom is not None:                          # diag-only trace marker
@@ -766,8 +776,11 @@ def _pick_fuller_code(rigid_text, rigid_conf, inline_val, inline_conf, anchor, v
             return committed
     if rigid_conf is not None and inline_conf is not None and inline_conf <= rigid_conf:
         return None
-    return _mapping_result(inline_val, True, False, False, anchor, shape_warn=True,
-                           val_type=val_type, geom=inline_geom)
+    flagged = _mapping_result(inline_val, True, False, False, anchor, shape_warn=True,
+                              val_type=val_type, geom=inline_geom)
+    if inline_geom is not None and _clip_decline:                # diag-only decline reason
+        flagged["clip_decline"] = _clip_decline
+    return flagged
 
 
 def _inline_code_reconcile(page, rigid_text, anchor_box, target_box, val_type, field_key,

@@ -645,6 +645,68 @@ function renderFieldRail(){
   });
   renderFooter();
 }
+// ── Teach-time WORD-SNAP of the drawn value box (owner GO 2026-08-04; gary design, the
+// Slice-B principle applied at the moment the box is STORED: teach geometry == read geometry).
+// A human draws a generous-or-clipping rectangle; the words underneath know the truth. After
+// the read-back OCR we re-read a slightly WIDER band, convert its word boxes to page coords,
+// admit ONLY words the DRAWN box actually touches (the Slice-B core invariant — the snap
+// FINISHES nicked words like 'Stu[dio]', it never reaches out to new tokens), cut anything at
+// or left of a detected LEFT label's right edge (never re-absorb the label tail), and store
+// the word-union as the box the template keeps. The owner SEES the snapped box on the canvas
+// before confirming — the read-back is the review. Multi-row draws (address blocks) are left
+// untouched (single-row scope). Kill: setting teach_box_word_snap = 'false' (default ON — the
+// snapped box is displayed for approval on every use, which is the gate).
+let TEACH_SNAP_ON = true;
+try { D.getSetting?.('teach_box_word_snap').then(v => { TEACH_SNAP_ON = v !== 'false'; }); } catch {}
+async function snapDrawnBox(box, anchor){
+  const im = state.img; if (!im) return null;
+  const natW = im.naturalWidth, natH = im.naturalHeight;
+  const padXn = (box.h * natH * 1.2) / natW;             // ~1.2 line-heights sideways, in x-norm
+  const padYn = box.h * 0.35;
+  const band = { x: Math.max(0, box.x - padXn), y: Math.max(0, box.y - padYn),
+                 w: Math.min(1 - Math.max(0, box.x - padXn), box.w + 2 * padXn),
+                 h: Math.min(1 - Math.max(0, box.y - padYn), box.h + 2 * padYn) };
+  let res = null;
+  try { res = await D.ocrRegionBoxes(await cropB64(band)); } catch { return null; }
+  const raw = (res && res.words) || [];
+  if (!raw.length) return null;
+  // Crop-px → page-norm (cropB64 sends NATIVE, ds=1.0 — same frame as autoLabel's fix).
+  const words = [];
+  for (const wd of raw){
+    const b = wd && wd.box; if (!Array.isArray(b) || b.length < 4) continue;
+    const [l, t, w, h] = b; if (!(w > 0 && h > 0)) continue;
+    words.push({ text: String(wd.text || ''), x: band.x + l / natW, y: band.y + t / natH,
+                 w: w / natW, h: h / natH });
+  }
+  if (!words.length) return null;
+  const bx2 = box.x + box.w, by2 = box.y + box.h;
+  let admitted = words.filter(wd => {
+    const ix = Math.max(0, Math.min(bx2, wd.x + wd.w) - Math.max(box.x, wd.x));
+    const iy = Math.max(0, Math.min(by2, wd.y + wd.h) - Math.max(box.y, wd.y));
+    return ix > 0 && iy > 0;                              // touches the DRAWN box — never reach out
+  });
+  if (!admitted.length) return null;
+  // Left-label cut: never re-absorb the label tail the user's box brushed against.
+  if (anchor && anchor.box && anchor.dir === 'left' && anchor.anchor_text){
+    const lre = anchor.box.x + anchor.box.w;
+    admitted = admitted.filter(wd => wd.x + wd.w / 2 > lre);
+    if (!admitted.length) return null;
+  }
+  // Single-row scope: a multi-row draw (address block) keeps the drawn box untouched.
+  const cys = admitted.map(wd => wd.y + wd.h / 2).sort((a, b) => a - b);
+  const medH = admitted.map(wd => wd.h).sort((a, b) => a - b)[admitted.length >> 1] || box.h;
+  if (cys[cys.length - 1] - cys[0] > medH * 0.8) return null;
+  const x1 = Math.min(...admitted.map(wd => wd.x)), x2 = Math.max(...admitted.map(wd => wd.x + wd.w));
+  const y1 = Math.min(...admitted.map(wd => wd.y)), y2 = Math.max(...admitted.map(wd => wd.y + wd.h));
+  const pad = Math.min(0.004, box.h * 0.15);
+  const snapped = { x: Math.max(0, x1 - pad), y: Math.max(0, y1 - pad),
+                    w: Math.min(1, x2 + pad) - Math.max(0, x1 - pad),
+                    h: Math.min(1, y2 + pad) - Math.max(0, y1 - pad) };
+  if (snapped.w * snapped.h > 4 * Math.max(box.w * box.h, 1e-9)) return null;   // over-grab cap
+  const text = admitted.sort((a, b) => a.x - b.x).map(wd => wd.text).join(' ').trim();
+  return { box: snapped, text: text || null };
+}
+
 async function readBack(box){
   const f=curField();
   $('rg-readback').innerHTML='';   // hide the per-field "fixed value?" card while confirming a read
@@ -666,6 +728,18 @@ async function readBack(box){
     : await autoLabel(box);
   _teachReadBusy = false;   // both reads done; the box carries its own _ang for a later manual store
   if (anchor && anchor.box) anchor.box._ang = box._ang;   // same frame as the value box (manual-store safe)
+  // Teach-time word-snap: store (and SHOW) the word-union box, not the hand-drawn rectangle.
+  let usedBox = box;
+  try{
+    if (value && TEACH_SNAP_ON){
+      const sn = await snapDrawnBox(box, anchor);
+      if (sn && sn.box){
+        usedBox = sn.box; usedBox._ang = box._ang;
+        if (sn.text) value = sn.text;             // the words' own text (finishes a nicked token)
+        drawnBox = usedBox; redrawCanvas();       // the owner sees the snapped box before confirming
+      }
+    }
+  }catch{}
   if (!value){
     setConfirm(
       `<div class="warn">Couldn't read that clearly. Try a bigger box, or type the value:</div>`+
@@ -680,7 +754,7 @@ async function readBack(box){
     { const mi=$('rb-manual-input'); if (mi) mi.focus(); }
     return;
   }
-  store(f, box, anchor, value, /*pending*/true);
+  store(f, usedBox, anchor, value, /*pending*/true);
   showValueConfirm(f, state.results[f.key]);
 }
 // Value stored; ONE combined confirmation for the value read AND the detected label
