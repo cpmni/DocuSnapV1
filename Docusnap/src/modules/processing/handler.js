@@ -450,7 +450,7 @@ function buildTrainingArgs(db, configPath, logger = null) {
   // which hid the cause when 0 formats reach the extractor despite many confirms
   // — log a throw (so a real failure is visible) and the resulting group count.
   let allFormats = [];
-  try { allFormats = learning.getFieldFormats(db); }
+  try { allFormats = learning.getFieldFormats(db, { includeProvisional: true }); }   // Python consent channel only
   catch (e) { logger?.warn?.(`[training] getFieldFormats failed: ${e && e.message}`); }
   // Admin keyword label overrides (per-installation; merged onto the shipped
   // patterns at processing time, scoped to the doc-type slug). Guarded so an

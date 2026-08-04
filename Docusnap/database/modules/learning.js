@@ -1195,7 +1195,13 @@ function _looksDateish(v) {
   return false;
 }
 
-function getFieldFormats(db) {
+function getFieldFormats(db, opts) {
+  // opts.includeProvisional (default FALSE — S2 leak fix, 2026-08-04 morning): the provisional
+  // (sub-≥3-confirm) groups exist ONLY for the Python consent channel. Every OTHER consumer —
+  // trust.js auto-file gates, getDigitsOnlyFields, the renderer eligibility path — must see the
+  // exact pre-provisional list, so the default EXCLUDES them; only the training-file build in
+  // processing/handler.js opts in.
+  const includeProvisional = !!(opts && opts.includeProvisional);
   // Collect final confirmed values (corrected value if the user edited, else the
   // extracted display value) for every confirmed document. Built into TWO kinds
   // of group:
@@ -1284,6 +1290,7 @@ function getFieldFormats(db) {
   // skeleton instead of a cold "usual format".
   return Object.values(groups)
     .map(g => ({ ...g, _ok: g._values.size >= 3 || g._count >= 3 }))
+    .filter(g => g._ok || includeProvisional)
     .map(({ _values, _valueCounts, _count, _ok, ...rest }) => ({
       ...rest,
       ...(_ok ? {} : { provisional: true }),
