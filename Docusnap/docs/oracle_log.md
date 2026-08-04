@@ -431,3 +431,16 @@ with nothing to fix is a tax", trust 7→2 — quoted in the briefs by owner ins
 - SFDEV chord fixed (Ctrl+Shift is never text entry); teach-time box word-snap shipped ON
   (owner-approved read-back display = the gate); C2a decline instrumentation live
   (clip_decline reasons in SFDEV).
+- **TAUGHT + JITTER arms (the scorer earning its keep, same day):** taught arm (GT-derived
+  mappings via teach_from_gt.py + faithful manifest): cold→taught ref 45→70 · date 68→92 ·
+  issuer 0→75 · type 83→100 (288 docs). **JITTER arm (targets right-cut 18% — the human
+  cutting-draw disease) CRATERED the taught pipeline (ref 70→22, date 92→21, issuer 75→0) and
+  the ENTIRE shipped heal stack rescued ~nothing.** Three mechanisms identified for the next
+  arc: (1) CONSENT STARVATION — clip-commit's shape ladder needs learned/provisional history a
+  fresh install lacks (consent always 'none' → C2a structurally dead cold); (2) BORN-DIGITAL
+  WORD-GEOMETRY GAP — digital scores WORSE than scanned under damage (ref 12.5 vs 32.1; second
+  sighting) — the text-layer path starves every word-geometry heal; (3) MAPPER-HEAL CENSUS
+  BLINDNESS — the mapper heals log nothing (diag markers only), so fire-counting needs
+  instrumentation. NAME_UNCLIP flip: **HOLD** — jitter shows the lever is the substrate, not
+  more heals; also the corpus has NO non-supplier name field, so unclip is structurally
+  unexercisable there until customer-name GT exists.

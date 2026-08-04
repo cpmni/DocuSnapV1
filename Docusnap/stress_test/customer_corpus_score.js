@@ -141,6 +141,11 @@ async function main() {
                         reference: 'alphanumeric', reference_code: 'reference_code',
                         vat_gb: 'text', alphanumeric: 'alphanumeric' };
       for (const m of res.mappings) {
+        // TEACH_JITTER=0.18: shrink the taught target's RIGHT edge — recreates the human
+        // cutting-draw disease (mid-token cut of the last word) so the heal stack has a real
+        // class to act on and GT arbitrates every fire. 0/unset = the GT-perfect boxes.
+        const J = parseFloat(process.env.TEACH_JITTER || '0');
+        if (J > 0) m.target.w = m.target.w * (1 - J);
         templates.saveMapping(db, tid, {
           field_key: m.field_key, page_number: 0, anchor_text: m.anchor_text,
           anchor_x_norm: m.anchor.x, anchor_y_norm: m.anchor.y,

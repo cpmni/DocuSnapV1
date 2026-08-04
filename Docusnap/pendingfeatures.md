@@ -43,6 +43,33 @@ checks). Census mode `UNIVERSAL_VERIFY_CENSUS`(+`_FILE`): 522-doc realdoc census
 
 ---
 
+## 2026-08-04 (day) — C6 scorer + taught/jitter arms: the NEXT-ARC work list
+
+**Shipped:** customer_corpus_score.js (+ TEACH arm via teach_from_gt.py + TEACH_JITTER) — the
+Oracle-C6 gate. 2b/2c FLIPPED (zero noise measured). NAME_UNCLIP built dark (23 pins, no-harm x4;
+HOLD). Teach-time box word-snap ON. SFDEV chord fixed. C2a decline instrumentation. S2 leak fix.
+
+**THE JITTER FINDING (headline):** an 18% right-cut on taught boxes craters the taught pipeline
+(ref 70->22, date 92->21, issuer 75->0 on 112 docs) and the shipped heal stack rescues ~nothing.
+Next-arc list, in dependency order:
+1. **Consent starvation** — clip-commit/frag ladder needs shape history a fresh install lacks;
+   the provisional channel only fills from CONFIRMED rows. Candidate: taught-template values seed
+   provisional skeletons at teach commit (they are owner-confirmed by definition).
+2. **Born-digital word-geometry gap** — digital WORSE than scanned under damage (2 sightings:
+   cold ref 40 vs 50; jitter 12.5 vs 32). The text-layer path skips OCR so snap/inline/cluster
+   machinery starves. Candidate: synthesize word boxes from the PDF text layer (pypdfium2 has
+   char/word positions) so born-digital docs get BETTER geometry than OCR, not none.
+3. **Mapper-heal census instrumentation** — heals are silent (diag markers only); add log lines
+   so fire-counting works (the every-step-trace arc).
+4. **Customer-name GT** — corpus generator lacks customer values in GT; without them NAME_UNCLIP
+   (non-supplier names only) is structurally unexercisable. Generator extension + re-gen.
+5. **vat_no teach-locator** — multi-group values ('GB 286 4471 90') miss in teach_from_gt find_value
+   (single-run scan); also custom fields get NO label-alias seeding (vat_no ~0 in every arm).
+6. Also parked: digital-vs-scanned ref anomaly root-cause; C2b copy vet; ref_field_key threading;
+   rehearsal read + annealing.
+
+---
+
 ## 2026-08-03 NIGHT (autonomous, owner asleep) — perfect-catch arc: 4 flips, all Oracle-gated
 
 **Owner mandate:** "hash it out between yous, have the oracle vet it and implement when there is
