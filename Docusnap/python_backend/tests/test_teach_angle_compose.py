@@ -103,6 +103,11 @@ orig = dict(m)
 out = E._compose_mappings_to_level([m], 1.8, 1200, 1600)
 check("mappings composed as COPIES — stored row unmutated", m == orig and out[0] is not m
       and out[0]["target_x_norm"] != m["target_x_norm"])
+# NO-BLOAT pin (the nf-gate customer-lane crater): composition preserves w/h EXACTLY —
+# a corner-AABB grows a wide box by w·sinθ and pulls the caption line into the crop.
+check("composition preserves w/h exactly (no AABB bloat)",
+      abs(out[0]["target_w_norm"] - m["target_w_norm"]) < 1e-12
+      and abs(out[0]["target_h_norm"] - m["target_h_norm"]) < 1e-12)
 lm = {"label_text": "INVOICE", "x_norm": 0.1, "y_norm": 0.05, "w_norm": 0.1, "h_norm": 0.02}
 lorig = dict(lm)
 lout = E._compose_landmarks_to_level([lm], 1.8, 1200, 1600)

@@ -52,7 +52,7 @@ except ImportError:
 
 PAGE_W, PAGE_H = A4                       # 595 x 842 pt
 DESKTOP = os.path.join(os.environ.get("USERPROFILE", os.path.expanduser("~")), "Desktop")
-ROOT    = os.path.join(DESKTOP, "Customer Doc Test")
+ROOT    = os.environ.get("CORPUS_OUT") or os.path.join(DESKTOP, "Customer Doc Test")
 DIGITAL = os.path.join(ROOT, "Digital set")
 SCANNED = os.path.join(ROOT, "Scanned set")
 LOGODIR = os.path.join(ROOT, "_logos")
@@ -652,6 +652,15 @@ def build_doc(issuer, dtype, idx, logos, rng):
 
 
 # ── Scan rendering ─────────────────────────────────────────────────────────────────────
+# SCAN GEOMETRY FIDELITY (2026-08-05, the TEACH_ANGLE_COMPOSE gate finding): a REAL scanner
+# emits a FIXED page size — the paper tilts inside the glass, corners crop, dimensions never
+# change. expand=True GREW the page and shifted content by angle-dependent margins, a geometry
+# no real scanner produces — it made the corpus structurally unfaithful for any frame-transform
+# testing (teach coords from an expanded scan mismatch every unexpanded sibling). expand=False
+# is the faithful default; SCAN_EXPAND=1 restores the old behaviour for comparability reruns.
+_SCAN_EXPAND = os.environ.get("SCAN_EXPAND", "0") == "1"
+
+
 def scanify(pdf_bytes, rng):
     pdf = pdfium.PdfDocument(pdf_bytes)
     pil = pdf[0].render(scale=150 / 72.0).to_pil().convert("L")
@@ -659,7 +668,7 @@ def scanify(pdf_bytes, rng):
     # slight skew on SOME (~70%); the rest go through the scanner straight
     angle = rng.uniform(-1.6, 1.6) if rng.random() < 0.7 else 0.0
     if angle:
-        pil = pil.rotate(angle, expand=True, fillcolor=245, resample=Image.BICUBIC)
+        pil = pil.rotate(angle, expand=_SCAN_EXPAND, fillcolor=245, resample=Image.BICUBIC)
     pil = ImageEnhance.Brightness(pil).enhance(rng.uniform(0.94, 1.08))
     pil = ImageEnhance.Contrast(pil).enhance(rng.uniform(0.88, 1.05))
     if rng.random() < 0.5:

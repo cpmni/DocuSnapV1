@@ -292,21 +292,23 @@ TEACH_ANGLE_COMPOSE = os.environ.get('TEACH_ANGLE_COMPOSE', '0') != '0'
 
 
 def _compose_box_to_level(x, y, w, h, theta_deg, W, H):
-    """Rotate one raw-frame box (page-norm) into the LEVEL frame: corners → pixel space →
-    level = C + R(−θ)·(p − C) (the proven-sign inverse of deskewedNormToRaw) → AABB →
-    renormalise → clamp. Pure; returns (x, y, w, h)."""
+    """Rotate one raw-frame box (page-norm) into the LEVEL frame: transform the box's
+    CENTRE by level = C + R(−θ)·(p − C) (the proven-sign inverse of deskewedNormToRaw)
+    and KEEP w/h — exactly mirroring the teach surfaces, which back-transform only the
+    top-left POINT and persist the LEVEL-frame w/h (deskewFinalizeAnchor). A corner-AABB
+    here BLOATS a wide box vertically by w·sinθ (~half a text line for a 0.2-wide
+    free-text box at 1.6°), pulling the caption line into the crop — the nf-gate
+    customer-lane crater ('INVOICE TO' commits). Pure; returns (x, y, w, h) clamped."""
     th = math.radians(theta_deg)
     c, s = math.cos(th), math.sin(th)
     cx, cy = W / 2.0, H / 2.0
-    pts = []
-    for px_n, py_n in ((x, y), (x + w, y), (x, y + h), (x + w, y + h)):
-        px, py = px_n * W - cx, py_n * H - cy
-        pts.append((cx + c * px + s * py, cy - s * px + c * py))
-    x1 = max(0.0, min(p[0] for p in pts)) / W
-    x2 = min(float(W), max(p[0] for p in pts)) / W
-    y1 = max(0.0, min(p[1] for p in pts)) / H
-    y2 = min(float(H), max(p[1] for p in pts)) / H
-    return (x1, y1, max(0.0, x2 - x1), max(0.0, y2 - y1))
+    px = (x + w / 2.0) * W - cx
+    py = (y + h / 2.0) * H - cy
+    ncx = (cx + c * px + s * py) / W
+    ncy = (cy - s * px + c * py) / H
+    nx = min(max(0.0, ncx - w / 2.0), 1.0)
+    ny = min(max(0.0, ncy - h / 2.0), 1.0)
+    return (nx, ny, min(w, 1.0 - nx), min(h, 1.0 - ny))
 
 
 def _compose_mappings_to_level(mappings, theta_deg, W, H):

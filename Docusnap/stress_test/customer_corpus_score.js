@@ -24,7 +24,7 @@ const Database = require('better-sqlite3');
 
 const REPO = 'c:/GIT Projects/Docusnap', ST = path.join(REPO, 'stress_test');
 const OUT = path.join(ST, 'out');
-const CORPUS = path.join(os.homedir(), 'Desktop', 'Customer Doc Test');
+const CORPUS = process.env.CORPUS_DIR || path.join(os.homedir(), 'Desktop', 'Customer Doc Test');
 const CFG = path.join(REPO, 'config', 'keyword_patterns.json');
 const PROCESS_DOCS = path.join(REPO, 'python_backend', 'process_docs.py');
 const TESS = 'C:/Program Files/Tesseract-OCR/tesseract.exe';
