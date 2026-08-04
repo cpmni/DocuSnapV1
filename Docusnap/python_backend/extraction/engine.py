@@ -251,6 +251,47 @@ UNIVERSAL_VERIFY_NUMERIC = os.environ.get('UNIVERSAL_VERIFY_NUMERIC', '0') != '0
 # Default OFF = byte-identical.
 NAME_UNCLIP_RECONCILE = os.environ.get('NAME_UNCLIP_RECONCILE', '0') != '0'
 
+# DESKEW_RAW_CROPS — the Straighten-arc frame election (gary+007 → Oracle SIGN-OFF-W/COND C1-C7,
+# 2026-08-05 evening, docs/oracle_log.md). Taught boxes are stored RAW-frame (all three teach
+# surfaces back-transform on save), but under Straighten the crop machinery read them against the
+# DESKEWED page untransformed (1-2 glyph misplacement at 1.9°) AND any rotation of a noisy scan
+# degrades small print (interpolation hypothesis refuted) — while the RAW tilted page reads
+# perfectly at <=~2° (Tesseract self-tolerates). ELECTION: when Straighten produced raw pages,
+# the crop-family machinery reads the RAW pages with the stored raw coords; the deskewed frame
+# keeps serving full-page text (keyword), type detection, letterhead geometry and display.
+# Per-page angle bound (C3): raw only when |angle| <= DESKEW_RAW_CROP_MAX_ANGLE (default 2.0 —
+# proven at 1.9°; 2.5 only after a cap-edge lane greens); above the cap the page keeps today's
+# deskewed behaviour AND the Stage-2.5 raw witness still guards it (C2 — the witness is NOT
+# vestigial; global disable forbidden). C1: the election is computed ONCE per doc and the SAME
+# list object feeds every crop site. Default OFF (=1 arms); OFF = byte-identical by object
+# identity (the elected list is page_images itself).
+DESKEW_RAW_CROPS = os.environ.get('DESKEW_RAW_CROPS', '0') != '0'
+try:
+    DESKEW_RAW_CROP_MAX_ANGLE = float(os.environ.get('DESKEW_RAW_CROP_MAX_ANGLE', '2.0') or 2.0)
+except (TypeError, ValueError):
+    DESKEW_RAW_CROP_MAX_ANGLE = 2.0
+
+
+def _elect_crop_pages(page_images, raw_pages, deskew_angles):
+    """The Slice-0 frame election (pure; C1 single-list contract). Returns `page_images`
+    BY IDENTITY when the election cannot or must not run (switch off, no raw pages, or a
+    defensive length mismatch — fail toward today's behaviour, never mis-index); else a
+    per-page list electing raw below the angle cap and the deskewed page above it."""
+    if not DESKEW_RAW_CROPS or not raw_pages or not page_images:
+        return page_images
+    if len(raw_pages) != len(page_images):
+        return page_images                      # parallelism broken upstream — fail to status quo
+    out = []
+    for i, img in enumerate(page_images):
+        ang = 0.0
+        if deskew_angles and i < len(deskew_angles):
+            try:
+                ang = abs(float(deskew_angles[i] or 0.0))
+            except (TypeError, ValueError):
+                ang = 0.0
+        out.append(raw_pages[i] if ang <= DESKEW_RAW_CROP_MAX_ANGLE else img)
+    return out
+
 
 def _late_rescue_applicable(s2_supplier, supplier_name):
     """Stage-2.6 gate (pure, unit-pinned): rescue ONLY when Stage 2 ran with NO supplier
@@ -4243,7 +4284,9 @@ class ExtractionEngine:
                 raw_page0 = None,
                 page0_geometry: dict | None = None,
                 cached_text: str | None = None,
-                date_field_key: str | None = None) -> dict:
+                date_field_key: str | None = None,
+                raw_pages: list | None = None,
+                deskew_angles: list | None = None) -> dict:
         """
         Run extraction pipeline according to current mode.
         Returns dict with field values + metadata keys prefixed with _.
@@ -4259,6 +4302,9 @@ class ExtractionEngine:
                                       # unconditional); safety-load-bearing for G1 arm (i), do not re-gate
         results      = {}
         field_keys   = [f["key"] for f in field_defs]
+        # Straighten-arc frame election (C1: computed ONCE, the SAME list feeds every crop
+        # site below — mapper, registration fit, anchors, late rescue, corroboration).
+        crop_pages = _elect_crop_pages(page_images, raw_pages, deskew_angles)
         # Seed field_patterns from each field's configured TYPE (+ the ref-role
         # coercion) so CUSTOM doc-type fields and the structural REFERENCE role are
         # gated by their real type instead of loose free-text. The keyword config
@@ -4468,7 +4514,7 @@ class ExtractionEngine:
                     # landmarks AND registration is enabled.
                     _landmarks = (mapping_src or matched_tmpl).get("landmarks") or []
                     mapping_results = template_mapper.extract_with_mappings(
-                        page_images, tmpl_mappings,
+                        crop_pages, tmpl_mappings,
                         field_patterns=field_patterns,
                         validation_patterns=self.patterns.get("validation_patterns", {}),
                         format_lookup=_fmt_lookup,
@@ -4923,7 +4969,7 @@ class ExtractionEngine:
                 else:
                     try:
                         anchor_page_transform = template_mapper._fit_page_transform(
-                            page_images[0], _alm, template_mapper._ocr_lines)
+                            crop_pages[0], _alm, template_mapper._ocr_lines)
                     except Exception as e:
                         self.log(f"  Stage 2: landmark fit skipped ({e})", "warn")
                     # S-D VACUOUS-FIT GATE (Oracle-authorized cheap gate, evidence-met 2026-08-01;
@@ -4964,7 +5010,7 @@ class ExtractionEngine:
             _identity_labels.discard('')
             anchor_results = anchor.extract_with_anchors(
                 ocr_text, anchors, supplier_name, document_slug,
-                page_images=page_images,
+                page_images=crop_pages,
                 field_patterns=field_patterns,
                 validation_patterns=self.patterns.get("validation_patterns", {}),
                 slice_capture=(self._capture_slice if (self._trace and self._slice_dir) else None),
@@ -5577,7 +5623,7 @@ class ExtractionEngine:
                 try:
                     rescue_results = anchor.extract_with_anchors(
                         ocr_text, rescue_set, supplier_name, document_slug,
-                        page_images=page_images,
+                        page_images=crop_pages,
                         field_patterns=field_patterns,
                         validation_patterns=self.patterns.get("validation_patterns", {}),
                         slice_capture=(self._capture_slice if (self._trace and self._slice_dir) else None),
@@ -5629,7 +5675,7 @@ class ExtractionEngine:
                 try:
                     corrob_results = anchor.extract_with_anchors(
                         ocr_text, corrob_set, supplier_name, document_slug,
-                        page_images=page_images,
+                        page_images=crop_pages,
                         field_patterns=field_patterns,
                         validation_patterns=self.patterns.get("validation_patterns", {}),
                         format_lookup=self._make_format_lookup(supplier_name, document_slug),
@@ -6247,7 +6293,11 @@ class ExtractionEngine:
                         # it has been confirmed enough times (count-gated shapes).
                         # GATE-FAILURE RE-READ (default ON): before withholding, take ONE bounded
                         # second look at the page for a clean, kin re-read (see _maybe_gate_reread).
-                        # Frame invariant: it OCRs + crops the SAME raw page_images the engine holds.
+                        # Frame invariant: it self-locates — image_to_data and the crop run on the
+                        # SAME page-image instance, whichever frame that is (it is NOT coupled to
+                        # taught coordinates; deliberately OUTSIDE the DESKEW_RAW_CROPS election —
+                        # Oracle 2026-08-05 delta-2; a later slice may move it, minding _reread_cache
+                        # frame keying).
                         _reread = self._maybe_gate_reread(
                             str(val), data, fmt_entry, field_types.get(key), field_labels.get(key),
                             page_images, page_provenance, _reread_cache)

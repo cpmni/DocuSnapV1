@@ -484,6 +484,9 @@ def main():
             _deskew_pages = bool(getattr(args, 'deskew_pages', False)) and os.environ.get('DESKEW_PAGES', '1') != '0'
             _deskew_min_angle = max(0.2, min(5.0, float(getattr(args, 'deskew_min_angle', 0.2) or 0.2)))
             _raw_pages = [] if _deskew_pages else None
+            # Per-page applied deskew angles (parallel to pages) — load-bearing for the
+            # DESKEW_RAW_CROPS election's per-page cap (Oracle C4), not just observability.
+            _deskew_angles = [] if _deskew_pages else None
             # PAGE-0 GEOMETRY hand-off (letterhead height ranking): filled only when page 0 was
             # freshly OCR'd — empty on a cached reprocess (the pairing would be stale) and on a
             # born-digital page 0 (exact vector text, no word boxes) → consumers fall back to
@@ -502,7 +505,7 @@ def main():
                     auto_rotate=getattr(args, 'auto_rotate', False), rotations_out=_rotations,
                     provenance_out=_provenance,
                     deskew_pages=_deskew_pages, deskew_min_angle=_deskew_min_angle, raw_pages_out=_raw_pages,
-                    page0_words_out=_page0_geom)
+                    page0_words_out=_page0_geom, deskew_angles_out=_deskew_angles)
             if any(_rotations):
                 log(f"  auto-rotate: {[r for r in _rotations if r]} (clockwise°) on {filepath.name}")
 
@@ -776,8 +779,15 @@ def main():
                     # an ambiguous pick forces the ambiguous-HOLD in the engine (C2, engine.py — a
                     # pinned doc never auto-files), and the engine's own match is the authoritative one
                     # persisted. Documented in lieu of threading the hash here (lower blast radius).
+                    # Site 6 (Oracle C6, DESKEW_RAW_CROPS): logo hashes are LEARNED raw-frame
+                    # (engine identity reads raw_page0 unconditionally) — this pre-pass was the
+                    # split-brain hashing the DESKEWED logo against raw-learned hashes. Under the
+                    # election, query raw too. Switch off / deskew off -> byte-identical.
+                    _idpage = page_images[0]
+                    if _raw_pages and os.environ.get('DESKEW_RAW_CROPS', '0') != '0':
+                        _idpage = _raw_pages[0]
                     tmatch = template_matcher.identify_template(
-                        page_images[0], ocr_text, templates,
+                        _idpage, ocr_text, templates,
                         detected_slug=detected_slug, title_trusted=title_trusted)
                 except Exception:
                     tmatch = None
@@ -872,6 +882,8 @@ def main():
                 raw_page0       = (_raw_pages[0] if _raw_pages else None),
                 page0_geometry  = (_page0_geom or None),   # empty (cached/born-digital p0) ⇒ None
                 cached_text     = global_cached_text,       # raw-frame witness text (deskew reprocess); None ⇒ engine falls back to ocr_text
+                raw_pages       = (_raw_pages or None),     # DESKEW_RAW_CROPS election substrate (Oracle 2026-08-05)
+                deskew_angles   = (_deskew_angles or None), # per-page cap input (C4)
             )
 
             # Pull out metadata keys before sanitising

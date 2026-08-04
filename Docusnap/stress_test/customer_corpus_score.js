@@ -205,7 +205,11 @@ async function main() {
     console.log(`[ccs] TEACH: seeded ${provFormats.length} provisional format rows (live-confirm parity)`);
   }
 
-  const snapArgs = ['--fields-file', w('f', dts.flatMap(d => d.fields)),
+  // DESKEW=1: run processing with --deskew-pages (the customer's Straighten-ON reality; the
+  // scanned set carries ±1.6° skews). DEFAULTS OFF (Oracle C5) — every existing arm's config
+  // is deskew-off by absence, so the jitter/edge-guard arms stay untouched.
+  const DESKEW_ARGS = process.env.DESKEW === '1' ? ['--deskew-pages'] : [];
+  const snapArgs = [...DESKEW_ARGS, '--fields-file', w('f', dts.flatMap(d => d.fields)),
                     '--doc-types-file', w('d', dts),
                     '--hints-file', w('h', []), '--anchors-file', w('a', []), '--logos-file', w('l', []),
                     '--formats-file', w('fm', provFormats),
