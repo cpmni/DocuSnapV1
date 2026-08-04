@@ -92,11 +92,13 @@ T._SS_ROTATE_MAX_PIXELS = _orig_max
 check("clamp: over-cap page still rotates (single-resample path), size preserved",
       r2.size == img.size)
 
-# ── C1: region.py routes through the SHARED helper (one rotation implementation) ──
+# ── OWNER RULE pin (2026-08-05, supersedes Oracle C1): NO PIPELINE SHARING — the
+# teach/display deskew keeps its OWN rotation, never the pipeline helper, so a pipeline
+# rotation change can't silently alter what the operator sees at teach time.
 rsrc = (Path(__file__).resolve().parents[1] / "ocr" / "region.py").read_text(encoding="utf-8")
-check("region.py display deskew calls _apply_skew_rotation (no private rotate)",
-      "_apply_skew_rotation(orig, angle)" in rsrc
-      and "orig.rotate(angle, expand=False" not in rsrc)
+check("region.py display deskew keeps its OWN rotate (owner rule: no pipeline sharing)",
+      "_apply_skew_rotation(orig" not in rsrc
+      and "orig.rotate(angle, expand=False" in rsrc)
 
 # '1'-mode parity (region.py native-mode callers)
 one = dot_page().convert("1")
