@@ -21,19 +21,25 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-08-05 FINAL) — jitter-crater CLOSED + Straighten arc: gate RED, pivot chartered
-**LATE UPDATE (read `HANDOVER_2026-08-05.md` ADDENDUM + pendingfeatures 2026-08-05-late FIRST):**
-the owner-directed STRAIGHTEN ARC ran after the wrap below. `DESKEW_RAW_CROPS` election built dark
-(`7d88dc4`) → **gate RED** (customer −24 scanned — caption-grabs; stored teach coords carry the
-TEACH doc's own tilt; deskew's placement normalisation is LOAD-BEARING). **NEXT SESSION #1 = the
-CANONICAL LEVEL FRAME pivot** (Review works because box+pixels share the straightened frame
-end-to-end; options a/b/c in pendingfeatures; Oracle review required). Owner rules: NO PIPELINE
-SHARING (display/teach rotation decoupled — pinned) · Chris scope = sandbox-reprocess owner-trained
-docs ONLY, Claude reads slices/logs. Dark + gate-red: DESKEW_RAW_CROPS, DESKEW_SS_ROTATE (keep the
-code — election infra + angles threading are the pivot's building blocks). Settings bridge for the
-jitter-crater trio SHIPPED (`79edd7c`); live fixes during owner testing: edge-guard witness scope
-(`db45373`) + keyword caption-strip (`5671043`) + heal census (`3b37228`) + customer-GT lane w/
-NAME_UNCLIP negative evidence (`ecdafa7`). HEAD `2810ce2`.
+## Current session state (2026-08-05 NIGHT wrap) — Straighten pivot LIVE (16/20 on owner data); morning polish round chartered
+**READ `HANDOVER_2026-08-05_NIGHT.md` FIRST** (⚠ its FIRST ACTION: live docs 560/561's working
+files await the owner's restore from `recovered_inbox\` — a sandbox auto-file MOVED them).
+**The CANONICAL LEVEL FRAME pivot ran end-to-end tonight (owner GO):** `TEACH_ANGLE_COMPOSE` —
+mig 58 `templates.sample_deskew_angle` + engine composition (level = C + R(−θ_t)·(raw−C), the
+proven inverse of the teach save-transform; CENTRE transformed, w/h preserved — AABB bloats) +
+lazy angle heal + settings bridge/toggle (`c29b797`→`9cb65fa`), gates GREEN on the faithful
+expand=False corpus ("Customer Doc Test NF"; the main corpus's scanify was expand=True — a
+physically-impossible scanner geometry, generator fixed, `SCAN_EXPAND=1` restores) — ref
++13/+14.5 · date →98.6/95.7 · issuer +20/+20 — Chris-vetted in a sandbox, then LIVE on the
+owner's Larkspur batch: **16/20 full DN-xxxxx** (angle seeded manually — the heal's spawn bug
+`ctx.pythonExe` IS A FUNCTION fixed `4f8e2e1`, all skip branches now log `8961d89`; heal still
+unproven live end-to-end). **MORNING ROUND (owner-agreed, Oracle first):** composed-box
+word-snap (composed = machine-derived ⇒ snap-eligible) · leading-glyph witness-adopt (keyword
+held the correct value every time and lost coin-flips: 'IN-75028'@97 vs keyword 'DN-75028'93) ·
+wizard-anchor tightening (docket_07 anchor swallowed the address block) · false "differs from
+format" note on clean values + SFDEV crop-tile rung labels. KEY TRUTH (owner-pinned): READING is
+fine everywhere — cross-document PLACEMENT transfer is the entire failure class. Prior wraps
+below; HEAD `8961d89`.
 
 ## Prior wrap (2026-08-05 day) — jitter-crater arc CLOSED (A/B/C/D dark, gates green); settings-bridge + owner flip
 **2026-08-05 (Fable 5, autonomous). Commits `b63bd86`·`8f631b8`·`2ddd5fa`·`fafd8b4`, PUSHED. READ
