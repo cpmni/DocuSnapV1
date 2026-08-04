@@ -450,7 +450,7 @@ function mergeReextractRows(existing, newExtractions, anchoredKeys = new Set(), 
 // Session-scoped attempt cache: a gone/unreadable sample file never spawns twice per app run.
 const _angleHealTried = new Set();
 function _healSampleAngles(db, allTemplates, logger) {
-  if (!_pyHelpers || !_pyHelpers.pythonExe) return;
+  if (!_pyHelpers || !_pyHelpers.pythonExe) { logger?.warn?.('[training] angle heal: _pyHelpers unset'); return; }
   const { spawn } = require('child_process');
   const fs = require('fs');
   for (const t of allTemplates) {
@@ -462,8 +462,12 @@ function _healSampleAngles(db, allTemplates, logger) {
       const d = db.prepare('SELECT working_path, stored_path FROM documents WHERE id = ?')
                   .get(t.sample_document_id);
       file = (d && (d.working_path || d.stored_path)) || null;
-    } catch { file = null; }
-    if (!file || !fs.existsSync(file)) continue;
+    } catch (eq) { logger?.warn?.(`[training] angle heal (template ${t.id}): sample query failed: ${eq && eq.message}`); file = null; }
+    if (!file || !fs.existsSync(file)) {
+      logger?.warn?.(`[training] angle heal (template ${t.id}): sample file missing (${file || 'no path'})`);
+      continue;
+    }
+    logger?.log?.(`[training] angle heal: detecting sample tilt for template ${t.id} (${file})`);
     try {
       const script = _pyHelpers.resourcePath('python_backend', 'ocr', 'detect_angle.py');
       // ctx.pythonExe / ctx.pythonArgs are FUNCTIONS in main.js (resolved per call —
@@ -474,15 +478,19 @@ function _healSampleAngles(db, allTemplates, logger) {
       const p = spawn(exe, [...pargs, script, '--file', file], { windowsHide: true });
       let out = '';
       p.stdout.on('data', (d2) => { out += d2; });
-      p.on('close', () => {
+      p.on('close', (code) => {
         try {
           const r = JSON.parse(out.trim());
           if (r && typeof r.angle === 'number' && isFinite(r.angle)) {
             db.prepare('UPDATE templates SET sample_deskew_angle = ? WHERE id = ?')
               .run(r.angle, t.id);
             logger?.log?.(`[training] sample angle healed: template ${t.id} = ${r.angle.toFixed(2)} deg`);
+          } else {
+            logger?.warn?.(`[training] angle heal (template ${t.id}): detector returned no angle (exit ${code}, out=${(out || '').trim().slice(0, 120)})`);
           }
-        } catch { /* next serve retries only after app restart (session cache) */ }
+        } catch (ep) {
+          logger?.warn?.(`[training] angle heal (template ${t.id}): unparseable detector output (exit ${code}, out=${(out || '').trim().slice(0, 120)}): ${ep && ep.message}`);
+        }
       });
       p.on('error', (e2) => { logger?.warn?.(`[training] angle-heal spawn failed (template ${t.id}): ${e2 && e2.message}`); });
     } catch (e3) { logger?.warn?.(`[training] angle heal (template ${t.id}): ${e3 && e3.message}`); }
