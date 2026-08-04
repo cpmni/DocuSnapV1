@@ -406,3 +406,28 @@ with nothing to fix is a tax", trust 7→2 — quoted in the briefs by owner ins
   (`template_code_frag_clean` / `template_clip_commit` = true) per the standing instruction; the
   corpus's derived-rung instances were already healed by B, so frag/clip guard the ABSOLUTE rung
   (live-jitter class) with unit-pinned heal evidence. Settings toggles shipped for all three.
+
+---
+
+## 2026-08-04 — NAME_UNCLIP built (dark) · Customer-corpus scorer SHIPPED · Slice-2 2b/2c FLIPPED
+- **NAME_UNCLIP_RECONCILE** (reggie → Oracle SIGN-OFF-W/COND): built per both conditions — the
+  cut-glyph rule ('Studio'.startswith('Stuc') is FALSE; one edge-glyph substitution at the cut) and
+  the corrected premise (Stage-4.5 wordness note IS Python-side and STARVES the heal on
+  lexicon-rich scopes — pinned). Carve-out documented at _override_eligible. 23 pins ALL PASS;
+  realdoc no-harm arm GREEN (0 changed docs, M 10==10). DARK: its corpus gate needs a TAUGHT arm
+  (cold install fires no Stage-0.5) — scorer increment 2.
+- **Customer-corpus GT scorer** (`stress_test/customer_corpus_score.js`) — the Oracle-C6 gate:
+  cold-install throwaway DB, stratified deterministic sample of the 11,000-doc Desktop corpus,
+  9 lanes incl. names/numeric/structured/custom, per-fire census capture, env-switch arms.
+  Cold baselines (288 docs): ref 45.1 · date 67.7 · total 41.2 · type 83.0 · vat_no ~0 (custom
+  structured fields have NO seeded label aliases — fine-tuning-arc item) · issuer 0 (suggest-only
+  first-contact design).
+- **Slice-2 2b + 2c FLIPPED ON** (`universal_verify_numeric` / `universal_verify_flag`): base vs
+  2b vs 2c arms all BYTE-IDENTICAL on the corpus (0 fires, 0 flag noise) + realdoc no-harm.
+  Honest note: neither gate could FAIL yet (no number-TYPE fields in the corpus; no cold
+  text-fire exhibits) — the flip evidence is symmetric pins + double no-harm + measured-zero
+  noise; the classes arm for live jitter docs. The 2c flag-noise fear (Chris's reflex-confirm
+  ledger) measured ZERO.
+- SFDEV chord fixed (Ctrl+Shift is never text entry); teach-time box word-snap shipped ON
+  (owner-approved read-back display = the gate); C2a decline instrumentation live
+  (clip_decline reasons in SFDEV).
