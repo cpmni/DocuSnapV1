@@ -43,6 +43,44 @@ checks). Census mode `UNIVERSAL_VERIFY_CENSUS`(+`_FILE`): 522-doc realdoc census
 
 ---
 
+## 2026-08-05 — Jitter-crater REFRAMED (Oracle premise overturn): the crater is the absolute rung, not born-digital
+
+**Investigation (rung probe + armed rerun + wrong-answer classes + teach-anchor audit) overturned
+the 08-04 item-1 charter.** Verified: (1) the cut taught box reads a CLEAN PARTIAL on crisp pages
+('VXC153', '07-01-20-') which passes `_gate_value` shape_mode='ignore' and COMMITS at 78-90 with no
+note — every shipped heal keys on page-vs-taught DISAGREEMENT and this class is stored-box damage on
+an UNDAMAGED page, so nothing fires (armed-env rerun j120armed == j120s BYTE-IDENTICAL); (2) digital-
+worse-than-scanned = crisp partials PASS the gate, scan garble FAILS it and falls through to heals
+(j120s digital wrong refs: 33/49 clean-prefix-of-GT); (3) 34% of harness taught mappings had
+poisoned/absent labels (value-as-label — FIXED, Slice A shipped, audit 48→0/310); (4) date
+validation + parse_date accept 3-digit/cut years and Stage-4 expands them to confidently-wrong
+dates. **Born-digital word-box synthesis DEMOTED to follow-up** (template_mapper OCRs the render on
+both renditions — word geometry exists at Stage 0.5; the only real text-layer hole is `_page0_geom`
+letterhead ranking, disproven as the crater by t300 digital issuer 90.3%).
+
+**Oracle-signed slices (docs/oracle_log.md 2026-08-05 — conditions verbatim there):**
+- A harness label fidelity — SHIPPED (see commit b63bd86).
+- B `TEMPLATE_DATE_CLIP_GATE` (dark): _date_clip_suspect in _gate_value (reject dangling-separator /
+  3-digit-year date fragments; 4-digit-year + trailing debris EXEMPT) + unswitched parse_date
+  year<1000 floor. Pins: '07-01-20' clean 2-digit year stays ACCEPTED.
+- C `TEMPLATE_ABS_EDGE_GUARD` (dark): read-time word-edge predicate on the ABS rung + word-bounded
+  GROW + full-res re-read + per-type comparator + _shape_consents ladder; fallback cap ≤70 + note.
+  C-C0 FIRST: the WYSIWYG pin at test_template_target_word_snap.py:108 is a DEAD GUARD (empty-string
+  slice — passes vacuously); rebuild behaviourally before touching the fast path. Names EXCLUDED v1
+  (NAME_UNCLIP seam); issuer lane declared out of scope for C's gate.
+- D `_label_score` digit-exactness guard (dark): digit-heavy needles (share ≥0.5, ≥4 digits) require
+  their digit sequence contiguous in the haystack before fuzzy blending ('03-06-2026' must not lock
+  '07-01-2026').
+**Sequencing: A → re-baseline arms (t300f/j120f) → D+B → C.** Gates: t300 byte-identical + ZERO
+predicate fires counted · jitter climbs BOTH renditions + asymmetry narrows · LEFT-cut variant ·
+realdoc 535 M=0. Old crater numbers (70→22 etc.) RETIRED — quote only re-baselined ones.
+
+Still live from 08-04: mapper-heal census instrumentation (#2) · customer-name GT (#4) · vat_no
+teach-locator + custom-field alias seeding (#5) · C2b copy vet · ref_field_key threading ·
+rehearsal read + annealing · born-digital `_page0_geom` letterhead synthesis (demoted follow-up).
+
+---
+
 ## 2026-08-04 (day) — C6 scorer + taught/jitter arms: the NEXT-ARC work list
 
 **Shipped:** customer_corpus_score.js (+ TEACH arm via teach_from_gt.py + TEACH_JITTER) — the

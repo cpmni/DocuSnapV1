@@ -98,9 +98,17 @@ def parse_date(raw: str | None, date_order: str | None = None) -> datetime | Non
     s = re.sub(r'\s{2,}', ' ', s).strip()
     for fmt in _formats_for_order(date_order or _DATE_ORDER):
         try:
-            return datetime.strptime(s, fmt)
+            d = datetime.strptime(s, fmt)
         except ValueError:
-            pass
+            continue
+        # Year floor (Oracle 2026-08-05, Slice B companion): %Y happily parses a
+        # 3-digit year ('03-06-202' → year 202) — always a right-clipped 4-digit
+        # year from a cut crop, never a real office document. Without the floor,
+        # normalise/salvage expand the fragment into a confidently-wrong full date.
+        # 2-digit years are untouched (%y maps to 1969-2068, always >= 1000).
+        if d.year < 1000:
+            continue
+        return d
     return None
 
 def normalise_date(raw: str | None) -> str | None:

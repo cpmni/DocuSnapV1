@@ -108,6 +108,38 @@ _INLINE_CODE_RECONCILE_ON = os.environ.get('TEMPLATE_INLINE_CODE_RECONCILE', '1'
 # + 3 real drift-garble fixes, realdoc DRIFT==baseline (0 new), 4 drift unit/PIN. =0: byte-identical.
 _INLINE_CODE_RECONCILE_DRIFT_ON = os.environ.get('TEMPLATE_INLINE_CODE_RECONCILE_DRIFT', '1') != '0'
 
+# Slice B (jitter-crater arc, Oracle 2026-08-05 SIGN-OFF-W/COND) — DATE-CLIP GATE. A right-cut
+# taught box reads a clean date FRAGMENT ('07-01-20-' of 07-01-2026, '03-06-202' of 03-06-2026)
+# that PASSES the shared date pattern (its \d{2,4} year branch) and commits at 90 — then Stage-4
+# normalise expands it to a confidently-wrong full date. Two tells, RAW-text, checked BEFORE the
+# salvage fallback so salvage can never resurrect the fragment (B-C2): a dangling date separator
+# glued to a <=2-digit year (the crop edge cut mid-token), or an exactly-3-digit year (never
+# legitimate). A COMPLETE 4-digit-year date with trailing debris ('07-01-2026.') is EXEMPT
+# (B-C1), and a clean 2-digit-year date ('07-01-20') stays ACCEPTED — pinned trade-off: only
+# geometry (Slice C) can tell that cut from a real 2-digit year. Fire → (None) → the rung falls
+# to the derived ladder or omits the field → review; never a fabricated date. Default OFF
+# (=1 arms); OFF = byte-identical. Pins: tests/test_date_clip_gate.py.
+_DATE_CLIP_GATE_ON = os.environ.get('TEMPLATE_DATE_CLIP_GATE', '0') != '0'
+
+_DATE_CLIP_NUMERIC = re.compile(r'(?<!\d)(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})(?!\d)')
+# (_date_clip_suspect itself lives beside _gate_value below — the module prefix
+#  before the first `def` must keep carrying every kill-switch getenv line: the
+#  wiring pins in test_template_code_edge_clean.py inspect exactly that slice.)
+
+
+# Slice D (jitter-crater arc, Oracle 2026-08-05 SIGN-OFF-W/COND) — LABEL DIGIT-EXACTNESS. The
+# fuzzy label blend lets a digit-heavy VALUE-like needle lock a DIFFERENT value as its "label"
+# ('03-06-2026' located '07-01-2026' via shared separators + ratio) — the drift guard then calls
+# the anchor stable and a wrong lock stands. For needles that are digit-dominant (>=4 digits,
+# >=50% of alnum chars), the digit SEQUENCE is the identity: require it contiguous in the
+# haystack's digits before any fuzzy blending; absent → 0.0 (a locate MISS → derived rungs —
+# the safe fail direction). Caption needles carrying incidental digits ("VAT No 1", "Invoice #2")
+# are far below the share bar and untouched. Reaches _match_label_run too (it maximises
+# _label_score) — a digit-heavy needle can no longer win a fuzzy window there either (D-C3).
+# Default OFF (=1 arms); OFF = byte-identical. Pins: tests/test_label_digit_exact.py.
+_LABEL_DIGIT_EXACT_ON = os.environ.get('TEMPLATE_LABEL_DIGIT_EXACT', '0') != '0'
+
+
 # Slice A — agree-branch EDGE-DEBRIS heal (reggie+gary → Oracle SIGN-OFF-W/COND, fork RULED
 # reggie/witness-equality, 2026-08-03 evening — docs/oracle_log.md). The label-tail bleed class:
 # a value box drawn a few px off the label ("Delivery Note No.") catches its trailing "." on
@@ -425,6 +457,28 @@ def _salvage_date_value(text, val_type):
     return d.strftime("%d-%m-%Y") if d else None
 
 
+def _date_clip_suspect(text):
+    """Slice B: True when a crop's date read carries the right-clip signature (see the
+    _DATE_CLIP_GATE_ON flag block). Pure text predicate on the RAW read; conservative —
+    no numeric date / 4-digit year → False."""
+    s = (text or '').rstrip()
+    if not s:
+        return False
+    last = None
+    for last in _DATE_CLIP_NUMERIC.finditer(s):
+        pass
+    if last is None:
+        return False
+    year = last.group(3)
+    if len(year) == 3:
+        return True                                   # '03-06-202' — never a real year
+    if len(year) <= 2:
+        nxt = s[last.end():last.end() + 1]
+        if nxt and nxt in '/-.':                      # '07-01-20-' — separator glued to the cut
+            return True                               # ('' guarded: '' in str is always True)
+    return False
+
+
 def _gate_value(text, val_type, field_key, validation_patterns, format_lookup,
                 shape_mode='drop', ocr_conf=None):
     """Shared accept/reject (+ date salvage) for a crop read, used by the
@@ -461,6 +515,10 @@ def _gate_value(text, val_type, field_key, validation_patterns, format_lookup,
     if not text:
         return None, False, False
     salvaged = False
+    # Slice B date-clip gate — RAW text, BEFORE the salvage fallback (B-C2: salvage must
+    # never resurrect a clipped fragment). See the _DATE_CLIP_GATE_ON flag block.
+    if val_type == 'date' and _DATE_CLIP_GATE_ON and _date_clip_suspect(text):
+        return None, False, False
     if val_type == 'date' and not _crop_is_credible(text, val_type, validation_patterns):
         rescued = _salvage_date_value(text, val_type)
         if rescued:
@@ -1649,6 +1707,15 @@ def _label_score(needle, haystack):
     _post = r'(?![a-z0-9])'  if needle[-1:].isalnum() else ''
     if re.search(_pre + re.escape(needle) + _post, haystack):
         return 1.0
+    # Slice D digit-exactness (see _LABEL_DIGIT_EXACT_ON flag block): a digit-dominant
+    # needle's digit sequence is its identity — absent from the haystack's digits, no
+    # amount of separator/ratio similarity may score it ('03-06-2026' vs '07-01-2026').
+    if _LABEL_DIGIT_EXACT_ON:
+        _nd = re.sub(r'[^0-9]', '', needle)
+        _na = re.sub(r'[^a-z0-9]', '', needle)
+        if len(_nd) >= 4 and _na and len(_nd) / len(_na) >= 0.5 \
+                and _nd not in re.sub(r'[^0-9]', '', haystack):
+            return 0.0
     # Present, but glued inside a larger token (sub|total) → a false label. Reject
     # so it can neither win a 1.0 tie nor pass threshold on shared characters.
     if needle in haystack:
