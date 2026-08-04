@@ -7572,7 +7572,11 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && active && !modalOpen) { close(); return; }
-    if (modalOpen || inField(e.target)) return;
+    if (modalOpen) return;
+    // Ctrl+Shift held is NEVER text entry, so the chord works even with focus in a field
+    // box (2026-08-04: the old inField guard here silently ate the chord after a reprocess
+    // left focus in a field — diagnosed as "SFDEV is broken". inField still guards nothing
+    // else: without Ctrl+Shift we disarm and return immediately.)
     if (!(e.ctrlKey && e.shiftKey)) { armed = false; return; }
     if (e.code === 'KeyD') { armed = true; armedAt = Date.now(); return; }
     if (e.code === 'KeyM' && armed && (Date.now() - armedAt) < 1000) {
