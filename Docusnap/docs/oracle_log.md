@@ -531,3 +531,29 @@ next arc's charter, NOT built. Owner interim: Straighten-all OFF on the affected
 **Added value? YES** — C1 caught a real divergence seam (owner would have validated teach reads
 against display pixels the pipeline never sees), and the falsifiable-gate discipline (his C4/C5)
 is exactly what caught the refutation before a default-ON ship.
+
+## 2026-08-05 (late) — DESKEW_RAW_CROPS gate OUTCOME: RED — the election pivots to a canonical-level-frame design
+
+**The C3/C4 gate did its job.** Deskew-forced taught pair (dsk_off/dsk_on, SAMPLE=112): refs climbed
+(scanned 58.9→66.1, job_ref 85.7→100) but date −5.3, issuer −5.4, customer −23.8 scanned; per-doc
+diff = 24 T→F vs 16 F→T, the regressions dominated by CAPTION-GRABS ('INVOICE TO'/'BILL TO'/
+'CUSTOMER' committed as customer_name). MECHANISM: the corpus teaches on LEVEL digital docs → stored
+raw coords are a level frame; a scanned sibling's RAW frame is tilted ±1.6° — the election
+reintroduced the tilt mismatch deskew exists to normalise. Deskew's placement normalisation is
+LOAD-BEARING; the compound teach-tilt case ruled "acceptable residual" is in fact the corpus's (and
+the customer's) MAIN case. Election stays DARK; no flip.
+
+**Corrected mechanism record (band probe):** a CORRECTLY-PLACED, slightly-generous crop on the
+deskewed 300-DPI frame reads 'DN-98447' fine — the earlier "any rotation garbles any read" claim
+was overbroad (the failing mapper crops were misplaced in x AND y; the genuine pixel casualty is
+the full-page ~120-DPI locate pass). The dominant defect is FRAME MISMATCH.
+
+**The pivot (next arc, Oracle review required):** ONE CANONICAL LEVEL FRAME — the owner's hint
+("look at how Review/target teach does it — works on straighten every time") decoded: Review works
+because box and pixels share the straightened frame end-to-end. The pipeline's actual bug is the
+teach-time back-transform-to-raw: coords stored in the teach doc's OWN tilted frame match nothing
+(deskewed sibling off by θ_teach; raw sibling off by θ_sib−θ_teach). Candidate designs: (a) teach
+stores LEVEL-frame coords + processing deskews to level (save-path change + legacy migration or
+epoch marker); (b) persist θ_teach per template/anchor and compose at read time; (c) re-detect the
+teach sample's angle on demand (sample_document_id is stored). Owner rule stands: NO PIPELINE
+SHARING (the display/teach rotation stays decoupled — pinned in test_deskew_ss_rotate.py).
