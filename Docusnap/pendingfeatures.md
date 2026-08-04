@@ -52,10 +52,15 @@ HOLD). Teach-time box word-snap ON. SFDEV chord fixed. C2a decline instrumentati
 **THE JITTER FINDING (headline):** an 18% right-cut on taught boxes craters the taught pipeline
 (ref 70->22, date 92->21, issuer 75->0 on 112 docs) and the shipped heal stack rescues ~nothing.
 Next-arc list, in dependency order:
-1. **Consent starvation** — clip-commit/frag ladder needs shape history a fresh install lacks;
-   the provisional channel only fills from CONFIRMED rows. Candidate: taught-template values seed
-   provisional skeletons at teach commit (they are owner-confirmed by definition).
-2. **Born-digital word-geometry gap** — digital WORSE than scanned under damage (2 sightings:
+1. **Born-digital word-geometry gap** [PROMOTED — the seeding experiment proved consent was NOT
+   the binding constraint: seeded jitter arm = same crater (only job_ref 50->64). Digital 12.5%
+   vs scanned 32.1% under damage: the text-layer path produces NO word boxes so locate/inline/
+   snap/cluster all starve. This is now suspect #1.]
+2. **Consent starvation** — RESOLVED for the LIVE app (the teach wizard commit ends in a confirm
+   -> count-1 provisional rows flow automatically via the night channel) and for the HARNESS
+   (scorer now seeds live-parity provisional rows in TEACH mode). Keep: verify live end-to-end
+   once on a real teach.
+3. **Born-digital word-box synthesis** — digital WORSE than scanned under damage (2 sightings:
    cold ref 40 vs 50; jitter 12.5 vs 32). The text-layer path skips OCR so snap/inline/cluster
    machinery starves. Candidate: synthesize word boxes from the PDF text layer (pypdfium2 has
    char/word positions) so born-digital docs get BETTER geometry than OCR, not none.

@@ -160,10 +160,45 @@ async function main() {
     console.log(`[ccs] TEACH: ${ok}/${entries.length} templates stored (${missTotal} field misses)`);
   }
 
+  // PROVISIONAL SEEDING PARITY (2026-08-04, owner GO): in the LIVE app the teach wizard's
+  // commit ENDS IN A CONFIRM, so the taught values become count-1 confirmed rows that
+  // getFieldFormats emits as `provisional:true` — arming the consent ladder from sibling #1.
+  // The harness's throwaway DB has no confirmed rows, so the taught arm must emit the same
+  // provisional entries itself (supplier-scoped + doc-type-scoped, mirroring getFieldFormats)
+  // or every consent-gated heal is structurally dead here (the jitter-crater mechanism 1).
+  const provFormats = [];
+  if (TEACH) {
+    const seen = new Set();
+    for (const [k, tid] of Object.entries(tmplBySlugIssuer)) {
+      const [issuer, slug] = k.split('|');
+      const e = gt.find(x => x.issuer === issuer && x.type_slug === slug
+                             && /manually confirmed/i.test(x.file)
+                             && String(x.rendition || '').toLowerCase().startsWith('digital'));
+      if (!e) continue;
+      const refKey = refKeyBySlug[slug], dateKey = dateKeyBySlug[slug];
+      const vals = {};
+      if (refKey && e.ref != null) vals[refKey] = String(e.ref);
+      if (dateKey && e.date != null) vals[dateKey] = String(e.date);
+      if (e.total != null) vals.total_amount = String(e.total);
+      for (const x of ['vat_no', 'account_no', 'job_ref', 'po_ref'])
+        if (e[x] != null) vals[x] = String(e[x]);
+      for (const [fk, v] of Object.entries(vals)) {
+        for (const sup of [issuer, '']) {                 // supplier + doc-type scope, like live
+          const dk = `${sup}|${slug}|${fk}`;
+          if (seen.has(dk)) continue; seen.add(dk);
+          provFormats.push({ supplier_name: sup, document_type: slug, field_key: fk,
+                            provisional: true, sample_values: [v], confirmed_count: 1,
+                            value_counts: { [v]: 1 } });
+        }
+      }
+    }
+    console.log(`[ccs] TEACH: seeded ${provFormats.length} provisional format rows (live-confirm parity)`);
+  }
+
   const snapArgs = ['--fields-file', w('f', dts.flatMap(d => d.fields)),
                     '--doc-types-file', w('d', dts),
                     '--hints-file', w('h', []), '--anchors-file', w('a', []), '--logos-file', w('l', []),
-                    '--formats-file', w('fm', []),
+                    '--formats-file', w('fm', provFormats),
                     '--templates-file', w('t', TEACH ? templates.getAll(db) : []),
                     '--config-file', CFG, '--registration', '--born-digital', '--multiline'];
 
