@@ -158,6 +158,9 @@ function _reconcileEnv(db) {
     if (learning.getSetting(db, 'template_abs_edge_guard', 'false') === 'true') env.TEMPLATE_ABS_EDGE_GUARD = '1';
     if (learning.getSetting(db, 'template_date_clip_gate', 'false') === 'true') env.TEMPLATE_DATE_CLIP_GATE = '1';
     if (learning.getSetting(db, 'template_label_digit_exact', 'false') === 'true') env.TEMPLATE_LABEL_DIGIT_EXACT = '1';
+    // Straighten pivot (Oracle 2026-08-05 late; corpus + Chris-vet GREEN): the level-frame
+    // composition — taught boxes rotated to the straightened frame by the teach sample's tilt.
+    if (learning.getSetting(db, 'teach_angle_compose', 'false') === 'true') env.TEACH_ANGLE_COMPOSE = '1';
     return env;
   } catch { return {}; }
 }
@@ -501,7 +504,12 @@ function buildTrainingArgs(db, configPath, logger = null) {
   // the healed angle). Gated on the kill switch so the dark slice is byte-identical incl.
   // zero spawns/writes. Renders the WORKING file (post-auto-rotate — the frame every teach
   // surface drew on). Stores 0.0 for a level sample (NULL = only never/failed detection).
-  if (process.env.TEACH_ANGLE_COMPOSE === '1') {
+  let _composeOn = process.env.TEACH_ANGLE_COMPOSE === '1';
+  if (!_composeOn) {
+    try { _composeOn = learning.getSetting(db, 'teach_angle_compose', 'false') === 'true'; }
+    catch { _composeOn = false; }
+  }
+  if (_composeOn) {
     try { _healSampleAngles(db, allTemplates, logger); } catch (e) { logger?.warn?.(`[training] angle heal: ${e && e.message}`); }
   }
   // Format model is the source of the qualification gate. The catch was SILENT,
