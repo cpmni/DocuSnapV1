@@ -96,10 +96,20 @@ cut); after the pipeline's +1.9° deskew rotation the same header garbles (locat
 Not/Ne:/DN/er!', full-res crop 'IN-JOSS f') — bicubic rotation smears small header print, every
 heal starves on broken word geometry, the edge guard correctly flags instead of healing. Prior
 art: `project_deskew_field_reread` ("straighten NOT monotone", designed-not-built) +
-`project_deskew_raw_witness`; `raw_pages_out` already keeps the raw frames. NEXT: 007 + Oracle on
-the RAW-FRAME WITNESS re-read (a capped/suspect mapped field re-reads its box on the RAW page —
-frame bookkeeping is the trap: taught coords live in the deskewed/display frame). Interim owner
-guidance: Straighten-all OFF for these batches.
+`project_deskew_raw_witness`; `raw_pages_out` already keeps the raw frames.
+**ARC RUN SAME SESSION (007 → Oracle → build → REFUTATION — oracle_log 2nd 2026-08-05 entry):**
+S1 `DESKEW_SS_ROTATE` built DARK (`5ae461a`, supersample rotate, 11 pins incl. analytic sign pin)
++ Oracle-C1 one-rotation-implementation unification (region.py private rotate deleted — SHIPPED,
+behaviour-identical with SS off) + `deskew_angles_out` threading. **The interpolation hypothesis
+was REFUTED on doc 561** — the supersampled rotation garbles identically; suspect #1 = the scan
+noise field smearing under ANY rotation (raw+tilted reads perfectly; Tesseract self-tolerates
+≤~2°). NEXT ARC (evidence bar MET): the Oracle-banked **S4 raw-preferring pre-extraction frame
+election** and/or a **read-path deskew angle floor** (~2-3°, keep display straightening); S3
+pdfium matrix render remains reserve; S2 raw-frame witness stays SEND BACK behind its revival
+bar (C6-C10 preapproved). KEY FACTS for that arc: all THREE teach surfaces persist RAW-frame
+coords (wizard suppresses · ⊕ back-transforms · teach-window Straighten back-transforms);
+mapper `target_geom` is deskew-frame (never raw-crop from it); stored DB targets ARE raw-frame.
+Interim owner guidance: Straighten-all OFF for these batches.
 
 Still live from 08-04: mapper-heal census — DONE 2026-08-05 (`3b37228` — `_heal` markers + engine
 "Stage 0.5 heal:" log lines + HEAL_RE; 95 fires captured on a 48-doc smoke) · customer-name GT
