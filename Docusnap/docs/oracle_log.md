@@ -557,3 +557,20 @@ stores LEVEL-frame coords + processing deskews to level (save-path change + lega
 epoch marker); (b) persist θ_teach per template/anchor and compose at read time; (c) re-detect the
 teach sample's angle on demand (sample_document_id is stored). Owner rule stands: NO PIPELINE
 SHARING (the display/teach rotation stays decoupled — pinned in test_deskew_ss_rotate.py).
+
+## 2026-08-05 (night) — TEACH_ANGLE_COMPOSE outcome: GREEN on the faithful corpus
+
+Slice 1 built per C1-C6 (`c29b797`), then two gate findings fixed in `036ba26`: (1) the MAIN
+corpus's scanify rotated expand=True — grew pages + shifted content by angle-dependent margins, a
+geometry no real scanner produces; the lvl pair's digital crater was THIS artifact, not the
+design (faithful expand=False side corpus "Customer Doc Test NF" now carries the gate; SCAN_EXPAND=1
+restores the old shape for comparability); (2) corner-AABB composition BLOATED wide boxes by
+w·sinθ (caption line pulled into free-text crops) — the teach surfaces persist LEVEL w/h and
+back-transform only the point, so the exact inverse rotates the CENTRE and keeps w/h (NO-BLOAT
+pin, 1e-12). **FAITHFUL GATE nf_off→nf_on2 (tilted teach + deskew forced): ref 59.4→72.5 /
+68.1→82.6 · date 85.5→98.6 / 84.1→95.7 · issuer 44.9→66.7 / 53.6→73.9 · po_ref 77.8→94.4 /
+88.9→100 · job 100/100 — every taught structured lane climbs on BOTH renditions.** Named
+residual → follow-up slice with its own Oracle round: the caption-commit class on wide free-text
+recipient boxes (customer scanned 22.2% — captions vary per sibling; needs the known-caption
+vocab veto extended to the mapper's free-text gate). Next: owner flip decision after the Chris
+sandbox reprocess of the owner-trained docs (Straighten ON + TEACH_ANGLE_COMPOSE=1).
