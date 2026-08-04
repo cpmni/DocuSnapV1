@@ -284,9 +284,40 @@ check("C-C1 composition: B rejects the fragment, C's geometry still heals the da
       r is not None and r["value"] == "07-01-2026" and r["method"].endswith("_edgegrow"))
 os.environ.pop('TEMPLATE_DATE_CLIP_GATE', None)
 
-# INDEPENDENT-WITNESS pin: the grown re-read must CONTAIN each cut word's locate-pass
-# text — a corrupted extension ('VXC1536' word but grown read 'VXC1596') falls through
-# (defer_cap), never a clean commit (the scanned-arm '13-02-2096'/'POH-49938' class).
+# WITNESS SCOPE pin (live Larkspur exhibit 2026-08-05): a taught box narrower than its
+# value word, overlapping the label tail — left_cut = the LABEL word ('No.'), excluded
+# from the grow by the label bound. An unabsorbed cut word makes no claim in the grown
+# value and must NOT veto the witness; the heal commits.
+LBL = {"text": "No.", "x_norm": 0.24, "y_norm": 0.20, "w_norm": 0.03, "h_norm": 0.02}
+VW = {"text": "DN-98447", "x_norm": 0.30, "y_norm": 0.20, "w_norm": 0.10, "h_norm": 0.02}
+NARROW_LINES = [{"text": "No. DN-98447", "x_norm": 0.24, "y_norm": 0.20, "w_norm": 0.16,
+                 "h_norm": 0.02, "words": [LBL, VW]}]
+
+
+def _narrow_stub(crop):
+    x1, y1, x2, y2 = crop
+    if y2 < 150 or y1 > 280:
+        return None
+    if x1 <= 302 and x2 >= 398:
+        return "DN-98447"                # grown box covers the whole value word
+    if x2 >= 330:
+        return "N-9844"                  # narrow box: both edges inside the value word
+    return None
+
+
+m = mapping(box(0.25, 0.095))            # left edge inside 'No.', right edge inside 'DN-98447'
+loc = {"matched_text": "Delivery Note No.",
+       "label_box": {"x_norm": 0.18, "y_norm": 0.20, "w_norm": 0.092, "h_norm": 0.02}}
+r = tm._extract_one(PAGE, m, FP, lambda img: [], _narrow_stub, located=loc,
+                    validation_patterns=VAL, format_lookup=None,
+                    line_cache={(id(PAGE), 0.0, 0.0, 1.0, 1.0): NARROW_LINES},
+                    provisional_lookup=lambda fk, v: True)
+check("witness scope: unabsorbed left-cut label word never vetoes — 'N-9844' heals to 'DN-98447'",
+      r is not None and r["value"] == "DN-98447" and r["method"].endswith("_edgegrow"))
+
+# INDEPENDENT-WITNESS pin: the grown re-read must CONTAIN each ABSORBED cut word's
+# locate-pass text — a corrupted extension ('VXC1536' word but grown read 'VXC1596')
+# falls through (defer_cap), never a clean commit (the '13-02-2096'/'POH-49938' class).
 def _corrupt_grow(crop):
     x1, y1, x2, y2 = crop
     if y2 < 150 or y1 > 280:

@@ -1708,15 +1708,26 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
     # INDEPENDENT-WITNESS corroboration (the owner kernel rule: a heal files without
     # review only when corroborated by an independent-GEOMETRY read): the locate-pass
     # word text (~120-DPI recipe) is a different OCR tier from the full-res ladder that
-    # produced `gv` — every cut word's own text must be CONTAINED in the grown value,
-    # else the grow re-read corrupted the extension ('13-02-2026' word -> grown
-    # '13-02-2096'; 'PO-49938' -> 'POH-49938' — the scanned clean-arm class) and the
-    # heal falls through (defer_cap: the reconcile may still heal; the final abs commit
-    # wears the cap). A garbled locate word downgrades a GOOD heal the same way — the
-    # safe direction (review, never a silent wrong value).
+    # produced `gv` — every cut word the grow ABSORBED must have its text CONTAINED in
+    # the grown value, else the grow re-read corrupted the extension ('13-02-2026' word
+    # -> grown '13-02-2096'; 'PO-49938' -> 'POH-49938' — the scanned clean-arm class)
+    # and the heal falls through (defer_cap: the reconcile may still heal; the final abs
+    # commit wears the cap). SCOPE (live Larkspur exhibit, 2026-08-05): a cut word the
+    # grow did NOT absorb — a left-cut label tail ('No.') deliberately excluded by the
+    # label bound, or a word dropped by the width cap — makes no claim in `gv` and must
+    # not veto it; only words substantially inside the GROWN box are the grow's claim.
+    # A garbled locate word still downgrades a GOOD heal — the safe direction (review,
+    # never a silent wrong value).
     for _cw in (left_cut, right_cut):
         if _cw is None:
             continue
+        try:
+            _wx1 = float(_cw["x_norm"]); _ww = float(_cw["w_norm"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        _ins = max(0.0, min(gx2, _wx1 + _ww) - max(gx1, _wx1))
+        if _ww <= 0 or _ins / _ww < 0.9:
+            continue                                  # not absorbed -> not the grow's claim
         _wt = _code_norm(str(_cw.get("text") or ""))
         if _wt and _wt not in _code_norm(str(gv)):
             return _floor()
