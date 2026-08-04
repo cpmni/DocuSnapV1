@@ -229,6 +229,37 @@ def _shape_consents(value, field_key, format_lookup, provisional_lookup):
 _TARGET_WORD_SNAP_ON = os.environ.get('TEMPLATE_TARGET_WORD_SNAP', '0') != '0'
 _SNAP_VAL_TYPES = frozenset(_CODE_CROSSCHECK_TYPES | {'date'})
 
+# Slice C (jitter-crater arc, Oracle 2026-08-05 SIGN-OFF-W/COND C-C0..C5, fork RULED for 007's
+# GROW over demote-to-ladder) — ABSOLUTE-RUNG WORD-EDGE GUARD. The crater class: a right/left-cut
+# taught box on an UNDAMAGED page reads a CLEAN PARTIAL ('VXC153' of VXC1536) that passes the
+# type gate and commits silently at 78-90 — every shipped heal keys on page-vs-taught
+# DISAGREEMENT (label displaced / transform divergent / witness disagreeing), so nothing fires
+# (proven: armed-env jitter rerun byte-identical). Only the page's WORD GEOMETRY witnesses the
+# damage. When a row-band word is CUT by the read box's edge (intrusion >= ~1 glyph inside,
+# overhang >= max(0.004, 0.6 glyph) outside, inside-fraction 0.12-0.95), GROW the READ crop to
+# the cut word's far edge (+0.004 pad; right <= 2.0x drawn width; left never past the located
+# label's right edge + 0.002 — the C1 frame rule), full-res re-read, per-type comparator (codes:
+# stripped-core prefix with <= 1 trailing-glyph slack — the cut glyph misreads; dates: the grown
+# read must gate as a date + digit-prefix discipline), then consent: codes via _shape_consents
+# (confirmed/provisional -> CLEAN commit '_edgegrow'; none -> grown FLAGGED <= 70; refused ->
+# keep the rigid read SILENTLY — the deliberate-sub-token-teach protection); dates self-consent
+# on a complete un-suspect parse (self-validating type — learned-shape stats never veto dates).
+# Comparator/gate failure -> commit the rigid read capped <= 70 + note '_edgecut' (fail-toward-
+# review: the geometric evidence stands even when the heal could not complete). The predicate is
+# GATE-OUTCOME-INDEPENDENT (C-C1: it runs even when Slice B rejected the fragment, so B cannot
+# starve C) and the STORED mapping coordinates are NEVER mutated (C-C3, pinned). Composed BEFORE
+# _inline_code_reconcile — a clean heal rewrites the rigid SURFACE and the reconcile's
+# independent inline witness still arbitrates it (no new _pick_fuller_code branch — its order is
+# pinned/load-bearing). Scope = codes + dates (_SNAP_VAL_TYPES); NAMES excluded v1
+# (NAME_UNCLIP_RECONCILE owns that class — two dark healers racing one class breeds M=1s).
+# Teach-time word-snap (teach_box_word_snap ON) is the licence: stored boxes are word-aligned at
+# teach, so a read-time mid-word edge is drift evidence, not operator intent. Default OFF
+# (=1 arms); OFF = byte-identical. Pins: tests/test_template_abs_edge_guard.py.
+_ABS_EDGE_GUARD_ON = os.environ.get('TEMPLATE_ABS_EDGE_GUARD', '0') != '0'
+_EDGE_CUT_NOTE = ("The taught box's edge cuts through the printed value here and the fuller "
+                  "reading could not be verified — please check this value.")
+_EDGE_GUARD_FIRES = []   # per-process census: (field_key, edges, outcome) — tests + SFDEV introspection
+
 
 def extract_with_mappings(page_images, mappings, field_patterns=None,
                           ocr_lines_fn=None, ocr_text_fn=None, slice_capture=None,
@@ -1195,6 +1226,28 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
                                  ocr_lines_fn=ocr_lines_fn, line_cache=line_cache)
         if reg:
             return reg
+    # ── ABS-RUNG WORD-EDGE GUARD (Slice C, jitter-crater arc) — see the flag block ──
+    # GATE-OUTCOME-INDEPENDENT (Oracle C-C1: runs whether or not abs_text survived the
+    # gate — a Slice-B date-clip rejection must not starve this geometric heal). Placed
+    # AFTER drift/registration (a genuinely drifted page keeps its full-res _geometric
+    # path) and BEFORE the inline reconcile (a clean heal rewrites the rigid SURFACE;
+    # the reconcile's independent inline witness then arbitrates the corrected read).
+    _edge_healed = False
+    if _ABS_EDGE_GUARD_ON and val_type in _SNAP_VAL_TYPES:
+        _eg = _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text,
+                              val_type, field_key, ocr_lines_fn, ocr_text_fn,
+                              validation_patterns, format_lookup, provisional_lookup,
+                              line_cache, (located if located is not _UNSET else None),
+                              slice_capture, page_idx,
+                              has_label=bool(mapping.get("anchor_text")),
+                              anchor_name=mapping.get("anchor_text"))
+        if _eg is not None:
+            if "rewrite" in _eg:
+                abs_text, _abs_meta['conf'] = _eg["rewrite"]
+                abs_salvaged = False
+                _edge_healed = True
+            else:
+                return _eg["result"]
     # ── INLINE CODE RECONCILE (single-token code, taught inline) — DARK ──────────
     # The label is found and NOT drifted (so drift-relocate + registration above did not
     # fire), yet a fixed narrow drawn box can still clip a code value's prefix under
@@ -1216,11 +1269,14 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
         if rc is not None:
             return rc
     if abs_text:
-        return _mapping_result(abs_text, bool(mapping.get("anchor_text")),
-                               abs_expanded, abs_salvaged,
-                               mapping.get("anchor_text") or field_key,
-                               ocr_conf=_abs_meta.get('conf'), val_type=val_type,
-                               geom=_box_list(target_box) if slice_capture else None)
+        _r = _mapping_result(abs_text, bool(mapping.get("anchor_text")),
+                             abs_expanded, abs_salvaged,
+                             mapping.get("anchor_text") or field_key,
+                             ocr_conf=_abs_meta.get('conf'), val_type=val_type,
+                             geom=_box_list(target_box) if slice_capture else None)
+        if _edge_healed:
+            _r["method"] += "_edgegrow"      # SFDEV every-step-trace visibility (Slice C heal)
+        return _r
 
     # ── SINGLE-LABEL LOCAL REFINEMENT (anchor + stored offset) — PREFERRED ──────
     # The drawn box read nothing credible. Find THIS field's OWN label and derive
@@ -1454,6 +1510,180 @@ def _snap_box_to_words(page, seated_box, val_type, ocr_lines_fn, line_cache, lab
     if snapped["w_norm"] * snapped["h_norm"] > 4.0 * max(sw * sh, 1e-9):
         return seated_box
     return snapped
+
+
+def _page_words_cached(page, ocr_lines_fn, line_cache):
+    """Full-page word lines via the shared cache (identity frame — crop-relative norm of the
+    whole page IS page-norm), exactly as _snap_box_to_words sources them. None on any failure."""
+    if page is None:
+        return None
+    key = (id(page), 0.0, 0.0, 1.0, 1.0)
+    if line_cache is not None and key in line_cache:
+        return line_cache[key]
+    if ocr_lines_fn is None:
+        return None
+    try:
+        crop = _crop(page, {"x_norm": 0.0, "y_norm": 0.0, "w_norm": 1.0, "h_norm": 1.0})
+        if crop is None:
+            return None
+        lines = ocr_lines_fn(crop)
+        if line_cache is not None and lines is not None:
+            line_cache[key] = lines
+        return lines
+    except Exception:
+        return None
+
+
+def _find_edge_cut_words(lines, read_box):
+    """Slice C predicate (see the _ABS_EDGE_GUARD_ON flag block): words on the read box's row
+    band that the box's LEFT or RIGHT edge passes THROUGH. Returns (left_cut, right_cut) —
+    each the cut word dict or None. Pure geometry; thresholds per the Oracle-signed table."""
+    if not lines or not isinstance(read_box, dict):
+        return None, None
+    try:
+        sx1 = float(read_box["x_norm"]); sy1 = float(read_box["y_norm"])
+        sw = float(read_box["w_norm"]);  sh = float(read_box["h_norm"])
+    except (KeyError, TypeError, ValueError):
+        return None, None
+    sx2 = sx1 + sw
+    scy = sy1 + sh / 2.0
+    left_cut = right_cut = None
+    for ln in lines:
+        for wd in (ln.get("words") or ()):
+            try:
+                wx1 = float(wd["x_norm"]); wy1 = float(wd["y_norm"])
+                ww = float(wd["w_norm"]);  wh = float(wd["h_norm"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if ww <= 0 or wh <= 0:
+                continue
+            if abs((wy1 + wh / 2.0) - scy) > max(wh, sh) * 0.6:   # Slice-B row-band convention
+                continue
+            g = ww / max(1, len(str(wd.get("text") or "")))       # mean glyph width
+            wx2 = wx1 + ww
+            # RIGHT edge through the word: enough of the word inside to have fed the read,
+            # enough outside to prove the cut, and neither a pad-nick nor box-overshoot.
+            inside_r = sx2 - wx1
+            over_r = wx2 - sx2
+            if (wx1 < sx2 < wx2
+                    and inside_r >= max(0.006, g)
+                    and over_r >= max(0.004, 0.6 * g)
+                    and 0.12 <= inside_r / ww <= 0.95):
+                if right_cut is None or wx2 > float(right_cut["x_norm"]) + float(right_cut["w_norm"]):
+                    right_cut = wd
+            # LEFT edge mirror.
+            inside_l = wx2 - sx1
+            over_l = sx1 - wx1
+            if (wx1 < sx1 < wx2
+                    and inside_l >= max(0.006, g)
+                    and over_l >= max(0.004, 0.6 * g)
+                    and 0.12 <= inside_l / ww <= 0.95):
+                if left_cut is None or wx1 < float(left_cut["x_norm"]):
+                    left_cut = wd
+    return left_cut, right_cut
+
+
+def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_type, field_key,
+                    ocr_lines_fn, ocr_text_fn, validation_patterns, format_lookup,
+                    provisional_lookup, line_cache, located, slice_capture, page_idx,
+                    has_label=True, anchor_name=None):
+    """Slice C action contract (007's GROW, Oracle-ruled — full rationale in the
+    _ABS_EDGE_GUARD_ON flag block). Returns:
+      None                          — no fire / silent-keep (caller continues untouched);
+      {'rewrite': (value, conf)}   — clean heal: caller rewrites the rigid surface and the
+                                     existing flow (inline reconcile -> commit) continues;
+      {'result': <mapping dict>}   — commit directly (grown-but-unproven FLAGGED, or the
+                                     capped '_edgecut' fail-toward-review floor).
+    The STORED mapping is never touched — only this read's crop grows (C-C3)."""
+    lines = _page_words_cached(page, ocr_lines_fn, line_cache)
+    if not lines:
+        return None                                   # no geometry -> byte-identical (fail-inert)
+    read_box = _expand_box(target_box, expansion) if (abs_expanded and expansion > 0) else target_box
+    left_cut, right_cut = _find_edge_cut_words(lines, read_box)
+    if left_cut is None and right_cut is None:
+        return None
+
+    def _floor():
+        """Fail-toward-review: the edge-through-ink evidence stands even when the heal
+        could not complete — a partial may no longer commit silently at 78-90."""
+        _EDGE_GUARD_FIRES.append((field_key, _edges, 'capped'))
+        if not abs_text:
+            return None                               # nothing committed today either -> ladder
+        r = _mapping_result(abs_text, has_label, abs_expanded, False,
+                            anchor_name or field_key, val_type=val_type)
+        r["confidence"] = min(r["confidence"], 70)
+        r["method"] += "_edgecut"
+        r["validation_note"] = _EDGE_CUT_NOTE
+        return {"result": r}
+
+    _edges = ('L' if left_cut is not None else '') + ('R' if right_cut is not None else '')
+    pad = 0.004
+    gx1 = float(read_box["x_norm"]); gx2 = gx1 + float(read_box["w_norm"])
+    if right_cut is not None:
+        gx2 = max(gx2, float(right_cut["x_norm"]) + float(right_cut["w_norm"]) + pad)
+    if left_cut is not None:
+        nl = float(left_cut["x_norm"]) - pad
+        lb = (located or {}).get("label_box") if isinstance(located, dict) else None
+        if isinstance(lb, dict):                      # C-C2: never re-absorb the located label
+            try:
+                nl = max(nl, float(lb["x_norm"]) + float(lb["w_norm"]) + 0.002)
+            except (KeyError, TypeError, ValueError):
+                pass
+        gx1 = min(gx1, nl)
+    if (gx2 - gx1) > 2.0 * max(float(target_box["w_norm"]), 1e-9):
+        return _floor()                               # merged-word / runaway grow -> no grow
+    grown = _clamp_box({"x_norm": gx1, "y_norm": read_box["y_norm"],
+                        "w_norm": gx2 - gx1, "h_norm": read_box["h_norm"]})
+    _gcap = ((lambda c: slice_capture(field_key, "template_mapping", page_idx,
+              (grown["x_norm"], grown["y_norm"], grown["w_norm"], grown["h_norm"]), c, "target"))
+             if slice_capture else None)
+    _gmeta = {}
+    raw = _crop_and_ocr(page, grown, val_type, ocr_text_fn, capture=_gcap, meta=_gmeta)
+    gv, g_salv, _ = _gate_value(raw, val_type, field_key, validation_patterns,
+                                format_lookup, shape_mode='ignore', ocr_conf=_gmeta.get('conf'))
+    if not gv or g_salv:
+        return _floor()                               # a salvaged grow is not a proven heal
+    # Per-type comparator — the cut fragment's LAST glyph is untrusted (a cut 'P' reads 'F'),
+    # so prefix discipline allows exactly one trailing-glyph drop; anything else is a
+    # different value (a neighbouring column) -> the floor, never a silent swap.
+    if abs_text:
+        if val_type == 'date':
+            do = re.sub(r'[^0-9]', '', _strip_code_edges(str(abs_text)))
+            dn = re.sub(r'[^0-9]', '', str(gv))
+            if not (do and (dn.startswith(do) or (len(do) > 1 and dn.startswith(do[:-1])))):
+                return _floor()
+        else:
+            co = _code_norm(_strip_code_edges(str(abs_text)))
+            cn = _code_norm(_strip_code_edges(str(gv)))
+            if not (co and len(cn) > len(co) - 1
+                    and (cn.startswith(co) or (len(co) > 1 and cn.startswith(co[:-1])))):
+                return _floor()
+    # Consent: dates self-consent on a complete, un-suspect parse (self-validating type —
+    # learned-shape stats never veto a real calendar date); codes take the shared ladder.
+    if val_type == 'date':
+        try:
+            from extraction.validator import parse_date
+            consent = 'confirmed' if (not _date_clip_suspect(gv) and parse_date(gv)) else 'none'
+        except Exception:
+            consent = 'none'
+    else:
+        consent = _shape_consents(gv, field_key, format_lookup, provisional_lookup)
+    if consent in ('confirmed', 'provisional'):
+        _EDGE_GUARD_FIRES.append((field_key, _edges, 'healed'))
+        return {"rewrite": (gv, _gmeta.get('conf'))}
+    if consent == 'refused':
+        # Deliberate-sub-token-teach protection: a confirmed history in the SUB-token shape
+        # means the operator meant the cut — keep the rigid read silently, no flag, no nag.
+        _EDGE_GUARD_FIRES.append((field_key, _edges, 'refused'))
+        return None
+    # No history either way: the fuller value goes to review pre-filled (cheapest correction).
+    _EDGE_GUARD_FIRES.append((field_key, _edges, 'flagged'))
+    r = _mapping_result(gv, has_label, False, False, anchor_name or field_key,
+                        val_type=val_type, ocr_conf=_gmeta.get('conf'))
+    r["confidence"] = min(r["confidence"], 70)
+    r["method"] += "_edgegrow"
+    r["validation_note"] = _EDGE_CUT_NOTE
+    return {"result": r}
 
 
 def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,

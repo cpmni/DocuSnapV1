@@ -105,8 +105,20 @@ rsrc = inspect.getsource(tm._read_registration)
 check("registration rung snaps with the TRANSFORMED anchor frame (apply_box)",
       '_snap_box_to_words' in rsrc and 'apply_box' in rsrc)
 asrc = inspect.getsource(tm)
-fastpath = asrc[asrc.find('FAST PATH: read the EXACT box'):asrc.find('def _read_registration')]
-check("absolute rung UNTOUCHED (no snap call in the fast path)",
+# DEAD-GUARD REBUILD (Oracle 2026-08-05, C-C0): the old slice
+# `asrc[asrc.find('FAST PATH…'):asrc.find('def _read_registration')]` was EMPTY —
+# _read_registration is defined ABOVE the fast path, so start > end and the
+# "absolute rung untouched" assertion passed vacuously forever (the CLAUDE.md
+# dead-guard trap). Now pin against _extract_one's OWN source, and assert the
+# slice is non-empty so a future refactor can't silently re-kill the pin.
+# AMENDED CONTRACT (teach-time word-snap changed the WYSIWYG premise): the
+# absolute rung never routes through _snap_box_to_words; the Slice-C edge guard
+# may GROW-and-RE-READ this read's crop when a word is cut, but must never snap
+# the box to word unions nor mutate the stored mapping (see
+# test_template_abs_edge_guard.py for the behavioural no-fire/no-mutation pins).
+fastpath = inspect.getsource(tm._extract_one)
+check("fast-path source slice NON-EMPTY (dead-guard rebuild)", len(fastpath) > 200)
+check("absolute rung never calls _snap_box_to_words",
       '_snap_box_to_words' not in fastpath)
 check("switch default OFF",
       "os.environ.get('TEMPLATE_TARGET_WORD_SNAP', '0')" in asrc)
