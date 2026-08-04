@@ -113,6 +113,7 @@ async function main() {
       if (refKey && e.ref != null) fields[refKey] = e.ref;
       if (dateKey && e.date != null) fields[dateKey] = e.date;
       if (e.issuer != null) fields.supplier_name = e.issuer;
+      if (e.customer != null) fields.customer_name = e.customer;   // recipient (owner co) — the NAME_UNCLIP lane
       if (e.total != null) fields.total_amount = e.total;
       for (const x of ['vat_no', 'account_no', 'job_ref', 'po_ref'])
         if (e[x] != null) fields[x] = e[x];
@@ -141,6 +142,10 @@ async function main() {
                         reference: 'alphanumeric', reference_code: 'reference_code',
                         vat_gb: 'text', alphanumeric: 'alphanumeric' };
       for (const m of res.mappings) {
+        // A field the scorer-DB type doesn't carry (e.g. customer_name on a trimmed
+        // built-in) can't be taught — skip its mapping (matches the live wizard, which
+        // only offers the type's own fields).
+        if (!(m.field_key in typeByKey)) continue;
         // TEACH_JITTER=0.18: shrink the taught target's RIGHT edge — recreates the human
         // cutting-draw disease (mid-token cut of the last word) so the heal stack has a real
         // class to act on and GT arbitrates every fire. 0/unset = the GT-perfect boxes.
@@ -186,6 +191,7 @@ async function main() {
       if (e.total != null) vals.total_amount = String(e.total);
       for (const x of ['vat_no', 'account_no', 'job_ref', 'po_ref'])
         if (e[x] != null) vals[x] = String(e[x]);
+      if (e.customer != null) vals.customer_name = String(e.customer);
       for (const [fk, v] of Object.entries(vals)) {
         for (const sup of [issuer, '']) {                 // supplier + doc-type scope, like live
           const dk = `${sup}|${slug}|${fk}`;
@@ -241,7 +247,11 @@ async function main() {
   }
 
   // ── 5. Score ──────────────────────────────────────────────────────────────
-  const LANES = ['ref', 'date', 'total', 'issuer', 'vat_no', 'account_no', 'job_ref', 'po_ref', 'type'];
+  const LANES = ['ref', 'date', 'total', 'issuer', 'customer', 'vat_no', 'account_no', 'job_ref', 'po_ref', 'type'];
+  // customer_name is absent on some scorer-DB types (built-ins are trimmed to
+  // name/date/ref) — the customer lane only scores docs whose TYPE carries the field.
+  const custTypes = new Set(dts.filter(d => (d.fields || []).some(f => f.key === 'customer_name'))
+                               .map(d => d.slug));
   const tally = {};
   const bump = (lane, rend, ok) => { const k = `${lane}|${rend}`; (tally[k] || (tally[k] = { ok: 0, n: 0 })); tally[k].n++; if (ok) tally[k].ok++; };
   const rows = [];
@@ -260,6 +270,8 @@ async function main() {
       date:       e.date    != null && normDate(exVal(m, dateKey) || m.doc_date) === normDate(e.date),
       total:      e.total   != null && normMoney(exVal(m, 'total_amount') || m.total_amount) === normMoney(e.total),
       issuer:     e.issuer  != null && normName(m.supplier_name || exVal(m, 'supplier_name')) === normName(e.issuer),
+      customer:   e.customer != null && custTypes.has(e.type_slug)
+                    && normName(exVal(m, 'customer_name')) === normName(e.customer),
       vat_no:     e.vat_no     != null && normRef(exVal(m, 'vat_no')) === normRef(e.vat_no),
       account_no: e.account_no != null && normRef(exVal(m, 'account_no')) === normRef(e.account_no),
       job_ref:    e.job_ref    != null && normRef(exVal(m, 'job_ref')) === normRef(e.job_ref),
@@ -271,7 +283,8 @@ async function main() {
     const exMeth = key => { const x = (m.extractions || {})[key]; return x && x.method ? x.method : undefined; };
     row.methods = {};
     for (const [lane, key] of [['ref', refKey], ['date', dateKey], ['total', 'total_amount'],
-                               ['issuer', 'supplier_name'], ['vat_no', 'vat_no'],
+                               ['issuer', 'supplier_name'], ['customer', 'customer_name'],
+                               ['vat_no', 'vat_no'],
                                ['account_no', 'account_no'], ['job_ref', 'job_ref'], ['po_ref', 'po_ref']]) {
       const meth = key && exMeth(key);
       if (meth) row.methods[lane] = meth;
@@ -279,12 +292,14 @@ async function main() {
     for (const lane of LANES) {
       const gtHas = lane === 'type' || e[lane === 'issuer' ? 'issuer' : lane] != null;
       if (!gtHas) continue;
+      if (lane === 'customer' && !custTypes.has(e.type_slug)) continue;   // type lacks the field
       bump(lane, rend, !!checks[lane]);
       row.verdicts[lane] = !!checks[lane];
       if (!checks[lane]) row[`${lane}_got`] = lane === 'type' ? slug
         : (lane === 'ref' ? (exVal(m, refKey) || m.reference_number)
           : lane === 'date' ? (exVal(m, dateKey) || m.doc_date)
           : lane === 'issuer' ? m.supplier_name
+          : lane === 'customer' ? exVal(m, 'customer_name')
           : lane === 'total' ? (exVal(m, 'total_amount') || m.total_amount) : exVal(m, lane));
     }
     rows.push(row);

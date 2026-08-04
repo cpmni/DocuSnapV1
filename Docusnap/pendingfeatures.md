@@ -90,9 +90,23 @@ jitter BY DESIGN (names excluded v1 — the NAME_UNCLIP flip decision owns it); 
 "Heal/verify fires captured (0)" header is stale — fires now counted via jsonl `methods`
 (HEAL_RE log capture remains for engine-side heals).
 
-Still live from 08-04: mapper-heal census instrumentation (#2) · customer-name GT (#4) · vat_no
-teach-locator + custom-field alias seeding (#5) · C2b copy vet · ref_field_key threading ·
-rehearsal read + annealing · born-digital `_page0_geom` letterhead synthesis (demoted follow-up).
+**2026-08-05 LIVE FINDING — DESKEW DEGRADATION is the Larkspur docket class (probe-proven):**
+docket_14 (live doc 561) reads 'DN-98447' PERFECTLY on the raw scan render (clean abs @90, no
+cut); after the pipeline's +1.9° deskew rotation the same header garbles (locate words 'Dobrery/
+Not/Ne:/DN/er!', full-res crop 'IN-JOSS f') — bicubic rotation smears small header print, every
+heal starves on broken word geometry, the edge guard correctly flags instead of healing. Prior
+art: `project_deskew_field_reread` ("straighten NOT monotone", designed-not-built) +
+`project_deskew_raw_witness`; `raw_pages_out` already keeps the raw frames. NEXT: 007 + Oracle on
+the RAW-FRAME WITNESS re-read (a capped/suspect mapped field re-reads its box on the RAW page —
+frame bookkeeping is the trap: taught coords live in the deskewed/display frame). Interim owner
+guidance: Straighten-all OFF for these batches.
+
+Still live from 08-04: mapper-heal census — DONE 2026-08-05 (`3b37228` — `_heal` markers + engine
+"Stage 0.5 heal:" log lines + HEAL_RE; 95 fires captured on a 48-doc smoke) · customer-name GT
+(#4) — GT lane SHIPPED 2026-08-05 (GT enriched in place, generator parity, scorer `customer` lane;
+NAME_UNCLIP evidence pair running) · vat_no teach-locator + custom-field alias seeding (#5) · C2b
+copy vet · ref_field_key threading · rehearsal read + annealing · born-digital `_page0_geom`
+letterhead synthesis (demoted follow-up).
 
 ---
 

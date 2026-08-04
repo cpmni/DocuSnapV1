@@ -551,7 +551,13 @@ def build_doc(issuer, dtype, idx, logos, rng):
     ref = make_ref(issuer["ref"][dtype], rng, year)
     title = rng.choice(TYPE_TITLES[dtype])
     gt = dict(issuer=issuer["name"], type_slug=dtype, ref=ref, date=date, total=None,
-              vat_no=issuer["vat"], account_no=issuer["acct"])
+              vat_no=issuer["vat"], account_no=issuer["acct"],
+              # The RECIPIENT on every doc is the owner company (draw_parties prints its
+              # block under Bill To/Customer/Deliver To on every type — POs deliver to the
+              # owner too). GT-carried so the customer_name lane is scorable (2026-08-05:
+              # without it NAME_UNCLIP's non-supplier name class was structurally
+              # unexercisable in every arm).
+              customer=OWNER["name"])
 
     if dtype == "purchase_order":
         # The OWNER issues every purchase order, so every PO shares ONE Bramblewood layout
