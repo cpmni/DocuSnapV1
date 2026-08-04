@@ -224,7 +224,7 @@ async function main() {
   const N = 8; const shards = Array.from({ length: N }, () => []);
   Object.keys(byName).forEach((f, i) => shards[i % N].push(f));
   const heals = [];                              // every heal/verify log line → per-fire census
-  const HEAL_RE = /(Name-unclip reconcile|Universal verify|Crosscheck-outlier|edge-clean|Snap|clip commit|frag)/i;
+  const HEAL_RE = /(Name-unclip reconcile|Universal verify|Crosscheck-outlier|edge-clean|Snap|clip commit|frag|Stage 0\.5 heal)/i;
   const run1 = files => new Promise(res => {
     const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', runDir, '--files-file', w('shard', files),
                            '--mode', 'fast', '--tesseract', TESS, ...manifestArgs, ...snapArgs], { windowsHide: true });

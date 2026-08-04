@@ -4481,6 +4481,18 @@ class ExtractionEngine:
                     _pre_s05 = self._snap(results)
                     self._remember_candidates('0.5_mapping', mapping_results)
                     for key, data in mapping_results.items():
+                        # MAPPER-HEAL CENSUS (2026-08-05, the every-step-trace arc): each
+                        # reconcile-family heal stamps a private `_heal` marker; the Slice-C
+                        # edge guard stamps its method suffix. ONE log line per fire makes
+                        # every heal countable from the process log (the scorer's HEAL_RE
+                        # census + SFDEV) — previously these healed silently (diag markers
+                        # only) and every arm's fire count read as zero. Marker popped so
+                        # the persisted result dict stays byte-identical.
+                        _heal = data.pop("_heal", None) if isinstance(data, dict) else None
+                        _meth = (data or {}).get("method", "")
+                        if _heal or _meth.endswith(("_edgegrow", "_edgecut")):
+                            self.log(f"  Stage 0.5 heal: {key} "
+                                     f"{_heal or _meth.rsplit('_', 1)[-1]} ({_meth})")
                         existing = results.get(key)
                         # An admin-drawn mapping (Settings → Templates → "Map a
                         # Field") is a deliberate, per-template correction —

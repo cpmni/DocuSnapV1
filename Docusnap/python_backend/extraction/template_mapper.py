@@ -791,6 +791,7 @@ def _pick_fuller_code(rigid_text, rigid_conf, inline_val, inline_conf, anchor, v
                     and not _format_rejects(stripped, field_key, format_lookup)):
                 healed = _mapping_result(stripped, True, False, False, anchor,
                                          val_type=val_type, geom=inline_geom)
+                healed["_heal"] = "edge_clean"   # census marker — engine logs + pops it
                 if inline_geom is not None:      # diag/preview mode only (A-C6): trace marker,
                     healed["edge_cleaned_from"] = rigid_text   # normal result dict byte-identical
                 return healed
@@ -799,7 +800,10 @@ def _pick_fuller_code(rigid_text, rigid_conf, inline_val, inline_conf, anchor, v
     # rigid-fuller) → C2a → conf race. Reordering silently restores either the α-variant
     # (dirty fragment+full-core committing clean @90) or the false-note class.
     if ni.endswith(na):
-        return _mapping_result(inline_val, True, False, False, anchor, val_type=val_type, geom=inline_geom)
+        _unclipped = _mapping_result(inline_val, True, False, False, anchor,
+                                     val_type=val_type, geom=inline_geom)
+        _unclipped["_heal"] = "unclip"           # census marker — engine logs + pops it
+        return _unclipped
     if na.endswith(ni):
         # Slice A2/C1 composite (gated): ALNUM label-tail fragment. Fragment must be a
         # case-insensitive suffix of the mapping's own anchor label tail; the remainder must
@@ -823,6 +827,7 @@ def _pick_fuller_code(rigid_text, rigid_conf, inline_val, inline_conf, anchor, v
                                 or (_consent == 'none' and len(_frag) == 1):
                             healed = _mapping_result(_stripped, True, False, False, anchor,
                                                      val_type=val_type, geom=inline_geom)
+                            healed["_heal"] = "frag_clean"       # census marker
                             if inline_geom is not None:          # diag-only trace marker
                                 healed["frag_cleaned_from"] = rigid_text
                             return healed
@@ -860,6 +865,7 @@ def _pick_fuller_code(rigid_text, rigid_conf, inline_val, inline_conf, anchor, v
         if _clip_decline is None:
             committed = _mapping_result(inline_val, True, False, False, anchor,
                                         val_type=val_type, geom=inline_geom)
+            committed["_heal"] = "clip_commit"                   # census marker
             if inline_geom is not None:                          # diag-only trace marker
                 committed["clip_committed_from"] = rigid_text
             return committed
@@ -867,6 +873,7 @@ def _pick_fuller_code(rigid_text, rigid_conf, inline_val, inline_conf, anchor, v
         return None
     flagged = _mapping_result(inline_val, True, False, False, anchor, shape_warn=True,
                               val_type=val_type, geom=inline_geom)
+    flagged["_heal"] = "inline_disagree_flag"                    # census marker
     if inline_geom is not None and _clip_decline:                # diag-only decline reason
         flagged["clip_decline"] = _clip_decline
     return flagged
