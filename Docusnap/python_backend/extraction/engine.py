@@ -238,6 +238,19 @@ UNIVERSAL_VERIFY_CENSUS  = os.environ.get('UNIVERSAL_VERIFY_CENSUS', '0') != '0'
 # numeric/text GT arm (Customer Doc Test corpus) exists. RESTORE alone arms ref+date (stage 2a).
 UNIVERSAL_VERIFY_NUMERIC = os.environ.get('UNIVERSAL_VERIFY_NUMERIC', '0') != '0'
 
+# NAME-UNCLIP reconcile (reggie design → Oracle SIGN-OFF-W/COND 2026-08-04 — docs/oracle_log.md).
+# The free-text complement of _reconcile_clipped_suffix (which SKIPS name-like fields): a Stage-0.5
+# mapping whose drawn box CUTS a name mid-token ('Kingfisher Print Stuc' — the sliced 'd' misreads
+# as 'c') commits @90 and silently beats two agreeing independent fuller reads. Heal post-merge from
+# the ledger under FIVE conditions (C0 scope · C1 keyword+crop token-IDENTICAL witnesses · C2 cut
+# fingerprint incl. Oracle's ONE edge-glyph substitution at the cut · C3 winner remnant page-ABSENT —
+# the load-bearing genuine-shorter-name guard · C4 adopt page-present · C5 name-quality no worse).
+# First sanctioned post-merge value-rewrite of a Stage-0.5 winner — justified SOLELY by C3
+# page-absence ("the teach fixed the position, not the value"). On lexicon-rich scopes Stage 4.5's
+# wordness note fires FIRST and this pass correctly STARVES to that flag (pinned — do not reorder).
+# Default OFF = byte-identical.
+NAME_UNCLIP_RECONCILE = os.environ.get('NAME_UNCLIP_RECONCILE', '0') != '0'
+
 
 def _late_rescue_applicable(s2_supplier, supplier_name):
     """Stage-2.6 gate (pure, unit-pinned): rescue ONLY when Stage 2 ran with NO supplier
@@ -1968,7 +1981,12 @@ class ExtractionEngine:
     def _override_eligible(incumbent: dict) -> bool:
         """A winner may be reconsidered ONLY if it is a generic/auto source — NEVER
         an authoritative ⊕ anchor, a Stage 0.5 located mapping/registration, or an
-        admin label. This is what preserves the committed precedence guarantees."""
+        admin label. This is what preserves the committed precedence guarantees.
+        ⚠ ONE named, predicate-bound carve-out exists OUTSIDE this gate (Oracle 2026-08-04):
+        _reconcile_name_truncation may rewrite a Stage-0.5 free-text winner's VALUE — justified
+        solely by C3 page-absence (the drawn box's remnant is provably not printed on the page)
+        + a keyword+crop token-identical witness pair. It is NOT precedent for broad Stage-0.5
+        rewrites; do not add exceptions here."""
         if incumbent.get('authoritative'):
             return False
         m = incumbent.get('method')
@@ -3472,6 +3490,97 @@ class ExtractionEngine:
                      f"'{wit_val}' ({wit.get('stage')}) — flagged for review")
         except Exception:
             pass   # advisory guard — must never break extraction
+
+    def _reconcile_name_truncation(self, results, field_defs, ocr_text):
+        """NAME-UNCLIP reconcile (see the NAME_UNCLIP_RECONCILE const block for the full design +
+        Oracle conditions). Post-merge, ledger-based, the free-text complement of
+        _reconcile_clipped_suffix. Adopts the fuller value KEEPING the winner's method/confidence
+        (the suffix-reconcile mold — the drawn box IS the suspect); silent (owner rule) — every
+        decline leaves today's behaviour byte-identical."""
+        if not NAME_UNCLIP_RECONCILE:
+            return
+        try:
+            from extraction import text_normalise as _tn
+            from extraction import name_match as _nm
+            type_by_key = {f.get('key'): (f.get('type') or '').lower() for f in (field_defs or [])}
+            for key, data in list(results.items()):
+                if key.startswith('_') or not isinstance(data, dict) or key == 'supplier_name':
+                    continue                                   # identity lane owns supplier_name
+                if not value_quality.is_name_like_field(key):
+                    continue
+                if type_by_key.get(key) not in (None, '', 'text', 'multiline_text'):
+                    continue
+                m = str(data.get('method') or '')
+                if not _is_stage05_located(m):
+                    continue                                   # the drawn-box lane EXACTLY
+                if str(data.get('validation_note') or '').strip() or data.get('was_corrected') \
+                        or data.get('corrected_to') or '+corrected' in m or '+snapped' in m:
+                    continue    # one voice per field: a 4.5 wordness/repair note starves the heal
+                wv = str(data.get('value') or '').strip()
+                if not wv or '\n' in wv:
+                    continue                                   # single-line scope (v1)
+                wtoks = [t for t in _tn.tokenise(wv) if _nm._is_content(t)]
+                if not wtoks:
+                    continue
+                # C1 — >=2 single-line ledger witnesses, token-IDENTICAL to each other (EXACT — no
+                # Levenshtein anywhere in this pass), covering BOTH the keyword AND crop families;
+                # the mapping FAMILY is excluded outright (Oracle cond. 3).
+                wit = []
+                for c in ((self._field_candidates or {}).get(key) or []):
+                    fam_t = _crosscheck_witness_bucket((c or {}).get('stage'), (c or {}).get('method'))
+                    if fam_t is None or fam_t[0] == 'mapping':
+                        continue
+                    v = str((c or {}).get('value') or '').strip()
+                    if not v or '\n' in v:
+                        continue
+                    toks = [t for t in _tn.tokenise(v) if _nm._is_content(t)]
+                    if toks:
+                        wit.append((fam_t[0], v, toks, int((c or {}).get('confidence') or 0)))
+                if len(wit) < 2 or any(w[2] != wit[0][2] for w in wit[1:]):
+                    continue
+                if not ({'keyword', 'crop'} <= {w[0] for w in wit}):
+                    continue
+                F = wit[0][2]
+                # C2 — the cut fingerprint: same token count, all but the last equal, last token a
+                # mid-token cut with remnant >=4. Oracle cond. 1 (the cut-glyph rule): a box that
+                # slices a glyph mid-stroke MISREADS it ('Stuc' — the sliced 'd' left-bowl reads
+                # 'c'; 'Studio'.startswith('Stuc') is False), so ONE edge-glyph substitution is
+                # tolerated AT THE CUT POSITION ONLY (clean prefix >=3 chars + fuller witness).
+                if len(wtoks) != len(F) or wtoks[:-1] != F[:-1]:
+                    continue
+                wl, fl = wtoks[-1], F[-1]
+                if wl == fl or len(wl) < 4:
+                    continue
+                if fl.startswith(wl):
+                    agree = wl
+                elif fl.startswith(wl[:-1]) and len(fl) > len(wl):
+                    agree = wl[:-1]                            # len(wl)>=4 => >=3 clean chars
+                else:
+                    continue
+                completion = fl[len(agree):]
+                if not completion or not completion.isalpha():
+                    continue                                   # digit completions refused
+                # C3 — the load-bearing genuine-shorter-name guard: a REAL short name is printed
+                # word-bounded on the page and defends itself; a cut remnant ('Stuc') never is.
+                if _uv_text_page_present(wv, ocr_text):
+                    continue
+                wit.sort(key=lambda w: (-w[3], w[1]))          # conf desc, value asc — deterministic
+                adopt = wit[0][1]
+                # C4 + C5 — the adopted value is page-present and no worse a name.
+                if not _uv_text_page_present(adopt, ocr_text):
+                    continue
+                if value_quality.name_quality(adopt) < value_quality.name_quality(wv):
+                    continue
+                healed = {**data, 'value': adopt, 'name_unclip_reconciled': True}
+                if 'display_value' in healed:
+                    healed['display_value'] = adopt
+                results[key] = healed
+                self._t('name_unclip', field=key, method=m,
+                        witness_fams=sorted({w[0] for w in wit}), **{'from': wv, 'to': adopt})
+                self.log(f"  Name-unclip reconcile: {key} '{wv}' (cut mapping box) -> '{adopt}' "
+                         f"(keyword+crop token-identical, remnant page-absent)")
+        except Exception:
+            pass   # advisory — must never break extraction
 
     def _uv_restore_demotion(self, key, tier, winner_val, alt_val, supplier_name,
                              document_slug, field_patterns, validation_patterns):
@@ -6203,6 +6312,10 @@ class ExtractionEngine:
         # expose it. Adopt-or-flag from the candidate ledger, no new OCR. BEFORE the
         # prefix-outlier guard so that guard judges the healed value.
         self._reconcile_clipped_suffix(results, field_defs, supplier_name, document_slug)
+        # NAME-UNCLIP (Oracle 2026-08-04): the free-text complement, immediately after its code
+        # sibling and before the S-C..D1 chain + the universal verify (which then judges the
+        # HEALED value — order load-bearing, pinned in test_name_unclip_reconcile.py).
+        self._reconcile_name_truncation(results, field_defs, ocr_text)
         # ORDER PINNED (Oracle 2026-08-01, tests/test_validation_pass_order.py): suffix-reconcile
         # -> S-C blind-geometry -> S-A date-in-ref -> prefix-outlier -> S-B length guard.
         # S-C before S-A is load-bearing: on the #141 class S-C adopts the witnesses' 'DN-24408'

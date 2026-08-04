@@ -150,6 +150,8 @@ function _reconcileEnv(db) {
     // clean commit (both dark until their composed gate).
     if (learning.getSetting(db, 'template_code_frag_clean', 'false') === 'true') env.TEMPLATE_CODE_FRAG_CLEAN = '1';
     if (learning.getSetting(db, 'template_clip_commit', 'false') === 'true') env.TEMPLATE_CLIP_COMMIT = '1';
+    // Name-unclip reconcile (Oracle 2026-08-04 — DARK until the customer-corpus name gate).
+    if (learning.getSetting(db, 'name_unclip_reconcile', 'false') === 'true') env.NAME_UNCLIP_RECONCILE = '1';
     return env;
   } catch { return {}; }
 }
