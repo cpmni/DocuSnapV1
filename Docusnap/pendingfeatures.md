@@ -43,6 +43,31 @@ checks). Census mode `UNIVERSAL_VERIFY_CENSUS`(+`_FILE`): 522-doc realdoc census
 
 ---
 
+## 2026-08-05 (late) — STRAIGHTEN ARC: election gate RED → pivot to CANONICAL LEVEL FRAME (next session #1)
+
+**Owner directive:** teach happens on straightened pages; customers run Straighten ON; taught
+templates must read ~100% at ≤2°. **Arc ran:** 007+gary convergent design → Oracle SIGN-OFF-W/COND
+→ `DESKEW_RAW_CROPS` election BUILT dark (`7d88dc4`, 18 pins — crop reads on RAW pages) → **gate
+RED** (dsk_off/dsk_on pair: refs +7 scanned but customer −24/issuer −5/date −5; per-doc diff =
+caption-grabs). ROOT TRUTH the gate exposed: stored teach coords live in the TEACH DOC'S OWN
+raw frame (θ_teach baked in) — they match NEITHER the deskewed sibling (off by θ_teach) NOR the
+raw sibling (off by θ_sib−θ_teach). Deskew's placement normalisation is LOAD-BEARING; the band
+probe proved correctly-placed deskewed crops READ FINE (the earlier "any rotation garbles"
+claim was overbroad — the pixel casualty is the full-page ~120-DPI locate, not placed crops).
+
+**THE PIVOT (Oracle review required before build):** ONE CANONICAL LEVEL FRAME — Review/target-
+teach works every time because box + pixels share the straightened frame end-to-end. Options:
+(a) teach saves LEVEL-frame coords + processing deskews to level (save-path change + legacy
+epoch/migration); (b) persist θ_teach per template/anchor, compose at read; (c) lazily re-detect
+the teach sample's angle via sample_document_id. Constraints: owner rule NO PIPELINE SHARING
+(display/teach rotation stays decoupled — pinned); `DESKEW_RAW_CROPS` + `DESKEW_SS_ROTATE` stay
+DARK (both gates red — keep the code, the election infra + angles threading get reused by the
+pivot). Evidence: out/customer_score_dsk_{off,on}.* · oracle_log 3 entries 2026-08-05 · the
+scorer's DESKEW=1 knob. **Chris test loop ready:** sandboxed reprocess of owner-trained docs
+only (no full sweep), read slices+logs — owner-approved scope.
+
+---
+
 ## 2026-08-05 — Jitter-crater REFRAMED (Oracle premise overturn): the crater is the absolute rung, not born-digital
 
 **Investigation (rung probe + armed rerun + wrong-answer classes + teach-anchor audit) overturned
