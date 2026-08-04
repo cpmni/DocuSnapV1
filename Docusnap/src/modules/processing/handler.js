@@ -466,9 +466,12 @@ function _healSampleAngles(db, allTemplates, logger) {
     if (!file || !fs.existsSync(file)) continue;
     try {
       const script = _pyHelpers.resourcePath('python_backend', 'ocr', 'detect_angle.py');
-      const p = spawn(_pyHelpers.pythonExe,
-                      [...(_pyHelpers.pythonArgs || []), script, '--file', file],
-                      { windowsHide: true });
+      // ctx.pythonExe / ctx.pythonArgs are FUNCTIONS in main.js (resolved per call —
+      // dev 'py -3.12' vs packaged vendor python). Spawning the function object throws
+      // silently — the 2026-08-05 live-heal no-op bug. Call them like every other site.
+      const exe = typeof _pyHelpers.pythonExe === 'function' ? _pyHelpers.pythonExe() : _pyHelpers.pythonExe;
+      const pargs = typeof _pyHelpers.pythonArgs === 'function' ? _pyHelpers.pythonArgs() : (_pyHelpers.pythonArgs || []);
+      const p = spawn(exe, [...pargs, script, '--file', file], { windowsHide: true });
       let out = '';
       p.stdout.on('data', (d2) => { out += d2; });
       p.on('close', () => {
@@ -481,8 +484,8 @@ function _healSampleAngles(db, allTemplates, logger) {
           }
         } catch { /* next serve retries only after app restart (session cache) */ }
       });
-      p.on('error', () => {});
-    } catch { /* fail-inert */ }
+      p.on('error', (e2) => { logger?.warn?.(`[training] angle-heal spawn failed (template ${t.id}): ${e2 && e2.message}`); });
+    } catch (e3) { logger?.warn?.(`[training] angle heal (template ${t.id}): ${e3 && e3.message}`); }
   }
 }
 
