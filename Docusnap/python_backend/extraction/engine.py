@@ -14,6 +14,7 @@ Usage:
   result = engine.extract(...)
 """
 
+import math
 import os
 import re
 import sys
@@ -270,6 +271,77 @@ try:
     DESKEW_RAW_CROP_MAX_ANGLE = float(os.environ.get('DESKEW_RAW_CROP_MAX_ANGLE', '2.0') or 2.0)
 except (TypeError, ValueError):
     DESKEW_RAW_CROP_MAX_ANGLE = 2.0
+
+
+# TEACH_ANGLE_COMPOSE — the CANONICAL LEVEL-FRAME pivot (Oracle SIGN-OFF-W/COND C1-C6,
+# 2026-08-05 late, docs/oracle_log.md). Stored teach coords (template mappings + landmarks)
+# live in the TEACH SAMPLE's raw frame with its tilt θ_t baked in (every teach surface
+# back-transforms display→raw on save via anchorLabel.deskewedNormToRaw: raw = C + R(+θ)·level,
+# sign empirically pinned). Under Straighten-ON processing the pages are deskewed to LEVEL, so
+# the coords are off by θ_t on every sibling — the caption-grab/cut-value class. COMPOSITION:
+# rotate COPIES of the source template's mapping/landmark boxes to the level frame by the exact
+# inverse, level = C + R(−θ_t)·(raw − C), in pixel space on the current page's W,H (expand=False
+# keeps dims identical across frames). Fires ONLY when: switch ON · the doc was DESKEWED
+# (raw_pages present — mode-level, NOT per-page: a below-floor/born-digital sibling is level and
+# still exposes the full θ_t error) · the SOURCE template (mapping_src — the borrowed sibling's,
+# never blindly the matched one; Oracle C2) carries a non-null angle ≥ the 0.2° floor · and
+# DESKEW_RAW_CROPS is OFF (C3 mutual exclusion — level coords on a raw tilted page would be a
+# third wrong frame; the election wins by explicit precedence). Stored rows NEVER mutated.
+# Default OFF (=1 arms); OFF = byte-identical. Pins: tests/test_teach_angle_compose.py.
+TEACH_ANGLE_COMPOSE = os.environ.get('TEACH_ANGLE_COMPOSE', '0') != '0'
+
+
+def _compose_box_to_level(x, y, w, h, theta_deg, W, H):
+    """Rotate one raw-frame box (page-norm) into the LEVEL frame: corners → pixel space →
+    level = C + R(−θ)·(p − C) (the proven-sign inverse of deskewedNormToRaw) → AABB →
+    renormalise → clamp. Pure; returns (x, y, w, h)."""
+    th = math.radians(theta_deg)
+    c, s = math.cos(th), math.sin(th)
+    cx, cy = W / 2.0, H / 2.0
+    pts = []
+    for px_n, py_n in ((x, y), (x + w, y), (x, y + h), (x + w, y + h)):
+        px, py = px_n * W - cx, py_n * H - cy
+        pts.append((cx + c * px + s * py, cy - s * px + c * py))
+    x1 = max(0.0, min(p[0] for p in pts)) / W
+    x2 = min(float(W), max(p[0] for p in pts)) / W
+    y1 = max(0.0, min(p[1] for p in pts)) / H
+    y2 = min(float(H), max(p[1] for p in pts)) / H
+    return (x1, y1, max(0.0, x2 - x1), max(0.0, y2 - y1))
+
+
+def _compose_mappings_to_level(mappings, theta_deg, W, H):
+    """COPIES of the mapping rows with anchor+target boxes composed to the level frame."""
+    out = []
+    for m in (mappings or []):
+        m2 = dict(m)
+        for pre in ("anchor", "target"):
+            try:
+                bx = float(m[f"{pre}_x_norm"]); by = float(m[f"{pre}_y_norm"])
+                bw = float(m[f"{pre}_w_norm"]); bh = float(m[f"{pre}_h_norm"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            nx, ny, nw, nh = _compose_box_to_level(bx, by, bw, bh, theta_deg, W, H)
+            m2[f"{pre}_x_norm"] = nx; m2[f"{pre}_y_norm"] = ny
+            m2[f"{pre}_w_norm"] = nw; m2[f"{pre}_h_norm"] = nh
+        out.append(m2)
+    return out
+
+
+def _compose_landmarks_to_level(landmarks, theta_deg, W, H):
+    """COPIES of the landmark rows composed to the level frame (same transform)."""
+    out = []
+    for lm in (landmarks or []):
+        l2 = dict(lm)
+        try:
+            bx = float(lm["x_norm"]); by = float(lm["y_norm"])
+            bw = float(lm["w_norm"]); bh = float(lm["h_norm"])
+        except (KeyError, TypeError, ValueError):
+            out.append(l2)
+            continue
+        nx, ny, nw, nh = _compose_box_to_level(bx, by, bw, bh, theta_deg, W, H)
+        l2["x_norm"] = nx; l2["y_norm"] = ny; l2["w_norm"] = nw; l2["h_norm"] = nh
+        out.append(l2)
+    return out
 
 
 def _elect_crop_pages(page_images, raw_pages, deskew_angles):
@@ -4513,6 +4585,24 @@ class ExtractionEngine:
                     # registers this page against). Inert unless that template has
                     # landmarks AND registration is enabled.
                     _landmarks = (mapping_src or matched_tmpl).get("landmarks") or []
+                    # TEACH_ANGLE_COMPOSE (see the flag block): compose the SOURCE template's
+                    # teach-frame boxes to the LEVEL frame this deskewed doc is in. Angle comes
+                    # from mapping_src (the borrowed sibling's sample tilt, Oracle C2), never
+                    # blindly the matched template's. C3: the raw-crop election wins if both on.
+                    if (TEACH_ANGLE_COMPOSE and not DESKEW_RAW_CROPS
+                            and raw_pages and tmpl_mappings):
+                        _src_t = (mapping_src or matched_tmpl) or {}
+                        _theta = _src_t.get("sample_deskew_angle")
+                        try:
+                            _theta = float(_theta) if _theta is not None else None
+                        except (TypeError, ValueError):
+                            _theta = None
+                        if _theta is not None and abs(_theta) >= 0.2:
+                            _W, _H = crop_pages[0].size
+                            tmpl_mappings = _compose_mappings_to_level(tmpl_mappings, _theta, _W, _H)
+                            _landmarks = _compose_landmarks_to_level(_landmarks, _theta, _W, _H)
+                            self.log(f"  Stage 0.5: composed {len(tmpl_mappings)} mapping(s) "
+                                     f"teach-frame -> level (sample tilt {_theta:.2f} deg)")
                     mapping_results = template_mapper.extract_with_mappings(
                         crop_pages, tmpl_mappings,
                         field_patterns=field_patterns,

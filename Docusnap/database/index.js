@@ -1185,6 +1185,24 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 57 applied: documents.confirmed_via (NULL = human/legacy; scope-sweep confirms excluded from trust graduation)');
   }
 
+  // Migration 58 (TEACH_ANGLE_COMPOSE, Oracle SIGN-OFF-W/COND 2026-08-05 late — the canonical
+  // level-frame pivot): templates.sample_deskew_angle — the pinned SAMPLE doc's detected skew
+  // angle (degrees, detect_skew_angle's PIL-CCW convention). Stored teach coords live in the
+  // sample's RAW frame with this tilt baked in; under Straighten-ON processing the engine
+  // composes mapping/landmark COPIES to the level frame by rotating by -angle. NULL = never
+  // detected (no composition — today's behaviour); 0.0 = detected level (so level samples
+  // never re-spawn detection). Healed lazily at buildTrainingArgs when the kill switch is on.
+  // NOTE: values are DETECTED, not ground truth — if detect_skew_angle's algorithm is re-tuned,
+  // healed angles for old teaches drift with it (sub-floor concern; re-heal by NULLing).
+  if (!applied.has(58)) {
+    if (tableExists(db, 'templates') && !hasColumn(db, 'templates', 'sample_deskew_angle')) {
+      try { db.exec('ALTER TABLE templates ADD COLUMN sample_deskew_angle REAL'); }
+      catch (e) { console.warn(`  migration 58 sample_deskew_angle: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (58)').run();
+    console.log('JS migration 58 applied: templates.sample_deskew_angle (teach-frame tilt for level-frame composition; NULL-inert)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

@@ -442,6 +442,47 @@ function mergeReextractRows(existing, newExtractions, anchoredKeys = new Set(), 
   return suggestions;
 }
 
+// TEACH_ANGLE_COMPOSE lazy sample-angle heal (Oracle C4). Fire-and-forget: detects the pinned
+// sample's skew ONCE per template and stores it (0.0 = level, so level samples never re-spawn).
+// Session-scoped attempt cache: a gone/unreadable sample file never spawns twice per app run.
+const _angleHealTried = new Set();
+function _healSampleAngles(db, allTemplates, logger) {
+  if (!_pyHelpers || !_pyHelpers.pythonExe) return;
+  const { spawn } = require('child_process');
+  const fs = require('fs');
+  for (const t of allTemplates) {
+    if (!t || t.sample_deskew_angle != null || !t.sample_document_id) continue;
+    if (_angleHealTried.has(t.id)) continue;
+    _angleHealTried.add(t.id);
+    let file = null;
+    try {
+      const d = db.prepare('SELECT working_path, stored_path FROM documents WHERE id = ?')
+                  .get(t.sample_document_id);
+      file = (d && (d.working_path || d.stored_path)) || null;
+    } catch { file = null; }
+    if (!file || !fs.existsSync(file)) continue;
+    try {
+      const script = _pyHelpers.resourcePath('python_backend', 'ocr', 'detect_angle.py');
+      const p = spawn(_pyHelpers.pythonExe,
+                      [...(_pyHelpers.pythonArgs || []), script, '--file', file],
+                      { windowsHide: true });
+      let out = '';
+      p.stdout.on('data', (d2) => { out += d2; });
+      p.on('close', () => {
+        try {
+          const r = JSON.parse(out.trim());
+          if (r && typeof r.angle === 'number' && isFinite(r.angle)) {
+            db.prepare('UPDATE templates SET sample_deskew_angle = ? WHERE id = ?')
+              .run(r.angle, t.id);
+            logger?.log?.(`[training] sample angle healed: template ${t.id} = ${r.angle.toFixed(2)} deg`);
+          }
+        } catch { /* next serve retries only after app restart (session cache) */ }
+      });
+      p.on('error', () => {});
+    } catch { /* fail-inert */ }
+  }
+}
+
 function buildTrainingArgs(db, configPath, logger = null) {
   const docTypes  = require('../../../database/modules/document_types');
   const learning  = require('../../../database/modules/learning');
@@ -454,6 +495,15 @@ function buildTrainingArgs(db, configPath, logger = null) {
   const allAnchors   = learning.getAllAnchors(db);
   const allLogos     = learning.getAllLogos(db);
   const allTemplates = templates.getAll(db);
+  // TEACH_ANGLE_COMPOSE lazy heal (Oracle C4, 2026-08-05 late): templates with a pinned
+  // sample but no detected sample_deskew_angle get it detected ONCE (fire-and-forget spawn,
+  // never blocks the batch — THIS run serves the NULL and composes nothing, the NEXT run has
+  // the healed angle). Gated on the kill switch so the dark slice is byte-identical incl.
+  // zero spawns/writes. Renders the WORKING file (post-auto-rotate — the frame every teach
+  // surface drew on). Stores 0.0 for a level sample (NULL = only never/failed detection).
+  if (process.env.TEACH_ANGLE_COMPOSE === '1') {
+    try { _healSampleAngles(db, allTemplates, logger); } catch (e) { logger?.warn?.(`[training] angle heal: ${e && e.message}`); }
+  }
   // Format model is the source of the qualification gate. The catch was SILENT,
   // which hid the cause when 0 formats reach the extractor despite many confirms
   // — log a throw (so a real failure is visible) and the resulting group count.
@@ -702,7 +752,7 @@ function register(ctx) {
   const { ipcMain, getDb, pythonExe, pythonArgs, tesseractPath,
           backendScript, configPath, notifyMainWindow, notifyDevInspector,
           notifyReview, safeSend, spawn, path, fs, logger } = ctx;
-  _pyHelpers = { pythonExe, pythonArgs, backendScript };
+  _pyHelpers = { pythonExe, pythonArgs, backendScript, resourcePath: ctx.resourcePath };
   _notifyAll = ctx.notifyAllWindows;   // broadcast import/watch activity to Review (see _broadcastActivity)
 
   // Warm OCR worker POOL (draw-tool UX plan Slice 2) — configured once; the ocr-region(-boxes)

@@ -100,11 +100,15 @@ async function main() {
   if (TEACH) {
     const pairs = {};
     for (const e of sampled) (pairs[`${e.issuer}|${e.type_slug}`] = true);
+    // TEACH_SCANNED=1: teach on the SCANNED (tilted, ±1.6°) manually-confirmed sample — the
+    // owner's real workflow and the faithful θ_t≠0 gate for TEACH_ANGLE_COMPOSE (the digital
+    // teach docs are level, θ_t≈0, blind to the composition). Default = digital (unchanged).
+    const TEACH_REND = process.env.TEACH_SCANNED === '1' ? 'scan' : 'digital';
     const teachDocs = {};
-    for (const e of gt) {                          // teach doc = digital + "manually confirmed"
+    for (const e of gt) {                          // teach doc = TEACH_REND + "manually confirmed"
       const k = `${e.issuer}|${e.type_slug}`;
       if (!pairs[k] || teachDocs[k]) continue;
-      if (String(e.rendition || '').toLowerCase().startsWith('digital')
+      if (String(e.rendition || '').toLowerCase().startsWith(TEACH_REND)
           && /manually confirmed/i.test(e.file)) teachDocs[k] = e;
     }
     const teachOne = ([k, e]) => new Promise(res => {
@@ -133,9 +137,13 @@ async function main() {
     for (const [k, e, res] of taught) {
       if (!res || !res.mappings || !res.mappings.length) continue;
       const dt = dts.find(d => d.slug === e.type_slug); if (!dt) continue;
-      const info = db.prepare(`INSERT INTO templates (name, slug, document_type_slug, confirmed_count)
-                               VALUES (?, ?, ?, 3)`)
-        .run(e.issuer, `ccs_${k.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`, e.type_slug);
+      // sample_deskew_angle = the DETECTED tilt of the teach render (teach_from_gt emits it —
+      // Oracle C5: detection error is part of the system under test, never the synthetic tilt).
+      const info = db.prepare(`INSERT INTO templates (name, slug, document_type_slug, confirmed_count,
+                                                      sample_deskew_angle)
+                               VALUES (?, ?, ?, 3, ?)`)
+        .run(e.issuer, `ccs_${k.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`, e.type_slug,
+             (typeof res.sample_angle === 'number' ? res.sample_angle : null));
       const tid = info.lastInsertRowid;
       const typeByKey = {}; for (const f of dt.fields) typeByKey[f.key] = (f.type || '').toLowerCase();
       const OCR_TYPE = { date: 'date', currency: 'currency', number: 'currency',

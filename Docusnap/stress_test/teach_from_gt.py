@@ -14,6 +14,7 @@ Pure/deterministic; page-norm coords; never writes anywhere.
 """
 import argparse
 import json
+import os
 import re
 import sys
 
@@ -28,13 +29,24 @@ def norm(s):
     return "".join(c for c in str(s or "") if c.isalnum()).upper()
 
 
-def words_from_page(pdf_path, tesseract):
+def words_from_page(pdf_path, tesseract, angle_out=None):
     pytesseract.pytesseract.tesseract_cmd = tesseract
     doc = pdfium.PdfDocument(pdf_path)
     page = doc[0]
     bmp = page.render(scale=SCALE)
     img = bmp.to_pil()
     W, H = img.size
+    # TEACH_SCANNED parity (Oracle C5, 2026-08-05): the DETECTED skew of the teach sample —
+    # exactly what the app's lazy heal will store (detection error is part of the system
+    # under test; never the generator's synthetic ground-truth tilt).
+    if angle_out is not None:
+        try:
+            sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), "python_backend"))
+            from ocr.tesseract import detect_skew_angle
+            angle_out.append(float(detect_skew_angle(img, 0.2)))
+        except Exception:
+            angle_out.append(None)
     data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
     out = []
     for i in range(len(data["text"])):
@@ -164,7 +176,8 @@ def main():
     ap.add_argument("--tesseract", required=True)
     args = ap.parse_args()
     job = json.load(open(args.job, encoding="utf-8"))
-    words = words_from_page(job["pdf"], args.tesseract)
+    _angle = []
+    words = words_from_page(job["pdf"], args.tesseract, angle_out=_angle)
     rows = rows_of(words)
     # The teach doc's own GT values — a label candidate must never BE one of these
     # (value-as-label poisons every label-anchored heal on sibling docs).
@@ -186,7 +199,8 @@ def main():
             anchor_text = None
         mappings.append({"field_key": key, "anchor_text": anchor_text,
                          "anchor": anchor, "target": target})
-    print(json.dumps({"mappings": mappings, "misses": misses}))
+    print(json.dumps({"mappings": mappings, "misses": misses,
+                      "sample_angle": (_angle[0] if _angle else None)}))
 
 
 if __name__ == "__main__":
