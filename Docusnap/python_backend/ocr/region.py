@@ -122,8 +122,11 @@ def main():
             return
         try:
             orig = Image.open(args.image_file)                      # native mode (not the greyscale copy)
-            fill = 255 if orig.mode in ('L', '1') else (255, 255, 255)
-            rot  = orig.rotate(angle, expand=False, fillcolor=fill, resample=Image.BICUBIC)
+            # ONE rotation implementation (Oracle C1, 2026-08-05): this private duplicate rotate
+            # used to diverge from the pipeline's — post-S1 the operator would have validated a
+            # straightened display the pipeline never reads. Route through the shared helper.
+            from ocr.tesseract import _apply_skew_rotation
+            rot  = _apply_skew_rotation(orig, angle)
             buf  = BytesIO(); rot.save(buf, format='PNG')
             print(json.dumps({"angle": round(angle, 2),
                               "image": _b64.b64encode(buf.getvalue()).decode('ascii')}), end='', flush=True)

@@ -363,14 +363,41 @@ def detect_skew_angle(img: Image.Image, min_angle: float = 0.2) -> float:
     return best if abs(best) >= max(0.2, min_angle) else 0.0
 
 
+# S1 DESKEW_SS_ROTATE (007 + Oracle SIGN-OFF-W/COND C1-C5, 2026-08-05 — docs/oracle_log.md).
+# A single BICUBIC rotate at render resolution DEGRADES marginal-resolution print: on a
+# 150-DPI-native scan an ~8pt glyph has 1-2px strokes, the rotation's subpixel phase varies
+# across the page (strokes alternately thin/thicken) and BICUBIC's negative lobes add halos —
+# probe-proven on live doc 561 ('Delivery Note No. DN-98447' reads PERFECTLY raw, garbles to
+# 'Dobrery/Not/Ne:/DN/er!' after its own +1.9° deskew). Supersample 2× (LANCZOS) → rotate →
+# downsample to the ORIGINAL size (LANCZOS): geometrically IDENTICAL (same centre/angle/output
+# size/mode — zero coordinate impact anywhere), only the pixels get the anti-aliased rotation.
+# C2: pages beyond the megapixel clamp keep the single-resample path (transient supersample
+# memory ~4× — an A4@300 is ~9MP, the clamp only trips on outliers).
+# DEFAULT OFF (=1 arms): the doc-561 probe REFUTED the interpolation hypothesis — the
+# supersampled rotation garbles the same header the same way, so the degradation is NOT the
+# resample quality (suspect: the scan's noise field smearing into strokes under ANY rotation;
+# raw+tilted reads perfectly because Tesseract self-tolerates <=~2°). Oracle C5: default ON
+# only after the C4 gate is green — it is not. The Oracle-banked S4 (raw-preferring frame
+# election) / read-path angle floor now carry the evidence bar instead.
+_SS_ROTATE_ON = os.environ.get('DESKEW_SS_ROTATE', '0') != '0'
+_SS_ROTATE_MAX_PIXELS = 24_000_000   # ~A3 @ 300 DPI; beyond this the 4× transient is unreasonable
+
+
 def _apply_skew_rotation(img: Image.Image, angle: float) -> Image.Image:
     """Rotate `img` by a PRE-DETECTED skew `angle` (PIL CCW-positive), or return it UNCHANGED when
     angle is 0.0 (a below-floor page). Factored out of `_deskew` so a caller can detect the angle
-    ONCE (to decide fast-path cache reuse) and apply it here without a second projection sweep —
-    the rotation is byte-identical to `_deskew`'s (same white fill + BICUBIC resample)."""
+    ONCE (to decide fast-path cache reuse) and apply it here without a second projection sweep.
+    ONE rotation implementation for the whole system (Oracle C1): the pipeline, the Review display
+    deskew and the teach window's straightened render all route through here, so the operator
+    always validates against the SAME pixels the pipeline reads."""
     if not angle:
         return img  # no meaningful skew — identical pixels, so an OCR read would be unchanged
-    fill = 255 if img.mode == 'L' else (255, 255, 255)
+    fill = 255 if img.mode in ('L', '1') else (255, 255, 255)   # ('1' parity — region.py callers)
+    w, h = img.size
+    if _SS_ROTATE_ON and 0 < w * h <= _SS_ROTATE_MAX_PIXELS:
+        big = img.resize((w * 2, h * 2), Image.LANCZOS)
+        big = big.rotate(angle, expand=False, fillcolor=fill, resample=Image.BICUBIC)
+        return big.resize((w, h), Image.LANCZOS)
     return img.rotate(angle, expand=False, fillcolor=fill, resample=Image.BICUBIC)
 
 
@@ -440,6 +467,7 @@ def extract_text_and_images(
     deskew_min_angle: float = 0.2,
     raw_pages_out: list | None = None,
     page0_words_out: dict | None = None,
+    deskew_angles_out: list | None = None,
 ) -> tuple[str, list[Image.Image]]:
     """
     Extract OCR text from a document file.
@@ -567,6 +595,8 @@ def extract_text_and_images(
                 if _angle:
                     img = _apply_skew_rotation(img, _angle)
                     any_scanned_tilted = True
+                if deskew_angles_out is not None:
+                    deskew_angles_out.append(_angle)   # per-page applied angle (0.0 = untouched) — SFDEV/raw-witness observability
                 if deskew_pages and raw_pages_out is not None:
                     raw_pages_out.append(raw_img)   # parallel to pages (raw==img on a born-digital / level page)
                 pages.append(img)
@@ -624,6 +654,8 @@ def extract_text_and_images(
         _angle = detect_skew_angle(img, deskew_min_angle) if deskew_pages else 0.0
         if _angle:
             img = _apply_skew_rotation(img, _angle)
+        if deskew_angles_out is not None:
+            deskew_angles_out.append(_angle)   # per-page applied angle — parity with the PDF path
         if deskew_pages and raw_pages_out is not None:
             raw_pages_out.append(raw_img)
         pages = [img]

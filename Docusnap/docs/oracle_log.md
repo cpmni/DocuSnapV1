@@ -503,3 +503,31 @@ skip). FINAL GATES: clean t300s→t300c3 ZERO True→False + 21 pure heals (ref 
 (dark baselines 12.5/19.6 · 3.6/26.8 · 14.3 · 0/57) · left-jitter j120L3 ref 69.6/62.5 (was
 3.6/17.9) · realdoc 543-doc baseline==armed on every axis (ref 95.6, date 99.3, silent 14==14,
 wrong-auto-file 11==11 standing, M_type 0). Switches DARK pending settings-bridge + owner flip.
+
+## 2026-08-05 (later) — Deskew degradation: S1/S2 vet + the same-day REFUTATION
+
+**Consensus in (007):** live doc 561 reads its taught box perfectly RAW but garbles after its own
++1.9° deskew; root-cause hypothesis = third-resample phase erosion + BICUBIC ringing; slices S1
+supersample-rotate (4 lines, geometry-identical) · S2 raw-frame witness extension to template
+methods · S3 pdfium matrix render (reserve) · S4 raw-preferring frame election (bank dark).
+
+**Oracle verdict:** S1 SIGN OFF W/COND C1-C5 (C1 = region.py's private duplicate rotate must route
+through the shared helper — the "operator validates pixels the pipeline never reads" seam; C2
+megapixel clamp; C5 default ON only after the C4 gate) · S2 SEND BACK w/ revival bar + preapproved
+C6-C10 (method-name authority: adopted method must stay startswith template_mapping; note
+whitelist exact _EDGE_CUT_NOTE; the THIRD teach surface — the teach window's own Straighten —
+named + pinned) · S3 reserve · S4 do-nothing. Corrected 007 twice: THREE deskew-aware teach
+surfaces not two; "display shares the helper" was FALSE (region.py:126 private rotate).
+
+**Outcome — H REFUTED same session:** S1 built (shared helper + region.py C1 unification +
+deskew_angles_out + 11 pins incl. the analytic SIGN pin, tests/test_deskew_ss_rotate.py) and
+probed on doc 561: the supersampled rotation garbles the SAME header the SAME way ('Demers/Nene/
+Nes/DEOL'). The degradation is NOT interpolation quality — suspect #1 is the scan's noise field
+smearing into strokes under ANY rotation (raw+tilted reads perfectly; Tesseract self-tolerates
+≤~2°). Per C5, DESKEW_SS_ROTATE ships DEFAULT OFF; the C1 unification stays (behaviour-identical
+with SS off). The S4 raw-preferring election / read-path angle floor now hold the evidence bar —
+next arc's charter, NOT built. Owner interim: Straighten-all OFF on the affected batches.
+
+**Added value? YES** — C1 caught a real divergence seam (owner would have validated teach reads
+against display pixels the pipeline never sees), and the falsifiable-gate discipline (his C4/C5)
+is exactly what caught the refutation before a default-ON ship.
