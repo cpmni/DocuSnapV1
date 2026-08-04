@@ -21,7 +21,21 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-08-05 wrap) — jitter-crater arc CLOSED (A/B/C/D dark, gates green); NEXT = settings-bridge + owner flip
+## Current session state (2026-08-05 FINAL) — jitter-crater CLOSED + Straighten arc: gate RED, pivot chartered
+**LATE UPDATE (read `HANDOVER_2026-08-05.md` ADDENDUM + pendingfeatures 2026-08-05-late FIRST):**
+the owner-directed STRAIGHTEN ARC ran after the wrap below. `DESKEW_RAW_CROPS` election built dark
+(`7d88dc4`) → **gate RED** (customer −24 scanned — caption-grabs; stored teach coords carry the
+TEACH doc's own tilt; deskew's placement normalisation is LOAD-BEARING). **NEXT SESSION #1 = the
+CANONICAL LEVEL FRAME pivot** (Review works because box+pixels share the straightened frame
+end-to-end; options a/b/c in pendingfeatures; Oracle review required). Owner rules: NO PIPELINE
+SHARING (display/teach rotation decoupled — pinned) · Chris scope = sandbox-reprocess owner-trained
+docs ONLY, Claude reads slices/logs. Dark + gate-red: DESKEW_RAW_CROPS, DESKEW_SS_ROTATE (keep the
+code — election infra + angles threading are the pivot's building blocks). Settings bridge for the
+jitter-crater trio SHIPPED (`79edd7c`); live fixes during owner testing: edge-guard witness scope
+(`db45373`) + keyword caption-strip (`5671043`) + heal census (`3b37228`) + customer-GT lane w/
+NAME_UNCLIP negative evidence (`ecdafa7`). HEAD `2810ce2`.
+
+## Prior wrap (2026-08-05 day) — jitter-crater arc CLOSED (A/B/C/D dark, gates green); settings-bridge + owner flip
 **2026-08-05 (Fable 5, autonomous). Commits `b63bd86`·`8f631b8`·`2ddd5fa`·`fafd8b4`, PUSHED. READ
 `HANDOVER_2026-08-05.md` FIRST.** The 08-04 born-digital charter was OVERTURNED (Oracle UPHELD,
 `docs/oracle_log.md` 2026-08-05): the crater = ABSOLUTE-RUNG CLIPPED-CLEAN-READ COMMITS (cut
