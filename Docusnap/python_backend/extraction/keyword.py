@@ -962,6 +962,19 @@ def extract_fields(ocr_text: str, field_keys: list[str],
                 # seeded ref fields hit this (role_caption='ref'); shipped patterns are byte-identical.
                 value = re.sub(r'^(?:(?:no|number|nº)\b\.?|#)\s*', '', value, flags=re.I)
                 value = re.sub(r'^[.\s:|\-–]+', '', value).strip()
+            elif value and fp.get("validation") in ('alphanumeric', 'reference_code', 'date'):
+                # CAPTION-PUNCTUATION debris on ANY structured read (owner live report
+                # 2026-08-05 — the Larkspur '. DN-98447' class): a label list carries both the
+                # dotless and dotted caption forms ('Delivery Note No' before 'Delivery Note
+                # No.'), the dotless form matches first against the printed 'Delivery Note No.
+                # DN-98447', and the caption's own '. ' rides into the committed value — on
+                # shipped, seeded AND override labels alike. No structured value can
+                # legitimately BEGIN with caption punctuation (each validator requires an
+                # alnum start), so strip the leading run. Deliberately NOT the seeded path's
+                # 'No/Number' token strip — that would mangle a genuine 'NO-1234' code; the
+                # punctuation-only strip cannot (it stops at the first alnum). Free-text and
+                # currency reads are byte-identical.
+                value = re.sub(r'^[.\s:|\-–]+', '', value).strip()
             if not value or len(value.strip()) < 1:
                 continue
 
