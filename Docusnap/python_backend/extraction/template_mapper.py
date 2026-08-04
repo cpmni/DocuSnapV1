@@ -1233,6 +1233,7 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
     # path) and BEFORE the inline reconcile (a clean heal rewrites the rigid SURFACE;
     # the reconcile's independent inline witness then arbitrates the corrected read).
     _edge_healed = False
+    _edge_suspect = False
     if _ABS_EDGE_GUARD_ON and val_type in _SNAP_VAL_TYPES:
         _eg = _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text,
                               val_type, field_key, ocr_lines_fn, ocr_text_fn,
@@ -1246,6 +1247,11 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
                 abs_text, _abs_meta['conf'] = _eg["rewrite"]
                 abs_salvaged = False
                 _edge_healed = True
+            elif "defer_cap" in _eg:
+                # Heal refused/incomplete: keep the FULL flow (the inline reconcile is the
+                # independent witness that heals exactly this class) — only the final abs
+                # commit wears the cap + note, and only if nothing else healed first.
+                _edge_suspect = True
             else:
                 return _eg["result"]
     # ── INLINE CODE RECONCILE (single-token code, taught inline) — DARK ──────────
@@ -1276,6 +1282,12 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
                              geom=_box_list(target_box) if slice_capture else None)
         if _edge_healed:
             _r["method"] += "_edgegrow"      # SFDEV every-step-trace visibility (Slice C heal)
+        elif _edge_suspect:
+            # Deferred fail-toward-review floor: nothing healed the cut-evidence read —
+            # it may not commit silently at 78-90 any more.
+            _r["confidence"] = min(_r["confidence"], 70)
+            _r["method"] += "_edgecut"
+            _r["validation_note"] = _EDGE_CUT_NOTE
         return _r
 
     # ── SINGLE-LABEL LOCAL REFINEMENT (anchor + stored offset) — PREFERRED ──────
@@ -1595,6 +1607,19 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
       {'result': <mapping dict>}   — commit directly (grown-but-unproven FLAGGED, or the
                                      capped '_edgecut' fail-toward-review floor).
     The STORED mapping is never touched — only this read's crop grows (C-C3)."""
+    # A COMPLETE 4-digit-year date is never a partial: when the abs read CONTAINS one
+    # (even junk-wrapped — 'TE 13-02-2026', Stage-4 normalise handles the junk), an edge
+    # overhang is word-box overshoot noise (H3) and a grown re-read of noisier ink can
+    # only corrupt it ('13-02-2026' -> '13-02-2096' — observed on the scanned clean arm).
+    # A clean 2-digit-year read does NOT skip: it may be a cut 4-digit year (the pinned
+    # Slice-B trade-off) — geometry is exactly the judge there. Codes have no
+    # completeness test — their witness + consent ladder carries them.
+    if val_type == 'date' and abs_text and not _date_clip_suspect(abs_text):
+        m4 = None
+        for m4 in _DATE_CLIP_NUMERIC.finditer(str(abs_text)):
+            pass
+        if m4 is not None and len(m4.group(3)) == 4:
+            return None
     lines = _page_words_cached(page, ocr_lines_fn, line_cache)
     if not lines:
         return None                                   # no geometry -> byte-identical (fail-inert)
@@ -1604,17 +1629,14 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
         return None
 
     def _floor():
-        """Fail-toward-review: the edge-through-ink evidence stands even when the heal
-        could not complete — a partial may no longer commit silently at 78-90."""
+        """Fail-toward-review, but NEVER pre-empt a later heal: the caller keeps its full
+        flow (inline reconcile — the independent witness that heals exactly this class —
+        then the commit), and only the FINAL abs commit wears the cap + note. Returning a
+        result here amputated the reconcile and turned healable partials into capped
+        partials on the clean arm ('PP-808' -> 'QPP-8083' class) — the deferred-cap
+        contract is what the t300s->t300c diff bought."""
         _EDGE_GUARD_FIRES.append((field_key, _edges, 'capped'))
-        if not abs_text:
-            return None                               # nothing committed today either -> ladder
-        r = _mapping_result(abs_text, has_label, abs_expanded, False,
-                            anchor_name or field_key, val_type=val_type)
-        r["confidence"] = min(r["confidence"], 70)
-        r["method"] += "_edgecut"
-        r["validation_note"] = _EDGE_CUT_NOTE
-        return {"result": r}
+        return {"defer_cap": True} if abs_text else None
 
     _edges = ('L' if left_cut is not None else '') + ('R' if right_cut is not None else '')
     pad = 0.004
@@ -1643,21 +1665,61 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
                                 format_lookup, shape_mode='ignore', ocr_conf=_gmeta.get('conf'))
     if not gv or g_salv:
         return _floor()                               # a salvaged grow is not a proven heal
-    # Per-type comparator — the cut fragment's LAST glyph is untrusted (a cut 'P' reads 'F'),
-    # so prefix discipline allows exactly one trailing-glyph drop; anything else is a
-    # different value (a neighbouring column) -> the floor, never a silent swap.
+    # Per-type, EDGE-DIRECTIONAL comparator — the cut fragment's edge glyph is untrusted
+    # (a half-cut 'C' reads '5'), so the discipline mirrors the cut: a RIGHT cut leaves a
+    # PREFIX of the truth (allow one trailing-glyph drop), a LEFT cut leaves a SUFFIX
+    # (allow one leading-glyph drop), both cut -> containment with one slack glyph each
+    # side. Anything else is a different value (a neighbouring column) -> the floor,
+    # never a silent swap. (The first build was prefix-only — it refused the perfect
+    # left-cut heal '5S-1108' -> 'CSS-1108' and cratered the j120L arm.)
+    def _frag_matches(old, new):
+        if not old:
+            return False
+        variants = [old]
+        if len(old) > 1:
+            if right_cut is not None:
+                variants.append(old[:-1])             # untrusted trailing glyph
+            if left_cut is not None:
+                variants.append(old[1:])              # untrusted leading glyph
+            if left_cut is not None and right_cut is not None:
+                variants.append(old[1:-1] if len(old) > 2 else old)
+        for v in variants:
+            if not v:
+                continue
+            if right_cut is not None and left_cut is None and new.startswith(v):
+                return True
+            if left_cut is not None and right_cut is None and new.endswith(v):
+                return True
+            if left_cut is not None and right_cut is not None and v in new:
+                return True
+        return False
+
     if abs_text:
         if val_type == 'date':
             do = re.sub(r'[^0-9]', '', _strip_code_edges(str(abs_text)))
             dn = re.sub(r'[^0-9]', '', str(gv))
-            if not (do and (dn.startswith(do) or (len(do) > 1 and dn.startswith(do[:-1])))):
+            if not (do and len(dn) > len(do) - 1 and _frag_matches(do, dn)):
                 return _floor()
         else:
             co = _code_norm(_strip_code_edges(str(abs_text)))
             cn = _code_norm(_strip_code_edges(str(gv)))
-            if not (co and len(cn) > len(co) - 1
-                    and (cn.startswith(co) or (len(co) > 1 and cn.startswith(co[:-1])))):
+            if not (co and len(cn) > len(co) - 1 and _frag_matches(co, cn)):
                 return _floor()
+    # INDEPENDENT-WITNESS corroboration (the owner kernel rule: a heal files without
+    # review only when corroborated by an independent-GEOMETRY read): the locate-pass
+    # word text (~120-DPI recipe) is a different OCR tier from the full-res ladder that
+    # produced `gv` — every cut word's own text must be CONTAINED in the grown value,
+    # else the grow re-read corrupted the extension ('13-02-2026' word -> grown
+    # '13-02-2096'; 'PO-49938' -> 'POH-49938' — the scanned clean-arm class) and the
+    # heal falls through (defer_cap: the reconcile may still heal; the final abs commit
+    # wears the cap). A garbled locate word downgrades a GOOD heal the same way — the
+    # safe direction (review, never a silent wrong value).
+    for _cw in (left_cut, right_cut):
+        if _cw is None:
+            continue
+        _wt = _code_norm(str(_cw.get("text") or ""))
+        if _wt and _wt not in _code_norm(str(gv)):
+            return _floor()
     # Consent: dates self-consent on a complete, un-suspect parse (self-validating type —
     # learned-shape stats never veto a real calendar date); codes take the shared ladder.
     if val_type == 'date':

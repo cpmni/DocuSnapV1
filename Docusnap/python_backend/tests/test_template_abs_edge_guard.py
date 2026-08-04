@@ -141,7 +141,9 @@ check("PIN sub-token protection: shape REFUSED -> rigid partial kept SILENTLY, n
       r and r["value"] == "VXC153" and r["method"] == "template_mapping"
       and "validation_note" not in r)
 
-# Fail floor: grown read is a DIFFERENT value -> comparator refuses -> capped + note.
+# Fail floor: grown read is a DIFFERENT value -> comparator refuses -> DEFERRED cap
+# (fall-through contract: the guard returns defer_cap, the flow continues — the inline
+# reconcile may still heal; nothing healed here, so the final commit wears the cap).
 _orig_crop = tm._crop_and_ocr
 
 
@@ -158,6 +160,70 @@ tm._crop_and_ocr = _orig_crop
 check("floor: comparator refuses a different grown value -> rigid capped <=70 + note (_edgecut)",
       r and r["value"] == "VXC153" and r["confidence"] <= 70
       and r["method"].endswith("_edgecut") and r.get("validation_note"))
+
+# PIN the fall-through contract itself: on comparator refusal the guard returns
+# {'defer_cap': True}, NEVER a result — returning a result here amputated the inline
+# reconcile and turned healable partials into capped partials on the clean arm
+# ('PP-808' -> 'QPP-8083' class; the t300s->t300c diff).
+tm._crop_and_ocr = _wrong_grow
+lcx = {(id(PAGE), 0.0, 0.0, 1.0, 1.0): LINES}
+eg = tm._abs_edge_guard(PAGE, CUT, False, 0.0, "VXC153", "alphanumeric", "ref",
+                        lambda img: [], ocr_text_stub, VAL, None, None, lcx, None, None, 0)
+tm._crop_and_ocr = _orig_crop
+check("PIN: comparator refusal returns defer_cap (fall-through), never a result",
+      eg == {"defer_cap": True})
+
+# LEFT-cut SUFFIX heal (the '5S-1108' -> 'CSS-1108' class + the j120L crater): the cut
+# glyph is the fragment's FIRST glyph — suffix discipline with one leading-glyph slack.
+LWORD = {"text": "CSS-1108", "x_norm": 0.20, "y_norm": 0.20, "w_norm": 0.10, "h_norm": 0.02}
+LLINES = [{"text": "CSS-1108", "x_norm": 0.20, "y_norm": 0.20, "w_norm": 0.10, "h_norm": 0.02,
+           "words": [LWORD]}]
+
+
+def _left_stub(crop):
+    x1, y1, x2, y2 = crop
+    if y2 < 150 or y1 > 280:
+        return None
+    if x1 <= 202:
+        return "CSS-1108"                # full word covered
+    if x1 <= 270:
+        return "5S-1108"                 # left-clipped, cut glyph misread C -> 5
+    return None
+
+
+m = mapping(box(0.26, 0.10))             # left edge at 0.26 cuts CSS-1108
+before = copy.deepcopy(m)
+r = tm._extract_one(PAGE, m, FP, lambda img: [], _left_stub, located=None,
+                    validation_patterns=VAL, format_lookup=None,
+                    line_cache={(id(PAGE), 0.0, 0.0, 1.0, 1.0): LLINES},
+                    provisional_lookup=lambda fk, v: True)
+check("LEFT-cut suffix heal: '5S-1108' grows to 'CSS-1108' (leading-glyph slack)",
+      r and r["value"] == "CSS-1108" and r["method"].endswith("_edgegrow"))
+check("LEFT-cut heal: stored mapping unmutated", m == before)
+
+# Date COMPLETE-read skip: an abs read that already parses as an un-suspect calendar
+# date is never a partial — an edge overhang is box-overshoot noise, and a grown
+# re-read can only corrupt it ('13-02-2026' -> '13-02-2096', observed on the clean arm).
+def _full_date_stub(crop):
+    x1, y1, x2, y2 = crop
+    if y2 < 150 or y1 > 280:
+        return None
+    return "07-01-2026"
+
+
+m = {"field_key": "d", "anchor_text": "Date:", "page_number": 0, "enabled": 1,
+     "anchor_x_norm": 0.10, "anchor_y_norm": 0.195, "anchor_w_norm": 0.08, "anchor_h_norm": 0.03,
+     "target_x_norm": 0.29, "target_y_norm": 0.195, "target_w_norm": 0.07, "target_h_norm": 0.03}
+DW2 = {"text": "07-01-2026", "x_norm": 0.30, "y_norm": 0.20, "w_norm": 0.10, "h_norm": 0.02}
+r = tm._extract_one(PAGE, m, {"d": {"validation": "date"}}, lambda img: [], _full_date_stub,
+                    located=None, validation_patterns=VAL, format_lookup=None,
+                    line_cache={(id(PAGE), 0.0, 0.0, 1.0, 1.0):
+                                [{"text": "07-01-2026", "x_norm": 0.30, "y_norm": 0.20,
+                                  "w_norm": 0.10, "h_norm": 0.02, "words": [DW2]}]},
+                    provisional_lookup=None)
+check("date complete-read SKIP: a full parsed date never fires the guard (no grow, no cap)",
+      r and r["value"] == "07-01-2026" and r["method"] == "template_mapping"
+      and r["confidence"] == 90 and "validation_note" not in r)
 
 # No geometry -> fail-inert byte-identity (the honest no-word-boxes pin).
 r, _ = run_one(tm, CUT, lines=[])
@@ -217,6 +283,53 @@ r = tm._extract_one(PAGE, m, {"d": {"validation": "date"}}, lambda img: [], _dat
 check("C-C1 composition: B rejects the fragment, C's geometry still heals the date",
       r is not None and r["value"] == "07-01-2026" and r["method"].endswith("_edgegrow"))
 os.environ.pop('TEMPLATE_DATE_CLIP_GATE', None)
+
+# INDEPENDENT-WITNESS pin: the grown re-read must CONTAIN each cut word's locate-pass
+# text — a corrupted extension ('VXC1536' word but grown read 'VXC1596') falls through
+# (defer_cap), never a clean commit (the scanned-arm '13-02-2096'/'POH-49938' class).
+def _corrupt_grow(crop):
+    x1, y1, x2, y2 = crop
+    if y2 < 150 or y1 > 280:
+        return None
+    if x2 >= 398:
+        return "VXC1596"                 # tail corrupted vs the word text 'VXC1536'
+    if x2 >= 330:
+        return "VXC153"
+    return None
+
+
+m = mapping(CUT)
+r = tm._extract_one(PAGE, m, FP, lambda img: [], _corrupt_grow, located=None,
+                    validation_patterns=VAL, format_lookup=None,
+                    line_cache={(id(PAGE), 0.0, 0.0, 1.0, 1.0): LINES},
+                    provisional_lookup=lambda fk, v: True)
+check("PIN witness: corrupted grow extension -> defer_cap floor, never a clean commit",
+      r and r["value"] == "VXC153" and r["confidence"] <= 70
+      and r["method"].endswith("_edgecut"))
+
+# Junk-wrapped COMPLETE date skip: 'TE 13-02-2026' contains a 4-digit-year match ->
+# the guard never fires (Stage-4 normalise owns the junk); a clean 2-digit-year read
+# still fires (it may be a cut 4-digit year — geometry is the judge, pinned trade-off).
+def _junk_date_stub(crop):
+    x1, y1, x2, y2 = crop
+    if y2 < 150 or y1 > 280:
+        return None
+    return "TE 13-02-2026"
+
+
+m = {"field_key": "d", "anchor_text": "Date:", "page_number": 0, "enabled": 1,
+     "anchor_x_norm": 0.10, "anchor_y_norm": 0.195, "anchor_w_norm": 0.08, "anchor_h_norm": 0.03,
+     "target_x_norm": 0.29, "target_y_norm": 0.195, "target_w_norm": 0.07, "target_h_norm": 0.03}
+DW3 = {"text": "13-02-2026", "x_norm": 0.30, "y_norm": 0.20, "w_norm": 0.10, "h_norm": 0.02}
+r = tm._extract_one(PAGE, m, {"d": {"validation": "date"}}, lambda img: [], _junk_date_stub,
+                    located=None, validation_patterns=VAL, format_lookup=None,
+                    line_cache={(id(PAGE), 0.0, 0.0, 1.0, 1.0):
+                                [{"text": "13-02-2026", "x_norm": 0.30, "y_norm": 0.20,
+                                  "w_norm": 0.10, "h_norm": 0.02, "words": [DW3]}]},
+                    provisional_lookup=None)
+check("junk-wrapped complete 4-digit-year date -> guard never fires",
+      r and r["value"] == "TE 13-02-2026" and r["method"] == "template_mapping"
+      and "validation_note" not in r)
 
 os.environ.pop('TEMPLATE_ABS_EDGE_GUARD', None)
 importlib.reload(tm)

@@ -144,8 +144,12 @@ async function main() {
         // TEACH_JITTER=0.18: shrink the taught target's RIGHT edge — recreates the human
         // cutting-draw disease (mid-token cut of the last word) so the heal stack has a real
         // class to act on and GT arbitrates every fire. 0/unset = the GT-perfect boxes.
+        // TEACH_JITTER_LEFT=0.18: the LEFT-edge mirror (Oracle Slice-C gate: run the
+        // left-cut variant too — the un-clip twin). Both may combine.
         const J = parseFloat(process.env.TEACH_JITTER || '0');
         if (J > 0) m.target.w = m.target.w * (1 - J);
+        const JL = parseFloat(process.env.TEACH_JITTER_LEFT || '0');
+        if (JL > 0) { const cut = m.target.w * JL; m.target.x += cut; m.target.w -= cut; }
         templates.saveMapping(db, tid, {
           field_key: m.field_key, page_number: 0, anchor_text: m.anchor_text,
           anchor_x_norm: m.anchor.x, anchor_y_norm: m.anchor.y,
@@ -261,6 +265,17 @@ async function main() {
       job_ref:    e.job_ref    != null && normRef(exVal(m, 'job_ref')) === normRef(e.job_ref),
       po_ref:     e.po_ref     != null && normRef(exVal(m, 'po_ref')) === normRef(e.po_ref),
     };
+    // Per-lane extraction METHOD (always recorded): the mapper-heal census input —
+    // '_edgegrow'/'_edgecut'/'_shapewarn' etc are countable per arm from the jsonl
+    // (a Slice-C fire on the CLEAN arm = a gate breach even when the value matched).
+    const exMeth = key => { const x = (m.extractions || {})[key]; return x && x.method ? x.method : undefined; };
+    row.methods = {};
+    for (const [lane, key] of [['ref', refKey], ['date', dateKey], ['total', 'total_amount'],
+                               ['issuer', 'supplier_name'], ['vat_no', 'vat_no'],
+                               ['account_no', 'account_no'], ['job_ref', 'job_ref'], ['po_ref', 'po_ref']]) {
+      const meth = key && exMeth(key);
+      if (meth) row.methods[lane] = meth;
+    }
     for (const lane of LANES) {
       const gtHas = lane === 'type' || e[lane === 'issuer' ? 'issuer' : lane] != null;
       if (!gtHas) continue;
