@@ -35,6 +35,12 @@ const SAMPLE = parseInt(process.env.SAMPLE || '300', 10);
 const SET = (process.env.SET || 'both').toLowerCase();          // digital | scanned | both
 const TAG = process.env.TAG || 'base';
 const SEED = parseInt(process.env.SEED || '7', 10);
+const TEACH = process.env.TEACH === '1';                        // TAUGHT arm: derive Stage-0.5
+// mappings from ONE digital "To be manually confirmed" doc per (issuer,type) via teach_from_gt.py,
+// insert templates+mappings into the throwaway DB, and pin every sampled doc to its template with
+// --reprocess-manifest (the app's faithful Reprocess-All shape). This is what lets the mapper
+// heal/verify stack — incl. NAME_UNCLIP — actually FIRE on this corpus (cold fires no Stage 0.5).
+const templates = require(path.join(REPO, 'database', 'modules', 'templates.js'));
 
 const w = (tag, d) => { const f = path.join(os.tmpdir(), `ccs_${tag}_${Math.random().toString(36).slice(2)}.json`); fs.writeFileSync(f, JSON.stringify(d)); return f; };
 const normRef = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -89,21 +95,86 @@ async function main() {
   const refKeyBySlug = {}, dateKeyBySlug = {};
   for (const dt of dts) { refKeyBySlug[dt.slug] = dt.ref_field_key; dateKeyBySlug[dt.slug] = dt.date_field_key; }
 
+  // ── 2b. TAUGHT arm: teach one digital manual doc per (issuer,type) from GT ─
+  const tmplBySlugIssuer = {};                     // `${issuer}|${type_slug}` -> template_id
+  if (TEACH) {
+    const pairs = {};
+    for (const e of sampled) (pairs[`${e.issuer}|${e.type_slug}`] = true);
+    const teachDocs = {};
+    for (const e of gt) {                          // teach doc = digital + "manually confirmed"
+      const k = `${e.issuer}|${e.type_slug}`;
+      if (!pairs[k] || teachDocs[k]) continue;
+      if (String(e.rendition || '').toLowerCase().startsWith('digital')
+          && /manually confirmed/i.test(e.file)) teachDocs[k] = e;
+    }
+    const teachOne = ([k, e]) => new Promise(res => {
+      const refKey = refKeyBySlug[e.type_slug], dateKey = dateKeyBySlug[e.type_slug];
+      const fields = {};
+      if (refKey && e.ref != null) fields[refKey] = e.ref;
+      if (dateKey && e.date != null) fields[dateKey] = e.date;
+      if (e.issuer != null) fields.supplier_name = e.issuer;
+      if (e.total != null) fields.total_amount = e.total;
+      for (const x of ['vat_no', 'account_no', 'job_ref', 'po_ref'])
+        if (e[x] != null) fields[x] = e[x];
+      const job = w('job', { pdf: path.join(CORPUS, e.file), fields });
+      const p = spawn('py', ['-3.12', path.join(ST, 'teach_from_gt.py'),
+                             '--job', job, '--tesseract', TESS], { windowsHide: true });
+      let out = ''; p.stdout.on('data', d => out += d); p.stderr.on('data', () => {});
+      p.on('close', () => { try { res([k, e, JSON.parse(out)]); } catch { res([k, e, null]); } });
+      p.on('error', () => res([k, e, null]));
+    });
+    const entries = Object.entries(teachDocs);
+    console.log(`[ccs] TEACH: deriving mappings for ${entries.length} (issuer,type) pairs…`);
+    const taught = [];
+    for (let i = 0; i < entries.length; i += 8)
+      taught.push(...await Promise.all(entries.slice(i, i + 8).map(teachOne)));
+    let ok = 0, missTotal = 0;
+    for (const [k, e, res] of taught) {
+      if (!res || !res.mappings || !res.mappings.length) continue;
+      const dt = dts.find(d => d.slug === e.type_slug); if (!dt) continue;
+      const info = db.prepare(`INSERT INTO templates (name, slug, document_type_slug, confirmed_count)
+                               VALUES (?, ?, ?, 3)`)
+        .run(e.issuer, `ccs_${k.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`, e.type_slug);
+      const tid = info.lastInsertRowid;
+      const typeByKey = {}; for (const f of dt.fields) typeByKey[f.key] = (f.type || '').toLowerCase();
+      const OCR_TYPE = { date: 'date', currency: 'currency', number: 'currency',
+                        reference: 'alphanumeric', reference_code: 'reference_code',
+                        vat_gb: 'text', alphanumeric: 'alphanumeric' };
+      for (const m of res.mappings) {
+        templates.saveMapping(db, tid, {
+          field_key: m.field_key, page_number: 0, anchor_text: m.anchor_text,
+          anchor_x_norm: m.anchor.x, anchor_y_norm: m.anchor.y,
+          anchor_w_norm: m.anchor.w, anchor_h_norm: m.anchor.h,
+          target_x_norm: m.target.x, target_y_norm: m.target.y,
+          target_w_norm: m.target.w, target_h_norm: m.target.h,
+          ocr_type: OCR_TYPE[typeByKey[m.field_key]] || 'text',
+        });
+      }
+      tmplBySlugIssuer[k] = tid; ok++; missTotal += (res.misses || []).length;
+    }
+    console.log(`[ccs] TEACH: ${ok}/${entries.length} templates stored (${missTotal} field misses)`);
+  }
+
   const snapArgs = ['--fields-file', w('f', dts.flatMap(d => d.fields)),
                     '--doc-types-file', w('d', dts),
                     '--hints-file', w('h', []), '--anchors-file', w('a', []), '--logos-file', w('l', []),
-                    '--formats-file', w('fm', []), '--templates-file', w('t', []),
+                    '--formats-file', w('fm', []),
+                    '--templates-file', w('t', TEACH ? templates.getAll(db) : []),
                     '--config-file', CFG, '--registration', '--born-digital', '--multiline'];
 
   // ── 3. Flat tmp folder of sampled files (unique names → GT mapping) ───────
   const runDir = path.join(os.tmpdir(), `ccs_run_${Date.now()}`);
   fs.mkdirSync(runDir, { recursive: true });
-  const byName = {};
+  const byName = {}, manifest = {};
   sampled.forEach((e, i) => {
     const name = `ccs_${String(i).padStart(4, '0')}.pdf`;
     fs.copyFileSync(path.join(CORPUS, e.file), path.join(runDir, name));
     byName[name] = e;
+    const tid = tmplBySlugIssuer[`${e.issuer}|${e.type_slug}`];
+    if (tid) manifest[name] = { known_template_id: tid, known_doc_slug: e.type_slug };
   });
+  const manifestArgs = Object.keys(manifest).length
+    ? ['--reprocess-manifest', w('manifest', manifest)] : [];
 
   // ── 4. Shard + spawn (env inherited — the arm's switches ride through) ────
   const N = 8; const shards = Array.from({ length: N }, () => []);
@@ -112,7 +183,7 @@ async function main() {
   const HEAL_RE = /(Name-unclip reconcile|Universal verify|Crosscheck-outlier|edge-clean|Snap|clip commit|frag)/i;
   const run1 = files => new Promise(res => {
     const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', runDir, '--files-file', w('shard', files),
-                           '--mode', 'fast', '--tesseract', TESS, ...snapArgs], { windowsHide: true });
+                           '--mode', 'fast', '--tesseract', TESS, ...manifestArgs, ...snapArgs], { windowsHide: true });
     let out = ''; p.stdout.on('data', d => out += d); p.stderr.on('data', () => {});
     p.on('close', () => res(out)); p.on('error', () => res(''));
   });
