@@ -266,17 +266,50 @@ NAME_UNCLIP_RECONCILE = os.environ.get('NAME_UNCLIP_RECONCILE', '0') != '0'
 # tests/test_taught_date_invalid_yield.py.
 TEMPLATE_DATE_INVALID_YIELD = os.environ.get('TEMPLATE_DATE_INVALID_YIELD', '0') != '0'
 
+# TEMPLATE_DATE_FUTURE_YIELD (Oracle SIGN-OFF-W/COND 2026-08-06) — the sibling of the impossible-date
+# yield for the deterministically-FUTURE slice of the "misread → a different VALID date" residual. A
+# taught date box that OCR-misread the YEAR ('2026'->'2096') reads a VALID calendar date that is
+# absurdly far future and wins the merge over the correct keyword date. Stage 4 already FLAGS such a
+# date @40 ("date is in the future") — so the doc was never auto-filing — but the WRONG value shows.
+# Yield to the valid keyword date, FLAGGED. Its OWN switch (default OFF) because — unlike the
+# impossible arm, which drops garbage — this drops a VALID taught value (larger blast radius: a
+# genuinely >3y-future taught due/warranty date could be dropped; bounded to Review, M cannot rise
+# since the doc was already flagged). OFF = byte-identical; INVALID-on / FUTURE-off = the shipped
+# impossible-only behaviour. Pins: tests/test_taught_date_invalid_yield.py.
+TEMPLATE_DATE_FUTURE_YIELD = os.environ.get('TEMPLATE_DATE_FUTURE_YIELD', '0') != '0'
+# The taught-side FUTURE-YIELD trigger. DELIBERATELY on its own constant, HIGHER than the Stage-4
+# future FLAG (validator._FUTURE_DATE_TOLERANCE_DAYS=366): a YIELD DROPS a valid taught value, so it
+# must clear the whole plausible post-dated-business range (annual pre-billing, warranty/contract end
+# ~1-2y). A glyph year-misread lands DECADES out (2->9 = +70y), so ~3y cleanly separates the misread
+# class from any legitimate post-date. Retuning this must NOT retune the Stage-4 flag (kept separate).
+_DATE_YIELD_FUTURE_DAYS = 1096   # ~3 years
 
-def _invalid_taught_date_yields(taught_value, kw_value) -> bool:
-    """Deterministic date-validity discriminator for the located date-merge branch: True when the
-    taught value is an IMPOSSIBLE calendar date (validator.parse_date None AND validator.salvage_date
-    None — a spaced/junk-suffixed VALID date is recovered by salvage and correctly does NOT yield)
-    while the keyword value IS a valid calendar date. Content-nature only; the caller still requires
-    date-typed key + _kw_ok (conf>=90) and flags the swap to Review."""
-    return bool(taught_value                                 # an EMPTY taught read is a non-read,
-                and validator.parse_date(taught_value) is None      # not an impossible date -> out of
-                and validator.salvage_date(taught_value) is None    # scope (leave normal precedence)
-                and validator.parse_date(kw_value) is not None)
+
+def _invalid_taught_date_yields(taught_value, kw_value, now=None) -> str:
+    """REASON code for the located date-merge yield ('' = keep the taught read's authority):
+      'impossible' — taught is NOT a real calendar date (parse None AND salvage None; a spaced/junk-
+                     suffixed VALID date is recovered by salvage and correctly does NOT yield);
+      'future'     — taught PARSES but sits absurdly far future (glyph year-misread,
+                     > _DATE_YIELD_FUTURE_DAYS) while the keyword is a valid date Stage 4 would NOT
+                     itself future-flag (<= validator._FUTURE_DATE_TOLERANCE_DAYS — an INTENTIONAL
+                     coupling: only yield to a keyword date that is not itself clearly-future).
+    The keyword must be a valid calendar date in both cases; the caller still requires a date-typed
+    key + _kw_ok (conf>=90) and flags the swap to Review. Reason keys the accurate review note.
+    `now` is injectable for date-stable tests (routed through validator.days_in_future, the single
+    clock/parse source)."""
+    if not taught_value:                                     # an EMPTY taught read is a non-read
+        return ''
+    if validator.parse_date(kw_value) is None:               # keyword must be a valid calendar date
+        return ''
+    if validator.parse_date(taught_value) is None:           # (a) IMPOSSIBLE taught date
+        return 'impossible' if validator.salvage_date(taught_value) is None else ''
+    t_days = validator.days_in_future(taught_value, now)     # (b) CLEARLY-FUTURE taught date, kw not
+    k_days = validator.days_in_future(kw_value, now)
+    if (t_days is not None and k_days is not None
+            and t_days > _DATE_YIELD_FUTURE_DAYS
+            and k_days <= validator._FUTURE_DATE_TOLERANCE_DAYS):
+        return 'future'
+    return ''
 
 # DESKEW_RAW_CROPS — the Straighten-arc frame election (gary+007 → Oracle SIGN-OFF-W/COND C1-C7,
 # 2026-08-05 evening, docs/oracle_log.md). Taught boxes are stored RAW-frame (all three teach
@@ -5021,15 +5054,23 @@ class ExtractionEngine:
                 # Stage 4's clean-date floor makes the cap cosmetic). Own continue; method stays keyword
                 # (do NOT re-grant the taught shape-gate exemption). Env is the first conjunct so OFF is
                 # byte-identical and salvage_date runs only on the rare invalid-taught case.
-                if (TEMPLATE_DATE_INVALID_YIELD and key in date_field_keys and _kw_ok
-                        and _invalid_taught_date_yields(existing.get("value"), data.get("value"))):
-                    results[key] = {**data,
-                                    "confidence": min((data.get("confidence") or 0), _CONFLICT_CAP),
-                                    "validation_note": (
-                                        f"Kept the read value “{data.get('value')}” — the taught date "
-                                        f"box read “{existing.get('value')}”, which isn't a valid "
-                                        f"calendar date. Please check.")}
-                    continue
+                if ((TEMPLATE_DATE_INVALID_YIELD or TEMPLATE_DATE_FUTURE_YIELD)
+                        and key in date_field_keys and _kw_ok):
+                    _reason = _invalid_taught_date_yields(existing.get("value"), data.get("value"))
+                    if ((_reason == 'impossible' and TEMPLATE_DATE_INVALID_YIELD)
+                            or (_reason == 'future' and TEMPLATE_DATE_FUTURE_YIELD)):
+                        # Reason-keyed note: accurate per case (an impossible date is NOT "far in the
+                        # future" and vice-versa) + NAMES the dropped taught value so a correct-but-far-
+                        # future taught date stays operator-recoverable.
+                        _why = ("isn't a valid calendar date" if _reason == 'impossible'
+                                else "is far in the future (likely a mis-scanned year)")
+                        results[key] = {**data,
+                                        "confidence": min((data.get("confidence") or 0), _CONFLICT_CAP),
+                                        "validation_note": (
+                                            f"Kept the read value “{data.get('value')}” — the taught "
+                                            f"date box read “{existing.get('value')}”, which {_why}. "
+                                            f"Please check.")}
+                        continue
                 if (_blind_reg and _kw_ok
                         and _cmp_norm(data.get("value")) != _cmp_norm(existing.get("value"))
                         and (data.get("confidence") or 0) > (existing.get("confidence") or 0)):

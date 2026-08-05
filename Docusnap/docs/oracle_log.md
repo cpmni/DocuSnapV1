@@ -735,3 +735,35 @@ incoming). Invalid-incumbent/valid-incoming had NO handler → the impossible ta
   inert — same OCR-context divergence as doc_06), so it proves no-regression on the valid-read path; the
   EXACT misread-heal (33/04/2026 → 03-04-2026 + note) is owner-watched (harness can't bit-reproduce the
   app's tilt misread). NF both-arms gate pending. Committed dark + env bridge + Settings toggle.
+
+## 2026-08-06 (later) — TEMPLATE_DATE_FUTURE_YIELD (deterministically-future taught-date yield) — SIGN OFF WITH CONDITIONS
+Extension of the shipped 11aa400 impossible-date yield to the C6 residual's DETERMINISTICALLY-FUTURE
+slice: LarkspurInteriors_invoice_14 taught `15/10/2096` (glyph-misread of `2026`, a VALID calendar
+date 70y future) wins the kw-merge over the correct keyword `15/10/2026`; parse_date != None so the
+impossible branch can't fire. Predicate now returns a REASON string ('' / 'impossible' / 'future');
+'future' fires when taught PARSES + is > `_DATE_YIELD_FUTURE_DAYS`(1096) future AND kw is valid AND not
+itself > 366d future. New sub-switch `TEMPLATE_DATE_FUTURE_YIELD` default OFF (drops a VALID taught
+value → larger blast radius than the impossible arm = drops garbage), independent kill + gate attribution.
+- **Consensus (gary+reggie)**: reason-string predicate (accurate per-case note, no false-note class);
+  1096 taught trigger on its OWN constant; 366 REUSED as the kw-side guard; separate default-OFF sub-switch.
+- **Oracle SIGN OFF WITH CONDITIONS.** Verified at source: (seam#1) yielded kw <=366d → no Stage-4 future
+  flag → the yield's note is the sole auto-file block; a non-yielded future taught date → validator:470
+  floors to 94 then validator:612 RE-CAPS to 40 + note — NO path auto-files a future date (both halves
+  confirmed). KEY RISK RULED ACCEPT: a correct >3y-future taught date dropped for a wrong non-future kw
+  is bounded — the doc is ALREADY @40-flagged in baseline, the yield always notes → M PROVABLY CANNOT
+  INCREASE; only a worse pre-fill in a rare far-future-taught doc. Threshold RULED 1096 not 366 (glyph
+  year-misreads land ~decades out; 366 over-catches annual pre-bills). Sub-switch RULED separate default-OFF.
+- **Conditions (all folded in)**: C1 single injectable clock via `validator.days_in_future(value, now)`
+  (no `datetime` import into engine's merge; the shared `(d-now).days` formula); C2 the 366 kw-guard
+  documented as INTENTIONAL ("yield only to a kw Stage-4 wouldn't itself future-flag"), taught trigger on
+  its own 1096 constant; C3 the 'future' note NAMES the dropped taught value (recoverable, mirrors the
+  impossible arm); C4 unit pin arms 'impossible' ONLY under INVALID and 'future' ONLY under FUTURE; C5
+  UPDATED (not deleted) the 11aa400 pins for bool->str (`reason=='impossible'` + byte-identity); C6 pins
+  the reason domain + note-accuracy + placement/first-conjunct/own-continue.
+- **BUILT + GATE**: 22 unit pins green (impossible family + reggie's salvage cases preserved; future arm:
+  invoice_14 `15/10/2096`→'future'; the PINNED trade-off now+100d→'' authority-preserved; band now+400d→''
+  still Stage-4-flagged; future→future no-swap). Date suites (precedence/hard-gate/future-only/clip-gate)
+  green. NF both-arms (baseline vs invalid+future) pending — the future arm is inert on the Customer
+  corpus (no far-future taught dates), so it should match the INVALID-only +1/0. Exact 2096→2026 heal is
+  owner-watched (harness can't bit-reproduce the tilt misread). C6 SAME-YEAR order-flip slice (03→08)
+  STAYS OPEN — this fix closes only the deterministically-future slice.

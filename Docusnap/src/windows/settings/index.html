@@ -713,6 +713,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Never file a wildly-future date over a valid one</div>
+                <div class="threshold-sub">If a taught date reading spot misreads the year into the far future (e.g. 2096 instead of 2026), ScanFinder keeps the clearly-read date from elsewhere on the page instead — flagged for a quick check. Only for dates more than ~3 years out, so a genuine post-dated document is never affected. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="date-future-yield-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Read small reference/date print more clearly</div>
                 <div class="threshold-sub">Enlarges a tightly-cropped reference or date before reading it and drops an over-sharpen step, so small print (e.g. “PO-17039” misread as “»0-17039”) reads correctly. Only helps where it can, never changes a read it can't improve. Off by default.</div>
               </div>

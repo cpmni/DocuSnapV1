@@ -86,6 +86,19 @@ DATE_FORMATS = _formats_for_order("dmy")
 # is CLEARLY in the future, not merely unusual.
 _FUTURE_DATE_TOLERANCE_DAYS = 366
 
+
+def days_in_future(value, now=None):
+    """Whole days between the parsed date of `value` and `now` (None if `value` doesn't parse).
+    The SINGLE clock/parse source for future-date decisions — the Stage-4 future flag below and the
+    engine's merge-time future-yield guard share this exact `(d - now).days` formula so retuning one
+    can't silently diverge from the other. `now` is injectable for date-stable tests (defaults to
+    datetime.now())."""
+    d = parse_date(value)
+    if d is None:
+        return None
+    return (d - (now or datetime.now())).days
+
+
 def parse_date(raw: str | None, date_order: str | None = None) -> datetime | None:
     if not raw:
         return None
