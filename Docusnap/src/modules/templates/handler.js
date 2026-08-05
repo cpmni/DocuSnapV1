@@ -191,6 +191,51 @@ function register(ctx) {
   // inert, letting a mapping box drift onto the wrong row. Best-effort; never throws.
   ctx.generateLandmarks = generateLandmarks;
 
+  // TEACH-COMMIT SAMPLE-ANGLE WRITE (TEACH_ANGLE_COMPOSE enabler). The lazy heal in
+  // processing/handler.js (_healSampleAngles) detects a template's sample tilt at RUN start,
+  // fire-and-forget — so a JUST-taught template's angle lands only on the SECOND batch (the
+  // "one batch behind" cost the owner's Chris rounds surfaced). Detect + store it HERE, at the
+  // promote/link/graduation commit, so the very first process of a sibling composes correctly.
+  // Same detector the heal uses (ocr/detect_angle.py -> {"angle": float|null}, 0.0 = level);
+  // writes sample_deskew_angle ONLY when a finite number comes back and the column is still
+  // unset (never clobbers an owner-set or heal-set value). Inert unless TEACH_ANGLE_COMPOSE is
+  // ON (the compose step is the only reader); best-effort, never throws, never blocks the commit.
+  async function generateSampleAngle(templateId) {
+    const db   = getDb();
+    const tmpl = templates.getById(db, templateId);
+    if (!tmpl || !tmpl.sample_document_id) return { success: false, reason: 'no sample' };
+    if (tmpl.sample_deskew_angle != null) return { success: true, skipped: true };   // already known
+    const doc  = db.prepare('SELECT working_path, stored_path FROM documents WHERE id = ?')
+                   .get(tmpl.sample_document_id);
+    const file = _resolveDocPath(doc);
+    if (!file) return { success: false, reason: 'sample file not found' };
+    const script = ctx.resourcePath('python_backend', 'ocr', 'detect_angle.py');
+    return new Promise((resolve) => {
+      let proc;
+      try { proc = spawn(ctx.pythonExe(), ctx.pythonArgs(script, '--file', file), { windowsHide: true }); }
+      catch (e) { resolve({ success: false, reason: e.message }); return; }
+      let out = '', err = '';
+      proc.stdout.on('data', d => { out += d.toString(); });
+      proc.stderr.on('data', d => { err += d.toString(); });
+      proc.on('close', () => {
+        if (err) console.error('detect_angle stderr:', err.trim());
+        let angle = null;
+        try { const r = JSON.parse(out.trim()); if (r && typeof r.angle === 'number' && isFinite(r.angle)) angle = r.angle; }
+        catch {}
+        if (angle != null) {
+          try {
+            db.prepare('UPDATE templates SET sample_deskew_angle = ? WHERE id = ? AND sample_deskew_angle IS NULL')
+              .run(angle, templateId);
+            console.log(`[templates] sample angle written at commit: template ${templateId} = ${angle.toFixed(2)} deg`);
+          } catch (e) { console.error('write sample_deskew_angle:', e.message); }
+        }
+        resolve({ success: angle != null, angle });
+      });
+      proc.on('error', (e) => { console.error('detect_angle spawn:', e.message); resolve({ success: false, reason: e.message }); });
+    });
+  }
+  ctx.generateSampleAngle = generateSampleAngle;
+
   // Lazy one-shot backfill: existing templates that have a pinned sample but no
   // landmarks gain them with NO re-teach. Delayed + sequential so it never
   // competes with startup or active processing; entirely best-effort.

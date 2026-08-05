@@ -96,6 +96,7 @@ function register(ctx) {
       if (ctx.captureSampleWords) {
         await ctx.captureSampleWords(tId, docId);
         if (ctx.generateLandmarks) await ctx.generateLandmarks(tId);
+        if (ctx.generateSampleAngle) await ctx.generateSampleAngle(tId);
       }
     },
     notifyCounts: (db) => {
@@ -969,6 +970,10 @@ function register(ctx) {
         // resolves (never rejects) and the template still works via anchors meanwhile.
         try { if (ctx.generateLandmarks) await ctx.generateLandmarks(result.templateId); }
         catch (e) { console.error('promote-to-template landmarks:', e.message); }
+        // TEACH_ANGLE_COMPOSE enabler: record the sample's tilt NOW so the first process of a
+        // sibling composes the teach coords to level (else the lazy heal lands it one batch late).
+        try { if (ctx.generateSampleAngle) await ctx.generateSampleAngle(result.templateId); }
+        catch (e) { console.error('promote-to-template sample-angle:', e.message); }
         // Same for the keyword FINGERPRINT — a teach-promoted born-digital template
         // (whose sample doc may have an empty stored ocr_text) would otherwise be born
         // fingerprint-less and only matchable by an unreliable logo phash. Fills only
@@ -1014,6 +1019,7 @@ function register(ctx) {
         templates.setSampleDocument(db, newId, document_id);
         try { if (ctx.generateLandmarks)  await ctx.generateLandmarks(newId); }  catch (e) { console.error('link landmarks:', e.message); }
         try { if (ctx.generateFingerprint) await ctx.generateFingerprint(newId); } catch (e) { console.error('link fingerprint:', e.message); }
+        try { if (ctx.generateSampleAngle) await ctx.generateSampleAngle(newId); } catch (e) { console.error('link sample-angle:', e.message); }
       }
       // 2) Put both templates in the SAME group (reuse the target's group, else make one).
       let groupId = target.group_id || null;
@@ -1393,6 +1399,7 @@ async function _maybeGraduationTemplate(ctx, db, document_id, info) {
     try { templates.setSampleDocument(db, res.templateId, document_id); } catch (e) { console.warn('Graduation sample pin failed:', e.message); }
     try { if (ctx.generateLandmarks)   await ctx.generateLandmarks(res.templateId); }   catch (e) { console.warn('Graduation landmarks failed:', e.message); }
     try { if (ctx.generateFingerprint) await ctx.generateFingerprint(res.templateId); } catch (e) { console.warn('Graduation fingerprint failed:', e.message); }
+    try { if (ctx.generateSampleAngle) await ctx.generateSampleAngle(res.templateId); } catch (e) { console.warn('Graduation sample-angle failed:', e.message); }
     console.log(`[graduation] auto-created template "${res.name}" (id ${res.templateId}${res.keywordOnly ? ', keyword-only' : ''}) on scope graduation`);
   }
 }
