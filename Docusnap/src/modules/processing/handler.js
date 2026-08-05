@@ -269,6 +269,134 @@ function _recordDevTrace(ev) {
   if (arr.length > 4000) arr.shift();   // bound per-doc memory
 }
 
+// ── SFDEV bulk debug-table (dev-only, read-only) ────────────────────────────
+// Build a queue-wide field grid: rows = the review queue (needs_review + deferred),
+// columns = the union of the present types' declared fields (structural-first, then
+// each type's own order), cells = the extracted value + confidence + method from the
+// DB. PURE given `db` (no IPC, no fs) so it can be pinned with a fixture DB. The owner
+// uses this to see the CLASS of a detection failure across the whole queue at once,
+// not one screenshot at a time. Zero production/customer/auto-file/learning impact.
+function _buildDebugTable(db) {
+  const docTypes = require('../../../database/modules/document_types');
+  const typesAll = docTypes.getAllWithFieldsAll(db);
+  const bySlug = new Map();
+  const labels = {};
+  for (const t of typesAll) {
+    bySlug.set(t.slug, t);
+    for (const f of (t.fields || [])) if (!(f.key in labels)) labels[f.key] = f.label || f.key;
+  }
+
+  const docs = db.prepare(`
+    SELECT d.id, d.original_filename, d.supplier_name, d.status,
+           d.overall_confidence, dt.name AS type_name, dt.slug AS type_slug
+    FROM documents d
+    LEFT JOIN document_types dt ON dt.id = d.document_type_id
+    WHERE d.status IN ('needs_review','deferred')
+    ORDER BY d.id
+  `).all();
+
+  const exStmt = db.prepare(
+    'SELECT field_key, raw_value, display_value, confidence, extraction_method FROM extractions WHERE document_id = ?'
+  );
+
+  // Columns: for each present type in queue order, structural fields first then the
+  // rest — deduped, so a shared field (supplier_name) appears once, near the front.
+  const columns = [];
+  const seenCol = new Set();
+  const pushCol = (k) => { if (k && !seenCol.has(k)) { seenCol.add(k); columns.push(k); } };
+  const orderTypeCols = (t) => {
+    if (!t) return;
+    const fs2 = (t.fields || []);
+    for (const f of fs2) if (f.is_structural) pushCol(f.key);
+    for (const f of fs2) if (!f.is_structural) pushCol(f.key);
+  };
+
+  const rows = [];
+  for (const d of docs) {
+    const t = bySlug.get(d.type_slug);
+    orderTypeCols(t);
+    const fields = {};
+    for (const e of exStmt.all(d.id)) {
+      const dv = (e.display_value != null && String(e.display_value).trim() !== '') ? e.display_value : e.raw_value;
+      fields[e.field_key] = {
+        value: (dv == null || dv === '') ? null : String(dv),
+        confidence: e.confidence ?? null,
+        method: e.extraction_method || null,
+      };
+    }
+    rows.push({
+      id: d.id, filename: d.original_filename, supplier: d.supplier_name || null,
+      typeName: d.type_name || null, typeSlug: d.type_slug || null,
+      status: d.status, confidence: d.overall_confidence ?? null, fields,
+    });
+  }
+  return { columns, labels, rows };
+}
+
+// Debug-table output dir: <project>/Debug in dev, <userData>/debug when packaged —
+// mirrors modules/diaglog.js so the two dev artefacts sit together. __dirname is
+// src/modules/processing, so three levels up is the repo root.
+function _debugTableDir(app, path) {
+  const base = (app && app.isPackaged)
+    ? path.join(app.getPath('userData'), 'debug')
+    : path.join(__dirname, '..', '..', '..', 'Debug');
+  return path.join(base, 'debug_table');
+}
+
+// Persist the owner-assembled table to debug_values.json (+ copy any winning-crop
+// slices the renderer resolved). Only copies a slice PATH that resolves INSIDE the
+// dev slice dir (same path-validation as dev-get-slice) so the renderer can never
+// make this read an arbitrary file. Returns a summary the console shows as a toast.
+function _saveDebugTable(ctx, payload) {
+  const { path, fs } = ctx;
+  const app = require('electron').app;
+  const outDir = _debugTableDir(app, path);
+  const sliceOutDir = path.join(outDir, 'slices');
+  fs.mkdirSync(sliceOutDir, { recursive: true });
+
+  const rows = Array.isArray(payload && payload.rows) ? payload.rows : [];
+  const sliceRoot = path.resolve(ctx.devSliceDir || '');
+  let slices = 0, flags = 0;
+  const out = { generated_at: new Date().toISOString(), doc_count: rows.length, rows: [] };
+
+  for (const r of rows) {
+    const fieldsOut = {};
+    for (const [k, cell] of Object.entries((r && r.fields) || {})) {
+      let sliceRel = null;
+      const sp = cell && cell.slicePath;
+      if (sp && sliceRoot) {
+        try {
+          const abs = path.resolve(String(sp));
+          if (abs.startsWith(sliceRoot + path.sep) && fs.existsSync(abs)) {
+            const rel = path.join('slices', `${r.id}__${k}.png`);
+            fs.copyFileSync(abs, path.join(outDir, rel));
+            sliceRel = rel; slices++;
+          }
+        } catch {}
+      }
+      const wrong = !!(cell && cell.wrong);
+      if (wrong) flags++;
+      const correct = (cell && cell.correct != null && String(cell.correct).trim() !== '')
+        ? String(cell.correct).trim() : null;
+      fieldsOut[k] = {
+        value: cell ? (cell.value ?? null) : null,
+        method: cell ? (cell.method ?? null) : null,
+        confidence: cell ? (cell.confidence ?? null) : null,
+        wrong, correct, slice: sliceRel,
+      };
+    }
+    out.rows.push({
+      id: r.id, filename: r.filename, supplier: r.supplier || null,
+      type: r.typeName || null, type_slug: r.typeSlug || null, status: r.status || null,
+      fields: fieldsOut,
+    });
+  }
+
+  const file = path.join(outDir, 'debug_values.json');
+  fs.writeFileSync(file, JSON.stringify(out, null, 2));
+  return { ok: true, file, doc_count: rows.length, flags, slices };
+}
+
 // Supported input extensions — mirrors python_backend ocr.tesseract.SUPPORTED_EXTENSIONS
 // and watch/handler.js. Used only to enumerate + shard files for the parallel
 // worker pool; the per-document pipeline (and its file detection) is unchanged.
@@ -891,6 +1019,12 @@ function register(ctx) {
   // even in packaged builds where the inspector WINDOW is disabled.
   ipcMain.handle('dev-get-session-docs', () => { requireRole('admin', 'edit'); return _devSession.docs.slice().reverse(); });
   ipcMain.handle('dev-get-session-doc',  (_e, key) => { requireRole('admin', 'edit'); return _devSession.traceByDoc.get(key) || []; });
+
+  // SFDEV bulk debug-table (dev-only, admin/edit-gated like the sibling dev IPCs). READ
+  // builds the queue-wide field grid from the DB; SAVE writes debug_values.json (+ copies
+  // the winning-crop slices the renderer resolved) to the Debug dir. No DB writes, no learning.
+  ipcMain.handle('dev-debug-table-data', () => { requireRole('admin', 'edit'); return _buildDebugTable(getDb()); });
+  ipcMain.handle('dev-debug-table-save', (_e, payload) => { requireRole('admin', 'edit'); return _saveDebugTable(ctx, payload); });
 
   // Source folder for "Process Documents" — part of the daily Admin/Edit workflow. A native folder
   // picker can't show the files inside (Windows: folders-only), so the Import view lists the folder's
@@ -3646,4 +3780,6 @@ module.exports = {
   // Exposed for the fast re-extract fill-only merge unit test (test_reextract_merge.js).
   _mergeReextractRows: mergeReextractRows,
   _admitReextractPick: admitReextractPick,
+  // Exposed for the SFDEV debug-table builder pin (test_debug_table.js).
+  _buildDebugTable, _saveDebugTable, _debugTableDir,
 };

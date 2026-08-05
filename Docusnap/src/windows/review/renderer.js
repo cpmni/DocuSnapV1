@@ -7664,5 +7664,165 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
   }
 })();
 
+// ── SFDEV bulk debug-table (dev-only) — queue-wide field grid ──────────────────
+// Rows = the review queue (needs_review + deferred), columns = the union of the
+// present types' fields, cells = the extracted value + method + confidence. Click a
+// cell to flag it wrong (toggle) and optionally type the CORRECT value; Submit writes
+// debug_values.json to the Debug dir so the main session sees the CLASS of a detection
+// failure across the whole queue, not one screenshot at a time. Reachable only once the
+// trace console (#rdc) is unlocked. All state is in-renderer — no DB writes, no learning.
+(() => {
+  const overlay  = document.getElementById('rdt');
+  if (!overlay) return;
+  const elTable   = document.getElementById('rdt-table');
+  const elEmpty   = document.getElementById('rdt-empty');
+  const elStats   = document.getElementById('rdt-stats');
+  const elToast   = document.getElementById('rdt-toast');
+  const btnOpen   = document.getElementById('rdc-table');
+  const btnClose  = document.getElementById('rdt-close');
+  const btnSubmit = document.getElementById('rdt-submit');
+
+  let open = false;
+  let data = null;                      // { columns, labels, rows }
+  const flagged = new Set();            // `${id}::${field}` for cells the owner marked wrong
+  const skey = (id, f) => `${id}::${f}`;
+  const esc = (s) => String(s == null ? '' : s)
+    .replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function toast(msg) {
+    elToast.textContent = msg; elToast.classList.add('show');
+    setTimeout(() => elToast.classList.remove('show'), 3200);
+  }
+  function updateStats() {
+    elStats.textContent = data
+      ? `${data.rows.length} docs · ${data.columns.length} fields · ${flagged.size} flagged`
+      : '';
+  }
+
+  function cellHtml(row, f) {
+    const cell = (row.fields || {})[f];
+    const val    = cell && cell.value != null ? cell.value : '';
+    const method = cell && cell.method ? cell.method : '';
+    const conf   = cell && cell.confidence != null ? `${cell.confidence}%` : '';
+    const cls = 'rdt-cell' + (val === '' ? ' empty' : '') + (flagged.has(skey(row.id, f)) ? ' wrong' : '');
+    let inner = `<span class="cv">${val === '' ? '—' : esc(val)}</span>`;
+    const meta = [method, conf].filter(Boolean).join(' ');
+    if (meta) inner += ` <span class="cm">${esc(meta)}</span>`;
+    return `<td class="${cls}" data-id="${row.id}" data-f="${esc(f)}">${inner}</td>`;
+  }
+
+  function renderTable() {
+    if (!data || !data.rows.length) {
+      elEmpty.hidden = false; elEmpty.textContent = 'Review queue is empty.'; elTable.innerHTML = ''; updateStats(); return;
+    }
+    elEmpty.hidden = true;
+    const head = `<thead><tr><th class="doc-col">Document</th>`
+      + data.columns.map(f => `<th title="${esc(f)}">${esc(data.labels[f] || f)}</th>`).join('') + `</tr></thead>`;
+    const body = data.rows.map(row => {
+      const docCell = `<td class="doc-col" data-id="${row.id}"><div class="rdt-fname" title="${esc(row.filename)}">${esc(row.filename || '(' + row.id + ')')}</div>`
+        + `<div class="rdt-dmeta"><span class="type">${esc(row.typeName || 'untyped')}</span>${row.supplier ? ' · ' + esc(row.supplier) : ''}</div></td>`;
+      return `<tr data-id="${row.id}">${docCell}${data.columns.map(f => cellHtml(row, f)).join('')}</tr>`;
+    }).join('');
+    elTable.innerHTML = head + `<tbody>${body}</tbody>`;
+    updateStats();
+  }
+
+  // Click a VALUE cell → toggle its wrong flag. That is ALL the owner does — the main
+  // session reads the flagged doc to work out the correct value (owner rule: don't make
+  // me populate 77 correct values for one test round). Click the DOCUMENT cell → select
+  // that doc in the queue so the preview BEHIND this movable panel shows it.
+  elTable.addEventListener('click', (e) => {
+    const docTd = e.target.closest('.doc-col');
+    if (docTd) {
+      const id = Number(docTd.dataset.id);
+      const doc = (typeof queue !== 'undefined' && queue && queue.find) ? queue.find(d => d.id === id) : null;
+      if (doc && typeof selectDoc === 'function') { try { selectDoc(doc); } catch {} }
+      elTable.querySelectorAll('tr.sel').forEach(tr => tr.classList.remove('sel'));
+      docTd.closest('tr')?.classList.add('sel');
+      return;
+    }
+    const td = e.target.closest('.rdt-cell'); if (!td) return;
+    const k = skey(Number(td.dataset.id), td.dataset.f);
+    if (flagged.has(k)) { flagged.delete(k); td.classList.remove('wrong'); }
+    else { flagged.add(k); td.classList.add('wrong'); }
+    updateStats();
+  });
+
+  async function openTable() {
+    if (open) return;
+    if (document.getElementById('rdc').hidden) return;   // console must be unlocked first
+    open = true; overlay.hidden = false;
+    elEmpty.hidden = false; elEmpty.textContent = 'Loading queue…'; elTable.innerHTML = '';
+    let err = null;
+    try {
+      if (typeof window.docusnap.devDebugTableData !== 'function')
+        throw new Error('bridge missing — reopen the Review window');
+      data = await window.docusnap.devDebugTableData();
+    } catch (e) { data = null; err = e; }
+    if (!data) {
+      // Surface WHY. "no handler registered" ⇒ the main process is stale (restart the whole
+      // app so the new IPC registers); any other message is the real builder/DB error.
+      const m = (err && err.message) ? err.message : 'returned no data';
+      elEmpty.textContent = /no handler|not.*registered|not a function|bridge missing/i.test(m)
+        ? 'Failed to load: the app’s main process is stale — fully QUIT and relaunch (reprocessed data is kept). Details: ' + m
+        : 'Failed to load the queue: ' + m;
+      return;
+    }
+    renderTable();
+  }
+  function closeTable() { if (!open) return; open = false; overlay.hidden = true; }
+
+  async function submit() {
+    if (!data) return;
+    btnSubmit.disabled = true;
+    const rows = data.rows.map(row => ({
+      id: row.id, filename: row.filename, supplier: row.supplier,
+      typeName: row.typeName, typeSlug: row.typeSlug, status: row.status,
+      // Emit only fields that HAVE a value or were flagged — keeps the JSON to the
+      // signal (present reads + the owner's wrong-marks), not one empty cell per column.
+      fields: Object.fromEntries(data.columns
+        .filter(f => (row.fields || {})[f] || flagged.has(skey(row.id, f)))
+        .map(f => {
+          const cell = (row.fields || {})[f] || {};
+          return [f, { value: cell.value ?? null, method: cell.method ?? null, confidence: cell.confidence ?? null,
+                       wrong: flagged.has(skey(row.id, f)), correct: null, slicePath: null }];
+        })),
+    }));
+    let res = null;
+    try { res = await window.docusnap.devDebugTableSave({ rows }); } catch {}
+    btnSubmit.disabled = false;
+    if (res && res.ok) toast(`Saved ${res.doc_count} docs · ${res.flags} flagged · ${res.slices} slices → ${res.file}`);
+    else toast('Save failed.');
+  }
+
+  btnOpen?.addEventListener('click', openTable);
+  btnClose?.addEventListener('click', closeTable);
+  btnSubmit?.addEventListener('click', submit);
+  // Esc closes the table FIRST (capture phase + stop) so it doesn't also close the console underneath.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && open) { e.stopPropagation(); e.preventDefault(); closeTable(); }
+  }, true);
+
+  // Drag the panel by its header (buttons excluded) so it can be shoved aside to read
+  // the document preview behind it. Resizing is native (CSS resize:both on #rdt).
+  const head = document.getElementById('rdt-head');
+  let drag = null;
+  head?.addEventListener('mousedown', (e) => {
+    if (e.target.closest('button')) return;
+    const r = overlay.getBoundingClientRect();
+    drag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+    overlay.style.left = r.left + 'px'; overlay.style.top = r.top + 'px';
+    overlay.style.right = 'auto'; document.body.style.userSelect = 'none'; e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!drag) return;
+    const maxL = Math.max(0, window.innerWidth  - overlay.offsetWidth);
+    const maxT = Math.max(0, window.innerHeight - 40);
+    overlay.style.left = Math.min(Math.max(0, e.clientX - drag.dx), maxL) + 'px';
+    overlay.style.top  = Math.min(Math.max(0, e.clientY - drag.dy), maxT) + 'px';
+  });
+  window.addEventListener('mouseup', () => { if (drag) { drag = null; document.body.style.userSelect = ''; } });
+})();
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 loadQueue();

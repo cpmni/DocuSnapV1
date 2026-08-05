@@ -953,6 +953,25 @@ def extract_fields(ocr_text: str, field_keys: list[str],
         # code (config unchanged) so OFF ⇒ byte-identical.
         if pk == 'po_number' and os.environ.get('PO_ORDER_NO_LABELS', '1') != '0':
             labels = labels + ["Order No.", "Order Number", "Order No"]
+        # TOTAL_GROSS_LABELS (reggie 2026-08-06, DEFAULT OFF → byte-identical): the shipped
+        # total_amount list misses common grand-total captions, so on those layouts keyword reads NO
+        # gross at all (measured: cold Customer-corpus total 40.6%→50.0%, M=0, scanned +16). This
+        # starves both the total lane AND the net-misread FLAG (no gross candidate to corroborate).
+        # Each addition is a payable/final caption reggie cleared of subtotal collision; the matcher
+        # normalises case+spacing but NOT parens/periods, so paren/'incl' literals are separate.
+        # Inserted BEFORE bare "Total" (specific-first); the "Charge(s)" residual (subtotal-section
+        # collision risk) is LAST. Does NOT touch subtotal / _total_role_collision / the bare-"Total"
+        # net-vs-gross guard. Config unchanged so OFF ⇒ byte-identical (mirrors PO_ORDER_NO_LABELS).
+        if pk == 'total_amount' and os.environ.get('TOTAL_GROSS_LABELS', '0') != '0':
+            _gross_extra = ["Total to Pay", "Net to Pay", "Balance to Pay", "Amount Now Due",
+                            "Total Incl VAT", "Total Incl. VAT",
+                            "Total (inc VAT)", "Total (incl VAT)", "Total (inc. VAT)",
+                            "Total Charges", "Total Charge"]
+            if "Total" in labels:
+                _i = labels.index("Total")
+                labels = labels[:_i] + _gross_extra + labels[_i:]
+            else:
+                labels = labels + _gross_extra
         dirs    = fp.get("directions", ["right"])
         base_conf = fp.get("base_confidence", 75)
         role_caption = fp.get("role_caption")   # 'ref' on a seeded custom-ref field (RC1/RC5)

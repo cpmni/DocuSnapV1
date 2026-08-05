@@ -806,3 +806,40 @@ value → larger blast radius than the impossible arm = drops garbage), independ
   HONESTY: the harness cannot bit-reproduce the live app tilt misread -> this is a REGRESSION + false-flag
   gate; the recovered-suggestion quality (~=GT) is owner-watched live. DEFERRED: Slice 1b (codes -- already
   owned by inline-reconcile + edge-guard) and Slice 2 (keyword-corroborated SILENT heal).
+
+## 2026-08-06 — Net-misread total FLAG + missing grand-total labels (taught totals read the NET line)
+Advisors: gary (engine seam + gate/test) + reggie (total-label precedence + £-neg currency + the label set) →
+Oracle. Trigger: the owner's SFDEV debug-table flagged wrong totals on 77 taught Castellan credit notes;
+measured vs GT = 55 gross-correct / **10 read the NET line** (some at 90-95% conf → silent-auto-file danger) /
+12 garbled. Corpus-wide the TEACH-arm total lane was **30.7%**.
+- **Root (traced):** a taught Stage-0.5 total read has ZERO net-vs-gross discipline (`template_mapper.py`
+  reads a fixed box / relocates off the literal "TOTAL" anchor, `shape_mode='ignore'`) — the net-vs-gross
+  logic lives ONLY in `keyword.py` (`_total_role_collision`). The two existing safeties
+  (`_reconciliation_pick_total`, the Stage-4 `_RECONCILE_CAP` flag) BOTH need VAT read correctly; when the
+  "VAT @ 20%" line mis-reads/absent, `total_reconciles(net)` FALSELY balances (net ≈ subtotal + 0) so
+  neither fires and the net commits silently. SECOND root (measured after a 0-fire gate): keyword's
+  `total_amount` label bank MISSES common gross captions ("Total to Pay"/"Total Charge"/"Total (inc VAT)")
+  → on those layouts keyword reads NO gross → tanks the total lane AND starves the flag (no gross candidate).
+- **Oracle verdict:** **SEND BACK** the original design (its step 2 gated on `total_reconciles`, which is a
+  strict SUPERSET of the bug → inert on the vat-missing target); **SIGN OFF WITH CONDITIONS** on the
+  corrected `_net_misread_verdict` (keys on `total ≈ subtotal` + a distinct nearest-above VAT-plausible
+  [1.01–1.30×] confident [≥70] gross candidate; caps to 50 + review note; **NEVER swaps** — arithmetic/role
+  rail, not learned-shape → authoritative-anchor invariant preserved). FLAG, not auto-correct (reggie:
+  keyword grand-total is an unsafe REPLACEMENT — "Amount Due £0.00" is tried before bare "Total"), not
+  do-nothing. **Leave the switch OFF tonight — the owner flips** (the false-flag rate is the load-bearing
+  unknown, measured against a corpus, not a unit test). Oracle's added GATE CONDITION: count FALSE-FLAGS
+  (a correct-at-base total newly capped), not just accuracy/M.
+- **BUILT (both DEFAULT OFF → byte-identical):** `NET_MISREAD_TOTAL_FLAG` (`engine._flag_net_misread_total`
+  + pure `_net_misread_verdict`, after `_reconciliation_pick_total`, before Stage-4) · `TOTAL_GROSS_LABELS`
+  (reggie-cleared payable captions injected in keyword.py, config unchanged; mirrors PO_ORDER_NO_LABELS;
+  "Charge" residual last). Pins: `test_net_misread_total_flag.py` (14, incl. the critical VAT-missing
+  regression pin the original design fails) + `test_total_gross_labels.py`; 7 totals/keyword regression
+  suites green.
+- **GATE (customer_corpus_score.js, SAMPLE=300 SEED=7 both):** labels cold total **40.6→50.0 (+9.4, scanned
+  +16.3)**, every other lane byte-identical (M=0). Both-fixes TEACH arm: total **30.7→34.4 (+3.8)**, every
+  other lane IDENTICAL (M=0); the flag fired **4×, all real catches** (Meadowvale net-misreads, some
+  previously SILENT), **ZERO false-flags**. HONESTY: the harness can't bit-reproduce the app's exact 10
+  Castellan net-misreads (they type "TOTAL", a keyword candidate → the flag WILL fire there) — the
+  deterministic role/arithmetic decision is gate-able, the end-to-end taught heal is OWNER-WATCHED.
+- **DEFERRED (own switch/gate):** robust VAT read → let `_reconciliation_pick_total` AUTO-CORRECT net→gross
+  (bigger blast radius); reggie's residual labels "Balance Outstanding" family (statement running-balance risk).

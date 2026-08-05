@@ -447,6 +447,9 @@ contextBridge.exposeInMainWorld('docusnap', {
   devGetSessionDocs:   ()        => ipcRenderer.invoke('dev-get-session-docs'),
   devGetSessionDoc:    (key)     => ipcRenderer.invoke('dev-get-session-doc', key),
   devGetSlice:         (path)    => ipcRenderer.invoke('dev-get-slice', path),
+  // SFDEV bulk debug-table: read the queue-wide field grid / save it + slices to disk.
+  devDebugTableData:   ()        => ipcRenderer.invoke('dev-debug-table-data'),
+  devDebugTableSave:   (payload) => ipcRenderer.invoke('dev-debug-table-save', payload),
 });
 
 // ── Keyboard-focus repair (Windows) ────────────────────────────────────────────

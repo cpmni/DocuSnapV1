@@ -1107,6 +1107,7 @@
     <span id="rdc-title">Extraction trace</span>
     <span id="rdc-doc"></span>
     <button id="rdc-reprocess" class="rdc-btn" title="Reprocess this document with tracing on">↻ Reprocess (trace)</button>
+    <button id="rdc-table" class="rdc-btn" title="Open the queue-wide debug table">▦ Table</button>
     <button id="rdc-close" class="rdc-btn" title="Close (Esc)">&times;</button>
   </div>
   <div id="rdc-body">
@@ -1114,6 +1115,81 @@
     <div id="rdc-fields"></div>
   </div>
 </aside>
+
+<!-- SFDEV bulk debug-table (dev-only). Queue-wide field grid: click a cell to flag it
+     wrong, click again to type the correct value, then Submit → writes debug_values.json.
+     Reachable only once the trace console (#rdc) is unlocked. -->
+<div id="rdt" hidden>
+  <div id="rdt-head">
+    <span id="rdt-title">▦ Debug table</span>
+    <span id="rdt-sub">click a cell to mark it wrong · click a filename to view that doc · drag/resize this panel</span>
+    <span id="rdt-stats"></span>
+    <button id="rdt-submit" class="rdt-btn primary" title="Write debug_values.json + copy any winning-crop slices">Submit</button>
+    <button id="rdt-close" class="rdt-btn" title="Close (Esc)">&times;</button>
+  </div>
+  <div id="rdt-body">
+    <div id="rdt-empty">Loading queue…</div>
+    <div id="rdt-scroll"><table id="rdt-table"></table></div>
+  </div>
+  <div id="rdt-toast"></div>
+</div>
+<style>
+  /* Floating, draggable + resizable panel — deliberately NOT full-screen so the
+     document preview stays visible behind it while you flag cells. */
+  #rdt { position: fixed; top: 52px; left: 16px; width: min(1100px, 92vw); height: 68vh;
+         min-width: 420px; min-height: 220px; z-index: 95000; background: var(--surface);
+         border: 1px solid var(--border2); border-radius: 10px; overflow: hidden; resize: both;
+         box-shadow: 0 16px 48px rgba(0,0,0,.5); display: flex; flex-direction: column;
+         font-family: var(--sans); color: var(--text); }
+  #rdt[hidden] { display: none; }
+  #rdt-head { display: flex; align-items: center; gap: 10px; padding: 9px 14px; flex-shrink: 0;
+              border-bottom: 1px solid var(--border2); background: var(--surface2);
+              cursor: move; user-select: none; border-radius: 10px 10px 0 0; }
+  #rdt-title { font-weight: 700; font-size: 13px; color: var(--accent2); flex-shrink: 0; }
+  #rdt-sub { font-size: 11px; color: var(--muted); flex: 1; overflow: hidden;
+             text-overflow: ellipsis; white-space: nowrap; }
+  #rdt-stats { font-family: var(--mono); font-size: 11px; color: var(--muted); flex-shrink: 0; }
+  .rdt-btn { border: 1px solid var(--border2); background: var(--surface); color: var(--muted);
+             border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; flex-shrink: 0; }
+  .rdt-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .rdt-btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .rdt-btn.primary:hover { background: var(--accent2); color: var(--on-accent); }
+  #rdt-body { flex: 1; min-height: 0; position: relative; }
+  #rdt-empty { padding: 20px; font-size: 12px; color: var(--muted); }
+  #rdt-scroll { position: absolute; inset: 0; overflow: auto; }
+  #rdt-table { border-collapse: separate; border-spacing: 0; font-size: 11px; font-family: var(--mono); }
+  #rdt-table th, #rdt-table td { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+              padding: 5px 8px; text-align: left; vertical-align: top; white-space: nowrap; }
+  #rdt-table thead th { position: sticky; top: 0; z-index: 3; background: var(--surface3);
+              color: var(--text); font-weight: 600; }
+  #rdt-table .doc-col { position: sticky; left: 0; z-index: 2; background: var(--surface2);
+              max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+  #rdt-table thead .doc-col { z-index: 4; }
+  #rdt-table tbody tr:hover td { background: var(--surface2); }
+  #rdt-table tbody tr:hover .doc-col { background: var(--surface3); }
+  #rdt-table .doc-col { cursor: pointer; }
+  .rdt-fname { color: var(--text); }
+  #rdt-table tbody tr:hover .rdt-fname { color: var(--accent); text-decoration: underline; }
+  #rdt-table tr.sel .doc-col { box-shadow: inset 3px 0 0 var(--accent); }
+  .rdt-dmeta { color: var(--muted); font-size: 10px; margin-top: 2px; }
+  .rdt-dmeta .type { color: var(--accent2); }
+  .rdt-cell { cursor: pointer; }
+  .rdt-cell.empty { color: var(--muted2); }
+  .rdt-cell .cv { color: var(--text); }
+  .rdt-cell .cm { color: var(--muted); font-size: 9.5px; }
+  .rdt-cell.wrong { background: rgba(214,69,69,.14) !important; box-shadow: inset 2px 0 0 var(--err); }
+  .rdt-cell.wrong .cv { color: var(--err); text-decoration: line-through; }
+  .rdt-cell .correct { display: block; margin-top: 3px; color: var(--ok); }
+  .rdt-cell .correct::before { content: "✓ "; }
+  .rdt-cell input.correct-in { width: 130px; margin-top: 3px; font-family: var(--mono); font-size: 10.5px;
+              padding: 2px 5px; border: 1px solid var(--accent); border-radius: 4px;
+              background: var(--bg); color: var(--text); outline: none; }
+  #rdt-toast { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+               background: var(--surface3); border: 1px solid var(--border2); color: var(--text);
+               padding: 8px 16px; border-radius: 8px; font-size: 12px; opacity: 0;
+               transition: opacity .2s; pointer-events: none; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+  #rdt-toast.show { opacity: 1; }
+</style>
 <style>
   #rdc {
     position: fixed; top: 52px; right: 16px; width: 380px; height: 70vh; max-height: 84vh;

@@ -1101,3 +1101,21 @@ it MUST route through teach_angle_compose's level frame + the deskewedNormToRaw 
 design + gate + the RED-gate pitfall: `docs/designs/DATE_CROP_DESKEW_READ_2026-08-06.md`. Owner chose to
 build it from a fresh session (core change, not the tail of a marathon). Supersedes the C6 same-year
 order-flip residual (that class is THIS fix's job — not another merge-layer guard).
+
+## 2026-08-08 — totals-fix follow-ups + debug-table Slice 2 (owner asleep, autonomous session)
+Context: HANDOVER_2026-08-08.md. The SFDEV debug-table shipped + two DEFAULT-OFF totals fixes shipped
+(NET_MISREAD_TOTAL_FLAG + TOTAL_GROSS_LABELS, gated M=0, owner to flip). Deferred:
+- **Customer field degrades on teach** — teaching ONE credit note drops the recipient field from cold-keyword
+  79.6% to taught 41.7% (corpus scorer): the taught fixed box lands on label captions ("BILL TO"/"SITE ADDRESS")
+  across variant layouts. All get a name-quality review flag today (safety holds). Design lead: for a taught
+  free-text/name field that FAILS its quality gate, fall back to / corroborate with the keyword label-hunt read
+  (keyword customer is 79.6%). Needs gary/reggie + Oracle; gate = customer lane up, M=0.
+- **Robust shadow vat_tax read** (inline rate "VAT @ 20%") → lets the EXISTING `_reconciliation_pick_total`
+  AUTO-CORRECT net→gross (turns the net-misread FLAG into a silent heal). Bigger blast radius; own switch/gate.
+- **Extra gross labels (residual)** — reggie flagged "Balance Outstanding"/"Outstanding Balance"/"Balance Owing"
+  as payable-but-statement-collision-risky. Add under TOTAL_GROSS_LABELS only after a full-corpus false-flag vet.
+- **Debug-table Slice 2 — winning-crop persistence.** Today `debug_values.json` records value/method/conf/wrong;
+  the slice-copy backend is built + path-defended but the renderer sends slicePath:null. Slice 2 = accumulate
+  each doc's winning-slice-per-field at reprocess-complete while the SFDEV console is open (owner's gate:
+  "slices saved only on reprocess with SFDEV open"), reusing the 63e0cb3 target_geom bbox-match. Then Submit
+  copies the real crops into the debug dir.

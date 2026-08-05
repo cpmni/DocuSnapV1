@@ -1883,6 +1883,52 @@ def select_mapping_source(matched_tmpl: dict, templates: list | None) -> tuple[l
     return best_maps, best_sib
 
 
+# ── Net-misread total FLAG (DEFAULT OFF — gary+reggie+Oracle 2026-08-06, docs/oracle_log.md) ──
+# A taught Stage-0.5 total read has NO net-vs-gross discipline (template_mapper reads a fixed box /
+# relocates off the literal "TOTAL" anchor), so on a variable-line-count credit note it can land on
+# the "Net Total" row and commit the NET at high confidence. The two existing safeties both need the
+# VAT line read correctly: _reconciliation_pick_total swaps only to a candidate that BALANCES, and the
+# Stage-4 flag needs `tax` present. When VAT is absent/mis-read, `total_reconciles(net)` FALSELY
+# balances (net ≈ subtotal + 0) so neither fires and the net auto-files silently. This pass catches
+# exactly that gap WITHOUT relying on total_reconciles: it keys on "committed total ≈ subtotal (the net)
+# AND a distinct, VAT-plausible, larger, confident total was also read" → cap + review note, NEVER swap
+# (fail-toward-review; preserves the authoritative-anchor invariant — arithmetic/role rail, not learned
+# shape). Byte-identical when OFF. Owner flip pending its own corpus false-flag gate (Oracle condition).
+NET_MISREAD_TOTAL_FLAG = os.environ.get('NET_MISREAD_TOTAL_FLAG', '0') != '0'
+_NET_MISREAD_MIN_CONF  = 70     # a corroborating gross candidate must be at least this confident
+_NET_MISREAD_RATIO_LO  = 1.01   # gross/net band — VAT-plausible (≈5%..25% + rounding). Oracle: keep
+_NET_MISREAD_RATIO_HI  = 1.30   # continuous + nearest-above; do NOT snap to {1.05,1.20} (mixed-rate baskets)
+_NET_MISREAD_CAP       = 50     # cap a flagged net to review level (matches validator _RECONCILE_CAP)
+
+
+def _net_misread_verdict(total, subtotal, candidates, tol):
+    """PURE (Oracle SIGN-OFF-W/COND 2026-08-06). Returns (gross_float, candidate_dict) when the
+    committed `total` looks like the NET/subtotal line AND a distinct larger VAT-plausible confident
+    total also exists — else None. `total`/`subtotal` are parsed floats; `candidates` = [{'value',
+    'confidence'}, …]. Keys on `total ≈ subtotal` + nearest-above VAT-plausible candidate — NOT
+    total_reconciles, which spuriously balances net==subtotal when VAT is absent (the exact silent-
+    commit case). A correct GROSS differs from the net by a real VAT > tol, so it fails step 2 and is
+    never flagged; a zero-VAT doc (net==gross) has no larger candidate, so it is never flagged."""
+    from extraction.validator import parse_amount
+    if total is None or subtotal is None or total <= 0 or subtotal <= 0:
+        return None
+    if abs(total - subtotal) > tol:
+        return None                       # total is NOT on the net line — a correct gross (protected)
+    best = None                            # nearest-above VAT-plausible gross
+    for c in (candidates or []):
+        g = parse_amount(c.get('value'))
+        if g is None or (c.get('confidence') or 0) < _NET_MISREAD_MIN_CONF:
+            continue
+        if g <= total + tol:
+            continue                       # must be strictly larger than the net
+        ratio = g / total
+        if not (_NET_MISREAD_RATIO_LO <= ratio <= _NET_MISREAD_RATIO_HI):
+            continue                       # implausible as a VAT gross (running balance / line-item)
+        if best is None or g < best[0]:
+            best = (g, c)                  # nearest-above = the gross, not a larger running balance
+    return best
+
+
 class ExtractionEngine:
 
     def __init__(self,
@@ -4309,6 +4355,68 @@ class ExtractionEngine:
         except Exception:
             pass  # reconciliation aid — must never break extraction
 
+    def _flag_net_misread_total(self, results, field_defs):
+        """FLAG (never swap) a `total_amount` that looks like the NET/subtotal line while a distinct
+        larger VAT-plausible total was ALSO read — cap confidence to review level + a note so it cannot
+        silently auto-file. DEFAULT OFF (NET_MISREAD_TOTAL_FLAG) → byte-identical. Runs AFTER
+        _reconciliation_pick_total (a valid balancing swap wins first → this no-ops) and BEFORE Stage-4.
+        Fail-toward-review; changes no VALUE, disables no safety, preserves the authoritative-anchor
+        invariant (arithmetic/role rail, not learned shape). gary+reggie+Oracle 2026-08-06. Best-effort."""
+        if not NET_MISREAD_TOTAL_FLAG:
+            return
+        try:
+            from extraction import validator as _v
+            total_key = None
+            for k in ('total_amount', *keyword.ROLE_KEY_ALIASES.get('total_amount', ())):
+                d = results.get(k)
+                if isinstance(d, dict) and d.get('value'):
+                    total_key = k
+                    break
+            if not total_key:
+                return
+            inc = results[total_key]
+            if inc.get('validation_note'):
+                return   # already flagged (e.g. a pick_total swap / garble note) — never double-cap
+            total = _v.parse_amount(inc.get('value'))
+            sub = None
+            for k in ('subtotal', *keyword.ROLE_KEY_ALIASES.get('subtotal', ())):
+                d = results.get(k)
+                if isinstance(d, dict) and d.get('value'):
+                    sub = _v.parse_amount(d.get('value'))
+                    if sub:
+                        break
+            if total is None or sub is None:
+                self._t('net_misread_flag', field=total_key, decision='skip',
+                        reason='no total/subtotal witness')
+                return
+            tol = max(total * 0.02, 0.05)
+            # Candidate ledger for the total role + its aliases (amount_due/balance_due can be the
+            # true gross — Oracle: include, measure false-flags rather than hard-exclude).
+            cands = list(self._field_candidates.get(total_key) or [])
+            for ak in keyword.ROLE_KEY_ALIASES.get('total_amount', ()):
+                cands += (self._field_candidates.get(ak) or [])
+            verdict = _net_misread_verdict(total, sub, cands, tol)
+            if not verdict:
+                self._t('net_misread_flag', field=total_key, decision='skip',
+                        reason='total!=subtotal or no VAT-plausible larger total',
+                        total=total, subtotal=sub)
+                return
+            gross, gc = verdict
+            # Copy vetted by Chris (2026-08-06): drop the "net/subtotal" jargon, name BOTH the filed
+            # value AND the larger one so the operator can compare without hunting for the current read.
+            note = (f"we filed {inc.get('value')}, but it looks like a part-total — a larger total "
+                    f"({gc.get('value')}) was also found; please check which is the real total")
+            results[total_key] = {
+                **inc,
+                'confidence':      min(inc.get('confidence') or 0, _NET_MISREAD_CAP),
+                'validation_note': note,
+            }
+            self._t('net_misread_flag', field=total_key, decision='flag', was=inc.get('value'),
+                    gross=str(gc.get('value')), gross_conf=gc.get('confidence'),
+                    subtotal=sub, capped=_NET_MISREAD_CAP)
+        except Exception:
+            pass  # flag aid — must never break extraction
+
     def _maybe_gate_reread(self, garble, data, fmt_entry, val_type, label,
                            page_images, page_provenance, cache):
         """Stage-4.5 gate-failure re-read (DEFAULT ON: GATE_REREAD_ENABLED). A structured value
@@ -6058,6 +6166,11 @@ class ExtractionEngine:
         # component is present, prefer the total CANDIDATE that actually BALANCES over one that
         # doesn't — objective maths, never over an explicit ⊕ teach. Before the Stage-4 flag.
         self._reconciliation_pick_total(results, field_defs)
+
+        # A taught total that landed on the NET row (variable line-count credit note) can commit the
+        # net silently when VAT didn't read (both reconcile safeties above starve). FLAG it — never
+        # swap — when total≈subtotal AND a larger VAT-plausible total was also read. DEFAULT OFF.
+        self._flag_net_misread_total(results, field_defs)
 
         # ── Stage 4: Validation ───────────────────────────────────────────────
         self.log("  Stage 4: validating…")

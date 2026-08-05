@@ -297,6 +297,12 @@ async function main() {
     // '_edgegrow'/'_edgecut'/'_shapewarn' etc are countable per arm from the jsonl
     // (a Slice-C fire on the CLEAN arm = a gate breach even when the value matched).
     const exMeth = key => { const x = (m.extractions || {})[key]; return x && x.method ? x.method : undefined; };
+    // Additive dev capture (net-misread total FLAG census): the committed total value + any
+    // validation_note, for EVERY processed doc — lets a false-flag / catch count run off the jsonl
+    // (a false-flag = total matched GT yet carries the net-misread note; a catch = total wrong + note).
+    { const te = (m.extractions || {}).total_amount || {};
+      row.total_got  = exVal(m, 'total_amount') || m.total_amount || '';
+      row.total_note = te.validation_note || null; }
     row.methods = {};
     for (const [lane, key] of [['ref', refKey], ['date', dateKey], ['total', 'total_amount'],
                                ['issuer', 'supplier_name'], ['customer', 'customer_name'],
