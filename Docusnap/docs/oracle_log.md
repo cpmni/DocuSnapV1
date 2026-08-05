@@ -703,3 +703,35 @@ own `_frag_matches` already grants this 1-trailing-glyph slack; C2a lacked it (t
 - **BUILT to spec + GATE**: pins `test_template_frag_clip.py` (10 edge-slack + nesting, all green).
   ISOLATED live pin (edge-guard OFF): slack OFF → WS-14939 @70 shapewarn; slack ON → WS-14939 @95
   template_mapping CLEAN. NF both-arms gate pending. Committed dark + env bridge + Settings toggle.
+
+## 2026-08-06 — TEMPLATE_DATE_INVALID_YIELD (engine kw-merge date precedence) — SIGN OFF WITH CONDITIONS
+Pinned via faithful trace: LarkspurInteriors_invoice_08 invoice_date commits `33/04/2026` @30
+(template_mapping, flagged) — an IMPOSSIBLE date (`parse_date` None; a 1.8°-tilt glyph-misread of the
+taught box's `03/04/2026`) — which SUPERSEDED the valid keyword `03/04/2026` @93. Cause (engine.py
+kw-merge): the located-mapping block (:4985) `continue`s at :5001 for any Stage-0.5 incumbent; the
+date-validity guard at :5002-5005 is unreachable AND is the MIRROR direction (valid incumbent vs invalid
+incoming). Invalid-incumbent/valid-incoming had NO handler → the impossible taught date won on authority.
+- **Consensus (gary+reggie)**: new predicate + a guarded branch inside the located block; when the taught
+  date is unparseable AND unsalvageable and a >=90-conf keyword read IS a valid date, yield to it FLAGGED
+  to Review. New switch `TEMPLATE_DATE_INVALID_YIELD`, default OFF. reggie's `salvage_date(taught) is None`
+  conjunct closes the false-invalid class (spaced `03 / 04 / 2026` / junk-suffixed VALID dates are
+  recovered by salvage; verified `salvage_date('33/04/2026')`=None so the bug still fires). parse_date is
+  calendar-STRICT (no rollover) → catches the whole impossible family (33/04, 31/02, 32/xx, 29-Feb-non-leap).
+- **Oracle SIGN OFF WITH CONDITIONS (all folded in)**: premise verified at source; SEAM confirmed —
+  `validate_and_adjust` floors a clean date's confidence to `_CLEAN_DATE_CONF`=94 (so the `_CONFLICT_CAP`
+  is cosmetic), BUT `{**data}` preserves the `validation_note`, which is the FLOOR-INDEPENDENT auto-file
+  block (trust.js:466 / engine.py:3338 / handler.js:295) → REVIEW-bound at any conf. Rulings: risk #1
+  (parse false-negative) bounded by salvage+90-floor+note; risk #2 (Stage-2 re-contention) bounded, no
+  worse than status quo — REJECTED gary's "preserve provenance" (would re-grant shape_mode='ignore');
+  method stays keyword. Conditions: place after `_kw_ok`/before `_blind_reg` swap with own continue (done);
+  env FIRST conjunct + OFF byte-identical (done); pin the FINAL emitted extraction + auto-file DECISION,
+  never `conf==88` (green-but-false trap); both-invalid pins validator:511-514 flagged @≤30 (done).
+- **RESIDUAL (Oracle C6, pendingfeatures)**: a misread landing on a DIFFERENT VALID date (tilt 03→08,
+  order-flip) parses → NOT caught. This fix heals ONLY the impossible-date subset; the crop/tilt read is
+  the complementary real cure (deskew/OCR arc).
+- **BUILT + GATE**: 13 unit pins green (`test_taught_date_invalid_yield.py` — predicate incl. reggie's
+  salvage cases + the whole impossible family + valid-taught-preserved + empty-guard + source/placement
+  pins). invoice_08 integration: the standalone harness reads the date correctly (03-04-2026, both arms,
+  inert — same OCR-context divergence as doc_06), so it proves no-regression on the valid-read path; the
+  EXACT misread-heal (33/04/2026 → 03-04-2026 + note) is owner-watched (harness can't bit-reproduce the
+  app's tilt misread). NF both-arms gate pending. Committed dark + env bridge + Settings toggle.

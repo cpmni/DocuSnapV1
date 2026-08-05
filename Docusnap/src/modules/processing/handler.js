@@ -168,6 +168,9 @@ function _reconcileEnv(db) {
     // Clip-commit trailing-glyph slack (Oracle 2026-08-06): a CLIP-misread FINAL glyph no longer
     // false-flags a correct, double-witnessed, shape-confirmed inline read (WS-1493S vs WS-14939).
     if (learning.getSetting(db, 'template_clip_commit_edge_slack', 'false') === 'true') env.TEMPLATE_CLIP_COMMIT_EDGE_SLACK = '1';
+    // Invalid taught date yields (Oracle 2026-08-06): an IMPOSSIBLE taught date ('33/04/2026') no
+    // longer wins over a valid, confident keyword date — the valid read is kept, flagged for review.
+    if (learning.getSetting(db, 'template_date_invalid_yield', 'false') === 'true') env.TEMPLATE_DATE_INVALID_YIELD = '1';
     return env;
   } catch { return {}; }
 }

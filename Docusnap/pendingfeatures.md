@@ -1076,3 +1076,15 @@ with the truth so the frag-tie can't clean it). NOT verbatim reuse: `_snap_union
 against `grown`/grow-`edges`; feeding the re-seated box needs new plumbing + its own pins + its own
 re-seat-frame regression gate (do NOT ride the headline "silent clean heal" on un-shelved code). Own
 switch, own gate round.
+
+## Taught DATE misread landing on a DIFFERENT valid date (owned elsewhere; Oracle C6 2026-08-06)
+`TEMPLATE_DATE_INVALID_YIELD` heals only the IMPOSSIBLE-date subset of the taught-date tilt-misread class:
+a taught date box that OCR-misreads a glyph such that the result is an unparseable calendar date
+('03/04'→'33/04') now yields to a valid keyword date, flagged. But a misread that lands on a DIFFERENT
+VALID date ('03/04/2026'→'08/04/2026', or a DD-MM/MM-DD order flip) PARSES — `parse_date` returns a date,
+the yield branch is skipped, and the wrong-but-valid taught date can win (and, being a clean date @94,
+auto-file). This valid→valid misread class is NOT caught here; it's owned by the shape/witness-reconcile
+machinery + the crop-quality/deskew improvement (a tight taught date crop on a tilt is the root reading
+fragility). Repro leads: LarkspurInteriors_invoice_08 (the impossible-date instance this fix healed);
+engine.py `_invalid_taught_date_yields`. The complementary cure = extend the placement/deskew arc to the
+date rung so the taught date box survives the tilt rather than leaning on the keyword fallback. Own round.

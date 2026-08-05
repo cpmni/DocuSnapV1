@@ -252,6 +252,32 @@ UNIVERSAL_VERIFY_NUMERIC = os.environ.get('UNIVERSAL_VERIFY_NUMERIC', '0') != '0
 # Default OFF = byte-identical.
 NAME_UNCLIP_RECONCILE = os.environ.get('NAME_UNCLIP_RECONCILE', '0') != '0'
 
+# TEMPLATE_DATE_INVALID_YIELD (Oracle SIGN-OFF-W/COND 2026-08-06). A Stage-0.5-located taught DATE
+# that OCR-misread into an IMPOSSIBLE calendar value ('33/04/2026' — a tilt glyph-misread of
+# '03/04/2026') used to WIN the kw-merge on AUTHORITY over a valid, confident keyword date. The teach
+# fixed the POSITION, not the value; an impossible date is a deterministic CONTENT flaw (same family as
+# the shipped date-in-ref / ref-length flags that already apply to taught reads). When the taught date
+# is unparseable AND unsalvageable and a >=90-conf rx-validated keyword read IS a valid date, yield to
+# it — but ALWAYS flagged to Review (the keyword is a valid date, not a verified-correct one; the NOTE
+# is the sole safety: Stage 4 floors a clean date's confidence to _CLEAN_DATE_CONF=94, so the cap is
+# cosmetic, but a non-empty validation_note blocks auto-file at any confidence). Heals ONLY the
+# impossible-date subset of the tilt-misread class (a misread landing on a DIFFERENT valid date parses
+# and is out of scope — see pendingfeatures). Default OFF (=1 arms); OFF = byte-identical. Pins:
+# tests/test_taught_date_invalid_yield.py.
+TEMPLATE_DATE_INVALID_YIELD = os.environ.get('TEMPLATE_DATE_INVALID_YIELD', '0') != '0'
+
+
+def _invalid_taught_date_yields(taught_value, kw_value) -> bool:
+    """Deterministic date-validity discriminator for the located date-merge branch: True when the
+    taught value is an IMPOSSIBLE calendar date (validator.parse_date None AND validator.salvage_date
+    None — a spaced/junk-suffixed VALID date is recovered by salvage and correctly does NOT yield)
+    while the keyword value IS a valid calendar date. Content-nature only; the caller still requires
+    date-typed key + _kw_ok (conf>=90) and flags the swap to Review."""
+    return bool(taught_value                                 # an EMPTY taught read is a non-read,
+                and validator.parse_date(taught_value) is None      # not an impossible date -> out of
+                and validator.salvage_date(taught_value) is None    # scope (leave normal precedence)
+                and validator.parse_date(kw_value) is not None)
+
 # DESKEW_RAW_CROPS — the Straighten-arc frame election (gary+007 → Oracle SIGN-OFF-W/COND C1-C7,
 # 2026-08-05 evening, docs/oracle_log.md). Taught boxes are stored RAW-frame (all three teach
 # surfaces back-transform on save), but under Straighten the crop machinery read them against the
@@ -4989,6 +5015,21 @@ class ExtractionEngine:
                 _blind_reg = (existing.get("method") or "").startswith("template_registration")
                 _kw_ok = (data.get("method") in ("keyword", "keyword_override")
                           and data.get("value") and (data.get("confidence") or 0) >= _KEYWORD_TRUST_FLOOR)
+                # A located taught DATE that OCR-misread into an IMPOSSIBLE calendar value must not win
+                # on authority over a valid, confident keyword date (see the TEMPLATE_DATE_INVALID_YIELD
+                # flag block). Yields to the keyword read but FLAGGED to Review (the note is the safety;
+                # Stage 4's clean-date floor makes the cap cosmetic). Own continue; method stays keyword
+                # (do NOT re-grant the taught shape-gate exemption). Env is the first conjunct so OFF is
+                # byte-identical and salvage_date runs only on the rare invalid-taught case.
+                if (TEMPLATE_DATE_INVALID_YIELD and key in date_field_keys and _kw_ok
+                        and _invalid_taught_date_yields(existing.get("value"), data.get("value"))):
+                    results[key] = {**data,
+                                    "confidence": min((data.get("confidence") or 0), _CONFLICT_CAP),
+                                    "validation_note": (
+                                        f"Kept the read value “{data.get('value')}” — the taught date "
+                                        f"box read “{existing.get('value')}”, which isn't a valid "
+                                        f"calendar date. Please check.")}
+                    continue
                 if (_blind_reg and _kw_ok
                         and _cmp_norm(data.get("value")) != _cmp_norm(existing.get("value"))
                         and (data.get("confidence") or 0) > (existing.get("confidence") or 0)):
