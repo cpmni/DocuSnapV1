@@ -179,6 +179,11 @@ function _reconcileEnv(db) {
     // cross-checks it and FLAGS a confident disagreement (keeps the value, routes to review). Dates
     // only (Slice 1); geometric neighbour guard; never silent-swaps. Default OFF, byte-identical off.
     if (learning.getSetting(db, 'template_pad_window_read', 'false') === 'true') env.TEMPLATE_PAD_WINDOW_READ = '1';
+    // Absent-title pixel re-read (Oracle 2026-08-07 — rung 3). The full-page --dpi OCR pass can drop
+    // an oversized centred TITLE entirely (Credit Note typed Invoice); a pixel pre-gate + tight band
+    // re-read recovers it so type detection self-corrects. Type-changing → default OFF. App RESTART
+    // to load the bridge; type re-detection runs on fresh import / reprocess.
+    if (learning.getSetting(db, 'heading_absent_reread', 'false') === 'true') env.HEADING_ABSENT_REREAD = '1';
     return env;
   } catch { return {}; }
 }

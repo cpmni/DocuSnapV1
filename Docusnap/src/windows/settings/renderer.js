@@ -638,7 +638,8 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          ['clip-slack-toggle', 'template_clip_commit_edge_slack'],
                          ['date-invalid-yield-toggle', 'template_date_invalid_yield'],
                          ['date-future-yield-toggle', 'template_date_future_yield'],
-                         ['pad-window-read-toggle', 'template_pad_window_read']]) {
+                         ['pad-window-read-toggle', 'template_pad_window_read'],
+                         ['heading-absent-reread-toggle', 'heading_absent_reread']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);

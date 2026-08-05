@@ -632,6 +632,14 @@ def main():
             # contract as rungs 1/2 (no new matcher). Needs fresh page-0 geometry (med_h + the read
             # word-set for the coverage test) → honestly inert on a cached reprocess / born-digital.
             # SAME ordering as rungs 1/2 (before title_trusted_fresh + identify_template).
+            # Oracle C3 (WON'T-FIX-in-rung-3): a corrected type changing the FIELD SET (the gate's
+            # Silverbeck sales_order total −1 — a mis-typed doc that captured total_amount now types
+            # correctly as a sales_order whose field set doesn't) is a `document_types` field-config
+            # question, NOT something rung 3 should compensate for by preserving the mis-typed field
+            # set — that would restore the total by WEAKENING the correct type. Right folder + right
+            # fields dominates a stray total. Owner-watch (C2): the first recovered high-volume-scope
+            # docs (e.g. Castellan credit notes) must land in review / file CORRECTLY, never silently
+            # auto-file — watch the scope graduating past the ungraduated-100 floor to 95.
             _absent_reread = False
             if (os.environ.get("HEADING_ABSENT_REREAD", "0") != "0"    # DARK — flip after the gate
                     and not _banner_reread and not _band_reread

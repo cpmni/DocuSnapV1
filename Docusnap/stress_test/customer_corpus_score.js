@@ -228,13 +228,17 @@ async function main() {
   const runDir = path.join(os.tmpdir(), `ccs_run_${Date.now()}`);
   fs.mkdirSync(runDir, { recursive: true });
   const byName = {}, manifest = {};
+  let _missing = 0;
   sampled.forEach((e, i) => {
+    const src = path.join(CORPUS, e.file);
+    if (!fs.existsSync(src)) { _missing++; return; }   // corpus file absent on disk — skip, don't crash the gate
     const name = `ccs_${String(i).padStart(4, '0')}.pdf`;
-    fs.copyFileSync(path.join(CORPUS, e.file), path.join(runDir, name));
+    fs.copyFileSync(src, path.join(runDir, name));
     byName[name] = e;
     const tid = tmplBySlugIssuer[`${e.issuer}|${e.type_slug}`];
     if (tid) manifest[name] = { known_template_id: tid, known_doc_slug: e.type_slug };
   });
+  if (_missing) console.log(`[ccs] WARNING: ${_missing} sampled corpus file(s) missing on disk — skipped (scored ${Object.keys(byName).length})`);
   const manifestArgs = Object.keys(manifest).length
     ? ['--reprocess-manifest', w('manifest', manifest)] : [];
 
@@ -242,7 +246,7 @@ async function main() {
   const N = 8; const shards = Array.from({ length: N }, () => []);
   Object.keys(byName).forEach((f, i) => shards[i % N].push(f));
   const heals = [];                              // every heal/verify log line → per-fire census
-  const HEAL_RE = /(Name-unclip reconcile|Universal verify|Crosscheck-outlier|edge-clean|Snap|clip commit|frag|Stage 0\.5 heal)/i;
+  const HEAL_RE = /(Name-unclip reconcile|Universal verify|Crosscheck-outlier|edge-clean|Snap|clip commit|frag|Stage 0\.5 heal|Banner heading recovered)/i;
   const run1 = files => new Promise(res => {
     const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', runDir, '--files-file', w('shard', files),
                            '--mode', 'fast', '--tesseract', TESS, ...manifestArgs, ...snapArgs], { windowsHide: true });
