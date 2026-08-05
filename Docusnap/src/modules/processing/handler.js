@@ -174,6 +174,11 @@ function _reconcileEnv(db) {
     // Far-future taught date yields (Oracle 2026-08-06): a taught date OCR-misread into an absurdly
     // future year ('2026'->'2096') no longer wins over a valid non-future keyword date; kept flagged.
     if (learning.getSetting(db, 'template_date_future_yield', 'false') === 'true') env.TEMPLATE_DATE_FUTURE_YIELD = '1';
+    // Pad-window date read (Oracle 2026-08-06 — the date-crop read ROOT fix). A taught DATE box that
+    // clips the value's leading glyph commits a silent still-parses misread; a wider row-bounded read
+    // cross-checks it and FLAGS a confident disagreement (keeps the value, routes to review). Dates
+    // only (Slice 1); geometric neighbour guard; never silent-swaps. Default OFF, byte-identical off.
+    if (learning.getSetting(db, 'template_pad_window_read', 'false') === 'true') env.TEMPLATE_PAD_WINDOW_READ = '1';
     return env;
   } catch { return {}; }
 }

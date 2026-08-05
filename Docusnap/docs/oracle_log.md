@@ -767,3 +767,42 @@ value → larger blast radius than the impossible arm = drops garbage), independ
   corpus (no far-future taught dates), so it should match the INVALID-only +1/0. Exact 2096→2026 heal is
   owner-watched (harness can't bit-reproduce the tilt misread). C6 SAME-YEAR order-flip slice (03→08)
   STAYS OPEN — this fix closes only the deterministically-future slice.
+
+
+## 2026-08-07 — PAD-WINDOW DATE READ (`TEMPLATE_PAD_WINDOW_READ`) — the date-crop read ROOT (supersedes the DATE_CROP_DESKEW_READ premise)
+- **PREMISE REVERSAL vetted.** The banked `docs/designs/DATE_CROP_DESKEW_READ_2026-08-06.md` blamed the
+  DESKEW frame ("deskew degrades the small-angle read; raw reads clean") -> an expensive raw-frame
+  election (a prior `DESKEW_RAW_CROPS` attempt RED-gated on mis-placement). A fresh 4-doc empirical probe
+  (filed Larkspur invoices, angles -0.5..2.3 deg) REFUTED it: the TIGHT taught box CLIPS the value's
+  leading glyph on BOTH the raw AND deskewed frame at every angle; a synthetic quiet-zone (`_struct_prep`)
+  cannot recover it (ink clipped OUT), only a REAL padded WINDOW + psm6 does; raw is sometimes WORSE (year
+  2020, garble). Root = the tight crop, NOT the frame; the raw election was RED-gate-prone AND unnecessary.
+- **Consensus (gary + reggie)**: caller-seat pad-window read (NOT the shared ladder -- no
+  validation_patterns / Stage-2 blast radius); corroborate-or-flag (never silent-swap); reuse
+  `salvage_date_detail` distinct-count + a geometric nearest-centre guard.
+- **Oracle SIGN OFF WITH CONDITIONS.** Traced every load-bearing fact (tight-only read; widen-on-empty;
+  shape_mode='ignore' + structured conf-exempt -> silent valid-shaped wrong commit; trust.js:466 note is
+  the sole auto-file block; a real leading-glyph clip). Two seams caught: SEAM A -- `_edge_cut_relocate`
+  can pre-empt the pad backstop (BOTH-ON); SEAM B -- reggie's textual witness-fold is DEGENERATE for dates
+  (01/04 vs 02/04 folds to 'reject', killing the motivating case) -> date neighbour-rejection must be
+  GEOMETRIC-ONLY. Fork rulings: DROP the witnessless Case-1 adopt (the empty-tight path already falls to
+  the correct keyword read -- a silent adopt would REGRESS it); ship Slice 1 (flag) now, don't gate behind
+  Slice 2 (keyword-corroborated silent heal, deferred to the engine merge layer); Case-3 flag is
+  legitimate (a taught-box self-consistency / read-quality flag, value kept -- NOT a learned-shape veto).
+- **Conditions (all folded in)**: C1 no witnessless adopt (Case 1 dropped -- Slice 1 is dates-only Case-2
+  no-op + Case-3 flag); C2 date neighbour-rejection GEOMETRIC-ONLY (row-bound pad, nearest-centre,
+  abstain-on->=2-equidistant / >1-distinct); C3 kill line = zero false-flags on CORRECT values; C4 pad
+  wired at BOTH the abs-commit AND the edge-cut-relocate return; C5 don't stack over an existing note; C6
+  default OFF, own switch, byte-identical off; C7 per-word x-geometry via `image_to_data` (not
+  `_read_lines_full`).
+- **BUILT + GATE**: 21 unit pins green (`test_template_pad_window_read.py`); existing mapper/date suites
+  green (byte-identical OFF). Corpus gate (`customer_corpus_score.js` TEACH=1 SET=both SAMPLE=224 SEED=7),
+  OFF vs ON AND a BOTH-ON pass (4 shipped flips + edge-guard): every lane +0 (M=0), zero date-verdict
+  flips, zero T->F regressions, seam clean. One `_paddisagree` fire (Castellan-Security invoice_0063,
+  DIGITAL) is a TRUE POSITIVE: committed `01-07-2025` (GT `14-07-2025`) -- a taught-box misread that
+  BOTH-OFF filed SILENTLY and BOTH-ON now FLAGS (value unchanged, routed to review). Oracle's literal C3
+  "digital=0" assumed digital reads correctly; here the taught box misreads a digital date (derived from a
+  different sibling) -> the fix's target class, NOT a neighbour false-flag. Zero fires on correct dates.
+  HONESTY: the harness cannot bit-reproduce the live app tilt misread -> this is a REGRESSION + false-flag
+  gate; the recovered-suggestion quality (~=GT) is owner-watched live. DEFERRED: Slice 1b (codes -- already
+  owned by inline-reconcile + edge-guard) and Slice 2 (keyword-corroborated SILENT heal).

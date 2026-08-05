@@ -720,6 +720,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Double-check a taught date when the box clips a digit</div>
+                <div class="threshold-sub">When a taught date-reading spot is drawn tightly and clips the first digit on a slightly-tilted scan (e.g. “03/04/2026” read as “01/04/2026”), ScanFinder takes a second, wider reading of the same spot; if it clearly disagrees, the date is flagged for a quick check instead of being filed silently. Never changes a value on its own. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="pad-window-read-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Read small reference/date print more clearly</div>
                 <div class="threshold-sub">Enlarges a tightly-cropped reference or date before reading it and drops an over-sharpen step, so small print (e.g. “PO-17039” misread as “»0-17039”) reads correctly. Only helps where it can, never changes a read it can't improve. Off by default.</div>
               </div>

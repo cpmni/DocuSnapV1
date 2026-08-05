@@ -1,5 +1,18 @@
 # Taught date/code crop misreads on a small-angle deskewed frame — read-path frame election
 
+> **⚠ PREMISE SUPERSEDED 2026-08-07 (Opus 4.8, Oracle SIGN-OFF-W/COND).** The frame-election premise
+> below (§Problem/§PROVEN mechanism/§fix direction) is **WRONG** and NOT the fix that shipped. A fresh
+> 4-doc empirical probe (filed Larkspur invoices, angles −0.5°…2.3°) REFUTED it: the deskew frame is **not** the lever — the **tight taught
+> box CLIPS the value's leading glyph on BOTH the raw AND deskewed frame at every angle**, and a synthetic
+> quiet-zone (`_struct_prep`) cannot recover it (the ink is clipped OUT); only a REAL padded WINDOW of
+> neighbouring page pixels + psm6 does. Raw is sometimes WORSE (year-misread 2020, garble where DESK
+> reads clean), so the raw-frame election was both RED-gate-prone AND unnecessary. **SHIPPED fix =
+> `TEMPLATE_PAD_WINDOW_READ`** (Slice 1, dates-only, default OFF): a wider row-bounded read cross-checks
+> a committed taught date and FLAGS a confident disagreement (never silent-swaps; geometric neighbour
+> guard). See `template_mapper.py` `_read_pad_window_date`/`_maybe_pad_date_flag`,
+> `tests/test_template_pad_window_read.py`, and the memory `project_pad_window_date_read`. The build
+> order / raw-election / compose-inverse machinery below is retained only as the (rejected) prior art.
+
 **Status:** DIAGNOSED (root cause PROVEN empirically), fix direction Oracle-PRE-VETTED (banked), NOT BUILT.
 Owner chose (2026-08-06) to build this from a FRESH session — it's a CORE-pipeline change and a prior
 attempt (`DESKEW_RAW_CROPS`) RED-gated. Read this + the related memories before building; do not rush.

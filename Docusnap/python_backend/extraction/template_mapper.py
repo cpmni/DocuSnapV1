@@ -317,6 +317,36 @@ _SNAP_UNION_WITNESS_ON = os.environ.get('TEMPLATE_SNAP_UNION_WITNESS', '0') != '
 # pendingfeatures). Default OFF (=1 arms); OFF = byte-identical. Pins: tests/test_template_edge_cut_relocate.py.
 _EDGE_CUT_RELOCATE_ON = os.environ.get('TEMPLATE_EDGE_CUT_RELOCATE', '0') != '0'
 
+# PAD-WINDOW DATE READ (Oracle SIGN-OFF-W/COND 2026-08-06 — the DATE-CROP read ROOT fix; SUPERSEDES
+# the raw-frame-election premise in docs/designs/DATE_CROP_DESKEW_READ_2026-08-06.md). A taught DATE
+# box, drawn tight on the teach sample, CLIPS the value's leading glyph on a sibling scan
+# ('03/04/2026' -> '3/04/2026', or a substituted '01/04/2026') and the still-parses misread commits
+# SILENTLY at 90 — the abs rung gates on regex/type only (shape_mode='ignore') and structured types
+# skip the ocr_conf cap, so a valid-shaped WRONG date has no backstop. PROVEN by a 4-doc empirical
+# probe (filed Larkspur invoices): the TIGHT crop garbles the leading glyph on BOTH
+# the raw AND the deskewed frame at every angle (-0.5..2.3 deg); a REAL padded WINDOW of neighbouring
+# page pixels + psm6 recovers it, while the shipped synthetic quiet-zone (_struct_prep) CANNOT — the
+# ink is clipped OUT. So this is NOT a deskew-frame problem (the raw election was RED-gate-prone AND
+# unnecessary — raw is sometimes WORSE): it is a tight-crop problem, fixed on the CURRENT frame.
+# SLICE 1 (dates only): after a taught date commits off the ABSOLUTE / edge-cut path, read a
+# row-bounded padded window; on a PARSED-value DISAGREEMENT read with a confidence MARGIN over the
+# tight read, KEEP the committed value but FLAG it (<=70 + validation_note carrying the padded
+# suggestion) -> the wrong silent auto-file becomes a review. It NEVER silent-swaps (a padded
+# neighbour-grab must not become the filed value). Neighbour rejection is GEOMETRIC-ONLY for dates
+# (Oracle C2 — the textual witness-fold is degenerate: 01/04 vs 02/04 folds to 'reject'): the padded
+# date must be the single row-bounded qualifier NEAREST the taught-box centre; abstain on >=2
+# near-equidistant candidates or >1 distinct salvaged date. Case-1 (empty tight read) is NOT adopted
+# here (Oracle C1 — the empty path already falls to the correct keyword read; a witnessless adopt
+# would regress that fail-safe). Codes stay owned by _inline_code_reconcile + the edge-guard family
+# (Slice 1b, deferred). Slice 2 (deferred, engine merge layer) = keyword-corroborated SILENT heal.
+# HARNESS NOTE: the corpus scorer CANNOT bit-reproduce the live app tilt misread
+# (HANDOVER_2026-08-06_DAY2) -> the gate is REGRESSION + false-flag only; the heal is owner-watched
+# live. Default OFF (=1 arms); OFF = byte-identical. Pins: tests/test_template_pad_window_read.py.
+_PAD_WINDOW_READ_ON = os.environ.get('TEMPLATE_PAD_WINDOW_READ', '0') != '0'
+_PAD_DISAGREE_MARGIN = 15          # padded read's OCR conf must beat the TIGHT read's by this (Oracle ~15)
+_PAD_DATE_DISAGREE_NOTE = ("A wider reading of this date box shows '{}', which differs from the filed "
+                           "value — please verify.")
+
 
 def extract_with_mappings(page_images, mappings, field_patterns=None,
                           ocr_lines_fn=None, ocr_text_fn=None, slice_capture=None,
@@ -1236,6 +1266,133 @@ def _edge_cut_relocate(page, mapping, anchor_box, target_box, located, val_type,
     return relo
 
 
+def _read_pad_window_date(page, target_box):
+    """PAD-WINDOW DATE READ (Slice 1, geometric neighbour-safe). Read a ROW-BOUNDED padded
+    window around the taught DATE target box and return (DD-MM-YYYY, mean_word_conf) for the
+    date qualifier NEAREST the box centre — or None (nothing found / ambiguous / abstain).
+
+    The window is padded generously HORIZONTALLY (the clip is a leading/trailing glyph on the
+    value's own row — the probe-proven recovery lever) but tightly VERTICALLY (<= 0.5 * box
+    height) so it can never reach the row above/below where a neighbouring date/code lives — the
+    PRIMARY neighbour guard (Oracle C2). psm6 (block mode) + --dpi is the tight-crop-starves-the-
+    LSTM cure the probe proved. Nearest-to-centre + abstain-on-two resolves an in-row second date;
+    a whole-window salvage with a >1 distinct-date count also abstains. Pure — no mutation."""
+    if page is None or Output is None or pytesseract is None:
+        return None
+    from extraction import validator
+    try:
+        pw, ph = page.size
+        bx = float(target_box.get("x_norm") or 0.0); by = float(target_box.get("y_norm") or 0.0)
+        bw = float(target_box.get("w_norm") or 0.0); bh = float(target_box.get("h_norm") or 0.0)
+    except (TypeError, ValueError, AttributeError):
+        return None
+    if bw <= 0 or bh <= 0:
+        return None
+    hpad = min(0.8 * bw, 0.06)              # leading/trailing clipped glyph, capped 0.06 page-norm/side
+    vpad = 0.5 * bh                         # ROW-BOUND — never into an adjacent row
+    px0 = int(max(0.0, bx - hpad) * pw); py0 = int(max(0.0, by - vpad) * ph)
+    px1 = int(min(1.0, bx + bw + hpad) * pw); py1 = int(min(1.0, by + bh + vpad) * ph)
+    if px1 - px0 < 4 or py1 - py0 < 4:
+        return None
+    try:
+        prepped = _prep(page.crop((px0, py0, px1, py1)))
+    except Exception:
+        return None
+    iw, ih = prepped.size
+    if iw < 1:
+        return None
+    cfg = "--oem 3 --psm 6"
+    _dpi = os.environ.get("OCR_RENDER_DPI")
+    if _dpi:
+        try:
+            cfg += f" --dpi {int(_dpi)}"
+        except (TypeError, ValueError):
+            pass
+    try:
+        data = pytesseract.image_to_data(prepped, config=cfg, output_type=Output.DICT)
+    except Exception:
+        return None
+    # Target-box centre-x in the crop's normalised frame (prep scales uniformly, so [0,1] carries).
+    crop_w = max(1, px1 - px0)
+    tcx = ((bx + bw / 2.0) * pw - px0) / crop_w
+    words = data.get("text", [])
+    cands = []                              # (parsed_date, conf, centre_x_norm)
+    all_words, all_confs = [], []
+    for i in range(len(words)):
+        w = (words[i] or "").strip()
+        if not w:
+            continue
+        try:
+            conf = float(data["conf"][i])
+        except (TypeError, ValueError):
+            conf = -1.0
+        if conf < 0:
+            continue
+        all_words.append(w); all_confs.append(conf)
+        d = validator.parse_date(w)         # a clean recovered date usually reads as ONE token
+        if d is None:
+            continue
+        try:
+            cx = (int(data["left"][i]) + int(data["width"][i]) / 2.0) / iw
+        except Exception:
+            cx = 0.5
+        cands.append((d, conf, cx))
+    if cands:
+        cands.sort(key=lambda c: abs(c[2] - tcx))
+        # Abstain when the two nearest qualifiers are near-equidistant AND parse to DIFFERENT dates
+        # (a genuine same-row second date the geometry can't confidently separate).
+        if (len(cands) >= 2 and cands[1][0].date() != cands[0][0].date()
+                and abs(abs(cands[1][2] - tcx) - abs(cands[0][2] - tcx)) < 0.15):
+            return None
+        d, conf, _ = cands[0]
+        return (d.strftime("%d-%m-%Y"), conf)
+    # No single-word date — try a spaced/merged date across the joined window, gated on a single
+    # distinct salvaged date (reggie's distinct-count guard; >1 = ambiguous row → abstain).
+    if all_words:
+        d, distinct = validator.salvage_date_detail(" ".join(all_words))
+        if d is not None and distinct == 1:
+            return (d.strftime("%d-%m-%Y"), sum(all_confs) / len(all_confs))
+    return None
+
+
+def _maybe_pad_date_flag(page, target_box, val_type, result, tight_ocr_conf):
+    """Case 2/3 of the PAD-WINDOW DATE READ (Slice 1). Given a taught DATE committed off the
+    ABSOLUTE / edge-cut path, cross-check a wider row-bounded read; on a confident PARSED-value
+    DISAGREEMENT keep the committed value but FLAG it for review (never silent-swap). Returns the
+    (possibly annotated) result dict. Byte-identical no-op when: the switch is OFF, the field is
+    not a date, the result is already flagged (C5 — don't stack an edge-cut/shape note), the reads
+    agree on the calendar date (Case 2), or the padded witness is weak / ambiguous."""
+    if not _PAD_WINDOW_READ_ON or val_type != 'date' or not result:
+        return result
+    if result.get("validation_note"):       # already flagged (edge-cut / shape-warn) — don't stack (C5)
+        return result
+    committed = result.get("value")
+    if not committed:
+        return result
+    from extraction import validator
+    cd = validator.parse_date(str(committed))
+    if cd is None:                           # committed isn't a clean date — nothing to compare
+        return result
+    pad = _read_pad_window_date(page, target_box)
+    if pad is None:
+        return result
+    pad_val, pad_conf = pad
+    pd = validator.parse_date(pad_val)
+    if pd is None or pd.date() == cd.date():  # Case 2 — calendar-equal (e.g. 3/04 vs 03/04): no-op
+        return result
+    # Case 3 — DISAGREEMENT. Only flag when the padded read is confidently better than the TIGHT
+    # read (not the synthetic 90 tier — that would never fire). Weak disagreement adds review load
+    # for no gain → keep the current commit (Oracle: fail toward MAX auto-file).
+    base = tight_ocr_conf if tight_ocr_conf is not None else 70
+    if pad_conf is None or pad_conf < base + _PAD_DISAGREE_MARGIN:
+        return result
+    out = dict(result)
+    out["confidence"] = min(out.get("confidence") or 90, 70)
+    out["method"] = (out.get("method") or "template_mapping") + "_paddisagree"
+    out["validation_note"] = _PAD_DATE_DISAGREE_NOTE.format(pad_val)
+    return out
+
+
 def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
                  located=_UNSET, page_transform=None,
                  slice_capture=None, page_idx=0,
@@ -1382,7 +1539,10 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
                                            validation_patterns, format_lookup, line_cache,
                                            slice_capture, page_idx, provisional_lookup)
                 if _relo is not None:
-                    return _relo
+                    # C4 (BOTH-ON seam): the re-seat can reproduce a still-clipped date; pad-check
+                    # it too so a leading-glyph-clipped date can never silent-commit behind the
+                    # edge-cut-relocate. No-op for non-dates / unarmed / agreeing reads.
+                    return _maybe_pad_date_flag(page, target_box, val_type, _relo, None)
                 if "defer_cap" in _eg:
                     # Heal refused/incomplete: keep the FULL flow (the inline reconcile is the
                     # independent witness that heals exactly this class) — only the final abs
@@ -1424,6 +1584,10 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
             _r["confidence"] = min(_r["confidence"], 70)
             _r["method"] += "_edgecut"
             _r["validation_note"] = _EDGE_CUT_NOTE
+        # PAD-WINDOW DATE READ (Slice 1): cross-check the committed taught date against a wider
+        # row-bounded read and FLAG a confident disagreement (the silent still-parses misread class).
+        # No-op unless armed + val_type=='date' + not already flagged. Tight OCR conf is the margin base.
+        _r = _maybe_pad_date_flag(page, target_box, val_type, _r, _abs_meta.get('conf'))
         return _r
 
     # ── SINGLE-LABEL LOCAL REFINEMENT (anchor + stored offset) — PREFERRED ──────
