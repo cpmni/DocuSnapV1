@@ -2337,14 +2337,20 @@ class ExtractionEngine:
         for key, cand in (stage_results or {}).items():
             if key.startswith("_") or not isinstance(cand, dict):
                 continue
+            # target_geom (dev-trace only) is the box the WINNING rung actually READ — a
+            # relocate/registration/edge rung carries its OWN box here, not the abs box. Emit it
+            # so the SFDEV console can show the exact crop this candidate was read from (matched by
+            # bbox) instead of the first same-stage capture (the abs box), which mislabels a
+            # relocated/footer read. Absent off-trace ⇒ inert.
+            _geom = cand.get("target_geom")
             self._t("candidate", stage=stage, field=key, method=cand.get("method"),
-                    value=cand.get("value"), confidence=cand.get("confidence"))
+                    value=cand.get("value"), confidence=cand.get("confidence"), geom=_geom)
             after = results.get(key)
             won = (self._merge_outcome(cand, after) == "won")
             self._t("merge", stage=stage, field=key,
                     decision=("win" if won else "lose"),
                     method=cand.get("method"), value=cand.get("value"),
-                    confidence=cand.get("confidence"),
+                    confidence=cand.get("confidence"), geom=_geom,
                     vs=(pre.get(key) if won else after))
         self._t("stage_end", stage=stage)
 

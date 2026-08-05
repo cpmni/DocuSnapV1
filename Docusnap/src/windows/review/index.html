@@ -1169,6 +1169,8 @@
   .rdc-slice img { max-width: 170px; max-height: 96px; border: 1px solid var(--border2);
                    border-radius: 4px; background: var(--surface); object-fit: contain; }
   .rdc-slice figcaption { font-size: 9px; color: var(--muted); overflow-wrap: anywhere; }
+  .rdc-slice.read img { border-color: var(--ok); border-width: 2px; }
+  .rdc-slice.read figcaption { color: var(--ok); font-weight: 600; }
   .rdc-slice.missing img { display: none; }
   .rdc-slice.missing::after { content: 'crop unavailable'; font-size: 9px; color: var(--err); }
   /* A field the last trace run produced NO candidate for (union placeholder — it still shows). */

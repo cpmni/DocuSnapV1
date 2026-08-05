@@ -7254,9 +7254,25 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
     // Pick the slice that the candidate's METHOD actually produced — never a
     // fallback to "any slice for the field" (that was the wrong-box bug: a winning
     // inline read borrowed the rejected rigid crop's stale coordinates).
-    function pickSlice(field, method) {
+    function pickSlice(field, method, geom) {
       const m = sliceMap[field];
-      if (!m || !method) return null;
+      if (!m) return null;
+      // PRIMARY: match the captured crop whose box == the winning value's ACTUAL read box
+      // (target_geom, emitted on the merge event). A relocate / registration / edge / footer
+      // rung carries its OWN box, so this shows the crop the value was TRULY read from — not
+      // the first same-stage (abs) capture, which mislabelled a relocated read (the "slice
+      // shows PO-90621 but the value is IM.ANKI1" bug). Tolerance ~2% of the page per axis.
+      if (Array.isArray(geom) && geom.length === 4) {
+        let best = null, bestD = 0.02;
+        for (const k of Object.keys(m)) for (const s of m[k]) {
+          if (s.kind !== 'target' || !Array.isArray(s.bbox) || s.bbox.length !== 4) continue;
+          const d = Math.max(...s.bbox.map((v, i) => Math.abs(v - geom[i])));
+          if (d <= bestD) { best = s; bestD = d; }
+        }
+        if (best) return best;
+      }
+      // FALLBACK (no geom, e.g. a rejected rung): the method's own captured crop.
+      if (!method) return null;
       const key = METHOD_TO_SLICE[method];
       if (!key) return null;                  // text/inline read — no crop region
       const arr = m[key];
@@ -7321,7 +7337,7 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
             ? `lost — lower confidence (${c.confidence}% < ${wc}%)`
             : (c.vs && c.vs.value != null ? `lost — superseded by "${shown(c.vs.value)}"` : 'lost — superseded');
         }
-        rows.push(cand(STAGE_LABEL[c.stage] || c.stage, c.value, c.confidence, c.method, won ? 'won' : 'lost', won ? '' : reason, pickSlice(field, c.method), rxBadge(field, c.value), anchorSlice(field)));
+        rows.push(cand(STAGE_LABEL[c.stage] || c.stage, c.value, c.confidence, c.method, won ? 'won' : 'lost', won ? '' : reason, pickSlice(field, c.method, c.geom), rxBadge(field, c.value), anchorSlice(field)));
       }
       for (const r of m.rejects) {
         // A rejected rung IS keyed by its method (e.g. "anchor_crop") — show the
@@ -7368,11 +7384,18 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
 
       // Bottom strip: every crop this field was OCR'd from (lazy-loaded via devGetSlice), so you
       // can see the exact image behind each read — incl. a disagreeing taught crop vs full-page.
+      // The crop the WINNING value was actually read from is badged "← read" (bbox-matched to the
+      // winning merge's target_geom) and its vertical page position is shown, so two same-stage
+      // captures (e.g. the abs box vs a relocated footer read) are no longer indistinguishable.
+      const winGeoms = (m.merges || []).filter(x => x.decision === 'win' && Array.isArray(x.geom)).map(x => x.geom);
+      const bboxMatch = (bb, g) => Array.isArray(bb) && bb.length === 4 && Math.max(...bb.map((v, i) => Math.abs(v - g[i]))) <= 0.02;
       const slices = allSlices(field);
       const sliceStrip = slices.length
-        ? `<div class="rdc-slices">` + slices.map(s =>
-            `<figure class="rdc-slice"><img data-slice-path="${escHtml(s.path)}" alt="crop" loading="lazy">`
-            + `<figcaption>${escHtml(s.method || s.kind || 'crop')}${(s.stage && s.stage !== '_') ? ' · ' + escHtml(s.stage) : ''}</figcaption></figure>`).join('')
+        ? `<div class="rdc-slices">` + slices.map(s => {
+            const isRead = winGeoms.some(g => bboxMatch(s.bbox, g));
+            const pos = (Array.isArray(s.bbox) && s.bbox.length === 4) ? ` @${Math.round(s.bbox[1] * 100)}%` : '';
+            return `<figure class="rdc-slice${isRead ? ' read' : ''}"><img data-slice-path="${escHtml(s.path)}" alt="crop" loading="lazy">`
+            + `<figcaption>${escHtml(s.method || s.kind || 'crop')}${escHtml(pos)}${isRead ? ' · ← read' : ''}</figcaption></figure>`; }).join('')
           + `</div>`
         : '';
 
