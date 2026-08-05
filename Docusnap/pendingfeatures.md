@@ -1088,3 +1088,16 @@ machinery + the crop-quality/deskew improvement (a tight taught date crop on a t
 fragility). Repro leads: LarkspurInteriors_invoice_08 (the impossible-date instance this fix healed);
 engine.py `_invalid_taught_date_yields`. The complementary cure = extend the placement/deskew arc to the
 date rung so the taught date box survives the tilt rather than leaning on the keyword fallback. Own round.
+
+## Taught date/code crop read-path frame election (DIAGNOSED, design captured, build fresh — 2026-08-06)
+ROOT of the taught-date-crop misread class (invoice_08 03→33, invoice_14 2026→2096, and the same-year
+03→08 slice the merge-layer yields can't catch). PROVEN empirically (`<scratchpad>/datecrop_probe.py`):
+on a 1.8° scan the taught date box read on the DESKEWED frame misreads the leading digit, while the RAW
+frame + a small pad + psm6 reads it CORRECTLY — deskew degrades the 0.2–2° read (Tesseract self-tolerates
+≤~2°). Fix direction (Oracle-BANKED): a read-path angle floor / raw-preferring frame election for CROP
+reads (read raw pixels at level-composed placement via the level→raw inverse), + a psm6+pad rung for tight
+code/date crops. CORE-pipeline change; a prior naive attempt (DESKEW_RAW_CROPS) RED-gated on placement, so
+it MUST route through teach_angle_compose's level frame + the deskewedNormToRaw inverse. Full multi-slice
+design + gate + the RED-gate pitfall: `docs/designs/DATE_CROP_DESKEW_READ_2026-08-06.md`. Owner chose to
+build it from a fresh session (core change, not the tail of a marathon). Supersedes the C6 same-year
+order-flip residual (that class is THIS fix's job — not another merge-layer guard).
