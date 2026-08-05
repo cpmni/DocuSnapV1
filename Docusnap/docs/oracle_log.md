@@ -574,3 +574,68 @@ residual → follow-up slice with its own Oracle round: the caption-commit class
 recipient boxes (customer scanned 22.2% — captions vary per sibling; needs the known-caption
 vocab veto extended to the mapper's free-text gate). Next: owner flip decision after the Chris
 sandbox reprocess of the owner-trained docs (Straighten ON + TEACH_ANGLE_COMPOSE=1).
+
+---
+
+2026-08-06 — compose-box word-snap (morning round #1) — VERDICT: SEND BACK / WRONG LAYER.
+Premise false: the abs-rung nicked-code/date class is NOT unhealed today — _abs_edge_guard
+runs on the composed target_box (engine.py:4604 -> _extract_one:1245), gate-outcome-independent,
+catches 12-95%-inside nicks (_find_edge_cut_words:1618-1630) WITH corroboration + fail-to-review.
+Compose-snap is a 2nd, pre-read, consent-less healer on the same class/rung — the code's own
+rule forbids it ("two dark healers racing one class breeds M=1s", template_mapper.py:254).
+Incremental accuracy over the compose-on/snap-off baseline (nf_on2) ~= 0; only effect = converting
+edge-guard REVIEW FLAGS into SILENT commits of un-corroborated cross-document placement guesses.
+SEAM (Claude's "adopt 007" resolution OVERTURNED): 007's "pass snapped box to edge-guard" opens a
+silent-truncation hole — _snap_box_to_words is a re-fit that can SHRINK (drop a multi-token value's
+tail); the excluded tail is fully outside the snapped edge -> no cut -> edge-guard no-fires ->
+truncated value commits at full confidence. gary's un-mutated-box wiring recovers it (safe
+direction). If ever built: gary wiring + pass located.label_box (not None) + pin the truncation
+fail-safe + fix the dead-guard-green gate (NF lacks space-separated in-scope values; needs a
+synthetic multi-token nick fixture + snap-application census>0 + False->True heal count).
+RIGHT FIX (right layer): add a word-snap-union GEOMETRY WITNESS to _abs_edge_guard's consent
+ladder — a composed nick whose grown-read extent AGREES with the snap union heals CLEAN (rewrite)
+through the existing ladder even without confirmed/provisional shape (the teach-once case); an
+un-corroborated composed nick still FLAGS <=70. One healer, preserves fail-toward-review, no
+shrink/over-grab silent commit. Claude action: pre-read compose-snap NOT shipped (kept OFF/dark
+pending the gate's False->True number as warrant); enabler (teach-commit sample-angle write) stands
+(independent, un-objected). Chris Kyle run to use the SHIPPED config (compose + edge-guard, NO
+compose-snap) so the crop review measures the real system.
+
+  GATE CONFIRMED THE SEND-BACK (2026-08-06, NF corpus SET=both SAMPLE=228 SEED=7, shipped flags
+  both arms): nfc_off (compose on, snap OFF) -> nfc_on (compose-snap ON): date +3 (97.8->98.7);
+  account_no -6 (32.5->29.8, all on LEVEL digital docs); job_ref -4 (100->66.7). NET -7, no real
+  gain. The regressions ARE Oracle's predicted modes: job_ref is space-separated (4-4-1) ->
+  multi-token shrink-truncation; account_no on level digital -> compose fires mode-level even on
+  level siblings, snap re-fit over-grabs/shrinks. Compose-snap REVERTED in full (mapper + engine
+  tag + dedicated pin file); enabler (teach-commit sample-angle write) retained. RIGHT FIX stands
+  for a future round: snap-union geometry witness INSIDE _abs_edge_guard's consent ladder.
+
+## 2026-08-06 (later) — snap-union geometry WITNESS in `_abs_edge_guard` (the deferred RIGHT fix) — SIGN OFF WITH CONDITIONS, then SHELVED DARK on a net-negative gate
+Built the fix Oracle named this morning: when the edge-guard's grown code read `gv` is corroborated by
+the LOCATE-tier words inside the grown box (exact `_code_norm` union == gv, edge-anchored to the un-cut
+side of the TAUGHT box), promote a no-history (teach-once) nick to a CLEAN heal instead of flagging @70.
+- **Advisor consensus** (007 + gary + reggie): right layer = the mapper edge-guard (keyword read
+  unavailable at Stage 0.5; engine-reconcile = the "two healers" trap). Witness = cached locate tier
+  (no new OCR). EXACT union equality, NO glyph fuzz (reggie: confusable/edit-≤1 admit the sequential
+  neighbour). New dedicated switch `TEMPLATE_SNAP_UNION_WITNESS`, default OFF, nested in the guard.
+- **Oracle FORK RULING**: occupancy-only (gary/reggie) is INSUFFICIENT — 007's directional un-cut-edge
+  anchor is load-bearing (it is the only element certifying located-at-taught-POSITION, not just
+  reading). But 007's 0.5·g coincidence is a reading tolerance mis-used as placement — softened to
+  `R-cut: -g ≤ (ux1-tx1) ≤ 0.25·W`, `L-cut` mirror, `LR: no clean promotion`; + contiguity ≤1.5·g;
+  occupancy≥0.6 secondary; frame = target_box. SEAM caught: witness must skip ONLY frag and still flow
+  through the neg-witness veto + `refused` guard. Built to spec; pins green incl. the straddle- and
+  LR-rejection (`tests/test_template_snap_union_witness.py`, 15/15).
+- **GATE = SEND-BACK (net-negative), the residual Oracle NAMED bit for real.** NF both-arms
+  (SET=both SAMPLE=228 SEED=7, shipped flags): witness ON = ref −1, account_no −1 (both on Ironclad
+  statement_0042), ZERO gains. Determinism confirmed (OFF re-run byte-identical). Fire trace: most
+  fires are no-ops frag already heals; the witness-ONLY promotions skew WRONG — e.g. `po_ref
+  '19-12-2025' → '25-12-2025'` (a CODE box sitting on a DATE, "healed" one wrong value to another).
+  The design cannot distinguish "grow recovered the clipped TRUE value" (the goal) from "box is on the
+  WRONG field, both tiers agree on a wrong value" — geometrically identical, and not rare enough. The
+  motivating VIN-O0U5D case is NOT in the corpus (live Kyle docs), so best case unproven-positive.
+- **DECISION: SHELVED DARK.** Code + pins kept, default OFF, byte-identical off. NOT flipped. The class
+  is a cross-doc PLACEMENT-transfer failure ("reading fine everywhere; placement transfer is the failure
+  class") — a read-time value-swap healer is the wrong instrument (007: "a reading failure CAUSED by a
+  placement failure"). Next: fix the PLACEMENT (prefer the label-relocated + word-snapped derived read
+  when the absolute box is edge-cut), not another read-time healer. No more read-time swap healers on
+  this class without a placement-layer redesign first.

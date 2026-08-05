@@ -228,6 +228,14 @@ def _shape_consents(value, field_key, format_lookup, provisional_lookup):
 # =1 arms. OFF → helper returns its input, byte-identical.
 _TARGET_WORD_SNAP_ON = os.environ.get('TEMPLATE_TARGET_WORD_SNAP', '0') != '0'
 _SNAP_VAL_TYPES = frozenset(_CODE_CROSSCHECK_TYPES | {'date'})
+# NOTE (2026-08-06): a COMPOSED-BOX WORD-SNAP on the ABSOLUTE rung (TEMPLATE_COMPOSE_WORD_SNAP) was
+# built + Oracle-reviewed here and SENT BACK / reverted — the nicked composed-code/date class is
+# ALREADY healed by the Slice-C _abs_edge_guard (which runs on the composed target_box WITH
+# corroboration + fail-to-review); a pre-read snap was a 2nd consent-less healer on the same class.
+# The NF gate confirmed it net-negative (job_ref -4 via multi-token shrink-truncation, account_no
+# -6 on level docs via over-grab; date only +3). The RIGHT fix, if pursued, is a snap-union
+# GEOMETRY WITNESS inside the edge-guard's consent ladder (docs/oracle_log.md 2026-08-06), not a
+# new snap rung. Do not re-add a pre-read abs-rung snap without that redesign + its own gate.
 
 # Slice C (jitter-crater arc, Oracle 2026-08-05 SIGN-OFF-W/COND C-C0..C5, fork RULED for 007's
 # GROW over demote-to-ladder) — ABSOLUTE-RUNG WORD-EDGE GUARD. The crater class: a right/left-cut
@@ -259,6 +267,20 @@ _ABS_EDGE_GUARD_ON = os.environ.get('TEMPLATE_ABS_EDGE_GUARD', '0') != '0'
 _EDGE_CUT_NOTE = ("The taught box's edge cuts through the printed value here and the fuller "
                   "reading could not be verified — please check this value.")
 _EDGE_GUARD_FIRES = []   # per-process census: (field_key, edges, outcome) — tests + SFDEV introspection
+
+# SNAP-UNION GEOMETRY WITNESS (Oracle SIGN-OFF-W/COND 2026-08-06, docs/oracle_log.md) — the
+# deferred RIGHT fix for the composed/derived NICK class the reverted compose-snap targeted. A
+# heavily garbled clip ('VIN-O0U5D' of DN-58038) shares no glyphs with the grown read, so the
+# edge-guard's _frag_matches comparator floors it and the correct value ships FLAGGED @70 even
+# though the page plainly shows it. When the LOCATE-tier words inside the grown box reconstruct the
+# grown read `gv` EXACTLY + CONTIGUOUSLY + edge-ANCHORED to the un-cut side of the TAUGHT box, that
+# independent geometry stands in for the missing shape history (teach-once) and licenses a CLEAN
+# heal. It SKIPS ONLY the _frag_matches gate — the negative per-cut-word veto and the `refused`
+# protection still gate (a deliberate sub-token teach still wins). Codes only (dates self-consent);
+# BOTH-cut (no un-cut edge to anchor) never promotes in v1. Nested under _ABS_EDGE_GUARD_ON (it
+# lives in the guard). Default OFF (=1 arms); OFF = byte-identical. Pins:
+# tests/test_template_snap_union_witness.py.
+_SNAP_UNION_WITNESS_ON = os.environ.get('TEMPLATE_SNAP_UNION_WITNESS', '0') != '0'
 
 
 def extract_with_mappings(page_images, mappings, field_patterns=None,
@@ -1602,6 +1624,76 @@ def _find_edge_cut_words(lines, read_box):
     return left_cut, right_cut
 
 
+def _snap_union_witness(lines, grown, gx1, gx2, gv, target_box, edges):
+    """SNAP-UNION GEOMETRY WITNESS (Oracle SIGN-OFF-W/COND 2026-08-06 — see the
+    _SNAP_UNION_WITNESS_ON flag block). Corroborate a grown CODE read `gv` by an INDEPENDENT
+    geometry so a garbled composed/derived nick heals CLEAN even with no shape history (teach-once):
+    the LOCATE-tier words inside the grown box must reconstruct gv EXACTLY, CONTIGUOUSLY, and be
+    edge-ANCHORED to the UN-cut side of the TAUGHT box (`target_box`) — proving the value occupies
+    the operator's slot, not a sideways neighbour (the Oracle-ruled placement, not merely reading,
+    certification). Returns True only in that case; the caller keeps every other guard.
+
+    All measured against `target_box` (what the operator DREW), never `grown` (the expanded read):
+      (1) exact contiguous union of ≥0.9-inside locate words == _code_norm(gv) — subset/superset fail;
+      (2) contiguity — every adjacent word x-gap ≤ 1.5·g (no cross-column stitch);
+      (3) directional un-cut-edge anchor — R-cut: -g ≤ (ux1-tx1) ≤ 0.25·W ; L-cut mirror on ux2/tx2;
+          BOTH-cut ('LR') has no un-cut edge -> no clean promotion (v1);
+      (4) occupancy floor overlap(union, taught)/W ≥ 0.6 (secondary belt-and-suspenders).
+    g = median witness-word glyph width; W = target_box width; k=0.25 (safe-direction-tunable)."""
+    if edges not in ('L', 'R'):                       # LR (or none) has no un-cut edge to anchor
+        return False
+    want = _code_norm(str(gv))
+    if not want:
+        return False
+    gcy = float(grown["y_norm"]) + float(grown["h_norm"]) / 2.0
+    gh = float(grown["h_norm"])
+    picks = []                                        # (x1, x2, glyph_len, code_text)
+    for ln in (lines or ()):
+        for wd in (ln.get("words") or ()):
+            try:
+                wx1 = float(wd["x_norm"]); wy1 = float(wd["y_norm"])
+                ww = float(wd["w_norm"]);  wh = float(wd["h_norm"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if ww <= 0 or wh <= 0:
+                continue
+            if abs((wy1 + wh / 2.0) - gcy) > max(wh, gh) * 0.6:          # same row-band convention
+                continue
+            if max(0.0, min(gx2, wx1 + ww) - max(gx1, wx1)) / ww < 0.9:  # ≥0.9 inside grown (as the veto)
+                continue
+            txt = str(wd.get("text") or "")
+            ct = _code_norm(txt)
+            if ct:
+                picks.append((wx1, wx1 + ww, max(1, len(txt)), ct))
+    if not picks:
+        return False
+    picks.sort(key=lambda p: p[0])
+    if ''.join(p[3] for p in picks) != want:          # (1) exact contiguous union == gv
+        return False
+    gws = sorted((p[1] - p[0]) / p[2] for p in picks)  # per-word glyph width
+    g = gws[len(gws) // 2]                              # median, computed once
+    if g <= 0:
+        return False
+    for a, b in zip(picks, picks[1:]):                 # (2) contiguity — no cross-column stitch
+        if b[0] - a[1] > 1.5 * g:
+            return False
+    ux1, ux2 = picks[0][0], picks[-1][1]
+    tx1 = float(target_box["x_norm"]); tw = float(target_box["w_norm"]); tx2 = tx1 + tw
+    if tw <= 0:
+        return False
+    k = 0.25
+    if edges == 'R':                                   # (3) right cut -> value LEFT edge intact
+        if not (-g <= (ux1 - tx1) <= k * tw):
+            return False
+    else:                                              # 'L' -> value RIGHT edge intact
+        if not (-k * tw <= (ux2 - tx2) <= g):
+            return False
+    overlap = min(ux2, tx2) - max(ux1, tx1)            # (4) occupancy floor
+    if overlap / tw < 0.6:
+        return False
+    return True
+
+
 def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_type, field_key,
                     ocr_lines_fn, ocr_text_fn, validation_patterns, format_lookup,
                     provisional_lookup, line_cache, located, slice_capture, page_idx,
@@ -1672,6 +1764,13 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
                                 format_lookup, shape_mode='ignore', ocr_conf=_gmeta.get('conf'))
     if not gv or g_salv:
         return _floor()                               # a salvaged grow is not a proven heal
+    # SNAP-UNION GEOMETRY WITNESS (Oracle 2026-08-06, own switch, codes only): does the
+    # locate-tier geometry independently reconstruct gv, edge-anchored to the taught slot?
+    # If so it stands in for the missing shape history — it SKIPS ONLY the glyph-frag gate
+    # below (a garbled clip can't vouch for its own fuller read) and licenses a CLEAN heal at
+    # the consent ladder; the negative per-cut-word veto and the `refused` guard still gate.
+    witness_ok = (_SNAP_UNION_WITNESS_ON and val_type != 'date'
+                  and _snap_union_witness(lines, grown, gx1, gx2, gv, target_box, _edges))
     # Per-type, EDGE-DIRECTIONAL comparator — the cut fragment's edge glyph is untrusted
     # (a half-cut 'C' reads '5'), so the discipline mirrors the cut: a RIGHT cut leaves a
     # PREFIX of the truth (allow one trailing-glyph drop), a LEFT cut leaves a SUFFIX
@@ -1710,7 +1809,11 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
         else:
             co = _code_norm(_strip_code_edges(str(abs_text)))
             cn = _code_norm(_strip_code_edges(str(gv)))
-            if not (co and len(cn) > len(co) - 1 and _frag_matches(co, cn)):
+            # witness_ok skips ONLY this glyph-frag gate (Oracle §3 seam): a garbled clip
+            # ('vino0u5d') shares no glyphs with the true grown read ('dn58038'), so frag
+            # cannot rescue it — the independent geometry does. Everything downstream (the
+            # negative cut-word veto, the consent ladder incl. `refused`) still runs.
+            if not witness_ok and not (co and len(cn) > len(co) - 1 and _frag_matches(co, cn)):
                 return _floor()
     # INDEPENDENT-WITNESS corroboration (the owner kernel rule: a heal files without
     # review only when corroborated by an independent-GEOMETRY read): the locate-pass
@@ -1748,8 +1851,12 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
             consent = 'none'
     else:
         consent = _shape_consents(gv, field_key, format_lookup, provisional_lookup)
-    if consent in ('confirmed', 'provisional'):
-        _EDGE_GUARD_FIRES.append((field_key, _edges, 'healed'))
+    # A snap-union geometry witness is a GEOMETRIC provisional consent: it clean-heals the
+    # no-history (teach-once) case the ladder would otherwise flag ≤70. It NEVER overrides a
+    # `refused` shape (that branch below still wins — the deliberate sub-token teach).
+    if consent in ('confirmed', 'provisional') or (witness_ok and consent == 'none'):
+        _EDGE_GUARD_FIRES.append((field_key, _edges,
+                                  'healed_witness' if consent == 'none' else 'healed'))
         return {"rewrite": (gv, _gmeta.get('conf'))}
     if consent == 'refused':
         # Deliberate-sub-token-teach protection: a confirmed history in the SUB-token shape
