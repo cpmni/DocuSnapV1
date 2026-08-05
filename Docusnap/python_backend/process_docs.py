@@ -556,6 +556,25 @@ def main():
             document_type  = type_detection["type"] if type_detection else None
             type_conf      = type_detection["confidence"] if type_detection else 0
 
+            # REPROCESS HEADING GEOMETRY (kill REPROCESS_HEADING_GEOM, default OFF). A cached reprocess
+            # reuses stored OCR text and never builds page-0 word geometry, so the heading re-read rungs
+            # (1/2/3) are INERT on reprocess — a mis-typed doc (e.g. a credit note whose large title the
+            # main --dpi pass DROPPED) can't self-correct on a re-run. When enabled AND page 0 was
+            # rendered (not a text-only reextract) AND scanned provenance AND the geometry is empty
+            # (cached) AND the cached text gave NO trusted heading (the only mis-type-risk case), build
+            # the geometry with ONE page-0 pass — SAME --dpi as the main pass so a dropped title stays
+            # absent from this geometry (rung-3's coverage test then fires correctly). Bounded: page 0
+            # only, reprocess-with-no-trusted-heading only. OFF = byte-identical (never runs).
+            if (os.environ.get("REPROCESS_HEADING_GEOM", "0") != "0"
+                    and not _page0_geom and page_images and page_images[0] is not None
+                    and _provenance and _provenance[0] == "ocr" and known_type_names
+                    and not (type_detection and type_detection.get("heading") and type_conf >= 70)):
+                try:
+                    from ocr.tesseract import reconstruct_page_text as _recon, _RENDER_DPI as _rdpi
+                    _recon(page_images[0], dpi=_rdpi, words_out=_page0_geom)
+                except Exception:
+                    _page0_geom = {}   # geometry aid only — never break extraction
+
             # BANNER HEADING RE-READ. ORDERING IS LOAD-BEARING (Oracle C2): this MUST stay BEFORE
             # title_trusted_fresh (~L560) AND before identify_template (~L623), so a recovered heading
             # flips BOTH the fresh-scan type-precedence and the machine-authority reprocess override.

@@ -179,11 +179,17 @@ function _reconcileEnv(db) {
     // cross-checks it and FLAGS a confident disagreement (keeps the value, routes to review). Dates
     // only (Slice 1); geometric neighbour guard; never silent-swaps. Default OFF, byte-identical off.
     if (learning.getSetting(db, 'template_pad_window_read', 'false') === 'true') env.TEMPLATE_PAD_WINDOW_READ = '1';
-    // Absent-title pixel re-read (Oracle 2026-08-07 — rung 3). The full-page --dpi OCR pass can drop
-    // an oversized centred TITLE entirely (Credit Note typed Invoice); a pixel pre-gate + tight band
-    // re-read recovers it so type detection self-corrects. Type-changing → default OFF. App RESTART
-    // to load the bridge; type re-detection runs on fresh import / reprocess.
-    if (learning.getSetting(db, 'heading_absent_reread', 'false') === 'true') env.HEADING_ABSENT_REREAD = '1';
+    // LARGE-TITLE TYPE RECOGNITION (Oracle/herald 2026-08-07). One owner switch enables the whole
+    // credit-note-typed-Invoice fix family (all type-changing → default OFF): rung-3 absent-title
+    // pixel re-read (the --dpi pass DROPPED the title), the wide-spaced-title gap collapse (a
+    // letter-tracked 'CREDIT    NOTE' split at the column-break marker), and the reprocess page-0
+    // geometry pass (so the heading rungs fire on a cached reprocess, not just fresh import). App
+    // RESTART to load the bridge.
+    if (learning.getSetting(db, 'heading_absent_reread', 'false') === 'true') {
+      env.HEADING_ABSENT_REREAD = '1';
+      env.HEADING_TITLE_GAP_COLLAPSE = '1';
+      env.REPROCESS_HEADING_GEOM = '1';
+    }
     return env;
   } catch { return {}; }
 }

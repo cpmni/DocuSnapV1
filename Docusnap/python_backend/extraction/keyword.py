@@ -718,6 +718,15 @@ def detect_document_type(ocr_text: str, patterns: dict,
     # Lever 1 kill switch (default ON): fuzzy-to-closed-vocabulary title recovery (see _fuzzy_heading).
     # OFF ⇒ the elif below short-circuits ⇒ detect_document_type is byte-identical (Oracle C4).
     _fuzzy = os.environ.get("HEADING_FUZZY_VOCAB", "1") != "0"
+    # TITLE-GAP COLLAPSE (herald 2026-08-07, DARK — flip after the corpus gate). A wide-TRACKED
+    # multi-word title ('CREDIT    NOTE', 'DELIVERY    NOTE') reconstructs with a >=COLUMN_BREAK_MIN
+    # intra-title gap, so the column-aware heading test splits it into two columns and the title
+    # scores as a mere MENTION (Credit Note 4.7 vs 9.3) — the doc mis-types (Invoice). FIX: collapse
+    # whitespace ONLY inside the matched type-phrase SPAN before the column split, so an intra-title
+    # gap can't fuse (span-bounded) while genuine column breaks OUTSIDE the phrase are preserved (a
+    # caption row 'CREDIT NOTE NO ...    CREDIT DATE ...' still splits). Byte-identical OFF, and ON it
+    # only changes a line where a name/alias phrase carries a >=2-space internal gap.
+    _gap_collapse = os.environ.get("HEADING_TITLE_GAP_COLLAPSE", "0") != "0"
 
     type_keywords = {k: list(v) for k, v in patterns.get("document_type_keywords", {}).items()}
     aliases_by_name = type_aliases or {}
@@ -805,14 +814,29 @@ def detect_document_type(ocr_text: str, patterns: dict,
                 # counted (line==phrase) still scores 2.0 (seg0==phrase); a mid-body table column
                 # relies on the low positional weight + the C1 refuse review-hold to stay safe.
                 # Kill switch HEADING_SCORE_COLUMN_AWARE.
+                # Exposed-signal inputs (the :826 _line_is_heading_like call); overridden ONLY by the
+                # gap-collapse branch so the other paths + OFF stay byte-identical.
+                _hl_line, _hl_phrase = line, (m.group(0) if m is not None else "")
                 if _despaced:
                     is_heading = True                       # Seam B (Oracle): a letter-spacing
                     # recovery MUST force BOTH the strong 2.0 SCORE and the exposed head signal below;
                     # the :483/:496 recompute uses m.group(0)=collapsed vs the spaced seg -> False,
                     # which would silently leave title_trusted off and NOT fix the cascade.
                 elif _col_aware and kw.lower() in name_alias_lc:
-                    seg0 = _COL_BREAK_RE.split(line.strip().lower())[0].strip()
-                    is_heading = _segment_is_heading(seg0, m.group(0).strip(), caption_ok=False)
+                    _lo = line.strip().lower()
+                    _phrase = m.group(0).strip()
+                    _work = _lo
+                    if _gap_collapse:
+                        # Collapse whitespace ONLY inside the matched type-phrase span (re-match on the
+                        # STRIPPED line — m at :768 matched the UNSTRIPPED line, so its offsets are off
+                        # by the leading whitespace). Column breaks outside the span are preserved.
+                        _mm = pattern.search(_lo)
+                        if _mm is not None:
+                            _phrase = re.sub(r'\s+', ' ', _mm.group(0)).strip()
+                            _work = _lo[:_mm.start()] + _phrase + _lo[_mm.end():]
+                        _hl_line, _hl_phrase = _work, _phrase
+                    seg0 = _COL_BREAK_RE.split(_work)[0].strip()
+                    is_heading = _segment_is_heading(seg0, _phrase, caption_ok=False)
                 else:
                     is_heading = line.strip().lower() == m.group(0).strip()
                 score += position_weight * (2.0 if is_heading else 1.0)
@@ -823,7 +847,7 @@ def detect_document_type(ocr_text: str, patterns: dict,
                 # vs the strict scoring `is_heading` so a real title carrying a number or
                 # punctuation ("WORKSHEET 38", "Purchase Order:", "Invoice No. 10023")
                 # still counts as a heading, while an in-prose mention does not.
-                if is_heading or (m is not None and _line_is_heading_like(line, m.group(0))):
+                if is_heading or (m is not None and _line_is_heading_like(_hl_line, _hl_phrase)):
                     head = True                             # _despaced -> is_heading True -> head True (Seam B)
                 break  # first occurrence of this phrase is enough
         if score > 0:
