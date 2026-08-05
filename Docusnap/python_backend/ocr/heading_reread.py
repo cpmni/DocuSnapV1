@@ -252,3 +252,84 @@ def recover_type_detection_general(page_image, geom, ocr_text, known_types, type
     if aug and aug.get("heading") and aug.get("confidence", 0) >= 70:
         return aug
     return None
+
+
+def find_absent_heading_band(page_image, geom):
+    """PIXEL PROMINENCE PRE-GATE (rung 3, NO OCR) for a title the full-page --dpi PSM-3 dropped
+    ENTIRELY. find_prominent_heading_band (rung 2) reads the fresh word GEOMETRY, so it is BLIND to
+    a title that never reached that geometry (the Castellan 'CREDIT NOTE' class: --dpi 300 makes
+    full-page PSM-3 AND the PSM-6 supp merge drop the oversized centred title — proven — so no
+    banner-height word exists for the geometry gate to find). Instead, a NumPy row-ink projection on
+    the TOP band finds a banner-height horizontal INK run whose y-span is NOT covered by any word the
+    full-page pass DID read, and returns TIGHT (y0, y1) page-px bounds around it (a loose band
+    re-garbles — the recovery needs the title alone). Returns None on anything doubtful. A logo/rule
+    mis-fire is harmless: the recovered band is adopted ONLY through the trusted-heading contract
+    (recover_type_detection_absent), which a non-title read fails. PURE; unit-pinned."""
+    try:
+        if page_image is None:
+            return None
+        med_h = float((geom or {}).get('med_h') or 0)
+        w, h = page_image.size
+        if med_h <= 0 or w <= 0 or h <= 0:
+            return None
+        top_limit = int(h * _BAND_TOP_FRAC)
+        if top_limit < 4:
+            return None
+        arr = np.asarray(page_image.crop((0, 0, w, top_limit)).convert('L'))
+        ink = arr < 160                                    # dark text/graphics
+        row_ink = ink.sum(axis=1)
+        floor = max(3, int(w * 0.01))                      # a text row spans >= ~1% of the width
+        inked = row_ink > floor
+        runs, y = [], 0
+        while y < len(inked):
+            if inked[y]:
+                y0 = y
+                while y < len(inked) and inked[y]:
+                    y += 1
+                runs.append((y0, y))
+            else:
+                y += 1
+        if not runs:
+            return None
+        gwords = (geom or {}).get('words') or []
+        def _covered(y0, y1):                              # a row the full-page pass already READ
+            for wd in gwords:
+                try:
+                    gt, gh = int(wd[1]), int(wd[3])
+                except (IndexError, TypeError, ValueError):
+                    continue
+                if gt < y1 and (gt + gh) > y0:
+                    return True
+            return False
+        floor_h = med_h * _BAND_PROMINENCE                 # banner-height, not body text
+        best, best_w = None, 0
+        for (y0, y1) in runs:
+            if (y1 - y0) < floor_h or _covered(y0, y1):
+                continue
+            cols = ink[y0:y1].any(axis=0)                  # horizontal extent (text spans wide; a logo is compact)
+            xs = np.where(cols)[0]
+            width = int(xs[-1] - xs[0]) if xs.size else 0
+            if width > best_w:
+                best_w, best = width, (y0, y1)
+        if best is None or best_w < w * 0.08:              # too narrow to be a title heading
+            return None
+        pad = max(2, int((best[1] - best[0]) * 0.12))      # SMALL pad — a loose band re-garbles
+        return (max(0, best[0] - pad), min(h, best[1] + pad))
+    except Exception:
+        return None
+
+
+def recover_type_detection_absent(page_image, geom, ocr_text, known_types, type_aliases, detect_fn):
+    """Rung-3: PIXEL pre-gate (absent title) -> single-pass band re-read -> the SAME adoption
+    contract as rungs 1/2 (detect_fn only; adopt only heading=True AND conf >= 70). None on every
+    doubtful path, so the caller keeps its original detection (fail toward review)."""
+    bounds = find_absent_heading_band(page_image, geom)
+    if not bounds:
+        return None
+    band = recover_heading_band_general(page_image, bounds)
+    if not band:
+        return None
+    aug = detect_fn(band + "\n" + (ocr_text or ""), known_types, type_aliases)
+    if aug and aug.get("heading") and aug.get("confidence", 0) >= 70:
+        return aug
+    return None

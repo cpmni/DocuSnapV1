@@ -620,6 +620,38 @@ def main():
                 except Exception:
                     pass  # additive; on any failure the original detection stands (fail toward review)
 
+            # RUNG 3 — ABSENT-TITLE PIXEL RE-READ (2026-08-07; oscar→Oracle-pending; kill
+            # HEADING_ABSENT_REREAD, DEFAULT OFF/DARK — a type-changing path; flip only after the
+            # corpus M=0 gate). The full-page --dpi PSM-3 pass can DROP an oversized centred title
+            # ENTIRELY (Castellan 'CREDIT NOTE': --dpi 300 drops it from full-page PSM-3 AND the PSM-6
+            # supp merge — proven), so it never reaches the word GEOMETRY rung 2's
+            # find_prominent_heading_band reads → rung 2 is BLIND to it BY CONSTRUCTION. A NumPy PIXEL
+            # prominence pre-gate (NO OCR — a top-band banner-height ink run the full-page pass left
+            # unread) locates the title, and a TIGHT single-pass band re-read (PSM 6/7/11) recovers it
+            # (a loose band re-garbles; proven). Adoption via the SAME detect_fn + trusted-heading
+            # contract as rungs 1/2 (no new matcher). Needs fresh page-0 geometry (med_h + the read
+            # word-set for the coverage test) → honestly inert on a cached reprocess / born-digital.
+            # SAME ordering as rungs 1/2 (before title_trusted_fresh + identify_template).
+            _absent_reread = False
+            if (os.environ.get("HEADING_ABSENT_REREAD", "0") != "0"    # DARK — flip after the gate
+                    and not _banner_reread and not _band_reread
+                    and not (type_detection and type_detection.get("heading") and type_conf >= 70)
+                    and page_images and known_type_names and _page0_geom
+                    and _provenance and _provenance[0] == "ocr"):
+                try:
+                    from ocr.heading_reread import recover_type_detection_absent
+                    _aug3 = recover_type_detection_absent(page_images[0], _page0_geom, ocr_text,
+                                                          known_type_names, type_aliases or None,
+                                                          engine.detect_document_type)
+                    if _aug3:
+                        type_detection = _aug3
+                        document_type  = _aug3["type"]
+                        type_conf      = _aug3["confidence"]
+                        _absent_reread = True
+                        log(f"  Banner heading recovered: {document_type} ({type_conf}%) [absent-title pixel re-read]")
+                except Exception:
+                    pass  # additive; on any failure the original detection stands (fail toward review)
+
             # TYPE-PRESENCE GATE (keyword path, Slice 1b — kill switch TYPE_PRESENCE_GATE, default OFF
             # = byte-identical). A keyword-detected type must show its OWN name/alias as a HEADING in the
             # title band. A type assigned only from a BODY mention (heading=False) whose name is ABSENT
