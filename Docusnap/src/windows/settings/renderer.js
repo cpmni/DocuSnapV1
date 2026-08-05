@@ -634,7 +634,8 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          ['date-clip-toggle', 'template_date_clip_gate'],
                          ['label-digit-toggle', 'template_label_digit_exact'],
                          ['angle-compose-toggle', 'teach_angle_compose'],
-                         ['edge-cut-relocate-toggle', 'template_edge_cut_relocate']]) {
+                         ['edge-cut-relocate-toggle', 'template_edge_cut_relocate'],
+                         ['clip-slack-toggle', 'template_clip_commit_edge_slack']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);

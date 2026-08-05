@@ -184,6 +184,22 @@ _CODE_FRAG_TAIL = re.compile(r'^[A-Za-z]{1,2}[^A-Za-z0-9\r\n]{1,4}(?=[A-Za-z0-9]
 # today's flagged path byte-identical. Kill TEMPLATE_CLIP_COMMIT (default OFF).
 _CLIP_COMMIT_ON = os.environ.get('TEMPLATE_CLIP_COMMIT', '0') != '0'
 _CLIP_COMMIT_MIN_PREFIX = 4        # rigid must corroborate >=4 core chars ('d' prefixing everything is noise)
+# EDGE-SLACK (Oracle SIGN-OFF-W/COND 2026-08-06). The C2a clip-commit leg (i) demanded a byte-EXACT
+# prefix, so a CLIP-misread FINAL glyph ('9'->'S', box read WS-1493S@44 vs the DOUBLE-witnessed inline
+# WS-14939@91) false-flagged the CORRECT inline value @70 with the factually-false "differs from the
+# usual format" note. The edge-guard's own _frag_matches already grants this 1-trailing-glyph slack (the
+# cut glyph is untrusted); C2a lacked it. Admit a LENGTH-PRESERVING single-trailing-glyph substitution —
+# but ONLY when the rigid is markedly LESS confident (it now casts a DISSENTING vote on that glyph; a
+# real clip reads low so a genuine heal keeps a big conf gap, and the MARGIN keeps a credible near-tie
+# dissent in review; None-conf declines), the SHARED (len-1) prefix clears the floor, and legs (ii)
+# ladder + (iv) locate_token==inline (both OCR tiers read the full value incl. the trailing glyph) +
+# (v) shape-consent still gate. Nested under _CLIP_COMMIT_ON; default OFF (=1 arms); OFF = byte-identical.
+# MARGIN gate-tunable in the SAFE direction (higher = fewer heals). Pins: tests/test_template_frag_clip.py.
+_CLIP_COMMIT_EDGE_SLACK_ON = os.environ.get('TEMPLATE_CLIP_COMMIT_EDGE_SLACK', '0') != '0'
+try:
+    _CLIP_COMMIT_EDGE_SLACK_MARGIN = int(os.environ.get('TEMPLATE_CLIP_COMMIT_EDGE_SLACK_MARGIN', '15'))
+except ValueError:
+    _CLIP_COMMIT_EDGE_SLACK_MARGIN = 15
 
 
 def _anchor_alnum_tail(anchor_text):
@@ -891,9 +907,20 @@ def _pick_fuller_code(rigid_text, rigid_conf, inline_val, inline_conf, anchor, v
         _core2 = _code_norm(_r2)
         # Evaluate legs INDIVIDUALLY so a decline is diagnosable from the SFDEV trace
         # (2026-08-04 morning: a live decline was invisible — the every-step-trace rule).
-        if not (ni.startswith(_core2) and ni != _core2):
+        # Leg (i): the rigid core strictly prefixes the fuller inline (a clean right-clip) OR — with the
+        # edge-slack armed — a LENGTH-PRESERVING trailing-glyph misread (the clip garbled only the last,
+        # untrusted glyph; the trusted body prefixes the inline). The slack demands a confidence MARGIN
+        # (the rigid dissents on that glyph; a genuine clip reads low → big gap; None-conf declines) and
+        # floors on the SHARED (len-1) prefix; legs (ii)-(v) still fully gate. Mirrors _frag_matches.
+        _exact = ni.startswith(_core2) and ni != _core2
+        _slack = (_CLIP_COMMIT_EDGE_SLACK_ON
+                  and len(ni) == len(_core2) and len(ni) - 1 >= _CLIP_COMMIT_MIN_PREFIX
+                  and ni[:-1] == _core2[:-1] and ni[-1:] != _core2[-1:]
+                  and rigid_conf is not None and inline_conf is not None
+                  and inline_conf >= rigid_conf + _CLIP_COMMIT_EDGE_SLACK_MARGIN)
+        if not (_exact or _slack):
             _clip_decline = 'not_a_strict_prefix'
-        elif len(_core2) < _CLIP_COMMIT_MIN_PREFIX:
+        elif _exact and len(_core2) < _CLIP_COMMIT_MIN_PREFIX:
             _clip_decline = 'prefix_too_short'
         elif not inline_from_ladder:
             _clip_decline = 'inline_not_from_ladder'

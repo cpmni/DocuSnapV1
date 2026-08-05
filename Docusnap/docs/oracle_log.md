@@ -675,3 +675,31 @@ reliable placement primitive) and prefer it. Switch `TEMPLATE_EDGE_CUT_RELOCATE`
   horizontal word cut never arms `_find_edge_cut_words` → this fix never triggers. Needs a separate
   row-seat-mismatch sensor. Logged in pendingfeatures.md. And Stage-2 (witness CLEAN upgrade on the
   re-seated box) remains a deferred own-gate round.
+
+## 2026-08-06 (final round) — C2a trailing-glyph SLACK (Larkspur worksheet_12 WS-1493S→WS-14939 false shapewarn) — SIGN OFF WITH CONDITIONS
+Pinned via a faithful traced reprocess: worksheet_12 reference_number commits the CORRECT `WS-14939`
+but @70 `template_mapping_shapewarn` with the factually-false "manually mapped value differs from the
+usual format" note. Cause (`_pick_fuller_code`, template_mapper.py C2a leg (i)): the abs box read
+`WS-1493S` (trailing `9`→`S` CLIP-misread, rigid_conf 44); the label-anchored INLINE read `WS-14939`
+(conf 91) is double-witnessed (full-res ladder + ~120-DPI locate) and shape-`confirmed` (all 37 confirmed
+Larkspur worksheet refs are WS-#####), but leg (i) demands a byte-EXACT prefix — `ws14939` doesn't start
+with `ws1493s` — so it declines `not_a_strict_prefix` and false-flags the correct value. The edge-guard's
+own `_frag_matches` already grants this 1-trailing-glyph slack; C2a lacked it (the asymmetry = the bug).
+- **Consensus (gary+reggie)**: 1-trailing-glyph slack on leg (i); legs (ii) ladder + (iv) locate_token==ni
+  (both tiers read the full value incl. the trailing glyph) + (v) shape-consent SUBSTITUTE for C2a's missing
+  geometric cut evidence; trailing-only; new switch `TEMPLATE_CLIP_COMMIT_EDGE_SLACK` nested under
+  `_CLIP_COMMIT_ON`, default OFF; reggie rejected a confusable table (clip garble, not font confusion);
+  convergent with the edge-guard (both commit WS-14939) — not the two-healers trap.
+- **Oracle FORK → reggie length-preserving** (`len(ni)==len(_core2) and ni[:-1]==_core2[:-1] and
+  ni[-1]!=_core2[-1]`); gary's `startswith(_core2[:-1])` admits arbitrarily-longer ni — rejected.
+- **4 catches folded in**: C2 floor on the SHARED (len-1) prefix (the dissenting glyph isn't corroboration);
+  C3 conf MARGIN (~15, gate-tunable) not a bare `>` (the plain guard gives ZERO protection against the
+  named residual — both tiers misread the true glyph identically while the LOW-conf rigid caught truth →
+  guard satisfied BECAUSE rigid is low-conf; a real clip reads low so a genuine heal keeps a big gap
+  (worksheet_12 gap=47); None-conf declines; margin slack-path only); C4 isolate the live pin with
+  edge-guard OFF so the gate fails without the slack; C5 pin both trade-off directions.
+- **Residual ACCEPTED**: bounded to one glyph, length-preserving, ⊂ the existing 2-tier clean-clip envelope,
+  human checkpoint preserved at the near-tie boundary via the margin (fail-to-review).
+- **BUILT to spec + GATE**: pins `test_template_frag_clip.py` (10 edge-slack + nesting, all green).
+  ISOLATED live pin (edge-guard OFF): slack OFF → WS-14939 @70 shapewarn; slack ON → WS-14939 @95
+  template_mapping CLEAN. NF both-arms gate pending. Committed dark + env bridge + Settings toggle.

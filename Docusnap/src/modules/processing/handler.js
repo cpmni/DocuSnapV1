@@ -165,6 +165,9 @@ function _reconcileEnv(db) {
     // a cut taught box, re-seat the value off the LOCAL located label + word-snap and prefer it over
     // the garble (FLAGGED pre-fill for review). Co-requires template_target_word_snap (the y-cure).
     if (learning.getSetting(db, 'template_edge_cut_relocate', 'false') === 'true') env.TEMPLATE_EDGE_CUT_RELOCATE = '1';
+    // Clip-commit trailing-glyph slack (Oracle 2026-08-06): a CLIP-misread FINAL glyph no longer
+    // false-flags a correct, double-witnessed, shape-confirmed inline read (WS-1493S vs WS-14939).
+    if (learning.getSetting(db, 'template_clip_commit_edge_slack', 'false') === 'true') env.TEMPLATE_CLIP_COMMIT_EDGE_SLACK = '1';
     return env;
   } catch { return {}; }
 }
