@@ -282,6 +282,25 @@ _EDGE_GUARD_FIRES = []   # per-process census: (field_key, edges, outcome) — t
 # tests/test_template_snap_union_witness.py.
 _SNAP_UNION_WITNESS_ON = os.environ.get('TEMPLATE_SNAP_UNION_WITNESS', '0') != '0'
 
+# EDGE-CUT → LABEL-RELOCATE (Oracle SIGN-OFF-W/COND 2026-08-06 — the PLACEMENT pivot). The
+# delivery_number VIN-O0U5D class is a cross-doc PLACEMENT-transfer failure, not a reading one: a
+# taught ABSOLUTE box, seated a hair off on a sibling (sub-_DRIFT_FLOOR, so the drift branch never
+# fires), CLIPS the value → garbled rigid read. The horizontal edge-guard GROW cannot recover a
+# VERTICAL seat clip (it never moves y/h). The reliable placement primitive already exists — the
+# derived path re-seats the value off the LOCATED label + stored offset and word-snaps it to the
+# real word geometry (both axes) — but it is structurally unreachable once the abs read produced a
+# non-empty garble. So: when the edge-guard could NOT clean-heal a cut, re-seat via the LOCAL
+# located label (Rule A: never a fresh page-wide locate — genuine drift is owned by the drift
+# branch) + `_relocate_and_read`, and PREFER the re-seated value over the abs garble. Stage-1
+# commits it FLAGGED (<=70 + note, pre-filled for review) — NEVER a silent clean auto-file of a
+# no-history teach-once value (Oracle Cond 3); it earns clean ONLY via confirmed/provisional shape
+# consent. The edge-directional frag-tie + the snap-union witness clean-UPGRADE are a deferred
+# Stage-2 (own switch + own gate). CO-REQUIRES _TARGET_WORD_SNAP_ON — the word-snap is the entire
+# y-cure; without it the re-seat reproduces the same clipped y (Oracle Cond 0). Scope = CUT-DETECTED
+# clips only (a pure-vertical-inside-column clip never arms _find_edge_cut_words — named open in
+# pendingfeatures). Default OFF (=1 arms); OFF = byte-identical. Pins: tests/test_template_edge_cut_relocate.py.
+_EDGE_CUT_RELOCATE_ON = os.environ.get('TEMPLATE_EDGE_CUT_RELOCATE', '0') != '0'
+
 
 def extract_with_mappings(page_images, mappings, field_patterns=None,
                           ocr_lines_fn=None, ocr_text_fn=None, slice_capture=None,
@@ -1144,6 +1163,52 @@ def _read_registration(page, mapping, target_box, val_type, ocr_text_fn, expansi
     return result
 
 
+def _edge_cut_relocate(page, mapping, anchor_box, target_box, located, val_type, field_key,
+                       anchor_text, abs_text, ocr_text_fn, ocr_lines_fn, expansion,
+                       validation_patterns, format_lookup, line_cache, slice_capture,
+                       page_idx, provisional_lookup):
+    """TEMPLATE_EDGE_CUT_RELOCATE (Oracle SIGN-OFF-W/COND 2026-08-06 — see the flag block).
+    Called only when `_abs_edge_guard` could NOT clean-heal a cut taught box. Re-seat the value off
+    the LOCAL located label + stored offset + word-snap (the reliable placement the drift path uses)
+    and PREFER it over the abs garble — but Stage-1 commits FLAGGED (<=70 + _EDGE_CUT_NOTE, pre-
+    filled), earning a clean commit ONLY via confirmed/provisional shape consent. Returns a result
+    dict to COMMIT, or None to fall through to the guard's own outcome (fail-toward-review).
+
+    Guards: CO-REQUIRE _TARGET_WORD_SNAP_ON (the y-cure, Cond 0); LOCAL located only — matched,
+    not too-wide (Rule A); relocate must actually READ something; NOT `_shapewarn` (a learned-shape
+    bleed fails toward review, Cond); and the re-seat must be MATERIALLY DIFFERENT from the abs
+    garble (re-anchoring that changed nothing gives no gain and must not clean-promote a garble)."""
+    if not (_EDGE_CUT_RELOCATE_ON and _TARGET_WORD_SNAP_ON and anchor_text):
+        return None
+    if not (isinstance(located, dict) and located.get("matched_text") is not None):
+        return None                                   # Rule A: no usable LOCAL label -> no relocate
+    if _located_too_wide(anchor_box, located):
+        return None
+    relo = _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
+                              ocr_text_fn, expansion, validation_patterns, format_lookup,
+                              slice_capture, page_idx, field_key, ocr_lines_fn, line_cache,
+                              provisional_lookup=provisional_lookup)
+    if not (isinstance(relo, dict) and relo.get("value")):
+        return None                                   # relocate failed -> fall through (no worse)
+    rv = relo.get("value")
+    if "_shapewarn" in (relo.get("method") or ""):
+        return None                                   # learned-shape wrong-column bleed -> review floor
+    if _code_norm(rv) == _code_norm(abs_text or ""):
+        return None                                   # re-anchor changed nothing -> no gain, no promote
+    # Preferred. CLEAN only when the re-seated value earns it via learned/provisional shape consent
+    # (Oracle Cond 5: the relocate's OWN same-pixel inline agreement never licenses clean). Otherwise
+    # commit the re-seated value FLAGGED + pre-filled — the honest teach-once win (right value to
+    # review, human checkpoint kept). Frag-tie + snap-union-witness clean-upgrade = Stage-2.
+    consent = _shape_consents(rv, field_key, format_lookup, provisional_lookup)
+    if consent not in ('confirmed', 'provisional'):
+        relo = dict(relo)
+        relo["confidence"] = min(int(relo.get("confidence") or 70), 70)
+        relo["validation_note"] = _EDGE_CUT_NOTE
+        if not str(relo.get("method") or "").endswith(("_edgecut", "_relocated")):
+            relo["method"] = (relo.get("method") or "template_mapping") + "_relocated"
+    return relo
+
+
 def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
                  located=_UNSET, page_transform=None,
                  slice_capture=None, page_idx=0,
@@ -1276,13 +1341,28 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
                 abs_text, _abs_meta['conf'] = _eg["rewrite"]
                 abs_salvaged = False
                 _edge_healed = True
-            elif "defer_cap" in _eg:
-                # Heal refused/incomplete: keep the FULL flow (the inline reconcile is the
-                # independent witness that heals exactly this class) — only the final abs
-                # commit wears the cap + note, and only if nothing else healed first.
-                _edge_suspect = True
             else:
-                return _eg["result"]
+                # The guard could NOT clean-heal this cut (defer_cap floor OR flagged {'result'}).
+                # Before committing either, try the PLACEMENT primitive: re-seat the value off the
+                # LOCAL located label + word-snap — this fixes a vertical/edge seat clip the
+                # horizontal grow structurally cannot. Intercepts BOTH non-rewrite outcomes (Oracle
+                # Cond 1): the flagged {'result'} would otherwise return here and pre-empt the
+                # re-seat. Inert unless TEMPLATE_EDGE_CUT_RELOCATE — helper returns None → the
+                # original defer_cap/result handling below runs, byte-identical.
+                _relo = _edge_cut_relocate(page, mapping, anchor_box, target_box, located,
+                                           val_type, field_key, anchor_text, abs_text,
+                                           ocr_text_fn, ocr_lines_fn, expansion,
+                                           validation_patterns, format_lookup, line_cache,
+                                           slice_capture, page_idx, provisional_lookup)
+                if _relo is not None:
+                    return _relo
+                if "defer_cap" in _eg:
+                    # Heal refused/incomplete: keep the FULL flow (the inline reconcile is the
+                    # independent witness that heals exactly this class) — only the final abs
+                    # commit wears the cap + note, and only if nothing else healed first.
+                    _edge_suspect = True
+                else:
+                    return _eg["result"]
     # ── INLINE CODE RECONCILE (single-token code, taught inline) — DARK ──────────
     # The label is found and NOT drifted (so drift-relocate + registration above did not
     # fire), yet a fixed narrow drawn box can still clip a code value's prefix under

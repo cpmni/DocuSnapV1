@@ -633,7 +633,8 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          ['edge-guard-toggle', 'template_abs_edge_guard'],
                          ['date-clip-toggle', 'template_date_clip_gate'],
                          ['label-digit-toggle', 'template_label_digit_exact'],
-                         ['angle-compose-toggle', 'teach_angle_compose']]) {
+                         ['angle-compose-toggle', 'teach_angle_compose'],
+                         ['edge-cut-relocate-toggle', 'template_edge_cut_relocate']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);

@@ -1055,3 +1055,24 @@ to a stage that attempted and lost, which is exactly the confusion behind Exhibi
   engine → native `.pyd`; arm the Electron fuses (`HARDEN_FUSES`, RunAsNode/inspector off); the deferred
   asar rungs B/D/F/E (bytenode/obfuscation). Plan: `docs/BUILD_HARDENING_PLAN_2026-07-26.md`. Framing:
   raise the bar, not "uncrackable" — the **licensing gate** is the commercial moat, not code secrecy.
+
+## Pure-vertical-inside-column seat clip — row-seat-mismatch sensor (open; named by Oracle 2026-08-06)
+`TEMPLATE_EDGE_CUT_RELOCATE` (the placement pivot) only fires on a CUT-DETECTED clip —
+`_find_edge_cut_words` is a HORIZONTAL sensor (left/right box edge straddles a row-band word). A taught
+box seated too high/low whose value is fully INSIDE the box's x-range (a pure-vertical clip, no
+horizontal word cut) never arms the guard, so neither the grow nor the relocate triggers — it stays
+today's behaviour (clean/garbled abs commit). Need a distinct sensor: a full-page word overlaps the
+box column but its OWN bbox is vertically mis-centred vs the read box (seat error), independent of any
+horizontal cut. Then route it to the same `_edge_cut_relocate` re-seat. Repro leads: template_mapper.py
+`_find_edge_cut_words` (horizontal only), `_snap_box_to_words` row-band admission. Own advisor→Oracle→
+gate round.
+
+## Stage-2 — snap-union witness CLEAN upgrade on the RE-SEATED box (deferred; Oracle 2026-08-06)
+`TEMPLATE_EDGE_CUT_RELOCATE` Stage-1 commits the re-seated value FLAGGED (pre-fill for review) unless it
+earns clean via confirmed/provisional shape consent. The shelved `_snap_union_witness` (net-negative on
+a GROWN box) is SOUND when corroborating a PLACEMENT-CORRECT re-seated box — that would clean-heal the
+teach-once no-history case (e.g. Larkspur delivery_docket_06 DN-58038, whose garble shares no glyphs
+with the truth so the frag-tie can't clean it). NOT verbatim reuse: `_snap_union_witness` is written
+against `grown`/grow-`edges`; feeding the re-seated box needs new plumbing + its own pins + its own
+re-seat-frame regression gate (do NOT ride the headline "silent clean heal" on un-shelved code). Own
+switch, own gate round.

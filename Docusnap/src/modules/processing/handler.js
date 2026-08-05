@@ -161,6 +161,10 @@ function _reconcileEnv(db) {
     // Straighten pivot (Oracle 2026-08-05 late; corpus + Chris-vet GREEN): the level-frame
     // composition — taught boxes rotated to the straightened frame by the teach sample's tilt.
     if (learning.getSetting(db, 'teach_angle_compose', 'false') === 'true') env.TEACH_ANGLE_COMPOSE = '1';
+    // Placement pivot (Oracle 2026-08-06, NF gate +1/0-regress): when the edge-guard can't clean-heal
+    // a cut taught box, re-seat the value off the LOCAL located label + word-snap and prefer it over
+    // the garble (FLAGGED pre-fill for review). Co-requires template_target_word_snap (the y-cure).
+    if (learning.getSetting(db, 'template_edge_cut_relocate', 'false') === 'true') env.TEMPLATE_EDGE_CUT_RELOCATE = '1';
     return env;
   } catch { return {}; }
 }

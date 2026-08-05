@@ -639,3 +639,39 @@ side of the TAUGHT box), promote a no-history (teach-once) nick to a CLEAN heal 
   placement failure"). Next: fix the PLACEMENT (prefer the label-relocated + word-snapped derived read
   when the absolute box is edge-cut), not another read-time healer. No more read-time swap healers on
   this class without a placement-layer redesign first.
+
+## 2026-08-06 (later still) — Stage-0.5 PLACEMENT pivot: edge-cut → LABEL-RELOCATE — SIGN OFF WITH CONDITIONS, GATE GREEN (+1/0-regress), committed dark
+The pivot after the witness shelved net-negative: stop patching the READ, fix the PLACEMENT. The
+delivery_number VIN-O0U5D class is a cross-doc placement-transfer failure — a taught ABSOLUTE box
+seats a hair off on a sibling (sub-`_DRIFT_FLOOR`), CLIPS the value → garble; the horizontal
+edge-guard grow structurally cannot recover a VERTICAL seat clip. Fix: when the guard can't clean-heal
+a cut, re-seat off the LOCAL located label + stored offset + word-snap (`_relocate_and_read`, the
+reliable placement primitive) and prefer it. Switch `TEMPLATE_EDGE_CUT_RELOCATE`, default OFF.
+- **Advisors** (007 + gary AGREE): right layer = the edge-guard non-rewrite dispatch; the re-seat
+  cures BOTH axes (label-origin Y + `_snap_box_to_words` both-axis lock) where the horizontal grow
+  cures neither; edge-cut trigger >> lowering `_DRIFT_FLOOR` (3 sites, diffuse blast radius).
+- **Oracle FORK RULING + 4 catches**: (A) locate scope → 007 (LOCAL `located` only; a page-wide locate
+  buys the wrong-repeated-occurrence M=1 and drift is already owned by the drift branch). (B) accept →
+  SPLIT: gary's 3-part (credible + not-shapewarn + materially-different) chooses the review PRE-FILL,
+  but a CLEAN commit needs consent/frag-tie/witness. Caught: (0) the y-cure is ENTIRELY
+  `_snap_box_to_words` — CO-REQUIRE `TEMPLATE_TARGET_WORD_SNAP` (verified ON in prod), else inert;
+  (1) the flagged `{'result'}` branch RETURNS before any post-dispatch relocate → intercept BOTH
+  non-rewrite outcomes; (2) "prefer verbatim" clean-commits a teach-once value @90 = silent auto-file
+  → CAP to FLAGGED @70 pre-fill, clean only via confirmed/provisional consent; (4) doc_06 garble shares
+  NO glyphs with truth so the frag-tie can't clean it — the witness clean-UPGRADE is a deferred,
+  ISOLATED Stage-2 (own switch, own re-seat-frame gate), not un-shelved here.
+- **BUILT to spec**: helper `_edge_cut_relocate` (Rule A local-only, co-require word-snap, prefer→
+  FLAGGED, clean only via shape consent); dispatch intercepts both non-rewrite outcomes; byte-identical
+  off. Pins `tests/test_template_edge_cut_relocate.py` (15/15 incl. Rule-A never-page-wide-locate,
+  teach-once→FLAGGED, same-garble guard, shapewarn-reject, co-require, OFF byte-identical, dispatch
+  intercept). Edge-guard/witness/word-snap/compose suites unchanged.
+- **GATE GREEN**: NF both-arms (TEACH=1 SET=both SAMPLE=228 SEED=7, shipped flags): **+1 gain, 0
+  regressions** — po_ref on Ironclad DELIVERY_NOTE_0093 (scanned) OFF wrong-`edgegrow` → ON correct
+  (a real cross-doc placement-clip heal on a delivery doc, the exact class). 13 `_relocated` fires, all
+  FLAGGED pre-fills → review (M=0). ref/date/total/issuer/customer/vat_no/account_no/job_ref all
+  unchanged. Committed DARK + owner env-bridge + Settings toggle. Owner flip + owner-watched doc_06
+  reprocess confirmation pending (the standalone harness couldn't bit-reproduce doc_06's OCR context).
+- **OPEN (named, not implied fixed — Oracle Cond 6)**: a PURE-vertical-inside-column clip with NO
+  horizontal word cut never arms `_find_edge_cut_words` → this fix never triggers. Needs a separate
+  row-seat-mismatch sensor. Logged in pendingfeatures.md. And Stage-2 (witness CLEAN upgrade on the
+  re-seated box) remains a deferred own-gate round.
