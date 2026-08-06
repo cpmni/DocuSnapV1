@@ -22,7 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from extraction import keyword, anchor, validator, ocr_corrector, template_matcher, template_mapper, format_anomaly_checker, value_quality, wordness
+from extraction import keyword, anchor, validator, ocr_corrector, template_matcher, template_mapper, format_anomaly_checker, value_quality, wordness, registration
 
 # Identity-fusion (text-led SUPPLIER identity) is optional — it needs rapidfuzz, which is
 # not yet in the bundled runtime. Used ONLY by the shadow measurement (extract(identity_
@@ -5373,9 +5373,14 @@ class ExtractionEngine:
                     # word — and RANSAC kept an arbitrary self-consistent pair). Refuse the
                     # transform -> the rung falls through exactly as a failed fit always has
                     # (keyword/review — fail toward review, never a blind mapped crop).
-                    if (anchor_page_transform is not None
-                            and os.environ.get('REG_MIN_INLIERS_GATE', '1') != '0'   # default ON (A/B byte-identical — zero collateral); =0 kills
-                            and int(getattr(anchor_page_transform, 'n_inliers', 0) or 0) < 3):
+                    # 2026-08-06: the condition was INLINED here and nowhere else, so the sibling
+                    # Stage-0.5 call site consumed exactly the fits this refused (the Castellan
+                    # incident). It now lives ONCE in registration.is_unfalsifiable — same env var,
+                    # same default, same semantics — and both call sites consume that. Do not
+                    # re-inline it. NOTE: _fit_page_transform now applies the same predicate
+                    # internally, so this is a redundant second net rather than the only guard;
+                    # it is kept for the log line and as belt-and-braces.
+                    if registration.is_unfalsifiable(anchor_page_transform):
                         self.log(f"  Stage 2: registration REFUSED — {anchor_page_transform.n_inliers} "
                                  f"inlier(s) is an unverified exact fit (vacuous-fit gate)")
                         anchor_page_transform = None

@@ -73,6 +73,37 @@ _UNSET = object()         # "located not provided" sentinel (distinct from a Non
 # still needs a REAL move, not OCR jitter, to count as drift (see _label_drifted).
 _DRIFT_FLOOR = 0.02
 
+# ── S-D VACUOUS-FIT GATE, second call site (2026-08-06; Oracle SEND-BACK -> this slice) ───────────
+# A similarity fit surviving on n_inliers <= 2 is EXACTLY DETERMINED: `registration.fit_transform`
+# scores it on the very points that produced it, so its residual is 0.0000 BY CONSTRUCTION and it
+# carries ZERO verification. `registration_confidence` then returns a flat 78 no matter how wrong
+# the fit is. This class was already diagnosed, Oracle-authorized and shipped DEFAULT-ON on
+# 2026-08-01 — but only at `engine.py`'s Stage-2 call site (`anchor_page_transform`).
+# `_fit_page_transform` has TWO callers, and the Stage-0.5 one (extract_with_mappings, below) was
+# never gated, so `template_registration` kept consuming exactly the fits Stage 2 refuses.
+# THE LIVE EXHIBIT (Castellan Security credit_note, template 32, 2026-08-06): 2 landmarks, one of
+# them the 3-char table header 'Qty'. On these pages 'Qty' is not found in its taught box, so the
+# page-wide fallback locate matches it onto the line 'Castellan Security Systems' —
+# _label_score('qty', 'castellan security systems') = 0.667 >= the 0.6 threshold, because the
+# longest common run is 'ty' (from "securi-TY") and the run fraction is measured against the
+# 3-char NEEDLE. The resulting fit: scale 1.1445, rotation -166.71 deg, residual 0.000000,
+# n_inliers 2, conf 78 — and it displaced the taught supplier box by 0.277 of the page, so
+# `template_registration` overwrote the operator's own drawn-box read with whatever landed there
+# ('Bramblewood Joinery Ltd' = the CUSTOMER block, 'DELIVER TO', '1 264.00', ...) on 15 of 22 docs.
+# Measured on the real PDFs: the taught box read 'Castellan Security Systems' CORRECTLY on every
+# doc, so the transform was pure loss — these pages are not drifting (the stable header labels
+# relocate within ~0.0005 of page).
+# THE GATE IS THE FIX, NOT A NEW MATCHING RULE: refuse the unverified fit and the rung falls through
+# exactly as a failed fit always has (absolute read / keyword / review — fail toward review, never a
+# blind mapped crop). Placed INSIDE `_fit_page_transform` rather than at the call site (which is how
+# engine.py does it) DELIBERATELY: the whole defect is that a shared helper was guarded at one of its
+# two callers, so the guard belongs at the single choke point where no present or future caller can
+# miss it. engine.py's own gate is left untouched and simply becomes a redundant second net.
+# Same kill switch + default as the 2026-08-01 precedent: REG_MIN_INLIERS_GATE=0 restores the old
+# behaviour byte-for-byte. The predicate itself lives ONCE in `registration.is_unfalsifiable` and is
+# consumed by BOTH call sites — re-inlining it is what caused this bug.
+# Pins: tests/test_registration_min_inliers.py.
+
 # Review note attached when a manually-mapped value PASSES the field's regex/type
 # but differs from the learned per-(supplier,doctype,field) shape on a DERIVED rung
 # (registration / relocation). The value is kept (manual authority) but flagged for
@@ -608,7 +639,16 @@ def _fit_page_transform(page, landmarks, ocr_lines_fn, line_cache=None):
                     found["y_norm"] + found["h_norm"] / 2.0])
     if len(src) < 2:
         return None
-    return registration.fit_transform(src, dst, kind="similarity")
+    _t = registration.fit_transform(src, dst, kind="similarity")
+    # S-D VACUOUS-FIT GATE — the SHARED predicate (see registration.is_unfalsifiable). An
+    # exactly-determined fit verifies nothing, so refuse it rather than let a rung consume a
+    # transform built on coincidence; the caller then falls through exactly as a failed fit always
+    # has. Placed HERE, inside the shared helper, rather than at each call site: the whole defect is
+    # that this function had a guard at one of its two callers, so the guard belongs at the single
+    # choke point no present or future caller can miss. OFF -> byte-identical.
+    if registration.is_unfalsifiable(_t):
+        return None
+    return _t
 
 
 # ── Per-mapping resolution ────────────────────────────────────────────────────

@@ -6,6 +6,127 @@
 
 ---
 
+## 2026-08-06 — Registration follow-ups after the Castellan incident (NOT BUILT; owner-raised + Oracle C5/C7)
+
+Context: the Castellan supplier corruption is FIXED by the shared vacuous-fit gate
+(`registration.is_unfalsifiable`, both call sites). These are the follow-ups that would stop the class
+recurring, or make registration WORK rather than merely go quiet. Ranked. **Do not build any of these
+off the Castellan exemplar alone** (standing Oracle ruling on registration work).
+
+**(0) `pos_tol` IS TIGHTER THAN THE PAGE JITTER IT MUST TOLERATE — the dominant filter. HIGHEST VALUE.**
+MEASURED by replaying `select_cross_sample` over template 32's real corpus (160 words / 4 docs):
+```
+'security' 4/4 spread=0.0213   'systems' 4/4 0.0218   'bastion' 4/4 0.0208  (ADDRESS)
+'house,'   4/4 spread=0.0214   'keep'    4/4 0.0219   'reg'     4/4 0.0213
+'vat'      3/4 spread=0.0211   'note'    4/4 0.0188  (the TYPE NAME)  'account' 4/4 0.0166
+'deliver'  4/4 spread=0.0146 -> SURVIVES      'qty' 3/4 spread=0.0063 -> SURVIVES
+```
+EVERY header word clusters at ~0.021 spread. That uniformity is the tell: the words are not moving
+independently — the WHOLE PAGE shifts ~0.021 between scans. `select_cross_sample`'s `pos_tol=0.015`
+sits just UNDER that, so it rejects the entire letterhead (supplier name, address, VAT/reg line) AND
+the document title, then keeps whichever two words happened to jitter least in a 4-doc sample —
+`deliver` and `qty`. They survived on measurement noise, not merit, and two landmarks is precisely
+the degenerate case that yields an unfalsifiable fit.
+THE DEFECT (owner-diagnosed): page shift is NORMAL for scanned documents — glass vs feeder, paper
+registration is never perfect — so a landmark's COORDINATE must be an OUTPUT of finding it, not the
+criterion for CHOOSING it. The read path already works that way (`_fit_page_transform` text-locates
+each landmark via `_locate_anchor`, tight box then page-wide, and uses wherever it lands). Only the
+SELECTOR still thinks in fixed coordinates, and that mismatch is the bug: it rejects stable chrome
+BECAUSE the page shifted, which is the very thing registration exists to correct.
+
+PROVEN by de-meaning the per-document global offset on the real corpus (measured scanner shift
+between these 4 docs: dx 0.0000 / -0.0204 / -0.0076 / -0.0129):
+```
+word        RAW    verdict     DE-MEANED  verdict
+security   0.0213  REJECTED  ->  0.0009    ok
+note       0.0188  REJECTED  ->  0.0017    ok     (the TYPE NAME)
+systems    0.0218  REJECTED  ->  0.0024    ok
+reg        0.0213  REJECTED  ->  0.0036    ok
+account    0.0166  REJECTED  ->  0.0039    ok
+bastion    0.0208  REJECTED  ->  0.0055    ok     (ADDRESS)
+house,     0.0214  REJECTED  ->  0.0079    ok     (ADDRESS)
+keep       0.0219  REJECTED  ->  0.0093    ok     (ADDRESS)
+pack       0.0592  REJECTED  ->  0.0591  STILL REJECTED   (line-item text: genuinely floats)
+pir        0.0956  REJECTED  ->  0.0955  STILL REJECTED   (line-item text: genuinely floats)
+```
+**Landmarks 1 -> 9.** CRITICAL PROPERTY: de-meaning rescues the chrome WITHOUT admitting a single
+floater — `pack`/`pir` move 0.0592 -> 0.0591, i.e. it cleanly separates "the PAGE moved" from "the
+CONTENT moved", which is exactly the distinction the raw test cannot make. This also removes the
+degenerate 2-landmark case AT SOURCE rather than catching it downstream in the vacuous-fit gate.
+FIX DIRECTION: estimate a per-document global offset (median displacement over words common to all
+sample docs) and measure the RESIDUAL spread against `pos_tol`. Do NOT simply raise `pos_tol` — that
+would admit the genuine floaters (`TOTAL`, line-item text) the tolerance correctly rejects today.
+This outranks (1): position-instability alone rejects `keep`/`reg`/`note`/`vat`/`account`, none of
+which are inside a taught box.
+
+**(1) LANDMARK STARVATION — narrow `_excludeBoxesFor` to VALUE boxes only. HIGH VALUE.**
+`src/modules/templates/handler.js:58-67` pushes BOTH `target_*` and `anchor_*` of every mapping into
+`exclude_boxes`, so `select_landmarks`/`select_cross_sample` may not use any taught LABEL as a
+landmark. On template 32 that disqualified the letterhead band AND all three captions
+(`CREDIT REF`, `CREDIT DATE`, `TOTAL`), leaving only body text — which is why cross-sample, running
+with 4 confirmed docs, still returned just `DELIVER` + `Qty`. MEASURED: `CREDIT REF`/`CREDIT DATE`
+relocate within **0.0005** of page across these docs (ideal landmarks) while `Qty` cannot be found in
+its own taught box. `TOTAL` floats −0.031..−0.111 with line-item count, but `select_cross_sample`'s
+`pos_tol=0.015` rejects floaters automatically — so letting labels compete is SAFE.
+SEAM (answer before building): if the transform is fitted on the same label the anchor path uses to
+relocate a field, the two rungs stop being independent and their errors correlate. Options: allow
+label zones only for landmarks NOT consumed by an active mapping on the same field, or allow them and
+accept the correlation for the registration rung only.
+
+**(2) ASK FOR A SECOND DOCUMENT (owner-raised).** The plumbing already exists and is PASSIVE:
+`captureSampleWords` (reviewService.js:325-330, on confirm) → `tryCrossSampleLandmarks`
+(handler.js:105, gated `countSampleDocs >= 3`) → `select_cross_sample`. Nothing ever ASKS the operator
+for a 2nd/3rd sibling. UX addition, no new matching machinery: after a teach that yields a thin
+landmark set, invite the customer to drop in another doc of the same type "so the system can learn the
+layout" — explicitly NOT a re-teach. Pairs with (3): the thin-set condition is the trigger.
+
+**(3) REFUSE TO STORE A <3 LANDMARK SET (Oracle C5, the durable fix).** A set of <3 can only ever
+produce an unfalsifiable fit (see `registration.is_unfalsifiable`), so persisting one arms a transform
+that the read path must then refuse at runtime. Either refuse to persist it or mark the template
+registration-ineligible until cross-sample supplies >=3, and say so honestly (engine.py already knows
+the phrasing: "registration inactive — template has no landmarks"). Census at the time of writing:
+6 templates have 0 landmarks, 7 have 1, 3 have exactly 2 (tpl 9, 30, 32).
+
+**(4) REGISTRATION AS A WITNESS, NOT AN AUTHORITY (owner-designed; the real architectural fix).**
+Owner's model: treat the drawn-box read, the keyword/label read, the logo identity and the fitted
+transform as INDEPENDENT WITNESSES and require corroboration ("2 of 3") instead of letting the
+transform OVERTURN the operator's box. Why it is right: `anchor_stable` can only be set when a mapping
+has `anchor_text`, so a LABEL-LESS mapping (every `supplier_name`) can never defend its own absolute
+read — which is exactly how the Castellan junk committed. MEASURED support: in the incident the system
+already held TWO correct independent witnesses and used neither — the taught box read
+`Castellan Security Systems` on 5/5 docs sampled, and the logo resolved the same supplier at conf 89 on
+the one doc with no template (tpl 32 also stores 3 logo hashes; `logo_fingerprints` match_count 3).
+Prior art to build on, NOT duplicate: `decide_logo_text_gate` + `LOGO_NAME_PRESENCE_ACCEPT`
+(engine.py:955-990) already implements "logo + an independent geometry name read that AGREES confirms
+the identity". HARD CONSTRAINT from project history: a logo must NEVER assert alone (pHash is a LAYOUT
+signature, same-logo siblings collide, degrades on scans) — it may be one vote, never the deciding one.
+
+**(5) ROTATION-LOCKED / OVERDETERMINED FIT (owner-designed).** A similarity fit is 4 DOF, so 2 points
+are exactly determined and the residual is 0 BY CONSTRUCTION — that is what makes a 2-inlier fit
+unfalsifiable. On a straightened page, CONSTRAIN rotation (and optionally scale): 2 points then give 4
+equations against 2-3 unknowns, the fit becomes OVERDETERMINED, and the residual becomes MEANINGFUL —
+a bad correspondence can no longer hide. This is the right shape for any future registration rebuild.
+CAVEAT MEASURED: on the Castellan pages a rotation-locked fit was ALSO wrong, because the INPUT
+correspondence was false rather than the model being unsuitable — so this fixes falsifiability, not
+bad inputs. Pair with (1) and Oracle's deferred rotation-plausibility gate (|theta| <= ~12deg, which
+catches the n_inliers>=4-false-inlier corner where confidence reaches 95 and clears the 88 floor —
+the one cell neither the vacuous-fit gate nor a landmark witness reaches).
+
+**(6) `_fit_page_transform` FRAME ERROR (deferred slice).** `dst` is built from the located LINE-box
+centre (`found["x_norm"] + found["w_norm"]/2`) while `src` is the taught WORD centre — measured
+0.0119-0.0182 on this template, and up to half the line width where a landmark heads a wide row. A
+systematic per-landmark bias against a 0.02 inlier band, i.e. a manufacturer of the n_inliers==2
+collapses the gate now refuses. `found["label_box"]` is the tight word box — but note it is built by
+`_match_label_run` using the SAME `_label_score` at the SAME threshold, so it is not an independent
+witness, only a better centre. Own switch, own gate.
+
+**STALE ENTRY CORRECTED (Oracle C7):** the older "S-D registration fit audit" entry reads as an open
+investigation. H1 (n<=2 vacuous fit) was MEASURED (~43% of docket fits collapsed to 2 inliers) and the
+`REG_MIN_INLIERS_GATE` shipped default-ON 2026-08-01 at engine.py's Stage-2 site — and, from
+2026-08-06, at the Stage-0.5 site too via the shared predicate. Do not re-investigate it.
+
+---
+
 ## 2026-08-06 — `_label_score` partial credit lets a PROSE line outrank a 1-glyph-garbled true caption (NOT BUILT — larger lever)
 
 **Symptom (traced, live, deterministic).** The PAGE-WIDE fuzzy locate in

@@ -933,3 +933,55 @@ the mapping IS labelled (`'Order No.'`).
   the R5-arbitration line the design had not; caught that C6's old stub was value-BLIND so every SWAP pin would
   silently flip to FLAG under the new rule; and demanded the auto-file census that accuracy/M cannot see.
 - Default OFF, strict subset of the parent flag; **owner flips.**
+
+## 2026-08-06 — Castellan `template_registration` supplier corruption — SEND BACK, then SIGN OFF WITH CONDITIONS
+**The incident:** owner imported ~22 Castellan Security credit notes, taught ONE, reprocessed. 15 of 22 got a
+WRONG `supplier_name` — `'Bramblewood Joinery Ltd'` (the owner's OWN company / the customer block), `'DELIVER TO'`,
+`'Draymarket, DM2 6QF'`, line totals. Every wrong doc: method `template_registration`, conf 70-78.
+- **What the specialists proposed:** a new landmark-hit witness (`_landmark_hit`, token-ratio) inside
+  `_fit_page_transform`, default ON, to reject the false correspondence.
+- **ORACLE SEND-BACK — the decisive catch.** The gate ALREADY EXISTED. `engine.py:5376`
+  `REG_MIN_INLIERS_GATE` (Oracle-authorized, evidence-met, **default ON since 2026-08-01**) refuses a fit with
+  `n_inliers < 3` — but `_fit_page_transform` has **TWO callers** and the condition was INLINED at only the
+  Stage-2 one. Stage 0.5 kept consuming exactly the fits Stage 2 refuses. *"The specialists reconstructed, from
+  first principles and with excellent forensics, a defect the codebase had already diagnosed, gated and shipped
+  — at the other one of the function's two call sites."*
+- **ROOT CAUSE (confirmed by live probe over the real PDFs):** template 32 has 2 landmarks, one the 3-char table
+  header `'Qty'`. `_label_score('qty','castellan security systems') = 0.667 >= 0.6` — the longest common run is
+  `'ty'` (from "securi-TY") and the run fraction is measured against the 3-char NEEDLE — so the page-wide
+  fallback locate matched `'Qty'` onto the SUPPLIER LINE. Resulting fit: scale 1.1445, **rotation -166.71 deg**,
+  residual 0.000000, n_inliers 2, conf 78; it displaced the taught supplier box by **0.277 of the page**.
+  Measured: the taught box read `'Castellan Security Systems'` CORRECTLY on 5/5 docs sampled — the transform was
+  PURE LOSS. These pages are not drifting (stable header labels relocate within ~0.0005).
+- **THE FIX SHIPPED (Oracle C1):** ONE shared predicate `registration.is_unfalsifiable(transform)` consumed by
+  BOTH call sites; applied INSIDE `_fit_page_transform` so no present or future caller can miss it (deviation
+  from Oracle's "gate at the call site", taken deliberately because the whole defect was a per-call-site copy —
+  engine.py's own gate is kept as a redundant net). Predicate is on **INLIERS, not n_points**: a 5-landmark
+  RANSAC can still collapse to a 2-inlier refit (measured residual 1.1e-16, conf 78). Same env var, same
+  default-ON as the 2026-08-01 precedent. Caught en route: engine.py never imported `registration` — the call
+  would have been a runtime NameError invisible to a module-load smoke.
+- **CORRECTIONS the Oracle made to the brief, all re-verified at source:** the 88 `CRITICAL_FIELD_FLOOR` does
+  **NOT** protect `supplier_name` (`critKeys` = ref+date only, `trust.js:615`; `roleKeys` at :452 is a different
+  set) — severity was understated, not overstated · `select_cross_sample` is **NOT** unused
+  (`tryCrossSampleLandmarks`, handler.js:105, preferred by `generateLandmarks`) · `_is_word` already enforces
+  `len>=3`, so `'Qty'` passes at exactly 3 · `label_box` is **not** an independent witness (built by
+  `_match_label_run` using the SAME `_label_score` at the SAME threshold — a dead guard).
+- **ONE ORACLE CLAIM CORRECTED BY ME at source:** it argued cross-sample had never fired for tpl 32 ("zero
+  confirmed"). The DB shows **4 confirmed docs and landmark `source='cross_sample'`** — cross-sample DID run and
+  still produced the degenerate 2-landmark set. So "confirm 3 docs and re-derive" is NOT the cure it hoped.
+- **GATES.** Castellan 21-doc A/B: **4/21 -> 16/21 correct, 12 heals, 0 regressions**, registration wins
+  **17 -> 0**, every other taught field byte-identical. Realdoc 695: supplier **692 -> 693**, regressions 60 -> 59,
+  **SILENT 26 -> 24**, no new entries (armed strictly ⊆ baseline + 1 heal); `#714 'Bramblewood Joinery Ltd'`
+  SILENT healed, `#711` silent -> **flagged**. Pins `test_registration_min_inliers.py` (21) incl. Oracle G5 (the
+  shared matcher `_label_score` deliberately UNCHANGED), G6 (both call sites consume the shared helper, and
+  engine.py imports it), and a RED-proof (kill switch OFF returns the Transform). 6 neighbouring suites pass.
+- **GATE BLINDNESS STATED (Oracle G3):** the Customer corpus fires registration **0 times in 1793 field wins** —
+  an M=0 there is VACUOUS for this change. Realdoc traced subset: 21/538 (3.9%), **all on `supplier_name`**,
+  which independently confirms the asymmetry — `anchor_stable` requires `anchor_text`, so a label-less mapping
+  can never defend its own absolute read, and `supplier_name` is label-less on all 10 templates.
+- **Added value? YES — decisive, and it inverted the plan.** Found the shipped gate the whole consult had
+  reconstructed from scratch; killed a default-ON change to a shared matching primitive that would have been
+  calibrated on one exemplar; caught that the proposed fix silently affects Stage 2 too (where the existing
+  n_inliers gate would then blackout 3-landmark templates); and demanded the both-methods census that made that
+  visible. Residual (owner-facing, NOT fixed here): `#712` still reads `'tastellan Security Systems'` SILENT at
+  95 via `+corrected` — an absolute-read/corrector defect, not registration.
