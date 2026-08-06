@@ -953,6 +953,23 @@ def extract_fields(ocr_text: str, field_keys: list[str],
         # code (config unchanged) so OFF ⇒ byte-identical.
         if pk == 'po_number' and os.environ.get('PO_ORDER_NO_LABELS', '1') != '0':
             labels = labels + ["Order No.", "Order Number", "Order No"]
+        # CUSTOMER_PO_LABELS (reggie 2026-08-09, DEFAULT OFF → byte-identical): a seller's invoice /
+        # delivery note cross-references the BUYER's purchase order under captions the shipped list
+        # misses ("Your PO", "Customer PO", "Cust PO"), so out of the box po_number never reads it
+        # (systemic recall gap, same shape as TOTAL_GROSS_LABELS). Appended AFTER the shipped + bare
+        # labels so the doc's OWN explicit PO caption wins first; the …No/…Number form precedes the
+        # bare form (Larkspur ". DN-98447" rule — the caption's No/./: is consumed by the match, not
+        # ridden into the value). The value side is unchanged: PO_REF_DIGIT_GATE (needs \d\S*\d) +
+        # alphanumeric _validate still gate it, so a "your portal 24/7" / "your postcode BT1 1HE"
+        # prefix match is rejected (no 2-digit run). The "Your Order" family is DELIBERATELY EXCLUDED
+        # — it activates a pre-existing sales_order_number double-fill ("our" ⊂ "your", and
+        # "Our Order No" has no leading word-boundary); ship it only alongside that boundary fix.
+        # "Your Ref" excluded (too generic; _REF_PARTY_STOP already treats "your" as a foreign-party
+        # ref qualifier). Config unchanged so OFF ⇒ byte-identical (mirrors PO_ORDER_NO_LABELS).
+        if pk == 'po_number' and os.environ.get('CUSTOMER_PO_LABELS', '0') != '0':
+            labels = labels + ["Customer PO No", "Customer PO Number", "Customer PO",
+                               "Cust PO No", "Cust PO",
+                               "Your PO No", "Your PO Number", "Your PO"]
         # TOTAL_GROSS_LABELS (reggie 2026-08-06, DEFAULT OFF → byte-identical): the shipped
         # total_amount list misses common grand-total captions, so on those layouts keyword reads NO
         # gross at all (measured: cold Customer-corpus total 40.6%→50.0%, M=0, scanned +16). This
