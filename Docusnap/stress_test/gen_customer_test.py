@@ -387,7 +387,7 @@ def draw_header(p, issuer, logo, title, rng):
         p.img(logo, 40, 34, 62, 62)
         p.t(114, 56, name, 17, bold=True, rgb=rgb)
         p.t(114, 72, " · ".join(addr), 8)
-        p.t(114, 84, f"Tel {issuer.get('phone', '01632 ' + str(rng.randint(960000, 969999)))}   VAT Reg No {issuer['vat']}", 8)
+        p.t(114, 84, f"Tel {issuer.get('phone', '01632 ' + str(random.Random(issuer['slug']).randint(960000, 969999)))}   VAT Reg No {issuer['vat']}", 8)
         p.t(PAGE_W - 42, 60, title, 19, bold=True, rgb=rgb, right=True)
         p.line(40, 102, PAGE_W - 40, 102, rgb)
         return 118
@@ -547,9 +547,15 @@ def build_doc(issuer, dtype, idx, logos, rng):
     c = canvas.Canvas(buf, pagesize=A4)
     p = Page(c, issuer["font"])
     labels = LABELS[issuer["slug"]]
+    # TEMPLATE rng — seeded by (supplier, type) so the label VOCABULARY, title and party captions
+    # are STABLE across every doc of a given (supplier, type) but still DIFFER across suppliers.
+    # A real supplier's template does not re-roll its headers per document; only the VALUES change
+    # (values/line-count/renditions keep using the per-doc `rng`). Fixes the 2026-08-06 finding that
+    # the corpus penalised template-teaching for label instability no real supplier has.
+    tmpl = random.Random(f"{issuer['slug']}|{dtype}")
     date, year = make_date(rng)
     ref = make_ref(issuer["ref"][dtype], rng, year)
-    title = rng.choice(TYPE_TITLES[dtype])
+    title = tmpl.choice(TYPE_TITLES[dtype])
     gt = dict(issuer=issuer["name"], type_slug=dtype, ref=ref, date=date, total=None,
               vat_no=issuer["vat"], account_no=issuer["acct"],
               # The RECIPIENT on every doc is the owner company (draw_parties prints its
@@ -577,12 +583,12 @@ def build_doc(issuer, dtype, idx, logos, rng):
     def _case(s):
         return s.upper() if issuer["slug"] in UPPERCASE_ISSUERS and dtype != "purchase_order" else s
     if dtype == "invoice":
-        ref_label = labels["ref"][rng.randrange(len(labels["ref"]))]
-        date_label = labels["date"][rng.randrange(len(labels["date"]))]
+        ref_label = labels["ref"][tmpl.randrange(len(labels["ref"]))]
+        date_label = labels["date"][tmpl.randrange(len(labels["date"]))]
     else:
         tl = TYPE_LABELS[dtype]
-        ref_label = _case(tl["ref"][rng.randrange(len(tl["ref"]))])
-        date_label = _case(tl["date"][rng.randrange(len(tl["date"]))])
+        ref_label = _case(tl["ref"][tmpl.randrange(len(tl["ref"]))])
+        date_label = _case(tl["date"][tmpl.randrange(len(tl["date"]))])
 
     po_ref = f"PO-{rng.randint(10000, 99999)}"
     job_ref = f"JB-{rng.randint(2000, 9999)}"
@@ -594,7 +600,7 @@ def build_doc(issuer, dtype, idx, logos, rng):
     if dtype == "service_worksheet":
         meta.append(("Job Ref", job_ref)); gt["job_ref"] = job_ref
     y = draw_meta(p, issuer_style, y + 8, meta, rng)
-    y = draw_parties(p, issuer_style, y + 4, dict(type=dtype), rng, vendor=issuer)
+    y = draw_parties(p, issuer_style, y + 4, dict(type=dtype), tmpl, vendor=issuer)
 
     cur = "£"
     if dtype == "statement":
@@ -622,12 +628,12 @@ def build_doc(issuer, dtype, idx, logos, rng):
         gt["serials"] = [sn for it in items for sn in it["serials"]] or None
         if dtype == "service_worksheet":
             p.t(40, y + 8, "Work carried out:", 9, bold=True)
-            p.t(40, y + 22, rng.choice(["Routine service completed; all checks passed.",
+            p.t(40, y + 22, tmpl.choice(["Routine service completed; all checks passed.",
                                         "Fault traced and repaired on site.",
                                         "Installation commissioned and handed over."]), 9)
             p.t(40, y + 44, "Engineer signature: ______________________     Customer signature: ______________________", 9)
         else:
-            p.t(40, y + 10, f"Received in good condition — {rng.choice(['sign on delivery', 'goods checked at gate'])}.", 8.5)
+            p.t(40, y + 10, f"Received in good condition — {tmpl.choice(['sign on delivery', 'goods checked at gate'])}.", 8.5)
             p.t(40, y + 26, "Received by: ______________________    Date: ____________", 9)
     else:
         items = make_items(issuer, rng)
@@ -641,7 +647,7 @@ def build_doc(issuer, dtype, idx, logos, rng):
         if dtype == "credit_note":
             p.t(40, y + 8, f"Credit against invoice {make_ref(issuer['ref']['invoice'], rng, year)} — goods returned.", 9)
         if dtype in ("invoice",):
-            p.t(40, y + 12, f"Payment terms: {rng.choice(['30 days net', '14 days net', 'Due on receipt'])}. "
+            p.t(40, y + 12, f"Payment terms: {tmpl.choice(['30 days net', '14 days net', 'Due on receipt'])}. "
                             f"Please quote {ref} on all remittances.", 8.5)
     if issuer["header"] != "footer_letterhead" and dtype != "purchase_order":
         p.t(PAGE_W / 2, 806, f"{issuer['name']} · Registered in England · VAT Reg No {issuer['vat']}", 7.5, centre=True, rgb=(110, 110, 110))
