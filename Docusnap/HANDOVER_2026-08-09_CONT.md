@@ -69,7 +69,42 @@ models po_ref as a separate seeded field).
 - Dedicated `customer_po_number` cross-reference field (clean model for CUSTOMER_PO_LABELS).
 - "Your Order" po_number labels + the son `Our Order` leading-boundary fix (separate slice).
 
+## Pad-window CODE slice (TEMPLATE_PAD_WINDOW_CODE) — BUILT, DARK, but OFF-TARGET (premise error) — DO NOT rely on it yet
+Owner asked to extend the date-only pad-window read to CODE fields (the read-layer residual). Built + gated,
+BUT a verification error mis-targeted it — read the whole story before touching it:
+- **Commits after 1c25e10:** `template_mapper.py` (helpers `_read_pad_window_code` + `_maybe_pad_code` + flag
+  `TEMPLATE_PAD_WINDOW_CODE`, call at the abs-commit site ~1780), `tests/test_template_pad_window_code.py`
+  (17 pins green), `stress_test/crop_recipe_sweep.js` (the reusable crop A/B harness). All DARK / byte-identical
+  off. Corpus gate: PAD_WINDOW_CODE **0 change / M=0 / 0 T→F** (safe). Realdoc NOT re-run (inert).
+- **THE PREMISE ERROR (mine):** I told gary+Oracle the Larkspur `po_number` box is "pure absolute, label-less"
+  — read from a NON-EXISTENT column (`anchor_label`). VERIFIED AT SOURCE the real column: `template_field_mappings.anchor_text
+  = 'Order No.'` — **the box IS labelled.** So the slice, scoped by Oracle to LABEL-LESS boxes (`not anchor_text`),
+  **never fires on Larkspur** → the crop sweep showed **0 recovery**. gary+Oracle's design is sound for a genuinely
+  label-less box; it's the targeting that's wrong.
+- **THE REAL BUG (traced):** the labelled box's recovery ladder `_inline_code_reconcile` (template_mapper.py:1006,
+  ON by default) RUNS and returns **None** on the clip (trace: #625 abs=`-48009`, anchor `Order No.` located,
+  rc=null). It depends on cleanly LOCATING `Order No.` + reading the inline value; on the marginal siblings the
+  label OCRs poorly (the padded probe read the label region as just `". "`), so the clipped abs box wins. This is
+  a DIFFERENT bug than the slice was built for.
+- **THE CORRECTED FIX (evidence-backed, NOT yet built):** DROP the `not anchor_text` scope on the `_maybe_pad_code`
+  call. It sits at the abs-commit point, which is only reached AFTER `_inline_code_reconcile` already returned None
+  (`if rc is not None: return rc` first). So firing pad-code there — regardless of anchor_text — does NOT override
+  a healthy reconcile (the reconcile already gave up); it backstops it. And pad-window is GEOMETRY-only (pads the
+  box, re-reads) so it doesn't need the flaky label locate. NEEDS: Oracle re-vet on the CORRECTED premise (the
+  label-less scoping was to avoid overriding a healthy reconcile — moot at the post-reconcile position) + re-gate
+  on crop_recipe_sweep.js (should then actually recover on Larkspur). Owner was about to switch to Opus; this is
+  the bookmark to revert to if the re-scope goes wrong.
+- **GROUND TRUTH for the sweep:** Larkspur PO po_numbers #625 PO-48009 #630 PO-91914 #632 PO-82956 #635 PO-19649
+  #637 PO-40351 #638 PO-60906 #639 PO-41508 #640 PO-90621 (encoded in crop_recipe_sweep.js DEFAULT_GT; #637/#640
+  recovered from a padded PIL probe). The harness CANNOT bit-reproduce the app's marginal clip (which doc clips
+  shuffles run-to-run; DPI ±1) — recovery is directional + owner-watched, same as the date slice.
+- **Owner has ALL 22 crop-recovery flags ON already** (the sweep reads them from settings) — the existing
+  machinery is exhausted on this marginal box; that's why a new backstop is needed.
+
 ## Gotchas reaffirmed
+- **VERIFY SYSTEM STATE AT SOURCE (working rule #6).** The `anchor_label` vs `anchor_text` column error above cost
+  a full build aimed at the wrong class. The template mapping column is `anchor_text` (the label phrase);
+  `anchor_label` does not exist. Query the DB, don't infer "label-less" from a wrong column.
 - Corpus field key is `po_ref` (seeded label "Your PO", type reference → validates loose `alphanumeric`);
   `_is_ref_field('po_ref')` is FALSE ("ref" ≠ "reference"). This is why the redesign needed the local
   `endswith('_ref')` predicate + the `reference_code` gate (loose alphanumeric passes "Account").

@@ -347,6 +347,32 @@ _PAD_DISAGREE_MARGIN = 15          # padded read's OCR conf must beat the TIGHT 
 _PAD_DATE_DISAGREE_NOTE = ("A wider reading of this date box shows '{}', which differs from the filed "
                            "value — please verify.")
 
+# PAD-WINDOW CODE READ (Slice 1b — gary design -> Oracle SIGN-OFF-W/COND 2026-08-09). The date slice's
+# sibling for CODE/reference fields, aimed at the LABEL-LESS taught box class the containment ladder
+# can't reach: a pure-absolute box (no anchor_text) too tight for its value CLIPS the leading glyphs
+# ('PO-40351' -> '40351') or garbles ('IM.ANKI1'), and the clip is FORMAT-VALID so the merge-layer
+# TEMPLATE_FORMAT_FAIL_YIELD declines it. A row-bounded PADDED re-read of the SAME box recovers the
+# fuller code (probe-proven). Decision (Oracle-conditioned):
+#   • SWAP (adopt the padded value, same tier as a clean read of this box, no note) ONLY on a STRICT
+#     SUFFIX containment (padded ENDS WITH the tight read, i.e. a recovered clipped PREFIX) + a
+#     substantial-overlap floor + the field's HARD reference_code pattern + a conf margin + a CONSENT
+#     gate (the padded shape is confirmed/provisional — fork B; a COLD read never clean-swaps, closing
+#     the label-glue false-swap 'PONo40351'.endswith('40351')).
+#   • FLAG (keep the committed value, cap<=70 + note carrying the padded suggestion) on any other
+#     confident disagreement (a garble; or a suffix-containment whose shape is still cold).
+#   • ABSTAIN (byte-identical no-op) otherwise: already-noted result (Oracle — never erase the
+#     edge-guard/shape review flag), prefix-containment (padded over-read to the RIGHT; the tight read
+#     was correct), weak margin, padded fails the hard pattern, empty tight, equidistant candidates.
+# SCOPED TO LABEL-LESS boxes (not anchor_text — the exact residual class; a labelled box is served by
+# _inline_code_reconcile). HONEST CEILING (Oracle): a label-less code box commits at 78 < the critical
+# floor 88, so it is review-bound regardless — this slice makes the review CORRECT + EXPLAINED, it does
+# NOT restore auto-file (that is the label-less->90-tier problem). Default OFF; OFF = byte-identical.
+# Pins: tests/test_template_pad_window_code.py.
+_PAD_WINDOW_CODE_ON = os.environ.get('TEMPLATE_PAD_WINDOW_CODE', '0') != '0'
+_PAD_CODE_MIN_SUFFIX = _CLIP_COMMIT_MIN_PREFIX   # >=4 tight-read chars must survive as the padded suffix
+_PAD_CODE_DISAGREE_NOTE = ("A wider reading of this box shows '{}', which differs from the filed "
+                           "value — please verify.")
+
 
 def extract_with_mappings(page_images, mappings, field_patterns=None,
                           ocr_lines_fn=None, ocr_text_fn=None, slice_capture=None,
@@ -1393,6 +1419,156 @@ def _maybe_pad_date_flag(page, target_box, val_type, result, tight_ocr_conf):
     return out
 
 
+def _read_pad_window_code(page, target_box, validation_patterns):
+    """PAD-WINDOW CODE READ (Slice 1b). The CODE sibling of `_read_pad_window_date`: read a ROW-BOUNDED
+    padded window around the taught box and return (RAW SURFACE, mean_word_conf) for the CODE-shaped
+    qualifier NEAREST the box centre — or None (nothing / ambiguous / abstain). Geometry is IDENTICAL to
+    the date reader (row-bound vpad = 0.5*box_h is the neighbour guard; hpad = leading/trailing clipped
+    glyph, capped; psm6 + --dpi is the tight-crop-starves-the-LSTM cure). The ONLY difference from the
+    date reader: a candidate is credible when it PASSES the field's HARD reference_code pattern (a
+    digit-bearing code — the same gate the merge layer uses), and the RAW surface is returned (un-parsed)
+    so the caller can test glyph-continuity (suffix-containment) against the tight read. Pure — no
+    mutation. Abstains on two near-equidistant candidates (a genuine same-row second code)."""
+    if page is None or Output is None or pytesseract is None:
+        return None
+    rc = (validation_patterns or {}).get("reference_code")
+    if not rc:                                  # no hard pattern → can't qualify a code safely
+        return None
+    try:
+        pw, ph = page.size
+        bx = float(target_box.get("x_norm") or 0.0); by = float(target_box.get("y_norm") or 0.0)
+        bw = float(target_box.get("w_norm") or 0.0); bh = float(target_box.get("h_norm") or 0.0)
+    except (TypeError, ValueError, AttributeError):
+        return None
+    if bw <= 0 or bh <= 0:
+        return None
+    hpad = min(0.8 * bw, 0.06)                   # leading/trailing clipped glyph, capped 0.06/side
+    vpad = 0.5 * bh                              # ROW-BOUND — never into an adjacent row
+    px0 = int(max(0.0, bx - hpad) * pw); py0 = int(max(0.0, by - vpad) * ph)
+    px1 = int(min(1.0, bx + bw + hpad) * pw); py1 = int(min(1.0, by + bh + vpad) * ph)
+    if px1 - px0 < 4 or py1 - py0 < 4:
+        return None
+    try:
+        prepped = _prep(page.crop((px0, py0, px1, py1)))
+    except Exception:
+        return None
+    iw, ih = prepped.size
+    if iw < 1:
+        return None
+    cfg = "--oem 3 --psm 6"
+    _dpi = os.environ.get("OCR_RENDER_DPI")
+    if _dpi:
+        try:
+            cfg += f" --dpi {int(_dpi)}"
+        except (TypeError, ValueError):
+            pass
+    try:
+        data = pytesseract.image_to_data(prepped, config=cfg, output_type=Output.DICT)
+    except Exception:
+        return None
+    crop_w = max(1, px1 - px0)
+    tcx = ((bx + bw / 2.0) * pw - px0) / crop_w
+    words = data.get("text", [])
+    cands = []                                   # (surface, conf, centre_x_norm)
+    for i in range(len(words)):
+        surf = (words[i] or "").strip()
+        if not surf:
+            continue
+        try:
+            conf = float(data["conf"][i])
+        except (TypeError, ValueError):
+            conf = -1.0
+        if conf < 0:
+            continue
+        if not _validate_code(surf, rc):         # must be a real digit-bearing code, not a caption word
+            continue
+        try:
+            cx = (int(data["left"][i]) + int(data["width"][i]) / 2.0) / iw
+        except Exception:
+            cx = 0.5
+        cands.append((surf, conf, cx))
+    if not cands:
+        return None
+    cands.sort(key=lambda c: abs(c[2] - tcx))
+    # Abstain when the two nearest qualifiers are near-equidistant AND textually DIFFERENT (a genuine
+    # same-row second code the geometry can't confidently separate) — mirrors the date reader's guard.
+    if (len(cands) >= 2 and _code_norm(cands[1][0]) != _code_norm(cands[0][0])
+            and abs(abs(cands[1][2] - tcx) - abs(cands[0][2] - tcx)) < 0.15):
+        return None
+    return (cands[0][0], cands[0][1])
+
+
+def _validate_code(value, reference_code_patterns):
+    """True when `value` matches the field's HARD reference_code pattern (digit-bearing, anchored) —
+    the same quality gate the merge layer applies (keyword._validate). Kept local + defensive so an
+    import failure degrades to a safe reject (no swap), never a crash."""
+    try:
+        from extraction import keyword
+        return keyword._validate(str(value), reference_code_patterns)
+    except Exception:
+        return False
+
+
+def _maybe_pad_code(page, target_box, val_type, result, tight_ocr_conf,
+                    full_confidence, anchor, expanded, field_key, validation_patterns,
+                    format_lookup, provisional_lookup):
+    """PAD-WINDOW CODE READ decision (Slice 1b — gary -> Oracle SIGN-OFF-W/COND 2026-08-09). Given a
+    taught CODE committed off the ABSOLUTE path on a LABEL-LESS box, cross-check a wider row-bounded
+    read and either SWAP (recover a clipped prefix), FLAG (surface a garble for review), or no-op.
+    Byte-identical no-op unless armed. See the _PAD_WINDOW_CODE_ON design comment for the full rule."""
+    if not _PAD_WINDOW_CODE_ON or val_type not in _CODE_CROSSCHECK_TYPES or not result:
+        return result
+    # NOTE-FIRST short-circuit (Oracle condition): a result already carrying a review note (an edge-cut
+    # defer-cap, a shape-warn, a relocation flag) reflects INDEPENDENT evidence of trouble; a same-pixel
+    # superset re-read must never erase that human checkpoint. Guards BOTH the swap and the flag path.
+    if result.get("validation_note"):
+        return result
+    committed = result.get("value")
+    if not committed:                            # empty tight → the keyword/relocate path owns it (C1)
+        return result
+    pad = _read_pad_window_code(page, target_box, validation_patterns)
+    if pad is None:
+        return result
+    pad_val, pad_conf = pad
+    t, p = _code_norm(committed), _code_norm(pad_val)
+    if not t or not p or p == t:                 # nothing to reconcile
+        return result
+    # Padded must clear the OCR-confidence margin over the tight read (else the disagreement is weak —
+    # keep the commit; fail toward MAX auto-file). The padded value already passed the hard pattern
+    # inside the reader.
+    base = tight_ocr_conf if tight_ocr_conf is not None else 70
+    if pad_conf is None or pad_conf < base + _PAD_DISAGREE_MARGIN:
+        return result
+    # PREFIX-containment → ABSTAIN: the padded read is the tight value PLUS trailing chars (a right-side
+    # over-read). The tight read was the correct value; never swap, never flag (mirrors _pick_fuller_code
+    # rejecting right-side over-reads from a clean commit).
+    if p.startswith(t) and not p.endswith(t):
+        return result
+    # SUFFIX-containment (padded ENDS WITH tight, i.e. a recovered clipped PREFIX) is the ONLY swap
+    # shape. Substantial-overlap floor closes the 1-char / label-glue path. Consent gate (fork B): the
+    # padded shape must be confirmed/provisional — a COLD read never clean-swaps (blocks the label-glue
+    # false-swap 'PONo40351'.endswith('40351'), whose glued shape is never in the confirmed history).
+    is_suffix = p.endswith(t) and len(t) >= _PAD_CODE_MIN_SUFFIX and len(t) >= 0.5 * len(p)
+    if is_suffix:
+        consent = _shape_consents(pad_val, field_key or "",
+                                  format_lookup, provisional_lookup)
+        if consent in ("confirmed", "provisional"):
+            out = _mapping_result(pad_val, full_confidence, expanded, False, anchor,
+                                  ocr_conf=pad_conf, val_type=val_type)
+            out["method"] = (out.get("method") or "template_mapping") + "_padunclip"
+            out["_heal"] = "pad_unclip"
+            out["pad_unclipped_from"] = committed         # diag-only breadcrumb
+            return out
+        # suffix but COLD shape → fall through to FLAG (surface the fuller read, don't silent-swap)
+    # FLAG: a confident disagreement that is NOT a clean consented swap (a garble, or a cold suffix).
+    # Keep the committed value, cap for review, carry the padded suggestion. Never silent.
+    out = dict(result)
+    out["confidence"] = min(out.get("confidence") or 90, 70)
+    out["method"] = (out.get("method") or "template_mapping") + "_padcodeflag"
+    out["validation_note"] = _PAD_CODE_DISAGREE_NOTE.format(pad_val)
+    return out
+
+
 def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
                  located=_UNSET, page_transform=None,
                  slice_capture=None, page_idx=0,
@@ -1588,6 +1764,15 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
         # row-bounded read and FLAG a confident disagreement (the silent still-parses misread class).
         # No-op unless armed + val_type=='date' + not already flagged. Tight OCR conf is the margin base.
         _r = _maybe_pad_date_flag(page, target_box, val_type, _r, _abs_meta.get('conf'))
+        # PAD-WINDOW CODE READ (Slice 1b): the code sibling, scoped to a LABEL-LESS box (the residual
+        # class the containment ladder can't reach — _inline_code_reconcile needs anchor_text). SWAP a
+        # consented clipped-prefix recovery, else FLAG a confident disagreement. No-op unless armed +
+        # code type + not already noted (the date flag / edge-cut note short-circuits it).
+        if not mapping.get("anchor_text"):
+            _r = _maybe_pad_code(page, target_box, val_type, _r, _abs_meta.get('conf'),
+                                 bool(mapping.get("anchor_text")),
+                                 mapping.get("anchor_text") or field_key, abs_expanded,
+                                 field_key, validation_patterns, format_lookup, provisional_lookup)
         return _r
 
     # ── SINGLE-LABEL LOCAL REFINEMENT (anchor + stored offset) — PREFERRED ──────
