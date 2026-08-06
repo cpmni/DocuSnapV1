@@ -137,6 +137,28 @@ Regressions 59 -> 57, SILENT 24 -> 23. Diff contains ONLY deletions (armed stric
 baseline): `#712 'tastellan Security Systems' [SILENT]` and `#711 'Castellan Security System:'
 [flagged]` both gone. Meets Oracle C6 (zero supplier drop; SILENT 23 <= the 24 baseline).
 
+**Customer corpus (288 docs) A/B: 0 doc-level true->false, 0 heals, lanes byte-identical.**
+BUT — Oracle C6 required me to VERIFY blindness rather than assume it. Verified: the corpus resolves
+the issuer via `template_mapping` on all 282 scored docs and **never** `template_fixed`, so the rule
+CANNOT fire there. **The corpus is BLIND to iteration 2.** Its clean result proves no collateral
+damage; it is NOT evidence the fix works. (Iteration 1's corpus arm was blind for a different reason:
+0 registration wins in 1793 field reads.)
+
+## Iteration 2 — Chris sandbox retest (ARMED)
+Iteration 2 ships DEFAULT OFF, so a retest on the shipped defaults would be byte-identical to
+iteration 1 and would measure nothing. Sandbox 2 was therefore rebuilt FRESH and launched with BOTH
+flags armed via process env (verified reachable: `handler.js` spawns python with
+`{...process.env, ..._reconcileEnv(db)}`). Same 18 documents, same workflow, same scoring.
+**RESULT: 18/18 correct — SAME as iteration 1. No regression, and no near-misses** (Chris: "no stray
+colons, no wrong first letters"). Reprocessing individual docs afterwards changed no issuer.
+Notable: on `credit_note_0029` the page text came through as `Castellan SeaEeey oyetene` and the
+issuer still read `Castellan Security Systems` at 95%.
+Earlier-round defects re-checked by Chris: stale "you don't have that document type yet" = **FIXED**;
+type-change blanking values = **FIXED/not seen**; minus-sign loss on credit-note totals = **STILL
+THERE** (16/16, three silent at High 85%); teach-appears-to-do-nothing = **STILL THERE**;
+teach-invents-a-character = **STILL THERE**. All of these are OUT OF SCOPE for this fix and are
+queued for owner vet, not implemented.
+
 ---
 
 # ACCEPTANCE SUMMARY
@@ -146,6 +168,7 @@ baseline): `#712 'tastellan Security Systems' [SILENT]` and `#711 'Castellan Sec
 | **realdoc supplier field** | **695** | **695/695 = 100.0%** | **YES — this is the acceptance number** |
 | live-DB Castellan probe | 21 | 21/21 = 100% | no (quantises 95.2 -> 100) |
 | Chris sandbox (iteration 1 code) | 18 | 18/18 = 100% | no (quantises 94.4 -> 100) |
+| Chris sandbox (iteration 2 ARMED) | 18 | 18/18 = 100% | no (same quantisation) |
 
 All three sets are at 100%. The only set that can express the owner's >=98% bar is realdoc (n=695),
 and it reads 100.0% with a strict-subset regression set.

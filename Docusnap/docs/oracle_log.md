@@ -985,3 +985,62 @@ WRONG `supplier_name` — `'Bramblewood Joinery Ltd'` (the owner's OWN company /
   n_inliers gate would then blackout 3-landmark templates); and demanded the both-methods census that made that
   visible. Residual (owner-facing, NOT fixed here): `#712` still reads `'tastellan Security Systems'` SILENT at
   95 via `+corrected` — an absolute-read/corrector defect, not registration.
+
+## 2026-08-06 (iteration 2) — curated `template_fixed` supplier vs a MISREAD letterhead — SIGN OFF WITH CONDITIONS
+Follow-on to the same fire. Iteration 1 (`63b1807`) closed the vacuous-fit gate at the second call site
+(4/21 -> 16/21). This closes the five residuals: `Castellan Security System:` x2, `Cas tellan Security
+System:`, **`tastellan Security Systems` @95 SILENT**, and `ba)`.
+- **ROOT CAUSE (verified):** Stage 0 seeds the template's curated `fixed_value` at conf 95 method
+  `template_fixed` (`template_matcher.py:819-824`); the Stage-0.5 merge (`engine.py:4905-4917`) lets a
+  mapping READ displace it on AUTHORITY (`is_curated_refinement`), guarded only by `_ft_mapping_weak`
+  (free-text under conf 75). A tight taught crop puts the FIRST and LAST glyphs on the crop boundary,
+  the LSTM force-fits them, and the misreads arrive ABOVE 75 and win.
+- **THE ORACLE'S SEAM (the reason the worst case was silent):** the more corrupted the string, the more
+  completely it EVADES the branding cross-check — `_branding_own_ratio` (engine.py:993) finds no bank
+  for `tastellan Security Systems`, returns None = "unjudgeable", and `_flag_branding_conflict`
+  fail-safes without flagging. **Corruption buys immunity from the one guard meant to catch it.** That,
+  not the veto method names, is the real argument for KEEP-THE-SEED over snap-the-read: keeping the seed
+  preserves `method == 'template_fixed'`, which `BRANDING_NAMED_BLANK` (:2983) and
+  `TEMPLATE_FIXED_NAME_PRESENCE_VETO` (:3018) key on EXACTLY, and returns the value to the guard's
+  jurisdiction. Snapping would have minted a veto-exempt `template_mapping+snapped`.
+- **ORACLE CORRECTIONS that changed the design:** (a) **branch A is INERT** — the `:` IS the misread
+  final `s`, so an alnum fold never makes these equal; all three are edit-distance 1. gary's proposed
+  "flip branch A first, branch B after" would have been a ZERO-YIELD first flip presented as a green
+  gate. Ship A+B on one switch. (b) gary's UV-exemption argument was wrong (`engine.py:3989` skips ANY
+  method containing `template_fixed`, so both options were UV-exempt) — his conclusion survived on the
+  veto legs only. (c) Slice 1 does NOT reach `ba)` (23 edits), so a second guard was mandatory or the
+  batch stalls at 20/21.
+- **MY MEASUREMENT KILLED gary's SLICE 2:** he proposed demoting junk via `name_quality(value) == 0.0`,
+  conditional on short legitimate names not scoring 0.0. MEASURED: `name_quality('BP') =
+  name_quality('3M') = name_quality('IBM') = 0.0` — the function is length-biased
+  (`value_quality.py:237` needs len>=4). His own fallback (`folded length < 3`) hits `BP` too. Oracle
+  replaced it with a deterministic rule that can only fire when the template's OWN curated name is
+  >=8 chars, so a genuine `BP` is never at risk.
+- **THRESHOLD IS DERIVED, NOT TUNED:** after alnum-folding, the entire residual class is exactly 1 edit
+  while the nearest genuinely different string ON THE SAME PAGE (`Bramblewood Joinery Ltd` — the owner's
+  own company, printed as the DELIVER TO block) is ~20. A ~19x margin. Plain Levenshtein deliberately,
+  not `ocr_corrector._is_confusion`: `C`->`t` is a letter->letter forced fit at a crop edge and is
+  absent from the digit/letter confusion maps, so verbatim reuse would have rejected the real case.
+- **CONTAINMENT CARVE-OUT (load-bearing, pinned):** a mis-taught leading-glyph-CLIPPED `fixed_value` is
+  ALSO exactly 1 edit from the CORRECT read; without the carve-out the rule would discard the correct
+  read and freeze the clipped literal — the mirror of the bug it fixes.
+- **ACCEPTED TRADE-OFF (C3, pinned):** a `fixed_value` that is itself one glyph wrong stops self-healing
+  on the affected templates. Lever = Learning Repair / template viewer. Budget must stay 1.
+- **SCOPE CORRECTION I made:** scoped to `supplier_name` only, NOT `_IDENTITY_FIELD_KEYS` — that set
+  includes `customer_name`, which is legitimately VARIABLE per document (post-mig-44 COMPANY_KEYS is
+  supplier_name only).
+- **GATES.** Live-DB Castellan **16/21 -> 21/21**, all five now `template_fixed`@95, every other taught
+  field byte-identical. **realdoc n=695: supplier 693 -> 695 = 100.0%**, regressions 59 -> 57, SILENT
+  24 -> 23, diff is deletions ONLY. Blast radius measured: exactly **7** templates carry a non-variable
+  supplier `fixed_value` (Copperfield x3, Ridgeway x2, Ironbridge x1, Castellan x1) — all live-DB, so
+  realdoc exercises 6 beyond Castellan; this gate is NOT blind, unlike iteration 1's corpus arm. Pins
+  `test_template_fixed_near_match.py` (27) assert the METHOD not just the value (a value-only assertion
+  would go green under the rejected snap implementation). 7 adjacent suites pass.
+- **98% MEASUREMENT RULING (both advisors, upheld):** n=21 quantises at 4.76% and the 18-doc sandbox at
+  5.6% — **neither batch can express "98%"**. The acceptance number is realdoc's supplier field at
+  n=695, which reads **100.0%**.
+- **Added value? YES.** Killed a zero-yield staged flip that would have shipped as a green gate; found
+  the corruption-buys-immunity seam that explains why the worst case was silent; corrected the
+  keep-vs-snap rationale to the one that actually holds; and forced a second guard without which the
+  batch would have stalled one document short.
+- Both switches default OFF, bridged in `handler.js _reconcileEnv`; **owner flips.**

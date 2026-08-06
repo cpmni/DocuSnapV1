@@ -198,6 +198,19 @@ function _reconcileEnv(db) {
         env.TEMPLATE_PAD_WINDOW_CODE_LABELLED = '1';
       }
     }
+    // CURATED SUPPLIER vs a MISREAD LETTERHEAD (Oracle 2026-08-06). A taught template stores the
+    // supplier as a non-variable `fixed_value`, seeded at conf 95 (method `template_fixed`). The
+    // Stage-0.5 merge lets a mapping READ of the letterhead displace that seed on authority, so an
+    // edge-glyph misread ('Castellan Security Systems' -> 'tastellan Security Systems', or debris
+    // like 'ba)') committed a WRONG supplier — a wrong output folder AND a wrong learning scope.
+    // Worse, the more corrupted the string the more completely it evaded the branding cross-check,
+    // so the worst case was the silent one. These two decline such a read and KEEP the curated seed:
+    //   • template_fixed_near_match — the read is the SAME name merely misread (alnum-fold, <=1 edit)
+    //   • template_fixed_fragment   — the read is debris (<3 chars) against a real curated name
+    // A genuinely DIFFERENT company still wins, so a stale fixed value can still be corrected by
+    // re-teaching. Both default OFF, byte-identical off. App RESTART to load the bridge.
+    if (learning.getSetting(db, 'template_fixed_near_match', 'false') === 'true') env.TEMPLATE_FIXED_NEAR_MATCH_RECONCILE = '1';
+    if (learning.getSetting(db, 'template_fixed_fragment', 'false') === 'true') env.TEMPLATE_FIXED_FRAGMENT_DECLINE = '1';
     // LARGE-TITLE TYPE RECOGNITION (Oracle/herald 2026-08-07). One owner switch enables the whole
     // credit-note-typed-Invoice fix family (all type-changing → default OFF): rung-3 absent-title
     // pixel re-read (the --dpi pass DROPPED the title), the wide-spaced-title gap collapse (a
