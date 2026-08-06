@@ -6,6 +6,73 @@
 
 ---
 
+## 2026-08-06 — `_label_score` partial credit lets a PROSE line outrank a 1-glyph-garbled true caption (NOT BUILT — larger lever)
+
+**Symptom (traced, live, deterministic).** The PAGE-WIDE fuzzy locate in
+`template_mapper._inline_code_reconcile` (`template_mapper.py:1037`, `expansion=1.0`) selects the
+document's FOOTER SENTENCE as the `'Order No.'` label. On the Larkspur Interiors purchase_order template
+(id 30, mapping `po_number`, `anchor_text='Order No.'`) the harvested inline token is
+`"on all correspondence and delivery notes."`, `inline_val` comes back null, `_pick_fuller_code` returns
+None, and the reconcile declines — leaving a clipped absolute read (`PO-48009` → `-48009`) to commit
+unchallenged at confidence 90 with no note.
+
+**MECHANISM — verified by logging every scored line (do NOT restate this as a plain "footer
+false-match"; the interesting part is WHY the footer wins):**
+```
+0.8750  please supply the goods above and quote our order number on all correspondence and deliver
+0.7500  purchase order orden no. eo          <- the REAL caption: OCR read "Order" as "Orden"
+0.7500  ee order date 08/03/2026
+```
+- `_label_score('order no.', ...)`: `_core` strips the trailing `.` → needle `'order no'` (len 8).
+- The word-boundary branch (`:2644`) misses, and the `if needle in haystack: return 0.0` guard
+  (`:2657`) does **NOT** fire — `'number'` begins `n-u`, so `'order no'` is genuinely *not* a substring
+  of `'order number'`. (Two reviewers independently misread this; check it before rebutting.)
+- So the footer falls through to the partial-credit branch `max(longest/len(needle), ratio())`
+  (`:2659-2661`): longest contiguous run `'order n'` = 7/8 = **0.875**, over `_FUZZY_MATCH_THRESHOLD`
+  0.6, and it BEATS the true caption's 0.75.
+- The caption scores only 0.75 because OCR misread one glyph (`Order` → `Orden`). Its own value is
+  garbled to `eo` on this doc, so that row was unreadable regardless.
+
+**The defect, stated precisely:** a long unrelated PROSE line can out-score a slightly-garbled genuine
+caption, because partial credit is computed against the NEEDLE's length only and carries no penalty for
+the haystack being a 17-word sentence rather than a caption.
+
+**Impact.** `_inline_code_reconcile` is the designed recovery ladder for a LABELLED taught code box; on
+this template it is inert on **7 of 8** docs (only #638 matched the real caption
+`"PURCHASE ORDER Order No, PO-20008"` at 1.0). Also implicated in #630's `R7_late_relocate` clip
+(`914` for GT `PO-91914`) — the same locate feeds `_relocate_and_read`, and #630 is the more suspicious
+of the two failures. Expect recurrence across suppliers: `"quote our order number on all
+correspondence"`, `"please quote invoice number"`, `"state your account number"` are normal PO/invoice
+footer boilerplate, so this is not a Larkspur quirk.
+
+**Evidence / repro.** Per-doc rung trace over `stress_test/crop_recipe_sweep.js` (8 Larkspur PO docs,
+owner flags ON, 2026-08-06). Repro: log the sorted `scored` list inside `_locate_anchor` just before
+`best_score` (`:2448`) for needle `'order no.'`.
+
+**Why NOT fixed here.** Out of the 2026-08-06 task's fixed scope (that task ships the R6 pad-window
+backstop). `_label_score`/`_locate_anchor` are shared by every template and every field — the blast
+radius needs its own design + advisor gate.
+
+**Fix direction (UNVETTED — no advisor has reviewed this).** Penalise partial credit by how much of the
+HAYSTACK the match explains (a caption needle explaining 8 of 95 chars of a prose line is not a
+caption); and/or require a boundary-aligned whole-needle hit before accepting a page-wide
+(`expansion=1.0`) locate; and/or make proximity to the taught `anchor_box` a tie-break at a WIDER
+epsilon than the current exact-tie `_SCORE_TIE_EPSILON` (1e-6), so 0.875-vs-0.75 across half a page
+cannot silently pick the far line. Note `_match_label_run` already tightens WITHIN a line — the defect
+is line SELECTION.
+
+**Seam to name before building.** `_locate_anchor` at `expansion=1.0` is the "the label moved a long
+way" recovery path — tightening it must not re-break the cropped/heavily-shifted-scan class it exists
+for. And raising the bar on partial credit directly trades against garbled-caption recall, which is the
+very thing failing here (0.75).
+
+**Gates.** `crop_recipe_sweep.js` (the reconcile should then actually fire on Larkspur), the Customer
+corpus (M=0, 0 doc-level T→F), `realdoc_regression.js` armed==baseline. CAUTION: fixing this makes R5
+pre-empt R6 on these docs, which changes what the 2026-08-06 pad-window backstop is measured against —
+re-run that slice's gates too.
+
+---
+
 ## 2026-08-03 — Crosscheck-outlier reconcile (SHIPPED+ON) + Slice-2 universal verify (DEFERRED)
 
 **SHIPPED + FLIPPED ON — `CROSSCHECK_OUTLIER_RECONCILE` (`09685d9`, setting

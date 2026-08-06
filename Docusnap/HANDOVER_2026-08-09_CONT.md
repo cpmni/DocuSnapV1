@@ -69,6 +69,28 @@ models po_ref as a separate seeded field).
 - Dedicated `customer_po_number` cross-reference field (clean model for CUSTOMER_PO_LABELS).
 - "Your Order" po_number labels + the son `Our Order` leading-boundary fix (separate slice).
 
+## Pad-window CODE slice — RESOLVED 2026-08-06 by the LABELLED sub-slice (read this box first)
+> **STATUS: the "OFF-TARGET" problem described below is FIXED.** The corrected fix was designed
+> (gary), adversarially vetted (Oracle, SIGN OFF W/COND C1..C7), built DARK and gated GREEN.
+> - New sub-flag **`TEMPLATE_PAD_WINDOW_CODE_LABELLED`** — a STRICT SUBSET of `TEMPLATE_PAD_WINDOW_CODE`;
+>   both default OFF, both now bridged from Settings via `handler.js _reconcileEnv`
+>   (`template_pad_window_code` / `template_pad_window_code_labelled`). **The parent had NO bridge before,
+>   so it was never actually owner-flippable.** App RESTART to load the bridge.
+> - **Gates:** sweep REPEATS=3 → #625 `-48009` → `PO-48009` in ALL 3 repeats, 0 regressed, 0 false flags,
+>   0 bad swaps · Customer corpus 288 docs → 0 doc-level T→F, every lane byte-identical, 0 auto-file
+>   losses on correct values, 6 fires all on already-wrong values · realdoc armed == baseline (M=15,
+>   M_type 0) · 34 pins green.
+> - **The measured blast radius: 7 labelled+code mappings; label-less+code = 0** — i.e. the ORIGINAL
+>   parent slice was inert on this install and could never have fired regardless of the premise error.
+> - **The mechanism behind the R5 decline was NOT what the section below says** (see "THE REAL BUG"):
+>   it is not that the label OCRs poorly in general. For needle `'order no.'` the FOOTER prose scores
+>   **0.875** on `_label_score`'s partial-credit branch and BEATS the true caption's **0.75** (OCR read
+>   `Order`→`Orden`). The `if needle in haystack: return 0.0` guard does NOT fire because `'number'`
+>   begins `n-u`, so `'order no'` is genuinely not a substring of `'order number'` — **two reviewers
+>   misread this; check it before rebutting.** Filed as a separate larger lever in `pendingfeatures.md`.
+> - Full reasoning + all 7 Oracle conditions: `docs/oracle_log.md` 2026-08-06 entry.
+> The historical account below is kept verbatim for context — treat its "REAL BUG" line as superseded.
+
 ## Pad-window CODE slice (TEMPLATE_PAD_WINDOW_CODE) — BUILT, DARK, but OFF-TARGET (premise error) — DO NOT rely on it yet
 Owner asked to extend the date-only pad-window read to CODE fields (the read-layer residual). Built + gated,
 BUT a verification error mis-targeted it — read the whole story before touching it:

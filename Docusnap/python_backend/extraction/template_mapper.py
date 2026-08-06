@@ -363,15 +363,73 @@ _PAD_DATE_DISAGREE_NOTE = ("A wider reading of this date box shows '{}', which d
 #   • ABSTAIN (byte-identical no-op) otherwise: already-noted result (Oracle — never erase the
 #     edge-guard/shape review flag), prefix-containment (padded over-read to the RIGHT; the tight read
 #     was correct), weak margin, padded fails the hard pattern, empty tight, equidistant candidates.
-# SCOPED TO LABEL-LESS boxes (not anchor_text — the exact residual class; a labelled box is served by
-# _inline_code_reconcile). HONEST CEILING (Oracle): a label-less code box commits at 78 < the critical
-# floor 88, so it is review-bound regardless — this slice makes the review CORRECT + EXPLAINED, it does
-# NOT restore auto-file (that is the label-less->90-tier problem). Default OFF; OFF = byte-identical.
+# HONEST CEILING for the LABEL-LESS scope (Oracle 2026-08-09): a label-less code box commits at 78 <
+# the critical floor 88, so it is review-bound regardless — for that scope this slice makes the review
+# CORRECT + EXPLAINED, it does NOT restore auto-file. That ceiling is SCOPE-SPECIFIC; see the LABELLED
+# sub-slice below, where it does NOT hold. Default OFF; OFF = byte-identical.
 # Pins: tests/test_template_pad_window_code.py.
 _PAD_WINDOW_CODE_ON = os.environ.get('TEMPLATE_PAD_WINDOW_CODE', '0') != '0'
 _PAD_CODE_MIN_SUFFIX = _CLIP_COMMIT_MIN_PREFIX   # >=4 tight-read chars must survive as the padded suffix
 _PAD_CODE_DISAGREE_NOTE = ("A wider reading of this box shows '{}', which differs from the filed "
                            "value — please verify.")
+
+# ── LABELLED sub-slice (2026-08-06 — gary design -> Oracle SIGN-OFF-W/COND C1..C7) ────────────────
+# The 2026-08-09 sign-off scoped the slice above to LABEL-LESS boxes on the stated ground that "a
+# labelled box is served by _inline_code_reconcile". THAT PREMISE WAS WRONG, and the correction is the
+# whole reason this sub-slice exists. Traced live on the Larkspur Interiors purchase_order template
+# (id 30, po_number, anchor_text='Order No.'): the reconcile's page-wide locate picks the FOOTER prose
+# line over the true caption (the caption OCRs 'Order'->'Orden' = 0.75, while the prose sentence scores
+# 0.875 on _label_score's partial-credit branch), so inline_val comes back EMPTY and the reconcile
+# declines on 7 of 8 docs. The clipped absolute read ('PO-48009' -> '-48009') then commits at the
+# LABELLED tier — confidence 90, no note — i.e. a SILENT WRONG AUTO-FILE. (The locate defect itself is
+# a far larger lever and is deliberately NOT fixed here — see pendingfeatures.md 2026-08-06.)
+# WHY THIS IS A BACKSTOP AND NOT AN OVERRIDE: the call site sits AFTER `if rc is not None: return rc`,
+# so reaching it already proves the reconcile declined (true while _INLINE_CODE_RECONCILE_ON, default
+# ON — name the dependency, do not assume it).
+# THE TIER CHANGE IS THE HEADLINE RISK: _mapping_result gives full_confidence -> 90, so a LABELLED swap
+# is auto-fileable where a label-less one (78) was review-bound regardless. Oracle ruled the
+# counterfactual ("the WRONG value already occupies that 90 channel") sufficient to license the swap but
+# NOT to award it on weak evidence — hence the consent TIERING below.
+# CONDITIONS BUILT IN (all Oracle-required):
+#   C1 no-op (swap AND flag) when the reconcile produced a USABLE inline witness (located + non-empty
+#      inline read) — a same-pixel padded re-read must never overturn, or flag against, a stronger
+#      independent-pixel label-anchored full-res witness that already arbitrated. _pick_fuller_code's
+#      branch order is load-bearing and pinned; this keeps it authoritative. It also cures the
+#      "relies on the locate defect persisting" seam: repair the locate and this sub-slice goes inert
+#      by construction rather than fighting R5.
+#   C2 no-op unless the committed read is the PURE absolute read — never when the crop was EXPANDED
+#      (committed came from a WIDER box, so a narrower pad window cannot be a "recovery") nor when the
+#      edge guard already GREW and healed it (_edgegrow carries NO validation_note, so the note-first
+#      short-circuit cannot protect it and a pad flag would drag a consented heal down to 70).
+#   C3 tier the swap by consent STRENGTH: 'confirmed' (>=3-confirm learned shape) keeps the full tier;
+#      'provisional' (a single taught-doc skeleton, from a template whose box we KNOW is mis-drawn)
+#      swaps the VALUE but caps below the 88 critical floor -> the operator gets the corrected string
+#      pre-filled and one review, after which confirmed history auto-files every later sibling. This is
+#      what closes the cold-start channel (first docs through a new template can no longer silently
+#      auto-file an uncorroborated swap).
+#   C4 reject a padded candidate that BEGINS with a >=2-char suffix of the label's alnum tail
+#      ('No.PO-48009' -> 'nopo48009' starts with 'no' of 'orderno') -> fall to FLAG. The pad window
+#      provably overlaps the label on a labelled inline box (hpad caps at 0.06 of page width, wider
+#      than the label->value gap), and the reader is deliberately LABEL-BLIND, so the label knowledge
+#      belongs here in the DECISION. Not tuning-to-sample: "never adopt a string that starts with the
+#      tail of the label you know sits to its left."
+# A left-pad geometric CLAMP was considered and REJECTED (gary, upheld by Oracle): clamping to the
+# taught anchor's right edge leaves ~0.01 of page width — inert on the motivating case — and clamping
+# to the LOCATED label would import the broken locate into the one primitive whose value is being
+# label-blind. Taught coordinates are not jitter-invariant either.
+# STRICT SUBSET of the parent flag so there is no orphan state. Default OFF; OFF = byte-identical.
+_PAD_CODE_LABELLED_ON = (_PAD_WINDOW_CODE_ON
+                         and os.environ.get('TEMPLATE_PAD_WINDOW_CODE_LABELLED', '0') != '0')
+_PAD_CODE_PROVISIONAL_CAP = 87   # C3: below the 88 critical auto-file floor (trust.js), never at it
+if os.environ.get('TEMPLATE_PAD_WINDOW_CODE_LABELLED', '0') != '0' and not _PAD_WINDOW_CODE_ON:
+    # Orphan state: the sub-flag is a STRICT SUBSET, so alone it is inert. Say so once — an owner who
+    # armed only this one must not conclude the feature is broken.
+    try:
+        import sys as _sys_warn
+        _sys_warn.stderr.write("[template_mapper] TEMPLATE_PAD_WINDOW_CODE_LABELLED=1 is INERT "
+                               "without TEMPLATE_PAD_WINDOW_CODE=1 (strict subset)\n")
+    except Exception:
+        pass
 
 
 def extract_with_mappings(page_images, mappings, field_patterns=None,
@@ -1006,7 +1064,7 @@ def _pick_fuller_code(rigid_text, rigid_conf, inline_val, inline_conf, anchor, v
 def _inline_code_reconcile(page, rigid_text, anchor_box, target_box, val_type, field_key,
                            anchor_text, ocr_lines_fn, ocr_text_fn, validation_patterns,
                            format_lookup, line_cache, slice_capture, page_idx,
-                           abs_ocr_conf=None, provisional_lookup=None):
+                           abs_ocr_conf=None, provisional_lookup=None, meta=None):
     """Cross-check a single-token CODE field's absolute drawn-box read (`rigid_text`) against
     the label-anchored INLINE read, and prefer the fuller value when the box read is a clipped
     subset of it (a fixed narrow box drifts off the value's prefix under per-scan offset/scale:
@@ -1041,6 +1099,13 @@ def _inline_code_reconcile(page, rigid_text, anchor_box, target_box, val_type, f
     inline_val, inline_conf, inline_from_ladder = _read_inline_box(
         page, located, val_type, ocr_text_fn, field_key,
         validation_patterns, format_lookup, slice_capture, page_idx)
+    # C1 WITNESS FLAG (pad-window labelled sub-slice): record that this reconcile actually FORMED an
+    # opinion — the label was located AND the independent inline read produced a value. Only then is a
+    # None return a genuine ARBITRATION (_pick_fuller_code kept the rigid read on purpose) rather than
+    # "never got a witness". The pad backstop must not overturn, or flag against, an arbitration.
+    # Purely additive: callers passing no `meta` are byte-identical.
+    if meta is not None and inline_val:
+        meta["witness"] = True
     inline_geom = (_box_list(located.get("inline_box"))
                    if (slice_capture and located.get("inline_box")) else None)
     return _pick_fuller_code(rigid_text, abs_ocr_conf, inline_val, inline_conf,
@@ -1509,13 +1574,30 @@ def _validate_code(value, reference_code_patterns):
         return False
 
 
+def _pad_label_glued(pad_norm, anchor_text):
+    """C4 (labelled sub-slice): True when the padded candidate BEGINS with a >=2-char suffix of the
+    label's alnum tail — i.e. the pad window swallowed the label's tail and glued it to the value
+    ('No.PO-48009' -> 'nopo48009' starts with 'no', the tail of 'orderno'). The pad reader is
+    deliberately LABEL-BLIND, so this label-aware check lives in the decision. Blocks the SWAP only;
+    the caller still FLAGS, so the disagreement is never silently discarded."""
+    tail = _anchor_alnum_tail(anchor_text)
+    if not tail or not pad_norm:
+        return False
+    for k in range(2, min(len(tail), len(pad_norm)) + 1):
+        if pad_norm.startswith(tail[-k:]):
+            return True
+    return False
+
+
 def _maybe_pad_code(page, target_box, val_type, result, tight_ocr_conf,
                     full_confidence, anchor, expanded, field_key, validation_patterns,
-                    format_lookup, provisional_lookup):
-    """PAD-WINDOW CODE READ decision (Slice 1b — gary -> Oracle SIGN-OFF-W/COND 2026-08-09). Given a
-    taught CODE committed off the ABSOLUTE path on a LABEL-LESS box, cross-check a wider row-bounded
-    read and either SWAP (recover a clipped prefix), FLAG (surface a garble for review), or no-op.
-    Byte-identical no-op unless armed. See the _PAD_WINDOW_CODE_ON design comment for the full rule."""
+                    format_lookup, provisional_lookup, anchor_text=None):
+    """PAD-WINDOW CODE READ decision (Slice 1b — gary -> Oracle SIGN-OFF-W/COND 2026-08-09, extended to
+    LABELLED boxes 2026-08-06 under Oracle C1..C7). Given a taught CODE committed off the ABSOLUTE path,
+    cross-check a wider row-bounded read and either SWAP (recover a clipped prefix), FLAG (surface a
+    garble for review), or no-op. Byte-identical no-op unless armed. The SCOPE decision (label-less vs
+    labelled, witness/expanded/edge-heal suppression) is the CALLER's — see the call site in
+    `_extract_one`. See the _PAD_WINDOW_CODE_ON / _PAD_CODE_LABELLED_ON design comments for the rules."""
     if not _PAD_WINDOW_CODE_ON or val_type not in _CODE_CROSSCHECK_TYPES or not result:
         return result
     # NOTE-FIRST short-circuit (Oracle condition): a result already carrying a review note (an edge-cut
@@ -1549,17 +1631,32 @@ def _maybe_pad_code(page, target_box, val_type, result, tight_ocr_conf,
     # padded shape must be confirmed/provisional — a COLD read never clean-swaps (blocks the label-glue
     # false-swap 'PONo40351'.endswith('40351'), whose glued shape is never in the confirmed history).
     is_suffix = p.endswith(t) and len(t) >= _PAD_CODE_MIN_SUFFIX and len(t) >= 0.5 * len(p)
-    if is_suffix:
+    if is_suffix and not _pad_label_glued(p, anchor_text):   # C4: label-tail glue never clean-swaps
         consent = _shape_consents(pad_val, field_key or "",
                                   format_lookup, provisional_lookup)
-        if consent in ("confirmed", "provisional"):
+        # C5 TWO-SIDED CONSENT (Oracle, both scopes). A swap asserts "the committed read is a CLIP".
+        # A tight read the learned history POSITIVELY ACCEPTS is not a clip — never swap it, FLAG.
+        # This is also what closes the VACUOUS-consent hole: `check_value` returns "accepted" for a
+        # FREETEXT class and for an entry with an empty shape set, so under a thin/heterogeneous
+        # history BOTH sides consent -> no swap -> flag. Cold start stays healable: with no confirmed
+        # entry the tight read scores 'none' (not positive), so a provisional padded read can still
+        # swap — at the capped tier below.
+        consent_tight = _shape_consents(committed, field_key or "",
+                                        format_lookup, provisional_lookup)
+        if consent in ("confirmed", "provisional") \
+                and consent_tight not in ("confirmed", "provisional"):
             out = _mapping_result(pad_val, full_confidence, expanded, False, anchor,
                                   ocr_conf=pad_conf, val_type=val_type)
+            if consent == "provisional":
+                # C3: a single taught-doc skeleton — from a template whose box we already know is
+                # mis-drawn — is not evidence enough to auto-file. Swap the VALUE, keep the review.
+                out["confidence"] = min(out.get("confidence") or 90, _PAD_CODE_PROVISIONAL_CAP)
             out["method"] = (out.get("method") or "template_mapping") + "_padunclip"
             out["_heal"] = "pad_unclip"
             out["pad_unclipped_from"] = committed         # diag-only breadcrumb
+            out["pad_consent"] = consent                  # diag-only: gate (b) swap census by tier
             return out
-        # suffix but COLD shape → fall through to FLAG (surface the fuller read, don't silent-swap)
+        # suffix but COLD/two-sided-blocked shape → FLAG (surface the fuller read, don't silent-swap)
     # FLAG: a confident disagreement that is NOT a clean consented swap (a garble, or a cold suffix).
     # Keep the committed value, cap for review, carry the padded suggestion. Never silent.
     out = dict(result)
@@ -1737,13 +1834,14 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
     # ON by default (kill TEMPLATE_INLINE_CODE_RECONCILE=0); OFF → this block is skipped. (Comment
     # corrected 2026-08-03 per Oracle — it read "Off by default" but _INLINE_CODE_RECONCILE_ON
     # defaults '1'. This reconcile is the Stage-0.5 garble's last review backstop; keep it ON.)
+    _icr_meta = {}          # C1: records whether the reconcile actually formed an opinion
     if (abs_text and _INLINE_CODE_RECONCILE_ON and anchor_text
             and val_type in _CODE_CROSSCHECK_TYPES):
         rc = _inline_code_reconcile(page, abs_text, anchor_box, target_box, val_type,
                                     field_key, anchor_text, ocr_lines_fn, ocr_text_fn,
                                     validation_patterns, format_lookup, line_cache,
                                     slice_capture, page_idx, abs_ocr_conf=_abs_meta.get('conf'),
-                                    provisional_lookup=provisional_lookup)
+                                    provisional_lookup=provisional_lookup, meta=_icr_meta)
         if rc is not None:
             return rc
     if abs_text:
@@ -1764,15 +1862,29 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
         # row-bounded read and FLAG a confident disagreement (the silent still-parses misread class).
         # No-op unless armed + val_type=='date' + not already flagged. Tight OCR conf is the margin base.
         _r = _maybe_pad_date_flag(page, target_box, val_type, _r, _abs_meta.get('conf'))
-        # PAD-WINDOW CODE READ (Slice 1b): the code sibling, scoped to a LABEL-LESS box (the residual
-        # class the containment ladder can't reach — _inline_code_reconcile needs anchor_text). SWAP a
-        # consented clipped-prefix recovery, else FLAG a confident disagreement. No-op unless armed +
-        # code type + not already noted (the date flag / edge-cut note short-circuits it).
-        if not mapping.get("anchor_text"):
+        # PAD-WINDOW CODE READ (Slice 1b): the code sibling. SWAP a consented clipped-prefix recovery,
+        # else FLAG a confident disagreement. No-op unless armed + code type + not already noted (the
+        # date flag / edge-cut note short-circuits it). TWO SCOPES:
+        #   • LABEL-LESS — the original residual class, unchanged (Oracle 2026-08-09), commits at 78.
+        #   • LABELLED — the sub-slice (_PAD_CODE_LABELLED_ON, Oracle 2026-08-06 C1/C2), commits at the
+        #     auto-fileable 90 tier, so it is admitted ONLY on the pure absolute read and ONLY when the
+        #     inline reconcile never formed an opinion:
+        #       C1 `not _icr_meta.get("witness")` — the reconcile located the label AND read a value,
+        #          so its None was a deliberate ARBITRATION by a stronger independent-pixel witness;
+        #          never overturn it and never flag against it.
+        #       C2 `not abs_expanded` — the committed text came from a WIDER crop, so a narrower pad
+        #          window cannot be a "recovery" (the same-box premise fails).
+        #       C2 `not _edge_healed` — the edge guard already GREW and consented this read, and
+        #          `_edgegrow` carries no validation_note, so nothing else would stop a pad flag from
+        #          dragging a good heal down to 70.
+        _pad_labelled_ok = (_PAD_CODE_LABELLED_ON and not _icr_meta.get("witness")
+                            and not abs_expanded and not _edge_healed)
+        if (not mapping.get("anchor_text")) or _pad_labelled_ok:
             _r = _maybe_pad_code(page, target_box, val_type, _r, _abs_meta.get('conf'),
                                  bool(mapping.get("anchor_text")),
                                  mapping.get("anchor_text") or field_key, abs_expanded,
-                                 field_key, validation_patterns, format_lookup, provisional_lookup)
+                                 field_key, validation_patterns, format_lookup, provisional_lookup,
+                                 anchor_text=mapping.get("anchor_text"))
         return _r
 
     # ── SINGLE-LABEL LOCAL REFINEMENT (anchor + stored offset) — PREFERRED ──────

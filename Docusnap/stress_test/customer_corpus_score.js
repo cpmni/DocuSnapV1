@@ -304,12 +304,22 @@ async function main() {
       row.total_got  = exVal(m, 'total_amount') || m.total_amount || '';
       row.total_note = te.validation_note || null; }
     row.methods = {};
+    // AUTO-FILE DELTA CENSUS input (Oracle gate (a), 2026-08-06): per-lane CONFIDENCE and
+    // validation_note for every processed doc. Accuracy deltas and M cannot see this change's
+    // dominant cost — a value that stays CORRECT but crosses >=88 -> <88, or gains a note, scores
+    // identically while silently costing the customer an auto-file. Additive keys only.
+    row.confs = {}; row.notes = {};
     for (const [lane, key] of [['ref', refKey], ['date', dateKey], ['total', 'total_amount'],
                                ['issuer', 'supplier_name'], ['customer', 'customer_name'],
                                ['vat_no', 'vat_no'],
                                ['account_no', 'account_no'], ['job_ref', 'job_ref'], ['po_ref', 'po_ref']]) {
       const meth = key && exMeth(key);
       if (meth) row.methods[lane] = meth;
+      const x = key && (m.extractions || {})[key];
+      if (x && typeof x === 'object') {
+        if (x.confidence != null) row.confs[lane] = x.confidence;
+        if (x.validation_note) row.notes[lane] = x.validation_note;
+      }
     }
     for (const lane of LANES) {
       const gtHas = lane === 'type' || e[lane === 'issuer' ? 'issuer' : lane] != null;

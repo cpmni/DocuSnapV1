@@ -179,6 +179,25 @@ function _reconcileEnv(db) {
     // cross-checks it and FLAGS a confident disagreement (keeps the value, routes to review). Dates
     // only (Slice 1); geometric neighbour guard; never silent-swaps. Default OFF, byte-identical off.
     if (learning.getSetting(db, 'template_pad_window_read', 'false') === 'true') env.TEMPLATE_PAD_WINDOW_READ = '1';
+    // Pad-window CODE read — the code sibling of the date slice above. A taught CODE box too tight for
+    // its value clips the leading glyphs ('PO-48009' -> '-48009') or garbles it; a wider row-bounded
+    // re-read of the SAME box either recovers the fuller code (consented strict-suffix SWAP) or FLAGS
+    // the disagreement for review. TWO settings, and the LABELLED one is a STRICT SUBSET — it does
+    // nothing unless the parent is also on:
+    //   • template_pad_window_code          — LABEL-LESS taught boxes (Oracle 2026-08-09). Commits at
+    //     78, below the 88 auto-file floor, so it only makes an existing review correct + explained.
+    //   • template_pad_window_code_labelled — LABELLED taught boxes (Oracle 2026-08-06 C1..C7). This
+    //     one CAN auto-file (labelled tier = 90), which is the point: it replaces a silently
+    //     auto-filed CLIPPED value with the full one. Guarded by two-sided consent, a consent-strength
+    //     tier cap, a label-glue reject, and suppression whenever the inline reconcile actually formed
+    //     an opinion or the read was expanded / already edge-healed.
+    // Both default OFF and are byte-identical off. App RESTART to load the bridge.
+    if (learning.getSetting(db, 'template_pad_window_code', 'false') === 'true') {
+      env.TEMPLATE_PAD_WINDOW_CODE = '1';
+      if (learning.getSetting(db, 'template_pad_window_code_labelled', 'false') === 'true') {
+        env.TEMPLATE_PAD_WINDOW_CODE_LABELLED = '1';
+      }
+    }
     // LARGE-TITLE TYPE RECOGNITION (Oracle/herald 2026-08-07). One owner switch enables the whole
     // credit-note-typed-Invoice fix family (all type-changing → default OFF): rung-3 absent-title
     // pixel re-read (the --dpi pass DROPPED the title), the wide-spaced-title gap collapse (a

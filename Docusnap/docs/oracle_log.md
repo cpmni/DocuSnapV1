@@ -880,3 +880,56 @@ READ-layer problem, not merge-layer.
   Committed dark `1bea059`; **owner flips.**
 - **RESIDUAL (read-layer, out of scope):** clipped-prefix + magnitude/sign taught reads are format-VALID by
   construction — the taught box must relocate/adapt to the shifted value. A separate gated arc.
+
+## 2026-08-06 — PAD-WINDOW CODE READ extended to LABELLED boxes (`TEMPLATE_PAD_WINDOW_CODE_LABELLED`) — SIGN OFF WITH CONDITIONS (gate GREEN)
+**Why re-consulted: a PRIOR Oracle sign-off rested on a FALSE PREMISE.** On 2026-08-09 the Oracle signed
+`TEMPLATE_PAD_WINDOW_CODE` (95e400d) and scoped it to LABEL-LESS boxes on the ground that "a labelled box is
+served by `_inline_code_reconcile`". The engineer had asserted the Larkspur `po_number` box was label-less,
+read from a column that does not exist (`anchor_label`). Verified at source: the column is `anchor_text`, and
+the mapping IS labelled (`'Order No.'`).
+- **Traced root cause (per-doc rung table, real pipeline, owner flags ON, 8 Larkspur PO docs):** #625 commits
+  at the ABS rung as `-48009` at **confidence 90 with NO note** — a silent wrong auto-file — while a pad-window
+  probe of the SAME box reads `('PO-48009', 91.0)`. `_maybe_pad_code` was skipped ONLY by the `not anchor_text`
+  guard. #630 is a DIFFERENT rung (R7 late-relocate, `914`) and is already conf 70 + noted; Oracle ruled it
+  explicitly NOT a success criterion. The clip SHUFFLES run-to-run (DPI ±1) — a prior session saw #637/#640.
+- **Why the designed backstop was inert (mechanism, verified by logging every scored line — do NOT restate this
+  as a plain "footer false-match"):** for needle `'order no.'` the footer prose scores **0.875** and the TRUE
+  caption only 0.75 (`purchase order orden no. eo` — OCR flipped one glyph). `_label_score`'s
+  `if needle in haystack: return 0.0` guard does NOT fire because `'number'` begins `n-u`, so `'order no'` is
+  genuinely not a substring of `'order number'` — **the Oracle and the engineer BOTH misread this at first.**
+  The footer therefore wins on the partial-credit branch (`longest/len(needle)` = 7/8). So R5 declines on 7/8
+  docs with `inline_val` EMPTY. Filed as a separate, larger lever in `pendingfeatures.md` (NOT fixed here).
+- **HEADLINE RISK the Oracle ruled on:** `_mapping_result` gives `90 if full_confidence else 78`, and
+  `full_confidence = bool(anchor_text)` — so a LABELLED swap is **auto-fileable** where the label-less 78 was
+  review-bound regardless. That retires a stated condition of the prior sign-off. **Verdict: the counterfactual
+  ("the WRONG value already occupies that 90 channel") LICENSES the swap but does NOT license awarding it on
+  weak evidence** → tier by consent strength (C3).
+- **CONDITIONS BUILT (C1/C2 were ship-blocking):** C1 thread the reconcile's outcome to the call site and no-op
+  (swap AND flag) when it produced a USABLE inline witness (located + non-empty read) — its None is then a
+  deliberate ARBITRATION by a stronger independent-pixel witness; this also cures the "relies on the locate
+  defect persisting" seam by construction · C2 admit the labelled scope ONLY on the PURE absolute read (never
+  `abs_expanded` — a narrower window cannot "recover" a wider read; never `_edge_healed` — `_edgegrow` carries
+  no note so nothing else would stop a pad flag dragging a consented heal to 70) · C3 consent tiering
+  ('confirmed' keeps the tier, 'provisional' caps at 87 < the 88 floor — closes the cold-start channel) ·
+  C4 reject a padded candidate beginning with a ≥2-char suffix of the label's alnum tail (`No.PO-48009`) ·
+  C5 TWO-SIDED consent, BOTH scopes (swap requires padded consented AND tight NOT positively consented) —
+  this, not geometry, closes the label-glue hole, because `check_value` consents VACUOUSLY under a FREETEXT
+  class or an empty shape set · C6 test integrity · C7 remove all instrumentation.
+- **A left-pad geometric CLAMP was REJECTED** (gary, upheld): clamping to the taught anchor edge leaves ~0.01
+  of page width (inert on the motivating case); clamping to the LOCATED label would import the broken locate
+  into the one primitive whose value is being LABEL-BLIND.
+- **BLAST RADIUS MEASURED (Oracle gate (c), was assumed not known):** 7 labelled+code mappings (po_number 3,
+  delivery_number 3, invoice_number 1) across Larkspur/Northgate/Ridgeway. **Label-less+code = 0 → the ORIGINAL
+  parent slice is inert on this install**; the labelled sub-slice is the whole feature.
+- **GATES GREEN.** Sweep (REPEATS=3): baseline 6/6/6 of 8 · +CODE 6/6/6 (inert) · **+CODE+LABELLED 7/7/7,
+  recovered #625 in ALL 3 repeats, 0 regressed, 0 shuffling**; fire census 3 fires, all correct swaps, **0 false
+  flags / 0 bad swaps**. Customer corpus (288 docs, TEACH=1, SET=both): **0 doc-level T→F, every lane byte-
+  identical**; Oracle gate (a) auto-file delta census **0 losses on correct values**; gate (b) 6 fires, all
+  FLAGS, all on already-wrong values (suggestions `MDW-315` vs committed `VIDW-315`/`MIUW-3S15` = the right
+  answers). Pins: `test_template_pad_window_code.py` (34 green — 17 originals preserved + a BEHAVIOURAL
+  anti-restore pin, a C1 witness-suppression pin, and vacuous-consent pins driving the REAL `check_value`).
+- **Added value? YES — decisive.** Caught the 78→90 tier change the engineer's brief had missed entirely; found
+  the VACUOUS-consent hole (`FREETEXT`/empty-shapes) that made the existing glue defence a mock of itself; drew
+  the R5-arbitration line the design had not; caught that C6's old stub was value-BLIND so every SWAP pin would
+  silently flip to FLAG under the new rule; and demanded the auto-file census that accuracy/M cannot see.
+- Default OFF, strict subset of the parent flag; **owner flips.**
