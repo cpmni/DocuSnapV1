@@ -64,6 +64,65 @@ _RECON_PICK_MIN_CONF = 70
 # in the Stage 4.5 loop). Mirrors COMPANY_KEYS in database/modules/document_types.js.
 _IDENTITY_FIELD_KEYS = frozenset({"supplier_name", "customer_name"})
 
+# ── TEMPLATE_FIXED SEED vs a MISREAD MAPPING (2026-08-06; gary -> Oracle SIGN-OFF-W/COND C1..C7) ──
+# Stage 0 seeds a template's curated `fixed_value` for supplier_name at conf 95, method
+# `template_fixed` (template_matcher.py:819-824). The Stage-0.5 merge below then lets a mapping READ
+# displace that seed on AUTHORITY (`is_curated_refinement`), guarded only by `_ft_mapping_weak`
+# (free-text reads under conf 75). Edge-glyph misreads of the letterhead arrive ABOVE 75 and win, so
+# a wrong supplier is committed — a wrong OUTPUT FOLDER and a wrong LEARNING SCOPE (anchors/hints/
+# logos/template identity all key off supplier_name). Measured on the Castellan credit notes:
+#   'Castellan Security System:' @78 · 'Cas tellan Security System:' @78 · 'tastellan Security
+#   Systems' @95 (SILENT) · 'ba)' @78.
+# WHY THE WORST ONE WAS SILENT (the Oracle's seam): the more corrupted the string, the more
+# completely it EVADES the branding cross-check — `_branding_own_ratio` finds no bank for
+# 'tastellan Security Systems', returns None = "unjudgeable", and `_flag_branding_conflict`
+# fail-safes without flagging. So corruption buys immunity from the one guard meant to catch it.
+# THE FIX IS TO KEEP THE SEED, NOT TO SNAP THE READ. Both yield the same string, but keeping the
+# seed leaves `method == 'template_fixed'`, which is what BRANDING_NAMED_BLANK (:2983) and
+# TEMPLATE_FIXED_NAME_PRESENCE_VETO (:3018) key on EXACTLY, and puts the value back inside the
+# branding guard's jurisdiction. Snapping would mint a veto-exempt `template_mapping+snapped`.
+# SCOPED TO supplier_name ONLY — deliberately NOT _IDENTITY_FIELD_KEYS: `customer_name` is
+# legitimately VARIABLE per document (post-mig-44 COMPANY_KEYS is supplier_name only), so a
+# fixed-value near-match must never govern it.
+# Both default OFF; OFF is byte-identical. Pins: tests/test_template_fixed_near_match.py.
+_FIXED_SEED_KEYS = frozenset({"supplier_name"})
+_FIXED_SEED_METHODS = ("template_fixed", "template_fixed_locked")
+_FIXED_NEAR_MATCH_ON = os.environ.get('TEMPLATE_FIXED_NEAR_MATCH_RECONCILE', '0') != '0'
+_FIXED_FRAGMENT_DECLINE_ON = os.environ.get('TEMPLATE_FIXED_FRAGMENT_DECLINE', '0') != '0'
+
+
+def _fixed_seed_declines_mapping(key, existing, data):
+    """Should the Stage-0.5 mapping read be DECLINED in favour of the curated template_fixed seed?
+
+    Returns 'near_match' | 'fragment' | None. Pure — the caller does the logging and the `continue`.
+
+    Fires ONLY on a genuine DISAGREEMENT with a curated seed. The raw-equality short-circuit is
+    load-bearing for blast radius: on the overwhelmingly common case (the mapping reads the name
+    correctly) this must be a no-op, or every taught supplier would flip method to `template_fixed`
+    corpus-wide for zero benefit and arm the presence veto on thousands of documents.
+
+    NOT an authority flip: a genuinely DIFFERENT company (~20 edits — e.g. the recipient block
+    'Bramblewood Joinery Ltd') still displaces the seed exactly as today. Making `fixed_value`
+    authoritative would reinstate the frozen-stamp class TEMPLATE_FIXED_NAME_PRESENCE_VETO exists
+    for, and that veto needs >=3 confirms, so it is inert for precisely the new suppliers this helps."""
+    if key not in _FIXED_SEED_KEYS or not isinstance(existing, dict):
+        return None
+    if (existing.get("method") or "") not in _FIXED_SEED_METHODS:
+        return None
+    read_val = str((data or {}).get("value") or "")
+    fixed_val = str(existing.get("value") or "")
+    if not read_val or not fixed_val or read_val == fixed_val:
+        return None                       # agreement (or nothing to compare) -> byte-identical
+    # Per-FUNCTION import, matching this module's existing name_match usage (:1535/:1577/:1737).
+    # A module-level import here would be the odd one out; a bare module reference would be a
+    # call-time NameError that no module-load smoke can catch (the 2026-08-06 registration lesson).
+    from extraction import name_match as _nm
+    if _FIXED_NEAR_MATCH_ON and _nm.near_match_identity(read_val, fixed_val):
+        return 'near_match'
+    if _FIXED_FRAGMENT_DECLINE_ON and _nm.is_fragment_read(read_val, fixed_val):
+        return 'fragment'
+    return None
+
 # IDENTITY RESCUE kill-switch (Oracle-signed slice 1, 2026-07-10; ocr_corrector's
 # SNAP_ALLOW_SUBSTITUTION precedent — a module constant, no settings plumbing: the
 # forced-review construction below is the real safety). Slice 2 (graduating a rescue
@@ -4901,6 +4960,19 @@ class ExtractionEngine:
                         # Threshold 75: a clean free-text mapping caps at >=78 (Stage A base 78
                         # no-label / 90 with-label); only a garbled one (~70) is demoted. Structured
                         # mappings (regex-validated, never capped, not in text_field_keys) are unaffected.
+                        # TEMPLATE_FIXED SEED GUARD (see the _FIXED_SEED_KEYS flag block). A mapping
+                        # read that is the SAME curated company name merely misread, or debris
+                        # against it, must not displace the seed on authority. Declines only on
+                        # DISAGREEMENT; a genuinely different company still wins. Inert unless armed.
+                        _fixed_decline = _fixed_seed_declines_mapping(key, existing, data)
+                        if _fixed_decline:
+                            self.log(f"  Stage 0.5: kept curated supplier "
+                                     f"'{existing.get('value')}' — declined mapping read "
+                                     f"'{data.get('value')}' ({_fixed_decline})")
+                            self._t('fixed_seed_decline', field=key, branch=_fixed_decline,
+                                    kept=existing.get('value'), declined=data.get('value'),
+                                    declined_conf=data.get('confidence'))
+                            continue
                         _ft_mapping_weak = (key in text_field_keys
                                             and data.get("confidence", 0) < 75)
                         is_curated_refinement = ((not _ft_mapping_weak)

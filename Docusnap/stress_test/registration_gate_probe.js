@@ -69,7 +69,10 @@ function liveBaselineEnv(db) {
 // The gate defaults ON in code, so the BASELINE arm is the one that must disable it.
 const RECIPES = [
   { name: 'baseline (gate OFF = pre-fix)', delta: { REG_MIN_INLIERS_GATE: '0' } },
-  { name: 'armed (gate ON = shipped)',     delta: { REG_MIN_INLIERS_GATE: '1' } },
+  { name: 'iter1 (vacuous-fit gate ON)',   delta: { REG_MIN_INLIERS_GATE: '1' } },
+  { name: 'iter2 (+ fixed-seed guards)',   delta: { REG_MIN_INLIERS_GATE: '1',
+                                                    TEMPLATE_FIXED_NEAR_MATCH_RECONCILE: '1',
+                                                    TEMPLATE_FIXED_FRAGMENT_DECLINE: '1' } },
 ];
 
 function docTypesWithFields(db) {
