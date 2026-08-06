@@ -843,3 +843,40 @@ measured vs GT = 55 gross-correct / **10 read the NET line** (some at 90-95% con
   deterministic role/arithmetic decision is gate-able, the end-to-end taught heal is OWNER-WATCHED.
 - **DEFERRED (own switch/gate):** robust VAT read → let `_reconciliation_pick_total` AUTO-CORRECT net→gross
   (bigger blast radius); reggie's residual labels "Balance Outstanding" family (statement running-balance risk).
+
+## 2026-08-09 — TEMPLATE_FORMAT_FAIL_YIELD REDESIGN (hard reference_code gate) — SIGN OFF WITH CONDITIONS (gate GREEN)
+Advisors: gary (root-cause + fix design + test strategy) → Oracle (final vet). **Supersedes the 2026-08-06
+entry's `SIGN-OFF-W/COND`, which GATE-FAILED.** The 08-06 version (`fcc0d5b`) keyed the taught-read format-fail
+on the `_shapewarn` TAG (L1) + a learned-shape veto (L2); on the fair corpus it produced a live **ref −1.0
+regression on flip** (a CORRECT taught ref shapewarn'd on a thin shape yielded to a LOOSE-`alphanumeric`-passing
+garbage keyword read "The"/"Tel 01632…"/"25-07-2025"), and po_ref **+0.0** (never fired — the seeded inline
+challenger is conf 85, below the old floor 88). Left un-touched it was a landmine (dark, but regresses ref on
+flip). **Diagnostic trace (SAMPLE=60) confirmed the mechanism** and that the dominant po_ref/total residual is
+FORMAT-VALID wrong values (clipped-prefix "19979"⊂"PO-19979", magnitude/sign clips "£2"/"£-1,329.00") — a
+READ-layer problem, not merge-layer.
+- **REDESIGN (built):** `_stage05_format_fails` is now a PURE, DETERMINISTIC content-nature check. REF-FAMILY
+  (incl. `po_ref`/`job_ref` via a LOCAL `endswith('_ref')` predicate — the global `_is_ref_field` misses them
+  and broadening it has ~6-call-site blast radius incl. two corroboration/override gates) judged by the HARD,
+  digit-bearing, ANCHORED `reference_code` pattern (NOT the loose `alphanumeric` most ref fields default to) +
+  a full-date guard. CURRENCY keeps the strict leading-glyph + `parse_amount` check (L3). **L1 (shapewarn tag)
+  + L2 (learned-shape veto) DROPPED** → sanctioned deterministic-content category, not a learned-shape veto
+  (invariant-preserved; removes the `_make_format_lookup` query). Floor **88→85** (reaches the base-80+right
+  seeded inline reads). Swap unchanged: cap 88 + validation_note → Review, never silent/auto-files (fail-safe
+  verified at `trust.js:466`).
+- **Oracle verdict: SIGN OFF WITH CONDITIONS.** No live seam (helper self-contained to the dark feature;
+  dropping L2 removes no safety another path relied on; the local `endswith('_ref')` doesn't touch the global;
+  disjoint from the date-invalid-yield + `_blind_reg` sibling blocks in the same gate). Redesign-and-commit-dark
+  > revert (revert = pure churn). Condition-2 sharpened the gate from aggregate-`≥` to **doc-level
+  monotonicity**. Q2 rejection UPHELD: the merge-layer fuller-code containment swap for clipped-prefix is
+  read-layer work (overrides a format-VALID authoritative taught read on a weak heuristic; collides with the
+  `_pick_fuller_code` rb_531 class; cold-start dirty) — left for owner + a separate gated arc, pinned so a dev
+  can't bolt it on.
+- **GATE (NEW DOCS STABLE TYPE, SAMPLE=300 SEED=7 both, TEACH, flag ON vs new_teach):** ref **80.2→82.6
+  (+2.4)**, po_ref **51.4→80.6 (+29.2)**, total **29.6→30.6 (+1.0)**, date/issuer/customer/type/job_ref/vat_no
+  FLAT. **Doc-level MONOTONIC: 0 T→F on every lane** (ref +7/0, po_ref +21/0, total +2/0, account_no +1/0).
+  Realdoc (632 confirmed, flag ON) **M-set IDENTICAL to baseline OFF (17==17 pre-existing skew/OCR/poison floor,
+  M_type 0)**. Pin `test_stage05_format_yield.py` rewritten (26 green — pins the 3 regression strings as FAILS,
+  a shapewarn'd-but-valid ref as PASS, clipped "19979"/"24511" as PASS = accepted read-layer residual).
+  Committed dark `1bea059`; **owner flips.**
+- **RESIDUAL (read-layer, out of scope):** clipped-prefix + magnitude/sign taught reads are format-VALID by
+  construction — the taught box must relocate/adapt to the shifted value. A separate gated arc.

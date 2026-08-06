@@ -1119,3 +1119,26 @@ Context: HANDOVER_2026-08-08.md. The SFDEV debug-table shipped + two DEFAULT-OFF
   each doc's winning-slice-per-field at reprocess-complete while the SFDEV console is open (owner's gate:
   "slices saved only on reprocess with SFDEV open"), reusing the 63e0cb3 target_geom bbox-match. Then Submit
   copies the real crops into the debug dir.
+
+## 2026-08-09 (cont.) — format-fail-yield residual (READ-layer) + customer-PO field split + Your-Order son fix
+Context: HANDOVER_2026-08-09_CONT.md. This session REDESIGNED `TEMPLATE_FORMAT_FAIL_YIELD` (dark, gate GREEN,
+`1bea059`) and shipped `CUSTOMER_PO_LABELS` (dark, M=0, `e656329`). Two new flags await OWNER FLIP. Deferred:
+- **Clipped/mis-magnitude taught reads = a READ-layer arc (the real po_ref/total residual).** The merge-layer
+  format-fail-yield can only catch FORMAT-INVALID taught reads ("Account"/"L922.14"). The dominant residual is
+  FORMAT-VALID wrong values: clipped-prefix ("19979"⊂"PO-19979"), magnitude/sign clips ("£2"/"£-1,329.00").
+  These are unfixable at the merge — the taught box must RELOCATE/ADAPT to the shifted value (or route through
+  the existing `_pick_fuller_code`/un-clip consent+shape ladder). gary+Oracle BOTH rejected a merge-layer
+  fuller-code containment swap (overrides a format-valid authoritative read on a weak heuristic; rb_531 class;
+  cold-start dirty). Pinned OUT in test_stage05_format_yield.py ("19979"/"24511" PASS). Own gate + Oracle pass.
+- **Dedicated customer_po_number / cross-reference field.** CUSTOMER_PO_LABELS currently piggybacks on
+  po_number; a buyer's PO on a seller's invoice is conceptually a DIFFERENT field. Clean model = a dedicated
+  field with `role_caption` so the party guards (`_ref_caption_party_conflict`) protect it. Schema + seeding +
+  filing/learning change — beyond the smallest fix. (reggie.)
+- **"Your Order"/"Your Order No" po_number labels + the son leading-boundary fix.** These captions were EXCLUDED
+  from CUSTOMER_PO_LABELS because they activate a pre-existing sales_order_number double-fill: "our" ⊂ "your"
+  and the son label "Our Order No" has NO leading word-boundary, so on "Your Order No: X" son already mis-grabs
+  X. Fix = add `(?<![a-z0-9])` before the `Our Order` caption (keyword.py `_label_pattern`), THEN add
+  "Your Order No"/"Your Order Number" to the po_number block (No-suffix first). Ship as a separate gated slice.
+- **CUSTOMER_PO_LABELS field-presence gap.** The default Invoice type has no po_number field, so the flag is
+  inert there until either the type carries po_number or the dedicated field above lands. Note in any real-world
+  recall claim.
