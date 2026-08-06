@@ -1939,39 +1939,65 @@ def _net_misread_verdict(total, subtotal, candidates, tol):
 # yields, so the teaching gains (ref/date/issuer) are untouched. The format-VALID net-line case is owned
 # separately by NET_MISREAD_TOTAL_FLAG. Byte-identical when OFF.
 TEMPLATE_FORMAT_FAIL_YIELD = os.environ.get('TEMPLATE_FORMAT_FAIL_YIELD', '0') != '0'
-_FORMAT_FAIL_KW_FLOOR = 88   # Oracle C1: 88 not 90 — the challenger already PASSES format AND disagrees
-                             # (a stronger bar than the blind-reg case); 90 leaves SO-refs (base 83) + all
-                             # below-direction reads unreachable, so the residual would under-move.
+_FORMAT_FAIL_KW_FLOOR = 85   # REDESIGN 2026-08-09 (gary): 85 not 88 — the corpus challenger is a seeded
+                             # inline label read at base 80 +5 (right direction) = 85; the old 88 stranded
+                             # every such read (the po_ref 0-fire on the shapewarn cases). Below 85 is
+                             # unlabelled-noise territory; the challenger already PASSES the hard pattern
+                             # AND disagrees (via _cmp_norm), so the pattern is the quality gate, not this.
 
 
-def _stage05_format_fails(value, key, val_type, format_lookup, method):
-    """PURE (gary→Oracle SIGN-OFF-W/COND 2026-08-06). True when a taught Stage-0.5 read demonstrably
-    FAILS its field's FORMAT (landed on the wrong row / adjacent field / clipped / garbled). Three
-    independent legs: L1 the derived rung already shape-flagged it (`_shapewarn`); L2 the learned shape
-    rejects it (codes — alphanum_sep etc); L3 a strict currency validity check the lenient substring
-    credibility (anchor._crop_is_credible) let through. L3 uses the pipeline's `parse_amount` + a strict
-    leading-glyph guard (NOT a hand-rolled anglo regex) so '-£662.18'/'£-662.18'/continental/swiss PASS
-    (no false swap) while 'L922.14'/'-3 5982.70' FAIL. Date + name-like free-text are excluded by the
-    CALLER's scope guard (they vary legitimately). A format-VALID net total passes here and is left to
-    NET_MISREAD_TOTAL_FLAG; a bare single-digit total ('2') also passes (magnitude, not format — out of
-    scope, accepted residual)."""
+def _stage05_format_fails(value, key, val_type, field_patterns, validation_patterns):
+    """PURE, DETERMINISTIC content-nature check (gary REDESIGN 2026-08-09 — supersedes the
+    2026-08-06 shapewarn/learned-shape version, which GATE-FAILED: L1 trusted the `_shapewarn`
+    TAG as 'wrong value', so a CORRECT taught ref shapewarn'd on a thin shape yielded to a
+    LOOSE-`alphanumeric`-passing garbage keyword read — the ref −1.0 regression).
+
+    True when a taught Stage-0.5 read demonstrably FAILS its field's FORMAT (landed on the wrong
+    row / adjacent field / clipped-to-junk / garbled). Two independent legs:
+
+      • REF-FAMILY — a reference/code field (…_number, …_no, an explicit "reference" field, OR a
+        `…_ref` field like the corpus `po_ref`/`job_ref` that the global `_is_ref_field` misses).
+        Judged by the HARD, DIGIT-BEARING, ANCHORED `reference_code` pattern — NOT the loose
+        `alphanumeric` many ref fields default to (which `re.search`-passes any 3-char run:
+        'Account'/'The'/'Tel 01632…' all slip through). 'Account'/'The'/prose FAIL (no digit /
+        spaces); 'PO-56863'/'INV-2026-001' PASS. Belt-and-braces: a value that is itself a full
+        numeric DATE also FAILS (a date-shaped keyword read must never be swapped into a ref).
+        A clipped-but-code-shaped '24511'/'19979' still PASSES here (format-valid, wrong value) —
+        that is a READ-layer error (taught box shifted), OUT of scope, accepted residual.
+
+      • CURRENCY — a strict validity check the lenient substring credibility let through. Uses the
+        pipeline's `parse_amount` + a strict leading-glyph guard (NOT a hand-rolled anglo regex)
+        so '-£662.18'/'£-662.18'/continental/swiss PASS while 'L922.14'/'-3 5982.70' FAIL. A
+        format-VALID net/bare total ('2', '£978.20') PASSES → left to NET_MISREAD_TOTAL_FLAG /
+        accepted magnitude residual (out of scope — not a FORMAT failure).
+
+    NO learned-shape veto and NO `_shapewarn`-tag trust (both dropped): the check is now purely a
+    function of the VALUE's content nature — the CLAUDE.md-sanctioned category for applying a
+    guard to an authoritative taught read (cf. date-in-ref / ref-length / prefix-outlier), never
+    a learned-shape veto (which the authoritative-read invariant forbids). Date + name-like
+    free-text are excluded by the CALLER's scope guard (they vary legitimately)."""
     v = str(value or "").strip()
     if not v:
         return True
-    if str(method or "").endswith("_shapewarn"):          # L1
-        return True
-    try:                                                   # L2 — learned shape (codes)
-        if template_mapper._format_rejects(v, key, format_lookup or {}):
+    # REF-FAMILY — local predicate ALSO catches `…_ref` fields the global _is_ref_field misses
+    # (po_ref/job_ref); deliberately NOT broadening _is_ref_field (~6 call sites incl. two
+    # corroboration/override safety gates). Mirrors what _field_role already does for alphanumeric.
+    if _is_ref_field(key) or (key or "").lower().endswith("_ref"):
+        _rc = (validation_patterns or {}).get("reference_code")
+        if _rc and not keyword._validate(v, _rc):          # fails the hard digit-bearing code pattern
             return True
-    except Exception:
-        pass
-    if val_type == "currency":                             # L3 — strict currency validity
+        # a date-shaped value is never a ref (guards a date challenger being swapped into a ref role)
+        if _NUM_DATE_RE.match(v) and validator.parse_date(v) is not None:
+            return True
+        return False
+    if val_type == "currency" or (field_patterns or {}).get(key, {}).get("validation") == "currency":
         # leading glyph: optional symbol and/or sign then a DIGIT (rejects 'L922.14' the substring let by)
         if not re.match(r"^[£$€¥]?\s*[-–]?\s*[£$€¥]?\s*\d", v):
             return True
         if validator.parse_amount(v) is None:
             return True
-    return False
+        return False
+    return False   # unknown structured field → no swap (fail-safe)
 
 
 class ExtractionEngine:
@@ -5160,10 +5186,9 @@ class ExtractionEngine:
                             _kd['display_value'] = _kclean
         _pre_s1 = self._snap(results)
         self._remember_candidates('1_keyword', kw_results)
-        # Learned-format lookup for the taught-format-fail yield — computed ONCE, and ONLY when the flag
-        # is on (OFF ⇒ byte-identical, no extra query). Empty on an unresolved supplier → L2 inert (safe).
-        _ff_flk = (self._make_format_lookup(supplier_name, document_slug)
-                   if TEMPLATE_FORMAT_FAIL_YIELD else None)
+        # Validation patterns for the taught-format-fail yield (the redesign judges by the HARD
+        # reference_code / strict-currency check — no per-supplier learned-format query needed).
+        _ff_vpats = self.patterns.get("validation_patterns") or {}
         # BUYER-ISSUED ISSUER GUARD (Oracle 2026-07-12) — drop a "Supplier/Vendor/Seller"-caption
         # supplier_name keyword read on a Purchase Order BEFORE it can become the resolved issuer
         # scope (see _suppress_buyer_seller_issuer). Runs AFTER _remember_candidates (C3) so the
@@ -5243,13 +5268,17 @@ class ExtractionEngine:
                                         f"Kept the read value “{data.get('value')}” — a taught "
                                         f"mapping read “{existing.get('value')}” at a registered "
                                         f"position that couldn't be confirmed by its label. Please check.")}
-                # TEMPLATE_FORMAT_FAIL_YIELD (gary+Oracle 2026-08-06, DEFAULT OFF): a taught
+                # TEMPLATE_FORMAT_FAIL_YIELD (gary REDESIGN 2026-08-09, DEFAULT OFF): a taught
                 # template_mapping read that FAILS this field's FORMAT (landed on the wrong row /
-                # adjacent field / clipped / garbled — po_ref "Account", total "L922.14") must not keep
-                # authoritative precedence over a confident, format-PASSING, DISAGREEING keyword read.
-                # Yields to keyword + cap + review note (never silent). Scoped to STRUCTURED keys: dates
-                # own the flag above; name-like free-text is excluded (names vary legitimately). A VALID
-                # taught read passes _stage05_format_fails → never fires → the teaching gains untouched.
+                # adjacent field / clipped-to-junk / garbled — po_ref "Account", total "L922.14") must
+                # not keep authoritative precedence over a confident, format-PASSING, DISAGREEING keyword
+                # read. Yields to keyword + cap + review note (never silent). Scoped to STRUCTURED keys:
+                # dates own the flag above; name-like free-text is excluded (names vary legitimately). A
+                # format-VALID taught read passes _stage05_format_fails → never fires → teaching gains
+                # untouched. A clipped-but-code-shaped value ('19979') is format-VALID → NOT swapped
+                # (read-layer residual, out of scope). The helper judges by the HARD reference_code /
+                # strict-currency pattern — the challenger side is re-checked so garbage keyword reads
+                # ('The'/'Tel 01632…') can't be adopted (the old ref regression).
                 if (TEMPLATE_FORMAT_FAIL_YIELD
                         and (existing.get("method") or "").startswith("template_mapping")
                         and key not in date_field_keys
@@ -5259,8 +5288,8 @@ class ExtractionEngine:
                         and (data.get("confidence") or 0) >= _FORMAT_FAIL_KW_FLOOR
                         and _cmp_norm(data.get("value")) != _cmp_norm(existing.get("value"))):
                     _ff_vt = _kw_types.get(key)
-                    if (_stage05_format_fails(existing.get("value"), key, _ff_vt, _ff_flk, existing.get("method"))
-                            and not _stage05_format_fails(data.get("value"), key, _ff_vt, _ff_flk, data.get("method"))):
+                    if (_stage05_format_fails(existing.get("value"), key, _ff_vt, field_patterns, _ff_vpats)
+                            and not _stage05_format_fails(data.get("value"), key, _ff_vt, field_patterns, _ff_vpats)):
                         results[key] = {**data,
                                         "confidence": min((data.get("confidence") or 0), _CONFLICT_CAP),
                                         "validation_note": (
