@@ -6,6 +6,37 @@
 
 ---
 
+## 2026-08-07 — New doc type should seed its own keyword bucket + teach must mirror the Settings type editor (owner-raised, NOT BUILT)
+
+Two related gaps the owner hit while creating types. Both are about the SAME thing: a type created outside
+Settings is a second-class citizen.
+
+**(1) A newly created doc type does not appear in the keyword list.** When the user adds a document type,
+its NAME should be seeded into the keyword bucket for that type so it is visible (and editable) on the
+keywords screen. Today detection scores types from the SHIPPED `config/keyword_patterns.json`
+`document_type_keywords` buckets, which exist INDEPENDENTLY of the types an install actually has
+(`database/index.js:1029`, `src/modules/processing/handler.js:43`, and pinned in
+`database/modules/test_detected_type_nudge.js` + `src/windows/review/test_review_untyped_reason.js`).
+So a custom type starts with NO keyword bucket of its own and the user cannot see or tune what detects it.
+Seeding the type's own name is the minimum; the type's `title_aliases` ("Also appears as" chips) are the
+natural second source, since an install-created type is identified by its ALIASES, never its internal name.
+LEADS / CARE: the shipped buckets are per-install config, and a custom type's keywords must be stored
+per-install (never packaged — see `project_customer_config_never_packaged`). Check whether seeding belongs
+next to the existing `field_label_overrides` seeding in `addPresetTypes`/`create-doc-type-with-fields`
+(`database/modules/document_types.js`), which already does exactly this shape of work for FIELD labels.
+Do not let a seeded bucket silently widen detection for an install that never asked — decide whether the
+seed is active or merely visible-and-empty until the user fills it.
+
+**(2) The teach wizard's "create a type" must mirror the Settings type editor.** `src/windows/teach/renderer.js:254`
+already notes it creates the new type "via the shared editor", so the seam is narrow — but the owner reports
+the two surfaces do not offer the same options. Bring the teach path to parity with Settings → Document Types
+(fields, structural roles, and whatever (1) adds), so a type taught into existence is identical to one created
+in Settings. Verify at source which options actually differ before designing — do not assume from the UI.
+
+Owner-raised 2026-08-07 during the credit-note totals session; not investigated beyond the pointers above.
+
+---
+
 ## 2026-08-07 — Credit-note totals: the sign note is PRE-EMPTED, and the reconcile false-flags every signed credit note (NOT BUILT)
 
 Found while the owner eyeballed the first live batch with `credit_sign_coherence` ON (Castellan credit
