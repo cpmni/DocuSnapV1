@@ -47,21 +47,43 @@ check precedence over the reconcile note specifically, on the grounds that a sig
 the arithmetic failure and is the more actionable message; (c) leave the note, add the sign fact to the
 trace only. (b) is the most useful to the operator and the most invasive. Advisor + Oracle before build.
 
-**(2) The sign-blind reconcile now false-flags EVERY signed credit note.** All 17 correctly-signed
-totals above carry "the total doesn't add up against the line amounts — please check", conf capped 50.
-Mechanism: the reconcile compares a NEGATIVE total against a POSITIVE subtotal + tax, so a perfectly
-correct credit note never reconciles. This is precisely the hazard the 08-07 handover flagged for
-credit-note slice B, arriving EARLY through the taught path rather than through a signed-arithmetic
-change. It is pre-existing and unrelated to today's commits.
-Cost: every credit note routes to review with a spurious and misleading arithmetic note — directly
-against `feedback_minimal_interaction_autofile`, and worse than the pre-flag state where at least some
-credit notes auto-filed (wrongly, but quietly).
-FIX DIRECTION: magnitude reconciliation + a SEPARATE sign-coherence assertion — the same shape slice B
-already specifies (`parse_amount_signed()`, never changing `parse_amount` in place). Compare
-`abs(total)` against `abs(subtotal) + abs(tax)` and assert the sign separately, so a correct credit
-note reconciles on magnitude and only a genuine incoherence notes. GATE: the 22-doc Castellan batch
-(expect the 17 spurious notes to clear and the 2 keyword-path positives to note for the RIGHT reason)
-plus realdoc `armed==baseline`, and watch the invoice lanes for any new abstention.
+**(2) The "doesn't add up" flags are a VAT REGISTRATION NUMBER read as a TAX AMOUNT — not a sign
+problem at all.** CORRECTED 2026-08-07 after measuring the components; the first version of this entry
+claimed the reconcile compares a negative total against a positive subtotal. **That was WRONG and is
+retracted** — `CURRENCY_RE` carries no `-`, so `parse_amount('-270.60') == 270.60` and the reconcile
+has always worked on MAGNITUDES. The sign is invisible to it. (Retained deliberately: the same
+sign-blindness is what makes `parse_amount` unsafe to "fix" in place — see slice B.)
+THE ACTUAL MECHANISM, measured across the batch:
+```
+doc    total    subtotal   vat_tax     sum      delta     tol    verdict
+705   270.60     225.50    0027.84   253.34     17.26    5.41    NOTE
+709   989.76     824.80    0027.84   852.64    137.12   19.80    NOTE
+721  1571.52    1309.60    0027.84  1337.44    234.08   31.43    NOTE
+718   160.32     133.60    0027.84   161.44      1.12    3.21    reconciles (BY LUCK)
+```
+`vat_tax` is **`0027.84` on all 13 docs that captured one** — an identical constant, conf 90, method
+`shadow_reconcile`. It is the LETTERHEAD's VAT registration number: `VAT Reg GB 651 0027 84` ->
+`0027 84` -> `0027.84`. It is also the ONLY `vat_tax` value in the entire live DB. So `subtotal + tax`
+is short by the real VAT every time and the reconcile correctly reports that the maths fails — it is
+being fed a poisoned component, and the note, while useless to the operator, is not itself wrong.
+#718 "reconciles" purely by coincidence (133.60 + 27.84 = 161.44 vs 160.32, inside a 3.21 tolerance) —
+that is the SAME doc the validator's own comment cites as having AFFIRMED a sign-wrong value. The
+7 docs with no captured subtotal skip the guard entirely and carry no note.
+WHY THIS IS A SYSTEM BUG, not a Castellan bug: any supplier printing a VAT registration number in the
+letterhead is exposed, and a registration number is a stable per-supplier constant, so the wrong value
+is CONSISTENT — the most dangerous shape, because consistency reads as corroboration to anything
+downstream that counts agreement.
+FIX DIRECTION (reggie-shaped, precision-first — a VAT REGISTRATION NUMBER IS NOT AN AMOUNT):
+(a) reject a `vat_tax` candidate whose label context is a registration identifier — `VAT Reg`,
+`VAT Reg No`, `VAT Registration`, `VAT No` — as opposed to an amount caption (`VAT @ 20%`, `VAT`,
+`Tax`); (b) reject the zero-padded `0027.84` FORM outright (money is not printed with a leading zero
+pair; this is a digit-group artefact of `651 0027 84`); (c) treat a `vat_tax` identical across many
+documents of one supplier as suspect. (a) is the root fix and the other two are cheap corroboration.
+Do NOT reach for a tax-vs-subtotal ratio band alone: 27.84/225.50 is 12%, which passes any plausible
+band, so that check would not have caught this.
+GATE: the Castellan batch (expect the ~12 spurious notes to clear, #718's lucky reconcile to become an
+honest one, and no new notes on the 7 subtotal-less docs) + realdoc `armed==baseline` + the customer
+corpus total lane, which must not move.
 
 **Also seen in the same batch, not investigated:** #724 total reads `'—-1,455.12'` (an em-dash glued
 ahead of the minus — a read-layer debris class, not a sign bug); #715 is a `Castellan-Security_credit_note_*.pdf`
