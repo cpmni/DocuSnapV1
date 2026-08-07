@@ -21,25 +21,58 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-08-05 NIGHT wrap) — Straighten pivot LIVE (16/20 on owner data); morning polish round chartered
-**READ `HANDOVER_2026-08-05_NIGHT.md` FIRST** (⚠ its FIRST ACTION: live docs 560/561's working
-files await the owner's restore from `recovered_inbox\` — a sandbox auto-file MOVED them).
-**The CANONICAL LEVEL FRAME pivot ran end-to-end tonight (owner GO):** `TEACH_ANGLE_COMPOSE` —
-mig 58 `templates.sample_deskew_angle` + engine composition (level = C + R(−θ_t)·(raw−C), the
-proven inverse of the teach save-transform; CENTRE transformed, w/h preserved — AABB bloats) +
-lazy angle heal + settings bridge/toggle (`c29b797`→`9cb65fa`), gates GREEN on the faithful
-expand=False corpus ("Customer Doc Test NF"; the main corpus's scanify was expand=True — a
-physically-impossible scanner geometry, generator fixed, `SCAN_EXPAND=1` restores) — ref
-+13/+14.5 · date →98.6/95.7 · issuer +20/+20 — Chris-vetted in a sandbox, then LIVE on the
-owner's Larkspur batch: **16/20 full DN-xxxxx** (angle seeded manually — the heal's spawn bug
-`ctx.pythonExe` IS A FUNCTION fixed `4f8e2e1`, all skip branches now log `8961d89`; heal still
-unproven live end-to-end). **MORNING ROUND (owner-agreed, Oracle first):** composed-box
-word-snap (composed = machine-derived ⇒ snap-eligible) · leading-glyph witness-adopt (keyword
-held the correct value every time and lost coin-flips: 'IN-75028'@97 vs keyword 'DN-75028'93) ·
-wizard-anchor tightening (docket_07 anchor swallowed the address block) · false "differs from
-format" note on clean values + SFDEV crop-tile rung labels. KEY TRUTH (owner-pinned): READING is
-fine everywhere — cross-document PLACEMENT transfer is the entire failure class. Prior wraps
-below; HEAD `8961d89`.
+## Current session state (2026-08-07 NIGHT2) — VAT-reg guard SHIPPED+FLIPPED · delivery defect DIAGNOSED · 2 designs ready
+**READ `HANDOVER_2026-08-07_NIGHT2.md` FIRST. HEAD `5ee4718` + handover; ALL PUSHED. Owner approved an
+autonomous night run: "run on auto and safely, no regressions".** (A) **SHIPPED + OWNER-FLIPPED LIVE:**
+`vat_reg_not_amount` + `net_misread_total_flag` (`d575668`/`60606d9`/`2a1ae7d`) — a letterhead VAT
+REGISTRATION NUMBER was read as a TAX AMOUNT (`number_format` rule 3 mints a decimal from the 3-4-2
+grouping: `651 0027 84` -> `0027.84`), poisoning `subtotal+tax` so ~12 CORRECT docs carried "the total
+doesn't add up". Gate: corpus 0 T->F + 0 values moved + `vat_no` untouched · **0 new `reconcile_pick`** ·
+realdoc **byte-identical** n=699 · Castellan 19 fires/16 notes cleared/0 gained. As production runs it:
+**false alarms 39->0, true flags 16->26**. Oracle SIGN-OFF-W/COND ×2; its BLOCKING C1 (credit-sign note
+outranks net-misread; the net rail is sign-BLIND) fired on live data (#722). (B) **DELIVERY DEFECT
+DIAGNOSED, NOT BUILT:** one wrong-column inline witness reaching the value through TWO reconcile call
+sites (`:1241` `TEMPLATE_INLINE_CODE_RECONCILE_DRIFT`, `:1880` `TEMPLATE_INLINE_CODE_RECONCILE`) + a third
+UNGUARDED door (`:1283` `_inline()`); admitted because `_target_inline_with_anchor` misuses
+`_DRIFT_FLOOR=0.02` as a same-row tolerance. **Arm C (both off) heals 5/5, 0 regressions** —
+`stress_test/inline_reconcile_ab.js`. Fix = `tol=(anchor_h+target_h)/2` at `:936` + the same guard in
+`_inline()`, flag `TEMPLATE_INLINE_ROW_OVERLAP`, 3 pins. (C) **DESIGNS READY:** gary's shadow-row
+auto-file deadlock (`unverifiable-value:subtotal` on an INVISIBLE row — sealed twice; **thread
+`extraction_method` into `realdoc_regression.js`/`sweepPredicate.js` FIRST or the gate is vacuously
+green**) and reggie's 5 taught-label/taught-value slices (**Slice 1 = widen `PO_REF_DIGIT_GATE` to the
+REF ROLE — kills `'Your PO'`/`'Delivery'` system-wide**). (D) **OWNER-SPOTTED, high value:** the TEACH
+SAMPLE doc never receives its taught values (`#736` displayed the right value, stored `'Your PO'`,
+seeded Learning History with it) — the inverse of "teaching must never hurt". `delivery_number` is type
+`text` with NO `validation_patterns.text`, so that field has no format gate at all; retyping it is an
+OWNER DECISION. GOTCHAS: a FLAT corpus lane is not a pass — verify the guard ARMED (diff the jsonl);
+`realdoc_regression.js` writes a FIXED filename (copy between arms); 4 pre-existing Python failures,
+verified identical with the session's files stashed.
+
+### Prior wrap — Current session state (2026-08-07) — date-crop premise REVERSED + SFDEV crop fix + credit-note type family + debug-table spec
+**READ `HANDOVER_2026-08-07.md` FIRST. HEAD `2a9a556`; 5 commits, ALL PUSHED.** Two halves. **(A)** Built the
+date-crop READ root fix but a 4-doc probe REVERSED its premise: root is NOT the deskew frame — the TIGHT
+taught box CLIPS the leading glyph on BOTH frames (every angle); a padded WINDOW+psm6 recovers it.
+`837b7d6` **`TEMPLATE_PAD_WINDOW_READ`** (dates only, OFF): a taught date's padded re-read flags a confident
+parsed-value disagreement (never swaps; geometric neighbour guard). gary+reggie→Oracle W/COND; NF M=0 + 1
+corpus true-positive. **`DATE_CROP_DESKEW_READ` design is SUPERSEDED (banner added) — do NOT build the
+raw-frame election.** `63e0cb3` **SFDEV crop fix** (dev): the trace now shows the WINNING rung's crop
+(`target_geom` bbox-match, badged "← read"), not the first same-stage abs crop. **(B)** Owner ran a fresh-DB
+new-customer test (import→teach→review) → surfaced the credit-note-typed-Invoice class; root-caused THREE
+distinct causes, all fixed DARK under ONE owner toggle (`heading_absent_reread` → 3 env flags via
+`_reconcileEnv`): `66c526a`/`4026222` **rung-3** (`HEADING_ABSENT_REREAD`) — the `--dpi` pass DROPS a large
+title (proven), a pixel pre-gate + band re-read recovers it; Oracle W/COND, gate type +1/0-mis-type,
+owner-watch C2 (recovered type ungraduated-100 floor, watch it graduating to 95). `2a9a556` **#2**
+(`HEADING_TITLE_GAP_COLLAPSE`, keyword.py) — a wide-TRACKED title `'CREDIT    NOTE'` splits at the
+column-break marker → scores as a mention; fix collapses whitespace ONLY inside the matched type-phrase span
+(herald); gate type +2/date +1/0-regress; **+ #3** (`REPROCESS_HEADING_GEOM`, process_docs.py) — a cached
+reprocess never builds page-0 geometry so heading rungs are inert; one bounded page-0 pass when no trusted
+heading. **All 4 new switches default OFF, byte-identical off; env bridges in `handler.js _reconcileEnv`.**
+Harness can't bit-reproduce app OCR drops/tilt misreads → gates prove NO-REGRESSION, heals are OWNER-WATCHED.
+**NEXT: BUILD the SFDEV bulk debug-table** (owner-designed queue-wide field grid → `debug_values.json` + winning-
+rung slices, saved only on reprocess-with-SFDEV-open — full spec in the handover). A sandbox instance is
+RUNNING with all heading flags. **`_CLEAN_DATE_CONF`=94 defeats the merge cap → the validation_note is the sole
+auto-file block (trust.js:466); pin the DECISION, never `conf==88`.** Prior wrap (08-06 DAY2, HEAD `8ddbc80`,
+4 taught-read flips + snap-union shelved): `HANDOVER_2026-08-06_DAY2.md`.
 
 ## Prior wrap (2026-08-05 day) — jitter-crater arc CLOSED (A/B/C/D dark, gates green); settings-bridge + owner flip
 **2026-08-05 (Fable 5, autonomous). Commits `b63bd86`·`8f631b8`·`2ddd5fa`·`fafd8b4`, PUSHED. READ
