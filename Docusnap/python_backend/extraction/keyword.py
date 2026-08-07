@@ -904,7 +904,8 @@ ROLE_KEY_ALIASES = {
 
 def extract_fields(ocr_text: str, field_keys: list[str],
                    patterns: dict, caption_vocab: dict | None = None,
-                   caption_guard_keys: "set | None" = None) -> dict:
+                   caption_guard_keys: "set | None" = None,
+                   trace = None) -> dict:
     """
     Extract field values using keyword patterns.
     Returns dict of {field_key: {"value": str, "confidence": int, "method": "keyword"}}
@@ -1010,7 +1011,8 @@ def extract_fields(ocr_text: str, field_keys: list[str],
                 label_text = label
                 label_dirs = dirs
             found = _search_for_label(lines, label_text, label_dirs, role_caption=role_caption,
-                                      caption_guard=_cap_guard)
+                                      caption_guard=_cap_guard, vat_role=(pk == 'vat_tax'),
+                                      trace=trace)
             if not found:
                 continue
 
@@ -1217,6 +1219,83 @@ def _ref_caption_party_conflict(line: str, start: int) -> bool:
     return bool(prec and prec.group(1) in _REF_PARTY_STOP)
 
 
+# ── VAT REGISTRATION NUMBER vs VAT AMOUNT (2026-08-07; reggie + gary consensus) ────────────────
+# A letterhead prints "… FB1 9AA · VAT Reg GB 651 0027 84". The bare "VAT" label matches it, the
+# scan is TOP-DOWN and returns the FIRST accepted occurrence, so the letterhead beats the real
+# "VAT @ 20%  £45.10" line further down. The value is then MINTED into money by
+# number_format.normalise_currency_spacing rule 3 ("trailing 2-digit decimal with the point
+# dropped", for "5,767 71" -> "5,767.71"): a UK VRN is grouped 3-4-2, so its last group is ALWAYS
+# exactly two digits at end-of-segment and "651 0027 84" becomes "651 0027.84". Only THEN does it
+# pass currency validation, and _clean_value returns just the match — destroying the "Reg GB 651"
+# context that would have condemned it. Measured: an identical 0027.84 on all 13 documents of one
+# supplier, conf 90, poisoning total reconciliation on ~12 correct documents.
+#
+# WHY THIS PREDICATE IS FORM-BASED, NOT KEYWORD-BASED: one shipped letterhead variant prints a
+# BARE "VAT GB 774 2093 55" with no Reg/No token at all, and a keyword-keyed guard would miss it
+# SILENTLY. The registration keyword is demoted to a corroborating leg.
+# It must run on the RAW post-label text, BEFORE normalise_currency_spacing mints the decimal.
+#
+# DELIBERATELY NOT FIXED HERE: number_format.py rule 3 itself. It is shared with anchor.py and is
+# load-bearing for genuinely OCR-split money, and there is no measured failure there — narrowing it
+# is a far wider blast radius. Pinned in tests/test_vat_reg_not_amount.py so a future dev "fixing"
+# the decimal fabrication instead of the label binding trips a test that explains why.
+#
+# A money witness VETOES the guard outright and outranks every other leg: this can only ever
+# SUPPRESS a read (fail toward review, never a substituted value), and the veto is what bounds it.
+_VAT_MONEY_WITNESS = re.compile(r"[£$€¥]|\b(?:GBP|USD|EUR|JPY)\b|\d[\d,]*\.\d{2}(?!\d)", re.I)
+# An optional registration lead-in between the caption and the number: "Reg", "Reg No.", "No:", "#".
+_VAT_ID_LEADIN = re.compile(r"^[\s:.|\-–]*(?:reg(?:d|istered|istration)?\b\.?\s*)?"
+                            r"(?:(?:no|nr|num|number|id|ident)\b\.?\s*)?[:#]?\s*", re.I)
+# The identifier itself: an optional 2-letter country code, then space/hyphen-grouped digits.
+# `\d+` per group, NOT `\d{1,4}` — a spaceless 'GB651002784' must reach the digit floor as ONE
+# group, else the unbroken-run leg is dead code (caught by tests/test_vat_reg_not_amount.py).
+_VAT_ID_RUN = re.compile(r"^(?P<cc>[A-Za-z]{2})?[\s\-]*(?P<digits>\d+(?:[ \-]\d+){0,6})")
+# Oracle C4: >=9 digits counted UNGROUPED. Every European VRN is 9-12 digits; a small-business VAT
+# AMOUNT is not. Counted ungrouped so a spaceless 'GB651002784' clears the floor too.
+_VAT_ID_MIN_DIGITS = 9
+
+
+def _vat_identifier_tail(tail: str) -> str | None:
+    """The firing LEG when the text following a money caption is a VAT REGISTRATION NUMBER rather
+    than an amount (so the occurrence is skipped and the line scan continues), else None. The leg
+    name is returned rather than a bool so the `vat_reg_skip` trace can say WHICH signal fired when
+    this eventually misfires on a supplier we have not met (Oracle C5).
+
+    Legs, in priority order — a money witness always wins:
+      VETO      a currency symbol/code or a dd.dd cents group anywhere in the tail -> never fire
+      FLOOR     >= 9 digits in the leading numeric run, counted UNGROUPED
+      unbroken  a single unbroken run of >= 9 digits is never money ('GB651002784')
+      grouping  some NON-LEADING digit group has length != 3. Thousands groups are ALWAYS exactly
+                3; the UK 3-4-2 VAT grouping is not. This is the only leg that catches a bare
+                'VAT 651 0027 84' with no country code and no keyword, and it is the leg the
+                predicate cannot ship without.
+      country   a 2-letter country prefix (GB, IE, DE, …) — money never carries one. Carries the
+                non-UK forms that `grouping` cannot, since IE/EU numbers are not 3-4-2.
+      keyword   a registration lead-in (Reg / Reg No / Number / #). Demoted to LAST deliberately:
+                one shipped letterhead variant prints a bare 'VAT GB 774 2093 55' with no such
+                token, and a keyword-keyed guard would miss it SILENTLY.
+    Pure and side-effect free; input is the RAW line tail. Guarded by tests/test_vat_reg_not_amount.py."""
+    if not tail:
+        return None
+    if _VAT_MONEY_WITNESS.search(tail):
+        return None                                   # it is money — never fire
+    lead = _VAT_ID_LEADIN.match(tail)
+    had_keyword = bool(lead.group(0).strip(" :.#|-–\t")) if lead else False
+    m = _VAT_ID_RUN.match(tail[lead.end():] if lead else tail)
+    if not m:
+        return None
+    groups = [g for g in re.split(r'[ \-]', m.group('digits')) if g]
+    if sum(len(g) for g in groups) < _VAT_ID_MIN_DIGITS:
+        return None
+    if len(groups) == 1:
+        return 'unbroken'                             # one run, >= 9 digits — never an amount
+    if any(len(g) != 3 for g in groups[1:]):
+        return 'grouping'
+    if m.group('cc'):
+        return 'country'
+    return 'keyword' if had_keyword else None
+
+
 # RC1 SLICE 2 guards (2026-07-10) — a SEEDED custom FREE-TEXT field (role_caption='party')
 # hunts its own DB label ("Customer", "Site Contact"). All three guards are party-gated, so
 # shipped patterns stay byte-identical. reggie-designed; guarded by test_keyword_label_guard.py.
@@ -1321,12 +1400,21 @@ def _order_caption_is_instruction(line: str, start: int, end: int) -> bool:
 def _search_for_label(lines: list[str], label: str,
                       directions: list[str],
                       role_caption: str | None = None,
-                      caption_guard: dict | None = None) -> tuple[str, str] | None:
+                      caption_guard: dict | None = None,
+                      vat_role: bool = False,
+                      trace = None) -> tuple[str, str] | None:
     """
     Search lines for a label and return (value, direction) or None.
 
     role_caption (RC1/RC5): 'ref' for a SEEDED custom-ref field, so a buyer/seller party caption
     ("Customer Reference") can't cross-fill it. None for shipped patterns → behaviour unchanged.
+
+    vat_role (2026-08-07, reggie + gary -> Oracle SIGN-OFF-W/COND): True only for the vat_tax ROLE
+    (via _pattern_key, so a type keying its field 'vat'/'tax'/'gst' is covered). Arms the VAT
+    REGISTRATION NUMBER occurrence skip — see _vat_identifier_tail. Oracle C2 ruled the arming must
+    be the ROLE, NOT the validation class: `val_type == 'currency'` would also arm the TOTAL, where
+    a genuine OCR-split large amount ("Total  1 234 567 89") trips the grouping leg and the money
+    veto may not survive OCR. Under role arming that exposure needs a VAT AMOUNT of >= 1,234,567.89.
 
     caption_guard (G3b, 2026-07-11): when set (an armed name-like/party field's caption vocab), a
     candidate VALUE that IS a known caption dies at generation — blanked at 'right' so it falls
@@ -1344,6 +1432,9 @@ def _search_for_label(lines: list[str], label: str,
                       and label.strip().lower().split()[:1] == ['order'])
     _instr_skip = os.environ.get('PO_ORDER_INSTRUCTION_SKIP', '1') != '0'
     _is_identity_caption = label.strip().lower() in _IDENTITY_CAPTION_LABELS
+    # Inline env read (same idiom as PO_REF_DIGIT_GATE / CUSTOMER_PO_LABELS) so a test can flip it
+    # without a module reload. Default OFF -> the `if` below is never entered -> byte-identical.
+    _vat_reg_skip = vat_role and os.environ.get('VAT_REG_NOT_AMOUNT', '0') != '0'
     for i, line in enumerate(lines):
         line_lower = line.lower()
         m = pattern.search(line_lower)
@@ -1374,6 +1465,19 @@ def _search_for_label(lines: list[str], label: str,
         # fields pass role_caption='party', so shipped patterns are byte-identical. (RC1 slice 2)
         if role_caption == 'party' and _party_caption_conflict(line, m.end()):
             continue
+        # A money caption ("VAT") must not read a VAT REGISTRATION NUMBER out of the letterhead
+        # ("VAT Reg GB 651 0027 84") — skip the occurrence so the scan continues DOWN to the real
+        # "VAT @ 20%" amount line. Evaluated on the RAW tail (Oracle C3): before the 4-space column
+        # split, because that threshold is a scan-quality variable not a layout constant, and before
+        # number_format.normalise_currency_spacing, which is what mints "0027 84" into "0027.84" and
+        # makes the identifier look like money in the first place. See _vat_identifier_tail.
+        if _vat_reg_skip:
+            _leg = _vat_identifier_tail(line[m.end():])
+            if _leg:
+                if trace:
+                    trace('vat_reg_skip', label=label, line=line.strip()[:120],
+                          tail=line[m.end():].strip()[:60], leg=_leg)
+                continue
 
         # Try RIGHT direction — value is on the same line after the label
         if "right" in directions or "inline" in directions:

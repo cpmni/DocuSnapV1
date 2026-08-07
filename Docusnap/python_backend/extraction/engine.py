@@ -2820,7 +2820,7 @@ class ExtractionEngine:
             uncovered = [r for r in self._RECONCILE_COMPONENT_ROLES if r not in covered]
             if not uncovered:
                 return
-            shadow = keyword.extract_fields(ocr_text, uncovered, patterns) or {}
+            shadow = keyword.extract_fields(ocr_text, uncovered, patterns, trace=self._t) or {}
             for k, data in shadow.items():
                 if data and data.get('value') and not (results.get(k) or {}).get('value'):
                     d = dict(data)
@@ -5232,7 +5232,8 @@ class ExtractionEngine:
                  or (patterns_for_run.get('field_patterns', {}).get(f.get('key')) or {}).get('role_caption') == 'party')}
         kw_results = keyword.extract_fields(ocr_text, field_keys, patterns_for_run,
                                             caption_vocab=_caption_vocab,
-                                            caption_guard_keys=_caption_guard_keys)
+                                            caption_guard_keys=_caption_guard_keys,
+                                            trace=self._t)
         # ── INPUT HYGIENE for name-like free-text keyword reads ── a keyword/label
         # capture has NO crop-path cleaning, so OCR edge junk ("--« Beaumont Care
         # Homes Ltd -") enters verbatim and — being the highest-authority source
