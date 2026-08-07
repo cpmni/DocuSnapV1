@@ -55,7 +55,16 @@ const ARMS = [
   // because _target_inline_with_anchor gates BOTH call sites.
   { name: 'C both sites OFF        ', delta: { TEMPLATE_INLINE_CODE_RECONCILE_DRIFT: '0',
                                                TEMPLATE_INLINE_CODE_RECONCILE: '0' } },
+  // Arm D (2026-08-07 NIGHT2): THE ACTUAL FIX. C is a sledgehammer — it deletes the reconcile for
+  // every template, including the inline ones it was built for. D leaves both reconciles ARMED and
+  // instead corrects the predicate that decides whether this mapping is inline at all, so a true
+  // inline row keeps its un-clip heal while a label-above row stops harvesting its neighbour.
+  // D should reproduce C's heals on Pelican and differ from C everywhere else.
+  { name: 'D row-overlap fix       ', delta: { TEMPLATE_INLINE_ROW_OVERLAP: '1' } },
 ];
+// Door C's guard is type-agnostic, and the census found template 33's date + customer mappings are
+// label-above too — so they must be measured for regression, not just the code field.
+const FIELDS = ['delivery_number', 'delivery_date', 'customer_name'];
 
 function runP(folder, args, files, manifest, extraEnv) {
   return new Promise(resolve => {
@@ -113,21 +122,41 @@ function runP(folder, args, files, manifest, extraEnv) {
   for (const a of ARMS) res[a.name] = await runP(RR, args, files, manifest, { ...BASE, ...a.delta });
   try { fs.rmSync(RR, { recursive: true, force: true }); } catch {}
 
-  const [A, B, C] = ARMS.map(a => res[a.name]);
+  const [A, B, C, D] = ARMS.map(a => res[a.name]);
   let fixed = 0, regressed = 0, same = 0;
-  console.log('  doc    baseline           B drift-off        C both-off         verdict');
+  console.log('  doc    baseline           B drift-off        C both-off         D overlap-fix      verdict');
   for (const f of files) {
-    const a = ef(A[f] || {}, 'delivery_number'), b = ef(B[f] || {}, 'delivery_number'), c2 = ef(C[f] || {}, 'delivery_number');
-    const av = sv(a.value), bv = sv(b.value), cv = sv(c2.value);
+    const a = ef(A[f] || {}, 'delivery_number'), b = ef(B[f] || {}, 'delivery_number');
+    const c2 = ef(C[f] || {}, 'delivery_number'), d = ef(D[f] || {}, 'delivery_number');
+    const av = sv(a.value), bv = sv(b.value), cv = sv(c2.value), dv = sv(d.value);
     const g = v => /^PD/i.test(v.replace(/[^A-Za-z0-9]/g, ''));
-    const aGood = g(av), cGood = g(cv);
+    const aGood = g(av), dGood = g(dv);
     let verdict = 'same';
-    if (!aGood && cGood) { verdict = 'FIXED by C'; fixed++; }
-    else if (aGood && !cGood) { verdict = 'REGRESSED <<<'; regressed++; }
+    if (!aGood && dGood) { verdict = 'FIXED by D'; fixed++; }
+    else if (aGood && !dGood) { verdict = 'REGRESSED <<<'; regressed++; }
     else same++;
-    console.log(`  #${idOf[f]}  ${av.padEnd(18)} ${bv.padEnd(18)} ${cv.padEnd(18)} ${verdict}  ` +
-                `(c ${a.confidence}->${c2.confidence}, ${String(a.method).slice(0, 24)} -> ${String(c2.method).slice(0, 24)})`);
+    console.log(`  #${idOf[f]}  ${av.padEnd(18)} ${bv.padEnd(18)} ${cv.padEnd(18)} ${dv.padEnd(18)} ${verdict}  ` +
+                `(c ${a.confidence}->${d.confidence}, ${String(a.method).slice(0, 24)} -> ${String(d.method).slice(0, 24)})`);
   }
-  console.log(`\n  FIXED ${fixed} · REGRESSED ${regressed} · unchanged ${same}`);
-  console.log(`  007 round-2 predicted for arm C: all 5 failures heal, #732/#734 untouched.`);
+  console.log(`\n  delivery_number: FIXED ${fixed} · REGRESSED ${regressed} · unchanged ${same}`);
+  console.log(`  arm C (sledgehammer) healed 5/5; D must match it WITHOUT disabling the reconciles.`);
+
+  // ── The other two label-above mappings on this template. Door C's guard is type-agnostic, so a
+  // value that used to arrive from a same-row harvest may now arrive EMPTY -> review. Report every
+  // change; an EMPTY where the baseline was CORRECT is a recall trade the owner must see, not a
+  // silent win. (No ground truth is asserted here — the values are printed for eyeballing.)
+  for (const key of FIELDS.slice(1)) {
+    console.log(`\n  --- ${key} (label-above on this template; measured for regression) ---`);
+    let moved = 0, emptied = 0;
+    for (const f of files) {
+      const a = ef(A[f] || {}, key), d = ef(D[f] || {}, key);
+      const av = sv(a.value), dv = sv(d.value);
+      if (av === dv) continue;
+      moved++;
+      if (dv === '—') emptied++;
+      console.log(`  #${idOf[f]}  ${av.padEnd(28)} -> ${dv.padEnd(28)} ` +
+                  `(c ${a.confidence}->${d.confidence}, ${String(a.method).slice(0, 22)} -> ${String(d.method).slice(0, 22)})`);
+    }
+    console.log(`  ${key}: ${moved} moved, ${emptied} now EMPTY (-> review)`);
+  }
 })();

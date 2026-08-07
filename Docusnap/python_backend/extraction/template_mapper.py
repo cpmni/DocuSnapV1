@@ -462,6 +462,44 @@ if os.environ.get('TEMPLATE_PAD_WINDOW_CODE_LABELLED', '0') != '0' and not _PAD_
     except Exception:
         pass
 
+# ── TEMPLATE_INLINE_ROW_OVERLAP (2026-08-07 NIGHT2 — 007 rounds 1+2, arm-C proven) ────────────────
+# `_target_inline_with_anchor` answers ONE question: "did the operator teach this value on the
+# label's OWN row?" It answered it with `max(anchor_h, target_h, _DRIFT_FLOOR)` — and _DRIFT_FLOOR
+# (0.02) is a *drift* floor, a "has this page moved a row?" tolerance, reused as a *same-row* test.
+# 0.02 of page height is ~70px on an A4 render = 1.5-3 line pitches, so the predicate says "inline"
+# for boxes that are one, two, even three lines apart. It admits the label-ABOVE layouts the
+# docstring says it excludes.
+# LIVE EXHIBIT (Pelican Office Interiors delivery_note, delivery_number): anchor/target boxes do not
+# overlap vertically AT ALL (0.0045 gap, Δcy 0.01515, h 0.0083/0.0130) and the predicate still
+# admitted them, so `_inline_code_reconcile` -> `_pick_fuller_code`'s inline-disagreement branch
+# committed the NEIGHBOURING CAPTION 'Delivery' as the value at conf 70. That branch tie-breaks on
+# OCR confidence, and a dictionary word ('Delivery Date') systematically outscores a code
+# ('PD/26/6680') on an LSTM engine — so once admitted, the caption wins EVERY time. 4 of 9 docs.
+# THE FIX IS THE DEFINITION, NOT A CONSTANT: two boxes share a row iff their centres are within the
+# mean of their heights — `tol = (anchor_h + target_h) / 2`. No magic number, DPI-invariant, scales
+# with whatever the operator actually drew. On Pelican: Δcy 0.01515 vs tol 0.01065 -> refused, 42%
+# margin. On a true inline row (Δcy ~0.001) it stays admitted with an order of magnitude to spare.
+# ONE PREDICATE, TWO DOORS: `_target_inline_with_anchor` is the sole gate of BOTH
+# `_inline_code_reconcile` call sites — :1241 (drift/geometric rung, switch
+# TEMPLATE_INLINE_CODE_RECONCILE_DRIFT) and :1880 (absolute rung, switch
+# TEMPLATE_INLINE_CODE_RECONCILE). Fixing it here closes both. Isolating only ONE of them is what
+# made the first A/B (arm B) heal 1 of 5 and look like a refutation; with BOTH off, arm C healed
+# 5 of 5 with 0 regressions — including the TEACH SAMPLE, which takes the zero-drift absolute path.
+# DOOR C — `_inline()` (:1255) has NO switch and NO layout guard at all: it commits a same-row
+# harvest regardless of what the mapping taught. Latent whether or not it fires on Pelican, so this
+# flag guards it too, but ONLY where a stored offset exists (dx or dy). A LEGACY offset-less mapping
+# (dx=dy=0) keeps `_inline()` as its PRIMARY read at :1296 — it has no geometric model to fall back
+# to, so guarding it there would delete the read outright. That trade-off is PINNED.
+# WHAT THIS DISABLES DOWNSTREAM (name the seam): a label-above mapping whose geometric read fails no
+# longer gets a same-row second chance — it falls through to the registration fallback (:1968) and
+# then omits the field -> REVIEW. That is the intended direction (fail toward review, never a
+# confident caption), but it IS a recall trade: expect some values that used to commit a WRONG
+# neighbour to now arrive EMPTY.
+# Ship it as "a taught label-above mapping may not commit a same-row harvest", NOT as "the delivery
+# fix". Default OFF; OFF = byte-identical (the legacy `max(...)` expression is preserved verbatim).
+# Pins: tests/test_template_inline_row_overlap.py.
+_INLINE_ROW_OVERLAP_ON = os.environ.get('TEMPLATE_INLINE_ROW_OVERLAP', '0') != '0'
+
 
 def extract_with_mappings(page_images, mappings, field_patterns=None,
                           ocr_lines_fn=None, ocr_text_fn=None, slice_capture=None,
@@ -931,9 +969,17 @@ def _target_inline_with_anchor(anchor_box, target_box):
     """True when the taught value sits on the label's ROW (an inline key/value row), not a
     line below it. Compares box CENTRES vertically against ~one row height; a label-ABOVE
     layout (target a line under the anchor) is excluded so the inline reconcile only fires
-    where an inline harvest is even meaningful (the geometric/relocate path owns label-above)."""
+    where an inline harvest is even meaningful (the geometric/relocate path owns label-above).
+
+    ARMED (_INLINE_ROW_OVERLAP_ON): the tolerance is the GEOMETRIC definition of "same row" —
+    the mean of the two box heights. OFF: the legacy expression, which floored the tolerance at
+    _DRIFT_FLOOR (a *drift* constant, ~1.5-3 line pitches) and so admitted label-ABOVE mappings
+    the docstring above claims it excludes — see the flag block for the live exhibit."""
     def _cy(b): return (b.get("y_norm") or 0.0) + (b.get("h_norm") or 0.0) / 2.0
-    tol = max(anchor_box.get("h_norm") or 0.0, target_box.get("h_norm") or 0.0, _DRIFT_FLOOR)
+    if _INLINE_ROW_OVERLAP_ON:
+        tol = ((anchor_box.get("h_norm") or 0.0) + (target_box.get("h_norm") or 0.0)) / 2.0
+    else:
+        tol = max(anchor_box.get("h_norm") or 0.0, target_box.get("h_norm") or 0.0, _DRIFT_FLOOR)
     return abs(_cy(anchor_box) - _cy(target_box)) <= tol
 
 
@@ -1258,6 +1304,17 @@ def _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
         # the SAME line. Robust to a value in a FAR column the drawn box width can't reach,
         # but it 'slides' with OCR line-segmentation — so it is the FALLBACK to the rigid
         # geometric read above (and the PRIMARY read only for a legacy offset-less mapping).
+        #
+        # DOOR C (TEMPLATE_INLINE_ROW_OVERLAP): this rung has no switch and, until now, no layout
+        # guard — it would commit a same-row harvest even for a mapping the operator taught
+        # label-ABOVE, i.e. read a row the taught model says is the wrong one. Guarded ONLY where a
+        # stored offset exists: with dx/dy there is a real geometric model to fall back on
+        # (registration -> omit -> review), whereas a LEGACY offset-less mapping reaches _inline()
+        # as its PRIMARY read at the tail of this function and has nothing behind it — guarding it
+        # there would delete the read outright. That asymmetry is deliberate and PINNED.
+        if _INLINE_ROW_OVERLAP_ON and (dx or dy) and \
+                not _target_inline_with_anchor(anchor_box, target_box):
+            return None
         iv = located.get("inline_value")
         if not iv:
             return None
