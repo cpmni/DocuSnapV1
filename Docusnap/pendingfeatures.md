@@ -6,6 +6,74 @@
 
 ---
 
+## 2026-08-07 — Credit-note totals: the sign note is PRE-EMPTED, and the reconcile false-flags every signed credit note (NOT BUILT)
+
+Found while the owner eyeballed the first live batch with `credit_sign_coherence` ON (Castellan credit
+notes, docs 705-726, template 32). Both items measured against the LIVE DB, read-only. Neither is
+caused by the flag; the flag made them visible.
+
+**FIRST — a premise correction that changes the scope of credit-note slice A.** The 08-07 handover says
+the minus sign is destroyed at READ. That is TOO BROAD, and slice A should not be designed off it.
+MEASURED across the 20 docs in the batch carrying a total:
+```
+17 totals SIGNED correctly ('-270.60', '-1,025.64', '-1,885.32')  -> ALL method template_mapping
+ 3 totals POSITIVE (sign lost)                                    -> #721 '1,571.52' and #722
+                                                                     '1,566.12' are method keyword
+```
+So the taught Stage-0.5 `template_mapping` read PRESERVES the leading minus; the Stage-1 `keyword`
+path is where it dies (`keyword.py:1647-1651`, the site gary caught). Chris's sandbox produced 16/16
+positive because those documents were never TAUGHT, so every read came through the keyword path — the
+sample was homogeneous in exactly the variable that matters. Before building slice A, re-measure which
+read sites actually lose the sign on a mixed taught/untaught set; the shared-config fix direction
+(`validation_patterns.currency` + the `anchor.py:2753` strip-set) still looks right, but the claimed
+blast radius does not.
+
+**(1) The sign check never runs on a field that already carries a note — `validator.py:727`.**
+```python
+if not str(_td.get("validation_note") or "").strip():      # never erase an existing flag
+```
+Section 2's arithmetic reconcile runs FIRST and writes "the total doesn't add up against the line
+amounts — please check" onto the total. On #721/#722 — credit-note typed, total positive, i.e. the
+exact class slice C exists to catch — the sign arm is therefore skipped. VERIFIED: zero notes in the
+whole DB mention credit/sign/minus/negative, with the flag ON.
+Not a safety hole (the doc is still flagged and still blocked from auto-file and from File All Ready),
+but the operator is told the WRONG THING: "the arithmetic is off" when the defect is a missing minus.
+It also makes the flag look inert when it is merely pre-empted — do not conclude from a silent DB that
+slice C does not work.
+FIX DIRECTION (needs a ruling, do not just reorder): the note chain is single-valued, and "never erase
+an existing flag" is a deliberate, load-bearing property. Options: (a) let the sign note APPEND rather
+than replace (the pinned note-chain pattern used by D1's digit-disagreement note); (b) give the sign
+check precedence over the reconcile note specifically, on the grounds that a sign incoherence EXPLAINS
+the arithmetic failure and is the more actionable message; (c) leave the note, add the sign fact to the
+trace only. (b) is the most useful to the operator and the most invasive. Advisor + Oracle before build.
+
+**(2) The sign-blind reconcile now false-flags EVERY signed credit note.** All 17 correctly-signed
+totals above carry "the total doesn't add up against the line amounts — please check", conf capped 50.
+Mechanism: the reconcile compares a NEGATIVE total against a POSITIVE subtotal + tax, so a perfectly
+correct credit note never reconciles. This is precisely the hazard the 08-07 handover flagged for
+credit-note slice B, arriving EARLY through the taught path rather than through a signed-arithmetic
+change. It is pre-existing and unrelated to today's commits.
+Cost: every credit note routes to review with a spurious and misleading arithmetic note — directly
+against `feedback_minimal_interaction_autofile`, and worse than the pre-flag state where at least some
+credit notes auto-filed (wrongly, but quietly).
+FIX DIRECTION: magnitude reconciliation + a SEPARATE sign-coherence assertion — the same shape slice B
+already specifies (`parse_amount_signed()`, never changing `parse_amount` in place). Compare
+`abs(total)` against `abs(subtotal) + abs(tax)` and assert the sign separately, so a correct credit
+note reconciles on magnitude and only a genuine incoherence notes. GATE: the 22-doc Castellan batch
+(expect the 17 spurious notes to clear and the 2 keyword-path positives to note for the RIGHT reason)
+plus realdoc `armed==baseline`, and watch the invoice lanes for any new abstention.
+
+**Also seen in the same batch, not investigated:** #724 total reads `'—-1,455.12'` (an em-dash glued
+ahead of the minus — a read-layer debris class, not a sign bug); #715 is a `Castellan-Security_credit_note_*.pdf`
+typed **Invoice** with `heading_absent_reread` ON (already confirmed, so it may predate the flip —
+check before treating it as a heading-detection miss).
+
+**Repro (read-only, live DB `%APPDATA%\ScanFinder\docusnap.db`):** the three probes are in the session
+scratchpad — flags + issuer lineage, totals + notes across 705-726, and the type/note census that
+proves the sign arm never fired.
+
+---
+
 ## 2026-08-06 — Registration follow-ups after the Castellan incident (NOT BUILT; owner-raised + Oracle C5/C7)
 
 Context: the Castellan supplier corruption is FIXED by the shared vacuous-fit gate
