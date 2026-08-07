@@ -1065,8 +1065,25 @@ def extract_fields(ocr_text: str, field_keys: list[str],
             # Un-anchored + space-tolerant so a noisy real header (", p0-22954" / OCR-split "PO 22954")
             # still reads (contrast the anchored reference_code — the 2026-07-24 null regression). Fail
             # toward review: no code here -> try the next label, else the field stays empty for Review.
+            # REF_ROLE_DIGIT_GATE (reggie slice 1, 2026-08-07, DEFAULT OFF) — widen the ARMING, not
+            # the predicate. The gate above was armed by a hardcoded PAIR, so every other reference
+            # field on every type stayed ungated: delivery_number committed the caption 'Delivery'
+            # at conf 70, and the Pelican teach sample stored 'Your PO' and seeded Learning History
+            # with it. The ROLE is what makes a field a code-bearing reference, so arm by the role
+            # inference Stage 1 already trusts to seed a custom field's format gate. Newly armed
+            # here: credit_note_number, delivery_number, invoice_number, reference_number.
+            # RECALL MEASURED BEFORE BUILDING: across every CONFIRMED value of those fields on this
+            # install (713 rows), ZERO fail `\d\S*\d` — the widened gate throws away nothing real.
+            # EXPECT A THROUGHPUT CHANGE, NOT AN ACCURACY ONE: a document that used to commit a
+            # caption now arrives EMPTY and routes to review. That is the intended direction.
+            # STRICT SUBSET — PO_REF_DIGIT_GATE=0 still disables both tiers. OFF = byte-identical.
+            _digit_gate_armed = field_key in ('po_number', 'sales_order_number')
+            if (not _digit_gate_armed
+                    and os.environ.get('REF_ROLE_DIGIT_GATE', '0') != '0'
+                    and _infer_validation(field_key) == 'alphanumeric'):
+                _digit_gate_armed = True
             if (os.environ.get('PO_REF_DIGIT_GATE', '1') != '0'
-                    and field_key in ('po_number', 'sales_order_number')
+                    and _digit_gate_armed
                     and not re.search(r'\d\S*\d', value or '')):
                 continue
 
