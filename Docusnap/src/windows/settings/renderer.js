@@ -661,8 +661,13 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
 //  • pad-window code read — template_pad_window_code (label-less taught boxes) +
 //    template_pad_window_code_labelled (labelled ones; a STRICT SUBSET that the bridge
 //    ignores unless the parent is also on).
+//  • VAT registration vs VAT amount — vat_reg_not_amount + net_misread_total_flag. Paired because
+//    removing the phantom tax also disarms the "total looks like the subtotal" note (that arm needs
+//    a tax to be present), so a net-as-gross total would lose a TRUE flag. Measured over 288 docs:
+//    false alarms 39 -> 0; true flags 16 -> 12 alone, 15 when paired, with zero false flags added.
 for (const [id, keys] of [['template-fixed-supplier-toggle', ['template_fixed_near_match', 'template_fixed_fragment']],
-                          ['pad-window-code-toggle', ['template_pad_window_code', 'template_pad_window_code_labelled']]]) {
+                          ['pad-window-code-toggle', ['template_pad_window_code', 'template_pad_window_code_labelled']],
+                          ['vat-reg-toggle', ['vat_reg_not_amount', 'net_misread_total_flag']]]) {
   (async () => {
     try {
       const v = await api.getSetting(keys[0]);

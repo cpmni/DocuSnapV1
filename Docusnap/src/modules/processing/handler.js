@@ -233,6 +233,25 @@ function _reconcileEnv(db) {
     // thing standing between a credit note and a sign-inverted filing.
     // Default OFF, byte-identical off. App RESTART to load the bridge.
     if (learning.getSetting(db, 'credit_sign_coherence', 'false') === 'true') env.CREDIT_SIGN_COHERENCE = '1';
+    // VAT REGISTRATION NUMBER read as a TAX AMOUNT (Oracle 2026-08-07, gate green). A letterhead
+    // prints "... VAT Reg GB 651 0027 84"; the bare "VAT" label matches it, the scan is top-down, and
+    // number_format rule 3 mints "651 0027 84" into "651 0027.84" (a UK VAT number is grouped 3-4-2,
+    // so its last group is always two digits) — which then passes currency validation. Measured: an
+    // identical '0027.84' on all 13 documents of one supplier, poisoning subtotal+tax so ~12 CORRECT
+    // documents carried "the total doesn't add up" and were capped at conf 50.
+    //
+    // FLIP ORDER IS BLOCKING: credit_sign_coherence must be ON first. The poisoned-VAT note is the
+    // accidental checkpoint currently holding the sign-wrong credit notes; clearing it with the sign
+    // detector off would recreate the 2026-08-06 incident (a credit filed as a charge).
+    //
+    // PAIRED WITH net_misread_total_flag ON PURPOSE. Removing the phantom tax also disarms the
+    // "total looks like the subtotal (tax not included)" arm, which needs a tax to be present — so a
+    // NET-as-gross total would lose a TRUE flag. Measured over 288 corpus docs: false alarms 39 -> 0,
+    // true flags 16 -> 12 with the guard alone, restored to 15 by the net flag, which adds ZERO false
+    // flags. Flip them together; flipping vat_reg alone trades false alarms for four silent wrong
+    // totals. App RESTART to load the bridge.
+    if (learning.getSetting(db, 'vat_reg_not_amount', 'false') === 'true') env.VAT_REG_NOT_AMOUNT = '1';
+    if (learning.getSetting(db, 'net_misread_total_flag', 'false') === 'true') env.NET_MISREAD_TOTAL_FLAG = '1';
     return env;
   } catch { return {}; }
 }

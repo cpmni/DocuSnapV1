@@ -755,6 +755,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Don't mistake a VAT registration number for a VAT amount</div>
+                <div class="threshold-sub">Most letterheads print a VAT registration number (“VAT Reg GB 651 0027 84”). ScanFinder could read those digits as the VAT amount, which then made the totals look like they didn't add up — so documents that were perfectly correct came to you saying “please check”, with nothing wrong to find. This tells the two apart and reads the real VAT line further down instead. It also flags a total that looks like a part-total, so a net figure filed as the grand total is still caught. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="vat-reg-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Read small reference/date print more clearly</div>
                 <div class="threshold-sub">Enlarges a tightly-cropped reference or date before reading it and drops an over-sharpen step, so small print (e.g. “PO-17039” misread as “»0-17039”) reads correctly. Only helps where it can, never changes a read it can't improve. Off by default.</div>
               </div>
