@@ -59,6 +59,15 @@ read sites actually lose the sign on a mixed taught/untaught set; the shared-con
 (`validation_patterns.currency` + the `anchor.py:2753` strip-set) still looks right, but the claimed
 blast radius does not.
 
+**(1) — PARTLY RESOLVED 2026-08-07 by the VAT-reg fix (`d575668`), for this class only.** With the
+phantom tax gone the arithmetic note no longer fires on these documents, so the sign arm reaches
+them: live `#722` (+1,566.12) now carries "this looks like a credit note but the total is positive"
+instead of the misleading arithmetic note. **The underlying pre-emption is NOT fixed** — the
+single-valued note chain and the `validator.py:727` guard are unchanged, so any OTHER note arriving
+first still silences the sign check. `2a1ae7d` added a targeted precedence rule for ONE new
+pre-empter (the net-misread note, Oracle C1 — it abstains when the sign arm would speak); every
+other writer is untouched. Keep this entry open: the general fix is still a ruling on the note chain.
+
 **(1) The sign check never runs on a field that already carries a note — `validator.py:727`.**
 ```python
 if not str(_td.get("validation_note") or "").strip():      # never erase an existing flag
@@ -77,6 +86,19 @@ than replace (the pinned note-chain pattern used by D1's digit-disagreement note
 check precedence over the reconcile note specifically, on the grounds that a sign incoherence EXPLAINS
 the arithmetic failure and is the more actionable message; (c) leave the note, add the sign fact to the
 trace only. (b) is the most useful to the operator and the most invasive. Advisor + Oracle before build.
+
+**(2) — SHIPPED DARK 2026-08-07, gate green, awaiting the owner flip.** `VAT_REG_NOT_AMOUNT`
+(`d575668`) + bridge/paired toggle (`60606d9`) + Oracle's two blocking conditions (`2a1ae7d`).
+Paired with `NET_MISREAD_TOTAL_FLAG` behind ONE Settings row, because removing the phantom tax also
+disarms `validator.py:673` (which needs a tax present) and a net-as-gross total would lose a TRUE
+flag. Measured as production runs it: **false alarms 39 -> 0, true flags 16 -> 26**. Full reasoning,
+both Oracle rounds and every gate number: `docs/oracle_log.md` 2026-08-07.
+**Named residual (nothing owns it today):** `Harrowgate-Timber_quote_0046.pdf`, total `L922.14` — an
+OCR garble that loses its (accidental) flag. Its owner, the format-fail-yield slice, is DARK, and
+`trust.js:486-495` routes currency to `_currencyDpConsistent` ONLY — which `L922.14` passes —
+without ever consulting `_currencyish`. The right-layer fix is one line (require `_currencyish(v)`
+before the dp check; it can only ever BLOCK, never file more), separate change, own gate.
+The original diagnosis is kept below because the mechanism is the reusable part.
 
 **(2) The "doesn't add up" flags are a VAT REGISTRATION NUMBER read as a TAX AMOUNT — not a sign
 problem at all.** CORRECTED 2026-08-07 after measuring the components; the first version of this entry

@@ -1103,3 +1103,76 @@ Customer: *"I would not trust it with credit notes."* Owner also reported "two n
   killed a "signed arithmetic" change that would have been a net safety loss (Seam 4), and identified
   that the one guard the design leaned on was sign-blind (Seam 1). gary separately caught the Stage-1
   read site and the File-All-Ready gating, either of which alone would have made the fix half-right.
+
+## 2026-08-07 — VAT registration number read as a TAX AMOUNT (`VAT_REG_NOT_AMOUNT`), paired with `NET_MISREAD_TOTAL_FLAG`
+
+**Consensus in (reggie + gary, independently):** a letterhead's VAT registration number is being
+committed as `vat_tax`. Both reached the same layer — an occurrence-level skip in
+`_search_for_label`, evaluated on the RAW tail — and both independently insisted the predicate be
+FORM-based rather than keyword-based, because one shipped letterhead variant prints a bare
+`VAT GB 774 2093 55` with no `Reg`/`No` token and a keyword-keyed guard would miss it SILENTLY.
+
+**The mechanism (traced, agreed by all three):** the bare `"VAT"` label matches the letterhead; the
+scan is TOP-DOWN and returns the first accepted occurrence, so the letterhead beats the real
+`VAT @ 20%` line below; then `number_format.normalise_currency_spacing` rule 3 ("trailing 2-digit
+decimal with the point dropped", for `5,767 71`) MINTS a decimal, because a UK VRN is grouped 3-4-2
+and its final group is ALWAYS two digits at end-of-segment: `651 0027 84` -> `651 0027.84`. Only
+then does it pass currency validation, and `_clean_value` returns just the match — destroying the
+`Reg GB 651` context that would have condemned it. Measured: an identical `0027.84` on all 13
+documents of one supplier, conf 90, the only `vat_tax` value in the live DB, poisoning
+`subtotal + tax` so ~12 CORRECT documents carried "the total doesn't add up" at conf 50.
+
+**Round 1 verdict: SIGN OFF WITH CONDITIONS** (C1 ordering, C2 role-arming, C3 raw-tail evaluation,
+C4 legs, C5 trace, C6 leave `number_format` rule 3 alone, C7 defer A2).
+- Ruled the arming FORK **for reggie** (`pk == 'vat_tax'`), against gary's `val_type == 'currency'`:
+  arming on the class would also arm the TOTAL, where a genuine OCR-split large amount
+  (`Total  1 234 567 89`) trips the grouping leg and the money veto may not survive OCR.
+- Caught that the banner letterhead poisons with the bare fragment **`774`**, not `2093.55` — a test
+  written against the `0027.84` shape alone would pass while that class still fired.
+- Corrected the brief's "the unlock is at100-only": it is bulk **File All Ready**
+  (`renderer.js:4471`), the mechanism of the 08-06 incident.
+- Added two predicate legs (>=9 digits counted UNGROUPED; a single unbroken >=9-digit run).
+
+**Round 2 (the pairing) verdict: SIGN OFF WITH CONDITIONS — one BLOCKING.** The gate surfaced that
+A1 alone costs 4 TRUE flags: removing the phantom tax disarms `validator.py:673` ("the total looks
+like the subtotal"), which requires a tax to be PRESENT, so a NET-as-gross total loses its flag.
+Proposed pairing with the already-built `NET_MISREAD_TOTAL_FLAG`.
+- **C1 (BLOCKING) — a SIGN incoherence outranks a MAGNITUDE one.** `_flag_net_misread_total` runs
+  BEFORE Stage 4 and `validator.py:727` refuses to overwrite an existing note, so a net-misread note
+  PRE-EMPTS the credit-sign note. `_net_misread_verdict` is sign-BLIND (`parse_amount` drops the
+  minus) and a credit note whose taught total box sits on the net row satisfies `total ≈ subtotal`
+  with a larger candidate — exactly the net flag's target layout. The note would have read "a larger
+  total (£Y) was also found; please check which is the real total", said nothing about the sign, and
+  quoted a sign-stripped £Y — so the likeliest operator action files a credit note as a LARGER
+  POSITIVE charge. **Confirmed on live data by the G4 census: the net flag DID decide to flag #722
+  (a credit note reading +1,566.12) and C1 is what stops it.** Fixed by threading `credit_expected`
+  into the helper and abstaining when the credit-sign arm would speak.
+- **C2 — co-residency, not flip ORDER.** `credit_sign_coherence` must be ON *whenever*
+  `vat_reg_not_amount` is, at every point in time; the two sit on separate Settings rows, so an
+  operator could switch the sign detector off later and silently recreate the incident. Arming the
+  guard now FORCES `CREDIT_SIGN_COHERENCE` for the run.
+- Also flagged a state the instruments could not see (`validator.py:695` writes its note with no
+  existing-note guard, so the reconcile note can silently clobber a net note — the doc stays flagged
+  either way while the better note degrades). Census run: 1 decided, 1 survived, no clobber.
+- On the residual `L922.14`: traced `trust.js` and found currency routes to `_currencyDpConsistent`
+  only, which `L922.14` PASSES, and `_currencyish` is never consulted — so the safety net I assumed
+  does not exist and its named owner (format-fail-yield) is dark. Recorded as a named residual.
+
+**GATES (all green).** Unit pins end-to-end incl. the banner form, with the OFF path pinned to still
+reproduce the bug · corpus 288 docs zero T->F, zero values moved on any lane, `vat_no` untouched
+(the arming proof) · **0 new `reconcile_pick`** on corpus AND Castellan (the SEAM-B blocker) ·
+realdoc **byte-identical** to baseline with BOTH flags armed (n=699) · Castellan 21 docs: 19 fires,
+16 notes cleared, 0 gained, 0 totals changed, supplier column unchanged · G4 survival census clean ·
+precedence pin verified to FAIL 3/3 on the pre-C1 build.
+**Measured as production will run it** (C2 forces the sign detector on): false alarms **39 -> 0**,
+true flags **16 -> 26** — the 11 extra being credit notes whose sign is lost, which the corpus scorer
+counts as CORRECT because `normMoney` strips the minus (the known instrument defect; the additive
+sign census proves the flags right and the score blind).
+
+**Added value? YES — decisively, twice.** Round 1 ruled a fork on evidence and killed a test that
+would have greened while a whole class still fired. Round 2 caught a BLOCKING seam that would have
+had the software recommend filing a credit note as a larger positive charge — the exact 08-06
+incident, re-opened by the fix meant to help. Neither advisor saw it (reggie was in `keyword.py`,
+gary in the consumers; the interaction lives in `validator.py:727`, in neither slice).
+**Commits:** `d575668` (guard) · `60606d9` (bridge + paired toggle) · `2a1ae7d` (C1 + C2 + pin).
+All default OFF pending the owner flip.
