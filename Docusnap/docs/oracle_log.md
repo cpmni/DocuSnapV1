@@ -1044,3 +1044,62 @@ System:`, **`tastellan Security Systems` @95 SILENT**, and `ba)`.
   keep-vs-snap rationale to the one that actually holds; and forced a second guard without which the
   batch would have stalled one document short.
 - Both switches default OFF, bridged in `handler.js _reconcileEnv`; **owner flips.**
+
+## 2026-08-07 — CREDIT-NOTE MINUS SIGN (release-blocking, financial safety) — SIGN OFF WITH CONDITIONS
+**Incident:** 16/16 credit notes filed with the sign gone (`TOTAL £-160.32` -> `160.32`, a £160.32 credit
+becoming a £160.32 charge). THREE carried no warning ("High · 85%", "Nothing was flagged") and bulk
+"File All Ready" wrote them to disk; the app then invited the user to LOWER the auto-file threshold.
+Customer: *"I would not trust it with credit notes."* Owner also reported "two negatives sum positive".
+- **ROOT CAUSE:** the app has no representation of a SIGNED money value — one unstated axiom ("money is
+  a non-negative magnitude") encoded twice in separately-maintained regexes. Sign destroyed at READ at
+  TWO sites sharing ONE artefact: `anchor.py:2751-2753` (`re.search` span starts at the digits, and
+  `.strip(" -:;,")` strips hyphens anyway) and **`keyword.py:1647-1651`** (the Stage-1 twin, ~60-70% of
+  fields — **I missed this; gary caught it**, and it is why the fix belongs in the shared CONFIG
+  pattern, not in `anchor.py`). Independently at `validator.py:307` `CURRENCY_RE`.
+- **The owner's "two negatives" symptom IS the parse defect, not an accumulation bug** — measured
+  `parse_amount('-100.00') + parse_amount('-60.32') = +160.32`. The values are magnitudes before any
+  addition; there is no double-negation, no abs(), no concatenation.
+- **WHY 13 FLAGGED / 3 SILENT:** `total_reconciles` opens `total > 0 and subtotal > 0` — structurally
+  incapable of seeing a sign inversion. The three escaped through three UNRELATED arms: no subtotal
+  captured; delta 1.12 inside a 3.21 tolerance -> `reconciles=True` = **it AFFIRMED the sign-wrong
+  value**; tax and shipping both absent -> NEUTRAL. So the 13 were flagged BY LUCK and the silent rate
+  is "3/16 today, unbounded tomorrow" (capture a subtotal next scan and a silent one reconciles).
+- **gary's correction that reshaped the design (I had told the owner the opposite; verified):**
+  File All Ready **DOES** gate on notes (`renderer.js:4471` `isFlagged`), as does backend auto-file
+  (`trust.js:466`, any noted field -> `{ok:false}`). So this is a **DETECTION bug only** — one note buys
+  all three protections and NO new gate is needed. Design collapsed from "three gates" to "mint a note".
+- **ORACLE'S SEAMS, both of which would have silently defeated the fix:**
+  * **SEAM 1** — `text_normalise._EDGE_RE` strips edge non-alphanumerics, so
+    `normalise_for_tokens('-160.32') == '160.32'`. **Every shared comparator in the pipeline is
+    sign-blind**; a sign check built on one would be a dead guard that greens every test. VERIFIED and
+    now PINNED. (Do NOT "fix" `_EDGE_RE` — byte-mirrored in JS and asserted by a golden corpus.)
+  * **SEAM 3** — a bare `-?` in the shared pattern MANUFACTURES a new class: `TOTAL-------160.32` and
+    `Total-160.32` capture `-160.32`, inverting a CHARGE into a CREDIT. VERIFIED. Requires a
+    left-boundary lookbehind. This is the strongest argument for shipping detection BEFORE the read fix.
+  * **SEAM 4** — a naive signed `parse_amount` is a NET SAFETY LOSS: `tol = max(total*0.02, 0.05)`
+    collapses to 5p on negatives, `total < subtotal - tol` then fires on every well-formed credit note,
+    and `- discount` double-negates. B must be MAGNITUDE reconciliation + a separate sign assertion.
+- **HARNESS FINDING (mine): this bug was UNCATCHABLE by the gate.** `customer_corpus_score.js`
+  `normMoney` strips `-` via `[^0-9.]`, so the total lane compares MAGNITUDES, while the generator emits
+  SIGNED credit-note GT (`gen_customer_test.py:642`). Measured: **17 of 36 corpus credit notes have the
+  sign lost and score as CORRECT.** That is a THIRD sign-blind comparator (after `_EDGE_RE` and
+  `CURRENCY_RE`). Added an ADDITIVE sign census; the score and pass/fail criteria deliberately
+  UNCHANGED (altering acceptance criteria is the owner's call).
+- **SHIPPED: slice C (detection) only, `CREDIT_SIGN_COHERENCE`, default OFF** (`60f0eca`). Pure predicate,
+  3 arms, never negates/swaps; type is evidence about the EXPECTATION, never the VALUE (owner's explicit
+  instruction). Type resolved via display name + ALIASES, never an internal slug. **GATES:** 33 pins ·
+  Customer corpus 288 docs 0 doc-level T->F, **0 false alarms on invoice-typed docs** · **realdoc n=695
+  IDENTICAL to the pre-flag baseline** · money-adjacent suites pass.
+- **NOT BUILT (designed + vetted):** A (preserve the sign at read — shared config pattern + the
+  `anchor.py` strip-set, ASCII-only, adjacency-strict, leading-sign-only) and B (`parse_amount_signed`,
+  never changing `parse_amount` in place). **Oracle: C-only is a correct hotfix state and an
+  unacceptable end state** — the user hand-types a minus on every credit note until A lands, so A is a
+  committed follow-on, not an option. Owner-decision items recorded: the review-burden trade-off (C
+  contradicts `feedback_minimal_interaction_autofile`), remediation of the 16 already-filed documents
+  (wrong XML on disk, and their confirmed values are the poison that will make A's signed reads
+  shape-mismatch), and suppressing the "lower the auto-file bar" nudge on a batch containing a currency
+  note.
+- **Added value? YES, decisively.** Killed a fix that would have inverted charges into credits (Seam 3),
+  killed a "signed arithmetic" change that would have been a net safety loss (Seam 4), and identified
+  that the one guard the design leaned on was sign-blind (Seam 1). gary separately caught the Stage-1
+  read site and the File-All-Ready gating, either of which alone would have made the fix half-right.
