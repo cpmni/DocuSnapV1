@@ -741,6 +741,20 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Trust a template's saved sender name over a misread letterhead</div>
+                <div class="threshold-sub">When you save a template you tell ScanFinder who the sender is. If the letterhead on a later scan reads badly — a stray mark turning “Castellan Security Systems” into “tastellan Security Systems”, or into a scrap like “an:” — that misreading can currently replace the name you saved, filing the document under the wrong sender. This keeps your saved name when the reading is clearly the same name misread, or is too short to be a company name at all. A genuinely different company still wins, so re-teaching a template still works. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="template-fixed-supplier-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Take a wider second look when a taught box clips a reference code</div>
+                <div class="threshold-sub">When a taught reading spot is drawn slightly too tight for its code, the first characters can be cut off (“PO-48009” read as “-48009”). ScanFinder re-reads the same spot a little wider and either recovers the full code or flags the disagreement for a quick check. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="pad-window-code-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Read small reference/date print more clearly</div>
                 <div class="threshold-sub">Enlarges a tightly-cropped reference or date before reading it and drops an over-sharpen step, so small print (e.g. “PO-17039” misread as “»0-17039”) reads correctly. Only helps where it can, never changes a read it can't improve. Off by default.</div>
               </div>

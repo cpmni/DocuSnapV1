@@ -652,6 +652,29 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
   });
 }
 
+// ── Fix families where ONE owner-facing switch drives TWO stored settings. Each pair is
+// always flipped together (the second is meaningless alone), so the UI shows one row and
+// writes both keys. Read state from the FIRST key; both default OFF.
+//  • curated sender name  — template_fixed_near_match (same name, misread) +
+//    template_fixed_fragment (debris too short to be a company name). Both decline a bad
+//    letterhead read in favour of the template's saved value.
+//  • pad-window code read — template_pad_window_code (label-less taught boxes) +
+//    template_pad_window_code_labelled (labelled ones; a STRICT SUBSET that the bridge
+//    ignores unless the parent is also on).
+for (const [id, keys] of [['template-fixed-supplier-toggle', ['template_fixed_near_match', 'template_fixed_fragment']],
+                          ['pad-window-code-toggle', ['template_pad_window_code', 'template_pad_window_code_labelled']]]) {
+  (async () => {
+    try {
+      const v = await api.getSetting(keys[0]);
+      document.getElementById(id).checked = (v === 'true');   // unset → off
+    } catch { document.getElementById(id).checked = false; }
+  })();
+  document.getElementById(id).addEventListener('change', async (e) => {
+    const val = e.target.checked ? 'true' : 'false';
+    for (const k of keys) await api.setSetting(k, val);
+  });
+}
+
 // ── Read small reference/date print more clearly (STRUCT_CODE_READ, default OFF) ──
 (async () => {
   try {
