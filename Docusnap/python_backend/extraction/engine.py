@@ -4653,6 +4653,7 @@ class ExtractionEngine:
                 pinned_supplier: str | None = None,   # operator "Resolve" pin — overrides logo/template (Part B)
                 known_template_id: int | None = None,
                 pinned_template_id: int | None = None,
+                credit_expected: bool | None = None,   # tri-state: does this doc TYPE expect a negative total?
                 trace = None,
                 slice_dir = None,
                 page_text_lines: list | None = None,
@@ -6357,7 +6358,8 @@ class ExtractionEngine:
         self._t('stage_start', stage='4_validate')
         _pre_val = self._snap(results)
         results = validator.validate_and_adjust(
-            results, field_defs, trace=(self._t if self._trace else None))
+            results, field_defs, trace=(self._t if self._trace else None),
+            credit_expected=credit_expected)
 
         # ── Field cleanup rules (operator-taught, Review right-click toolkit) ──
         # Strip a learned leaked heading/column from a field's WINNER value

@@ -45,6 +45,16 @@ const templates = require(path.join(REPO, 'database', 'modules', 'templates.js')
 const w = (tag, d) => { const f = path.join(os.tmpdir(), `ccs_${tag}_${Math.random().toString(36).slice(2)}.json`); fs.writeFileSync(f, JSON.stringify(d)); return f; };
 const normRef = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const normMoney = s => { const v = parseFloat(String(s || '').replace(/[^0-9.]/g, '')); return isNaN(v) ? null : v.toFixed(2); };
+// SIGN CENSUS (2026-08-07, additive — the score above is DELIBERATELY unchanged).
+// `normMoney` strips '-' via [^0-9.], so the total lane compares MAGNITUDES and is structurally
+// blind to a sign inversion. That is why the credit-note minus-sign incident (16/16 totals filed
+// as positive, 3 of them silently) could never have been caught by this harness: the generator
+// emits SIGNED credit-note totals as ground truth (`gen_customer_test.py:642`
+// `sign = -1 if dtype == "credit_note" else 1`) yet a positive read scores CORRECT.
+// This reports the sign agreement as a SEPARATE metric so the class is visible. It does not change
+// the pass/fail criteria — changing those is the owner's call, not the harness's.
+const moneySign = s => { const t = String(s || '').trim(); if (!t) return null;
+  return (/^\(.*\)$/.test(t) || /^\s*[£$€¥]?\s*-/.test(t)) ? -1 : 1; };
 const normDate = s => String(s || '').replace(/[^0-9]/g, '');
 const normName = s => String(s || '').toLowerCase().normalize('NFKC').replace(/[^a-z0-9]+/g, ' ').trim();
 
@@ -302,6 +312,8 @@ async function main() {
     // (a false-flag = total matched GT yet carries the net-misread note; a catch = total wrong + note).
     { const te = (m.extractions || {}).total_amount || {};
       row.total_got  = exVal(m, 'total_amount') || m.total_amount || '';
+      row.total_sign_got = moneySign(row.total_got);
+      row.total_sign_gt  = moneySign(e.total);
       row.total_note = te.validation_note || null; }
     row.methods = {};
     // AUTO-FILE DELTA CENSUS input (Oracle gate (a), 2026-08-06): per-lane CONFIDENCE and

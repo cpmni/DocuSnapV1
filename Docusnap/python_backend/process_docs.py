@@ -553,6 +553,11 @@ def main():
                     if al:
                         type_aliases[dt["name"]] = al
             type_detection = engine.detect_document_type(ocr_text, known_type_names, type_aliases or None)
+            # CREDIT-NOTE SIGN COHERENCE (2026-08-07): does this document TYPE expect a NEGATIVE
+            # total? Resolved HERE because this is the only place the type's "Also appears as"
+            # ALIASES are available — CLAUDE.md: a custom doc type is identified by its aliases,
+            # never its arbitrary internal name (a user may name a type 'CN' and alias it
+            # 'Credit Note'). Tri-state; None simply means the sign arms abstain.
             document_type  = type_detection["type"] if type_detection else None
             type_conf      = type_detection["confidence"] if type_detection else 0
 
@@ -927,6 +932,8 @@ def main():
                 document_slug = doc_slug,
                 detected_slug = detected_slug,
                 title_trusted = title_trusted,
+                credit_expected = _validator.type_expects_credit(
+                    document_type, (type_aliases or {}).get(document_type)),
                 ref_field_key = _ref_key,
                 date_field_key = _date_key,
                 supplier_name = None,
