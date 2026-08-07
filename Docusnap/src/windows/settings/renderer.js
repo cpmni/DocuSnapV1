@@ -639,7 +639,8 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          ['date-invalid-yield-toggle', 'template_date_invalid_yield'],
                          ['date-future-yield-toggle', 'template_date_future_yield'],
                          ['pad-window-read-toggle', 'template_pad_window_read'],
-                         ['heading-absent-reread-toggle', 'heading_absent_reread']]) {
+                         ['heading-absent-reread-toggle', 'heading_absent_reread'],
+                         ['credit-sign-toggle', 'credit_sign_coherence']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);

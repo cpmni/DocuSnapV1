@@ -222,6 +222,17 @@ function _reconcileEnv(db) {
       env.HEADING_TITLE_GAP_COLLAPSE = '1';
       env.REPROCESS_HEADING_GEOM = '1';
     }
+    // CREDIT-NOTE SIGN COHERENCE (Oracle 2026-08-07, slice C — DETECTION only). The app has no
+    // representation of a signed money value: the readers strip a leading '-' at BOTH sites
+    // (anchor.py + keyword.py), so a -£160.32 CREDIT commits as a +£160.32 CHARGE and files silently.
+    // This flag adds a pure note-only predicate (validator.credit_sign_note) — it NEVER negates or
+    // swaps a value; it flags the incoherence so the doc routes to Review (trust.js:466 blocks
+    // auto-file on any noted field) and the operator types the minus. Arms: a credit-typed doc read
+    // POSITIVE, an invoice-typed doc read NEGATIVE, and a negative marker in the RAW text the reader
+    // did not commit. Slice A (preserve the sign at READ) is NOT built — until it is, this is the only
+    // thing standing between a credit note and a sign-inverted filing.
+    // Default OFF, byte-identical off. App RESTART to load the bridge.
+    if (learning.getSetting(db, 'credit_sign_coherence', 'false') === 'true') env.CREDIT_SIGN_COHERENCE = '1';
     return env;
   } catch { return {}; }
 }
