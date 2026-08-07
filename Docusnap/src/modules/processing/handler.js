@@ -250,7 +250,15 @@ function _reconcileEnv(db) {
     // true flags 16 -> 12 with the guard alone, restored to 15 by the net flag, which adds ZERO false
     // flags. Flip them together; flipping vat_reg alone trades false alarms for four silent wrong
     // totals. App RESTART to load the bridge.
-    if (learning.getSetting(db, 'vat_reg_not_amount', 'false') === 'true') env.VAT_REG_NOT_AMOUNT = '1';
+    // ORACLE C2 (BLOCKING): this is a CO-RESIDENCY condition, not merely a flip ORDER — the sign
+    // detector must be on WHENEVER this guard is, at every point in time. The two sit on separate
+    // Settings rows, so an operator could switch credit-sign off next month and silently recreate
+    // the incident. Arming this guard therefore FORCES the sign detector on for the run rather than
+    // trusting the rows to stay in step.
+    if (learning.getSetting(db, 'vat_reg_not_amount', 'false') === 'true') {
+      env.VAT_REG_NOT_AMOUNT = '1';
+      env.CREDIT_SIGN_COHERENCE = '1';
+    }
     if (learning.getSetting(db, 'net_misread_total_flag', 'false') === 'true') env.NET_MISREAD_TOTAL_FLAG = '1';
     return env;
   } catch { return {}; }

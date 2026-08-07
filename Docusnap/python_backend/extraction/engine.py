@@ -4485,7 +4485,7 @@ class ExtractionEngine:
         except Exception:
             pass  # reconciliation aid — must never break extraction
 
-    def _flag_net_misread_total(self, results, field_defs):
+    def _flag_net_misread_total(self, results, field_defs, credit_expected=None):
         """FLAG (never swap) a `total_amount` that looks like the NET/subtotal line while a distinct
         larger VAT-plausible total was ALSO read — cap confidence to review level + a note so it cannot
         silently auto-file. DEFAULT OFF (NET_MISREAD_TOTAL_FLAG) → byte-identical. Runs AFTER
@@ -4507,6 +4507,28 @@ class ExtractionEngine:
             inc = results[total_key]
             if inc.get('validation_note'):
                 return   # already flagged (e.g. a pick_total swap / garble note) — never double-cap
+            # ORACLE C1 (2026-08-07, BLOCKING) — a SIGN incoherence outranks a MAGNITUDE one.
+            # validator.py:727 refuses to overwrite an existing note, and this helper runs BEFORE
+            # Stage 4, so a net-misread note here would PRE-EMPT the credit-sign note entirely. That
+            # is not a cosmetic ordering issue: `_net_misread_verdict` is sign-BLIND (parse_amount's
+            # CURRENCY_RE drops the minus), and a credit note whose taught total box sits on the net
+            # row satisfies total≈subtotal with a larger candidate — exactly this helper's target
+            # layout. The note would then read "a larger total (£Y) was also found; please check
+            # which is the real total", say nothing about the sign, and quote a sign-stripped £Y —
+            # so the likeliest operator action files a credit note as a LARGER POSITIVE charge. That
+            # is the 2026-08-06 incident with the software recommending it.
+            # Abstain and let the credit-sign arm speak. The magnitude question survives: the value
+            # is unchanged and the doc is still routed to review by the sign note.
+            if credit_expected is not None:
+                try:
+                    from extraction import validator as _cv
+                    if _cv._CREDIT_SIGN_ON and _cv.credit_sign_note(
+                            inc.get('value'), inc.get('raw_value'), credit_expected):
+                        self._t('net_misread_flag', field=total_key, decision='skip',
+                                reason='credit-sign note takes precedence (Oracle C1)')
+                        return
+                except Exception:
+                    pass        # best-effort: never let the precedence check break extraction
             total = _v.parse_amount(inc.get('value'))
             sub = None
             for k in ('subtotal', *keyword.ROLE_KEY_ALIASES.get('subtotal', ())):
@@ -6352,7 +6374,7 @@ class ExtractionEngine:
         # A taught total that landed on the NET row (variable line-count credit note) can commit the
         # net silently when VAT didn't read (both reconcile safeties above starve). FLAG it — never
         # swap — when total≈subtotal AND a larger VAT-plausible total was also read. DEFAULT OFF.
-        self._flag_net_misread_total(results, field_defs)
+        self._flag_net_misread_total(results, field_defs, credit_expected)
 
         # ── Stage 4: Validation ───────────────────────────────────────────────
         self.log("  Stage 4: validating…")
