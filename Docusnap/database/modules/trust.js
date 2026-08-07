@@ -286,6 +286,26 @@ function _nonRoleLenientEnabled() {
   return process.env.TRUST_NONROLE_SHAPE_LENIENT !== '0';
 }
 
+// TRUST_SHADOW_ROW_SKIP (gary design, 2026-08-07) — the SHADOW-ROW AUTO-FILE DEADLOCK.
+// `_shadow_reconcile_components` (engine.py:2802) writes extraction rows with
+// extraction_method='shadow_reconcile' purely to back the "totals add up" check. Those rows are
+// INVISIBLE in Review (review/renderer.js:2313 skips them), EXCLUDED from learning
+// (learning.js:1237), DELETED at confirm (foreignFields.dropForeignExtractions) and are not filing
+// inputs — but docTrustGate judged filability on them anyway. For a shadow row on a field this type
+// does not define, `fmts.get()` is always undefined, so the gate returns
+// `unverifiable-value:<field>` and the document can NEVER auto-file while the operator can never
+// see, let alone clear, the row that blocked it. SEALED TWICE. Live proof: three documents at
+// conf 97 on a graduated scope (floor 95), no note, reason `unverifiable-value:subtotal`.
+// The `at100` arm already ignores such rows (see the at100 branch below) — internal precedent.
+// SKIP ONLY when the row is genuinely inert: shadow method AND not a defined field of this type AND
+// not a structural role key. Fail-OPEN: a type carrying no field metadata skips nothing.
+// PLACED AFTER the validation_note check, so a FLAGGED shadow row still blocks — the note is real
+// information about the page even when the row itself is invisible.
+// Default OFF; OFF = byte-identical.
+function _shadowRowSkipEnabled() {
+  return process.env.TRUST_SHADOW_ROW_SKIP === '1';
+}
+
 const _DOMINANT_MIN_SAMPLES = 5;
 const _DOMINANT_MIN_SHARE   = 0.75;
 function _dominantStructuredClass(sampleValues) {
@@ -439,8 +459,11 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
     db.prepare('SELECT key, type FROM fields WHERE document_type_id = ?').all(doc.document_type_id)
       .map(r => [r.key, r.type])
   );
+  // extraction_method is selected for the SHADOW-ROW skip below. It is also the field the two
+  // harness overlays (stress_test/realdoc_regression.js, services/sweepPredicate.js) were missing,
+  // which would have made the gate for that skip VACUOUSLY GREEN — they now thread it too.
   const exs = opts.extractions || db.prepare(
-    'SELECT field_key, display_value, raw_value, validation_note FROM extractions WHERE document_id = ?'
+    'SELECT field_key, display_value, raw_value, validation_note, extraction_method FROM extractions WHERE document_id = ?'
   ).all(docId);
 
   // STRUCTURAL ROLE keys — the issuer plus the type's ref/date roles. These decide the folder path
@@ -465,6 +488,17 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
     if (!v) continue;                                                    // empty → safe
     if (e.validation_note && String(e.validation_note).trim())           // any flag → not safe
       return { ok: false, reason: `flagged:${e.field_key}` };
+    // SHADOW-ROW SKIP (see _shadowRowSkipEnabled). Deliberately AFTER the note check above: a
+    // flagged shadow row still blocks. A row that is VISIBLE to the operator — a defined field of
+    // this type, or a structural role — is never skipped, whatever its method, which preserves the
+    // 2026-07-22 foreignFields condition that a visible foreign row must still block.
+    if (_shadowRowSkipEnabled()
+        && String(e.extraction_method || '') === 'shadow_reconcile'
+        && fieldTypes.size > 0                                           // fail-open on no metadata
+        && !fieldTypes.has(e.field_key)
+        && !roleKeys.has(e.field_key)) {
+      continue;
+    }
     const _t = String(fieldTypes.get(e.field_key) || '').toLowerCase();
     if (STRICT_TYPES.has(_t)) {
       // Defence-in-depth for strict types (reggie T1/T2/T3/T5): don't trust note-absence alone —
@@ -721,6 +755,7 @@ module.exports = {
   classifyLearnedShape, valueMatchesShape, fieldVerifiable,
   _dominantStructuredClass,        // exported for the contaminated-history pin (test_scope_trust.js §18b)
   _nonRoleLenientEnabled,          // single source of the default, so tests can't drift from it
+  _shadowRowSkipEnabled,           // ditto for the shadow-row skip (TRUST_SHADOW_ROW_SKIP)
   validDate: _validDate, validIban: _validIban, validVatGb: _validVatGb,
   currencyDpConsistent: _currencyDpConsistent, currencyConsistentForField: _currencyConsistentForField, matchesTypePattern: _matchesTypePattern,
   scopeTrust, docTrustGate, isAutoFileEligible, autoFileEligibleIds,

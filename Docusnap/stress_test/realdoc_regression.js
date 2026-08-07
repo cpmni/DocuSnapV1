@@ -191,11 +191,15 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
     const detId = slugToId[detSlug];
     let wouldFile = false, afReason = null;
     if (detId != null && m.overall_confidence != null) {
+      // extraction_method is THREADED (2026-08-07): docTrustGate's shadow-row skip keys on it, and
+      // an overlay that omitted it would make that gate VACUOUSLY GREEN — every row would look like
+      // a non-shadow row here no matter what the pipeline actually produced.
       const rex = Object.entries(m.extractions || {}).map(([k, e]) => ({
         field_key: k,
         display_value: (e && typeof e === 'object') ? e.value : e,
         validation_note: (e && typeof e === 'object') ? e.validation_note : null,
         confidence: (e && typeof e === 'object') ? e.confidence : null,
+        extraction_method: (e && typeof e === 'object') ? e.method : null,
       }));
       const fakeDoc = { id: g.id, supplier_name: m.supplier_name, document_type_id: detId, overall_confidence: m.overall_confidence };
       try { const _af = trust.isAutoFileEligible(db, fakeDoc, { extractions: rex }); wouldFile = _af.eligible; afReason = _af.reason; } catch {}

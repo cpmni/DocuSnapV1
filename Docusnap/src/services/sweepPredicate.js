@@ -93,6 +93,9 @@ function evaluateSweepConsistency({ storedRows, freshFields, roleKeys, storedSlu
       confidence: (fc != null && !Number.isNaN(fc)) ? fc : srow.confidence,
       validation_note: null,
       corrected_to: null,
+      // THREADED 2026-08-07: docTrustGate's shadow-row skip keys on extraction_method. Dropping it
+      // here would silently present every stored row as a non-shadow row to the re-asked gate.
+      extraction_method: srow.extraction_method ?? null,
     });
   }
   return { pass: true, reason: 'ok', field: null, overlay };
