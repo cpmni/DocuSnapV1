@@ -1176,3 +1176,72 @@ incident, re-opened by the fix meant to help. Neither advisor saw it (reggie was
 gary in the consumers; the interaction lives in `validator.py:727`, in neither slice).
 **Commits:** `d575668` (guard) · `60606d9` (bridge + paired toggle) · `2a1ae7d` (C1 + C2 + pin).
 All default OFF pending the owner flip.
+
+---
+
+## 2026-08-08 — SEC-17 reparse-point containment (`915c412`), reviewed AFTER it shipped default-ON
+
+**In:** no specialist consensus — this was a single-author security fix that shipped ON with no
+adversarial pass, and the session handover named "Oracle on SEC-17" as its first action precisely
+for that reason. Asked him to vet the premise, trace the predicate for fail-open holes, judge the
+deliberate scope split (OPEN path fixed; the filing WRITE containment and `navGuard.js` left
+textual), weigh the blast radius on ordinary OneDrive/redirected-folder users, and — since the code
+was already live — rule explicitly on whether to revert it to OFF.
+
+**Verdict: SIGN OFF WITH CONDITIONS — 3 BLOCKING, 5 non-blocking. Ruling on the ON/OFF fork: LEAVE
+IT ON.** `SF_REALPATH_CONTAINMENT=0` is strictly worse than the shipped state and the false-refusal
+risk is bounded and non-destructive (a dead button, never a lost or mis-filed document). But the
+commit did not deliver the property its message claimed.
+
+**Added value? YES — decisively, and this is the clearest case yet for reviewing security code even
+when the author is confident.**
+
+- **B1, a live FAIL-OPEN in the shipped fix — the very hole SEC-17 exists to close.** `_realCanonical`
+  returned the RAW resolved path on ENOENT while `_withinAnyRoot` canonicalises the ROOT: two frames,
+  one comparison. With a junction at `Output\peek`, the path `Output\peek\nope.pdf` does not exist,
+  realpath throws, the raw string comes back and `startsWith(Output\)` accepts it. He also refuted
+  the shipped comment's defence ("refused later anyway — openPath would fail"): true of `open-file`,
+  but `show-in-explorer` falls back to revealing the CONTAINING directory, i.e. the junction target.
+  **CONFIRMED at source and FIXED (`917a009`)** by walking up to the nearest existing ancestor,
+  canonicalising that and re-appending the tail. The new pin's non-vacuity line proves the pre-fix
+  code accepted exactly this path.
+- **B2, the pin asserted the opposite of its own label.** `test_path_containment.js:86` read "a
+  non-existent path is not promoted into a match" while asserting `=== true`, under a FAIL-CLOSED
+  heading. He also spotted that the `return null` unverifiable branch was **entirely unpinned** — a
+  future dev could change it to `return p` with the whole suite still green, the "dead guard greens
+  every test" trap this repo has been burned by before. Both fixed in `917a009`.
+- **THE SEAM (C5) — SEC-17 is bypassed end-to-end by the write side it deliberately left textual.**
+  `_isOpenablePath` has two admission doors; SEC-17 hardened door 1 only. A document filed through a
+  junction (the still-textual `filing/handler.js:172`) has the escaped path RECORDED in
+  `documents.stored_path`, and door 2 matches `stored_path` textually — so it opens fine and the new
+  check never sees it. Containment is a property of one branch of one predicate, not of the system.
+  This is the `registration.is_unfalsifiable` / Castellan failure mode again: a guard written at one
+  of several doors into the same decision.
+- **PREMISE CORRECTED, downward.** He argued the finding is a **LOW**, not the MEDIUM it was filed
+  as: all three doors are admin/edit gated, both IPCs are fire-and-forget with no data returning to
+  the renderer, `ALLOWED_OPEN_EXTS` excludes executables, and the attacker needs write access inside
+  an approved root already. Yield is "the app opens, on the operator's own screen, a document that
+  operator could already read". Consequence he drew: nothing justified shipping ON ahead of review —
+  and equally nothing justifies reverting now.
+- **The strategically better fix (C6), which nobody had proposed:** every other renderer path channel
+  in this app was already de-pathed to resolve server-side from the doc row, and doc-id variants of
+  these two channels **already exist**. `open-file`/`show-in-explorer`/`open-folder` are the last
+  three legacy raw-path doors. Retiring them deletes the attack surface instead of guarding it, and
+  makes SEC-17 moot.
+- Plus: a genuine prefix trap in `navGuard.js` (`startsWith(root)` with no separator, so
+  `…\src\windowsEvil\` matches) found in passing and unrelated to SEC-17; the observation that the
+  kill switch does NOT revert the case-insensitive compare, contradicting its own comment (now
+  pinned as an accepted trade-off); and a pre-existing contradiction where Settings permits a UNC
+  output folder that `_isOpenablePath` then refuses outright, so UNC-filed documents can never be
+  opened.
+
+**Outcome:** B1 + B2 fixed and pushed in `917a009`; 20 containment pins green with zero skips, and
+the filing path-hardening / navGuard / anchor-label / teach-multipage / settings-wiring suites all
+still green. **B3 (the refusal is silent — both channels are `ipcMain.on`, so an unverifiable path
+gives the user no dialog, no toast, nothing) is OPEN and needs either a visible distinct refusal or
+a measurement that the OneDrive-dehydrated-offline case cannot reach it.** C4 (shared
+`src/lib/pathContainment.js`, with the filing WRITE side adopted behind its own flag because a false
+refusal there blocks Confirm and rolls the document back to `needs_review`), C5, C6, C7 and C8 are
+recorded in `SECURITY_BACKLOG.md` and pointed to from `pendingfeatures.md`. His manual gate — plant
+a junction, request a NON-EXISTENT leaf through it, see whether Explorer opens the target — remains
+the honest end-to-end check and has not been run on a real desktop session.

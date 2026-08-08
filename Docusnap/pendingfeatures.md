@@ -270,6 +270,127 @@ reference field" predicates (`engine.py:1237-1243`, `keyword.py:58-66`, `validat
 `review/renderer.js:46-49`) and the fact that the type's DECLARED `ref_field_key`/`date_field_key`
 role never reaches Stage 0.5 at all — only the key SPELLING does.
 
+> **DESIGNED 2026-08-08 (gary), and it CORRECTS TWO OF MY CLAIMS ABOVE. Not built — reggie's
+> precision ruling and an Oracle pass are still outstanding.**
+>
+> **CORRECTION 1 — my worked example was wrong, and it was wrong in the flattering direction.** I
+> said a field labelled "Discount" typed Percentage gets no reader. `discount` is a SHIPPED
+> `field_patterns` key (`config/keyword_patterns.json:355`), so it dies at `keyword.py:340-341`
+> (`key in shipped`) long before the type test and is rescued. Same for `currency`, `shipping`,
+> `subtotal`, `payment_terms`. The genuinely unattemptable examples are **"Unit Price" → key
+> `unit_price`, type `currency`** and **"Account" → key `account`, type `reference`** — both have
+> `_infer_validation` = None and a non-`text` type. Use those; the "Discount" example would have
+> been refuted the moment anyone tested it.
+>
+> **CORRECTION 2 — this is NOT as latent as I filed it, because the editor STEERS users into the
+> hole.** `doctype-editor.js:77-79` `guessType` auto-selects `currency` for any label matching
+> `/total|amount|price|cost|sum|net|gross|vat|tax/` and `reference` for
+> `/ref|reference|number|no|invoice|order|po|account/`. So a user typing "Unit Price" or "Account"
+> is GIVEN the broken type by default, without ever opening the dropdown. It is latent on this
+> install because few custom money/code fields exist, not because the types are rarely chosen.
+>
+> **Also established:** `merge_label_overrides` (`keyword.py:273-281`) already seeds ANY key
+> regardless of DB type — so the ADMIN-OVERRIDE path already does what the DB-label path refuses to,
+> which is the real inconsistency. `PRESET_CATALOG` fields ARE rescued (their `labels:[]` flow
+> through the same override path), so the hole touches only types made in the **DocType editor** and
+> the **teach wizard**. `ROLE_KEY_ALIASES` rescues exact money aliases (`net_amount`, `amount_due`)
+> but not `unit_price`/`handling_charge`/`discount_amount`.
+>
+> **FIX SHAPE:** extend only the fall-through branch (leave the date/alphanumeric role branches
+> first and untouched, which keeps `vat_no`/`account_no`/every `*_date` byte-identical); take the
+> gate from a NEW leaf module `extraction/field_types.py` that `engine._TYPE2VAL` re-exports **by
+> object identity**, so the mapping cannot fork into a 4th copy; 80 for gated types, 75 for
+> flag-only, no new confidence band. Flag `SEED_TYPED_FIELD_LABELS`, env-read, **DEFAULT OFF**.
+>
+> **THE TRAP GARY CAUGHT, and it would have shipped:** `role_caption:'party'` must NOT be applied to
+> the new typed seeds. `_PARTY_FOLLOW_STOP` (`keyword.py:1330-1340`) contains `email`, `website`,
+> `address`, `number`, `no`, `account`, `vat` — so a field labelled "Email" with `party` would
+> REFUSE to read `Email Address: info@acme.co.uk`, its single most common printed caption. Same for
+> Website and for Account typed `reference_code`. Absent `role_caption` is the design; the
+> fail-toward-review rail is `trust.js` `STRICT_TYPES` (`:86-89`), which already re-validates
+> email/postcode/percentage/number/reference_code/iban/vat_gb on the sub-100 auto-file path.
+>
+> **THE SEAM, and it must be an owner-visible decision rather than a silent side effect:** a
+> newly-seeded read at 80 becomes an INCUMBENT. A fresh passive anchor scores 78 at usage_count 1
+> (`anchor.py:1349`) and an anchor read that was CAPPED TO 70 AND NOTED scores lower still — so the
+> keyword read wins **and the anchor's `validation_note` disappears with it**. A document that used
+> to hold for review can then auto-file. Mandatory gate measurement: count docs where a winner moved
+> `anchor* → keyword` while the anchor arm carried a note. Non-zero ⇒ does not ship without the owner.
+>
+> **VACUITY — worse than the trap already recorded.** All four `customer_corpus_score.js` EXTRAS
+> (`vat_no`, `account_no`, `job_ref`, `po_ref`) are rescued TODAY by the key-role branch (`_no`,
+> `_ref`), so a corpus arm is STRUCTURALLY INCAPABLE of moving. The generator needs eight new
+> role-None fields (`unit_price` currency · `pallets` number · `account` reference · `ticket`
+> reference_code · `contact_email` email · `discount_rate` percentage · `delivery_postcode`
+> postcode_uk · `bank_iban` iban), and the DARK arm must be asserted at 0.0% recall on every new
+> lane BEFORE the fix is measured. This is the concrete answer to Oracle's earlier "DO NOTHING —
+> cannot be gated non-vacuously without a generator change".
+>
+> **REGGIE'S PRECISION RULING (2026-08-08) — the two advisors AGREE on the trap, independently.**
+> reggie reached the `role_caption` verdict by the same `_PARTY_FOLLOW_STOP` mechanism gary did, from
+> a different starting point, and adds the rule that makes the widening safe at all:
+>
+> - **POPULATION A — `email`, `website`, `postcode_uk`, `vat_gb`, `iban` — a bare label hunt is
+>   STRUCTURALLY unsafe, not merely risky.** `_search_for_label` scans TOP-DOWN and returns the FIRST
+>   accepted occurrence (`keyword.py:1455-1457`), and the letterhead is at the top — so the issuer's
+>   email/VAT/postcode does not *sometimes* win a customer-side field, it wins on EVERY document.
+>   Identical mechanism to the VAT-reg-as-money incident. The shape gate cannot help: the issuer's
+>   email is a perfectly valid email. **Rule C1** — seed these five ONLY if the DB label carries ≥2
+>   content tokens with at least one outside the generic type-noun set, so "Email"/"VAT Number" are
+>   REFUSED (teach-only, as today) and "Customer Email"/"Supplier VAT Number" are seeded. Mirrors the
+>   shipped `PRESET_CATALOG` doctrine at `document_types.js:540-542`. **Rule C2** — those five seed
+>   `directions:["right"]` only; "below" from a generic caption walks into the next letterhead line.
+> - **POPULATION B** (percentage, mac, ip, number, currency, reference, reference_code, date, text):
+>   bare own-label hunt is acceptable; existing `len(label)<3` + sibling dedupe already suffice.
+> - **Gate Stage 1 for all 11 structured types.** This does NOT contradict review-not-reject: a
+>   Stage-1 rejection discards a candidate the hunt just invented from a bare label and Stages 2/0.5
+>   still run afterwards, whereas a `_TYPE2VAL` rejection discards the value the operator physically
+>   pointed at. Different decisions. Keep the six flag-only types OUT of `_TYPE2VAL`.
+> - **A correction to the doctrine as filed:** "review-not-reject covers them" is only two-thirds
+>   true. For those six the BACKEND never evaluates the regex at all (`_val_key` is None; they are
+>   not in `_PRECISE_VAL_TYPES`), and the Stage-4.5 charset note flags CHARACTERS, not content — a
+>   wrong-but-well-formed email gets no note anywhere. The enforcement is `trust.js` `STRICT_TYPES`
+>   at the filing boundary, which is skipped `at100`. Widening seeding WITHOUT gating would add
+>   silent wrong values nothing surfaces.
+> - **THE AUTO-FILE SEAM, and it cuts against the owner's standing rule.** `docTrustGate` returns
+>   `unverifiable-value:<field>` for a value in a field with no confirmed history in scope
+>   (`trust.js:586`), so filling MORE fields REDUCES auto-file on cold scopes until history accrues —
+>   the same shape as the `TRUST_SHADOW_ROW_SKIP` deadlock, and directly opposed to
+>   `feedback_minimal_interaction_autofile`. **The gate for this slice must count AUTO-FILE, not fill
+>   rate.**
+>
+> **THREE LIVE DEFECTS reggie found in passing — each is a bug TODAY, independent of the widening,
+> and each is separately shippable:**
+> 1. **`validation_patterns.iban` rejects every conventionally-spaced printed IBAN.** `GB29 NWBK 6016
+>    1331 9268 19` fails. Live consequence: `trust.js:169` strips whitespace before the mod-97 check
+>    and PASSES the value, while the renderer's on-blur scores 0% coverage and WARNS on the same
+>    correct value. Proposed: `^[A-Za-z]{2}\d{2}(?:[ ]?[A-Za-z0-9]){11,30}$` — bounded, no nested
+>    repetition, still `^…$` so the anchored-pattern pin holds.
+> 2. **`validation_patterns.ip_address`'s IPv6 leg is wrong in BOTH directions.** It ACCEPTS
+>    `09:30:15` — a clock time — and `ip_address ∈ _PRECISE_VAL_TYPES` (`anchor.py:2503`), so at ≥95%
+>    coverage that time would be graded TYPE-AUTHORITATIVE and skip the charset and learned-shape
+>    checks. It also REJECTS `fe80::1`, the example the UI itself prints at `doctype-editor.js:53`.
+> 3. **`_infer_validation` is consulted BEFORE the DB type** (`keyword.py:342-343`), so a field
+>    labelled "VAT Number" typed `vat_gb` is seeded TODAY with the generic ref caption bank
+>    `["Reference No","Reference","Ref No","Ref"]` and the loose `alphanumeric` gate — the user's
+>    explicit type declaration is ignored in favour of the key spelling. reggie's ruling: DB type
+>    wins for the 11 structured types; key-role is retained only for `text`/untyped.
+>
+> **CURRENCY SIGN — my cited lines were STALE, correcting them here.** Not `keyword.py:1647-1651`
+> (that is `_is_doc_chrome_fragment`). Two independent losses: `:1509` strips a leading `-` as a
+> separator, and `:1768-1772` `_clean_value` returns `m.group(0)` of the first matching
+> `validation_patterns.currency` alternative — **no alternative admits a sign at all**. Fix is a `-?`
+> in alternatives [0] and [3] (strictly looser, so every currently-matching string still matches, and
+> `currency` routes to `_currencyDpConsistent` not `_matchesTypePattern`, so the filing gate is
+> untouched) plus a sign-aware separator strip.
+>
+> **SEQUENCING:** ship the gated non-money types + flag-only first; **split CURRENCY into slice 2.**
+> `_total_role_collision` is armed by the label text being exactly `'total'` (`keyword.py:1447`), not
+> by the money role, so a custom currency field labelled "Total Due" seeded at 80 can grab the wrong
+> totals-block line — which is why the original author wrote "currency deferred". Also gate against
+> `TEMPLATE_FORMAT_FAIL_YIELD` before either flips: it is inert on typed custom fields today only
+> because they have no keyword challenger, and this fix gives them one.
+
 **Also confirmed:** `template_field_mappings.ocr_type` is written by three UI surfaces with three
 different vocabularies and read by ZERO production code (`grep ocr_type python_backend/` finds only
 tests and the dev CLI `test_mapping.py:75-80`) — production `val_type` comes from
