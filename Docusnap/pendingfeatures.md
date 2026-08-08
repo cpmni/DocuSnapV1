@@ -95,6 +95,33 @@ than None, since `validation_patterns` has no `text` key either. Headline: `is_n
 on exactly `supplier_name`/`customer_name`/`buyer_name`/`*_address`, so **the name-quality guard is
 dead for its entire intended population at Stage 0.5** while Stage 2 applies it to the same keys.
 
+**6b-MEASURED (2026-08-08, after the fix was built) — the free-text guard population is TINY, so
+the fix is correct in principle and near-inert in practice on this corpus. Do not oversell it.**
+Built as `TEMPLATE_FREETEXT_GUARD_PARITY` + `TEMPLATE_FREETEXT_FALLTHROUGH_CAP` (`1f8ff9c`, both
+dark). realdoc 714 docs, three arms — dark, parity, parity+cap — came back **BYTE-IDENTICAL to each
+other**. A flat lane is not a pass here, so the flatness was chased to source with a reachability
+probe over 24 documents drawn from the 11 templates that carry free-text mappings:
+
+  supplier_name|hint_text_match  17     customer_name|anchor_crop      3
+  supplier_name|logo              7     customer_name|template_mapping 1
+
+**15 of 38 mappings are on a free-text key (11 supplier_name, 4 customer_name) — and `supplier_name`
+was NOT ONCE read by a template rung.** Logo identification and hint-text matching outrank Stage 0.5
+for the issuer, so the taught mapping almost never supplies the value. Exactly ONE template-rung
+free-text read occurred in 24 documents. The guards are therefore REACHABLE but the population they
+police is ~1 read in 24 docs, which is why every arm is flat.
+
+TWO CONSEQUENCES, both corrections to what was believed when the slice was designed:
+- The fall-through cap's blast radius is FAR smaller than feared. The worry (mine, and Oracle's C-condition)
+  was that capping `_inline()` would flag the issuer on the 11 dx=dy=0 supplier_name templates. It
+  cannot: those mappings do not win the field. The two-flag split was still the right call — it is
+  what made the effect measurable separately — but the danger it was hedging is not there.
+- The guard-parity BENEFIT is correspondingly small on this corpus. The inversion is real, the dead
+  name-quality guard is real, and both are worth fixing for correctness and for the owner's
+  custom-vs-built-in requirement. But it will not visibly change results here, and nobody should
+  present it as a heal. Its value is forward: a template whose taught box IS the winning source for
+  a free-text field.
+
 **6. LATENT — most data types have no Stage-1 reader, and picking the RIGHT type makes it worse.**
 `keyword.extract_fields` (`:942-945`) skips a field with no `field_patterns` entry;
 `seed_field_labels` (`:~338-364`) seeds only role `date`/`alphanumeric`, or role None AND DB type
