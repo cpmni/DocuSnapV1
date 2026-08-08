@@ -25,6 +25,15 @@ const state = {
   deskewImg: null,     // the straightened render (cached once fetched)
   deskewImgAngle: 0,   // the detected angle of deskewImg (fixed once fetched)
   deskewAngle: 0,      // angle CURRENTLY applied to state.img (deskewImgAngle when on, 0 when showing raw)
+  // MULTI-PAGE (2026-08-08). The wizard used to resolve getDocumentPages(...) to pages[0] and hard-
+  // code page_number:0 on commit — so a value on page 2 simply could not be taught. The hardcode was
+  // TRUTHFUL rather than a bug (there was no way to reach another page), which is why it had to be
+  // replaced in the SAME change as the navigation: replacing it alone would have been a no-op at
+  // best. Every field remembers the page its box was drawn on, so one template can teach fields
+  // spread across pages.
+  pages: [],           // every rendered page data-URL for the chosen doc (was: only the first)
+  pageIndex: 0,        // the page currently on the canvas
+  pageCache: {},       // idx -> {rawImg, deskewImg, deskewImgAngle} so flipping back is instant
   docTypeSlug: null,
   docTypeName: null,
   fields: [],          // [{key,label,type,required}]
@@ -384,6 +393,10 @@ async function toggleTeachDeskew(forceOn){
         if (res && res.image && res.angle) {
           await new Promise(r => { const im = new Image(); im.onload = () => { state.deskewImg = im; state.deskewImgAngle = res.angle; r(); }; im.onerror = () => r(); im.src = 'data:image/png;base64,' + res.image; });
         }
+        // Bank it against THIS page (multi-page): straighten is per page, and re-fetching a
+        // straightened render every time the operator flips back would be a visible stall.
+        const _pc = state.pageCache && state.pageCache[state.pageIndex];
+        if (_pc) { _pc.deskewImg = state.deskewImg; _pc.deskewImgAngle = state.deskewImgAngle; }
       }
       if (state.deskewImg && state.deskewImgAngle) { state.img = state.deskewImg; state.deskewAngle = state.deskewImgAngle; }
       else if (typeof forceOn !== 'boolean') { try { toast('This page is already straight'); } catch {} }
@@ -405,9 +418,90 @@ function _prefetchTeachPage(){
   state.pageFor = d.id;
   state.img = null; state.rawImg = null; state.deskewImg = null;
   state.deskewImgAngle = 0; state.deskewAngle = 0; state.pageDataUrl = null;
+  state.pages = []; state.pageIndex = 0; state.pageCache = {};
+  // Keep the WHOLE array — the wizard used to discard everything after pages[0]. The per-page
+  // renders are already produced by the same call, so multi-page costs no extra work here.
   state.pagePromise = D.getDocumentPages(d.id, d.folder_path, d.original_filename, TEACH_RENDER_SCALE)
-    .then(pages => (Array.isArray(pages) ? pages[0] : null))
-    .catch(() => null);
+    .then(pages => (Array.isArray(pages) ? pages : []))
+    .catch(() => []);
+}
+
+// Put page `idx` on the canvas. Caches each page's raw + straightened render so flipping back to a
+// page the operator already visited is instant and does not re-run deskew detection.
+async function showTeachPage(idx){
+  const n = (state.pages || []).length;
+  if (!n) return false;
+  idx = Math.max(0, Math.min(n - 1, idx | 0));
+  // Bank the page we are leaving, including whatever straighten state it had.
+  if (state.rawImg && state.pageCache[state.pageIndex]) {
+    Object.assign(state.pageCache[state.pageIndex], {
+      deskewImg: state.deskewImg, deskewImgAngle: state.deskewImgAngle });
+  }
+  state.pageIndex = idx;
+  state.pageDataUrl = state.pages[idx];
+  const cached = state.pageCache[idx];
+  if (cached && cached.rawImg) {
+    state.rawImg = cached.rawImg;
+    state.deskewImg = cached.deskewImg || null;
+    state.deskewImgAngle = cached.deskewImgAngle || 0;
+  } else {
+    state.rawImg = null; state.deskewImg = null; state.deskewImgAngle = 0;
+    if (!state.pageDataUrl) return false;
+    await new Promise(res => {
+      const im = new Image();
+      im.onload = () => { state.rawImg = im; res(); };
+      im.onerror = () => res();
+      im.src = state.pageDataUrl;
+    });
+    if (!state.rawImg) return false;
+    state.pageCache[idx] = { rawImg: state.rawImg, deskewImg: null, deskewImgAngle: 0 };
+  }
+  // Show the straightened render when we already have one, else the raw page; the deskew pass below
+  // (or the toggle) fills it in. Straighten is per PAGE — page 2 can be crooked while page 1 is level.
+  if (state.deskewImg && state.deskewImgAngle) {
+    state.img = state.deskewImg; state.deskewAngle = state.deskewImgAngle;
+  } else {
+    state.img = state.rawImg; state.deskewAngle = 0;
+  }
+  return true;
+}
+
+// The page strip is hidden entirely for a single-page document, so nothing changes for the common
+// case. Rendered as "‹ Page 2 of 3 ›" plus a dot per page the operator has already taught a field on.
+function renderPageNav(){
+  const el = $('rg-pagenav');
+  if (!el) return;
+  const n = (state.pages || []).length;
+  if (n <= 1) { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  const taught = new Set(Object.values(state.results || {})
+    .filter(r => r && r.target && Number.isInteger(r.page)).map(r => r.page));
+  const dots = Array.from({ length: n }, (_, i) =>
+    `<span class="pg-dot${i === state.pageIndex ? ' cur' : ''}${taught.has(i) ? ' has' : ''}" `
+    + `data-pg="${i}" title="${taught.has(i) ? 'Page ' + (i + 1) + ' — has taught fields' : 'Page ' + (i + 1)}"></span>`).join('');
+  el.innerHTML = `<button class="btn ghost pg-btn" id="pg-prev"${state.pageIndex <= 0 ? ' disabled' : ''}>‹</button>`
+    + `<span class="pg-lbl">Page ${state.pageIndex + 1} of ${n}</span>`
+    + `<span class="pg-dots">${dots}</span>`
+    + `<button class="btn ghost pg-btn" id="pg-next"${state.pageIndex >= n - 1 ? ' disabled' : ''}>›</button>`;
+  $('pg-prev').onclick = () => gotoTeachPage(state.pageIndex - 1);
+  $('pg-next').onclick = () => gotoTeachPage(state.pageIndex + 1);
+  for (const d of el.querySelectorAll('.pg-dot')) d.onclick = () => gotoTeachPage(Number(d.dataset.pg));
+}
+
+// Flip the canvas to another page. Any half-drawn box is dropped — a rectangle drawn on page 1
+// means nothing on page 2, and silently carrying it would store geometry against the wrong page.
+async function gotoTeachPage(idx){
+  if (idx === state.pageIndex || _teachDeskewBusy || _teachReadBusy) return;
+  drag = null; drawnBox = null;
+  _setPageLoading(true);
+  const ok = await showTeachPage(idx);
+  if (ok) {
+    fitCanvas(); tzReset(); redrawCanvas();
+    if (state.rawImg && !state.deskewImg) await toggleTeachDeskew(true);
+    if (TZ_DEFAULT > 1) requestAnimationFrame(() => { try { tzSet(TZ_DEFAULT); tzShowTop(); } catch {} });
+  }
+  _setPageLoading(false);
+  renderPageNav(); redrawCanvas();
 }
 function _setPageLoading(on){ const el = $('rg-loading'); if (el) el.classList.toggle('hidden', !on); }
 
@@ -420,11 +514,15 @@ async function startRegionStep(){
     // stays up until the page + deskew are ready.
     if (!(state.pagePromise && state.pageFor === state.doc.id)) _prefetchTeachPage();
     _setPageLoading(true);
-    try{ state.pageDataUrl = await state.pagePromise; }catch{ state.pageDataUrl=null; }
-    if (!state.pageDataUrl){ _setPageLoading(false); $('rg-prompt').textContent="Couldn't load that page."; return; }
-    await new Promise(res=>{ const im=new Image(); im.onload=()=>{state.img=im;res();}; im.onerror=()=>res(); im.src=state.pageDataUrl; });
-    state.rawImg = state.img;        // canonical RAW frame — boxes are stored here (see store-raw note)
+    try{ state.pages = (await state.pagePromise) || []; }catch{ state.pages = []; }
+    if (!state.pages.length){ _setPageLoading(false); $('rg-prompt').textContent="Couldn't load that page."; return; }
+    // showTeachPage sets pageDataUrl/rawImg/img and banks the render — one path for the first page
+    // and for every later flip, so the two cannot drift.
+    if (!await showTeachPage(state.pageIndex || 0)){
+      _setPageLoading(false); $('rg-prompt').textContent="Couldn't load that page."; return;
+    }
   }
+  renderPageNav();
   fitCanvas(); tzReset(); redrawCanvas();
   bindCanvas();
   // Straighten ON by default — training needs a level page so anchor↔target geometry registers cleanly.
@@ -466,7 +564,10 @@ function redrawCanvas(){
   // final field is confirmed (advanceField parks fieldIndex past the end → curField() is undefined
   // below → nothing drawn). The stored results (state.results) are untouched; this is display-only.
   // current field: its label (blue) + value (green) — same colours as Template Manager
-  const cf=curField(), cr=cf?state.results[cf.key]:null;
+  const cf=curField(); let cr=cf?state.results[cf.key]:null;
+  // MULTI-PAGE: a stored box belongs to the page it was drawn on. Drawing page 1's rectangle over
+  // page 2 would put a green box on unrelated content and invite the operator to "correct" it.
+  if (cr && Number.isInteger(cr.page) && cr.page !== state.pageIndex) cr = null;
   if (cr&&cr.anchor) drawBox(_teachFwdBox(cr.anchor),'#4f8ef7',true);
   if (cr&&cr.target) drawBox(_teachFwdBox(cr.target),'#3ecf8e',true);
   else if (drawnBox) drawBox(drawnBox,'#3ecf8e',true);
@@ -585,6 +686,10 @@ function setValueBanner(f){
 }
 function promptField(){
   const f=curField(); if(!f) return;
+  // MULTI-PAGE: selecting a field that was taught on another page FOLLOWS it there, so the operator
+  // sees the box they drew instead of a blank-looking page with their work apparently missing.
+  const _r = state.results[f.key];
+  if (_r && Number.isInteger(_r.page) && _r.page !== state.pageIndex) gotoTeachPage(_r.page);
   drawMode='value';
   setConfirm('');   // clear any prior read-back overlay
   setValueBanner(f);
@@ -849,8 +954,13 @@ async function captureAnchor(box){
 }
 function store(f,box,anchor,value,pending){
   // Canonicalise to the RAW frame (identity when straighten is off) so doCommit registers to the raw scan.
-  state.results[f.key]={ value, target:_teachBackBox(box), anchor:_teachBackBox(anchor.box), anchor_text:anchor.anchor_text, anchor_dir:anchor.dir||'left', anchorSuspicious:!!anchor.suspicious, status:pending?'pending':'done' };
+  // `page` is the page the operator actually drew on — it becomes the mapping's page_number at
+  // commit. Recorded here, at the one place a box is stored, so no path can produce a box without
+  // one (the old code hardcoded 0 downstream instead, which was only ever right because the wizard
+  // could not leave page 1).
+  state.results[f.key]={ value, target:_teachBackBox(box), anchor:_teachBackBox(anchor.box), anchor_text:anchor.anchor_text, anchor_dir:anchor.dir||'left', anchorSuspicious:!!anchor.suspicious, page:state.pageIndex, status:pending?'pending':'done' };
   if (!pending) advanceField();
+  renderPageNav();          // the page dots show which pages already carry a taught field
 }
 function advanceField(){
   redrawCanvas();
@@ -1089,7 +1199,9 @@ async function doCommit(){
         ? { x:r.target.x, y:r.target.y, w:r.target.w, h:r.target.h }
         : { x:Math.max(0,r.target.x-0.1), y:r.target.y, w:0.1, h:r.target.h });
       await D.saveTemplateMapping(templateId,{
-        field_key:f.key, page_number:0, anchor_text:r.anchor_text||null,
+        // The page the operator drew on. Falls back to 0 for a result stored before this field
+        // existed (an in-flight wizard across an app update), which is exactly the old behaviour.
+        field_key:f.key, page_number:Number.isInteger(r.page)?r.page:0, anchor_text:r.anchor_text||null,
         anchor_x_norm:a.x, anchor_y_norm:a.y, anchor_w_norm:a.w, anchor_h_norm:a.h,
         target_x_norm:r.target.x, target_y_norm:r.target.y, target_w_norm:r.target.w, target_h_norm:r.target.h,
         ocr_type: ocrTypeFor(f),

@@ -149,6 +149,17 @@
   #rg-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:11px;
     background:rgba(10,12,18,.82);color:#e6e9f2;font-size:14px;font-weight:600;z-index:3;pointer-events:none}
   #rg-loading.hidden{display:none}
+  /* Page strip (multi-page teaching). Sits under the canvas, above the read-back, so it reads as
+     part of the document rather than part of the wizard chrome. Hidden for single-page docs. */
+  .pagenav{display:flex;align-items:center;gap:10px;margin-top:9px;flex-wrap:wrap}
+  .pagenav.hidden{display:none}
+  .pagenav .pg-lbl{font-size:13px;color:var(--muted)}
+  .pagenav .pg-btn{padding:2px 11px;font-size:16px;line-height:1.35}
+  .pagenav .pg-btn[disabled]{opacity:.4;cursor:default}
+  .pagenav .pg-dots{display:flex;align-items:center;gap:6px}
+  .pagenav .pg-dot{width:9px;height:9px;border-radius:50%;background:var(--border2);cursor:pointer}
+  .pagenav .pg-dot.has{background:var(--ok)}          /* this page already has a taught field */
+  .pagenav .pg-dot.cur{outline:2px solid var(--accent);outline-offset:2px}
   .rg-spin{width:18px;height:18px;border:2.5px solid rgba(255,255,255,.22);border-top-color:var(--accent);
     border-radius:50%;animation:rgspin .8s linear infinite}
   @keyframes rgspin{to{transform:rotate(360deg)}}
@@ -299,6 +310,9 @@
             </div>
             <div id="rg-loading" class="hidden"><span class="rg-spin"></span>Reading document…</div>
           </div>
+          <!-- Page strip — hidden entirely for a single-page document, so the common case is
+               unchanged. A dot is filled for every page that already carries a taught field. -->
+          <div id="rg-pagenav" class="pagenav hidden" data-help-key="teach-pagenav"></div>
           <div class="readback" id="rg-readback"></div>
         </div>
         <div class="rail">
