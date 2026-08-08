@@ -46,7 +46,10 @@ threading verified in isolation. **CROSS-CUTTING PROOF: post-edit baseline (all 
 pre-edit baseline, byte-identical, 714 docs.** **NOTHING IS FLIPPABLE YET** — no Settings bridge was
 added (outside the plan); the two extraction flags need the `_reconcileEnv`+toggle pattern
 (precedent `60606d9`), and `TRUST_SHADOW_ROW_SKIP` needs an owner decision because it is a JS-side
-`process.env` read that a `_reconcileEnv` bridge does NOT reach. NEXT: `REPROCESS_SHADOW_STALE_DROP`
+`process.env` read that a `_reconcileEnv` bridge does NOT reach. **PLAN DEVIATION — the NIGHT2 plan's
+"Oracle → thread → build" for the shadow-row slice ran WITHOUT the Oracle pass (advisors may not be
+spawned unsolicited this session). Gates green ≠ signed off — run Oracle before that one flips.**
+NEXT: `REPROCESS_SHADOW_STALE_DROP`
 (designed; **realdoc cannot gate it** — the reprocess merge isn't exercised there). GOTCHAS: the
 corpus scorer's `TAG` defaults to `base` so untagged runs overwrite ONE jsonl; it records `<lane>_got`
 only when WRONG, so a heal reads as `'X' -> None` in a naive diff (read `verdicts`).

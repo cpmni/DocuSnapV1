@@ -214,9 +214,29 @@ whether the winning label survives into the extractions row.
 - Owner's uncommitted edit to `python_backend/tests/test_template_target_word_snap.py` — untouched all
   session, not staged.
 
+## PLAN DEVIATIONS — read before flipping anything
+
+**The NIGHT2 plan's step 4 read "shadow-row skip: Oracle → thread `extraction_method` → build".
+The Oracle review was NOT run.** The threading and the build were done and gated; the adversarial
+review was not. The reason is a standing operating constraint on this session — advisors may not be
+spawned unless the owner asks — not a judgement that the review was unnecessary.
+
+So the sign-off position per slice is:
+- `TEMPLATE_INLINE_ROW_OVERLAP` — 007's design, round 2, arm-C proven in NIGHT2. **No Oracle pass.**
+- `REF_ROLE_DIGIT_GATE` — reggie slice 1, listed in NIGHT2 as build-ready. **No Oracle pass.**
+- `TRUST_SHADOW_ROW_SKIP` — gary's design. **Oracle pass was PLANNED and SKIPPED.**
+
+All three are DEFAULT OFF and byte-identical off, so nothing is at risk in the tree. But **do not read
+"gates green" as "signed off"** — run Oracle on at least the shadow-row slice before it goes live,
+since it is the one whose review was explicitly scheduled and missed. The specific seam worth pointing
+Oracle at: the skip trusts `fieldTypes` + `roleKeys` to decide what is "invisible", which is the same
+predicate `foreignFields.ownFieldPredicate` uses at the confirm-time drop — if those two ever drift,
+a row could become skippable at the gate while still being visible in Review.
+
 ## ADVISOR TRACK RECORD
-No advisors were spawned tonight — every design was already signed off in NIGHT2 and the work was
-execution plus measurement. Two NIGHT2 predictions were tested and both held: 007's
-`(anchor_h+target_h)/2` predicate reproduced arm C exactly *without* the sledgehammer, and gary's
-harness-overlay trap was real (pinned as a test). reggie's slice-1 prediction was BEATEN — it forecast
-captions arriving empty, and on the corpus they mostly fell through to the correct value instead.
+No advisors were spawned tonight (see PLAN DEVIATIONS above) — the work was execution plus
+measurement against designs written in NIGHT2. Two NIGHT2 predictions were tested and both held:
+007's `(anchor_h+target_h)/2` predicate reproduced arm C exactly *without* the sledgehammer, and
+gary's harness-overlay trap was real (pinned as a test). reggie's slice-1 prediction was BEATEN — it
+forecast captions arriving empty, and on the corpus they mostly fell through to the correct value
+instead.
