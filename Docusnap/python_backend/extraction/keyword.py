@@ -67,6 +67,23 @@ def _infer_validation(field_key: str) -> "str | None":
     return None
 
 
+_REF_HAS_DIGIT = re.compile(r'\d')
+
+
+def ref_value_is_codeless(value) -> bool:
+    """A reference-role value carrying NO digit at all is a caption or prose, never a code.
+
+    Lives here so the Stage-1 gate above and the Stage-0.5 gate in template_mapper share ONE notion
+    of "this is not a code" — the codebase already carries four ref predicates and a fifth spelling
+    would be certain to drift. DELIBERATELY WEAKER than the Stage-1 gate's `\\d\\S*\\d` (>=2 digits):
+    that one judges a candidate the caption hunt INVENTED, whereas Stage 0.5 judges a value the
+    operator physically pointed at, which earns the most permissive of the three tiers. Measured
+    recall: across all 713 confirmed ref-role values on the reference install, ZERO fail even the
+    stricter two-digit form, so the one-digit form throws away nothing real.
+    """
+    return not _REF_HAS_DIGIT.search(str(value or ''))
+
+
 # ── Shared CAPTION VOCABULARY (taught-field ownership guard c2 + known-caption guard G3b) ──
 # A "caption" is a printed field-label ("Customer", "Order Number", "SO #") — never a VALUE.
 # The vocabulary is the RUN's post-merge label banks (shipped ∪ overrides ∪ seeds, i.e. every
@@ -858,6 +875,50 @@ def detect_document_type(ocr_text: str, patterns: dict,
         return None
 
     best_type  = max(scores, key=scores.get)
+
+    # TYPE_TITLE_OWNER_PRECEDENCE (kill switch, DEFAULT OFF — gary design 2026-08-08).
+    # THE DEFECT: type election is a BUCKET SUM, and an install-created type owns exactly ONE
+    # phrase (its own name, folded in above) while a built-in owns its whole shipped caption
+    # vocabulary. 'ORDER CONFIRMATION' is itself a shipped *Sales Order* phrase, so a page titled
+    # ORDER CONFIRMATION scores Sales Order for the title PLUS every 'order number'/'your order'
+    # caption it prints, and the install's own 'Order Confirmation' type scores the title alone.
+    # Worse, `max` returns the FIRST maximal key, and config buckets are inserted before DB names,
+    # so the install type cannot win even a tie. MEASURED: a teach against such a type produced a
+    # template bound to a slug its own siblings can never detect as — 20 of 20 and 15 of 20
+    # documents matched NO template, every value fell back to Stage 1, and the issuer read 0%.
+    # THE FIX is a pure RE-RANKING of evidence already computed: if exactly ONE installed type owns
+    # the page by printing its own name/alias as a STANDALONE HEADING IN THE TOP BAND, that type
+    # takes precedence over the bucket sum. Zero owners, two owners (ambiguous), or an owner that
+    # scored nothing → untouched.
+    # THE TOP-BAND CONDITION IS LOAD-BEARING, NOT COSMETIC (gary's named seam): `confidence` is
+    # recomputed from the promoted type's score below, and if it fell under 70 then `title_trusted`
+    # would go False in process_docs and disarm the ENTIRE heading-authority net — the type refuse
+    # and the ambiguity guard both. Requiring a top-band heading forces position_weight >= ~1.9,
+    # hence score >= 3.8, hence confidence >= 79. Do not relax it to "anywhere on the page".
+    if os.environ.get('TYPE_TITLE_OWNER_PRECEDENCE', '0') != '0':
+        _owners = set()
+        for _name in (known_types or []):
+            _nm = (_name or '').strip()
+            if not _nm or _nm not in scores:
+                continue
+            _phrases = [_nm] + [str(a or '') for a in ((aliases_by_name or {}).get(_nm) or [])]
+            for _i, _line in enumerate(lines):
+                if not (_i <= _HEADING_TOP_BAND_LINES
+                        or (total and _i / total <= _HEADING_TOP_BAND_FRAC)):
+                    continue
+                _seg0 = _COL_BREAK_RE.split(_line.strip().lower())[0].strip()
+                if not _seg0:
+                    continue
+                if any(_p and _segment_is_heading(_seg0, _p.strip().lower(), caption_ok=False)
+                       for _p in _phrases):
+                    _owners.add(_nm)
+                    break
+        if len(_owners) == 1:
+            _owner = next(iter(_owners))
+            if scores.get(_owner, 0) > 0 and _owner != best_type:
+                best_type = _owner
+                headings[_owner] = True
+
     best_score = scores[best_type]
 
     # Convert score to confidence (a clear top-of-page heading alone scores
@@ -1103,7 +1164,50 @@ def extract_fields(ocr_text: str, field_keys: list[str],
             }
             break  # found for this field, move to next
 
-    return results
+    return _drop_generic_caption_steals(results)
+
+
+_GENERIC_REF_CAPTIONS = frozenset(c.strip().lower() for c in _REF_ROLE_CAPTIONS)
+
+
+def _drop_generic_caption_steals(results: dict) -> dict:
+    """KEYWORD_GENERIC_CAPTION_EXCLUSIVE (kill switch, DEFAULT OFF — reggie design 2026-08-08).
+
+    A field with no shipped pattern is seeded with the GENERIC ref caption bank
+    (`_REF_ROLE_CAPTIONS` — 'Reference No' / 'Reference' / 'Ref No' / 'Ref'), and every ref-role
+    field on the type receives that SAME bank: the free-text branch of seed_field_labels dedupes
+    same-type siblings, the ref branch does not. So one printed code can be captured by three
+    different fields at once. MEASURED on a 10-issuer teach test:
+        sales_order_number 88 'VXS79871'   (its own shipped label 'Order No')
+        account_no         85 'VXS79871'   (generic 'Ref')
+        vat_no             85 'VXS79871'   (generic 'Reference')
+    — where the true VAT number is 'GB 286 4471 90' and the true account number is different again.
+    The 85s are the seeded base 80 + 5 for a right-read, which is how the generic bank is identified
+    as the source rather than inferred.
+
+    A value committed through a GENERIC caption loses to the SAME value committed by another field
+    through its OWN label. Fires only when a specific owner exists, so an all-generic tie is left
+    exactly as it is today (precision-first: it can only ever REMOVE a duplicate, never re-assign
+    one). Ranked on the matched caption recorded in `results[k]['label']`, so it is independent of
+    field iteration order. Equality is casefolded exact — no fuzzy match, which could kill a
+    legitimately similar sibling reference.
+    """
+    if os.environ.get('KEYWORD_GENERIC_CAPTION_EXCLUSIVE', '0') == '0':
+        return results
+    by_val: dict = {}
+    for k, r in results.items():
+        if not isinstance(r, dict):
+            continue
+        by_val.setdefault(str(r.get('value') or '').strip().casefold(), []).append(k)
+    drop = set()
+    for val, keys in by_val.items():
+        if not val or len(keys) < 2:
+            continue
+        generic = [k for k in keys
+                   if str(results[k].get('label') or '').strip().lower() in _GENERIC_REF_CAPTIONS]
+        if generic and len(generic) < len(keys):      # a field matched its OWN label — it wins
+            drop.update(generic)
+    return {k: v for k, v in results.items() if k not in drop}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

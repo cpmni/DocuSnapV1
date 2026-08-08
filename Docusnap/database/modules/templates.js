@@ -1454,10 +1454,27 @@ function getSampleWordsByDoc(db, templateId) {
 // database/modules/test_migration_unfreeze_names.js.
 function unfreezeAutoFrozenRecipientNames(db) {
   const { isNameLikeField } = require('./learning');
-  const { COMPANY_KEYS }    = require('./document_types');
+  return unfreezeAutoFrozenFields(db, {
+    predicate: (r) => isNameLikeField(r.key, r.label),           // keep genuinely-constant non-name fields
+    backupKey: null,                                             // migration 46 shipped without one
+  });
+}
+
+// GENERALISED 2026-08-08 (eric design). Same SQL, same guarantees, one swappable predicate — so the
+// TEMPLATE_FREEZE_ISSUER_ONLY sweep cannot drift from the migration-46 name sweep it is a sibling of.
+// `predicate(row)` decides whether a currently-frozen row is unfrozen; the ISSUER and any
+// admin-locked row (fixed_locked=1) are refused BEFORE the predicate is consulted, so no caller can
+// widen the sweep onto them by accident.
+// REVERSIBILITY (mandatory — the owner requires this night's work be revertible): when `backupKey`
+// is given, the pre-sweep {template_id, field_key, fixed_value} of every affected row is written to
+// that settings key BEFORE the UPDATE. Without it the sweep is one-way data deletion.
+function unfreezeAutoFrozenFields(db, opts = {}) {
+  const { COMPANY_KEYS } = require('./document_types');
   const companyKeys = COMPANY_KEYS || ['supplier_name'];
+  const predicate = opts.predicate || (() => true);
   const rows = db.prepare(`
-    SELECT tf.id AS id, tf.field_key AS key, f.label AS label
+    SELECT tf.id AS id, tf.template_id AS template_id, tf.field_key AS key,
+           tf.fixed_value AS fixed_value, f.label AS label
     FROM template_fields tf
     JOIN templates t ON t.id = tf.template_id
     LEFT JOIN document_types dt ON LOWER(dt.slug) = LOWER(t.document_type_slug)
@@ -1465,22 +1482,44 @@ function unfreezeAutoFrozenRecipientNames(db) {
     WHERE tf.is_variable = 0 AND COALESCE(tf.fixed_locked, 0) = 0
   `).all();
   const upd = db.prepare('UPDATE template_fields SET fixed_value = NULL, is_variable = 1 WHERE id = ?');
-  let unfrozen = 0;
+  const hit = rows.filter(r => !companyKeys.includes(r.key) && predicate(r));
   const tx = db.transaction(() => {
-    for (const r of rows) {
-      if (companyKeys.includes(r.key)) continue;                 // keep the issuer frozen
-      if (!isNameLikeField(r.key, r.label)) continue;            // keep genuinely-constant non-name fields
-      upd.run(r.id); unfrozen++;
+    if (opts.backupKey && hit.length) {
+      const backup = hit.map(r => ({ template_id: r.template_id, field_key: r.key, fixed_value: r.fixed_value }));
+      db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ' +
+                 'ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+        .run(opts.backupKey, JSON.stringify(backup));
     }
+    for (const r of hit) upd.run(r.id);
   });
   tx();
-  return { unfrozen, scanned: rows.length };
+  return { unfrozen: hit.length, scanned: rows.length };
+}
+
+// The inverse of the sweep: restore every fixed_value the backup blob recorded. Only ever writes
+// rows the sweep itself touched, and only when they are still unlocked and still unfrozen — so a
+// value an admin has since set by hand is never clobbered by a rollback.
+function restoreFrozenFieldsFromBackup(db, backupKey) {
+  let rows = [];
+  try {
+    const raw = db.prepare('SELECT value FROM settings WHERE key = ?').get(backupKey);
+    rows = raw && raw.value ? JSON.parse(raw.value) : [];
+  } catch { return { restored: 0, missing: 0 }; }
+  const upd = db.prepare(`UPDATE template_fields SET fixed_value = ?, is_variable = 0
+                          WHERE template_id = ? AND field_key = ?
+                            AND COALESCE(fixed_locked, 0) = 0 AND is_variable = 1`);
+  let restored = 0;
+  const tx = db.transaction(() => {
+    for (const r of rows) restored += upd.run(r.fixed_value, r.template_id, r.field_key).changes;
+  });
+  tx();
+  return { restored, missing: rows.length - restored };
 }
 
 module.exports = {
   getAll, getAllWithLiveCounts, liveConfirmedCounts, confirmedDocCount, getById, getFields, findByLogoHash, findByKeywordFingerprint, findByBrandingFingerprint, findForSupplierType, identifyByFingerprint,
   getDominantSupplier, establishedIdentity, supplierNamesDisjoint,
-  unfreezeAutoFrozenRecipientNames,
+  unfreezeAutoFrozenRecipientNames, unfreezeAutoFrozenFields, restoreFrozenFieldsFromBackup,
   searchByName,
   create, update, enrichIdentity, learnTemplateOnCommit, remove, rename, shouldAdoptIssuerName, hammingDistance,
   stabiliseFingerprint, chooseLogoPhash,

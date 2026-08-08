@@ -1320,6 +1320,20 @@ function _fieldsWithMultipleConfirmedValues(db, dtInfo) {
   return out;
 }
 
+// TEMPLATE_FREEZE_ISSUER_ONLY (kill switch, DEFAULT OFF — eric design + measurement 2026-08-08).
+// Mirrors trust._shadowRowSkipEnabled exactly: env wins IN BOTH DIRECTIONS so an A/B arm is
+// unambiguous, else the setting, and try/catch defaults OFF because test_build_template_fields.js
+// builds a fixture DB with no `settings` table at all.
+function _freezeIssuerOnlyEnabled(db) {
+  const env = process.env.TEMPLATE_FREEZE_ISSUER_ONLY;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try {
+    return require('../../../database/modules/learning')
+      .getSetting(db, 'template_freeze_issuer_only', 'false') === 'true';
+  } catch { return false; }
+}
+
 function _buildTemplateFields(db, allValues, dtInfo) {
   // A field is "variable" (differs per document — reference, date, and ALSO any
   // field the confirmed history shows taking multiple values) or "constant" for a
@@ -1330,7 +1344,12 @@ function _buildTemplateFields(db, allValues, dtInfo) {
   // (fixed_value) ONLY when the schema says constant AND confirmed history has NOT
   // shown it varying. The cost of a false "variable" is a harmless re-extract; a
   // false "fixed" commits a wrong value on every other document — so we bias to
-  // variable. This self-heals an already-frozen field on the next confirm.
+  // variable. ⚠ CORRECTED 2026-08-08: this block used to claim the bias "self-heals an already-
+  // frozen field on the next confirm". It does NOT. This builder is reached only via
+  // _upsertTemplate — from promote-to-template, link-document-to-template, and the onTaughtConfirm
+  // hook, which reviewService fires only when `taught_fields` is non-empty. An ordinary confirm and
+  // the whole auto-file path never rebuild, and even a rebuild skips keys that are blank on the
+  // healing document. See rule (C) below for why the freeze also manufactures its own evidence.
   // Variable fields get no anchor_label here — they are templated by the
   // user-taught ⊕ field-anchor tool (Stage 2) / drawn mappings (Stage 0.5),
   // which are coordinate-based and immune to text-substring collisions.
@@ -1349,6 +1368,23 @@ function _buildTemplateFields(db, allValues, dtInfo) {
   // Shared with the P2 foreign-row drop (reviewService.confirm + _autoFileDoc) via foreignFields.js,
   // so the keep-predicate can't drift between the template builder and the storage-scope fix.
   const ownField = require('../../lib/foreignFields').ownFieldPredicate(dtInfo);
+  // (C) FREEZE NOTHING BUT THE ISSUER (kill switch, default OFF). MEASURED 2026-08-08 on a 10-issuer
+  // teach test: `_annotateFieldVariability` marks only ref/date/date-typed/currency-typed fields
+  // variable (document_types.js:222-227), so a TEXT-typed code field — po_ref, serials, account_no —
+  // can never be schema-variable; `multiValued` needs >=2 distinct CONFIRMED values, which a single
+  // taught document cannot supply; and rule (B) covers NAME-like fields only. So those fields froze
+  // to the taught document's value and were stamped on every sibling as template_fixed @95 (above
+  // the 88 auto-file floor): expected 'PO-85510', got 'PO-78567'.
+  // It is SELF-REINFORCING, which is why the "self-heals on the next confirm" claim above is false:
+  // this builder is only reached from _upsertTemplate, and neither the auto-file path nor an
+  // ordinary human confirm rebuilds — so every stamped value is re-confirmed as evidence that the
+  // field is constant, and `multiValued` never fires. The freeze manufactures its own proof.
+  // Measured on the sandbox: every frozen field ALSO has a taught Stage-0.5 mapping, and the stamp
+  // only wins where that mapping produced nothing (po_ref: mapping x29 vs fixed x7) — so this
+  // removes a WRONG FALLBACK, not a reader. The genuine-constant case is served better by
+  // supplier_hints (>=2 usages, supplier-scoped, capped at 90, fill-empty-only) and by the admin's
+  // explicit fixed_locked. The issuer is untouched, in either direction.
+  const freezeIssuerOnly = _freezeIssuerOnlyEnabled(db);
 
   return Object.entries(allValues)
     .filter(([key, v]) => v && String(v).trim() && ownField(key))
@@ -1364,7 +1400,8 @@ function _buildTemplateFields(db, allValues, dtInfo) {
       // genuinely-constant recipient name is re-extracted / may route to review rather than frozen —
       // fail-toward-review, never a silent stamped value; do NOT restore the freeze "for recall".
       const recipientName = isNameLikeField(key, meta && meta.label) && !companyKeys.includes(key);
-      const isVariable = schemaVariable || multiValued.has(key) || recipientName;
+      const nonIssuerBlocked = freezeIssuerOnly && !companyKeys.includes(key);
+      const isVariable = schemaVariable || multiValued.has(key) || recipientName || nonIssuerBlocked;
       return {
         field_key:    key,
         anchor_label: null,

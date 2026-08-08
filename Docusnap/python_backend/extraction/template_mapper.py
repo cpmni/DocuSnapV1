@@ -124,6 +124,19 @@ _SELF_VALIDATING_TYPES = frozenset({'date', 'currency', 'currency_code',
 # its pattern permits internal spaces, so the one-token .split()[0] below would truncate it.
 _CODE_CROSSCHECK_TYPES = frozenset({'alphanumeric', 'reference_code'})
 
+# STAGE05_REF_CODE_GATE (kill switch, DEFAULT OFF — reggie design 2026-08-08). A taught box that
+# reads its own CAPTION commits it: measured on a 10-issuer teach test, expected 'HTS-SO-12013',
+# got the literal 'Ref' at conf 70. Stage 1 has refused codeless reference values since 2026-08-07
+# (REF_ROLE_DIGIT_GATE) but that gate lives INSIDE keyword.extract_fields and nothing else consults
+# it, so every Stage-0.5 rung was unprotected. `_gate_value` is the single choke point all six rungs
+# pass through, so one guard there covers the absolute box, the inline harvest, the derived/
+# relocated read, the crosscheck, the registration fallback and the grow.
+# Arming is the INTERSECTION of "the crop is typed as a code" and "the key's role is a reference",
+# reusing keyword._infer_validation — the same arming Stage 1 already trusts — so no fifth ref
+# predicate is created. Refusing returns the standard (None, False, False), i.e. the rung falls
+# through to the next one and ultimately to Stages 1/2; it never asserts a value of its own.
+_STAGE05_REF_CODE_GATE = os.environ.get('STAGE05_REF_CODE_GATE', '0') != '0'
+
 # Stage 0.5 inline-code reconcile — default ON (kill with TEMPLATE_INLINE_CODE_RECONCILE=0).
 # A fixed narrow drawn target box clips a code value's prefix under per-scan offset/scale
 # (DN-93159 → N-93159) and the alphanumeric gate can't see it; the label-anchored inline
@@ -914,6 +927,14 @@ def _gate_value(text, val_type, field_key, validation_patterns, format_lookup,
             text, salvaged = rescued, True
     if not _crop_is_credible(text, val_type, validation_patterns):
         return None, False, False
+    # A reference-role field's value is a CODE — a taught box that read its own caption ('Ref',
+    # 'Account', 'Delivery') carries no digit and is refused here rather than committed. See the
+    # _STAGE05_REF_CODE_GATE flag block; the predicate is keyword's, shared with the Stage-1 gate.
+    if _STAGE05_REF_CODE_GATE and val_type == 'alphanumeric':
+        from extraction import keyword as _kw
+        if (_kw._infer_validation(field_key) == 'alphanumeric'
+                and _kw.ref_value_is_codeless(text)):
+            return None, False, False
     # Free-text OCR-debris guard: a mis-aligned or low-quality crop on a name/
     # address field returns fragmented junk ("aan EE ..... 4 4.3 Fs . J... .")
     # that scrapes past the lax free-text credibility check and commits. Reject it
