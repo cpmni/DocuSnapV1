@@ -6,6 +6,48 @@
 
 ---
 
+## 2026-08-08 — OWNER-REPORTED (mid teach-run): a taught document has no field for something the TYPE defines — "Not needed on this doc"
+
+**Symptom, in the owner's words.** Teaching a *tax invoice* as an Invoice: the type carries a
+`serials` field, but that document does not print serial numbers anywhere. The wizard walks every
+field of the type and offers no way to say "this one isn't on this document", so the operator is
+pushed toward pointing the box at something wrong just to move on. (Caught live during the
+2026-08-08 teach run; the owner's instinct was to use the PO number, which would have written a
+mapping asserting serials live at the PO number's position — a wrong learning row on 20 test docs.)
+
+**The mechanism already exists — the wizard just doesn't expose it.**
+- `template_hidden_fields` (mig 54) + `templates.getHiddenFields`/`setHiddenFields`
+  (`database/modules/templates.js:374-438`). Its own comment: *"A DISPLAY/EXPECTATION mask: hide a
+  field the TYPE has but THIS supplier's layout lacks, so Review [stops expecting it]"*. The
+  Template Manager already renders a per-field hide toggle **including fields with no drawn
+  mapping** — the comment at `:417` says that is the whole point.
+- Hidden fields also drop out of the document score
+  (`template_matcher.hidden_fields_for_scope`, referenced at `templates.js:56`), so hiding is not
+  merely cosmetic — it stops an absent field dragging confidence and blocking auto-file.
+- HIDE-ONLY, never structural: memory `project_template_field_hiding` records that structural roles
+  (issuer / date / reference) must stay unhideable. Any wizard tick must honour that — the three
+  structural rows are shown locked in the manager and must be locked here too.
+
+**Today's workaround (correct, already shipped): "Skip for now"** — `rg-skip`
+(`src/windows/teach/renderer.js:997`) records `status:'skip'` and writes NO mapping. That is the
+right thing to press. What it does NOT do is tell the SYSTEM the field is absent, so the field still
+shows empty in Review and still counts against the document.
+
+**Fix direction (not built).** A tick beside each field in the wizard's field step — wording along
+the lines of *"This isn't on this document"* / *"Not printed on this document"* (owner to choose;
+avoid "not needed", which reads as "I don't want this field" rather than "this layout lacks it") —
+collected in `state.results[key].status = 'absent'` and written on commit through the EXISTING
+`setHiddenFields` call, in the same deferred commit sequence as the mappings (promote-to-template →
+save-mapping per field → hide absent fields → confirm-review). Structural fields must refuse the
+tick. Reuse the manager's copy so the two surfaces describe the same thing.
+
+**Gates.** Unit: structural field cannot be marked absent; an absent field writes a
+`template_hidden_fields` row and NO mapping; Back/Cancel writes neither (the commit stays deferred).
+Behavioural: a taught type with one absent field still auto-files (the absent field must not drag
+the score) — that is the claim worth pinning, since it is the reason to do this rather than leave
+people on Skip.
+
+---
 ## 2026-08-08 — OWNER-REPORTED, DIAGNOSED: Pelican `customer_name` is wrong on 66 of 72 — the clip-repair family EXCLUDES names and the name healer is OFF
 
 Owner ran the SFDEV debug table over the live queue and marked the bad cells
