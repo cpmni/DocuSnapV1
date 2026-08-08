@@ -94,6 +94,24 @@ function gate(extra, armed) {
   return r;
 }
 
+// Same document, but armed (or not) through the SETTING rather than the env var, and with the env
+// var left unset so the setting is what decides. Oracle C5: the shipped flip path is the setting.
+function gateBySetting(extra, settingValue, envOverride) {
+  delete process.env.TRUST_SHADOW_ROW_SKIP;
+  if (envOverride !== undefined) process.env.TRUST_SHADOW_ROW_SKIP = envOverride;
+  const { db, tid } = makeDb();
+  seedHistory(db, tid);
+  const id = seedSubject(db, tid, extra);
+  if (settingValue !== undefined) {
+    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)')
+      .run('trust_shadow_row_skip', settingValue);
+  }
+  const r = trust.docTrustGate(db, id, 'Anconia Corp', 'invoice');
+  db.close();
+  delete process.env.TRUST_SHADOW_ROW_SKIP;
+  return r;
+}
+
 // `subtotal` is NOT a field of this Invoice type — exactly the live exhibit
 // (`unverifiable-value:subtotal` at conf 97 on a graduated scope).
 const SHADOW = { key: 'subtotal', value: '100.00', method: 'shadow_reconcile' };
@@ -116,6 +134,11 @@ check(`ARMED: the document can auto-file (got ${on.ok ? 'ok' : on.reason})`, on.
 section('ARMED — the three deliberate NON-skips');
 // 1. A flagged shadow row still blocks: the skip is placed AFTER the validation_note check, because
 //    a note is real information about the page even when the row itself is invisible.
+//    ACCEPTED TRADE-OFF, PINNED (Oracle C8): this reason is `flagged:<an invisible key>`, and the
+//    Review hold-reason copy (review/renderer.js:2045-2049) prettifies an unknown key, so the
+//    operator would be told "Subtotal couldn't be checked" about a field that is not on their form.
+//    Rare — the reconciliation note lands on the VISIBLE total field (validator.py:696) — and the
+//    block itself is correct, so it stays. Do not "fix" it by moving the skip above the note check.
 const flagged = gate({ ...SHADOW, note: 'the total does not add up — please verify' }, true);
 check(`ARMED: a FLAGGED shadow row still BLOCKS (got ${flagged.reason})`,
       flagged.ok === false && flagged.reason === 'flagged:subtotal');
@@ -153,6 +176,56 @@ section('THE HARNESS-OVERLAY TRAP — an overlay without extraction_method is a 
         without.ok === false && without.reason === 'unverifiable-value:subtotal');
   check('overlay WITH extraction_method threaded: the skip fires', with_.ok === true);
   delete process.env.TRUST_SHADOW_ROW_SKIP;
+}
+
+section('THE FLIP PATH — a SETTING arms it, the env var is the dev escape (Oracle C5)');
+check(`setting unset -> disarmed (got ${gateBySetting(SHADOW, undefined).reason})`,
+      gateBySetting(SHADOW, undefined).ok === false);
+check("setting 'false' -> disarmed",
+      gateBySetting(SHADOW, 'false').ok === false);
+check("setting 'true' -> ARMED with no env var present",
+      gateBySetting(SHADOW, 'true').ok === true);
+check("env '0' OVERRIDES a 'true' setting (a harness arm must be unambiguous)",
+      gateBySetting(SHADOW, 'true', '0').ok === false);
+check("env '1' OVERRIDES a 'false' setting",
+      gateBySetting(SHADOW, 'false', '1').ok === true);
+{
+  // A DB that cannot answer the settings query must not throw inside the auto-file gate.
+  const bare = new Database(':memory:');
+  let threw = false;
+  try { trust._shadowRowSkipEnabled(bare); } catch { threw = true; }
+  check('a DB with no settings table does not throw, and reads OFF',
+        !threw && trust._shadowRowSkipEnabled(bare) === false);
+  bare.close();
+}
+
+section('opts.shadowRowSkip THREADING — one read per document/batch, caller can pin it (Oracle C4)');
+{
+  delete process.env.TRUST_SHADOW_ROW_SKIP;
+  const { db, tid } = makeDb();
+  seedHistory(db, tid);
+  const id = seedSubject(db, tid, SHADOW);
+  const byOpt = trust.docTrustGate(db, id, 'Anconia Corp', 'invoice', { shadowRowSkip: true });
+  const byOptOff = trust.docTrustGate(db, id, 'Anconia Corp', 'invoice', { shadowRowSkip: false });
+  db.close();
+  check('opts.shadowRowSkip:true arms the skip with no env and no setting', byOpt.ok === true);
+  check('opts.shadowRowSkip:false disarms it', byOptOff.ok === false);
+}
+
+section('ROLE-SET DRIFT — the gate and the confirm-time drop share COMPANY_KEYS (Oracle C3)');
+// foreignFields.ownFieldPredicate keeps a row VISIBLE when its key is in COMPANY_KEYS ∪ {ref,date}.
+// If this gate kept its own hardcoded 'supplier_name', growing COMPANY_KEYS (it held customer_name
+// before migration 44) would make a row that stays VISIBLE in Review become SKIPPABLE here.
+{
+  const doctypes = require('./document_types');
+  const before = [...doctypes.COMPANY_KEYS];
+  doctypes.COMPANY_KEYS.push('customer_name');      // simulate the pre-mig-44 shape
+  const r = gate({ key: 'customer_name', value: 'Wyatt Oil', method: 'shadow_reconcile' }, true);
+  doctypes.COMPANY_KEYS.length = 0;
+  doctypes.COMPANY_KEYS.push(...before);
+  check(`a shadow row on a COMPANY_KEYS key is NOT skipped (got ${r.ok ? 'ok' : r.reason})`,
+        r.ok === false);
+  check('COMPANY_KEYS restored after the drift pin', doctypes.COMPANY_KEYS.join() === before.join());
 }
 
 console.log();

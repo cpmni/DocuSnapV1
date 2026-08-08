@@ -92,5 +92,18 @@ for (const [id, key, env] of BRIDGES) {
         && handler.includes(`'${key}'`) && handler.includes(`env.${env} =`));
 }
 
+// SETTING-ONLY switches: a JS-side gate reads the key directly, so there is no _reconcileEnv leg
+// and no env var to check — the consumer file is the third leg instead. A switch listed here whose
+// consumer stops reading the key is the same dead-toggle failure, just one file over.
+const SETTING_SWITCHES = [
+  ['shadow-row-skip-toggle', 'trust_shadow_row_skip', 'database/modules/trust.js'],
+];
+for (const [id, key, consumer] of SETTING_SWITCHES) {
+  let src = '';
+  try { src = fs.readFileSync(path.join(root, consumer), 'utf8'); } catch {}
+  check(`setting switch ${id} -> ${key} -> read by ${consumer}`,
+        ids.has(id) && js.includes(`'${id}'`) && js.includes(`'${key}'`) && src.includes(`'${key}'`));
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nAll settings-wiring pins passed');
 process.exit(fails ? 1 : 0);

@@ -642,7 +642,12 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          ['heading-absent-reread-toggle', 'heading_absent_reread'],
                          ['credit-sign-toggle', 'credit_sign_coherence'],
                          ['inline-row-overlap-toggle', 'template_inline_row_overlap'],
-                         ['ref-role-digit-toggle', 'ref_role_digit_gate']]) {
+                         ['ref-role-digit-toggle', 'ref_role_digit_gate'],
+                         // NOT an extraction switch and NOT bridged through _reconcileEnv: the
+                         // auto-file gate is JS-side, so database/modules/trust.js reads this key
+                         // itself, once per document. That also means it takes effect on the next
+                         // filing decision rather than needing an app restart.
+                         ['shadow-row-skip-toggle', 'trust_shadow_row_skip']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);

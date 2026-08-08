@@ -286,24 +286,50 @@ function _nonRoleLenientEnabled() {
   return process.env.TRUST_NONROLE_SHAPE_LENIENT !== '0';
 }
 
-// TRUST_SHADOW_ROW_SKIP (gary design, 2026-08-07) — the SHADOW-ROW AUTO-FILE DEADLOCK.
-// `_shadow_reconcile_components` (engine.py:2802) writes extraction rows with
-// extraction_method='shadow_reconcile' purely to back the "totals add up" check. Those rows are
-// INVISIBLE in Review (review/renderer.js:2313 skips them), EXCLUDED from learning
-// (learning.js:1237), DELETED at confirm (foreignFields.dropForeignExtractions) and are not filing
-// inputs — but docTrustGate judged filability on them anyway. For a shadow row on a field this type
-// does not define, `fmts.get()` is always undefined, so the gate returns
-// `unverifiable-value:<field>` and the document can NEVER auto-file while the operator can never
-// see, let alone clear, the row that blocked it. SEALED TWICE. Live proof: three documents at
-// conf 97 on a graduated scope (floor 95), no note, reason `unverifiable-value:subtotal`.
-// The `at100` arm already ignores such rows (see the at100 branch below) — internal precedent.
+// TRUST_SHADOW_ROW_SKIP (gary design, 2026-08-07; Oracle SIGN-OFF-W/COND 2026-08-08) — the
+// SHADOW-ROW AUTO-FILE DEADLOCK.
+// `_shadow_reconcile_components` (engine.py:2800,2820-2828) writes extraction rows with
+// extraction_method='shadow_reconcile' purely to back the "totals add up" check. It writes ONLY
+// the four money roles ('subtotal','vat_tax','shipping','discount') and only for a role the
+// document's type does NOT cover — so a shadow key is FOREIGN TO THE TYPE BY CONSTRUCTION, at
+// write time. Those rows are EXCLUDED from learning (learning.js:1237) and DELETED at confirm
+// (reviewService.js:251, processing/handler.js:3749, both AFTER their filing decision), and they
+// are not filing inputs — but docTrustGate judged filability on them anyway. With no learned
+// format for a key the type does not define, `_scopeFormats` can never hold one, so the gate
+// returns `unverifiable-value:<field>` permanently. The document can NEVER auto-file and the
+// operator can never see, let alone clear, the row that blocked it. SEALED TWICE. Live proof:
+// three documents at conf 97 on a graduated scope (floor 95), no note, `unverifiable-value:subtotal`.
+//
+// WHY THE ROW IS INVISIBLE (Oracle C6 — the original citation here was BACKWARDS): Review renders
+// `for (const key of reviewFields())` (review/renderer.js:2456; reviewFields() at :506-509 returns
+// the TYPE's field keys, never extraction keys), so a foreign key has no row to render. Note that
+// review/renderer.js:2313 does the OPPOSITE of skipping — it CONSUMES shadow rows to drive the
+// "✓ mathematically verified" badge. So a shadow row IS user-facing, as a badge and not as a value.
+// (There is NO at100 precedent for this skip, contrary to an earlier draft of this comment: the
+// at100 arm ignores such rows only as a side effect of being history-blind, it is method-blind, and
+// it is `strict_100_autofile`-gated, DEFAULT OFF because it over-blocked in the field.)
+//
 // SKIP ONLY when the row is genuinely inert: shadow method AND not a defined field of this type AND
-// not a structural role key. Fail-OPEN: a type carrying no field metadata skips nothing.
+// not a structural role key. FAIL-OPEN means THE GATE STAYS SHUT: a type carrying no field metadata
+// skips nothing, so every row is judged and the document routes to review.
 // PLACED AFTER the validation_note check, so a FLAGGED shadow row still blocks — the note is real
 // information about the page even when the row itself is invisible.
 // Default OFF; OFF = byte-identical.
-function _shadowRowSkipEnabled() {
-  return process.env.TRUST_SHADOW_ROW_SKIP === '1';
+//
+// FLIP MECHANISM (Oracle C5): a SETTING read here, not `process.env` set at startup — an
+// env-at-startup toggle silently does nothing until the app is restarted, and this codebase has
+// been bitten by the stale-main-process class repeatedly. The env var is retained as the
+// dev/harness escape and WINS IN BOTH DIRECTIONS so an A/B arm is unambiguous. try/catch defaults
+// OFF so a fixture DB with no settings table cannot throw inside the auto-file gate. Hoisted to
+// ONE read per docTrustGate call and threadable via `opts.shadowRowSkip` (Oracle C4) — the
+// per-row call site would otherwise be N indexed queries per document.
+function _shadowRowSkipEnabled(db) {
+  const env = process.env.TRUST_SHADOW_ROW_SKIP;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try {
+    return require('./learning').getSetting(db, 'trust_shadow_row_skip', 'false') === 'true';
+  } catch { return false; }
 }
 
 const _DOMINANT_MIN_SAMPLES = 5;
@@ -472,7 +498,15 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
   const _dtRow = opts.dtRow
     || db.prepare('SELECT ref_field_key, date_field_key FROM document_types WHERE id = ?').get(doc.document_type_id)
     || {};
-  const roleKeys = new Set(['supplier_name', _dtRow.ref_field_key, _dtRow.date_field_key].filter(Boolean));
+  // COMPANY_KEYS, not a hardcoded 'supplier_name' (Oracle C3). foreignFields.ownFieldPredicate —
+  // the CONFIRM-TIME drop that decides the same "is this row visible to the operator" question —
+  // builds its role set from COMPANY_KEYS ∪ {ref,date}. Sharing the constant makes the two sets
+  // unable to drift: COMPANY_KEYS held customer_name before migration 44 and could grow again, and
+  // if it did, a row foreignFields keeps VISIBLE would have become skippable here.
+  const roleKeys = new Set([
+    ...require('./document_types').COMPANY_KEYS,
+    _dtRow.ref_field_key, _dtRow.date_field_key,
+  ].filter(Boolean));
   // NULL-ROLE GUARD (Oracle). An earlier draft of this claimed a dangling role key "falls back to
   // the strict treatment". That was FALSE and backwards: if ref_field_key is NULL, the document's
   // real reference field is still an ordinary field, is NOT in roleKeys, and would become the most
@@ -482,6 +516,10 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
   // role is unset, no leniency applies to this document at all.
   const _rolesComplete = !!(_dtRow.ref_field_key && _dtRow.date_field_key);
   const _nonRoleLenientOn = _nonRoleLenientEnabled() && _rolesComplete;
+  // ONE read per document, not one per row (Oracle C4) — mirrors how formats/gradOn/optOut are
+  // hoisted through opts by autoFileEligibleIds so a whole queue costs one lookup, not N×rows.
+  const _shadowSkipOn = (opts.shadowRowSkip !== undefined)
+    ? !!opts.shadowRowSkip : _shadowRowSkipEnabled(db);
 
   for (const e of exs) {
     const v = String(e.display_value ?? e.raw_value ?? '').trim();
@@ -492,9 +530,9 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
     // flagged shadow row still blocks. A row that is VISIBLE to the operator — a defined field of
     // this type, or a structural role — is never skipped, whatever its method, which preserves the
     // 2026-07-22 foreignFields condition that a visible foreign row must still block.
-    if (_shadowRowSkipEnabled()
+    if (_shadowSkipOn
         && String(e.extraction_method || '') === 'shadow_reconcile'
-        && fieldTypes.size > 0                                           // fail-open on no metadata
+        && fieldTypes.size > 0                        // no field metadata → skip nothing → gate shut
         && !fieldTypes.has(e.field_key)
         && !roleKeys.has(e.field_key)) {
       continue;
@@ -697,9 +735,14 @@ function autoFileEligibleIds(db, docs, opts = {}) {
   const formats = opts.formats || require('./learning').getFieldFormats(db);
   const gradOn  = _graduationEnabled(db);
   const optOut  = _optedOutScopes(db);
+  // Same hoist as the three above (Oracle C4): the shadow-row switch is a settings read, so
+  // resolving it once per BATCH keeps a whole-queue evaluation at one lookup instead of one per
+  // document. An explicit opts.shadowRowSkip from the caller still wins.
+  const shadowRowSkip = (opts.shadowRowSkip !== undefined)
+    ? !!opts.shadowRowSkip : _shadowRowSkipEnabled(db);
   const ids = [];
   for (const d of (docs || [])) {
-    if (isAutoFileEligible(db, d, { ...opts, formats, gradOn, optOut }).eligible) ids.push(d.id);
+    if (isAutoFileEligible(db, d, { ...opts, formats, gradOn, optOut, shadowRowSkip }).eligible) ids.push(d.id);
   }
   return ids;
 }
