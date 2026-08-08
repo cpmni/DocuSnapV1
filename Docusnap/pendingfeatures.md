@@ -6,6 +6,43 @@
 
 ---
 
+## 2026-08-08 — OPEN: template LANDMARKS are page-0-only while MAPPINGS can now be page 2+
+
+Surfaced by the teach multi-page smoke run (feature verified working — `5ad0220`, page_number 1
+written and confirmed against the DB). **This is the obvious next question the multi-page change
+raises, and it is NOT answered.**
+
+Observed in the sandbox: template 1 finished with field mappings on `page_number = 1` while ALL of
+its `template_landmarks` rows sat at `page_number = 0` ("Northgate", "Description", "Terrace",
+"invoice", "you"). Stage 0.5's registration transform buckets landmarks per page
+(`template_mapper.py:566-572`) and fits per page, so a page-2 mapping whose page carries NO landmarks
+gets no transform — it falls back to the anchor/absolute rungs with no drift correction, exactly the
+position the 15 landmark-starved templates are in (see the audit entry below).
+
+NOT PROVEN to misread anything — no page-2 mapping has ever been reprocessed. The questions to
+settle before anyone relies on multi-page teaching for a drifting scan:
+1. Does `captureSampleWords`/`select_cross_sample` gather words from EVERY page, or only page 0? If
+   only page 0, a page-2 mapping can never acquire landmarks and its registration is dead by
+   construction rather than by starvation.
+2. Should the teach commit trigger landmark derivation for each page it taught a field on?
+3. `templates/handler.js:242-253`'s backfill is existence-aware per TEMPLATE, not per page — a
+   template with page-0 landmarks looks "done" even if page 2 has none.
+
+Cheap probe: teach a field on page 2, reprocess a sibling, and read the trace for which rung won.
+
+**Also from the same run, fixed immediately:** an unconfirmed read-back survived a page switch, so
+the panel offered "Value: Northgate Textiles — Looks right →" while the operator was looking at the
+Larkspur page. Stored rows were always correct (the box's own page), so it was a trust defect rather
+than corruption. Fixed + pinned in the same commit as this entry.
+
+**Also observed, fixture artefact not a bug:** the template was named for the page-2 supplier but
+fingerprinted on the page-1 letterhead, so genuine page-1-supplier documents were stamped with the
+page-2 supplier's name. Only reachable because the test fixture deliberately staples two different
+companies' invoices together; no real document does this. Worth knowing that template IDENTITY and
+field GEOMETRY can be sourced from different pages.
+
+---
+
 ## 2026-08-08 — desktop security review (owner-supplied checklist) → SEC-17..SEC-22
 
 Owner asked for an audit of a general Electron/Python hardening checklist against this app. The

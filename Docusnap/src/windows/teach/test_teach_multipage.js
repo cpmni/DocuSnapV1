@@ -57,6 +57,16 @@ check('a stored box is only drawn on the page it belongs to',
       /cr\.page !== state\.pageIndex\) cr = null/.test(js));
 check('selecting a field taught on another page follows it there',
       /_r\.page !== state\.pageIndex\) gotoTeachPage\(_r\.page\)/.test(js));
+// Found by the sandbox smoke run: the canvas switched pages but the panel kept offering the
+// previous page's read-back with a live "Looks right" button, so a value from a page the operator
+// was no longer viewing could be confirmed. The stored row was always correct, so this was a trust
+// defect rather than data corruption — but it is exactly the kind of thing that makes an operator
+// distrust the whole wizard.
+check('an UNCONFIRMED read-back is dropped when the page changes',
+      /_pending\.status === 'pending'\) delete state\.results\[_cf\.key\]/.test(js));
+check('the panel is reset via renderFieldPrompt (not promptField, which would flip back)',
+      /_setPageLoading\(false\);[\s\S]{0,240}renderFieldPrompt\(\);/.test(js)
+      && /function renderFieldPrompt\(/.test(js));
 
 console.log('\nBACKWARD COMPATIBILITY');
 check('a result with no page (an in-flight wizard across an update) still commits as page 0',

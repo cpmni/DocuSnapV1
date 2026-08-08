@@ -493,6 +493,14 @@ function renderPageNav(){
 async function gotoTeachPage(idx){
   if (idx === state.pageIndex || _teachDeskewBusy || _teachReadBusy) return;
   drag = null; drawnBox = null;
+  // Drop an UNCONFIRMED read-back before leaving the page (found by the sandbox smoke run): the
+  // canvas switched but the panel kept offering "Value: Northgate Textiles — Looks right →" while
+  // the operator was looking at the Larkspur page. The stored row was always correct — the box's own
+  // page, not the displayed one — so this was never data corruption, but it invited someone to
+  // confirm a value that is nowhere on the page in front of them.
+  const _cf = curField();
+  const _pending = _cf && state.results[_cf.key];
+  if (_pending && _pending.status === 'pending') delete state.results[_cf.key];
   _setPageLoading(true);
   const ok = await showTeachPage(idx);
   if (ok) {
@@ -501,6 +509,9 @@ async function gotoTeachPage(idx){
     if (TZ_DEFAULT > 1) requestAnimationFrame(() => { try { tzSet(TZ_DEFAULT); tzShowTop(); } catch {} });
   }
   _setPageLoading(false);
+  // Reset the panel to "draw a box" for this page. renderFieldPrompt, never promptField — see the
+  // note on the split; promptField would navigate straight back to the page we just left.
+  renderFieldPrompt();
   renderPageNav(); redrawCanvas();
 }
 function _setPageLoading(on){ const el = $('rg-loading'); if (el) el.classList.toggle('hidden', !on); }
@@ -690,6 +701,13 @@ function promptField(){
   // sees the box they drew instead of a blank-looking page with their work apparently missing.
   const _r = state.results[f.key];
   if (_r && Number.isInteger(_r.page) && _r.page !== state.pageIndex) gotoTeachPage(_r.page);
+  renderFieldPrompt();
+}
+// The prompt/read-back panel, WITHOUT promptField's page-follow. Split out so a page change can
+// reset the panel without bouncing the canvas back to the page it just left (promptField would see
+// a pending result belonging to the old page and navigate straight back — an infinite flip).
+function renderFieldPrompt(){
+  const f=curField(); if(!f) return;
   drawMode='value';
   setConfirm('');   // clear any prior read-back overlay
   setValueBanner(f);
