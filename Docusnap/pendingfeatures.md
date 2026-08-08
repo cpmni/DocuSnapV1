@@ -6,11 +6,56 @@
 
 ---
 
-## 2026-08-08 — OPEN: template LANDMARKS are page-0-only while MAPPINGS can now be page 2+
+## 2026-08-08 — ANSWERED (2026-08-08 later): template LANDMARKS are page-0-only while MAPPINGS can now be page 2+
 
 Surfaced by the teach multi-page smoke run (feature verified working — `5ad0220`, page_number 1
-written and confirmed against the DB). **This is the obvious next question the multi-page change
-raises, and it is NOT answered.**
+written and confirmed against the DB).
+
+> **ANSWERED AT SOURCE — the teach+reprocess probe below was NOT needed; the code and the live DB
+> settle it. Read this box before re-investigating.**
+>
+> **Q1 — does landmark capture read every page? NO, and it is hardcoded in BOTH derivation paths.**
+> `templates/handler.js:82` (`captureSampleWords`) and `:157` (`generateLandmarks`) each spawn
+> `landmarks.py` with a literal `'--page', '0'`; `tryCrossSampleLandmarks` (`:115`) never passes a
+> page at all and `select_cross_sample`'s signature defaults `page_number=0`. **Worse, and this is
+> the load-bearing new fact: `template_sample_words` (migration 34, `database/index.js:735-746`) has
+> NO page column**, so the cross-sample corpus is page-blind BY SCHEMA — per-page cross-sample
+> landmarks need a MIGRATION, not just an argument change. So a page-2 mapping can never acquire
+> landmarks: its registration is dead by CONSTRUCTION, not by starvation.
+>
+> **Q3 — confirmed.** The `:242-253` backfill is `NOT EXISTS (… WHERE l.template_id = t.id)`, per
+> TEMPLATE. A template with page-0 landmarks looks done however many pages it maps.
+>
+> **SEVERITY IS LOWER THAN THIS ENTRY ORIGINALLY IMPLIED — degradation, never corruption, and today
+> zero.** Three separate checks:
+> 1. **Page-2 mappings ARE read in production.** `page_images` from `extract_text_and_images` is the
+>    FULL page list (bounded only by the 300-page OCR cap), `crop_pages` is parallel to it
+>    (`engine.py:4707`) and `extract_with_mappings` indexes `page_images[page_idx]`. The `page_idx >=
+>    len(page_images)` skip only ever bit the single-page PREVIEW caller — which is exactly what
+>    `TEMPLATE_PREVIEW_PAGE_PAD` (`6c85157`) already fixed. Nothing is silently dropped.
+> 2. **Page-0 landmarks can NEVER be mis-applied to page 2.** `lm_by_page` buckets by page and the
+>    lookup is `page_transform.get(page_idx)` (`template_mapper.py:609-618, 628`), so a landmark-less
+>    page gets `None` and the mapping falls through to the anchor/absolute rungs — the documented
+>    "never worse than today" path, not a blind transformed crop.
+> 3. **Live blast radius is ZERO.** Read-only census of `%APPDATA%\ScanFinder\docusnap.db`: all 38
+>    field mappings are `page_number = 0`; all 96 landmark rows are `page_number = 0` (30 `auto`,
+>    66 `cross_sample`); the query "template with a mapping on a page carrying no landmark" returns
+>    NO ROWS; and 0 documents have `page_count > 1`.
+>
+> **Bonus — the corrected starvation claim reproduced independently from the live DB:** 15 of 33
+> templates are under `MIN_VERIFIABLE_INLIERS = 3` (6 with zero landmarks, 7 with one, 2 with two),
+> and **exactly ONE of them has any field mappings** — template 30, 2 landmarks, 3 mappings, the only
+> one paying anything today. This matches 007's refutation in `HANDOVER_2026-08-08_DAY.md` exactly.
+>
+> **What remains open is therefore a FEATURE, not a defect:** per-page landmark derivation, so that
+> multi-page teaching gets drift correction on the pages it taught. Fix shape, smallest-correct:
+> derive landmarks for each page that CARRIES A MAPPING (not every page — cost is one OCR spawn per
+> page), make the backfill existence-aware per (template, page), and add `page_number` to
+> `template_sample_words` before making the cross-sample path page-aware. **It is a NO-OP on this
+> corpus by construction** (only page 0 has mappings), which is a gate strength and a gate weakness:
+> byte-identical is provable, but the new behaviour can only be exercised against a BUILT multi-page
+> fixture. Honour 007 item F / Oracle's standing rule — turning registration ON where it is currently
+> off is the documented Castellan mechanism — so **flag-gated and measured, or not at all.**
 
 Observed in the sandbox: template 1 finished with field mappings on `page_number = 1` while ALL of
 its `template_landmarks` rows sat at `page_number = 0` ("Northgate", "Description", "Terrace",
@@ -19,16 +64,14 @@ its `template_landmarks` rows sat at `page_number = 0` ("Northgate", "Descriptio
 gets no transform — it falls back to the anchor/absolute rungs with no drift correction, exactly the
 position the 15 landmark-starved templates are in (see the audit entry below).
 
-NOT PROVEN to misread anything — no page-2 mapping has ever been reprocessed. The questions to
-settle before anyone relies on multi-page teaching for a drifting scan:
-1. Does `captureSampleWords`/`select_cross_sample` gather words from EVERY page, or only page 0? If
-   only page 0, a page-2 mapping can never acquire landmarks and its registration is dead by
-   construction rather than by starvation.
+NOT PROVEN to misread anything — no page-2 mapping has ever been reprocessed. The questions that
+were open (all three now settled in the box above):
+1. Does `captureSampleWords`/`select_cross_sample` gather words from EVERY page, or only page 0?
+   **ANSWERED: page 0 only, hardcoded in both paths, and the corpus table has no page column.**
 2. Should the teach commit trigger landmark derivation for each page it taught a field on?
-3. `templates/handler.js:242-253`'s backfill is existence-aware per TEMPLATE, not per page — a
-   template with page-0 landmarks looks "done" even if page 2 has none.
-
-Cheap probe: teach a field on page 2, reprocess a sibling, and read the trace for which rung won.
+   **STILL OPEN — this is the remaining feature, and the only part still needing a decision.**
+3. `templates/handler.js:242-253`'s backfill is existence-aware per TEMPLATE, not per page.
+   **ANSWERED: confirmed, per template.**
 
 **Also from the same run, fixed immediately:** an unconfirmed read-back survived a page switch, so
 the panel offered "Value: Northgate Textiles — Looks right →" while the operator was looking at the
