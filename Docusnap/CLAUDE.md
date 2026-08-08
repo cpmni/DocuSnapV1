@@ -21,6 +21,29 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
+## ⏭ LATEST — 2026-08-08 OVERNIGHT (autonomous): **READ `HANDOVER_2026-08-08_OVERNIGHT.md` FIRST**
+Branch **`feat/teach-side-overnight`** (revert point `8b8b458` on `feat/reprocess-throughput-autostraighten`).
+The owner ran a controlled TEACH-SIDE test — teach 1 document per issuer x 10 issuers, import 20
+scanned siblings each — and it was scored against corpus ground truth for the first time. **The 98%
+goal was NOT met: date 83 / total 72 / ref 64 / issuer 60 / customer 53 / vat 51 / po_ref 35 /
+account 28 / serials 0.** The remaining gap is GEOMETRY (a taught box reading the wrong row/column
+on a drifted scan), not rules — do not spend another night on rule slices.
+**Shipped dark + measured (`4e5c21c`):** `STAGE05_REF_CODE_GATE` (a taught box committed its own
+caption 'Ref' as the reference — Stage 1's digit gate never reached Stage 0.5),
+`KEYWORD_GENERIC_CAPTION_EXCLUSIVE` (one code captured into THREE fields — every ref-role field is
+seeded the same generic caption bank), `TYPE_TITLE_OWNER_PRECEDENCE` (**the silent one**: type
+election is a bucket SUM, so an install-created type owning one phrase loses to a built-in owning a
+whole vocabulary, and a template taught against it binds to a slug its siblings can never detect as
+— 35 documents matched NO template and the operator got no signal at all).
+**REFUTED BY MEASUREMENT — do NOT flip `TEMPLATE_FREEZE_ISSUER_ONLY`:** the freeze defect is real
+(a field is frozen from a sample of ONE and stamped at 95), but unfreezing moved po_ref 35→50% and
+**vat_no 51→16%** — a VAT number IS a genuine per-supplier constant whose taught mapping often
+fails, and the stamp was carrying it. Ships OFF with a reversible sweep so the decision stays open.
+**New instruments:** `stress_test/teach_run_ab.js` (replay 200 siblings under a mutated learning
+state or env arm, ~6.5 min) + `stress_test/score_teach_run.py` (per-scope/per-field, counts EMPTY
+separately from WRONG) + `scripts/teach-sandbox.js` snapshot/restore. **OUTSTANDING: the Chris
+replication arm of the owner's instruction was not run.**
+
 ## Current session state (2026-08-08 EVENING, owner present) — ORACLE ×2 · SEC-17 FAIL-OPEN fixed · teach label-pick · 2 live pattern defects · 2 owner decisions shipped · Pelican `customer_name` diagnosed
 **READ `HANDOVER_2026-08-08_EVENING.md` FIRST** (NOT `HANDOVER_2026-08-08.md`, a MISDATED older
 file; `_DAY` is the earlier half of the same day). **HEAD `87c3057`, 13 commits, ALL PUSHED.
