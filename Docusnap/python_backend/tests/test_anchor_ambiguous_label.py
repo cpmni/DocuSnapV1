@@ -100,6 +100,8 @@ try:
     r = _extract([HEADER, ROW], "1102V03NL1", format_lookup=None)
     check("item kept as the code", r.get("item", {}).get("value"), "1102V03NL1")
     check("method stays anchor_crop (not relocated)", r.get("item", {}).get("method"), "anchor_crop")
+    check("r: clean rigid carries NO caption-guard note -> auto-files unflagged (Oracle cond 4)",
+          "heading on the page" not in (r.get("item", {}).get("validation_note") or ""), True)
 
     print("Drift fix preserved — a WRONG rigid read (not beside any label) still relocates:")
     r2 = _extract([ROW], "WRONGXY", format_lookup=None)
@@ -108,9 +110,19 @@ try:
     print("Backstop (reggie) — header only, digit-free word vs code on a digit-bearing field:")
     r3 = _extract([HEADER], "1102V03NL1", format_lookup=lambda _fk: {"shapes": ["####@##@@#"]})
     check("digit-bearing history -> keep the code", r3.get("item", {}).get("value"), "1102V03NL1")
+    print("Caption guard (FIX 1) — header-only: the harvested caption word never commits:")
     r4 = _extract([HEADER], "1102V03NL1", format_lookup=None)
-    check("no learned shape -> backstop inert (override to word)",
-          r4.get("item", {}).get("value"), "Information")
+    check("no learned shape -> caption 'Information' is NULLED, not committed (was the bug)",
+          r4.get("item", {}).get("value"), None)
+    check("r4: empty field carries a review note -> held, never a silent-blank auto-file (Oracle cond 2)",
+          bool(r4.get("item", {}).get("validation_note")), True)
+    os.environ["ANCHOR_CAPTION_HARVEST_GUARD"] = "0"
+    try:
+        r4off = _extract([HEADER], "1102V03NL1", format_lookup=None)
+        check("OFF (ANCHOR_CAPTION_HARVEST_GUARD=0): legacy 'Information' restored -> byte-identical",
+              r4off.get("item", {}).get("value"), "Information")
+    finally:
+        del os.environ["ANCHOR_CAPTION_HARVEST_GUARD"]
 finally:
     anchor._crop_and_ocr, tm._crop = _saved_cao, _orig_crop
 

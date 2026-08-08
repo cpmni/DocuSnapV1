@@ -1,0 +1,144 @@
+'use strict';
+/**
+ * lib/license/timeAnchor.js — SEC-05: keep the monotonic time high-water mark OUTSIDE the
+ * restorable app database.
+ *
+ * THE HOLE: the rollback defence (`effectiveNow = max(now, highWaterMark)`, token.js) reads its
+ * high-water mark from `settings` inside %APPDATA%\ScanFinder\docusnap.db — the same user-writable
+ * file a user can copy. Snapshot the DB while a trial is valid, let it expire, go offline, wind the
+ * clock back, restore the snapshot: the HWM returns to its old low value and the trial runs again,
+ * indefinitely.
+ *
+ * THE ANCHOR: mirror the mark to a file under LOCALAPPDATA — a DIFFERENT root from the roaming
+ * database, so restoring a DB backup (or the whole roaming folder) does not roll it back. The gate
+ * then takes max(db, anchor). This closes the snapshot-restore vector specifically; it does not
+ * pretend to stop a determined local attacker who edits both (client-side offline licensing can't —
+ * see SEC-09/SEC-10, accepted). The bar it raises is "copy a file back" → "find and edit two
+ * locations in different roots".
+ *
+ * ⚠ THE DANGEROUS DIRECTION IS THE OTHER ONE. `eff >= entitlementEnd` LOCKS, so a corrupt anchor
+ * holding an absurd future timestamp would lock a PAYING user out permanently, offline, with no
+ * recourse. Every read is therefore clamped (see sanitiseAnchor) and every failure fails OPEN
+ * (returns 0 = "no opinion", never a large number). A missing, unreadable, garbage or
+ * absurdly-future anchor must always degrade to today's behaviour, never to a lockout.
+ */
+const path = require('path');
+const crypto = require('crypto');
+
+// Stage 6c: OPTIONAL integrity stamp. When the caller supplies a per-install key (deps.hmacKey — the
+// device-fingerprint hash), the mark is written as `AV1:<value>:<hmac>` and verified on read, so a
+// foreign anchor copied from another machine, accidental corruption, or a naive text-edit is REJECTED.
+// BACKWARD-COMPATIBLE: a legacy bare-integer anchor is still read; the next write upgrades it. FAIL-OPEN
+// preserved — a bad/foreign/keyed HMAC reads as 0 ("no opinion"), NEVER a lock. With NO key the format
+// and behaviour are the legacy bare integer (byte-identical) — withholding the key IS the kill switch.
+// WHAT THIS IS (Oracle-corrected framing) — machine-binding + BRICK-CONTAINMENT: a foreign/cloned HIGH
+// anchor (profile-clone, disk-image, roaming-sync onto a second machine) now reads as 0 instead of
+// propagating and locking that machine out — a SAFETY win — plus modest raise-effort vs a notepad edit.
+// It is NOT rollback hardening: the SEC-05 rollback move is to DELETE the file (→0 → falls to a restored
+// low DB), which keying does nothing against, so the SEC-05 rollback residual is UNCHANGED (its follow-up
+// stays open). Also note: a MachineGuid change (OS reinstall / some VM clones) gives a new key, so the
+// old AV1 reads foreign→0 — a bare anchor's persistence across that event no longer holds. Fail-open (only
+// ever unlocks); re-stamped on the next bump / online heal, and an fp change forces online re-activation.
+const _STAMP_PREFIX = 'AV1:';
+function _anchorHmac(valueStr, key) {
+  const k = Buffer.isBuffer(key) ? key : Buffer.from(String(key), 'utf8');
+  return crypto.createHmac('sha256', k).update(String(valueStr), 'utf8').digest('hex');
+}
+function _macEq(a, b) {
+  try { const x = Buffer.from(String(a)), y = Buffer.from(String(b)); return x.length === y.length && crypto.timingSafeEqual(x, y); }
+  catch { return false; }
+}
+// → { value:Number, drop:boolean }. drop=true means a keyed verify FAILED (tampered/foreign) → ignore.
+function _decodeAnchor(content, key) {
+  const s = String(content).trim();
+  if (s.startsWith(_STAMP_PREFIX)) {
+    const rest = s.slice(_STAMP_PREFIX.length);
+    const i = rest.lastIndexOf(':');
+    if (i < 0) return { value: NaN, drop: !!key };
+    const valStr = rest.slice(0, i), mac = rest.slice(i + 1);
+    if (key && !_macEq(mac, _anchorHmac(valStr, key))) return { value: NaN, drop: true };
+    return { value: Number(valStr), drop: false };   // keyed+valid, or unkeyed downgrade (still honoured)
+  }
+  return { value: Number(s), drop: false };          // legacy bare integer (unverified, still honoured)
+}
+
+// A rollback further than this is not a scenario we defend — beyond it a value is far more likely
+// to be corruption (or a filesystem clock artefact) than a real observation, and treating it as
+// real would lock the user out. 5 years comfortably covers any realistic clock-rollback attack on a
+// 14-day trial / annual seat while keeping a garbage value non-fatal.
+const MAX_FUTURE_SKEW_MS = 5 * 365 * 24 * 60 * 60 * 1000;
+const ANCHOR_DIRNAME = 'ScanFinder';
+const ANCHOR_FILENAME = '.time-anchor';
+
+/**
+ * PURE. Turn a raw anchor reading into a usable high-water mark.
+ * Returns 0 ("no opinion") for anything missing, malformed, negative, or so far in the future that
+ * trusting it would lock a legitimate user out. `now` is the caller's current wall clock.
+ */
+function sanitiseAnchor(raw, now) {
+  const n = Number(raw);
+  const t = Number(now) || 0;
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  if (n > t + MAX_FUTURE_SKEW_MS) return 0;   // corrupt/absurd → ignore, NEVER lock on it
+  return Math.floor(n);
+}
+
+/** The anchor path: LOCALAPPDATA (or an injected base) — deliberately NOT the roaming userData dir. */
+function anchorPath(deps = {}) {
+  const base = deps.baseDir
+    || process.env.LOCALAPPDATA
+    || process.env.XDG_STATE_HOME
+    || process.env.HOME
+    || '';
+  if (!base) return null;
+  return path.join(base, ANCHOR_DIRNAME, ANCHOR_FILENAME);
+}
+
+/** Best-effort read. Never throws; 0 when absent/unreadable/implausible. */
+function readAnchor(now, deps = {}) {
+  const fs = deps.fs || require('fs');
+  try {
+    const p = anchorPath(deps);
+    if (!p || !fs.existsSync(p)) return 0;
+    const dec = _decodeAnchor(fs.readFileSync(p, 'utf8'), deps.hmacKey);
+    if (dec.drop) return 0;                    // keyed verify failed (tampered/foreign) → NEVER lock
+    return sanitiseAnchor(dec.value, now);
+  } catch { return 0; }
+}
+
+/**
+ * Best-effort write — mirrors the mark outside the DB. Never throws (a read-only or
+ * roaming-profile-restricted machine must still run the app), and never REGRESSES the stored value:
+ * we only ever write a larger number, so a stale caller can't lower the mark.
+ */
+function writeAnchor(value, now, deps = {}, opts = {}) {
+  const fs = deps.fs || require('fs');
+  try {
+    const v = sanitiseAnchor(value, now);
+    if (!v) return false;
+    const p = anchorPath(deps);
+    if (!p) return false;
+    // Monotonic by default: a stale caller can never lower the mark. `force` is the ONE
+    // sanctioned way down (Oracle C2) — a successful ONLINE refresh resetting to the backend's
+    // own server-stamped issued_at. Without it there is no recourse at all for a machine whose
+    // mark went wrongly high: this file survives deleting the database, so the old rescue fails.
+    if (!opts.force && readAnchor(now, deps) >= v) return false;
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    // Stamp when keyed (AV1); legacy bare integer otherwise (byte-identical kill-switch path).
+    const body = deps.hmacKey ? (_STAMP_PREFIX + v + ':' + _anchorHmac(String(v), deps.hmacKey)) : String(v);
+    fs.writeFileSync(p, body, 'utf8');
+    return true;
+  } catch { return false; }
+}
+
+/** Remove the anchor entirely (support/uninstall recovery). Best-effort; never throws. */
+function clearAnchor(deps = {}) {
+  const fs = deps.fs || require('fs');
+  try {
+    const p = anchorPath(deps);
+    if (p && fs.existsSync(p)) { fs.rmSync(p); return true; }
+    return false;
+  } catch { return false; }
+}
+
+module.exports = { sanitiseAnchor, anchorPath, readAnchor, writeAnchor, clearAnchor, MAX_FUTURE_SKEW_MS };

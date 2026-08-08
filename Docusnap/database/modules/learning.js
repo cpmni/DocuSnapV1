@@ -6,10 +6,10 @@ function insertExtractions(db, document_id, rows) {
   const stmt = db.prepare(`
     INSERT INTO extractions
       (document_id, field_key, raw_value, display_value,
-       confidence, extraction_method, validation_note, corrected_to, anchor_label, candidates)
+       confidence, extraction_method, validation_note, corrected_to, anchor_label, candidates, suggested_supplier)
     VALUES
       (@document_id, @field_key, @raw_value, @display_value,
-       @confidence, @extraction_method, @validation_note, @corrected_to, @anchor_label, @candidates)
+       @confidence, @extraction_method, @validation_note, @corrected_to, @anchor_label, @candidates, @suggested_supplier)
   `);
   const insertMany = db.transaction((rows) => {
     // corrected_to is the proposed (not-yet-applied) correction candidate from
@@ -17,7 +17,7 @@ function insertExtractions(db, document_id, rows) {
     // review "From anchor:" note); candidates is the disambiguation-picker JSON (migration
     // 48). All default to null so callers that don't set them are unaffected — and the null
     // default is REQUIRED (better-sqlite3 throws "missing named parameter" without it).
-    for (const row of rows) stmt.run({ document_id, corrected_to: null, anchor_label: null, candidates: null, ...row });
+    for (const row of rows) stmt.run({ document_id, corrected_to: null, anchor_label: null, candidates: null, suggested_supplier: null, ...row });
   });
   insertMany(rows);
 }
@@ -98,23 +98,76 @@ function nameQuality(value) {
   return total === 0 ? 1.0 : good / total;
 }
 
-function isPlausibleSupplierName(value) {
+// Document-chrome / TITLE words a large page heading garbles into — a closed,
+// supplier-agnostic set. Mirror of _DOC_CHROME_WORDS in
+// python_backend/extraction/keyword.py (keep in lockstep).
+const _DOC_CHROME_WORDS = new Set([
+  'invoice', 'statement', 'purchase', 'order', 'sales', 'delivery', 'docket',
+  'note', 'receipt', 'credit', 'debit', 'quote', 'quotation', 'remittance',
+  'worksheet', 'bill', 'advice', 'proforma', 'estimate', 'ticket', 'memo',
+  'packing', 'slip',
+]);
+
+function _boundedLevenshtein(a, b) {
+  const m = a.length, n = b.length;
+  const d = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    let prev = d[0]; d[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = d[j];
+      d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = tmp;
+    }
+  }
+  return d[n];
+}
+
+// Mirror of keyword._is_doc_chrome_fragment — a short OCR near-form of a title-word prefix.
+function _isDocChromeFragment(core) {
+  if (_DOC_CHROME_WORDS.has(core)) return true;         // a whole title word read as the supplier
+  const L = core.length;
+  if (L < 2 || L > 5) return false;
+  const budget = L <= 3 ? 1 : 2;
+  for (const w of _DOC_CHROME_WORDS) {
+    if (w.length >= L && _boundedLevenshtein(core, w.slice(0, L)) <= budget) return true;
+  }
+  return false;
+}
+
+// SHAPE-only plausibility (the base rules WITHOUT the document-chrome layer). Used where a
+// chrome-SHAPED but genuine short name ("Dell"/"Sage", edit-1 from a title prefix) must NOT be
+// demoted — judging an already-RESOLVED / CONFIRMED identity (template-name adopt, repair-suspect
+// scan). The chrome layer is an EXTRACTION-time filter (see isPlausibleSupplierName). Mirror of
+// keyword._is_plausible_supplier_name_base (Python).
+function isPlausibleSupplierNameBase(value) {
   const t = String(value == null ? '' : value).trim().replace(/:+$/, '');
   if (!t) return false;
   if (t.length <= 3 && !/\s/.test(t) && t === t.toUpperCase() && !/\d/.test(t)) {
     return false;
   }
-  // Digit-dominant reference shapes misread into the supplier field ("t 38/07",
-  // "36552", "12/345") — reject when there are 2+ digits AND fewer than 3
-  // letters. Keeps letter-rich names that merely contain digits ("3M",
-  // "G2 Environmental", "24/7 Services"). Mirrors keyword._is_plausible_supplier_name.
+  // Digit-dominant reference misread: 2+ digits AND <3 letters. Keeps letter-rich names that
+  // merely contain digits ("3M", "G2 Environmental", "24/7 Services").
   const nAlpha = (t.match(/[A-Za-z]/g) || []).length;
   const nDigit = (t.match(/\d/g) || []).length;
   if (nAlpha < 3 && nDigit >= 2) return false;
-  // Word-quality gate (multi-word only): a mostly-gibberish MULTI-TOKEN read
-  // ("Fr eanehae Crane", "67 Boucher Cre") is not a real supplier identity — so it
-  // is never persisted as a learned hint. Single-token brands ("3M") aren't judged.
+  // Word-quality gate (MULTI-word only): a mostly-gibberish multi-token read is not a supplier.
   if (/\s/.test(t) && nameQuality(t) < 0.5) return false;
+  return true;
+}
+
+// = the shape BASE test PLUS a document-CHROME near-form reject (kill switch
+// SUPPLIER_CHROME_FRAGMENT_GUARD). A large TITLE ("INVOICE") OCR-garbles into a short token
+// ("INi"/"INGE"/"IN \") that slips the all-caps guard and wins the supplier field. Demote it so a
+// garble is never PERSISTED as a learned hint (the hint-persist caller uses THIS full form).
+// CORROBORATED-value callers (template-name adopt, repair-suspect) use isPlausibleSupplierNameBase
+// so a real short name is never chrome-demoted (Oracle 2026-07-14). Mirror of keyword._is_plausible_supplier_name.
+function isPlausibleSupplierName(value) {
+  if (!isPlausibleSupplierNameBase(value)) return false;
+  if (process.env.SUPPLIER_CHROME_FRAGMENT_GUARD !== '0') {
+    const t = String(value == null ? '' : value).trim().replace(/:+$/, '');
+    const core = t.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (t.split(/\s+/).length <= 2 && _isDocChromeFragment(core)) return false;
+  }
   return true;
 }
 
@@ -278,6 +331,132 @@ function saveCorrections(db, document_id, corrections,
       }
     }
   })();
+}
+
+// ── retractConfirmHints — the INVERSE of saveCorrections' hint plants (Oracle-signed 2026-07-23,
+// C1-C3; co-located DIRECTLY below the plant so the pair can't drift). deconfirmDocument reverses
+// only the LIVE-derived half of confirm learning; the stored-increment half (supplier_hints) had
+// no inverse — a poisoned confirm's hints kept filling fields at usage>=2 after send-back.
+// Decrement-by-one is the ONLY faithful semantics: usage_count is NOT a pure function of current
+// confirmed docs (renameSupplier merges, mig-45 deletions, cycle-scoped increments), so a full
+// re-derive would silently rewrite untouched suppliers' counts install-wide. Mirrors the plant
+// branch-for-branch:
+//   corrections-path: LATEST corrections row per field → retract (supplier, UNTRIMMED exact) and,
+//     only when the scope isn't '__global__', the '__global__' twin (C3 — the plant skipped the
+//     separate global upsert for a null-supplier doc).
+//   allValues-path (fields with no corrections row): TRIMMED display_value, supplier-scoped only,
+//     with the SAME isPlausibleSupplierName skip on supplier_name (C2 — a passthrough-'IN' doc
+//     never planted, so its retract must never touch a corrected-'IN' row another doc planted).
+// C1: AT MOST ONE row per (scope, field, value) — exact match first, TRIM(hint_value) fallback
+// ONLY when exact missed (the :279 plant stores untrimmed while :328 trims; a single OR-match
+// could decrement BOTH variants = over-removal of another doc's contribution). A missing row is
+// 0 changes, never negative — other docs' contributions are arithmetic residue, untouched.
+// Guarded by database/modules/test_repair_unplant.js (round-trip vs a pristine plant of doc B).
+function retractConfirmHints(db, document_id) {
+  const doc = db.prepare(`
+    SELECT d.supplier_name, dt.slug AS type_slug
+    FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id
+    WHERE d.id = ?`).get(document_id);
+  if (!doc) return { decremented: 0, deleted: 0 };
+  const eff = normalizeSupplierName(String(doc.supplier_name || '').trim() || '__global__');
+  const dt = doc.type_slug || null;
+
+  const pickExact = db.prepare(`
+    SELECT id, usage_count FROM supplier_hints
+    WHERE supplier_name = @s AND COALESCE(document_type, '') = COALESCE(@dt, '')
+      AND field_key = @f AND hint_value = @v
+    ORDER BY id LIMIT 1`);
+  const pickTrim = db.prepare(`
+    SELECT id, usage_count FROM supplier_hints
+    WHERE supplier_name = @s AND COALESCE(document_type, '') = COALESCE(@dt, '')
+      AND field_key = @f AND TRIM(hint_value) = @v
+    ORDER BY id LIMIT 1`);
+  const delRow = db.prepare('DELETE FROM supplier_hints WHERE id = ?');
+  const decRow = db.prepare('UPDATE supplier_hints SET usage_count = usage_count - 1 WHERE id = ?');
+
+  let decremented = 0, deleted = 0;
+  const retractOne = (scope, field, value) => {
+    const v = String(value == null ? '' : value);
+    if (!v) return;
+    let row = pickExact.get({ s: scope, dt, f: field, v });
+    if (!row) row = pickTrim.get({ s: scope, dt, f: field, v: v.trim() });
+    if (!row) return;
+    if ((row.usage_count || 0) <= 1) { delRow.run(row.id); deleted++; }
+    else { decRow.run(row.id); decremented++; }
+  };
+
+  // corrections-path (C2): the LATEST corrections row per field is what the last confirm planted.
+  const latest = new Map();
+  for (const r of db.prepare(
+    'SELECT field_key, corrected_value FROM corrections WHERE document_id = ? ORDER BY rowid'
+  ).all(document_id)) {
+    latest.set(r.field_key, r.corrected_value);
+  }
+  for (const [field, v] of latest) {
+    if (!v) continue;
+    retractOne(eff, field, v);
+    if (eff !== '__global__') retractOne('__global__', field, v);
+  }
+  // allValues-path: final confirmed values, minus corrected fields (the plant skipped them here).
+  for (const r of db.prepare(
+    'SELECT field_key, display_value FROM extractions WHERE document_id = ?'
+  ).all(document_id)) {
+    if (latest.has(r.field_key)) continue;
+    const v = String(r.display_value || '').trim();
+    if (!v) continue;
+    if (r.field_key === 'supplier_name' && !isPlausibleSupplierName(v)) continue;
+    retractOne(eff, r.field_key, v);
+  }
+  return { decremented, deleted };
+}
+
+// ── replantConfirmHints — the inverse of retractConfirmHints, for the recycle-bin RESTORE of a
+// doc whose DELETE retracted (C6, owner-ruled 2026-07-23). Restore returns a filed doc to
+// 'confirmed', so its hint votes must return too, or delete→restore silently un-learns a good
+// doc. Mirrors retract's traversal EXACTLY (corrections-path latest-row untrimmed + __global__
+// twin only when scoped; allValues-path trimmed display, plausibility skip) using the SAME
+// upsert semantics as the original plant (+1 or insert-at-1). MUST only run when
+// documents.learning_retracted_at proves the delete actually retracted — a blind re-plant on a
+// pre-feature deletion double-counts forever (pinned). Round trip pinned: retract∘replant ==
+// identity on supplier_hints (modulo last_seen).
+function replantConfirmHints(db, document_id) {
+  const doc = db.prepare(`
+    SELECT d.supplier_name, dt.slug AS type_slug
+    FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id
+    WHERE d.id = ?`).get(document_id);
+  if (!doc) return { planted: 0 };
+  const eff = normalizeSupplierName(String(doc.supplier_name || '').trim() || '__global__');
+  const dt = doc.type_slug || null;
+  const upsert = db.prepare(`
+    INSERT INTO supplier_hints
+      (supplier_name, document_type, field_key, hint_value, usage_count, last_seen)
+    VALUES (@s, @dt, @f, @v, 1, datetime('now'))
+    ON CONFLICT(supplier_name, document_type, field_key, hint_value) DO UPDATE SET
+      usage_count = usage_count + 1, last_seen = datetime('now')`);
+  let planted = 0;
+  const plantOne = (s, f, v) => { if (v) { upsert.run({ s, dt, f, v: String(v) }); planted++; } };
+
+  const latest = new Map();
+  for (const r of db.prepare(
+    'SELECT field_key, corrected_value FROM corrections WHERE document_id = ? ORDER BY rowid'
+  ).all(document_id)) {
+    latest.set(r.field_key, r.corrected_value);
+  }
+  for (const [field, v] of latest) {
+    if (!v) continue;
+    plantOne(eff, field, v);
+    if (eff !== '__global__') plantOne('__global__', field, v);
+  }
+  for (const r of db.prepare(
+    'SELECT field_key, display_value FROM extractions WHERE document_id = ?'
+  ).all(document_id)) {
+    if (latest.has(r.field_key)) continue;
+    const v = String(r.display_value || '').trim();
+    if (!v) continue;
+    if (r.field_key === 'supplier_name' && !isPlausibleSupplierName(v)) continue;
+    plantOne(eff, r.field_key, v);
+  }
+  return { planted };
 }
 
 // The TRAINING dump — every hint row, uncapped (2026-07-10). buildTrainingArgs used the
@@ -486,6 +665,7 @@ function saveAnchor(db, {
         UPDATE field_anchors
         SET page_zone = @page_zone, x_norm = @x_norm, y_norm = @y_norm,
             w_norm = @w_norm, h_norm = @h_norm,
+            max_w_norm = MAX(COALESCE(max_w_norm, 0), @w_norm),
             offset_dx_norm = @offset_dx_norm, offset_dy_norm = @offset_dy_norm,
             usage_count = usage_count + 1,
             confidence  = 1.0,
@@ -497,11 +677,11 @@ function saveAnchor(db, {
       db.prepare(`
         INSERT INTO field_anchors
           (supplier_name, document_type, field_key, anchor_label, direction,
-           page_zone, x_norm, y_norm, w_norm, h_norm,
+           page_zone, x_norm, y_norm, w_norm, h_norm, max_w_norm,
            offset_dx_norm, offset_dy_norm, last_authoritative_at)
         VALUES
           (@supplier_name, @document_type, @field_key, @anchor_label, @direction,
-           @page_zone, @x_norm, @y_norm, @w_norm, @h_norm,
+           @page_zone, @x_norm, @y_norm, @w_norm, @h_norm, @w_norm,
            @offset_dx_norm, @offset_dy_norm, datetime('now'))
       `).run({ ...key, ...incoming });
     }
@@ -525,10 +705,10 @@ function saveAnchor(db, {
     db.prepare(`
       INSERT INTO field_anchors
         (supplier_name, document_type, field_key, anchor_label,
-         direction, page_zone, x_norm, y_norm, w_norm, h_norm)
+         direction, page_zone, x_norm, y_norm, w_norm, h_norm, max_w_norm)
       VALUES
         (@supplier_name, @document_type, @field_key, @anchor_label,
-         @direction, @page_zone, @x_norm, @y_norm, @w_norm, @h_norm)
+         @direction, @page_zone, @x_norm, @y_norm, @w_norm, @h_norm, @w_norm)
     `).run({ ...key, ...incoming });
     return;
   }
@@ -584,9 +764,14 @@ function saveAnchor(db, {
         y_norm      = @y_norm,
         w_norm      = @w_norm,
         h_norm      = @h_norm,
+        max_w_norm  = MAX(COALESCE(max_w_norm, 0), @incoming_w_raw),
         last_seen   = datetime('now')
     WHERE id = @id
-  `).run({ id: existing.id, page_zone: incoming.page_zone, ...next });
+  `).run({ id: existing.id, page_zone: incoming.page_zone, incoming_w_raw: incoming.w_norm || 0, ...next });
+  // ↑ max_w_norm binds the RAW drawn width (incoming.w_norm), NOT the blended next.w_norm
+  //   (:614 blends toward narrower samples) — this is the one line that makes the high-water
+  //   monotonic, so a later narrow re-teach can never shrink the field and re-truncate a long
+  //   value. (Oracle: the load-bearing line of the passive path.)
 }
 
 function getAllAnchors(db) {
@@ -645,6 +830,54 @@ function deleteAnchor(db, id) {
 // A NEW phash this many bits CLOSER to another supplier than to X's own = a cross-plant (poison).
 const LOGO_CROSSPLANT_MARGIN = 4;
 
+// DETAIL-space (256-bit isolated-mark) cross-plant guard (Oracle C1, 2026-07-15). Once the detail hash
+// is promoted to a PRIMARY supplier picker (logo_detail.classify_supplier), one poisoned enrolled mark
+// flips a real PICK — a mis-FILE — not a harmless abstain. So refuse to enrol OR backfill a detail mark
+// that POSITIVELY belongs to a DIFFERENT supplier. Mirrors logo_detail.detail_cross_plant_closer
+// (accept 80 / margin 24, measured). Must gate BOTH branches: the collide-at-8 COALESCE backfill path
+// pre-empts the coarse insert guard (Cascade↔Northgate coarse phash = 8 ≤ 10), so the insert-branch
+// coarse guard alone leaves the detail set open to poison.
+const DETAIL_ACCEPT_DIST       = 80;
+const DETAIL_CROSSPLANT_MARGIN = 24;
+
+// 256-bit hex Hamming. Large sentinel on length-mismatch/empty — NOT 64 (which is a valid mid-range
+// detail distance and would masquerade as a moderate match; hammingDistance's 64 fallback is for the
+// 64-bit coarse phash only).
+function detailHamming(h1, h2) {
+  if (!h1 || !h2 || h1.length !== h2.length) return 1e9;
+  let dist = 0;
+  for (let i = 0; i < h1.length; i++) {
+    const xor = parseInt(h1[i], 16) ^ parseInt(h2[i], 16);
+    dist += xor.toString(2).split('1').length - 1;
+  }
+  return dist;
+}
+
+// True → the incoming detail mark is decisively a DIFFERENT supplier's (matches a rival's enrolled set
+// within accept AND is > margin closer to that rival than to this supplier's own set) → refuse to plant
+// it under `supplier_name`. COLD-START SAFE: with no own detail yet (minOwn = ∞), a genuine first mark
+// sits FAR from every rival (inter ~108 > accept 80) → not refused; only a mark that positively matches
+// a rival is refused. FAIL-SAFE: missing detail / no rival detail → false (nothing to poison).
+function _detailCrossPlantCloser(db, supplier_name, detail_hash) {
+  if (!detail_hash) return false;
+  let minOwn = Infinity;
+  for (const r of db.prepare(
+    'SELECT detail_hash FROM logo_fingerprints WHERE supplier_name = ? AND detail_hash IS NOT NULL'
+  ).all(supplier_name)) {
+    const d = detailHamming(detail_hash, r.detail_hash);
+    if (d < minOwn) minOwn = d;
+  }
+  let minOther = Infinity;
+  for (const r of db.prepare(
+    'SELECT detail_hash FROM logo_fingerprints WHERE supplier_name <> ? AND detail_hash IS NOT NULL'
+  ).all(supplier_name)) {
+    const d = detailHamming(detail_hash, r.detail_hash);
+    if (d < minOther) minOther = d;
+  }
+  if (minOther === Infinity) return false;                 // no rival detail to be closer to
+  return minOther <= DETAIL_ACCEPT_DIST && (minOther + DETAIL_CROSSPLANT_MARGIN) < minOwn;
+}
+
 function saveLogoFingerprint(db, { supplier_name, phash, ahash, detail_hash, manual }) {
   const existing = db.prepare(
     'SELECT id, phash FROM logo_fingerprints WHERE supplier_name = ?'
@@ -656,12 +889,18 @@ function saveLogoFingerprint(db, { supplier_name, phash, ahash, detail_hash, man
       // has NULL detail_hash; COALESCE fills it from this confirm without overwriting an existing one
       // (the discriminator is a hash of the same mark, so any confirm's is equivalent). phash path
       // unchanged.
+      // C1 (Oracle 2026-07-15): but REFUSE the backfill when this detail mark decisively belongs to a
+      // RIVAL — the collide-at-8 coarse path lands HERE (before the insert cross-plant guard), so a
+      // Northgate doc mis-confirmed under Cascade would otherwise poison Cascade's picker set. Pass
+      // null so COALESCE leaves the row's detail_hash untouched; MANUAL bypasses (operator authority).
+      const backfill = (detail_hash && !manual && _detailCrossPlantCloser(db, supplier_name, detail_hash))
+        ? null : (detail_hash || null);
       db.prepare(`
         UPDATE logo_fingerprints
         SET match_count = match_count + 1, last_seen = datetime('now'),
             detail_hash = COALESCE(detail_hash, ?)
         WHERE id = ?
-      `).run(detail_hash || null, row.id);
+      `).run(backfill, row.id);
       return;
     }
   }
@@ -688,10 +927,15 @@ function saveLogoFingerprint(db, { supplier_name, phash, ahash, detail_hash, man
       return { skipped: true, reason: 'cross_plant', closerTo: otherName, minOther, minOwn };
     }
   }
+  // C1: even when the coarse phash passes the cross-plant guard above, refuse to plant a detail mark
+  // that decisively belongs to a rival (contradictory coarse-vs-detail evidence) — insert the phash
+  // (coarse-vetted) but with a null detail rather than poisoning the picker set. MANUAL bypasses.
+  const insDetail = (detail_hash && !manual && _detailCrossPlantCloser(db, supplier_name, detail_hash))
+    ? null : (detail_hash || null);
   db.prepare(`
     INSERT INTO logo_fingerprints (supplier_name, phash, ahash, detail_hash)
     VALUES (?, ?, ?, ?)
-  `).run(supplier_name, phash, ahash, detail_hash || null);
+  `).run(supplier_name, phash, ahash, insDetail);
 }
 
 function getAllLogos(db) {
@@ -835,7 +1079,7 @@ function clearFieldAnchorsForScope(db, { supplier_name, document_type } = {}) {
   if (!sn && !dt) return { changes: 0 };
   return db.prepare(`
     DELETE FROM field_anchors
-    WHERE (@sn IS NULL OR supplier_name = @sn) AND (@dt IS NULL OR document_type = @dt)
+    WHERE (@sn IS NULL OR supplier_name = @sn COLLATE NOCASE) AND (@dt IS NULL OR document_type = @dt)
   `).run({ sn, dt });
 }
 
@@ -844,7 +1088,7 @@ function clearSupplierHintsForScope(db, { supplier_name, document_type } = {}) {
   if (!sn && !dt) return { changes: 0 };
   return db.prepare(`
     DELETE FROM supplier_hints
-    WHERE (@sn IS NULL OR supplier_name = @sn) AND (@dt IS NULL OR document_type = @dt)
+    WHERE (@sn IS NULL OR supplier_name = @sn COLLATE NOCASE) AND (@dt IS NULL OR document_type = @dt)
   `).run({ sn, dt });
 }
 
@@ -858,7 +1102,7 @@ function clearCorrectionsForScope(db, { supplier_name, document_type } = {}) {
   if (!sn && !dt) return { changes: 0 };
   return db.prepare(`
     DELETE FROM corrections
-    WHERE (@sn IS NULL OR supplier_name = @sn) AND (@dt IS NULL OR document_type = @dt)
+    WHERE (@sn IS NULL OR supplier_name = @sn COLLATE NOCASE) AND (@dt IS NULL OR document_type = @dt)
   `).run({ sn, dt });
 }
 
@@ -932,7 +1176,7 @@ function clearFieldRulesForScope(db, { supplier_name, document_type } = {}) {
   if (!sn && !dt) return { changes: 0 };
   return db.prepare(`
     DELETE FROM field_rules
-    WHERE (@sn IS NULL OR supplier_name = @sn) AND (@dt IS NULL OR document_type = @dt)
+    WHERE (@sn IS NULL OR supplier_name = @sn COLLATE NOCASE) AND (@dt IS NULL OR document_type = @dt)
   `).run({ sn, dt });
 }
 
@@ -951,7 +1195,13 @@ function _looksDateish(v) {
   return false;
 }
 
-function getFieldFormats(db) {
+function getFieldFormats(db, opts) {
+  // opts.includeProvisional (default FALSE — S2 leak fix, 2026-08-04 morning): the provisional
+  // (sub-≥3-confirm) groups exist ONLY for the Python consent channel. Every OTHER consumer —
+  // trust.js auto-file gates, getDigitsOnlyFields, the renderer eligibility path — must see the
+  // exact pre-provisional list, so the default EXCLUDES them; only the training-file build in
+  // processing/handler.js opts in.
+  const includeProvisional = !!(opts && opts.includeProvisional);
   // Collect final confirmed values (corrected value if the user edited, else the
   // extracted display value) for every confirmed document. Built into TWO kinds
   // of group:
@@ -1031,10 +1281,19 @@ function getFieldFormats(db) {
   // by definition have <3 distinct values (mirrors ocr_corrector.MIN_CONFIRMED_FOR_SINGLE_SHAPE=3).
   // confirmed_count (total confirmed instances, not deduped) is carried so consumers can
   // apply their own stricter thresholds (e.g. the noise-profile gate needs 10+).
+  // PROVISIONAL channel (Oracle NIGHT 2026-08-03, S2): groups BELOW the ≥3 bar are now
+  // emitted too, tagged `provisional: true`. Python keeps them OUT of the main format
+  // index (build_format_class_index skips the tag — the ≥3-confirm VETO direction is
+  // preserved verbatim) and builds a SEPARATE consent-only skeleton index from them,
+  // consumed exclusively by the mapper's clean-commit consent ladder. This is what lets
+  // sibling #1 of a freshly-taught template corroborate against the TAUGHT value's
+  // skeleton instead of a cold "usual format".
   return Object.values(groups)
-    .filter(g => g._values.size >= 3 || g._count >= 3)
-    .map(({ _values, _valueCounts, _count, ...rest }) => ({
+    .map(g => ({ ...g, _ok: g._values.size >= 3 || g._count >= 3 }))
+    .filter(g => g._ok || includeProvisional)
+    .map(({ _values, _valueCounts, _count, _ok, ...rest }) => ({
       ...rest,
+      ...(_ok ? {} : { provisional: true }),
       sample_values:   [..._values].slice(0, 20),
       confirmed_count: _count,
       // Per-value confirmed-document counts (newest distinct first, capped) so
@@ -1307,6 +1566,32 @@ function getFieldValueHistory(db, { supplier_name, document_type, field_key } = 
   `).all(field_key, supplier_name || '', document_type || '');
 }
 
+// PREFIX-OUTLIER model for ONE scope (Slice 1 confirm-time cold-start gate). Runs the same scoped
+// confirmed-value query as getFieldValueHistory to get {value: confirmedCount}, then feeds the JS
+// mirror prefix_outlier.buildScopeRec — so the CONFIRM-time check uses the SAME dominant-prefix rule
+// as the Python extraction guard, against LIVE confirmed history (which the extraction index misses
+// on a first bulk import). Returns the scope rec {dominant,known,counts,total} or null (disarmed /
+// no supplier / no field). Supplier match is EXACT (per-supplier prefix convention, no cross-
+// supplier fallback); do NOT lowercase (the SQL is COALESCE-equality on the stored value).
+function getPrefixModelForScope(db, supplier_name, document_type_slug, field_key) {
+  if (!field_key || !supplier_name) return null;
+  const rows = db.prepare(`
+    SELECT COALESCE(NULLIF(TRIM(c.corrected_value), ''), e.display_value) AS value, COUNT(*) AS count
+    FROM extractions e
+    JOIN documents d ON d.id = e.document_id
+    LEFT JOIN document_types dt ON dt.id = d.document_type_id
+    LEFT JOIN corrections   c  ON c.document_id = e.document_id AND c.field_key = e.field_key
+    WHERE d.status = 'confirmed' AND e.field_key = ?
+      AND COALESCE(d.supplier_name, '') = COALESCE(?, '')
+      AND COALESCE(dt.slug, '')         = COALESCE(?, '')
+    GROUP BY value
+    HAVING value IS NOT NULL AND TRIM(value) <> ''
+  `).all(field_key, supplier_name || '', document_type_slug || '');
+  const counts = {};
+  for (const row of rows) counts[row.value] = row.count;
+  return require('./prefix_outlier').buildScopeRec(counts);
+}
+
 // List the CONFIRMED documents whose final value for this (supplier, doc-type, field) scope
 // equals `value` — so the Learning-history modal can jump from a learned value to the source
 // documents that taught it (to re-check/correct them via "Edit in Review"). Same scope +
@@ -1440,11 +1725,12 @@ function renameSupplier(db, { oldName, newName } = {}) {
 
 module.exports = {
   insertExtractions, deleteExtractions,
-  getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue,
+  getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue, getPrefixModelForScope,
   getSupplierScopeCounts, renameSupplier,
-  saveCorrections, getHints, getAllHints, isPlausibleSupplierName, isNameLikeField, nameQuality, normalizeSupplierName,
+  saveCorrections, retractConfirmHints, replantConfirmHints, getHints, getAllHints, isPlausibleSupplierName, isPlausibleSupplierNameBase, isNameLikeField, nameQuality, normalizeSupplierName,
   saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors, getAnchorsForScope, getTaughtFieldKeys, deleteAnchor,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
+  detailCrossPlantCloser: _detailCrossPlantCloser,   // exported for the detail-backfill script's final anti-poison check (2026-07-23)
   getFieldFormats, getDigitsOnlyFields,
   getRecoverySummary, getRecoveryDetail, getMemoryInventory, resetAllLearning,
   resetToFreshInstall, getLearningFootprintForDocuments,

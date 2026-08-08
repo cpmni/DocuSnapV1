@@ -137,6 +137,18 @@ def shape_signature(value: str) -> str:
 
     All four are alphanum_sep, but only the first matches the learned shape.
     Pure and deterministic.
+
+    ⚠ INVARIANT — the letter→'@' fold is DELIBERATELY prefix-AGNOSTIC, and must stay so
+    HERE. `shape_signature('PO-1') == shape_signature('DN-1')` on purpose. A wrong-
+    document-type misfile that keeps the same digit/separator shape (a PO filed as a
+    delivery note: 'PO-21275' vs 'DN-70795') is therefore invisible to this signature —
+    that is intentional at EXTRACTION time: making this prefix-aware would FALSE-HOLD a
+    genuinely-new supplier with a legitimately different prefix against thin learned
+    history (a fail-toward-review violation at the wrong moment). The prefix mismatch is
+    caught POST-CONFIRM instead, where an 80+ doc pool makes it safe, by the JS detector
+    `src/services/repairSuspects.detectRefPrefixOutliers` (a suggestion-only Learning-
+    Repair rule). Do NOT port that rule into this function. Pinned by
+    tests/test_format_shape_consistency.py (section 8, the prefix-agnostic invariant).
     """
     out = []
     for c in (value or '').strip():
@@ -680,6 +692,34 @@ def propose_sep_fix(value: str, format_entry: dict) -> "str | None":
 
 # ── Index builder ─────────────────────────────────────────────────────────────
 
+def _derive_charset(values) -> dict | None:
+    """Character-class summary of a scope's confirmed values, by UNANIMITY (ANCHOR_CHARSET_DEBRIS):
+    {has_letter, has_digit, has_space, literals:set}. has_letter True means SOME confirmed value
+    carried a letter — so a letter can never be treated as impossible junk for this scope. Returns
+    None when no non-empty values (⇒ no descriptor ⇒ the debris arm abstains)."""
+    has_letter = has_digit = has_space = False
+    literals: set = set()
+    n = 0
+    for v in values:
+        s = str(v or '')
+        if not s:
+            continue
+        n += 1
+        for c in s:
+            if c.isalpha():
+                has_letter = True
+            elif c.isdigit():
+                has_digit = True
+            elif c.isspace():
+                has_space = True
+            else:
+                literals.add(c)
+    if not n:
+        return None
+    return {'has_letter': has_letter, 'has_digit': has_digit,
+            'has_space': has_space, 'literals': literals}
+
+
 def build_format_class_index(formats_data: list) -> dict:
     """
     Build a lookup dict keyed by (supplier_lower, doc_type_lower, field_key).
@@ -712,6 +752,13 @@ def build_format_class_index(formats_data: list) -> dict:
         # (it only mattered on a drifted/degraded crop, which is why clean pages
         # still looked fine). Keep supplier-scoped entries too.
         if not doc_type or not field_key:
+            continue
+        # PROVISIONAL entries (below the ≥3-confirm bar, tagged by learning.js) must NEVER
+        # enter the MAIN index (Oracle NIGHT 2026-08-03 S2: a 1-count taught skeleton must
+        # not veto legitimate sibling variation pipeline-wide). They feed ONLY the separate
+        # consent-only index below. The <3 length check would drop most of them anyway —
+        # this is the explicit, pinned guarantee.
+        if entry.get('provisional'):
             continue
         if len(samples) < 3:
             continue
@@ -769,6 +816,59 @@ def build_format_class_index(formats_data: list) -> dict:
         if not _support and vcounts:
             _support = sum(int(n or 0) for n in vcounts.values())
         fmt = {**fmt, 'support': int(_support) if _support else len(samples)}
+        # Learned CHARSET descriptor (ANCHOR_CHARSET_DEBRIS, Oracle C2 2026-07-27) — derived by
+        # UNANIMITY over ALL raw distinct confirmed values (value_counts keys ∪ samples), NOT the
+        # ratio-accepted shapes: one lettered confirm anywhere ⇒ has_letter True ⇒ the debris arm
+        # permanently refuses letter-stripping for the scope (fail-safe: a poisoned confirm can
+        # only DISABLE the arm, never widen it; a Learning-Repair purge re-enables with no code
+        # change). Additive key — non-freetext entries only; no existing consumer reads it.
+        if fmt.get('class') != FREETEXT:
+            _cs = _derive_charset(set((vcounts or {}).keys()) | set(samples))
+            if _cs:
+                fmt = {**fmt, 'charset': _cs}
         index[(supplier, doc_type, field_key)] = fmt
 
     return index
+
+
+# ── PROVISIONAL taught-skeleton index (Oracle NIGHT 2026-08-03, gary #3 + S2) ─────────────────
+# Day-one shape witness for a freshly-taught template: the taught/early-confirmed values' shape
+# skeletons, from the `provisional: true` groups learning.js now emits for BELOW-the-≥3-bar
+# scopes. CONSENT-ONLY by construction — a SEPARATE index consumed exclusively by the mapper's
+# clean-commit consent ladder (template_mapper._shape_consents). It must NEVER be visible to
+# _format_rejects / check_value / _gate_value (the ≥3-confirm VETO principle stays verbatim;
+# pinned in tests). Lone-skeleton corroboration can only LICENSE a heal that already carries an
+# independent witness — it can never reject or flag anything.
+
+def build_provisional_shape_index(formats_data: list) -> dict:
+    """(supplier_lower, doc_type_lower, field_key) -> set of canonical shape skeletons."""
+    idx: dict[tuple, set] = {}
+    for entry in (formats_data or []):
+        if not isinstance(entry, dict) or not entry.get('provisional'):
+            continue
+        supplier = (entry.get('supplier_name') or '').lower().strip()
+        doc_type = (entry.get('document_type') or '').lower().strip()
+        field_key = entry.get('field_key', '')
+        if not doc_type or not field_key:
+            continue
+        sks = set()
+        for v in (entry.get('sample_values') or []):
+            if v:
+                try:
+                    sks.add(_shape_canonical(shape_signature(str(v))))
+                except Exception:
+                    pass
+        if sks:
+            idx.setdefault((supplier, doc_type, field_key), set()).update(sks)
+    return idx
+
+
+def provisional_shape_accepts(value, skeleton_set) -> bool:
+    """Does `value`'s canonical skeleton match a provisionally-taught skeleton? Pure;
+    False on any doubt (consent-only — a False here only declines a heal)."""
+    if not value or not skeleton_set:
+        return False
+    try:
+        return _shape_canonical(shape_signature(str(value))) in skeleton_set
+    except Exception:
+        return False

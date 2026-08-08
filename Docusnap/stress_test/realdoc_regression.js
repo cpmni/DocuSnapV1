@@ -23,7 +23,9 @@ const REPO = 'c:/GIT Projects/Docusnap', ST = path.join(REPO, 'stress_test');
 const OUT = path.join(ST, 'out'), CFG = path.join(REPO, 'config', 'keyword_patterns.json');
 const PROCESS_DOCS = path.join(REPO, 'python_backend', 'process_docs.py');
 const TESS = 'C:/Program Files/Tesseract-OCR/tesseract.exe';
-const LIVE_DB = path.join(process.env.APPDATA, 'ScanFinder', 'docusnap.db');
+// RR_DB: optional DB override for same-corpus A/Bs against a MODIFIED COPY (e.g. the
+// logo-detail backfill activation gate, Oracle C5 2026-07-23). Absent ⇒ the live DB, unchanged.
+const LIVE_DB = process.env.RR_DB || path.join(process.env.APPDATA, 'ScanFinder', 'docusnap.db');
 const learning = require(path.join(REPO, 'database', 'modules', 'learning.js'));
 const templates = require(path.join(REPO, 'database', 'modules', 'templates.js'));
 const trust = require(path.join(REPO, 'database', 'modules', 'trust.js'));
@@ -74,11 +76,16 @@ function snap(db) {
     '--config-file', CFG, '--registration', '--born-digital', '--multiline'] };
 }
 
-function runP(folder, snapArgs, files) {
+function runP(folder, snapArgs, files, manifest) {
   const N = 8; const shards = Array.from({ length: N }, () => []); files.forEach((f, i) => shards[i % N].push(f));
   const sf = shards.filter(x => x.length).map(names => w('shard', names));
+  // FAITHFUL REPROCESS (2026-08-03): pass the per-doc known template/type like the app's
+  // Reprocess All (--reprocess-manifest), so Stage 0.5 template_mapping fires on docs whose logo
+  // no longer self-matches — WITHOUT this the harness silently skips Stage 0.5 and is blind to the
+  // whole template_mapping-garble class (the Northgate PO-17039 gap). All shards share the manifest.
+  const manifestArgs = (manifest && Object.keys(manifest).length) ? ['--reprocess-manifest', w('manifest', manifest)] : [];
   const one = shardFile => new Promise(res => {
-    const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', folder, '--files-file', shardFile, '--mode', 'fast', '--tesseract', TESS, ...snapArgs], { windowsHide: true });
+    const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', folder, '--files-file', shardFile, '--mode', 'fast', '--tesseract', TESS, ...manifestArgs, ...snapArgs], { windowsHide: true });
     let out = ''; p.stdout.on('data', d => out += d); p.stderr.on('data', () => {}); p.on('close', () => res(out)); p.on('error', () => res(''));
   });
   return Promise.all(sf.map(one)).then(outs => {
@@ -94,7 +101,13 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   const nameToSlug = {}; for (const r of db.prepare('SELECT name, slug FROM document_types').all()) nameToSlug[r.name] = r.slug;
   const roles = {}; for (const r of db.prepare('SELECT slug, ref_field_key, date_field_key FROM document_types').all()) roles[r.slug] = { ref: r.ref_field_key, date: r.date_field_key };
   const slugToId = {}; for (const r of db.prepare('SELECT id, slug FROM document_types').all()) slugToId[r.slug] = r.id;
-  const conf = db.prepare(`SELECT d.id, d.supplier_name, d.reference_number, d.doc_date, d.original_filename, d.stored_path, d.working_path, dt.slug type_slug
+  // Every field key each TYPE defines — the denominator for the per-field fill rate below.
+  const typeFieldKeys = {};
+  for (const r of db.prepare(`SELECT dt.slug, f.key FROM fields f
+                                JOIN document_types dt ON dt.id = f.document_type_id`).all()) {
+    (typeFieldKeys[r.slug] || (typeFieldKeys[r.slug] = [])).push(r.key);
+  }
+  const conf = db.prepare(`SELECT d.id, d.supplier_name, d.reference_number, d.doc_date, d.original_filename, d.stored_path, d.working_path, d.template_id, dt.slug type_slug
     FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id WHERE d.status = 'confirmed'`).all();
   const exByDoc = {};
   for (const e of db.prepare(`SELECT e.document_id, e.field_key, e.display_value FROM extractions e JOIN documents d ON d.id = e.document_id WHERE d.status = 'confirmed'`).all())
@@ -105,10 +118,12 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   const resolveFile = d => (d.working_path && fs.existsSync(d.working_path)) ? d.working_path
                          : (d.stored_path && fs.existsSync(d.stored_path)) ? d.stored_path : null;
   const gt = {}; const files = []; let noFile = 0; const gtOverrideSkipped = [];
+  const manifest = {};   // per-doc known template/type — makes Stage 0.5 fire faithfully (see runP)
   for (const d of conf) {
     const src = resolveFile(d); if (!src) { noFile++; continue; }
     const fname = `doc${d.id}${path.extname(src) || '.pdf'}`;
     try { fs.copyFileSync(src, path.join(RR, fname)); } catch { noFile++; continue; }
+    manifest[fname] = { known_template_id: d.template_id || null, known_doc_slug: d.type_slug || null };
     files.push(fname);
     const ex = exByDoc[d.id] || {};
     gt[fname] = { id: d.id, type_slug: d.type_slug, supplier: d.supplier_name, ref: d.reference_number, date: d.doc_date,
@@ -128,10 +143,15 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
       // (normSupplier(null) === '' — the confirmed-without-issuer class, e.g. the Unknown-Company
       // Ashford sales orders 1777/1786/1788 whose correct read the 2026-07-10 improvements restored).
       const supOk   = ov.poisoned_supplier == null || normSupplier(d.supplier_name) === normSupplier(ov.poisoned_supplier);
-      if (fnameOk && refOk && dateOk && supOk) {
-        if (ov.ref      != null) gt[fname].ref      = ov.ref;
-        if (ov.date     != null) gt[fname].date     = ov.date;
-        if (ov.supplier != null) gt[fname].supplier = ov.supplier;
+      // Type poison: a doc mis-CONFIRMED under the wrong document TYPE (e.g. #190, a purchase order
+      // filed as delivery_note — the ref/date VALUES are correct, only the type is wrong). Same
+      // self-validation discipline: the DB row must STILL carry the poisoned slug, else SKIP.
+      const typeOk  = ov.poisoned_type == null || String(d.type_slug || '') === ov.poisoned_type;
+      if (fnameOk && refOk && dateOk && supOk && typeOk) {
+        if (ov.ref      != null) gt[fname].ref       = ov.ref;
+        if (ov.date     != null) gt[fname].date      = ov.date;
+        if (ov.supplier != null) gt[fname].supplier  = ov.supplier;
+        if (ov.type     != null) gt[fname].type_slug = ov.type;   // corrects role-key lookup + the type score
         gt[fname]._overridden = true;
       } else {
         gtOverrideSkipped.push(`#${d.id}: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='${d.reference_number}' file='${d.original_filename}')`);
@@ -140,7 +160,7 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   }
   const gtOverrideN = Object.values(gt).filter(g => g._overridden).length;
   const snapObj = snap(db);
-  const res = await runP(RR, snapObj.args, files);
+  const res = await runP(RR, snapObj.args, files, manifest);
 
   const F = ['type', 'supplier', 'ref', 'date', 'total', 'subtotal'];
   const acc = {}; for (const f of F) acc[f] = { ok: 0, n: 0 };
@@ -149,8 +169,19 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   let autoFiledN = 0, silentAutoFile = 0; const autoFileMisses = [];
   let rereadN = 0; const rereadDocs = [];   // Stage-4.5 gate-failure re-read adoptions (review-bound)
   let ownCapN = 0;                          // c2 taught-field ownership caps (review-volume delta, HOLD-only)
+  let wrongTypeAutoFile = 0;                // M_type (Oracle C3): would auto-file under the WRONG document TYPE
+  let bannerRereadN = 0; const bannerRereadDocs = [];  // BANNER_HEADING_REREAD firings (proves the fix fired)
+  // PER-FIELD FILL RATE (Oracle 2026-08-08, "the number that must not move — it does not exist yet").
+  // Every other number in this report is BLIND to a field going EMPTY. A change that turns a wrong
+  // value into an omitted field REDUCES the wrong-value count (M) and leaves the auto-file count
+  // happy — the type+un-flagged gate passes fine with a field simply absent — so a guard that
+  // deletes values scores as an improvement. This tracks, per (type_slug, field_key), how many
+  // documents of that type produced a NON-EMPTY value, which is the only lane that can see it.
+  // Keyed by type so a field the type does not define never drags its own denominator.
+  const fill = {};   // `${slug}|${key}` -> {n, filled}
   for (const fname of files) {
     const m = res[fname]; const g = gt[fname]; if (!m) continue;
+    if (m.banner_heading_reread) { bannerRereadN++; bannerRereadDocs.push(`#${g.id} ${g.type_slug} -> ${m.document_type}`); }
     const rk = (roles[g.type_slug] || {}).ref, dk = (roles[g.type_slug] || {}).date;
     const detSlug = m._document_slug || nameToSlug[m.document_type] || null;
     const s = {
@@ -162,6 +193,14 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
       subtotal: g.subtotal != null ? normMoney(ef(m, 'subtotal')) === normMoney(g.subtotal) : null,
     };
     for (const f of F) { if (s[f] == null) continue; acc[f].n++; if (s[f]) acc[f].ok++; }
+    // Fill rate: count EVERY field this document's type defines, not just the ones scored above,
+    // so a guard that empties a non-scored field (an address, a payment term) is still visible.
+    for (const key of (typeFieldKeys[g.type_slug] || [])) {
+      const k = `${g.type_slug}|${key}`;
+      (fill[k] || (fill[k] = { n: 0, filled: 0 })).n++;
+      const v = ef(m, key);
+      if (v != null && String(v).trim() !== '') fill[k].filled++;
+    }
     // Gate-failure re-read adoptions (GATE_REREAD): a re-read is review-bound (note + corrected_to),
     // so it can never auto-file — count it so a corpus A/B shows the feature actually FIRED.
     for (const [k, e] of Object.entries(m.extractions || {})) {
@@ -172,22 +211,71 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
     }
     // #6 auto-file SOUNDNESS — would the REAL gate auto-file this reprocessed read, and is it wrong?
     const detId = slugToId[detSlug];
-    let wouldFile = false;
+    let wouldFile = false, afReason = null;
     if (detId != null && m.overall_confidence != null) {
+      // extraction_method is THREADED (2026-08-07): docTrustGate's shadow-row skip keys on it, and
+      // an overlay that omitted it would make that gate VACUOUSLY GREEN — every row would look like
+      // a non-shadow row here no matter what the pipeline actually produced.
       const rex = Object.entries(m.extractions || {}).map(([k, e]) => ({
         field_key: k,
         display_value: (e && typeof e === 'object') ? e.value : e,
         validation_note: (e && typeof e === 'object') ? e.validation_note : null,
         confidence: (e && typeof e === 'object') ? e.confidence : null,
+        extraction_method: (e && typeof e === 'object') ? e.method : null,
       }));
       const fakeDoc = { id: g.id, supplier_name: m.supplier_name, document_type_id: detId, overall_confidence: m.overall_confidence };
-      try { wouldFile = trust.isAutoFileEligible(db, fakeDoc, { extractions: rex }).eligible; } catch {}
+      try { const _af = trust.isAutoFileEligible(db, fakeDoc, { extractions: rex }); wouldFile = _af.eligible; afReason = _af.reason; } catch {}
+    }
+    // RR_CONSENSUS (overnight P1 measurement, env-gated -> inert/byte-identical when unset): per-doc
+    // hold-reason + per-critical-field {value,conf,note,correct} so the multi-read-consensus auto-file
+    // opportunity (and its M-safety) can be analysed offline vs the stored page OCR. Read-only.
+    if (process.env.RR_CONSENSUS) {
+      try {
+        const _cf = (k, ok) => { if (!k) return null; const e = m.extractions && m.extractions[k]; return { key: k, val: ef(m, k), conf: (e && typeof e === 'object') ? e.confidence : null, note: (e && typeof e === 'object') ? (e.validation_note || null) : null, method: (e && typeof e === 'object') ? (e.method || e.extraction_method || null) : null, correct: ok }; };
+        fs.appendFileSync(process.env.RR_CONSENSUS, JSON.stringify({ id: g.id, type: g.type_slug, wouldFile, reason: afReason, ref: _cf(rk, s.ref), date: _cf(dk, s.date) }) + '\n');
+      } catch {}
     }
     if (wouldFile) autoFiledN++;
+    // RR_DUMP (C5 attribution, 2026-07-23): per-doc would-auto-file + the supplier field's note,
+    // so an A/B shortfall can be attributed doc-by-doc (which arm held it), never hand-waved.
+    if (process.env.RR_DUMP) {
+      try {
+        const supEx = (m.extractions || {}).supplier_name;
+        fs.appendFileSync(process.env.RR_DUMP, JSON.stringify({
+          id: g.id, wouldFile, sup: m.supplier_name || null,
+          supNote: (supEx && typeof supEx === 'object' && supEx.validation_note) || null,
+        }) + '\n');
+      } catch {}
+    }
+    // RR_TYPE_ENUM (type-outcome enumerator — task #5 gate, 2026-07-26): per-doc type resolution +
+    // which TYPE guard (if any) held it, so the fix's two load-bearing numbers are measurable
+    // corpus-wide: SILENT-MISFILE (wrong type, would-file, no guard) and FALSE-HOLD (correct type but
+    // a type guard fired). Guard inferred from the persisted validation_note signatures
+    // (engine.py: ambiguity :4950, refuse :4858, adjacent-G1 :4889). Read-only, env-gated ⇒ inert.
+    if (process.env.RR_TYPE_ENUM) {
+      try {
+        let guard = null;
+        for (const e of Object.values(m.extractions || {})) {
+          const n = (e && typeof e === 'object' && e.validation_note) ? String(e.validation_note) : '';
+          if (n.includes('used for several document types')) guard = 'ambiguity';
+          else if (n.includes("names a document type that doesn't match") || n.includes("match this document to")) guard = guard || 'refuse';
+          else if (n.includes("couldn't be confirmed anywhere else")) guard = guard || 'g1';
+        }
+        fs.appendFileSync(process.env.RR_TYPE_ENUM, JSON.stringify({
+          id: g.id, supplier: m.supplier_name || null, gt: g.type_slug, got: detSlug || null,
+          conf: m.overall_confidence != null ? m.overall_confidence : null,
+          wouldFile, typeOk: s.type, guard, overridden: !!g._overridden,
+        }) + '\n');
+      } catch {}
+    }
     if (wouldFile && F.some(f => s[f] === false)) {
       silentAutoFile++;
       autoFileMisses.push(`#${g.id} ${g.type_slug} would-auto-file but WRONG on: ${F.filter(f => s[f] === false).join(',')}`);
     }
+    // M_type (Oracle C3): a doc that would auto-file under the WRONG document TYPE. A SUBSET of
+    // silentAutoFile (type ∈ F) but tracked + gated on its OWN so a wrong-TYPE/right-VALUE auto-file
+    // — the banner-heading fix's exact failure mode — is VISIBLE and can't hide in the value metric.
+    if (wouldFile && s.type === false) wrongTypeAutoFile++;
     // Regressions on the filing-critical fields; flag whether the wrong read carried a review note (SILENT = didn't).
     for (const [f, key, want] of [['supplier', 'supplier_name', g.supplier], ['ref', rk, g.ref], ['date', dk, g.date]]) {
       if (s[f] === false) {
@@ -220,8 +308,32 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   for (const f of F) out.push(`| ${f} | ${acc[f].ok} | ${acc[f].n} | ${pct(acc[f].ok, acc[f].n)} |`);
   out.push(`\n**Regressions (a confirmed value the pipeline no longer reproduces): ${regress.length}** — of which ${silentWrong} SILENT (wrong + no review flag).`);
   for (const r of regress.slice(0, 60)) out.push(`- ${r}`);
+  // PER-FIELD FILL RATE — see the comment at the accumulator. This is the ONLY lane in this report
+  // that can see a field going EMPTY: a guard that withholds instead of committing a wrong value
+  // LOWERS the wrong-value count and leaves the auto-file count untouched, so without this a
+  // value-deleting change reads as an improvement. Gate any withholding change on M=0 AND zero
+  // fill-rate drop here, with supplier_name read separately — it is the learning scope key and the
+  // filing folder, so emptying it costs an auto-file on every document of that supplier.
+  out.push(`\n## Per-field fill rate (non-empty), by document type`);
+  out.push(`A withholding change must not drop any of these. supplier_name is called out separately:`);
+  out.push(`it is the learning-scope key AND the filing folder, so a drop there is the worst kind.`);
+  const fillKeys = Object.keys(fill).sort();
+  const supplierLines = [];
+  for (const k of fillKeys) {
+    const [slug, key] = k.split('|');
+    const r = fill[k];
+    const line = `- ${slug} · ${key}: ${r.filled}/${r.n} (${pct(r.filled, r.n)})`;
+    if (key === 'supplier_name') supplierLines.push(line); else out.push(line);
+  }
+  if (supplierLines.length) {
+    out.push(`\n**ISSUER FILL RATE (supplier_name) — watch this one first:**`);
+    for (const l of supplierLines) out.push(l);
+  }
   out.push(`\n**Auto-file soundness (#6): ${autoFiledN}/${files.length} reprocessed docs would auto-file; ${silentAutoFile} would auto-file a WRONG value (must be 0).**`);
   for (const r of autoFileMisses.slice(0, 40)) out.push(`- ${r}`);
+  out.push(`\n**Wrong-TYPE auto-file (M_type, Oracle C3): ${wrongTypeAutoFile} (must be 0 — would auto-file under the WRONG document type; a subset of M above, tracked + gated separately).**`);
+  out.push(`\n**Banner heading re-reads adopted (BANNER_HEADING_REREAD): ${bannerRereadN} (red-channel recovery FIRED + adopted a trusted type; 0 = never fired on this corpus, NOT proof of safety).**`);
+  for (const r of bannerRereadDocs.slice(0, 40)) out.push(`- ${r}`);
   out.push(`\n**Gate-failure re-reads adopted (GATE_REREAD): ${rereadN} (review-bound — can't auto-file; 0 = the feature never fired, not "safe").**`);
   for (const r of rereadDocs.slice(0, 40)) out.push(`- ${r}`);
   out.push(`\n**c2 taught-field ownership caps (TAUGHT_FIELD_OWNERSHIP): ${ownCapN} (HOLD-only — value untouched, review-bound; this is the review-VOLUME delta, not an accuracy change).**`);
@@ -229,5 +341,5 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   fs.writeFileSync(path.join(OUT, 'realdoc_regression.md'), txt);
   console.log(txt);
 
-  if (process.env.GATE === '1' && (silentWrong > 0 || silentAutoFile > 0)) process.exit(1);   // any SILENT regression OR wrong auto-file fails the gate
+  if (process.env.GATE === '1' && (silentWrong > 0 || silentAutoFile > 0 || wrongTypeAutoFile > 0)) process.exit(1);   // any SILENT regression, wrong-value OR wrong-TYPE auto-file fails the gate
 })();

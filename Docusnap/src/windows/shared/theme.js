@@ -12,12 +12,26 @@ function _applyThemeAttrs(theme) {
 }
 
 (function () {
-  _applyThemeAttrs(localStorage.getItem('docusnap_theme') || 'warm');   // default theme: Warm Paper
+  const t = localStorage.getItem('docusnap_theme') || 'warm';   // default theme: Warm Paper
+  _applyThemeAttrs(t);
+  _rememberThemeFamily(t);   // seed the current theme's family anchor before any flip (hoisted decl)
 })();
+
+// Remember the most-recent theme of EACH family so the quick Light⇄Dark flip round-trips
+// back to the user's actual selection instead of the base light/dark theme. Recorded here
+// (not just in the flip handler) so a theme picked in Settings — or arriving via the
+// theme-changed broadcast — updates its family's anchor in every window. Read by the main
+// window's setLightDark(); keyed per family via DARK_THEMES.
+function _rememberThemeFamily(theme) {
+  try {
+    localStorage.setItem(DARK_THEMES.has(theme) ? 'docusnap_theme_dark' : 'docusnap_theme_light', theme);
+  } catch {}
+}
 
 function applyTheme(theme) {
   theme = theme || 'warm';
   localStorage.setItem('docusnap_theme', theme);
+  _rememberThemeFamily(theme);
   _applyThemeAttrs(theme);
 }
 

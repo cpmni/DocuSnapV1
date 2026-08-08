@@ -28,7 +28,7 @@ async function freshDb() {
       id INTEGER PRIMARY KEY, supplier_name TEXT, reference_number TEXT, doc_date TEXT,
       document_type_id INTEGER, status TEXT, ocr_text TEXT, overall_confidence INTEGER,
       original_filename TEXT, stored_filename TEXT, stored_path TEXT, folder_path TEXT,
-      working_path TEXT, workflow_status TEXT, confirmed_at TEXT, processed_at TEXT
+      working_path TEXT, workflow_status TEXT, confirmed_at TEXT, processed_at TEXT, deleted_at TEXT
     );
     CREATE TABLE extractions (id INTEGER PRIMARY KEY, document_id INTEGER, field_key TEXT, raw_value TEXT,
       display_value TEXT, confidence INTEGER, was_corrected INTEGER, corrected_to TEXT, validation_note TEXT, extraction_method TEXT);
@@ -38,7 +38,7 @@ async function freshDb() {
     CREATE TABLE document_routes (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, from_user_id INTEGER,
       from_username TEXT, to_user_id INTEGER, to_username TEXT, action_required TEXT, state TEXT DEFAULT 'pending',
       comment TEXT, resolution_comment TEXT, claimed_by_id INTEGER, claimed_by_username TEXT, claimed_at TEXT,
-      resolved_at TEXT, version INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')));
+      resolved_at TEXT, matched_rule_summary TEXT, version INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')));
   `);
   db.prepare(`INSERT INTO document_types (id,name,slug) VALUES (1,'Invoice','invoice')`).run();
   db.prepare(`INSERT INTO documents (id,supplier_name,document_type_id,status,confirmed_at,processed_at)
@@ -62,7 +62,8 @@ async function mkClient(baseUrl, username) {
 
 async function main() {
   const db = await freshDb();
-  const server = api.createServer({ getDb: () => db, learning: { getDigitsOnlyFields: () => [] }, checkEntitlement: () => ({ entitled: true, feature: 'detached_client', search: { entitled: true, seats: 99 }, workflow: { entitled: true, seats: 99 } }) });
+  const wfEvents = [];   // Slice 1: the shared notification sink (ctx.notifyWorkflowEvent) spy
+  const server = api.createServer({ getDb: () => db, learning: { getDigitsOnlyFields: () => [] }, checkEntitlement: () => ({ entitled: true, feature: 'detached_client', search: { entitled: true, seats: 99 }, workflow: { entitled: true, seats: 99 } }), notifyWorkflowEvent: (ev) => wfEvents.push(ev) });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
 
@@ -109,6 +110,18 @@ async function main() {
   r = await editorC.workflow.resolve(rjRoute.id, 'reject', 'totals wrong', rjRoute.version);
   check('reject with reason -> 200 rejected', r.status === 200 && r.json.route.state === 'rejected');
 
+  // ── 'paid' decision REMOVED for v1 (Workflow Slice 1) ────────────────────────
+  // The /v1 layer passes the decision string VERBATIM to workflowService.resolve — the
+  // service DECIDE allowlist is the ONLY wall, and this pins that it holds over the wire.
+  r = await adminC.workflow.assign(1, editorId, 'approve');
+  const pdRoute = r.json.route;
+  r = await editorC.workflow.resolve(pdRoute.id, 'paid', 'paid via BACS', pdRoute.version);
+  check("'paid' decision over /v1 -> 400 INVALID (removed)", r.status === 400 && r.json.code === 'INVALID');
+  // Recall with the PRE-refusal version doubles as a pin that the refused resolve never
+  // touched the CAS version.
+  r = await adminC.workflow.recall(pdRoute.id, pdRoute.version);
+  check("refused 'paid' left the version untouched (recall with old version -> 200)", r.status === 200 && r.json.route.state === 'recalled');
+
   // ── readonly recipient cannot approve ────────────────────────────────────────
   r = await adminC.workflow.assign(1, readerId, 'approve');
   const roRoute = r.json.route;
@@ -121,9 +134,53 @@ async function main() {
   r = await adminC.workflow.assign(2, editorId, 'approve', 'check this review item');
   check('admin can route an uncommitted (needs_review) doc -> 200', r.status === 200 && r.json.route.state === 'pending');
 
+  // ── Slice 1: counts endpoint (badge poll) + the shared notification sink ─────
+  r = await readerC.workflow.counts();
+  check('counts endpoint -> 200 with four numeric boxes', r.status === 200 && r.json && r.json.counts
+    && ['inbox', 'sent', 'assigned', 'completed'].every(k => typeof r.json.counts[k] === 'number'));
+  check('reader inbox count mirrors the inbox list',
+    r.json.counts.inbox === ((await readerC.workflow.list('inbox')).json.routes || []).length);
+  // Oracle condition 4b: unauthenticated -> 401 (requireSession guards the endpoint).
+  const anonC = createClient({ baseUrl }); await anonC.connect(); anonC._setToken('bogus-token');
+  r = await anonC.workflow.counts();
+  check('unauthenticated counts -> 401', r.status === 401);
+  // eric's fan-out pin: the /v1-built service reaches the ONE shared ctx sink
+  // (main.js notifyWorkflowEvent -> notifyAllWindows, which includes the SEARCH window).
+  // A future "simplify to ctx.notifyMainWindow" — which misses the Search window and
+  // defeats the cross-user mailbox refresh — fails these loudly.
+  check('ctx.notifyWorkflowEvent saw the /v1 assigns', wfEvents.some(e => e.event === 'assigned' && e.route && e.actor));
+  check('ctx.notifyWorkflowEvent saw a /v1 resolve with its terminal state', wfEvents.some(e => e.event === 'approved'));
+
   // ── filing state never rewritten by workflow ─────────────────────────────────
   r = await adminC.getDocument(1);
   check('document filing status still "confirmed" after approve/reject', r.json.status === 'confirmed');
+
+  // ── FYI slice / Oracle C1: the /v1 delete door respects the approval lock ─────
+  // This door was UNGUARDED — a remote edit-role user could delete an approval-locked doc
+  // the desktop would refuse (authz asymmetry) and strand/dissolve the route. Doc 2 still
+  // carries the open approve route from the 5b check above.
+  const lockRoute = db.prepare("SELECT id FROM document_routes WHERE document_id=2 AND state IN ('pending','claimed')").get();
+  check('(setup) doc 2 has an open approve route', !!lockRoute);
+  r = await editorC.recycle.delete(2);
+  check('edit-role /v1 delete of an approval-locked doc -> 409 WORKFLOW_LOCKED',
+    r.status === 409 && r.json.code === 'WORKFLOW_LOCKED');
+  check('refusal leaves the route open + the doc undeleted',
+    db.prepare('SELECT state FROM document_routes WHERE id=?').get(lockRoute.id).state === 'pending'
+    && db.prepare('SELECT status FROM documents WHERE id=2').get().status === 'needs_review');
+  r = await adminC.recycle.delete(2);
+  check('admin /v1 delete overrides the lock -> 200', r.status === 200);
+  const closedRow = db.prepare('SELECT state, resolution_comment FROM document_routes WHERE id=?').get(lockRoute.id);
+  check("admin-override delete closes the route 'recalled' with the honest tombstone",
+    closedRow.state === 'recalled' && /Document deleted by admin/.test(closedRow.resolution_comment || ''));
+  check('doc soft-deleted', db.prepare('SELECT status FROM documents WHERE id=2').get().status === 'deleted');
+  check("the close badge-pinged the shared sink ('auto_closed')", wfEvents.some(e => e.event === 'auto_closed'));
+  // An open FYI route never blocks a writer's delete — and still closes honestly, never vanishes.
+  r = await adminC.workflow.assign(1, readerId, 'acknowledge');
+  const fyiRoute = r.json.route;
+  r = await editorC.recycle.delete(1);
+  check('edit-role /v1 delete passes with only an open FYI route -> 200', r.status === 200);
+  check("the FYI route closed 'recalled' too (tombstone, no silent vanish)",
+    db.prepare('SELECT state FROM document_routes WHERE id=?').get(fyiRoute.id).state === 'recalled');
 
   await new Promise(r2 => server.close(r2));
   db.close();

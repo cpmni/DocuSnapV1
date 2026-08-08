@@ -22,8 +22,46 @@ window.initHelpMode?.('help-mode-toggle', {
   'preview-pane':'A preview of the selected document and its filed details.',
   'preview-actions':'Open the file, show it in your file explorer, or open it back in Review to change something.',
   'preview-pages':'Move between the pages of the previewed document.',
+  'preview-zoom': 'Zoom with the − / + buttons or the mouse wheel; right-click and drag to pan around the page. Reset returns to 100%.',
   'help-mode':   'Help mode: click any control to see what it does. Press Esc to leave.',
 });
+
+// ── Arrow-key document cycling (same as the rail ↑/↓; mirrors the Review window) ──
+// Only fires outside text-entry controls so typing in the search box is unaffected.
+document.addEventListener('keydown', (e) => {
+  const t = e.target;
+  if (t && (t.isContentEditable || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === 'ArrowUp')        { e.preventDefault(); window.SearchResults.cycleSelection(-1); }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); window.SearchResults.cycleSelection(1); }
+});
+
+// ── Expandable details column — drag the grip to widen/narrow the sidebar ─────────
+// The sidebar is docked RIGHT, so its width grows as the grip is dragged left. Width
+// persists in localStorage (clamped) so a chosen width survives reopening.
+(function initSidebarResizer() {
+  const sidebar = document.getElementById('preview-sidebar');
+  const grip    = document.getElementById('sidebar-resizer');
+  if (!sidebar || !grip) return;
+  const MIN = 220, MAX = 620;
+  const saved = parseInt(localStorage.getItem('search_sidebar_width'), 10);
+  if (saved >= MIN && saved <= MAX) sidebar.style.width = saved + 'px';
+  let dragging = false, rightEdge = 0;
+  grip.addEventListener('mousedown', (e) => {
+    dragging = true; rightEdge = sidebar.getBoundingClientRect().right; e.preventDefault();
+    document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none';
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const w = Math.max(MIN, Math.min(MAX, rightEdge - e.clientX));
+    sidebar.style.width = w + 'px';
+  });
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false; document.body.style.cursor = ''; document.body.style.userSelect = '';
+    localStorage.setItem('search_sidebar_width', String(parseInt(sidebar.style.width, 10) || 280));
+  });
+})();
 
 async function _loadDocTypes() {
   const types = await window.docusnap.getAllDocTypes();
@@ -58,21 +96,53 @@ async function _init() {
     document.body.classList.add('workflow-on');                                       // mailbox + approvals
     if (window.SearchWorkflow) await window.SearchWorkflow.init();
     if (window.SearchMailbox) window.SearchMailbox.init();
+    // Cross-user freshness (Slice 1): ANY workflow change (this desktop or a /v1 client)
+    // pings every window — re-pull my open-route map + the visible mailbox, debounced
+    // (SearchMailbox.render has no concurrency guard; overlapping renders interleave DOM).
+    // The action-panel rerender is SKIPPED while the user is mid-input in it (a half-typed
+    // rejection note must never be wiped by someone else's action).
+    let _wfPing = null;
+    window.docusnap.onWorkflowCountsChanged?.(() => {
+      clearTimeout(_wfPing);
+      _wfPing = setTimeout(async () => {
+        try {
+          await window.SearchWorkflow?.refresh?.();
+          const panel = document.getElementById('preview-actions');
+          const busy = panel && (panel.contains(document.activeElement)
+            || (panel.querySelector('.wf-note') && panel.querySelector('.wf-note').value.trim()));
+          if (!busy && window.SearchState.selectedDoc) window.SearchActions.renderActions(window.SearchState.selectedDoc);
+          window.SearchMailbox?.refreshIfActive?.();
+        } catch { /* best-effort */ }
+      }, 400);
+    });
   }
   window.SearchPreview.initPageNav();
   window.SearchQuery.initInputs();
+  window.SearchResults.initRail();
   // Pre-fill from the Home "Quick find" card (full-text — the broadest match) before searching.
   try {
     const q = await window.docusnap.getSearchTarget();
     if (q) { const el = document.getElementById('inp-fulltext'); if (el) el.value = q; }
   } catch { /* no target */ }
   window.SearchQuery.doSearch();
+
+  // Deep-link: Home's "Open Mailbox" asks the Search window to LAND on the mailbox view.
+  // Consumed once on load (after doSearch, so the mailbox list wins the results pane).
+  try {
+    const view = await window.docusnap.getSearchViewTarget?.();
+    if (view === 'mailbox') window.SearchMailbox?.open?.();
+  } catch { /* no view target */ }
 }
 
 // If Search is ALREADY open when Quick-find fires, fill the full-text box + re-run live.
 window.docusnap.onSearchSetQuery?.((q) => {
   const el = document.getElementById('inp-fulltext');
   if (el) { el.value = q || ''; window.SearchQuery.doSearch(); }
+});
+
+// If Search is ALREADY open when a "go to view" deep-link fires (Home Open Mailbox).
+window.docusnap.onSearchGoto?.((v) => {
+  if (v === 'mailbox') window.SearchMailbox?.open?.();
 });
 
 _init();

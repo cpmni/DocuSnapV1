@@ -32,7 +32,12 @@ CASES = {
                ["12345", "GB12345678", "DE123456789"]),
     "reference_code": (["INV-001", "2024/123", "ABC123", "PO-5567"],
                        ["Total", "Reference", "Customer"]),
-    "iban": (["GB29NWBK60161331926819", "DE89370400440532013000", "IE29AIBK93115212345678"],
+    # SPACED forms added 2026-08-08: the pattern used to reject every IBAN as it is actually
+    # PRINTED (4-character groups). That was a live defect, not a nicety — trust.js strips
+    # whitespace before its mod-97 check and ACCEPTED the value, while the renderer's on-blur
+    # scored 0% coverage and WARNED on the same correct value. reggie found it; Oracle signed it.
+    "iban": (["GB29NWBK60161331926819", "DE89370400440532013000", "IE29AIBK93115212345678",
+              "GB29 NWBK 6016 1331 9268 19", "DE89 3704 0044 0532 0130 00"],
              ["GB29", "NWBK60161331926819"]),
     "website": (["www.acme.co.uk", "https://acme.com", "acme.io/contact"],
                 ["acme", "see our site", "john@acme.com"]),
@@ -77,6 +82,43 @@ def test_reference_code_gates_but_others_flag_only():
     # and surfaced for review, never dropped). Regression guard for that decision.
     for k in ("email", "percentage", "postcode_uk", "vat_gb", "iban", "website"):
         assert k not in _TYPE2VAL, f"{k} must stay flag-only (out of _TYPE2VAL)"
+
+
+def test_ip_address_v6_leg_rejects_clock_times_and_accepts_shorthand():
+    """The IPv6 leg was wrong in BOTH directions (reggie 2026-08-08, Oracle SIGN OFF).
+
+    It was `(?:[0-9A-Fa-f]{1,4}:){2,7}[0-9A-Fa-f]{1,4}` — two hextet groups plus a tail — so a
+    CLOCK TIME matched. That is not cosmetic: `ip_address` is in `anchor._PRECISE_VAL_TYPES`, so at
+    >=95% coverage a matching value is graded TYPE-AUTHORITATIVE and SKIPS the charset and
+    learned-shape checks. It simultaneously REJECTED `fe80::1` — the example the type's own tooltip
+    prints at doctype-editor.js:53 — because `{1,4}` demands a hex char before every colon.
+
+    Note these two legs are deliberately NOT anchored (unlike the supplementary types in CASES,
+    which `test_patterns_compile_anchored` covers), so `ip_address` stays out of CASES.
+
+    Assert WHOLE-VALUE coverage, not merely `re.search` truthiness. A bare search is too weak to
+    pin this: the first version of the fix matched only the `2001:db8::8a2e` PREFIX of
+    `2001:db8::8a2e:370:7334`, which `re.search` reports as a match while the consuming surfaces
+    (the renderer's >=0.8 coverage rule and `anchor._pattern_coverage`) correctly score it a partial
+    and warn. The JS mirror pin caught what a search-only assertion here would have waved through.
+    """
+    def span(v):
+        best = 0
+        for p in VP["ip_address"]:
+            m = re.search(p, v, re.IGNORECASE)
+            if m and m.group(0):
+                best = max(best, len(m.group(0)) / len(v))
+        return best
+
+    # Rejected: times and short colon runs that are not addresses.
+    assert span("09:30:15") < 0.8, "a clock time must not read as an IPv6 address"
+    assert span("12:45:00") < 0.8, "a clock time must not read as an IPv6 address"
+    # Accepted, and matched END TO END so downstream coverage metrics agree.
+    assert span("fe80::1") == 1.0, "the compressed form the UI itself advertises must match whole"
+    assert span("2001:db8::8a2e:370:7334") == 1.0
+    assert span("2001:0db8:0000:0000:0000:8a2e:0370:7334") == 1.0
+    # The IPv4 leg is untouched.
+    assert span("192.168.1.200") == 1.0
 
 
 def test_charsets_present_for_symbol_types():

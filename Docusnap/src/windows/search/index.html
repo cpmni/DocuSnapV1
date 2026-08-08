@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; img-src 'self' data:">
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; img-src 'self' data:; form-action 'none'; base-uri 'none'; object-src 'none'">
   <title>ScanFinder — Search</title>
   <link rel="stylesheet" href="../shared/theme.css" />
   <style>
@@ -83,7 +83,6 @@
     .wf-state.approved, .wf-state.acknowledged { background: var(--ok-bg); color: var(--ok); }
     .wf-state.rejected { background: var(--err-bg); color: var(--err); }
     .wf-state.recalled { background: var(--surface2); color: var(--muted); }
-    .wf-state.paid { background: rgba(59,130,246,.14); color: #3b82f6; }
     .wf-stamp-link { border: none; background: none; padding: 0; color: var(--accent2); font-size: 11px;
       cursor: pointer; text-decoration: underline; font-family: var(--sans); }
     .wf-stamp-link:hover { color: var(--accent); }
@@ -93,10 +92,10 @@
 
     /* ── Results pane ─────────────────────────────────────────────────────── */
     #results-pane {
-      width: 380px; flex-shrink: 0; display: flex; flex-direction: column;
+      width: 420px; flex-shrink: 0; display: flex; flex-direction: column;
       border-right: 1px solid var(--border); overflow: hidden;
     }
-    #results-scroll { flex: 1; overflow-y: auto; padding: 8px 0; }
+    #results-scroll { flex: 1; overflow-y: auto; padding: 8px 0; min-width: 0; }
 
     .section-header {
       padding: 6px 14px 4px; font-size: 10px; letter-spacing: .1em;
@@ -161,8 +160,8 @@
     #preview-img-col { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
 
     #preview-img-area {
-      flex: 1; overflow: auto; display: flex; align-items: flex-start;
-      justify-content: center; padding: 16px; min-height: 0;
+      flex: 1; overflow: hidden; display: flex; align-items: center;
+      justify-content: center; padding: 16px; min-height: 0; position: relative;
     }
     #preview-img { max-width: 100%; max-height: 100%; border: 1px solid var(--border); border-radius: 4px; display: block; object-fit: contain; }
     #preview-img-placeholder { color: var(--muted); font-size: 12px; margin: auto; }
@@ -251,13 +250,65 @@
     .wf-sub { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
     .wf-assign select.search-input, .wf-assign input.search-input { width: 100%; }
     .wf-err { font-size: 11px; color: var(--err); }
+    .wf-ok  { font-size: 11px; color: var(--ok); }   /* transient completion feedback (Chris r4 card 3) */
+    .wf-history { display: flex; flex-direction: column; gap: 3px; }
+    .wf-hist-row { font-size: 11px; color: var(--text); line-height: 1.45; }
 
     .spinner { width: 18px; height: 18px; border: 2px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; margin: auto; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* ── Vertical tool rail (mirrors the Review window's #queue-scroll-rail) ───── */
+    #results-body { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+    #search-scroll-rail {
+      flex-shrink: 0; width: 42px; display: flex; flex-direction: column;
+      align-items: center; justify-content: flex-start; gap: 10px; padding-top: 10px;
+      border-left: 1px solid var(--border); background: var(--surface);
+    }
+    .rail-group { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    .rail-divider { width: 22px; height: 1px; background: var(--border2); margin: 2px 0; flex-shrink: 0; }
+    .rail-divider-clear { width: 28px; margin: 8px 0; }
+    /* Round document-cycle buttons (prev / next) — same shape as Review */
+    .queue-nav-btn {
+      width: 32px; height: 32px; padding: 0; border-radius: 50%;
+      border: 1px solid var(--border2); background: var(--surface2); color: var(--accent2); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s, border-color .15s, color .15s, transform .12s, box-shadow .15s;
+    }
+    .queue-nav-btn svg { width: 18px; height: 18px; display: block; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+    .queue-nav-btn:hover:not(:disabled) { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); transform: scale(1.08); box-shadow: 0 2px 8px rgba(79,142,247,.18); }
+    .queue-nav-btn:active:not(:disabled) { transform: scale(.92); }
+    .queue-nav-btn:disabled { opacity: .3; color: var(--muted); cursor: default; }
+    /* Square-rounded tool triggers (delete / send-back / recycle) */
+    .queue-tool-btn {
+      width: 32px; height: 32px; padding: 0; border-radius: 8px;
+      border: 1px solid var(--border2); background: var(--surface2); color: var(--muted); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s, border-color .15s, color .15s, transform .12s;
+    }
+    .queue-tool-btn svg { width: 18px; height: 18px; display: block; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .queue-tool-btn:hover:not(:disabled) { background: var(--accent-bg); border-color: var(--accent); color: var(--accent2); transform: scale(1.06); }
+    .queue-tool-btn:disabled { opacity: .35; cursor: default; }
+    .queue-tool-btn.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent2); }
+    .queue-tool-btn.danger { color: var(--err); }
+    .queue-tool-btn.danger:hover:not(:disabled) { background: var(--err-bg); border-color: var(--err); color: var(--err); }
+
+    /* ── Preview zoom / pan (mirrors Review's transform-based viewer) ──────────── */
+    #preview-img-wrap { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; transform-origin: center center; will-change: transform; }
+    #page-nav .pn-group { display: flex; align-items: center; gap: 10px; }
+    #page-nav .pn-sep { width: 1px; height: 18px; background: var(--border2); }
+    #zoom-level { font-family: var(--mono); font-size: 11px; color: var(--muted); min-width: 40px; text-align: center; }
+    .page-nav-btn.pn-wide { width: auto; padding: 0 9px; font-size: 11px; }
+
+    /* ── Expandable details column ────────────────────────────────────────────── */
+    #sidebar-resizer { width: 6px; flex-shrink: 0; cursor: col-resize; background: transparent; transition: background .12s; }
+    #sidebar-resizer:hover { background: var(--accent-bg); }
+
     ::-webkit-scrollbar { width: 5px; }
     ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
   </style>
+  <!-- Graphical component layer ported from the detached client (re-skin only; loaded
+       AFTER the inline styles so its treatments win on equal specificity). -->
+  <link rel="stylesheet" href="search-components.css" />
 </head>
 <body>
 <div id="app">
@@ -271,7 +322,10 @@
   </div>
 
   <div id="search-bar">
-    <input class="search-input" id="inp-fulltext"  type="text" placeholder="Search anything…" title="Searches everything on the document — text, references, amounts, dates and codes. Numbers ignore commas (1137 finds 1,137)." data-help-key="fulltext">
+    <span class="lead-wrap">
+      <svg class="lead-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input class="search-input" id="inp-fulltext"  type="text" placeholder="Search anything…" title="Searches everything on the document — text, references, amounts, dates and codes. Numbers ignore commas (1137 finds 1,137)." data-help-key="fulltext">
+    </span>
     <span style="font-size:11px; color:var(--muted); white-space:nowrap;">From</span>
     <input class="search-input" id="inp-date-from" data-help-key="date-from" type="date" title="From date">
     <span style="font-size:11px; color:var(--muted);">to</span>
@@ -303,11 +357,45 @@
       <div id="mailbox-tabs" style="display:none">
         <button class="mb-tab active" data-box="inbox">Inbox</button>
         <button class="mb-tab" data-box="sent">Sent</button>
-        <button class="mb-tab" data-box="assigned">Assigned</button>
+        <!-- "Assigned" (= routes YOU have CLAIMED but not resolved) is HIDDEN on the desktop:
+             the desktop decision bar resolves straight from pending and never claims, so this
+             box is structurally always empty here — it only fills via the detached client's
+             claim flow (Chris r4 card 6 + eric A6; bob's honest-cut ruling). Un-hide when
+             desktop claiming exists. -->
+        <button class="mb-tab" data-box="assigned" style="display:none;">Assigned</button>
         <button class="mb-tab" data-box="completed">Completed</button>
       </div>
-      <div id="results-scroll">
-        <div id="results-empty" style="display:none">No documents found</div>
+      <div id="results-body">
+        <div id="results-scroll">
+          <div id="results-empty" style="display:none">No documents found</div>
+        </div>
+        <!-- Vertical tool rail (mirrors the Review window): document cycle at the top,
+             then the document tools. Buttons reveal by role/mode via search-results.js. -->
+        <div id="search-scroll-rail">
+          <div class="rail-group rail-nav-group">
+            <button class="queue-nav-btn" id="btn-doc-prev" title="Previous document (↑)" aria-label="Previous document">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>
+            </button>
+            <button class="queue-nav-btn" id="btn-doc-next" title="Next document (↓)" aria-label="Next document">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+          </div>
+          <div class="rail-divider rail-divider-clear"></div>
+          <div class="rail-group rail-tools-group">
+            <button class="queue-tool-btn danger" id="rail-delete" style="display:none" title="Delete (move to recycle bin)" aria-label="Delete">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+            </button>
+            <button class="queue-tool-btn" id="rail-restore" style="display:none" title="Restore from recycle bin" aria-label="Restore">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg>
+            </button>
+            <button class="queue-tool-btn" id="rail-sendback" style="display:none" title="Send back to Review (admin) — re-open a filed document in the queue" aria-label="Send back to Review">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v0a5 5 0 0 1-5 5H9"/></svg>
+            </button>
+            <button class="queue-tool-btn" id="rail-recycle" style="display:none" title="Show the recycle bin" aria-label="Recycle bin">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 19H4.815a1.83 1.83 0 0 1-1.57-.881 1.785 1.785 0 0 1-.004-1.784L7.196 9.5"/><path d="M11 19h8.203a1.83 1.83 0 0 0 1.556-.89 1.784 1.784 0 0 0 0-1.775l-1.226-2.12"/><path d="m14 16-3 3 3 3"/><path d="M8.293 13.596 7.196 9.5 3.1 10.598"/><path d="m9.344 5.811 1.093-1.892A1.83 1.83 0 0 1 11.985 3a1.784 1.784 0 0 1 1.546.888l3.943 6.843"/><path d="m13.378 9.633 4.096 1.098 1.097-4.096"/></svg>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -316,17 +404,27 @@
 
       <div id="preview-doc" style="display:none">
         <div id="preview-img-col">
-          <div id="preview-img-area">
+          <div id="preview-img-area" data-help-key="preview-zoom">
             <span id="preview-img-placeholder">Loading…</span>
-            <img id="preview-img" style="display:none" alt="Document preview" draggable="false">
+            <div id="preview-img-wrap" style="display:none"><img id="preview-img" alt="Document preview" draggable="false"></div>
           </div>
           <div id="page-nav" style="display:none">
-            <button class="page-nav-btn" id="btn-page-prev" data-help-key="preview-pages" title="Previous page" aria-label="Previous page" disabled>&#8249;</button>
-            <span id="page-label" class="page-nav-label">1 / 1</span>
-            <button class="page-nav-btn" id="btn-page-next" data-help-key="preview-pages" title="Next page" aria-label="Next page" disabled>&#8250;</button>
+            <div class="pn-group" data-help-key="preview-zoom">
+              <button class="page-nav-btn" id="btn-zoom-out" title="Zoom out" aria-label="Zoom out">&#8722;</button>
+              <span id="zoom-level" class="page-nav-label">100%</span>
+              <button class="page-nav-btn" id="btn-zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+              <button class="page-nav-btn pn-wide" id="btn-zoom-reset" title="Reset zoom &amp; position">Reset</button>
+            </div>
+            <div class="pn-sep pn-pages"></div>
+            <div class="pn-group pn-pages">
+              <button class="page-nav-btn" id="btn-page-prev" data-help-key="preview-pages" title="Previous page" aria-label="Previous page" disabled>&#8249;</button>
+              <span id="page-label" class="page-nav-label">1 / 1</span>
+              <button class="page-nav-btn" id="btn-page-next" data-help-key="preview-pages" title="Next page" aria-label="Next page" disabled>&#8250;</button>
+            </div>
           </div>
         </div>
 
+        <div id="sidebar-resizer" title="Drag to resize the details column"></div>
         <div id="preview-sidebar">
           <div id="preview-fields-scroll"></div>
           <div id="preview-actions" data-help-key="preview-actions"></div>
@@ -339,6 +437,9 @@
 <script src="../shared/theme.js"></script>
 <script src="../shared/helpmode.js"></script>
 <script src="../shared/thumbs.js"></script>
+<!-- Focus repair: arms this window's native confirm()/alert() dialogs + provides focusField()
+     for programmatic input focus (the workflow note). Search had no dialog wrapper before. -->
+<script src="../shared/dialogFocus.js"></script>
 <script src="search-state.js"></script>
 <script src="search-actions.js"></script>
 <script src="search-results.js"></script>

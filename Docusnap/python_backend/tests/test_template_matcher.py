@@ -178,6 +178,67 @@ def main():
                          ('the', 'total', 'amount', 'invoice', 'order', 'page', 'this', 'for'))):
         failures += 1
 
+    # ── FINGERPRINT_HYGIENE (slice 3, 2026-07-20): ref-prefix fragments are not branding ──
+    # The token regex splits "INV-76642" at '-', so 'INV' reached the digit filter digit-free and
+    # entered ~every invoice template's permanent identity (the live tpl-2 pollution that faked
+    # cross-supplier corroboration). The skip tests the RAW-TEXT context, not the token stream.
+    section('extract_keyword_fingerprint: a token glued to -/digit in the raw text is a ref prefix, not branding')
+    fp_ref = template_matcher.extract_keyword_fingerprint(
+        "NORTHGATE TEXTILES\nINV-76642\nREF/2024-1\nJOB#4417\nWeavers Way Preston")
+    fp_ref_lower = [w.lower() for w in fp_ref]
+    if not check("'INV' / 'REF' / 'JOB' (digit-glued) are dropped at harvest",
+                 not any(w in fp_ref_lower for w in ('inv', 'ref', 'job'))):
+        failures += 1
+    if not check('real branding words around them still harvest',
+                 'northgate' in fp_ref_lower and 'weavers' in fp_ref_lower):
+        failures += 1
+    import os as _os
+    _old_hyg = _os.environ.get('FINGERPRINT_HYGIENE')
+    _os.environ['FINGERPRINT_HYGIENE'] = '0'
+    try:
+        fp_ref_v0 = [w.lower() for w in template_matcher.extract_keyword_fingerprint(
+            "NORTHGATE TEXTILES\nINV-76642\nWeavers Way Preston")]
+    finally:
+        if _old_hyg is None:
+            _os.environ.pop('FINGERPRINT_HYGIENE', None)
+        else:
+            _os.environ['FINGERPRINT_HYGIENE'] = _old_hyg
+    if not check("kill switch =0 restores the legacy harvest ('inv' captured — the red proof/revert pin)",
+                 'inv' in fp_ref_v0):
+        failures += 1
+
+    # ── R3 COUNTERPARTY MARKERS (2026-08-01, kill FINGERPRINT_COUNTERPARTY_MARKERS): a
+    # buyer-issued PO's "Supplier :" block is per-document counterparty, not branding —
+    # the doc-259 deadlock's poison ('Halcyon Leisure Group' inside the Vellum PO template).
+    section("extract_keyword_fingerprint: buyer-issued 'Supplier'/'Vendor' blocks truncate; 'Suppliers' letterheads do not")
+    fp_po = [w.lower() for w in template_matcher.extract_keyword_fingerprint(
+        "VELLUM & CRANE STATIONERS\n8 Paternoster Court\nPurchase Order\n"
+        "Supplier : Pemberton Joinery\nOld Sawmill, Beech Road")]
+    if not check("harvest stops at 'Supplier :' — counterparty name never enters the identity",
+                 'pemberton' not in fp_po and 'joinery' not in fp_po and 'sawmill' not in fp_po):
+        failures += 1
+    if not check('branding above the marker still harvests',
+                 'vellum' in fp_po and 'paternoster' in fp_po):
+        failures += 1
+    fp_shop = [w.lower() for w in template_matcher.extract_keyword_fingerprint(
+        "OFFICE SUPPLIERS DIRECT\nUnit 4 Trading Estate\nBolton BL1 2AB\nTax Invoice")]
+    if not check("PIN (word boundary): an 'Office Suppliers Direct' LETTERHEAD is not truncated",
+                 'suppliers' in fp_shop and 'bolton' in fp_shop):
+        failures += 1
+    _old_cm = _os.environ.get('FINGERPRINT_COUNTERPARTY_MARKERS')
+    _os.environ['FINGERPRINT_COUNTERPARTY_MARKERS'] = '0'
+    try:
+        fp_po_off = [w.lower() for w in template_matcher.extract_keyword_fingerprint(
+            "VELLUM & CRANE STATIONERS\nPurchase Order\nSupplier : Pemberton Joinery")]
+    finally:
+        if _old_cm is None:
+            _os.environ.pop('FINGERPRINT_COUNTERPARTY_MARKERS', None)
+        else:
+            _os.environ['FINGERPRINT_COUNTERPARTY_MARKERS'] = _old_cm
+    if not check("kill switch =0 restores the legacy harvest ('pemberton' captured — revert pin)",
+                 'pemberton' in fp_po_off):
+        failures += 1
+
     # ── extract_keyword_fingerprint: per-document variable tokens must not pollute it ──
     # Two near-duplicate invoices from the SAME supplier - everything that
     # differs between them (ref, date, customer, totals) is exactly what must
@@ -417,8 +478,21 @@ def main():
         failures += 1
     m_refuse = with_stub_hash(lambda: template_matcher.identify_template(
         FakePage(SAME_HASH), ocr, SIBS, detected_slug='purchase_order', title_trusted=True))
-    if not check('trusted title of a type NO sibling has -> REFUSE (None, doc -> review to teach)',
-                 m_refuse is None):
+    # C1 (TYPE-heading authority): the trusted-title refuse now returns a HOLD sentinel (template
+    # None + type_refused) so the engine HOLDS the doc for review instead of silently typing it via
+    # detection at overall==100; it is still "no usable template" for every (m or {}).get('template')
+    # reader (byte-identical downstream). See engine._flag_type_ambiguity refuse branch.
+    if not check('trusted title of a type NO sibling has -> REFUSE (hold sentinel: template None + type_refused)',
+                 (m_refuse or {}).get('template') is None and (m_refuse or {}).get('type_refused') is True):
+        failures += 1
+    # C5(a) byte-identical pin: TYPE_REFUSE_HOLD=0 -> the pre-C1 None refuse exactly.
+    import os as _os
+    _os.environ['TYPE_REFUSE_HOLD'] = '0'
+    m_refuse_off = with_stub_hash(lambda: template_matcher.identify_template(
+        FakePage(SAME_HASH), ocr, SIBS, detected_slug='purchase_order', title_trusted=True))
+    _os.environ.pop('TYPE_REFUSE_HOLD', None)
+    if not check('TYPE_REFUSE_HOLD=0 -> refuse returns None (byte-identical to pre-C1)',
+                 m_refuse_off is None):
         failures += 1
     m_fb = with_stub_hash(lambda: template_matcher.identify_template(
         FakePage(SAME_HASH), ocr, SIBS, detected_slug='purchase_order', title_trusted=False))
@@ -427,14 +501,118 @@ def main():
         failures += 1
     m_single = with_stub_hash(lambda: template_matcher.identify_template(
         FakePage(SAME_HASH), ocr, [SO_TPL], detected_slug='worksheet', title_trusted=True))
-    if not check('single sales_order template + trusted worksheet title -> REFUSE (no wrong-type force)',
-                 m_single is None):
+    if not check('single sales_order template + trusted worksheet title -> REFUSE (hold sentinel, no wrong-type force)',
+                 (m_single or {}).get('template') is None and (m_single or {}).get('type_refused') is True):
         failures += 1
     m_ok = with_stub_hash(lambda: template_matcher.identify_template(
         FakePage(SAME_HASH), "ASHFORD WHOLESALE\nSALES ORDER\nSO-12345", [SO_TPL],
         detected_slug='sales_order', title_trusted=True))
     if not check('single sales_order template + trusted sales_order title -> keeps #9 (no regression)',
                  m_ok and m_ok['template']['id'] == 9):
+        failures += 1
+
+    # ── LOGO_REFUSE_FALLTHROUGH (2026-07-25): the logo arm locks a WRONG-TYPE same-letterhead sibling
+    #    (the 64-bit phash can't tell a supplier's layouts apart), so the trusted-title refuse used to
+    #    return before the same-type rescue/keyword arm could resolve the RIGHT-type sibling. Doc 555
+    #    (SaltmarshSeafoods_worksheet): logo dist 4 to the sales_order template, 18 to its own worksheet
+    #    template. Fall through, with Oracle C1's supplier-scoping guard. ──────────────────────────────
+    section('LOGO_REFUSE_FALLTHROUGH: wrong-type logo lock falls through to the right-type keyword match')
+    import os as _os2
+    NEAR = '0000000000000000'            # doc logo + the wrong-type sibling (dist 0, conf 100)
+    FAR  = '000000000003ffff'            # the right-type sibling (dist 18 > LOGO_THRESHOLD 13 -> excluded from the logo cluster)
+    LH   = ['saltmarsh', 'seafoods']
+    WRONG = {'id': 21, 'name': 'Saltmarsh SO', 'logo_phash': NEAR, 'confirmed_count': 3,
+             'document_type_slug': 'sales_order', 'keyword_fingerprint': LH, 'dominant_supplier': 'Saltmarsh Seafoods'}
+    RIGHT = {'id': 23, 'name': 'Saltmarsh WS', 'logo_phash': FAR,  'confirmed_count': 3,
+             'document_type_slug': 'service_worksheet', 'keyword_fingerprint': LH, 'dominant_supplier': 'Saltmarsh Seafoods'}
+    ws_ocr = "SALTMARSH SEAFOODS\nWORKSHEET 38\nREFERENCE NO WS-26836"
+
+    # (a) THE FIX — a future dev restoring `return _type_refuse` at :271 makes this RED (refuse instead of RIGHT).
+    m_ft = with_stub_hash(lambda: template_matcher.identify_template(
+        FakePage(NEAR), ws_ocr, [WRONG, RIGHT], detected_slug='service_worksheet', title_trusted=True))
+    if not check('logo locks wrong-TYPE sibling but right-type sibling matches by keyword -> resolves RIGHT (id23), no refuse',
+                 m_ft and m_ft['template']['id'] == 23 and not m_ft.get('type_refused')):
+        failures += 1
+
+    # (c) C1 SUPPLIER GUARD (load-bearing) — only a DIFFERENT-supplier right-type template matches -> re-emit refuse, never file the wrong company.
+    OTHER = {'id': 30, 'name': 'Bexley WS', 'logo_phash': 'ffffffffffffffff', 'confirmed_count': 3,
+             'document_type_slug': 'service_worksheet', 'keyword_fingerprint': ['bexley', 'traders'],
+             'dominant_supplier': 'Bexley Traders'}
+    other_ocr = "SALTMARSH SEAFOODS\nWORKSHEET 38\nBEXLEY TRADERS LTD"   # both brandings present on the page
+    m_c1 = with_stub_hash(lambda: template_matcher.identify_template(
+        FakePage(NEAR), other_ocr, [WRONG, OTHER], detected_slug='service_worksheet', title_trusted=True))
+    if not check('C1: logo locked Saltmarsh, only a DIFFERENT-supplier (Bexley) right-type template matches -> re-emit refuse, NOT Bexley',
+                 (m_c1 or {}).get('template') is None and (m_c1 or {}).get('type_refused') is True):
+        failures += 1
+
+    # (b) PURE RE-EMIT — no right-type template for anyone + no keyword hit -> the end re-emit fires (deleting it makes this RED).
+    m_re = with_stub_hash(lambda: template_matcher.identify_template(
+        FakePage(NEAR), "WORKSHEET 38\nUNRELATED BODY TEXT", [WRONG],
+        detected_slug='service_worksheet', title_trusted=True))
+    if not check('pure re-emit: logo refuses, no rescue + no keyword hit -> refuse held via the end re-emit',
+                 (m_re or {}).get('template') is None and (m_re or {}).get('type_refused') is True):
+        failures += 1
+
+    # (e) OFF byte-identical — LOGO_REFUSE_FALLTHROUGH=0 restores the immediate refuse at :271 (does NOT reach the rescue).
+    _os2.environ['LOGO_REFUSE_FALLTHROUGH'] = '0'
+    m_off2 = with_stub_hash(lambda: template_matcher.identify_template(
+        FakePage(NEAR), ws_ocr, [WRONG, RIGHT], detected_slug='service_worksheet', title_trusted=True))
+    _os2.environ.pop('LOGO_REFUSE_FALLTHROUGH', None)
+    if not check('OFF (=0): logo-arm refuse returns immediately (byte-identical) -> hold sentinel, NOT the rescued RIGHT',
+                 (m_off2 or {}).get('template') is None and (m_off2 or {}).get('type_refused') is True):
+        failures += 1
+    # (d, no-right-type still refuses) is covered above by m_refuse (:447) + m_single (:470): both now flow through
+    # the fall-through and end in a refuse via the keyword arm's own trusted-title guard — the preserved fail-safe.
+
+    # ── LOGO_REFUSE_SUPPLIER_CORROB (2026-07-27, Phillip/Oracle SIGN-OFF-WITH-CONDITIONS): the 64-bit
+    #    phash can't separate suppliers on shared letterheads, so a Northgate sales order's nearest logo
+    #    hash is a FOREIGN supplier's wrong-type template. The af346d8 C1 supplier-guard then BLOCKS the
+    #    correct same-supplier SO rescue purely because its supplier != the collided foreign one. Fix:
+    #    two-factor the guard — only trust the logo-locked supplier to block when its branding is on the
+    #    page (else it's a collision), and require the RESOLVED winner's OWN distinctive branding present
+    #    (Oracle C-1) so an all-generic foreign fingerprint can't silently resolve. ──────────────────────
+    section('LOGO_REFUSE_SUPPLIER_CORROB: phash collision does not block the right rescue; all-generic foreign holds')
+    COLL    = '0000000000000000'            # doc logo + a FOREIGN wrong-type template collide (dist 0)
+    OWN_FAR = '000000000003ffff'            # the real supplier's own same-type template (dist 18, keyword-only reachable)
+    FOR_WS = {'id': 40, 'name': 'Saltmarsh WS', 'logo_phash': COLL, 'confirmed_count': 3,
+              'document_type_slug': 'service_worksheet', 'keyword_fingerprint': ['saltmarsh', 'seafoods'],
+              'dominant_supplier': 'Saltmarsh Seafoods'}
+    OWN_SO = {'id': 41, 'name': 'Northgate SO', 'logo_phash': OWN_FAR, 'confirmed_count': 3,
+              'document_type_slug': 'sales_order', 'keyword_fingerprint': ['northgate', 'textiles'],
+              'dominant_supplier': 'Northgate Textiles'}
+    ng_ocr = "NORTHGATE TEXTILES\nSALES ORDER\nSALES ORDER NO SO-77608"   # Northgate present, Saltmarsh ABSENT
+
+    # (a) THE FIX — foreign wrong-type logo lock (branding absent) must NOT block the correct SO rescue.
+    #     RED on baseline (C1 blocks northgate != saltmarsh -> refuse); GREEN with the corroboration gate.
+    m_coll = with_stub_hash(lambda: template_matcher.identify_template(
+        FakePage(COLL), ng_ocr, [FOR_WS, OWN_SO], detected_slug='sales_order', title_trusted=True))
+    if not check('collision: foreign wrong-type logo lock (branding absent) does NOT block the correct '
+                 'same-supplier SO rescue -> resolves Northgate id41, no refuse',
+                 m_coll and (m_coll.get('template') or {}).get('id') == 41 and not m_coll.get('type_refused')):
+        failures += 1
+
+    # (b) SAFETY (Oracle C-2, the load-bearing winner-gate) — real supplier has NO own same-type template;
+    #     a FOREIGN all-generic SO fingerprint clears the RAW 0.80 bar but has ZERO distinctive presence
+    #     -> the winner-side gate HOLDS (never files the wrong company). Removing C-1 makes this RED.
+    GEN_SO = {'id': 42, 'name': 'Generic SO', 'logo_phash': 'ffffffffffffffff', 'confirmed_count': 3,
+              'document_type_slug': 'sales_order', 'keyword_fingerprint': ['sales', 'order'],   # both stopwords -> 0 distinctive
+              'dominant_supplier': 'Generic Trading Co'}
+    acme_ocr = "ACME WIDGETS\nSALES ORDER\nDATE 01/01/2026\nTOTAL 100.00"   # only the generic type words hit GEN_SO
+    m_gen = with_stub_hash(lambda: template_matcher.identify_template(
+        FakePage(COLL), acme_ocr, [FOR_WS, GEN_SO], detected_slug='sales_order', title_trusted=True))
+    if not check('safety: an all-generic FOREIGN SO fingerprint (raw>=0.80, distinctive n==0) is NOT '
+                 'resolved -> re-emit refuse/hold (winner-side gate; RED if C-1 removed)',
+                 (m_gen or {}).get('template') is None and (m_gen or {}).get('type_refused') is True):
+        failures += 1
+
+    # (c) OFF byte-identical: LOGO_REFUSE_SUPPLIER_CORROB=0 restores the af346d8 C1 -> the collision case
+    #     (a) reverts to the pre-fix bug (foreign lock blocks the correct rescue -> refuse/hold).
+    _os2.environ['LOGO_REFUSE_SUPPLIER_CORROB'] = '0'
+    m_off3 = with_stub_hash(lambda: template_matcher.identify_template(
+        FakePage(COLL), ng_ocr, [FOR_WS, OWN_SO], detected_slug='sales_order', title_trusted=True))
+    _os2.environ.pop('LOGO_REFUSE_SUPPLIER_CORROB', None)
+    if not check('OFF (=0): collision case reverts to the af346d8 block -> refuse/hold (byte-identical)',
+                 (m_off3 or {}).get('template') is None and (m_off3 or {}).get('type_refused') is True):
         failures += 1
 
     print()

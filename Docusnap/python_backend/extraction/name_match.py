@@ -401,3 +401,69 @@ def should_continue_line(line1, pattern_chars=None, name_lex=None, fmt_entry=Non
     # No trailing char: fall back to the data-verified truncation signal (history-gated,
     # inert without confirmed history).
     return bool(name_lex) and is_truncated_name(s, name_lex)
+
+
+# ── TEMPLATE_FIXED near-match identity (2026-08-06; gary -> Oracle SIGN-OFF-W/COND C1..C7) ───────
+# Consumed by the Stage-0.5 merge in engine.py to decide whether a mapping READ of a company field
+# is the SAME NAME as the template's curated `fixed_value`, merely misread, or a genuinely different
+# string. Pure + side-effect free so it is unit-testable without OCR.
+#
+# THE CLASS (measured on the Castellan credit notes): a tight taught crop hugs the wordmark, so the
+# FIRST and LAST glyphs sit on the crop boundary and the LSTM force-fits them —
+#   'Castellan Security Systems' -> 'Castellan Security System:'  (terminal 's' -> ':')
+#                               -> 'Cas tellan Security System:'  (+ a segmenter space split)
+#                               -> 'tastellan Security Systems'   (leading 'C' -> 't')
+# After an alnum fold every one of these is edit distance 1, while the nearest genuinely different
+# string on the same page ('Bramblewood Joinery Ltd' — the recipient block) is ~20. The budget is
+# therefore DERIVED from the class, not tuned to it: a ~19x margin.
+#
+# Why plain Levenshtein and not ocr_corrector._is_confusion: 'C'->'t' is a letter->letter forced fit
+# at a crop edge, absent from the digit/letter confusion maps, so reusing those verbatim would reject
+# the real 'tastellan' case. name_match already uses plain Levenshtein for name tokens.
+#
+# ACCEPTED TRADE-OFF (Oracle C3): a `fixed_value` that is ITSELF one glyph wrong will no longer be
+# displaced by a correct page read through this path, so that poison stops self-healing on the
+# affected templates. The lever is Learning Repair / the template viewer. Do NOT widen the budget
+# past 1 and do NOT remove the containment carve-out. Pins: tests/test_template_fixed_near_match.py.
+_NEAR_MATCH_MIN_FIXED_LEN = 8   # below this a name carries too little signal — require exact
+_NEAR_MATCH_MAX_EDITS     = 1   # the codebase's existing minimum snap budget (ocr_corrector)
+_FRAGMENT_MAX_READ_LEN    = 3   # a <3-char fold against a real company name is debris, not a value
+
+
+def fold_identity(value):
+    """Alnum-only lowercase fold — separator/space/punctuation jitter must not decide identity."""
+    return ''.join(c.lower() for c in str(value or '') if c.isalnum())
+
+
+def near_match_identity(read, fixed, allow_edit=True):
+    """True when `read` is the SAME company name as `fixed`, merely misread.
+
+    IDENTITY-PRESERVING BY CONSTRUCTION: it can only ever accept a <=1-edit variant of the curated
+    literal, so it can never turn one company into another. Returns False for anything that is a
+    genuinely different string, however low its OCR confidence."""
+    fr, ff = fold_identity(read), fold_identity(fixed)
+    if len(ff) < _NEAR_MATCH_MIN_FIXED_LEN or not fr:
+        return False
+    if fr == ff:
+        return True                       # branch A — folds equal, zero characters guessed
+    # CONTAINMENT CARVE-OUT (load-bearing — do not delete as dead code). A mis-taught,
+    # leading-glyph-CLIPPED fixed_value ('astellan Security Systems'; cf. the 'altmarsh Seafoods'
+    # class) is ALSO exactly 1 edit from the CORRECT page read. Without this the rule would discard
+    # the correct read and freeze the clipped literal forever — the mirror of the bug it fixes.
+    # A read that CONTAINS the whole curated name is the fuller string: let the read win.
+    if len(fr) > len(ff) and ff in fr:
+        return False
+    if not allow_edit:
+        return False
+    return _levenshtein(fr, ff) <= _NEAR_MATCH_MAX_EDITS      # branch B — one edge-glyph slip
+
+
+def is_fragment_read(read, fixed):
+    """True when the read is a DEBRIS FRAGMENT ('ba)') against a real curated company name.
+
+    Deterministic length test on purpose. `value_quality.name_quality` was rejected for this job
+    (Oracle C2): it is length-biased — `name_quality('BP') == name_quality('3M') ==
+    name_quality('IBM') == 0.0` — so it would demote legitimate short company names. This rule can
+    only fire when the template's OWN curated name is long, so a genuine 'BP' is never at risk."""
+    fr, ff = fold_identity(read), fold_identity(fixed)
+    return bool(fr) and len(fr) < _FRAGMENT_MAX_READ_LEN and len(ff) >= _NEAR_MATCH_MIN_FIXED_LEN

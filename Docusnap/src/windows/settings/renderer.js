@@ -2,6 +2,23 @@
 
 const api = window.docusnap;
 
+// Keyboard-focus repair (Windows) — mirror of the Review window's wrapper. A native
+// confirm()/alert() drops Blink's render-widget keyboard focus while the window still reports
+// focused (document.hasFocus() lies TRUE), so the preload's pointerdown self-heal can't detect
+// the desync on its own and the NEXT text-field click shows no caret until you alt-tab out and
+// back. Settings' Learning Repair fires confirm() (Forget / Delete / clear-anchors), so wrap the
+// native dialogs once: flag this window "focus suspect" in main whenever one returns, and the
+// pointerdown repair (preload → ensure-window-focus → focusRepair.blurWebView) then does the real
+// transition on the next field press. Single point, no call-site changes. Guarded so it never
+// breaks a dialog.
+(function instrumentNativeDialogsForFocusRepair() {
+  const mark = () => { try { window.docusnap?.markFocusSuspect?.(); } catch {} };
+  const _confirm = window.confirm.bind(window);
+  const _alert = window.alert.bind(window);
+  window.confirm = (...a) => { try { return _confirm(...a); } finally { mark(); } };
+  window.alert = (...a) => { try { return _alert(...a); } finally { mark(); } };
+})();
+
 // ── Tab switching ─────────────────────────────────────────────────────────────
 document.querySelectorAll('.tab').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -16,8 +33,183 @@ document.querySelectorAll('.tab').forEach(btn => {
     if (btn.dataset.tab === 'repair') repairInit();
     if (btn.dataset.tab === 'audit' && !auditState.loaded) loadAudit();
     if (btn.dataset.tab === 'searchclient') initClientApiSection();
+    // The Workflow add-on + client-seat sections live in the Licensing tab but are populated by
+    // initClientApiSection/loadSeats — run them on Licensing open too, not just on Refresh (after the
+    // Settings tab-reorg the sections moved here but their lazy-init trigger stayed on 'searchclient',
+    // so the workflow toggle/chip/seat-count sat in their raw default until a manual Refresh).
+    if (btn.dataset.tab === 'licensing') { initClientApiSection(); if (typeof loadSeats === 'function') loadSeats(); }
+    if (btn.dataset.tab === 'workflow') initWorkflowPanel();
   });
 });
+
+// ── Workflow routing rules (admin; entitlement-gated, hidden while the add-on is dark) ──────────
+let _wfWired = false;
+let _wfEditId = null;
+const _wfEsc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+async function applyWorkflowTabVisibility() {
+  const tab = document.querySelector('.tab[data-tab="workflow"]');
+  if (!tab) return;
+  try {
+    const e = await api.getEntitlement();
+    tab.style.display = (e && e.workflow && e.workflow.entitled && !e.workflow.disabled) ? '' : 'none';
+  } catch { tab.style.display = 'none'; }   // fail-closed
+}
+
+async function initWorkflowPanel() {
+  if (_wfWired) { loadWorkflowRules(); loadWorkflowOpenRoutes(); return; }
+  _wfWired = true;
+  try {
+    const types = (await api.getDocumentTypes()) || [];
+    document.getElementById('wf-b-type').innerHTML =
+      '<option value="">any document type</option>' + types.map(t => `<option value="${t.id}">${_wfEsc(t.name)}</option>`).join('');
+  } catch {}
+  try {
+    const [usersRes, me] = await Promise.all([api.authListUsers(), api.authGetCurrentUser().catch(() => null)]);
+    const meId = me && me.id;
+    // auth-list-users returns { users: [...] } (see loadUsersList) — NOT a bare array; the
+    // original array-shaped read threw inside this catch and left the dropdown EMPTY (found
+    // in the owner's first live click-through of the rule builder).
+    const users = (usersRes && usersRes.users) || [];
+    document.getElementById('wf-b-person').innerHTML = users.filter(u => u.is_active)
+      .map(u => `<option value="${u.id}">${_wfEsc(u.display_name || u.username)}${meId === u.id ? ' (me)' : ''}</option>`).join('');
+  } catch {}
+  const amtOn = document.getElementById('wf-b-amount-on');
+  amtOn.addEventListener('change', () => {
+    document.getElementById('wf-b-amount').style.display = amtOn.checked ? '' : 'none';
+    document.getElementById('wf-b-amount-suffix').style.display = amtOn.checked ? '' : 'none';
+  });
+  document.getElementById('wf-b-save').addEventListener('click', wfSaveRule);
+  document.getElementById('wf-b-dryrun').addEventListener('click', wfDryRun);
+  document.getElementById('wf-b-cancel').addEventListener('click', wfResetBuilder);
+  loadWorkflowRules();
+  loadWorkflowOpenRoutes();
+}
+
+// E1 admin cancel-route: the "Open routes" list — the DISCOVERY surface for stuck routes
+// (a NULL-sender auto-file route appears in NOBODY's Sent box; without this list a stuck doc
+// is only found by per-doc luck in Search). Includes routes whose document was deleted
+// ("(document deleted)") — those are legacy strands and this list is their only healing
+// surface (Oracle OC3). Cancel = two-step inline confirm, same IPC as the Search banner.
+async function loadWorkflowOpenRoutes() {
+  const list = document.getElementById('wf-open-list');
+  if (!list) return;
+  try {
+    const routes = (await api.workflow.openRoutes()) || [];
+    if (!routes.length) { list.innerHTML = '<p style="color:var(--muted);">Nothing is waiting on anyone.</p>'; return; }
+    list.innerHTML = routes.map(r => {
+      const fname = r.stored_filename || r.original_filename || ('Document #' + r.document_id);
+      const gone = r.doc_status === 'deleted' ? ' <span style="color:var(--err); font-size:11px;">(document deleted)</span>' : '';
+      const await_ = r.action_required === 'approve' ? 'awaiting approval' : 'for information';
+      const age = (r.created_at || '').slice(0, 10);
+      return `<div class="card" style="display:flex; align-items:center; gap:12px; padding:10px 14px; margin-bottom:8px;">
+        <div style="flex:1; min-width:0;">
+          <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${_wfEsc(fname)}${gone}</div>
+          <div style="font-size:11px; color:var(--muted);">${_wfEsc(r.supplier_name || '')} · to ${_wfEsc(r.to_username)} · ${_wfEsc(await_)} · since ${_wfEsc(age)}</div>
+        </div>
+        <button class="btn" data-wf-cancel="${r.id}" data-wf-cancel-v="${r.version}" data-wf-cancel-to="${_wfEsc(r.to_username)}" style="padding:4px 10px;">Cancel</button>
+      </div>`;
+    }).join('');
+    list.querySelectorAll('[data-wf-cancel]').forEach(el => el.addEventListener('click', async () => {
+      if (!el.dataset.armed) {
+        el.dataset.armed = '1'; el.textContent = `Confirm — remove from ${el.dataset.wfCancelTo}'s inbox`;
+        setTimeout(() => { if (el.isConnected) { delete el.dataset.armed; el.textContent = 'Cancel'; } }, 5000);
+        return;
+      }
+      el.disabled = true;
+      try { await api.workflow.adminCancel(Number(el.dataset.wfCancel), Number(el.dataset.wfCancelV)); }
+      catch (e) { el.disabled = false; el.textContent = 'Cancel'; delete el.dataset.armed; }
+      loadWorkflowOpenRoutes();
+    }));
+  } catch { list.innerHTML = '<p style="color:var(--muted);">Couldn\'t load the open routes.</p>'; }
+}
+
+function _wfBuilderPayload() {
+  const p = { documentTypeId: document.getElementById('wf-b-type').value || '', targetUserId: document.getElementById('wf-b-person').value || null,
+    actionRequired: document.getElementById('wf-b-action').value || 'approve' };
+  if (document.getElementById('wf-b-amount-on').checked) p.amountText = document.getElementById('wf-b-amount').value;
+  if (_wfEditId) p.id = _wfEditId;
+  return p;
+}
+
+async function wfSaveRule() {
+  const msg = document.getElementById('wf-b-msg');
+  msg.textContent = 'Saving…';
+  try {
+    const res = _wfEditId ? await api.workflow.ruleUpdate(_wfBuilderPayload()) : await api.workflow.ruleCreate(_wfBuilderPayload());
+    if (res && res.error) { msg.textContent = res.error; return; }
+    wfResetBuilder(); msg.textContent = 'Saved.'; loadWorkflowRules();
+  } catch { msg.textContent = "Couldn't save the rule."; }
+}
+
+function wfResetBuilder() {
+  _wfEditId = null;
+  document.getElementById('wf-builder-title').textContent = 'Add a routing rule';
+  document.getElementById('wf-b-save').textContent = 'Add rule';
+  document.getElementById('wf-b-cancel').style.display = 'none';
+  document.getElementById('wf-b-type').value = '';
+  document.getElementById('wf-b-amount-on').checked = false;
+  document.getElementById('wf-b-amount').value = '';
+  document.getElementById('wf-b-amount').style.display = 'none';
+  document.getElementById('wf-b-amount-suffix').style.display = 'none';
+  document.getElementById('wf-b-action').value = 'approve';
+  document.getElementById('wf-dryrun').innerHTML = '';
+}
+
+async function wfDryRun() {
+  const box = document.getElementById('wf-dryrun');
+  box.innerHTML = '<p style="color:var(--muted);">Checking your recent documents…</p>';
+  try {
+    const res = await api.workflow.ruleDryRun(_wfBuilderPayload());
+    if (res && res.error) { box.innerHTML = `<p style="color:var(--muted);">${_wfEsc(res.error)}</p>`; return; }
+    if (!res || res.count === 0) {
+      box.innerHTML = `<p style="color:var(--muted);">None of your last ${res ? res.sampled : 0} filed documents would match — the rule may be too narrow.</p>`;
+      return;
+    }
+    const rows = (res.matched || []).map(m => `<div style="padding:4px 0; border-top:1px solid var(--border); font-size:12px;">${_wfEsc(m.supplier)} · ${_wfEsc(m.total)} · ${_wfEsc(m.filename)}</div>`).join('');
+    box.innerHTML = `<div style="margin-top:6px; padding:12px; background:var(--surface2); border-radius:8px;"><div style="font-weight:600; margin-bottom:6px;">This would have routed ${res.count} of your last ${res.sampled} filed documents:</div>${rows}<div style="font-size:11px; color:var(--muted); margin-top:8px;">Preview only — saving a rule doesn't route these; it applies to documents filed from now on.</div></div>`;
+  } catch { box.innerHTML = '<p style="color:var(--muted);">Couldn\'t run the preview.</p>'; }
+}
+
+async function loadWorkflowRules() {
+  const list = document.getElementById('wf-rules-list');
+  try {
+    const rules = (await api.workflow.rulesList()) || [];
+    if (!rules.length) { list.innerHTML = '<p style="color:var(--muted);">No rules yet. Add one above.</p>'; return; }
+    list.innerHTML = rules.map(r => `<div class="card" style="display:flex; align-items:center; gap:12px; padding:12px 14px; margin-bottom:8px; ${r.active ? '' : 'opacity:.55;'}">
+        <div style="flex:1;">${_wfEsc(r.summary || 'Routing rule')}</div>
+        <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); cursor:pointer;"><input type="checkbox" ${r.active ? 'checked' : ''} data-wf-toggle="${r.id}"> On</label>
+        <button class="btn" data-wf-edit="${r.id}" style="padding:4px 10px;">Edit</button>
+        <button class="btn" data-wf-del="${r.id}" style="padding:4px 10px;">Delete</button>
+      </div>`).join('');
+    list.querySelectorAll('[data-wf-toggle]').forEach(el => el.addEventListener('change', () => api.workflow.ruleToggle(Number(el.dataset.wfToggle), el.checked).then(loadWorkflowRules)));
+    list.querySelectorAll('[data-wf-edit]').forEach(el => el.addEventListener('click', () => wfEditRule(Number(el.dataset.wfEdit), rules)));
+    list.querySelectorAll('[data-wf-del]').forEach(el => el.addEventListener('click', () => { if (confirm('Delete this routing rule?')) api.workflow.ruleDelete(Number(el.dataset.wfDel)).then(loadWorkflowRules); }));
+  } catch { list.innerHTML = '<p style="color:var(--muted);">Couldn\'t load your rules.</p>'; }
+}
+
+function wfEditRule(id, rules) {
+  const r = rules.find(x => x.id === id);
+  if (!r) return;
+  _wfEditId = id;
+  document.getElementById('wf-builder-title').textContent = 'Edit routing rule';
+  document.getElementById('wf-b-save').textContent = 'Save changes';
+  document.getElementById('wf-b-cancel').style.display = '';
+  document.getElementById('wf-b-type').value = r.document_type_id != null ? String(r.document_type_id) : '';
+  const hasAmt = Number(r.min_amount_pennies) > 0;
+  document.getElementById('wf-b-amount-on').checked = hasAmt;
+  document.getElementById('wf-b-amount').value = hasAmt ? (r.min_amount_pennies / 100).toFixed(2) : '';
+  document.getElementById('wf-b-amount').style.display = hasAmt ? '' : 'none';
+  document.getElementById('wf-b-amount-suffix').style.display = hasAmt ? '' : 'none';
+  // Prefill the action — without this, editing a for-information rule and saving would
+  // silently convert it to approval (eric's catch in the FYI slice review).
+  document.getElementById('wf-b-action').value = r.action_required === 'acknowledge' ? 'acknowledge' : 'approve';
+  if (r.target_user_id != null) document.getElementById('wf-b-person').value = String(r.target_user_id);
+}
+
+applyWorkflowTabVisibility();   // reveal the tab iff the add-on is entitled (dark today ⇒ stays hidden)
+
+// ── Search client access (admin) — host the detached-client API ────────────────
 
 // ── Search client access (admin) — host the detached-client API ────────────────
 let _clientApiWired = false;
@@ -81,20 +273,30 @@ async function initClientApiSection() {
   const wfSub = document.getElementById('wf-addon-sub');
   if (wfTgl && wfSub) {
     wfTgl.disabled = true;
+    const sec = document.getElementById('wf-section');
     try {
       const ent = await api.getEntitlement();
       // Pre-release: the workflow feature is master-disabled (entitlement returns workflow.disabled).
       // Hide the whole section so there's no mention of the unbuilt feature; un-hides automatically
-      // when the WORKFLOW_FEATURE_ENABLED flag is flipped back on.
+      // when the WORKFLOW_FEATURE_ENABLED flag is flipped back on. #wf-section defaults hidden in the
+      // HTML (so it never FLASHES visible before this async check resolves) — REVEAL it whenever the
+      // feature is not master-disabled.
       if (ent && ent.workflow && ent.workflow.disabled) {
-        const sec = document.getElementById('wf-section'); if (sec) sec.style.display = 'none';
+        if (sec) sec.style.display = 'none';
       } else {
+        if (sec) sec.style.display = '';
         const on = !!(ent && ent.workflow && ent.workflow.entitled);
+        const seats = (ent && ent.workflow && ent.workflow.seats) || 0;
         wfTgl.checked = on;
-        wfSub.textContent = on ? 'Licensed' : 'Not licensed';
+        wfSub.textContent = on
+          ? (seats > 0 ? `Licensed · ${seats} seat${seats === 1 ? '' : 's'}` : 'Licensed')
+          : 'Not licensed';
         setChip('wf-chip', on ? 'On' : 'Off', on ? 'ok' : '');
       }
-    } catch { wfSub.textContent = 'Unknown'; setChip('wf-chip', 'Unknown', ''); }
+    } catch {
+      if (sec) sec.style.display = '';
+      wfSub.textContent = 'Unknown'; setChip('wf-chip', 'Unknown', '');
+    }
   }
 
   if (_clientApiWired) return; // bind listeners once
@@ -171,6 +373,7 @@ const HELP_TEXTS = {
   'add-type':       'Create a custom document type with its own fields (e.g. “Delivery Note”) alongside the built-in Invoice / Sales Order / Purchase Order.',
   'add-field':      'Add a custom field to the selected document type: a label, an auto-generated key, a value type and whether it’s required.',
   'add-catalog':    'Add a ready-made document type (Purchase/Sales Invoice, Credit Note, Statement, Receipt…) with its fields already set up.',
+  'field-visibility':'Choose which fields each sender\'s layout shows. Untick a field a layout doesn\'t print so Review stops asking for it. The Issuer, Date and Reference are always shown.',
   'pick-output':    'Choose the folder where confirmed documents are filed. Must be set before any document can be confirmed.',
   'pick-processed': 'Choose where each original scan is moved after it’s filed. Leave blank to keep originals where they are.',
   'clear-processed':'Stop moving originals — leave them in the source folder after filing.',
@@ -340,6 +543,183 @@ document.getElementById('auto-rotate-toggle').addEventListener('change', async (
   await api.setSetting('auto_rotate_enabled', e.target.checked ? 'true' : 'false');
 });
 
+// ── Recover long refs the crop cuts off (ANCHOR_VALUE_RIGHT_GROW, default OFF) ──
+(async () => {
+  try {
+    const v = await api.getSetting('anchor_value_right_grow');
+    document.getElementById('right-grow-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('right-grow-toggle').checked = false; }
+})();
+document.getElementById('right-grow-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('anchor_value_right_grow', e.target.checked ? 'true' : 'false');
+});
+
+// ── Trim a label off the start of a read value (ANCHOR_LABEL_LEFT_CLAMP, default OFF) ──
+(async () => {
+  try {
+    const v = await api.getSetting('anchor_label_left_clamp');
+    document.getElementById('left-clamp-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('left-clamp-toggle').checked = false; }
+})();
+document.getElementById('left-clamp-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('anchor_label_left_clamp', e.target.checked ? 'true' : 'false');
+});
+
+// ── Recover a misread reference prefix (PREFIX_GARBLE_ADOPT, default OFF) ──────
+(async () => {
+  try {
+    const v = await api.getSetting('prefix_garble_adopt');
+    document.getElementById('prefix-garble-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('prefix-garble-toggle').checked = false; }
+})();
+document.getElementById('prefix-garble-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('prefix_garble_adopt', e.target.checked ? 'true' : 'false');
+});
+
+// ── Correct a reference that lost a cross-check (CROSSCHECK_OUTLIER_RECONCILE, default OFF) ──
+(async () => {
+  try {
+    const v = await api.getSetting('crosscheck_outlier_reconcile');
+    document.getElementById('crosscheck-reconcile-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('crosscheck-reconcile-toggle').checked = false; }
+})();
+document.getElementById('crosscheck-reconcile-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('crosscheck_outlier_reconcile', e.target.checked ? 'true' : 'false');
+});
+
+// ── Double-check references and dates against the whole document (Slice-2 stage 2a,
+// UNIVERSAL_VERIFY_RESTORE, default OFF; numeric/text stages keep their own switches) ──
+(async () => {
+  try {
+    const v = await api.getSetting('universal_verify_restore');
+    document.getElementById('universal-verify-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('universal-verify-toggle').checked = false; }
+})();
+document.getElementById('universal-verify-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('universal_verify_restore', e.target.checked ? 'true' : 'false');
+});
+
+// ── Tidy stray marks from taught reference reads (Slice A edge-debris heal,
+// TEMPLATE_CODE_EDGE_CLEAN, default OFF) ──
+(async () => {
+  try {
+    const v = await api.getSetting('template_code_edge_clean');
+    document.getElementById('edge-clean-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('edge-clean-toggle').checked = false; }
+})();
+document.getElementById('edge-clean-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('template_code_edge_clean', e.target.checked ? 'true' : 'false');
+});
+
+// ── Snap taught boxes to the printed text (Slice B word-snap, TEMPLATE_TARGET_WORD_SNAP,
+// default OFF) ──
+(async () => {
+  try {
+    const v = await api.getSetting('template_target_word_snap');
+    document.getElementById('word-snap-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('word-snap-toggle').checked = false; }
+})();
+document.getElementById('word-snap-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('template_target_word_snap', e.target.checked ? 'true' : 'false');
+});
+
+// ── Remove label fragments / complete cut-short taught reads (NIGHT round 2026-08-03:
+// TEMPLATE_CODE_FRAG_CLEAN + TEMPLATE_CLIP_COMMIT, both default OFF) + the jitter-crater
+// arc trio (Oracle 2026-08-05, gates green: TEMPLATE_ABS_EDGE_GUARD word-edge grow ·
+// TEMPLATE_DATE_CLIP_GATE cut-date reject · TEMPLATE_LABEL_DIGIT_EXACT locate digit
+// exactness — all default OFF until the owner flip) ──
+for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
+                         ['clip-commit-toggle', 'template_clip_commit'],
+                         ['edge-guard-toggle', 'template_abs_edge_guard'],
+                         ['date-clip-toggle', 'template_date_clip_gate'],
+                         ['label-digit-toggle', 'template_label_digit_exact'],
+                         ['angle-compose-toggle', 'teach_angle_compose'],
+                         ['edge-cut-relocate-toggle', 'template_edge_cut_relocate'],
+                         ['clip-slack-toggle', 'template_clip_commit_edge_slack'],
+                         ['date-invalid-yield-toggle', 'template_date_invalid_yield'],
+                         ['date-future-yield-toggle', 'template_date_future_yield'],
+                         ['pad-window-read-toggle', 'template_pad_window_read'],
+                         ['heading-absent-reread-toggle', 'heading_absent_reread'],
+                         ['credit-sign-toggle', 'credit_sign_coherence'],
+                         ['inline-row-overlap-toggle', 'template_inline_row_overlap'],
+                         ['ref-role-digit-toggle', 'ref_role_digit_gate'],
+                         // NOT an extraction switch and NOT bridged through _reconcileEnv: the
+                         // auto-file gate is JS-side, so database/modules/trust.js reads this key
+                         // itself, once per document. That also means it takes effect on the next
+                         // filing decision rather than needing an app restart.
+                         ['shadow-row-skip-toggle', 'trust_shadow_row_skip']]) {
+  (async () => {
+    try {
+      const v = await api.getSetting(key);
+      document.getElementById(id).checked = (v === 'true');   // unset → off
+    } catch { document.getElementById(id).checked = false; }
+  })();
+  document.getElementById(id).addEventListener('change', async (e) => {
+    await api.setSetting(key, e.target.checked ? 'true' : 'false');
+  });
+}
+
+// ── Fix families where ONE owner-facing switch drives TWO stored settings. Each pair is
+// always flipped together (the second is meaningless alone), so the UI shows one row and
+// writes both keys. Read state from the FIRST key; both default OFF.
+//  • curated sender name  — template_fixed_near_match (same name, misread) +
+//    template_fixed_fragment (debris too short to be a company name). Both decline a bad
+//    letterhead read in favour of the template's saved value.
+//  • pad-window code read — template_pad_window_code (label-less taught boxes) +
+//    template_pad_window_code_labelled (labelled ones; a STRICT SUBSET that the bridge
+//    ignores unless the parent is also on).
+//  • VAT registration vs VAT amount — vat_reg_not_amount + net_misread_total_flag. Paired because
+//    removing the phantom tax also disarms the "total looks like the subtotal" note (that arm needs
+//    a tax to be present), so a net-as-gross total would lose a TRUE flag. Measured over 288 docs:
+//    false alarms 39 -> 0; true flags 16 -> 12 alone, 15 when paired, with zero false flags added.
+for (const [id, keys] of [['template-fixed-supplier-toggle', ['template_fixed_near_match', 'template_fixed_fragment']],
+                          ['pad-window-code-toggle', ['template_pad_window_code', 'template_pad_window_code_labelled']],
+                          ['vat-reg-toggle', ['vat_reg_not_amount', 'net_misread_total_flag']]]) {
+  (async () => {
+    try {
+      const v = await api.getSetting(keys[0]);
+      document.getElementById(id).checked = (v === 'true');   // unset → off
+    } catch { document.getElementById(id).checked = false; }
+  })();
+  document.getElementById(id).addEventListener('change', async (e) => {
+    const val = e.target.checked ? 'true' : 'false';
+    for (const k of keys) await api.setSetting(k, val);
+  });
+}
+
+// ── Read small reference/date print more clearly (STRUCT_CODE_READ, default OFF) ──
+(async () => {
+  try {
+    const v = await api.getSetting('struct_code_read');
+    document.getElementById('struct-code-read-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('struct-code-read-toggle').checked = false; }
+})();
+document.getElementById('struct-code-read-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('struct_code_read', e.target.checked ? 'true' : 'false');
+});
+
+// ── Faster field reads via a warm OCR helper pool (default ON) ─────────────────
+(async () => {
+  try {
+    const v = await api.getSetting('ocr_warm_worker_enabled');
+    document.getElementById('warm-ocr-toggle').checked = (v !== 'false');   // unset → on
+  } catch { document.getElementById('warm-ocr-toggle').checked = true; }
+})();
+document.getElementById('warm-ocr-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('ocr_warm_worker_enabled', e.target.checked ? 'true' : 'false');
+});
+
+// ── Faster single-document reprocessing via multiple CPU cores (Option B/C; default OFF) ──────
+(async () => {
+  try {
+    const v = await api.getSetting('ocr_parallel_reprocess_enabled');
+    document.getElementById('parallel-reprocess-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('parallel-reprocess-toggle').checked = false; }
+})();
+document.getElementById('parallel-reprocess-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('ocr_parallel_reprocess_enabled', e.target.checked ? 'true' : 'false');
+});
+
 // ── Home dashboard cards (show/hide) ───────────────────────────────────────────
 // A toggle per Home card. Checked = shown, unchecked = hidden. Stored as a JSON list of HIDDEN
 // card ids in `dashboard_hidden_cards`; the main window applies it live (dashboard-cards-changed).
@@ -349,6 +729,7 @@ const DASH_CARD_SECTIONS = [
   ['Top', [
     ['dash-quickfind', 'Quick find'],
     ['dash-attention', 'Needs your attention'],
+    ['dash-workflow',  'Waiting on you (approvals)'],
     ['dash-pulse',     'Documents filed'],
     ['dash-autofile',  'Filed automatically'],
     ['dash-learning',  'Getting smarter'],
@@ -445,6 +826,23 @@ if (fileTimeoutSelect) {
   });
 }
 
+// ── Scan reading detail (OCR render resolution) ───────────────────────────────
+// Lower DPI = faster OCR + far better parallel scaling, traded against small-text accuracy.
+// Default 300 (byte-identical to the old hardcoded render). Snaps a stored/legacy value to an
+// offered option; the backend independently coerces anything out of [100,600] back to 300.
+const ocrDpiSelect = document.getElementById('ocr-dpi-select');
+if (ocrDpiSelect) {
+  (async () => {
+    let n = parseInt(await api.getSetting('ocr_dpi'), 10);
+    if (!Number.isFinite(n)) n = 300;                                   // unset → default 300
+    if (!['150', '200', '300'].includes(String(n))) n = 300;           // snap to an offered option
+    ocrDpiSelect.value = String(n);
+  })();
+  ocrDpiSelect.addEventListener('change', async () => {
+    await api.setSetting('ocr_dpi', ocrDpiSelect.value);
+  });
+}
+
 
 // ── Date format (region) — how an ambiguous numeric date is read ──────────────
 const dateOrderSelect = document.getElementById('date-order-select');
@@ -486,6 +884,108 @@ loadAutoSeparate();
 if (autoSeparateToggle) autoSeparateToggle.addEventListener('change', async () => {
   try { await api.setSetting('auto_separate_enabled', autoSeparateToggle.checked ? 'true' : 'false'); }
   catch { /* non-fatal; reloads on next open */ }
+});
+
+// ── Filing Slips ("Separator sheets") ──────────────────────────────────────────
+// Default OFF (backend reads 'filing_slips_enabled' with a 'false' default). The
+// detection gate is INDEPENDENT of the auto-separation toggle above (Oracle C2,
+// docs/designs/FILING_SLIPS_2026-07-18.md). C3: while a watch folder is configured,
+// a persistent warning explains sheets are detected on manual Import only.
+const slipsToggle = document.getElementById('filing-slips-toggle');
+const slipsWatchWarn = document.getElementById('filing-slips-watch-warn');
+const slipsCountInput = document.getElementById('filing-slips-count');
+const slipsPrintBtn = document.getElementById('filing-slips-print');
+const slipsResult = document.getElementById('filing-slips-result');
+async function slipsWatchConfigured() {
+  try {
+    return (await api.getSetting('watch_folder_enabled')) === '1'
+      && !!(await api.getSetting('watch_folder'));
+  } catch { return false; }
+}
+async function refreshSlipsWatchWarn() {
+  if (!slipsWatchWarn) return;
+  slipsWatchWarn.style.display = (slipsToggle?.checked && await slipsWatchConfigured()) ? '' : 'none';
+}
+async function loadFilingSlips() {
+  if (!slipsToggle) return;
+  slipsToggle.checked = (await api.getSetting('filing_slips_enabled')) === 'true';
+  refreshSlipsWatchWarn();
+}
+loadFilingSlips();
+if (slipsToggle) slipsToggle.addEventListener('change', async () => {
+  try { await api.setSetting('filing_slips_enabled', slipsToggle.checked ? 'true' : 'false'); }
+  catch { /* non-fatal; reloads on next open */ }
+  refreshSlipsWatchWarn();
+});
+// ── Document printing (Print-Slice 1) ──────────────────────────────────────────
+// Default OFF (backend reads 'printing_enabled' with a 'false' default). Adds the
+// Review Print button + the driver-dialog print IPC when on.
+const printingToggle = document.getElementById('printing-toggle');
+async function loadPrinting() {
+  if (!printingToggle) return;
+  try { printingToggle.checked = (await api.getSetting('printing_enabled')) === 'true'; } catch {}
+}
+loadPrinting();
+if (printingToggle) printingToggle.addEventListener('change', async () => {
+  try { await api.setSetting('printing_enabled', printingToggle.checked ? 'true' : 'false'); }
+  catch { /* non-fatal; reloads on next open */ }
+});
+
+// ── Generic Document fallback + Auto-Title (docs/designs/GENERIC_DOCTYPE_2026-07-18.md) ──
+// Defaults OFF (backend reads 'generic_fallback_enabled' / 'auto_title_enabled' with
+// 'false' defaults). Enabling the fallback AUTO-CREATES the "General Document" preset
+// first (transactional + idempotent via the existing add-doctype-presets IPC — owner Q5)
+// so the insert-seam mapping always has a type to land on.
+const genericToggle = document.getElementById('generic-fallback-toggle');
+const autoTitleToggle = document.getElementById('auto-title-toggle');
+async function loadGenericFallback() {
+  try {
+    if (genericToggle) genericToggle.checked = (await api.getSetting('generic_fallback_enabled')) === 'true';
+    if (autoTitleToggle) autoTitleToggle.checked = (await api.getSetting('auto_title_enabled')) === 'true';
+  } catch { /* defaults stay unchecked */ }
+}
+loadGenericFallback();
+if (genericToggle) genericToggle.addEventListener('change', async () => {
+  try {
+    if (genericToggle.checked) { try { await api.addDoctypePresets(['general_document']); } catch { /* already present */ } }
+    await api.setSetting('generic_fallback_enabled', genericToggle.checked ? 'true' : 'false');
+  } catch { /* non-fatal; reloads on next open */ }
+});
+if (autoTitleToggle) autoTitleToggle.addEventListener('change', async () => {
+  try { await api.setSetting('auto_title_enabled', autoTitleToggle.checked ? 'true' : 'false'); }
+  catch { /* non-fatal; reloads on next open */ }
+});
+
+if (slipsPrintBtn) slipsPrintBtn.addEventListener('click', async () => {
+  slipsPrintBtn.disabled = true;
+  if (slipsResult) { slipsResult.style.display = ''; slipsResult.textContent = 'Creating separator sheets…'; }
+  try {
+    const res = await api.generateFilingSlips(parseInt(slipsCountInput?.value, 10));
+    if (res && res.success && slipsResult) {
+      const pad = (n) => String(n).padStart(4, '0');
+      slipsResult.textContent = '';
+      slipsResult.append(`Created sheets ${pad(res.first)}–${pad(res.last)}. `);
+      const openBtn = document.createElement('button');
+      openBtn.className = 'btn'; openBtn.textContent = 'Open to print';
+      openBtn.style.marginRight = '6px';
+      openBtn.addEventListener('click', () => api.openFile(res.path));
+      const showBtn = document.createElement('button');
+      showBtn.className = 'btn'; showBtn.textContent = 'Show in folder';
+      showBtn.addEventListener('click', () => api.showInExplorer(res.path));
+      slipsResult.append(openBtn, showBtn);
+      if (await slipsWatchConfigured()) {
+        const w = document.createElement('div');
+        w.style.color = 'var(--warn)';
+        w.textContent = 'Note: sheets are detected on manual Import only — not yet in the auto-import folder.';
+        slipsResult.append(w);
+      }
+    } else if (slipsResult) {
+      slipsResult.textContent = `Could not create sheets: ${(res && res.error) || 'unknown error'}`;
+    }
+  } catch (e) {
+    if (slipsResult) slipsResult.textContent = `Could not create sheets: ${e.message}`;
+  }
+  slipsPrintBtn.disabled = false;
 });
 
 // ── Name wordness review flag (flag odd supplier/customer names) ───────────────
@@ -554,6 +1054,56 @@ async function loadOutputStructure() {
   updateOutputPreview();
 }
 loadOutputStructure();
+
+// ── Duplicate-file label (Settings → Files & filing) ─────────────────────────
+// Stored setting `duplicate_suffix`: DUPLICATE (default) | COPY | number | date | any custom word.
+// Default is byte-identical to the legacy "-DUPLICATE". Server-authoritative preview (no drift).
+const dupSelect  = document.getElementById('dup-suffix-select');
+const dupCustom  = document.getElementById('dup-suffix-custom');
+const dupPreview = document.getElementById('dup-preview');
+const DUP_KNOWN  = new Set(['DUPLICATE', 'COPY', 'NUMBER', 'DATE']);
+let _dupDebounce = null;
+
+function _dupEffectiveValue() {
+  if (!dupSelect) return 'DUPLICATE';
+  if (dupSelect.value === '__custom') return (dupCustom.value || '').trim();
+  return dupSelect.value;
+}
+async function refreshDupPreview() {
+  if (!dupPreview) return;
+  try {
+    const r = await api.previewDuplicateName(_dupEffectiveValue() || 'DUPLICATE');
+    dupPreview.textContent = (r && r.example) ? r.example : '…';
+  } catch { dupPreview.textContent = '…'; }
+}
+async function saveDupSuffix() {
+  // A blank custom box falls back to the default so filing never receives an empty label.
+  try { await api.setSetting('duplicate_suffix', _dupEffectiveValue() || 'DUPLICATE'); } catch { /* noop */ }
+  refreshDupPreview();
+}
+async function loadDupSuffix() {
+  if (!dupSelect) return;
+  const stored = String((await api.getSetting('duplicate_suffix')) || 'DUPLICATE').trim();
+  const up = stored.toUpperCase();
+  if (DUP_KNOWN.has(up)) {
+    dupSelect.value = (up === 'NUMBER' || up === 'DATE') ? up.toLowerCase() : up;
+    dupCustom.style.display = 'none';
+  } else {
+    dupSelect.value = '__custom';
+    dupCustom.value = stored;
+    dupCustom.style.display = '';
+  }
+  refreshDupPreview();
+}
+if (dupSelect) {
+  dupSelect.addEventListener('change', () => {
+    const custom = dupSelect.value === '__custom';
+    dupCustom.style.display = custom ? '' : 'none';
+    if (custom) { dupCustom.focus(); refreshDupPreview(); } else saveDupSuffix();
+  });
+  dupCustom.addEventListener('input', () => { clearTimeout(_dupDebounce); _dupDebounce = setTimeout(saveDupSuffix, 400); });
+  loadDupSuffix();
+}
 
 function renderOutputTokenList(listId, tokens, editor) {
   const list = document.getElementById(listId);
@@ -654,8 +1204,11 @@ function renderDocTypesList() {
     row.className = 'doctype-row'
       + (dt.enabled ? '' : ' disabled')
       + (dt.id === selectedDocTypeId ? ' active' : '');
+    row.dataset.tid = dt.id;
+    row.draggable = true;
     const fieldCount = (dt.fields || []).length;
     row.innerHTML = `
+      <span class="doctype-handle" title="Drag to reorder this type" aria-hidden="true">&#10303;</span>
       <div class="doctype-name">
         <span class="doctype-nametext" title="${escHtml(dt.name)}">${escHtml(dt.name)}</span>
         <span class="${dt.built_in ? 'badge-builtin' : 'badge-custom'}">${dt.built_in ? 'built-in' : 'custom'}</span>
@@ -664,6 +1217,77 @@ function renderDocTypesList() {
     `;
     row.addEventListener('click', () => selectDocType(dt.id));
     list.appendChild(row);
+  }
+  wireDocTypeListReorder(list);
+}
+
+// ── Drag-to-reorder the doc-type LIST (owner-requested; mirrors the field-row pattern) ──
+// Handle-armed native DnD, exactly the d91da4b gesture: the row is draggable but a drag
+// only STARTS from the ⠿ handle, so plain clicks still select. Live feedback moves the
+// SAME node via insertBefore; the drop commits ONCE via the SHARED
+// DocTypeEditor.planReorder math (gap-of-10 sort_order, minimal writes). Container
+// listeners are attached once (the container survives re-renders; rows don't).
+function wireDocTypeListReorder(list) {
+  if (list.dataset.dndWired) return;
+  list.dataset.dndWired = '1';
+  let pressedHandle = false;
+  let dragRow = null;
+  const rowAfter = (y) => {
+    const rows = Array.prototype.slice.call(list.querySelectorAll('.doctype-row')).filter(r => r !== dragRow);
+    for (const r of rows) {
+      const box = r.getBoundingClientRect();
+      if (y < box.top + box.height / 2) return r;
+    }
+    return null;
+  };
+  list.addEventListener('pointerdown', (e) => { pressedHandle = !!e.target.closest('.doctype-handle'); });
+  list.addEventListener('pointerup',   () => { pressedHandle = false; });
+  list.addEventListener('dragstart', (e) => {
+    const row = e.target.closest('.doctype-row');
+    if (!row || !pressedHandle) { e.preventDefault(); return; }
+    dragRow = row;
+    row.classList.add('dragging');
+    try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', row.dataset.tid || ''); } catch (_) {}
+  });
+  list.addEventListener('dragend', () => {
+    pressedHandle = false;
+    if (dragRow) dragRow.classList.remove('dragging');
+    dragRow = null;
+  });
+  list.addEventListener('dragover', (e) => {
+    if (!dragRow) return;
+    e.preventDefault();
+    try { e.dataTransfer.dropEffect = 'move'; } catch (_) {}
+    const after = rowAfter(e.clientY);
+    if (after == null) { if (dragRow !== list.lastElementChild) list.appendChild(dragRow); }
+    else if (after !== dragRow && after !== dragRow.nextSibling) list.insertBefore(dragRow, after);
+  });
+  list.addEventListener('drop', (e) => {
+    if (!dragRow) return;
+    e.preventDefault();
+    dragRow.classList.remove('dragging');
+    dragRow = null; pressedHandle = false;
+    const ids = Array.prototype.slice.call(list.querySelectorAll('.doctype-row')).map(r => Number(r.dataset.tid));
+    commitDocTypeOrder(ids);
+  });
+}
+
+// Persist a new type-list order: renumber sort_order via the SHARED planReorder math and
+// write only the changed rows (updateType whitelists sort_order; every fetch already
+// ORDERs BY it, so Review/teach/search pickers follow this order automatically).
+// Re-render FIRST so no click can act on a stale row mid-await; any write failure
+// re-reads from the DB so the list snaps back to server truth.
+async function commitDocTypeOrder(idsInNewOrder) {
+  const byId = new Map(allTypesWithFields.map(t => [t.id, t]));
+  const reordered = idsInNewOrder.map(id => byId.get(id)).filter(Boolean);
+  if (reordered.length !== allTypesWithFields.length) { renderDocTypesList(); return; }   // DOM/state mismatch → repaint, don't persist
+  const prevSort = new Map(allTypesWithFields.map(t => [t.id, t.sort_order]));
+  const writes = window.DocTypeEditor.planReorder(reordered, prevSort);
+  allTypesWithFields = reordered;
+  renderDocTypesList();
+  for (const w of writes) {
+    try { await api.updateDocumentType(w.id, { sort_order: w.sort_order }); }
+    catch (e) { await refreshDocTypesList(); return; }
   }
 }
 
@@ -700,7 +1324,7 @@ function renderDocTypeDetail(type) {
         <span class="toggle-slider"></span>
       </label>
       <span id="dt-enable-lbl" class="field-label-small">${type.enabled ? 'Enabled' : 'Disabled'}</span>
-      <button class="btn" id="dt-fix-type" title="Reset what's been learned for this type if it's reading documents wrong" style="padding:4px 10px; font-size:12px;">Fix this type…</button>
+      <button class="btn" id="dt-fix-type" title="Opens Learning Repair for this type — see what it's learned and send a badly-read document back to Review. Nothing changes until you choose there." style="padding:4px 10px; font-size:12px;">Repair learning…</button>
       ${type.built_in ? '' : '<button class="btn-icon" id="dt-hide" title="Hide this type">&#215;</button>'}
     </div>
     <div id="dt-editor-host"></div>`;
@@ -859,6 +1483,106 @@ async function openCatalogModal() {
 }
 
 document.getElementById('btn-catalog').addEventListener('click', openCatalogModal);
+
+// ── "Field visibility" — per-layout field masking (migration 54). The GENERAL-PURPOSE home for the
+// hide/show control, moved OUT of the advanced Template Manager (owner, 2026-07-25): pick a learned
+// layout, then tick the fields it actually shows. Unticking hides a field a supplier's layout doesn't
+// print, so Review stops flagging it. Structural roles (Issuer/Date/Reference) are always shown +
+// locked. Each toggle persists immediately (set-template-hidden-field, unticked => hide=true). Nothing
+// is deleted; other layouts are unaffected. Mirrors openCatalogModal's overlay pattern.
+async function openFieldVisibilityModal() {
+  let tmpls;
+  try { tmpls = await api.getTemplates(); }
+  catch (e) { alert('Could not load layouts: ' + (e && e.message || e)); return; }
+  tmpls = Array.isArray(tmpls)
+    ? tmpls.slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+    : [];
+  const opts = tmpls.map(t =>
+    `<option value="${t.id}">${escHtml(t.name)}${t.document_type_slug ? ' · ' + escHtml(t.document_type_slug) : ''}</option>`).join('');
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText =
+    'position:fixed; inset:0; z-index:9998; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center;';
+  overlay.innerHTML = `
+    <div style="width:460px; max-height:80vh; background:var(--surface); border:1px solid var(--border2);
+                border-radius:10px; padding:18px; display:flex; flex-direction:column; gap:12px;
+                font-family:var(--sans); color:var(--text);">
+      <div style="font-size:13px; font-weight:600;">Field visibility</div>
+      <div style="font-size:11px; color:var(--muted); line-height:1.6;">
+        Choose which fields each layout shows. Untick a field a sender's layout doesn't print — Review
+        will stop asking for it on those documents. The Document Issuer, Date and Reference are always
+        shown. Nothing is deleted, and other layouts are unaffected.</div>
+      ${tmpls.length
+        ? `<label style="font-size:11px; color:var(--muted);">Layout
+             <select id="fv-template" style="width:100%; margin-top:4px; padding:7px; border-radius:6px;
+                     border:1px solid var(--border2); background:var(--surface2); color:var(--text);
+                     font-family:inherit; font-size:12px;">${opts}</select>
+           </label>
+           <div id="fv-fields" style="overflow-y:auto; border:1px solid var(--border); border-radius:8px;
+                padding:4px; flex:1; min-height:120px;"></div>`
+        : `<div style="font-size:12px; color:var(--muted); padding:22px 6px; text-align:center; line-height:1.6;">
+             No layouts learned yet. A layout appears here once you've confirmed a few documents from a
+             sender, so Scan Finder knows what that sender's paperwork looks like.</div>`}
+      <div style="display:flex;">
+        <button id="fv-close" style="flex:1; padding:9px; border-radius:6px; border:1px solid var(--border2);
+                background:transparent; color:var(--muted); font-family:inherit; font-size:12px; cursor:pointer;">Done</button>
+      </div>
+    </div>`;
+  overlay.setAttribute('data-help-ignore', '1');
+  document.body.appendChild(overlay);
+
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector('#fv-close').addEventListener('click', close);
+
+  const sel  = overlay.querySelector('#fv-template');
+  const list = overlay.querySelector('#fv-fields');
+  if (!sel || !list) return;   // empty state — nothing to wire
+
+  async function renderFor(id) {
+    list.innerHTML = '<div style="font-size:11px; color:var(--muted); padding:12px;">Loading…</div>';
+    let detail;
+    try { detail = await api.getTemplateDetail(Number(id)); } catch { detail = null; }
+    const fields = (detail && detail.type_fields) || [];
+    if (!fields.length) {
+      list.innerHTML = '<div style="font-size:11px; color:var(--muted); padding:12px;">No fields on this layout.</div>';
+      return;
+    }
+    list.innerHTML = '';
+    for (const f of fields) {
+      const row = document.createElement('label');
+      row.style.cssText = 'display:flex; gap:10px; align-items:center; padding:7px 8px; border-radius:8px; cursor:'
+        + (f.structural ? 'default' : 'pointer') + ';';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !f.hidden;            // TICKED = shown (allowed); unticked = hidden
+      cb.disabled = !!f.structural;
+      cb.title = f.structural
+        ? 'The Document Issuer / Date / Reference roles are always shown'
+        : 'Untick to hide this field on this layout';
+      if (!f.structural) cb.addEventListener('change', async () => {
+        cb.disabled = true;
+        try {
+          const r = await api.setTemplateHiddenField(Number(id), f.key, !cb.checked);   // unticked -> hide=true
+          if (!r || r.ok === false) cb.checked = !cb.checked;   // revert on refusal
+          else f.hidden = !cb.checked;
+        } catch { cb.checked = !cb.checked; }
+        cb.disabled = false;
+      });
+      const txt = document.createElement('span');
+      txt.style.cssText = 'font-size:12px;' + (f.structural ? ' color:var(--muted);' : '');
+      txt.textContent = (f.label || f.key) + (f.structural ? '  🔒' : '');
+      row.appendChild(cb);
+      row.appendChild(txt);
+      list.appendChild(row);
+    }
+  }
+  sel.addEventListener('change', () => renderFor(sel.value));
+  renderFor(sel.value);
+}
+document.getElementById('btn-field-visibility')?.addEventListener('click', openFieldVisibilityModal);
 
 // (FIELDS TAB removed — merged into the Document Types master-detail tab above.
 //  Field add/edit/delete now happens in the shared DocTypeEditor component via the
@@ -1250,6 +1974,146 @@ async function loadTemplates() {
     allGroups    = [];
   }
   renderTemplateList();
+}
+
+// ── M3 "Suggested cleanups" (docs/designs/TEMPLATE_CONVERGENCE_2026-07-17.md) ────────────────
+// Read-only scan for duplicate templates + a backup-first admin-confirmed merge, plus a
+// non-destructive "re-link stray documents" backfill. Wired once at init (setupTemplateCleanups).
+function setupTemplateCleanups() {
+  const scanBtn   = document.getElementById('btn-scan-duplicates');
+  const relinkBtn = document.getElementById('btn-relink-strays');
+  const msg       = document.getElementById('tpl-cleanup-msg');
+  const results   = document.getElementById('tpl-cleanup-results');
+  if (!scanBtn || !relinkBtn || scanBtn.dataset.wired) return;
+  scanBtn.dataset.wired = '1';
+
+  scanBtn.addEventListener('click', async () => {
+    scanBtn.disabled = true; msg.textContent = 'Scanning…'; results.innerHTML = '';
+    try { renderMergeCandidates(await api.getMergeCandidates(), results, msg); }
+    catch (e) { msg.textContent = 'Scan failed: ' + e.message; }
+    finally { scanBtn.disabled = false; }
+  });
+
+  relinkBtn.addEventListener('click', async () => {
+    relinkBtn.disabled = true; msg.textContent = 'Checking…';
+    try {
+      const plan = await api.planTemplateBackfill();
+      if (!plan.count) { msg.textContent = 'No stray documents to re-link.'; return; }
+      if (!confirm(`Re-link ${plan.count} document(s) that have no template to their matching template?\n\n`
+        + `Documents are only linked (reversible) — nothing is deleted.`)) { msg.textContent = ''; return; }
+      const r = await api.applyTemplateBackfill();
+      msg.textContent = `Re-linked ${r.linked} document(s).`;
+      await loadTemplates();
+    } catch (e) { msg.textContent = 'Re-link failed: ' + e.message; }
+    finally { relinkBtn.disabled = false; }
+  });
+}
+
+// Plain-English name for a member's layout verdict (avoid the raw 'insufficient'/'divergent' jargon).
+function _layoutPhrase(structure) {
+  if (structure === 'compatible') return 'same layout';
+  if (structure === 'divergent')  return 'different layout';
+  return 'layout not verified';   // insufficient
+}
+
+function renderMergeCandidates(clusters, results, msg) {
+  results.innerHTML = '';
+  clusters = clusters || [];
+  if (!clusters.length) { msg.textContent = 'No duplicate templates found.'; return; }
+  // Both 'merge' (confident) and 'merge_review' (owner-verify) offer a merge button.
+  const mergeable = clusters.filter(c => c.suggestedAction === 'merge' || c.suggestedAction === 'merge_review').length;
+  msg.textContent = `${clusters.length} group(s) of possible duplicates (${mergeable} you can merge).`;
+
+  // A clickable template name that opens that template (and its sample) in the viewer, so the owner can
+  // actually compare two layouts before merging (Oracle #4c — the merge_review checkpoint must be real).
+  const tplLink = (id, name) => {
+    const a = document.createElement('a');
+    a.href = '#'; a.textContent = name; a.style.cssText = 'color:var(--accent); text-decoration:underline; cursor:pointer;';
+    a.title = 'Open this layout to view its sample';
+    a.addEventListener('click', (e) => { e.preventDefault(); try { selectTemplate(id); } catch {} });
+    return a;
+  };
+
+  for (const c of clusters) {
+    const box = document.createElement('div');
+    box.className = 'section';
+    box.style.cssText = 'padding:10px; margin-top:8px;';
+    const canon = c.canonical;
+    const head = document.createElement('div');
+    head.append(document.createTextNode('Keep: '));
+    const strong = document.createElement('strong'); strong.appendChild(tplLink(canon.id, canon.name)); head.appendChild(strong);
+    const meta = document.createElement('span');
+    meta.className = 'field-key';
+    meta.textContent = ` (${c.slug} · ${canon.liveConfirmed} confirmed)`;
+    head.appendChild(meta);
+    box.appendChild(head);
+
+    const memberDiv = document.createElement('div');
+    memberDiv.className = 'section-desc';
+    memberDiv.style.margin = '4px 0';
+    memberDiv.append(document.createTextNode(`Duplicate${c.members.length === 1 ? '' : 's'}: `));
+    c.members.forEach((m, i) => {
+      if (i) memberDiv.append(document.createTextNode(', '));
+      memberDiv.appendChild(tplLink(m.id, m.name));
+      const info = document.createElement('span');
+      info.className = 'field-key';
+      info.textContent = ` (${m.liveConfirmed}× · ${Math.round(m.jaccard * 100)}% branding · ${_layoutPhrase(m.structure)})`;
+      memberDiv.appendChild(info);
+    });
+    box.appendChild(memberDiv);
+
+    const action = c.suggestedAction;
+    if (action === 'merge' || action === 'merge_review') {
+      // merge_review = same supplier + type, near-identical branding, but the layout could NOT be verified
+      // automatically (independent teaches rarely reuse the same anchor words). It is NOT a claim they
+      // differ — but the owner must eyeball, because branding sameness never proves layout sameness.
+      if (action === 'merge_review') {
+        const hint = document.createElement('div');
+        hint.className = 'section-desc';
+        hint.style.cssText = 'margin:0 0 6px;';
+        hint.textContent = 'Same sender and type with near-identical branding, but the field layout couldn\'t be '
+          + 'auto-verified. Open a sample of each (click a name above) and merge only if the fields sit in the '
+          + 'same places.';
+        box.appendChild(hint);
+      }
+      const btn = document.createElement('button');
+      btn.className = 'btn danger';
+      btn.textContent = `Merge ${c.members.length} into "${canon.name}"`;
+      btn.addEventListener('click', async () => {
+        const geo = action === 'merge_review'
+          ? `\n\nThese may be different LAYOUTS of the same supplier — merge only if you've checked the fields sit in the same places.`
+          : '';
+        if (!confirm(`Merge ${c.members.length} duplicate(s) INTO "${canon.name}" and DELETE them?${geo}\n\n`
+          + `A database backup is taken first. "${canon.name}" gains all their documents plus any field `
+          + `mappings / landmarks / sample it lacks. This is NOT reversible (the backup is your safety net).`)) return;
+        btn.disabled = true; btn.textContent = 'Backing up + merging…';
+        try {
+          const r = await api.mergeTemplateCluster(canon.id, c.members.map(m => m.id));
+          if (r && r.ok) { msg.textContent = `Merged ${r.merged} into "${canon.name}".`; box.remove(); }
+          else { msg.textContent = 'Merge failed: ' + ((r && (r.error || r.reason)) || 'unknown'); btn.disabled = false; btn.textContent = `Merge ${c.members.length} into "${canon.name}"`; }
+        } catch (e) { msg.textContent = 'Merge failed: ' + e.message; btn.disabled = false; btn.textContent = `Merge ${c.members.length} into "${canon.name}"`; }
+        await loadTemplates();
+      });
+      box.appendChild(btn);
+    } else if (action === 'group_or_review') {
+      // Now ONLY genuinely-different geometry (a divergent landmark OR field-zone signal).
+      const note = document.createElement('div');
+      note.className = 'section-desc';
+      note.style.cssText = 'color:var(--warn); margin:0;';
+      note.textContent = 'These look like different layouts of the same supplier (their field positions differ), '
+        + 'so an automatic merge could break extraction. Merge manually in Learning Recovery only if they really are duplicates.';
+      box.appendChild(note);
+    } else {
+      // review — branding overlaps but not strongly enough to suggest a merge.
+      const note = document.createElement('div');
+      note.className = 'section-desc';
+      note.style.cssText = 'margin:0;';
+      note.textContent = 'Branding partly overlaps but not strongly enough to suggest a merge. Compare them and '
+        + 'merge manually in Learning Recovery if they are the same template.';
+      box.appendChild(note);
+    }
+    results.appendChild(box);
+  }
 }
 
 function makeTplRow(t, isChild) {
@@ -2510,6 +3374,22 @@ async function autoDetectAnchorText(rect) {
 
 // ── Mapping editor (Phase 2) ─────────────────────────────────────────────────
 
+// The field's REAL declared data type, for the "Test" preview. This replaced the mapping's
+// `ocr_type` when that column was deleted (2026-08-08, owner decision) — and it is strictly more
+// correct than what it replaced: test_mapping.py feeds this into the SAME
+// engine._seed_field_patterns the pipeline uses, so the preview now gates on the type the document
+// type actually declares rather than on a per-mapping value three UI surfaces wrote with three
+// different vocabularies and no production code ever read. Defensive: any lookup miss falls back
+// to 'text', which is what an absent ocr_type resolved to anyway.
+function tplFieldTypeFor(key) {
+  try {
+    const slug = (selectedTemplate && (selectedTemplate.document_type_slug || selectedTemplate.slug)) || null;
+    const dt   = slug ? (allTypesWithFields || []).find(t => t.slug === slug) : null;
+    const f    = dt && (dt.fields || []).find(x => x.key === key);
+    return (f && f.type) ? f.type : 'text';
+  } catch { return 'text'; }
+}
+
 async function populateMapFieldSelect(detail) {
   if (!allTypesWithFields.length) {
     try { await loadDocTypes(); } catch (e) { console.warn('loadDocTypes (for mapping fields) failed:', e.message); }
@@ -2577,7 +3457,6 @@ function loadMappingIntoEditor(fieldKey) {
       page_number: existing.page_number || 0,
     };
     document.getElementById('tpl-map-anchor-text').value = existing.anchor_text || '';
-    document.getElementById('tpl-map-ocr-type').value    = existing.ocr_type || 'text';
     const pct = Math.round((existing.search_expansion ?? 0.04) * 100);
     document.getElementById('tpl-map-expansion').value     = pct;
     document.getElementById('tpl-map-expansion-val').textContent = pct + '%';
@@ -2592,7 +3471,6 @@ function loadMappingIntoEditor(fieldKey) {
     tplDraftAnchor = null;
     tplDraftTarget = null;
     document.getElementById('tpl-map-anchor-text').value = '';
-    document.getElementById('tpl-map-ocr-type').value    = 'text';
     document.getElementById('tpl-map-expansion').value     = 4;
     document.getElementById('tpl-map-expansion-val').textContent = '4%';
     document.getElementById('tpl-map-enabled').checked   = true;
@@ -2645,7 +3523,6 @@ document.getElementById('tpl-btn-save-mapping').addEventListener('click', async 
     anchor_w_norm: tplDraftAnchor.w_norm, anchor_h_norm: tplDraftAnchor.h_norm,
     target_x_norm: tplDraftTarget.x_norm, target_y_norm: tplDraftTarget.y_norm,
     target_w_norm: tplDraftTarget.w_norm, target_h_norm: tplDraftTarget.h_norm,
-    ocr_type:         document.getElementById('tpl-map-ocr-type').value,
     search_expansion: parseInt(document.getElementById('tpl-map-expansion').value, 10) / 100,
     enabled:          document.getElementById('tpl-map-enabled').checked,
   };
@@ -2718,9 +3595,10 @@ document.getElementById('tpl-btn-test-mapping').addEventListener('click', async 
       target_w_norm: tplDraftTarget.w_norm, target_h_norm: tplDraftTarget.h_norm,
       offset_dx_norm:   tplDraftTarget.x_norm - tplDraftAnchor.x_norm,
       offset_dy_norm:   tplDraftTarget.y_norm - tplDraftAnchor.y_norm,
-      ocr_type:         document.getElementById('tpl-map-ocr-type').value,
       search_expansion: parseInt(document.getElementById('tpl-map-expansion').value, 10) / 100,
       enabled:          true,
+      // Preview-only, never persisted: test_mapping.py seeds the credibility pattern from this.
+      field_type:       tplFieldTypeFor(tplEditingFieldKey),
     };
 
     // The extractor relocates the anchor and derives the target itself, so send
@@ -2784,7 +3662,6 @@ function renderMappingsTable(detail) {
     tr.innerHTML = `
       <td><span class="field-key">${escHtml(m.field_key)}</span></td>
       <td>${escHtml(m.anchor_text || '—')}</td>
-      <td>${escHtml(m.ocr_type)}</td>
       <td>${Math.round((m.search_expansion || 0) * 100)}%</td>
       <td>${lastTest}</td>
       <td>${m.enabled ? 'Yes' : 'No'}</td>
@@ -3409,8 +4286,14 @@ async function rpSend() {
   if (!_rpSel) return;
   const doc = _rpDocs.find(d => d.id === _rpSel);
   if (!confirm(`Send “${doc.original_filename}” back to Review?\n\nThis just moves it to your Review list — nothing is deleted. If it was fine, confirm it there and it goes right back to where it was.`)) return;
+  // Thread the SUSPECT context so the un-plant can flag the exact field(s) that brought the
+  // operator here — the doc returns to Review visibly suspect (note + flag + File-All-Ready
+  // exclusion) instead of clean-looking (the rubber-stamp gap). Empty reasons ⇒ the service
+  // stamps its generic doc-level note.
+  const _reasons = (_rpSuspects[_rpSel] && _rpSuspects[_rpSel].reasons) || [];
+  const suspects = _reasons.map(rr => ({ field: rr.field || null, note: String(rr.text || rr.kind || '') }));
   let r = null;
-  try { r = await api.repairDeconfirm(_rpSel); } catch (e) { alert('Failed: ' + (e.message || e)); return; }
+  try { r = await api.repairDeconfirm(_rpSel, { suspects }); } catch (e) { alert('Failed: ' + (e.message || e)); return; }
   if (!r || !r.ok) { document.getElementById('rp-action-msg').textContent = (r && r.error) || 'Could not send this document back (it may be locked by an approval route).'; return; }
   rpRemoveCurrent('Sent back to Review.');
 }
@@ -3639,6 +4522,7 @@ loadTemplates().then(async () => {
     if (targetId) openTemplateInEditor(targetId);
   } catch (e) { console.warn('settings template target failed:', e.message); }
 });
+setupTemplateCleanups();   // M3 "Suggested cleanups" — wire the scan/merge/re-link buttons (idempotent)
 api.onNavigateToTemplate(openTemplateInEditor);
 
 // Section/tab deep-link (e.g. Home "Activate" → 'licensing'): click the matching tab. The target
@@ -4203,9 +5087,20 @@ function renderAuditRows(rows) {
     const cat = escHtml(r.action_category || '');
     const outcome = escHtml(r.outcome || '');
     const oclass = auditOutcomeClass(r.outcome);
-    const target = r.target_type
-      ? escHtml(r.target_id ? `${r.target_type}:${r.target_id}` : r.target_type)
-      : (r.document_id ? escHtml(`document:${r.document_id}`) : '');
+    // Document targets show the FILENAME + a "View" link (opens the doc in Review, full zoom/pan)
+    // instead of "document:111"; a deleted/missing doc shows as unavailable. Other target types unchanged.
+    const auditDocId = (r.target_type === 'document' && r.target_id) ? r.target_id : (r.document_id || null);
+    let target;
+    if (auditDocId) {
+      const gone = !r.doc_filename || r.doc_status === 'deleted';
+      const fname = r.doc_filename ? escHtml(r.doc_filename) : `document #${auditDocId}`;
+      target = `<span title="document #${auditDocId}">${fname}</span>`
+        + (gone
+            ? ` <span style="color:var(--muted)" title="This document is no longer available">(unavailable)</span>`
+            : ` <button type="button" class="aud-view-btn" data-doc="${auditDocId}" title="Open this document in Review">View</button>`);
+    } else {
+      target = r.target_type ? escHtml(r.target_id ? `${r.target_type}:${r.target_id}` : r.target_type) : '';
+    }
     html.push(`<tr class="aud-row" data-id="${r.id}">
       <td>${when}</td>
       <td>${user}${r.actor_role ? ` <span style="color:var(--muted)">(${escHtml(r.actor_role)})</span>` : ''}</td>
@@ -4232,6 +5127,15 @@ function renderAuditRows(rows) {
     tr.addEventListener('click', () => {
       const d = tbody.querySelector(`tr.aud-detail[data-detail="${tr.dataset.id}"]`);
       if (d) d.style.display = d.style.display === 'none' ? '' : 'none';
+    });
+  });
+  // "View" opens the audited document in Review (full zoom/pan); stop the click from also toggling the
+  // detail row. openReviewWindowAt is admin/edit-gated in main.js (the Audit tab is itself admin-only).
+  tbody.querySelectorAll('.aud-view-btn').forEach(b => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = Number(b.dataset.doc);
+      if (id) api.openReviewWindowAt(id);
     });
   });
 }
@@ -4278,4 +5182,34 @@ document.getElementById('aud-csv')?.addEventListener('click', async () => {
     btn.textContent = 'Export failed';
   }
   setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1800);
+});
+
+// Stage 5b — re-walk the tamper-evident audit hash chain (live + archives) and report the result.
+document.getElementById('aud-verify')?.addEventListener('click', async () => {
+  const btn = document.getElementById('aud-verify');
+  const out = document.getElementById('aud-verify-result');
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Verifying…';
+  try {
+    const r = await api.verifyAuditChain();
+    let msg, colour;
+    if (r && r.ok) {
+      msg = `✓ Integrity OK — ${r.checked || 0} record(s) verified, chain unbroken.`;
+      if (r.archivesPartial) msg += ' (Note: some archived months exceeded the attach limit and were not all checked.)';
+      colour = 'var(--ok)';
+    } else if (r && r.reason === 'no_key') {
+      msg = 'Integrity checking is not active on this install (no audit key set).'; colour = 'var(--muted)';
+    } else if (r && r.reason === 'no_chain_columns') {
+      msg = 'This log predates tamper-evidence — no chain to verify.'; colour = 'var(--muted)';
+    } else {
+      const at = r && r.brokenAt != null ? ` at record #${r.brokenAt}` : '';
+      msg = `⚠ Integrity FAILED${at} — the audit log has been altered, reordered, or truncated (${(r && r.reason) || 'unknown'}).`;
+      colour = 'var(--err)';
+    }
+    out.textContent = msg; out.style.color = colour; out.style.display = 'block';
+  } catch (e) {
+    out.textContent = 'Verify failed: ' + (e && e.message ? e.message : 'unknown error');
+    out.style.color = 'var(--err)'; out.style.display = 'block';
+  }
+  btn.textContent = orig; btn.disabled = false;
 });

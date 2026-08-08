@@ -608,7 +608,11 @@ const PRESET_CATALOG = [
         labels: ['Delivered By', 'Despatched By', 'Dispatched By'] },
       { key: 'customer_name',   label: 'Customer',          type: 'text', required: 0,
         labels: ['Deliver To', 'Delivery To', 'Ship To', 'Consignee'] },
-      { key: 'delivery_number', label: 'Delivery Number', type: 'text', required: 1,
+      // reference_code, not text: it is a CODE and must carry at least one digit. `text` has no
+      // validation_patterns entry and is not in trust.js STRICT_TYPES, so a text-typed delivery
+      // number had no format gate at all — which is how the caption 'Delivery' was stored as one
+      // and auto-filed. Migration 59 retypes existing installs; see the note there.
+      { key: 'delivery_number', label: 'Delivery Number', type: 'reference_code', required: 1,
         labels: ['Delivery No', 'Delivery Number', 'Delivery Note No', 'DN No', 'Despatch No', 'Dispatch No', 'Docket No', 'Note No'] },
       { key: 'delivery_date',   label: 'Delivery Date',   type: 'date', required: 1 },
     ],
@@ -659,7 +663,49 @@ const PRESET_CATALOG = [
         labels: ['Quote Total', 'Quotation Total', 'Estimated Total', 'Total Estimate'] },
     ],
   },
+  {
+    // Service/job worksheet. ref keyed to reference_number (the live convention) so the
+    // type-scoped "Worksheet No"/"Job No" captions raise its ~30% recall without touching the
+    // global _REF_ROLE_CAPTIONS seed (which would collide with the dedicated job_no field and
+    // blast every custom ref type — reggie). No supplier/customer label seeds: name fields are
+    // format-ungated, and "Engineer"/"Site" would grab a person/site, not the issuer (Oracle C2).
+    name: 'Service Worksheet', ref_field_key: 'reference_number', date_field_key: 'worksheet_date',
+    company_key: 'supplier_name',
+    fields: [
+      { key: 'supplier_name',    label: 'Document Issuer',  type: 'text', required: 1 },
+      { key: 'reference_number', label: 'Worksheet Number', type: 'text', required: 1,
+        labels: ['Worksheet No', 'Worksheet Number', 'Worksheet Ref', 'Job Sheet No',
+                 'Job Sheet Number', 'Job No', 'Job Number', 'Job Ref', 'Job Card No', 'WS No'] },
+      { key: 'worksheet_date',   label: 'Worksheet Date',   type: 'date', required: 1,
+        labels: ['Job Date', 'Service Date', 'Date of Work', 'Attendance Date'] },
+    ],
+  },
+  {
+    // The "just file this, I'll find it later" FALLBACK type (docs/designs/
+    // GENERIC_DOCTYPE_2026-07-18.md): arbitrary paperwork retrieved by full-text search +
+    // the Auto-Title. No reference role (first-class; a forced ref trains junk-typing).
+    // Date stays structural/required — satisfied by the visible scan-date prefill at review.
+    // NO label seeds anywhere: a title has no printed caption to anchor, and "Title:" is a
+    // salutation caption the free-text seeder must never bind (Oracle C2 excludes the key).
+    name: 'General Document', ref_field_key: null, date_field_key: 'date',
+    company_key: 'supplier_name',
+    fields: [
+      { key: 'supplier_name', label: 'Document Issuer', type: 'text', required: 1 },
+      { key: 'title',         label: 'Title',           type: 'text', required: 0 },
+      { key: 'date',          label: 'Date',            type: 'date', required: 1 },
+    ],
+  },
 ];
+
+// The Generic fallback type is identified by its FROZEN slug — a deliberate convention,
+// not a schema column (slugs freeze at creation and survive display renames; a
+// user-created type already carrying this slug IS their generic type — documented
+// trade-off). getGenericType returns null unless the type exists AND is enabled, which
+// is exactly the condition the insert-seam fallback and the Review chip key on.
+const GENERIC_SLUG = 'general_document';
+function getGenericType(db) {
+  return db.prepare('SELECT * FROM document_types WHERE slug = ? AND enabled = 1').get(GENERIC_SLUG) || null;
+}
 
 // Slug a preset's display name EXACTLY as addType does, so labels seed under the
 // same slug the type is created with (and the engine resolves at runtime).
@@ -738,4 +784,5 @@ module.exports = {
   reshapeCustomerIdentityTypes, cleanupStaleCustomerLearning,
   COMPANY_KEYS, isStructuralKey, normaliseTitleAliases,
   PRESET_CATALOG, presetSlug, getPresetCatalog, addPresetTypes,
+  GENERIC_SLUG, getGenericType,
 };

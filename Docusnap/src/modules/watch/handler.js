@@ -159,7 +159,10 @@ function stopForQuit() {
   for (const proc of _liveProcs) {
     try {
       require('child_process').spawnSync(
-        'taskkill', ['/F', '/T', '/PID', String(proc.pid)],
+        // SECURITY (Stage 2 — M11): absolute path — a bare 'taskkill' resolves from the (user-writable)
+        // app dir first, so a planted taskkill.exe would run in-app.
+        require('path').join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'taskkill.exe'),
+        ['/F', '/T', '/PID', String(proc.pid)],
         { windowsHide: true, stdio: 'ignore' });
     } catch {}
     try { proc.kill(); } catch {}
@@ -368,7 +371,11 @@ async function _processBatch(db, filenames) {
       '--mode',      procMode,
       ...trainingArgs,
     ];
-    const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs), { windowsHide: true });
+    // AUTO_TITLE env rides the watch batch too (slice 4 — the engine seam still only
+    // fires for detection-None docs, so typed watch imports are untouched). The crop
+    // right-grow opt-in rides here too (both default OFF → byte-identical env).
+    const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
+      { windowsHide: true, env: { ...process.env, ...processing._autoTitleEnv(db), ...processing._anchorCropEnv(db), ...processing._reconcileEnv(db) } });
     _liveProcs.add(proc);   // track for quit-time kill (untracked on close below)
     let buf = '';
 
@@ -427,7 +434,7 @@ function register(ctx) {
   const { ipcMain, getDb } = ctx;
   const { dialog, BrowserWindow } = require('electron');
   const learning = require('../../../database/modules/learning');
-  const { requireRole } = require('../auth/handler');
+  const { requireRole, logAudit } = require('../auth/handler');   // Stage 5a: audit watch-folder changes
 
   // The watch-folder is configured exclusively from the Admin-only Settings
   // window — "access all settings" is the line drawn there.
@@ -457,6 +464,8 @@ function register(ctx) {
     if (conflict) { _log('warn', `[watch] rejected folder (overlap): ${folderPath}`); return { ok: false, error: conflict }; }
     learning.setSetting(db, 'watch_folder', folderPath || '');
     _log('log', `[watch] folder set: ${folderPath || '(cleared)'}`);
+    logAudit(db, { action: 'watch_folder_set', action_category: 'settings', target_type: 'setting',
+      target_id: 'watch_folder', outcome: 'success', metadata: { cleared: !folderPath } });   // Stage 5a (direct setSetting bypasses set-setting's audit)
     if (learning.getSetting(db, 'watch_folder_enabled', '0') === '1') _start(db);
     return { ok: true };
   });
@@ -465,6 +474,8 @@ function register(ctx) {
     requireRole('admin');
     const db = getDb();
     learning.setSetting(db, 'watch_folder_enabled', enabled ? '1' : '0');
+    logAudit(db, { action: 'watch_folder_enabled', action_category: 'settings', target_type: 'setting',
+      target_id: 'watch_folder_enabled', outcome: 'success', metadata: { enabled: !!enabled } });   // Stage 5a
     if (enabled) _start(db);
     else _stop();
     return true;

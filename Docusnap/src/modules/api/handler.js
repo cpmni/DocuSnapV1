@@ -37,6 +37,7 @@ const sessionService    = require('../../services/sessionService');
 const authService       = require('../../services/authService');
 const workflowService   = require('../../services/workflowService');
 const entitlementService = require('../../services/entitlementService');
+const accessService      = require('../../services/accessService');
 const totp              = require('../../lib/totp');
 const certService       = require('../../services/certService');
 const path              = require('path');
@@ -157,7 +158,14 @@ function createRequestListener(ctx) {
     catch (e) { log(`[api] audit write failed: ${e && e.message}`); }
   };
 
-  const workflow = ctx.workflowService || workflowService.createWorkflowService({ audit });
+  const workflow = ctx.workflowService || workflowService.createWorkflowService({
+    audit,
+    // Slice 1: the SAME shared main.js sink as the desktop transport — a /v1 action by
+    // another user must reach the SEARCH window's open mailbox and toast the desktop user
+    // (eric: ctx.notifyMainWindow reaches main+review only and would starve it; pinned in
+    // test_workflow_ipc.js). Best-effort; the service shields the action from a throw.
+    notifyWorkflow: (ev) => { try { ctx.notifyWorkflowEvent && ctx.notifyWorkflowEvent(ev); } catch { /* best-effort */ } },
+  });
   const actorOf = (session) => ({ userId: session.userId, username: session.username, role: session.role });
 
   // The SAME transport-agnostic review orchestration the desktop uses (Phase 2). The API injects
@@ -410,14 +418,39 @@ function createRequestListener(ctx) {
         if (nw.length < 8 || nw.length > 128) return sendJson(res, 400, { error: 'New password must be 8–128 characters.' });
         if (nw === cur) return sendJson(res, 400, { error: 'New password must be different from your current password.' });
         dbAuth.setUserPassword(getDb(), user.id, await pwMod.hashPassword(nw), false);
+        // M3: revoke EVERY existing session for this account so a stolen /v1 token can't
+        // survive a self-service password change (the desktop change-password already does
+        // this; the /v1 path silently didn't). Then re-issue a fresh token for the caller so
+        // THIS client stays logged in — a client that ignores it simply re-logs-in.
+        try { sessions.revokeUser(user.id); } catch { /* best-effort; the token below is still fresh */ }
+        let reissued = null;
+        try { reissued = sessions.issue({ userId: session.userId, username: session.username, role: session.role, clientKey: session.clientKey }); } catch { /* client will re-login */ }
         audit({ user_id: user.id, action: 'password_change', action_category: 'auth', outcome: 'success',
                 actor_username: user.username, details: 'self_service_client' });
-        return sendJson(res, 200, { ok: true });
+        return sendJson(res, 200, { ok: true, token: reissued ? reissued.token : null, expiresAt: reissued ? reissued.expiresAt : null });
       }
 
       // ── Auth-required: TOTP enrolment (setup → returns secret; confirm → enables) ─
       if (req.method === 'POST' && pathname === `${API_PREFIX}/auth/totp/setup`) {
         const session = requireSession(req, res); if (!session) return;
+        // M2: re-enrolment must not silently disable an existing second factor. setTotpSecret
+        // clears totp_enabled, so a bare setup call from a stolen token would turn a victim's
+        // MFA OFF. If a factor is ALREADY enabled, require the current password AND a valid
+        // current code before overwriting. First-time enrol (no existing factor) needs no extra
+        // proof — you can't be locked out of what isn't set up yet.
+        const totpState = dbAuth.getTotpForUser(getDb(), session.userId);
+        if (totpState && totpState.totp_enabled) {
+          let body; try { body = await readJsonBody(req); } catch { body = {}; }
+          const user = dbAuth.getUserById(getDb(), session.userId);
+          const pwMod = require('../auth/password');
+          const pwOk   = !!user && await pwMod.verifyPassword(user.password_hash, String((body && body.currentPassword) || ''));
+          const codeOk = !!totpState.totp_secret && totp.verify(String((body && body.totp) || ''), totpState.totp_secret);
+          if (!pwOk || !codeOk) {
+            audit({ user_id: session.userId, action: 'totp_setup', action_category: 'auth', outcome: 'failure',
+                    actor_username: session.username, details: 'reenrol_reauth_failed' });
+            return sendJson(res, 401, { error: 'To change your authenticator, enter your current password and a current code.' });
+          }
+        }
         const secret = totp.generateSecret();
         dbAuth.setTotpSecret(getDb(), session.userId, secret);
         audit({ user_id: session.userId, action: 'totp_setup', action_category: 'auth', outcome: 'success' });
@@ -455,6 +488,12 @@ function createRequestListener(ctx) {
       if (req.method === 'GET' && detailMatch) {
         const session = requireSession(req, res); if (!session) return;
         const id = Number(detailMatch[1]);
+        // Per-document authorization (Slice 0). 404 hides existence on not_found; 403 on
+        // authorized-but-denied. Kill-switchable (ACCESS_GATE_ENABLED, default ON).
+        if (accessService.gateEnabled()) {
+          const acc = accessService.canAccessDocument(getDb(), session, id);
+          if (!acc.allow) return sendJson(res, acc.reason === 'not_found' ? 404 : 403, { error: acc.reason === 'not_found' ? 'not found' : 'forbidden' });
+        }
         const doc = previewService.getDocumentDetail(getDb(), id, { learning });
         if (!doc) return sendJson(res, 404, { error: 'not found' });
         audit({ user_id: session.userId, action: 'document_open', action_category: 'document',
@@ -467,6 +506,10 @@ function createRequestListener(ctx) {
       if (req.method === 'GET' && pagesMatch) {
         const session = requireSession(req, res); if (!session) return;
         const id = Number(pagesMatch[1]);
+        if (accessService.gateEnabled()) {
+          const acc = accessService.canAccessDocument(getDb(), session, id);
+          if (!acc.allow) return sendJson(res, acc.reason === 'not_found' ? 404 : 403, { error: acc.reason === 'not_found' ? 'not found' : 'forbidden' });
+        }
         // SECURITY (F-02): the on-disk location is resolved SERVER-SIDE from the
         // document row ONLY — client-supplied folderPath/filename are NOT read here.
         // A detached client never sees filesystem paths; honouring them would let an
@@ -493,6 +536,10 @@ function createRequestListener(ctx) {
       if (req.method === 'GET' && thumbMatch) {
         const session = requireSession(req, res); if (!session) return;
         const id = Number(thumbMatch[1]);
+        if (accessService.gateEnabled()) {
+          const acc = accessService.canAccessDocument(getDb(), session, id);
+          if (!acc.allow) return sendJson(res, acc.reason === 'not_found' ? 404 : 403, { error: acc.reason === 'not_found' ? 'not found' : 'forbidden' });
+        }
         // Same server-side path resolution as /pages (F-02): never trust client paths.
         let folderPath = null, filename = null;
         const P = ctx.path || require('path');
@@ -569,7 +616,25 @@ function createRequestListener(ctx) {
         const session = requireSession(req, res); if (!session) return;
         if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
         const id = Number(delMatch[1]);
+        // Workflow lock (FYI slice, Oracle C1): this door had NO guard — a remote edit-role user
+        // could delete an approval-locked doc the desktop would refuse (authz asymmetry + the
+        // stranded-route hole). Same semantics as the desktop door: approval-locked ⇒ 409 for a
+        // non-admin writer; admin override proceeds (audited) and the route-close below leaves
+        // the honest tombstone. An open FYI route never blocks.
+        const guard = workflowService.editGuard(getDb(), id, session.role);
+        if (!guard.ok) return sendJson(res, 409, { error: guard.error, code: guard.code });
+        if (guard.overridden) {
+          audit({ user_id: session.userId, action: 'workflow_lock_overridden', action_category: 'workflow',
+                  outcome: 'success', document_id: id, metadata: { action: 'delete', via: 'client' } });
+        }
         documents.softDelete(getDb(), id);
+        const closed = workflowService.closeOpenRoutesForDeletedDoc(getDb(),
+          { documentId: id, deletedByName: session.username }).closed;
+        if (closed.length) {
+          audit({ user_id: session.userId, action: 'workflow_route_closed_on_delete', action_category: 'workflow',
+                  outcome: 'success', document_id: id, metadata: { routes: closed.map(r => r.id), via: 'client' } });
+          try { ctx.notifyWorkflowEvent && ctx.notifyWorkflowEvent({ event: 'auto_closed' }); } catch { /* badge-ping only (unknown event ⇒ no toast) */ }
+        }
         audit({ user_id: session.userId, action: 'document_deleted', action_category: 'document',
                 outcome: 'success', document_id: id, metadata: { soft: true, via: 'client' } });
         return sendJson(res, 200, { ok: true });
@@ -624,6 +689,23 @@ function createRequestListener(ctx) {
           .filter(u => u.is_active)
           .map(u => ({ id: u.id, username: u.username, displayName: u.display_name, role: u.role }));
         return sendJson(res, 200, { recipients: users });
+      }
+
+      // Per-user box counts (Slice 1 badge poll) — COUNTs only, so the client's 60s poll
+      // costs ONE cheap request instead of four full list fetches, and never touches
+      // myOpenRoutes semantics (the full lists stay on view-load/action). Auto-gated by
+      // the WORKFLOW_ROUTE prefix (entitlement + workflow sub-seat) like every
+      // /v1/workflow path; contract is MAJOR-only so this addition needs no bump.
+      if (req.method === 'GET' && pathname === `${API_PREFIX}/workflow/counts`) {
+        const session = requireSession(req, res); if (!session) return;
+        const dbwf = require('../../../database/modules/workflow');
+        const uid = session.userId;
+        return sendJson(res, 200, { counts: {
+          inbox:     dbwf.countInbox(getDb(), uid),
+          sent:      dbwf.countSent(getDb(), uid),
+          assigned:  dbwf.countAssigned(getDb(), uid),
+          completed: dbwf.countCompleted(getDb(), uid),
+        } });
       }
 
       // Create a route (assign).
@@ -943,7 +1025,11 @@ function ensureManagedCert(ctx, { force = false } = {}) {
   const covering = exists(managedCrt) && certService.certCoversAddresses({ serverCrtPath: managedCrt, addresses: sans, fs }).valid;
   if (!force && covering && rp(cfg.certPath) === rp(managedCrt)) return { managed: true, regenerated: false, ...managedCertStatus(ctx) };
 
-  const r = certService.generateServerCerts({ certsDir: certsDirFor(ctx), sans, reuseCa: true, fs });
+  // H1: encrypt the CA private key at rest (Electron safeStorage / DPAPI). Kill switch
+  // CERT_KEY_ENCRYPT_DISABLED=1 restores plaintext (passthrough). Backward-compatible: a legacy
+  // plaintext ca.key reads fine and is migrated to encrypted on this reuse.
+  const secret = process.env.CERT_KEY_ENCRYPT_DISABLED === '1' ? undefined : require('../../lib/secretStore');
+  const r = certService.generateServerCerts({ certsDir: certsDirFor(ctx), sans, reuseCa: true, fs, secret });
   const db = ctx.getDb();
   const learning = require('../../../database/modules/learning');
   learning.setSetting(db, 'client_api_tls_cert', r.serverCrtPath);

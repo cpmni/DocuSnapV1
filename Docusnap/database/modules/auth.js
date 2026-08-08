@@ -7,7 +7,25 @@
  * permission rules live in src/modules/auth/.
  */
 
+const crypto = require('crypto');
+
 const VALID_ROLES = ['admin', 'edit', 'readonly'];
+
+// ── Audit hash chain (Stage 5b) ────────────────────────────────────────────────
+// The HMAC key is a DPAPI-held secret managed in the main process (src/lib/auditKey.js) and injected
+// here via setAuditKey — this data-layer module stays key-agnostic and only chains when a key is set.
+// Fields covered by the per-row HMAC, in a FIXED order (a reorder of this list would invalidate every
+// existing chain — do NOT change it). Excludes id (assigned on insert) + the chain columns themselves.
+let _auditKey = null;
+function setAuditKey(buf) { _auditKey = (buf && buf.length >= 16) ? Buffer.from(buf) : null; }
+const _AUDIT_HMAC_FIELDS = ['user_id', 'action', 'target_type', 'target_id', 'details',
+  'action_category', 'outcome', 'document_id', 'customer_id', 'session_id', 'source',
+  'metadata_json', 'actor_username', 'actor_role', 'created_at'];
+function _auditRowHmac(prevHash, row) {
+  const canonical = String(prevHash) + '\u0001' +
+    _AUDIT_HMAC_FIELDS.map(f => (row[f] == null ? '' : String(row[f]))).join('\u0001');
+  return crypto.createHmac('sha256', _auditKey).update(canonical, 'utf8').digest('hex');
+}
 
 // ── Users ─────────────────────────────────────────────────────────────────────
 
@@ -177,6 +195,10 @@ function auditColumns(db) {
   }
   return cols;
 }
+// Drop the cached column set for a db handle. Called by migration 55 the moment it adds the chain
+// columns, so a pre-migration write (the workflow-paid heal runs BEFORE mig 55 in the same pass and
+// may call auditColumns) can't leave a stale set that hides row_hmac for the rest of the session.
+function invalidateAuditColumns(db) { try { _auditCols.delete(db); } catch { /* noop */ } }
 
 function addAuditEntry(db, entry) {
   const e = entry || {};
@@ -202,8 +224,47 @@ function addAuditEntry(db, entry) {
     actor_username, actor_role,
   };
   const cols = auditColumns(db);
+  // Stage 5b: link this row into the tamper-evident hash chain when a key is set and the columns
+  // exist. created_at is fixed HERE (not left to the DB default) so it is covered by the HMAC and a
+  // later edit of the timestamp is detectable. INERT when no key (older rows carry NULL hmac).
+  if (_auditKey && cols.has('row_hmac') && cols.has('prev_hash')) {
+    try {
+      if (row.created_at == null) row.created_at = db.prepare("SELECT datetime('now') AS t").get().t;
+      const prev = db.prepare('SELECT row_hmac FROM audit_log ORDER BY id DESC LIMIT 1').get();
+      row.prev_hash = (prev && prev.row_hmac) || 'GENESIS';
+      row.row_hmac  = _auditRowHmac(row.prev_hash, row);
+    } catch { /* chain best-effort — never block the audit write */ }
+  }
   const use  = Object.keys(row).filter(k => cols.has(k));
   db.prepare(`INSERT INTO audit_log (${use.join(', ')}) VALUES (${use.map(k => '@' + k).join(', ')})`).run(row);
+}
+
+// Stage 5b — walk the hash chain and report the first break. `rows` may be the live table alone or the
+// live+archive UNION (the IPC attaches archives). Recomputes each row's HMAC from its prev_hash +
+// content and checks the prev_hash links the previous row. Rows with a NULL hmac (written before the
+// key existed) reset the link to GENESIS — so the chain is verified from the first keyed row onward.
+function verifyAuditChainRows(rows) {
+  if (!_auditKey) return { ok: false, reason: 'no_key' };
+  let prev = 'GENESIS', checked = 0, sawKeyed = false;
+  for (const r of rows) {
+    if (r.row_hmac == null) {
+      // A NULL-hmac row is legitimate ONLY as part of the initial pre-key PREFIX. id is AUTOINCREMENT
+      // and pre-key rows always carry the lowest ids (archived rows keep theirs), so under ORDER BY id
+      // ASC a genuine inert row can NEVER follow a keyed one. A NULL after a keyed row is therefore
+      // either an attacker NULLing a tampered suffix to launder it back to "ok", or terminal key-loss —
+      // both must FAIL LOUD. Never fall through to a bare ok:true when keyed rows precede unverifiable ones.
+      if (sawKeyed) return { ok: false, brokenAt: r.id, reason: 'null_after_keyed', checked };
+      prev = 'GENESIS'; continue;                              // still in the pre-key prefix — fresh link
+    }
+    if (r.prev_hash !== prev) return { ok: false, brokenAt: r.id, reason: 'prev_hash_mismatch', checked };
+    if (_auditRowHmac(r.prev_hash, r) !== r.row_hmac) return { ok: false, brokenAt: r.id, reason: 'hmac_mismatch', checked };
+    prev = r.row_hmac; checked++; sawKeyed = true;
+  }
+  return { ok: true, checked };
+}
+function verifyAuditChain(db) {
+  try { return verifyAuditChainRows(db.prepare('SELECT * FROM audit_log ORDER BY id ASC').all()); }
+  catch (e) { return { ok: false, reason: 'read_error', error: e && e.message }; }
 }
 
 function getAuditLog(db, limit = 200) {
@@ -322,4 +383,5 @@ module.exports = {
   getTotpForUser, setTotpSecret, setTotpEnabled, clearTotp,
   issueRecoveryCode, findActiveRecoveryCodeByHash, markRecoveryCodeUsed,
   addAuditEntry, getAuditLog, getAuditLogFiltered, sanitiseAuditMeta, categoryFor,
+  setAuditKey, verifyAuditChain, verifyAuditChainRows, invalidateAuditColumns,
 };

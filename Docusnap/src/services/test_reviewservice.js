@@ -192,6 +192,74 @@ const basePayload = (id, extra = {}) => ({
   check('  → no unhandledRejection escaped the detached learning block', sawUnhandled === false);
   process.removeListener('unhandledRejection', onUnhandled);
 
+  // ── PREFIX-OUTLIER confirm gate (Slice 1) ──────────────────────────────────────
+  // The extraction guard is inert on a first bulk import, so a cold-start confirm of an odd-one-out
+  // reference is HELD here — PRE-CLAIM, flag-only. Drive the scope model + settings via the learning
+  // stub (the service holds `learning` by reference). Real predicate: database/modules/prefix_outlier.
+  const prefixOutlier = require('../../database/modules/prefix_outlier');
+  const armedRec = () => prefixOutlier.buildScopeRec({ ...Object.fromEntries([...Array(12)].map((_, i) => ['DN-' + i, 1])), 'IN-1': 1, 'IN-2': 1 }); // DN dominant, IN a 2/14 stray
+  let stubRec = armedRec();
+  const settingVal = { prefix_outlier_confirm_guard_enabled: 'true' };
+  deps.learning.getPrefixModelForScope = () => stubRec;
+  deps.learning.getSetting = (_db, key, dflt) => (key === 'output_folder' ? '/out'
+    : (key in settingVal ? settingVal[key] : (dflt !== undefined ? dflt : '/out')));
+
+  const gatePayload = (id, extra = {}) => ({
+    document_id: id, folder_path: '/in', original_filename: 'scan.pdf',
+    corrections: {},   // ref NOT human-typed (a machine read)
+    allValues: { supplier_name: 'Ridgeway', invoice_number: 'IN-14390', invoice_date: '01-01-2026' },
+    supplier_name: 'Ridgeway', document_type: 'Invoice', document_type_slug: 'invoice', taught_fields: [], ...extra,
+  });
+  const seedExt = (id, val) => db.prepare(
+    'INSERT INTO extractions (document_id, field_key, raw_value, display_value, confidence, extraction_method) VALUES (?,?,?,?,?,?)')
+    .run(id, 'invoice_number', val, val, 97, 'anchor_crop');
+  const noteOf = (id) => String(db.prepare("SELECT validation_note FROM extractions WHERE document_id=? AND field_key='invoice_number'").get(id)?.validation_note || '');
+
+  const gd1 = newDoc(db); seedExt(gd1, 'IN-14390');
+  const commitBeforeGate = calls.commit;
+  const gr1 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, gatePayload(gd1));
+  check('outlier ref → ok:false, code PREFIX_OUTLIER', gr1.ok === false && gr1.code === 'PREFIX_OUTLIER');
+  check('  → detail carries field/dominant/prefix', gr1.field === 'invoice_number' && gr1.dominant === 'DN' && gr1.prefix === 'IN');
+  check('  → doc STILL needs_review (never claimed/filed)', get(db, gd1).status === 'needs_review' && get(db, gd1).stored_path === null);
+  check('  → NOT filed (commit not called)', calls.commit === commitBeforeGate);
+  check('  → validation_note written on the ref extraction', /IN.*DN/i.test(noteOf(gd1)));
+  check('  → held audit written', calls.audit.some(e => e.action === 'confirm_held_prefix_outlier' && e.target_id === gd1));
+
+  const gd2 = newDoc(db); seedExt(gd2, 'IN-14391');
+  const gr2 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, gatePayload(gd2, { corrections: { invoice_number: { original_value: 'x', corrected_value: 'IN-14391' } } }));
+  check('human-corrected outlier ref → EXEMPT (files)', gr2.ok === true && get(db, gd2).status === 'confirmed');
+
+  const gd3 = newDoc(db); seedExt(gd3, 'IN-14392');
+  const gr3 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, gatePayload(gd3, { acknowledgePrefixOutlier: ['invoice_number'] }));
+  check('acknowledgePrefixOutlier ("Confirm anyway") → EXEMPT (files)', gr3.ok === true && get(db, gd3).status === 'confirmed');
+
+  const gd4 = newDoc(db); seedExt(gd4, 'DN-777');
+  const gr4 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, gatePayload(gd4, { allValues: { supplier_name: 'Ridgeway', invoice_number: 'DN-777', invoice_date: '01-01-2026' } }));
+  check('dominant-prefix ref proceeds (no hold)', gr4.ok === true && get(db, gd4).status === 'confirmed');
+
+  stubRec = null;   // disarmed scope
+  const gd5 = newDoc(db); seedExt(gd5, 'IN-999');
+  const gr5 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, gatePayload(gd5, { allValues: { supplier_name: 'Ridgeway', invoice_number: 'IN-999', invoice_date: '01-01-2026' } }));
+  check('disarmed scope (no dominant) proceeds', gr5.ok === true && get(db, gd5).status === 'confirmed');
+  stubRec = armedRec();
+
+  settingVal.prefix_outlier_confirm_guard_enabled = 'false';
+  const gd6 = newDoc(db); seedExt(gd6, 'IN-14396');
+  const gr6 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, gatePayload(gd6));
+  check('setting prefix_outlier_confirm_guard_enabled=false → gate off (files)', gr6.ok === true && get(db, gd6).status === 'confirmed');
+  settingVal.prefix_outlier_confirm_guard_enabled = 'true';
+
+  process.env.PREFIX_OUTLIER_CONFIRM_GUARD = '0';
+  const gd7 = newDoc(db); seedExt(gd7, 'IN-14397');
+  const gr7 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, gatePayload(gd7));
+  check('env PREFIX_OUTLIER_CONFIRM_GUARD=0 → gate off (files)', gr7.ok === true && get(db, gd7).status === 'confirmed');
+  delete process.env.PREFIX_OUTLIER_CONFIRM_GUARD;
+
+  const gd8 = newDoc(db); seedExt(gd8, 'IN-14398');
+  documents.update(db, gd8, { status: 'confirmed', stored_path: '/out/OLD8.pdf', stored_filename: 'OLD8.pdf', confirmed_by_username: 'sarah' });
+  const gr8 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, gatePayload(gd8, { allowRefile: true }));
+  check('isRefile (allowRefile) SKIPS the gate (re-files)', gr8.ok === true);
+
   console.log(`\n${fails === 0 ? 'ALL PASS' : fails + ' FAILED'}`);
   process.exit(fails ? 1 : 0);
 })();

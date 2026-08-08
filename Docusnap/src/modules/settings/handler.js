@@ -22,6 +22,38 @@ function register(ctx) {
     'name_wordness_flag', 'auto_separate_enabled', 'multiline_enabled',
     'auto_rotate_enabled', 'dashboard_hidden_cards', 'telemetry_enabled',
   ]);
+  // SECURITY (Stage 2 — M1): refuse ENTITLEMENT / LICENSING / update keys over this generic admin
+  // set-setting IPC (self-grant of the paid add-on / update-URL repoint). The predicate is shared with
+  // backupService (Oracle C1) via src/lib/protectedSettings so the two write-doors can't drift.
+  const { isProtectedSettingKey: _isProtectedSettingKey } = require('../../lib/protectedSettings');
+  // Keys the PRE-LOGIN windows legitimately read before a session exists — only 'theme', applied
+  // before first paint by shared/theme.js in the login/license/splash windows. Everything else needs
+  // a signed-in session (Stage 2 — L1).
+  const _PREAUTH_READABLE_SETTINGS = new Set(['theme']);
+  // SECURITY (Stage 2 — M7): reject an UNSAFE output_folder at WRITE time. A bare drive root (C:\)
+  // would widen _allowedOpenRoots (processing/handler.js) to the WHOLE drive, and a system directory
+  // is never a legitimate filing destination (integrity). Normal local folders AND UNC network shares
+  // are ALLOWED — network filing is a legitimate business workflow. (Silent repoint to a network share
+  // under a compromised renderer is a residual best closed by config-integrity signing in Stage 7; a
+  // direct DB edit — threat T2 — is closed by the Stage-6 DB encryption. Both are out of this layer.)
+  const _outputFolderSafe = (v) => {
+    const s = String(v == null ? '' : v).trim();
+    if (!s) return false;
+    // Reject the extended-length / device namespaces (`\\?\…`, `\\.\…`) — they survive path.resolve
+    // UNCHANGED and would let `\\?\C:\Windows\System32` slip past the system-dir prefix check below
+    // (Oracle C3). Legit UNC (`\\server\share`) is NOT this shape (3rd char is the host, not . or ?).
+    if (/^[\\/][\\/][.?][\\/]/.test(s)) return false;
+    let r; try { r = require('path').resolve(s); } catch { return false; }
+    if (/^[\\/][\\/][.?][\\/]/.test(r)) return false;
+    if (/(^|[\\/])[A-Za-z0-9]{1,6}~\d/.test(r)) return false;        // 8.3 short-name segment (PROGRA~1)
+    if (/^[a-z]:[\\/]?$/i.test(r)) return false;                     // a bare drive root — too broad
+    const lower = r.toLowerCase(), sep = require('path').sep;
+    const win = (process.env.SystemRoot || 'C:\\Windows').toLowerCase();
+    for (const f of [win, 'c:\\program files', 'c:\\program files (x86)']) {
+      if (lower === f || lower.startsWith(f + sep)) return false;    // never file INTO a system dir
+    }
+    return true;
+  };
 
   // ── Document types ──────────────────────────────────────────────────────────
   // get-all-doc-types is shared with Review (Admin/Edit) and Search (every
@@ -151,9 +183,10 @@ function register(ctx) {
   });
 
   // ── Fields ──────────────────────────────────────────────────────────────────
-  ipcMain.handle('add-field',    (_e, data)    => { requireRole('admin'); return doctypes.addField(getDb(), data); });
-  ipcMain.handle('update-field', (_e, id, ch)  => { requireRole('admin'); return doctypes.updateField(getDb(), id, ch); });
-  ipcMain.handle('delete-field', (_e, id)      => { requireRole('admin'); return doctypes.deleteField(getDb(), id); });
+  // Stage 5a: schema mutations are audited (field add/update/delete change what every future doc extracts).
+  ipcMain.handle('add-field',    (_e, data)    => { requireRole('admin'); const r = doctypes.addField(getDb(), data); logAudit(getDb(), { action: 'field_added', action_category: 'settings', target_type: 'field', target_id: String((data && data.key) || ''), outcome: 'success', metadata: { document_type_id: data && data.document_type_id } }); return r; });
+  ipcMain.handle('update-field', (_e, id, ch)  => { requireRole('admin'); const r = doctypes.updateField(getDb(), id, ch); logAudit(getDb(), { action: 'field_updated', action_category: 'settings', target_type: 'field', target_id: String(id), outcome: 'success' }); return r; });
+  ipcMain.handle('delete-field', (_e, id)      => { requireRole('admin'); const r = doctypes.deleteField(getDb(), id); logAudit(getDb(), { action: 'field_deleted', action_category: 'settings', target_type: 'field', target_id: String(id), outcome: 'success' }); return r; });
 
   // ── Learning Recovery ────────────────────────────────────────────────────────
   // Small inspection/cleanup surface for the automatic-learning corpora
@@ -186,7 +219,9 @@ function register(ctx) {
   // renderer. Returns per-table deleted counts.
   ipcMain.handle('reset-all-learning', () => {
     requireRole('admin');
-    return learning.resetAllLearning(getDb());
+    const r = learning.resetAllLearning(getDb());
+    logAudit(getDb(), { action: 'reset_all_learning', action_category: 'settings', target_type: 'learning', outcome: 'success' });   // Stage 5a
+    return r;
   });
 
   // Developer "fresh install (keep document corpus)" reset — superset of the
@@ -198,6 +233,7 @@ function register(ctx) {
   // still proceeds (best-effort safety net, not a hard dependency).
   ipcMain.handle('reset-fresh-install', () => {
     requireRole('admin');
+    logAudit(getDb(), { action: 'reset_fresh_install', action_category: 'settings', target_type: 'learning', outcome: 'success' });   // Stage 5a — records the destructive invocation (a backup is taken below)
     const fs = ctx.fs || require('fs');
     const db = getDb();
     let backup = null;
@@ -212,6 +248,10 @@ function register(ctx) {
       try { ctx.logger?.warn?.(`[reset-fresh-install] DB backup failed: ${e.message}`); } catch {}
     }
     const counts = learning.resetToFreshInstall(db);
+    // M1: after a full wipe, VACUUM to reclaim + zero the freed pages (with secure_delete=ON
+    // the content is already zeroed on delete; VACUUM shrinks the file and clears the freelist
+    // so a "reset to fresh" DB doesn't still carry deleted content on disk). Best-effort.
+    try { db.exec('VACUUM'); } catch (e) { try { ctx.logger?.warn?.(`[reset-fresh-install] VACUUM failed: ${e.message}`); } catch { /* noop */ } }
     return { backup, counts };
   });
 
@@ -314,7 +354,7 @@ function register(ctx) {
     return recoverySvc.overview(getDb(), scope || {});
   });
   ipcMain.handle('recovery-apply', (_e, payload) => {
-    requireRole('admin');
+    const sess = requireRole('admin');
     const db = getDb();
     const p = payload || {};
     // .bak safety net for the NON-reversible learning clears (set-aside alone is reversible
@@ -330,12 +370,19 @@ function register(ctx) {
         }
       } catch (e) { backup = null; try { ctx.logger?.warn?.(`[recovery] DB backup failed: ${e.message}`); } catch {} }
     }
-    const res = recoverySvc.apply(db, {}, p);
+    const res = recoverySvc.apply(db, { username: sess.username, displayName: sess.displayName }, p);
     try {
       logAudit(db, { action: 'recovery_apply', action_category: 'processing', target_type: 'document_type',
         outcome: res.ok ? 'success' : 'failure',
         metadata: { type: p.document_type_slug || null, supplier: p.supplier_name || null, ...(res.summary || {}) } });
     } catch {}
+    // Route-close audit + ONE badge-ping AFTER the transaction committed (Oracle C2 — never
+    // announce a close a rollback could undo; 'auto_closed' is toast-free by design).
+    if (res.ok && Array.isArray(res.closedRoutes) && res.closedRoutes.length) {
+      try { logAudit(db, { action: 'workflow_route_closed_on_delete', action_category: 'workflow', target_type: 'document_type',
+        outcome: 'success', metadata: { routes: res.closedRoutes.map(r => r.id), via: 'recovery' } }); } catch {}
+      try { ctx.notifyWorkflowEvent && ctx.notifyWorkflowEvent({ event: 'auto_closed' }); } catch {}
+    }
     if (res.ok) notifyAllWindows('review-count-changed', require('../../../database/modules/documents').getReviewCount(db));
     return { ...res, backup };
   });
@@ -344,8 +391,18 @@ function register(ctx) {
     requireRole('admin');
     const db = getDb();
     const documents = require('../../../database/modules/documents');
+    // C6 restore side: re-plant the retracted hints IFF learning_retracted_at proves the delete
+    // retracted (a pre-feature / switch-off deletion never did — a blind re-plant would
+    // double-count). The service clears the marker either way; same REPAIR_UNPLANT switch.
+    const useSvc = process.env.REPAIR_UNPLANT !== '0';
+    const repairService = useSvc ? require('../../services/repairService') : null;
     let restored = 0;
-    for (const id of (Array.isArray(ids) ? ids : [])) { try { restored += documents.restoreDeleted(db, id).changes || 0; } catch {} }
+    for (const id of (Array.isArray(ids) ? ids : [])) {
+      try {
+        restored += (useSvc ? repairService.restoreFromRecycleBin(db, Number(id)).changes
+                            : documents.restoreDeleted(db, id).changes) || 0;
+      } catch {}
+    }
     return { restored };
   });
 
@@ -381,7 +438,7 @@ function register(ctx) {
     catch (e) { return { fields: [], error: e.message || String(e) }; }
   });
   // Send ONE confirmed doc back to the review queue (respects the workflow lock).
-  ipcMain.handle('repair-deconfirm', (_e, id) => {
+  ipcMain.handle('repair-deconfirm', (_e, id, opts) => {
     requireRole('admin');
     const db = getDb();
     const documents = require('../../../database/modules/documents');
@@ -390,6 +447,23 @@ function register(ctx) {
       const guard = require('../../services/workflowService').editGuard(db, docId, 'admin');
       if (guard && guard.ok === false) return { ok: false, error: guard.error || 'This document is locked by an approval route.', code: guard.code };
     } catch { /* workflow off → no lock */ }
+    // UN-PLANT (Oracle-signed 2026-07-23; kill REPAIR_UNPLANT=0 ⇒ the legacy status-flip only).
+    // One door serves all three send-back surfaces (Repair panel + Search preview/bulk); the
+    // service atomically de-confirms + retracts this doc's confirm-planted hints + deletes its
+    // corrections rows (the re-confirm echo) + stamps the suspect-field notes. See repairService.
+    if (process.env.REPAIR_UNPLANT !== '0') {
+      let r;
+      try { r = require('../../services/repairService').sendBackToReview(db, docId, opts || {}); }
+      catch (e) { return { ok: false, error: 'Send-back failed (nothing was changed): ' + (e.message || e) }; }
+      if (r.ok) {
+        try {
+          logAudit(db, { action: 'repair_send_to_review', action_category: 'document', target_type: 'document',
+            target_id: docId, outcome: 'success', details: JSON.stringify(r.unplanted) });
+        } catch {}
+        notifyAllWindows('review-count-changed', documents.getReviewCount(db));
+      }
+      return { ok: !!r.ok };
+    }
     const r = documents.deconfirmDocument(db, docId);
     if (r.changes) {
       try { logAudit(db, { action: 'repair_send_to_review', action_category: 'document', target_type: 'document', target_id: docId, outcome: 'success' }); } catch {}
@@ -399,12 +473,30 @@ function register(ctx) {
   });
   // Delete ONE confirmed doc to the recycle bin (recoverable; Undo via recovery-restore-docs).
   ipcMain.handle('repair-delete', (_e, id) => {
-    requireRole('admin');
+    const sess = requireRole('admin');
     const db = getDb();
     const documents = require('../../../database/modules/documents');
     const docId = Number(id);
-    const r = documents.softDelete(db, docId);
+    // C6 (owner-ruled 2026-07-23; same REPAIR_UNPLANT switch as send-back): deleting a CONFIRMED
+    // doc retracts its confirm-planted hints + stamps learning_retracted_at (mig 53), so the
+    // panel's heavier remedy un-poisons at least as much as its lighter one; recovery-restore
+    // re-plants IFF the marker proves the retract ran (see repairService).
+    const r = (process.env.REPAIR_UNPLANT !== '0')
+      ? require('../../services/repairService').deleteToRecycleBin(db, docId)
+      : documents.softDelete(db, docId);
     if (r.changes) {
+      // Previously-unguarded soft-delete door: close any open routes with the honest
+      // "Document deleted by <name>" tombstone (FYI slice, Oracle C1/C2 — was a
+      // stranded-open-route hole). Badge-ping only ('auto_closed' is deliberately
+      // unknown to workflowNotify ⇒ no toast).
+      try {
+        const closed = require('../../services/workflowService')
+          .closeOpenRoutesForDeletedDoc(db, { documentId: docId, deletedByName: (sess && (sess.displayName || sess.username)) || 'an administrator' }).closed;
+        if (closed.length) {
+          try { logAudit(db, { action: 'workflow_route_closed_on_delete', action_category: 'workflow', target_type: 'document', target_id: docId, document_id: docId, outcome: 'success', metadata: { routes: closed.map(x => x.id) } }); } catch {}
+          try { ctx.notifyWorkflowEvent && ctx.notifyWorkflowEvent({ event: 'auto_closed' }); } catch {}
+        }
+      } catch { /* best-effort — never blocks the delete */ }
       try { logAudit(db, { action: 'repair_delete', action_category: 'document', target_type: 'document', target_id: docId, outcome: 'success' }); } catch {}
       notifyAllWindows('review-count-changed', documents.getReviewCount(db));
     }
@@ -419,10 +511,23 @@ function register(ctx) {
   // no per-key write path outside the Admin-gated Settings window, where
   // set-setting below is the actual enforcement boundary for "access all
   // settings".
-  ipcMain.handle('get-setting', (_e, key)      => learning.getSetting(getDb(), key));
+  ipcMain.handle('get-setting', (_e, key)      => {
+    if (!_PREAUTH_READABLE_SETTINGS.has(key)) requireLogin();   // Stage 2 — L1
+    return learning.getSetting(getDb(), key);
+  });
   ipcMain.handle('set-setting', (_e, key, val) => {
     requireRole('admin');
     const db = getDb();
+    if (_isProtectedSettingKey(key)) {   // Stage 2 — M1
+      logAudit(db, { action: 'setting_write_refused', action_category: 'settings', target_type: 'setting',
+        target_id: key, outcome: 'denied', metadata: { key } });
+      throw Object.assign(new Error('This setting is managed by the system and cannot be changed here.'), { code: 'PROTECTED_SETTING' });
+    }
+    if (key === 'output_folder' && !_outputFolderSafe(val)) {   // Stage 2 — M7
+      logAudit(db, { action: 'setting_write_refused', action_category: 'settings', target_type: 'setting',
+        target_id: key, outcome: 'denied', metadata: { key, reason: 'unsafe_output_folder' } });
+      throw Object.assign(new Error('That output folder is not allowed (system folders and drive roots are blocked).'), { code: 'UNSAFE_OUTPUT_FOLDER' });
+    }
     learning.setSetting(db, key, val);
     // Mirror the output/documents folder into the registry the moment it changes so the
     // uninstaller's data-wipe guard always has the current path (see lib/outputPathRegistry).
@@ -432,7 +537,10 @@ function register(ctx) {
     if (key === 'telemetry_enabled') { try { ctx.telemetry?.refreshConsent(); } catch {} }
     logAudit(db, { action: 'setting_changed', action_category: 'settings', target_type: 'setting',
       target_id: key, outcome: 'success',
-      metadata: { key, value: _SAFE_SETTING_VALUE.has(key) ? String(val).slice(0, 120) : '[set]' } });
+      metadata: { key, value: _SAFE_SETTING_VALUE.has(key) ? String(val).slice(0, 120) : '[set]',
+        // Oracle C4 (Q1 residual made detectable): flag a filing repoint to a NETWORK share so an
+        // admin / the Stage-7 integrity check can SEE it, without recording the path itself.
+        ...(key === 'output_folder' ? { network: /^[\\/]{2}/.test(String(val || '')) } : {}) } });
     return true;
   });
 
@@ -469,14 +577,24 @@ function register(ctx) {
   // migrate to a new PC, but a fresh trial can't import another machine's learned data
   // to dodge the trial. Legacy backups (no device_fp) and dev boxes are not blocked.
   function _deviceImportAllowed(meta) {
-    const backupFp = meta && meta.device_fp;
-    if (!backupFp) return { allowed: true };          // pre-binding backup — can't enforce
     const curFp = _currentDeviceFp();
     if (!curFp) return { allowed: true };             // no licensing config (dev) — don't block
-    if (backupFp === curFp) return { allowed: true }; // same machine
+    const backupFp = meta && meta.device_fp;
+    if (backupFp && backupFp === curFp) return { allowed: true }; // same machine
+    // SECURITY (Sammy M-1): a MISSING/empty device_fp used to auto-allow ("pre-binding backup"),
+    // but a crafted archive can simply OMIT the field to defeat the whole gate. Treat absent-fp the
+    // same as a cross-machine import — require a signature-verified active PAID seat below. A real
+    // legacy backup on a licensed machine still restores (it holds a seat); a fresh trial importing
+    // another machine's OR a crafted no-fp archive is blocked (anti-trial-stacking intact).
     try {
-      const tok = require('../../../database/modules/licensing').getActiveToken(getDb(), curFp);
-      if (tok && tok.kind === 'seat' && tok.state !== 'revoked') return { allowed: true };  // paid migration
+      // SECURITY (Stage 4 — M5): the seat must be a SIGNATURE-VERIFIED active paid token, not merely a
+      // license_tokens ROW whose convenience columns say kind='seat'/state='active'. Reading those raw
+      // columns let a hand-inserted row defeat this anti-trial-stacking gate; route through the
+      // JWS-verifying evaluator instead (evaluateCachedAccess → token.evaluate: alg/kid-pinned,
+      // fp-bound, verify-before-claims). `decision==='allow'` requires a valid signature for THIS
+      // machine's fingerprint; the claims' kind must be 'seat' (a verified TRIAL must not unlock import).
+      const ev = require('../licensing/handler').evaluateCachedAccess(getDb());
+      if (ev && ev.decision === 'allow' && ev.claims && ev.claims.kind === 'seat') return { allowed: true };
     } catch { /* fall through to deny */ }
     return { allowed: false, error: 'This backup was made on a different computer. Restoring it here needs an activated licence on this computer — a free trial can only restore a backup created on the same machine.' };
   }
@@ -528,10 +646,22 @@ function register(ctx) {
           target_type: 'backup', outcome: 'failure', metadata: { reason: 'device_mismatch' } });
         return { ok: false, error: gate.error };
       }
+      // M5: snapshot the DB before this destructive restore so a mistaken import (e.g. a
+      // fresh-install backup that would replace learned tables) is recoverable. Best-effort
+      // (matches the reset/recovery snapshot pattern); a snapshot failure must not block a
+      // legitimate restore — the empty-table guards in applyBackup are the primary defence.
+      let snapshot = null;
+      try {
+        const db0 = getDb();
+        try { db0.pragma('wal_checkpoint(TRUNCATE)'); } catch { /* WAL flush best-effort */ }
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        snapshot = `${db0.name}.pre-restore-${stamp}`;
+        fs.copyFileSync(db0.name, snapshot);
+      } catch (e) { snapshot = null; try { ctx.logger?.warn?.(`[backup-restore] pre-restore snapshot failed: ${e.message}`); } catch { /* noop */ } }
       const { applied } = backupService.applyBackup(getDb(), payload);
       logAudit(getDb(), { action: 'settings_backup_restore', action_category: 'settings',
-        target_type: 'backup', outcome: 'success', metadata: { tables: Object.keys(applied).length } });
-      return { ok: true, applied, restart: true };
+        target_type: 'backup', outcome: 'success', metadata: { tables: Object.keys(applied).length, snapshot: snapshot ? snapshot.split(/[\\/]/).pop() : null } });
+      return { ok: true, applied, restart: true, snapshot };
     } catch (e) { return { ok: false, error: e.message }; }
   });
 }

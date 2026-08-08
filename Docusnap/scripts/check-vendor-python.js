@@ -37,9 +37,11 @@ const REQUIRED = [
   ['PIL',        'image handling (pillow)'],
   ['pypdfium2',  'PDF page rendering'],
   ['pypdf',      'PDF split / rotate'],
+  ['zxingcpp',   'QR decode — Filing Slips separator-sheet detection (ocr/slip_detect.py aborts to no-split without it)'],
+  ['segno',      'QR encode — separator-sheet pack generation + slip test fixtures'],
 ];
 // pip package name when it differs from the import name (for the "how to fix" hint).
-const PIP_NAME = { PIL: 'pillow' };
+const PIP_NAME = { PIL: 'pillow', zxingcpp: 'zxing-cpp' };
 
 // Import names that should NO LONGER be present (RapidOCR was removed 2026-07).
 const REMOVED = ['rapidocr_onnxruntime', 'onnxruntime', 'cv2', 'shapely', 'pyclipper'];

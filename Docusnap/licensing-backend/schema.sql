@@ -55,7 +55,9 @@ CREATE TABLE IF NOT EXISTS entitlements (
   polar_price_id VARCHAR(190) NULL,   -- Polar price/SKU that mapped to this entitlement
   FOREIGN KEY (account_id) REFERENCES accounts(id),
   FOREIGN KEY (product_id) REFERENCES products(product_id)
-);
+) ENGINE=InnoDB;   -- explicit: activate.php's `SELECT … FOR UPDATE` seat-race lock + all backend
+                   -- transactions are a silent no-op on MyISAM (Sammy L-7). FKs already force InnoDB
+                   -- on live hosts; this pins it for a fresh `schema.sql` apply.
 
 -- One ACTIVE binding per seat. A released seat sets fp_hash NULL and is
 -- reusable (revoke -> reactivate). fp_hash is unique among active bindings.
@@ -68,7 +70,8 @@ CREATE TABLE IF NOT EXISTS seats (
   released_at    DATETIME    NULL,
   status         VARCHAR(20) NOT NULL DEFAULT 'free',
   FOREIGN KEY (entitlement_id) REFERENCES entitlements(id)
-);
+) ENGINE=InnoDB;   -- see entitlements above (Sammy L-7): the seat-count COUNT + bind run under the
+                   -- FOR UPDATE lock, which requires a transactional engine.
 
 CREATE TABLE IF NOT EXISTS signing_keys (
   kid             VARCHAR(40) NOT NULL PRIMARY KEY,

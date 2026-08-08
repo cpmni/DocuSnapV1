@@ -137,8 +137,12 @@ const seed = (jws, state) => licensing.cacheToken(db, { kind: 'trial', subject: 
 
   // ── main.js wiring (renderer cannot self-grant) ──────────────────────────────
   const mainSrc = fs.readFileSync(path.join(ROOT, 'src', 'main.js'), 'utf8');
-  if (!check('license-enter-app re-decides via enterMainApp',
-      /ipcMain\.on\('license-enter-app',\s*\(\)\s*=>\s*enterMainApp\(\)\)/.test(mainSrc))) fail++;
+  // The handler was hardened (Stage 2 — M2): it now SENDER-scopes the signal to the licence
+  // window and requires an authenticated session before re-deciding, so the regex pins that
+  // hardened shape — the anti-self-grant sender guard AND the enterMainApp re-decide — rather
+  // than the old bare `() => enterMainApp()` form (which this scrape used to expect).
+  if (!check('license-enter-app re-decides via enterMainApp (sender-guarded, no self-grant)',
+      /ipcMain\.on\('license-enter-app',[\s\S]*?BrowserWindow\.fromWebContents\(e\.sender\)[\s\S]*?enterMainApp\(\)/.test(mainSrc))) fail++;
   if (!check('enterMainApp gates on decideAccess before openMainShell',
       /licensingModule\.decideAccess\(\)/.test(mainSrc) && /gate\.decision === 'allow'/.test(mainSrc))) fail++;
   if (!check('openMainShell not wired directly to a renderer enter signal',

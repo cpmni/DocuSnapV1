@@ -28,7 +28,10 @@ function createReviewService(deps = {}) {
   const documents = deps.documents || require('../../database/modules/documents');
   const learning  = deps.learning  || require('../../database/modules/learning');
   const doctypes  = deps.doctypes  || require('../../database/modules/document_types');
+  const templates = deps.templates || require('../../database/modules/templates');
+  const prefixOutlier = deps.prefixOutlier || require('../../database/modules/prefix_outlier');
   const filing    = deps.filing    || require('../modules/filing/handler');
+  const foreignFields = deps.foreignFields || require('../lib/foreignFields');
   const fs   = deps.fs   || require('fs');
   const path = deps.path || require('path');
   const logger = deps.logger || null;
@@ -37,8 +40,11 @@ function createReviewService(deps = {}) {
   const onScheduleSourceMove = deps.onScheduleSourceMove || (() => {});
   const onTaughtConfirm      = deps.onTaughtConfirm      || (async () => {});
   const onScopeGraduated     = deps.onScopeGraduated     || (async () => {});
+  const learnTemplateOnCommit = deps.learnTemplateOnCommit || (async () => {});   // Slice 1: identity convergence on every commit (dark)
   const captureSample        = deps.captureSample        || (async () => {});
   const notifyCounts         = deps.notifyCounts         || (() => {});
+  const captureRouteContext  = deps.captureRouteContext  || (() => null);   // Slice 3: total trust ctx captured pre-note-clear
+  const startDefaultRoute    = deps.startDefaultRoute    || (() => {});     // Slice 3: amount-threshold auto-route (detached)
   const releaseDelayMs       = deps.releaseDelayMs != null ? deps.releaseDelayMs : 0;
 
   // ── Queue reads (Admin/Edit; the caller gates) ────────────────────────────────
@@ -47,17 +53,30 @@ function createReviewService(deps = {}) {
   const counts   = (db) => ({ review: documents.getReviewCount(db), deferred: documents.getDeferredCount(db) });
 
   // ── Confirm / file ────────────────────────────────────────────────────────────
-  async function confirm(db, actor, payload) {
+  async function confirm(db, actor, payload, internal = {}) {
     const {
-      document_id, folder_path, original_filename,
+      document_id,
       corrections, allValues, supplier_name,
       document_type, document_type_slug, taught_fields, bulk,
     } = payload || {};
+    // Catch-up Filing (design 2026-07-31): 'scope_sweep' is set ONLY by the server-side sweep
+    // accept call site via the INTERNAL arg — never from the renderer/client payload (a
+    // compromised client must not be able to label its confirms as machine confirms or vice
+    // versa). Anything but the exact sentinel collapses to null (human/legacy).
+    const _via = internal && internal.via === 'scope_sweep' ? 'scope_sweep' : null;
     const actorName = (actor && actor.username) || null;
     const _t0 = Date.now();   // confirm return-latency probe (logged below when diag logging is on)
 
     const docRow = documents.getById(db, document_id);
-    const workingPath = docRow?.working_path || null;
+    if (!docRow) return fail('NOT_FOUND', 'Document not found.');
+    // SECURITY (Stage 1 — H1/M12): the on-disk source paths are resolved SERVER-SIDE from the doc
+    // row, NEVER from the payload (which carries field VALUES only). This mirrors the /v1 confirm
+    // path (api/handler.js), which already reads folder_path/original_filename from the row. Without
+    // this, a compromised/replaced renderer could aim filing's copy-in (arbitrary file → output
+    // tree) or the deferred source-unlink (arbitrary file delete) at any host path it named.
+    const folder_path       = docRow.folder_path || null;
+    const original_filename = docRow.original_filename || null;
+    const workingPath = docRow.working_path || null;
     // PREVIOUSLY-FILED copy: the doc's current filed copy, captured REGARDLESS of status and
     // BEFORE the claim below (which nulls the row's stored_path). Two cases carry one:
     //   • an already-confirmed doc ("Edit in Review" / re-surfaced auto-filed doc), and
@@ -98,10 +117,49 @@ function createReviewService(deps = {}) {
     const outputRoot = learning.getSetting(db, 'output_folder', null);
     if (!outputRoot) return fail('NO_OUTPUT', 'No output folder set. Please configure it in Settings.');
 
+    // ── PREFIX-OUTLIER confirm gate (Slice 1, cold-start) ────────────────────────────────────────
+    // The extraction-time prefix guard is INERT on a first bulk import (its history snapshot is
+    // empty), so RE-CHECK the reference here against LIVE confirmed history and HOLD an odd-one-out
+    // for review BEFORE it files. Flag-only + PRE-CLAIM: writes a review note, leaves the doc
+    // needs_review; nothing is claimed or filed. Exempt: a re-file, a human-typed value (a
+    // correction), and an explicit acknowledge ("Confirm anyway"). Dual kill switch (env + setting).
+    // Reuses the SAME weight-aware predicate as the Python extraction guard (prefix_outlier.js
+    // mirrors ocr_corrector.py; parity pinned by test_prefix_outlier.js). ADVISORY: a gate error
+    // fails OPEN (never blocks a confirm), like the Python guard.
+    if (!isRefile && dtInfo && dtInfo.ref_field_key
+        && process.env.PREFIX_OUTLIER_CONFIRM_GUARD !== '0'
+        && learning.getSetting(db, 'prefix_outlier_confirm_guard_enabled', 'true') !== 'false') {
+      try {
+        const refKey = dtInfo.ref_field_key;
+        const refVal = allValues ? allValues[refKey] : null;
+        const humanCorrected = !!(corrections && corrections[refKey] && corrections[refKey].corrected_value != null);
+        const acked = Array.isArray(payload && payload.acknowledgePrefixOutlier)
+                   && payload.acknowledgePrefixOutlier.includes(refKey);
+        if (refVal && !humanCorrected && !acked) {
+          const scopeSupplier = (allValues && allValues.supplier_name) || supplier_name || null;
+          const rec = learning.getPrefixModelForScope(db, scopeSupplier, document_type_slug, refKey);
+          const chk = prefixOutlier.checkValue(refVal, rec);   // { outlier, prefix, dominant }
+          if (chk.outlier) {
+            db.prepare('UPDATE extractions SET validation_note = ? WHERE document_id = ? AND field_key = ?')
+              .run(`Reference starts "${chk.prefix}-" but this sender's usually start "${chk.dominant}-" - please check.`,
+                   document_id, refKey);
+            audit(db, { action: 'confirm_held_prefix_outlier', target_type: 'document', target_id: document_id,
+              document_id, outcome: 'held', actor_username: actorName,
+              metadata: { field: refKey, dominant: chk.dominant, prefix: chk.prefix } });
+            notifyCounts(db);
+            return fail('PREFIX_OUTLIER', 'The reference looks unusual for this sender - please review.',
+              { field: refKey, dominant: chk.dominant, prefix: chk.prefix });
+          }
+        }
+      } catch (e) {
+        if (logger && logger.warn) logger.warn('prefix-outlier confirm gate skipped: ' + (e && e.message));
+      }
+    }
+
     // CLAIM before filing (first-confirm only) so a lost race can't double-file. The loser
     // reads the winner's name off confirmed_by_username and reports it.
     if (!isRefile) {
-      const claim = documents.confirmIfReviewable(db, document_id, { confirmed_by_username: actorName });
+      const claim = documents.confirmIfReviewable(db, document_id, { confirmed_by_username: actorName, confirmed_via: _via });
       if (!claim || claim.changes === 0) {
         const winner = documents.getById(db, document_id)?.confirmed_by_username || 'another user';
         return fail('ALREADY_FILED', `This document was already filed by ${winner}.`, { confirmedBy: winner });
@@ -148,7 +206,21 @@ function createReviewService(deps = {}) {
       if (fieldSummary) logger.log(`  Values: ${fieldSummary}`);
     }
 
-    learning.saveCorrections(db, document_id, corrections || {}, supplier_name, document_type_slug, allValues, taught_fields || []);
+    // C7 (2026-07-23, the un-plant's plant-side twin): the desktop panel is fieldDefs-driven, but
+    // this service is SHARED (bulk File-All + /v1) and the foreign-row drop below runs AFTER this
+    // plant — so a payload carrying foreign keys could learn hints the later row-drop orphans.
+    // Filter the LEARNING input through the same keep-predicate + switch (FOREIGN_FIELD_DROP);
+    // the original `corrections` object still feeds captureRouteContext below, unfiltered.
+    const _learn = foreignFields.filterLearningInput(allValues, corrections || {}, dtInfo);
+    // Catch-up LEARNING RULING (Oracle, design 2026-07-31): a machine 'scope_sweep' confirm
+    // SKIPS saveCorrections entirely — no hint usage inflation on machine echoes, no
+    // corrections rows, no anchor writes (the sweep files stored values verbatim; there is
+    // nothing human-taught to learn). Live-DERIVED learning (formats/shapes/prefix — computed
+    // from confirmed status at read time) still flows and rolls back cleanly on undo, which is
+    // what makes "Undo all" honest. learnTemplateOnCommit self-guards on confirmed_via.
+    if (!_via) {
+      learning.saveCorrections(db, document_id, _learn.corrections || {}, supplier_name, document_type_slug, _learn.allValues, taught_fields || []);
+    }
 
     // Record the stored location. First-confirm already flipped status/confirmed_at/confirmed_by
     // in the claim; a re-file confirms now (and records who re-filed).
@@ -161,10 +233,22 @@ function createReviewService(deps = {}) {
     audit(db, { action: 'review_confirmed', target_type: 'document', target_id: document_id,
       document_id, outcome: 'success', actor_username: actorName,
       metadata: { type: document_type_slug || null, filed: filingResult.filename,
-                  fields_changed: Object.keys(corrections || {}).join(',') || null } });
+                  fields_changed: Object.keys(corrections || {}).join(',') || null,
+                  ...(_via ? { via: _via } : {}) } });
+
+    // Slice 3 (amount routing): capture the total's trust context — its note + confidence — BEFORE the
+    // note-clear below wipes it (Oracle A1). No-op (returns null) unless WORKFLOW_AMOUNT_ROUTING is armed,
+    // so OFF is byte-identical. Consumed by the detached startDefaultRoute in the !bulk block.
+    const _routeCtx = captureRouteContext(db, document_id, corrections || {});
 
     // Clear pre-confirmation review aids (display-only; not read by learning).
     db.prepare('UPDATE extractions SET validation_note = NULL, corrected_to = NULL WHERE document_id = ?').run(document_id);
+
+    // P2 — drop FOREIGN extraction rows (keys not on this doc's assigned type: the union-of-keys
+    // bleed where a delivery docket's bare `Date:` also filled invoice/order/po_date). AFTER the
+    // claim + file above, so it can't affect the filing decision. Kill switch FOREIGN_FIELD_DROP=0.
+    // Shares _buildTemplateFields' keep-predicate (foreignFields.js) so the two can't drift.
+    if (dtInfo) { try { foreignFields.dropForeignExtractions(db, document_id, dtInfo); } catch (e) { logger?.warn?.('foreign-field drop skipped: ' + (e && e.message)); } }
 
     // The working copy has served its purpose — remove it + clear the pointer.
     if (workingPath) {
@@ -192,6 +276,38 @@ function createReviewService(deps = {}) {
       reference_number: (allValues && allValues[refField]) || null,
       document_type_id: dtInfo?.id || null,
     });
+
+    // TEMPLATE SUPPLIER-LINK GUARD (Oracle condition A on the template-misfile fix, 2026-07-20).
+    // A doc Stage-0-matched to ANOTHER supplier's template keeps that template_id through confirm —
+    // Part D (review/handler.js _upsertTemplate) detaches on TYPE mismatch only, so an invoice
+    // mis-matched to a foreign invoice template survives here. The stale link then poisons the
+    // wrong template on a PLAIN confirm through three doors: its LIVE confirmed_count (matcher
+    // tiebreaks), its dominant_supplier distribution (the identity key for the branding banks and
+    // gates), and captureSample below (this foreign page would become a LANDMARK SAMPLE of the
+    // wrong template). Detach ONLY when the confirmed issuer is NAME-DISJOINT from the template's
+    // established identity (zero shared distinctive tokens — a suffix/variant spelling shares one
+    // and keeps the link); an unjudgeable identity keeps the link (fail toward today). Runs for
+    // bulk confirms too — the count/dominant doors are derived state, not hooks.
+    if (process.env.TEMPLATE_SUPPLIER_LINK_GUARD !== '0') {
+      try {
+        const linkId = db.prepare('SELECT template_id FROM documents WHERE id = ?').get(document_id)?.template_id;
+        const confirmedIssuer = (allValues && allValues.supplier_name) || supplier_name || null;
+        if (linkId && confirmedIssuer) {
+          // SELF-INDEPENDENT identity (TEMPLATE_GUARD_SELF_INDEPENDENT, 2026-07-21): judge the
+          // template's identity from its OTHER confirmed docs — this doc is ALREADY confirmed +
+          // linked + supplier_name=confirmedIssuer at this point, so a plain establishedIdentity
+          // counts it against itself and the guard compares the issuer to itself (never disjoint →
+          // never detaches → the wrong template's dominant is permanently poisoned). Passing
+          // document_id removes the self-vote. OFF ('0') ⇒ excludeDocId=null ⇒ byte-identical.
+          const _selfIndep = process.env.TEMPLATE_GUARD_SELF_INDEPENDENT !== '0';
+          const ident = templates.establishedIdentity(db, linkId, _selfIndep ? document_id : null);
+          if (ident && templates.supplierNamesDisjoint(confirmedIssuer, ident)) {
+            documents.update(db, document_id, { template_id: null });
+            if (logger) logger.log(`  Supplier-link guard: detached template ${linkId} (${ident}) from doc ${document_id} — confirmed issuer '${confirmedIssuer}'`);
+          }
+        }
+      } catch { /* guard is best-effort; a failure must never affect the confirm */ }
+    }
 
     if (filingResult.srcPath) onScheduleSourceMove({ srcPath: filingResult.srcPath, originalFilename: original_filename });
     notifyCounts(db);
@@ -225,7 +341,42 @@ function createReviewService(deps = {}) {
         // check; a failure here can never affect the already-returned confirm.
         try { await onScopeGraduated(db, document_id, { allValues, document_type_slug, supplier_name, dtInfo }); }
         catch (e) { console.warn('Graduation auto-template failed:', e.message); }
+        // Slice 1 (learn-on-commit): AFTER graduation may have created/linked the template, keep its
+        // identity converging on this confirm (kill switch template_learn_on_confirm, DEFAULT OFF ⇒
+        // no-op). SKIP a taught confirm — onTaughtConfirm already enriched via templates.update. The
+        // hook self-gates on a resolvable same-type/same-supplier template; a failure can never affect
+        // the already-returned confirm.
+        if (!(Array.isArray(taught_fields) && taught_fields.length)) {
+          try { await learnTemplateOnCommit(db, document_id, { document_type_slug, supplier_name }); }
+          catch (e) { console.warn('Learn-on-commit failed:', e.message); }
+        }
       }).catch(() => {});
+    }
+
+    // Routing (SEAM A/A'): auto-create an approval route from the extracted total/type. Fires on BOTH
+    // bulk and non-bulk confirms — a filed doc is a filed doc (Oracle D2); the !bulk guard above exists
+    // only to throttle the Python-spawning landmark hooks, which routing is not. Detached + fail-open
+    // (can never affect the already-returned confirm). NOT on a re-file (Oracle B1 — an "Edit in Review"
+    // of a settled doc must not spawn a second route); the engine self-guards on the kill switch + real
+    // entitlement + hasActiveRoute.
+    if (!isRefile) {
+      Promise.resolve().then(() => {
+        startDefaultRoute(db, document_id, _routeCtx, {
+          actor,
+          supplierName: (allValues && allValues.supplier_name) || supplier_name || null,
+          slug: document_type_slug || (dtInfo && dtInfo.slug) || null,
+          documentTypeId: (dtInfo && dtInfo.id) || null,
+        });
+      }).catch(() => {});
+    }
+
+    // Slice 1 (learn-on-commit) — the !bulk chain above is SKIPPED on File-All/bulk, but bulk is the
+    // owner's common route, so mirror the hook here for bulk exactly as routing fires on both. Bulk
+    // carries no taught_fields, so no taught-skip is needed. Detached + fail-open + self-gated on the
+    // kill switch (DEFAULT OFF ⇒ byte-identical).
+    if (bulk) {
+      Promise.resolve().then(() => learnTemplateOnCommit(db, document_id, { document_type_slug, supplier_name }))
+        .catch(() => {});
     }
 
     return { ok: true, success: true, ...filingResult };

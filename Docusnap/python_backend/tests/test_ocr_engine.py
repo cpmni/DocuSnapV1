@@ -55,7 +55,7 @@ class SpyEngine:
     """Records read_page calls; returns a fixed marker (no real OCR)."""
     name = "spy"
     def __init__(self): self.calls = 0
-    def read_page(self, img, enhance_params=None, dpi=None):
+    def read_page(self, img, enhance_params=None, dpi=None, words_out=None):  # words_out: the geometry hand-off kwarg (stale-stub trap)
         self.calls += 1
         return "SPY"
 
@@ -80,7 +80,7 @@ with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
 # ── 6. default (engine=None) is the Tesseract path -> reconstruct_page_text ───────
 with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
     png = _png(td)
-    tess_mod.reconstruct_page_text = lambda img, config="--oem 3 --psm 3", dpi=None: "DEFAULT-TESS"
+    tess_mod.reconstruct_page_text = lambda img, config="--oem 3 --psm 3", dpi=None, **kw: "DEFAULT-TESS"   # **kw: words_out (geometry hand-off)
     try:
         text, _pages = tess_mod.extract_text_and_images(png, None)   # no engine arg
         check("default engine routes through Tesseract reconstruct_page_text", text == "DEFAULT-TESS")
@@ -190,6 +190,18 @@ check("grouping: two close single-column lines are NOT glued into one",
 # ── 10e. _with_dpi: append the render DPI so Tesseract scales right (the recognition fix) ──
 check("_with_dpi appends the render DPI", tess_mod._with_dpi("--psm 3", 300) == "--psm 3 --dpi 300")
 check("_with_dpi is a no-op when DPI is unknown", tess_mod._with_dpi("--psm 3", None) == "--psm 3")
+
+# ── 10e2. _resolve_render_dpi: the ocr_dpi setting reaches the render, DEFAULT/garbage -> 300 ──
+import os as _os
+def _rdpi(v):
+    if v is None: _os.environ.pop("OCR_RENDER_DPI", None)
+    else: _os.environ["OCR_RENDER_DPI"] = v
+    return tess_mod._resolve_render_dpi()
+check("render DPI defaults to 300 when unset (byte-identical)", _rdpi(None) == 300)
+check("render DPI honours a valid in-band value", _rdpi("150") == 150 and _rdpi("200") == 200)
+check("render DPI coerces out-of-band back to 300 (never a broken render)", _rdpi("999") == 300 and _rdpi("50") == 300)
+check("render DPI coerces garbage back to 300", _rdpi("abc") == 300 and _rdpi("") == 300)
+_os.environ.pop("OCR_RENDER_DPI", None)
 
 # ── 10f. THREE-column header: a value's row is SEEDED AFTER it, so a single greedy pass glued it to
 #   the row above (real Anconia coords: 179914 at yc1270 stuck to BILLING@yc1252 instead of its own

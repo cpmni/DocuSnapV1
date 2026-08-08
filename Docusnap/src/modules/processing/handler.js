@@ -9,6 +9,295 @@ const os   = require('os');
 const path = require('path');
 const fs   = require('fs');
 const diaglog = require('../diaglog');
+const { buildSegmentArgs, buildSplitPlan } = require('./split_plan');
+const { clampSlipCount, nextSlipRange, slipPackName } = require('./slip_pack');
+
+// SECURITY (Stage 2 — M11): call Windows system binaries by ABSOLUTE path. A bare image name is
+// resolved by CreateProcess from the CALLING process's directory FIRST — user-writable under a
+// per-user install — so a planted taskkill.exe there would execute in-app. %SystemRoot%\System32 is
+// not user-writable.
+const TASKKILL_EXE = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'taskkill.exe');
+
+// ── Generic Document fallback (docs/designs/GENERIC_DOCTYPE_2026-07-18.md §3) ──────────
+// Map a NO-MATCH import (detection returned None ⇒ msg.document_type null) to the
+// "General Document" type — ONLY when the switch is on AND the preset exists+enabled.
+// PIN 1: a doc ANY real type matched is untouched (the fallback fires only on None);
+// the trust.js 'generic-type' refusal keeps every mapped doc review-bound (PIN 2).
+// Exported for test_generic_fallback_mapping.js.
+function _genericFallbackId(db, msgDocumentType) {
+  if (msgDocumentType) return null;                        // a detected type always wins
+  if (process.env.GENERIC_FALLBACK === '0') return null;   // env hard-kill
+  try {
+    const learning = require('../../../database/modules/learning');
+    if (learning.getSetting(db, 'generic_fallback_enabled', 'false') !== 'true') return null;
+    const g = require('../../../database/modules/document_types').getGenericType(db);
+    return g ? g.id : null;
+  } catch { return null; }
+}
+// The SECOND insert seam (Oracle C1): reprocess. A pre-existing NULL-type doc whose
+// reprocess detection ALSO returns None adopts the generic type (the designed
+// go-forward backlog path). DIRECTION-GUARDED: a TYPED doc whose reprocess detection
+// returns None is NEVER dragged to generic (priorTypeId must be null), and a detected
+// type always wins. Exported for the C1 both-direction pins.
+// Resolve a DETECTED type NAME to an installed type, and say so when it isn't one.
+// Detection scores types from the SHIPPED document_type_keywords buckets, which exist
+// independently of the types an install actually HAS, so "Delivery Note" can be detected at 93%
+// by an install that never added it (Delivery Note is a PRESET, not a built-in — the 2026-07-20
+// delivery-docket report). Both insert seams treated name->id as a TOTAL function and dropped the
+// input on failure, so nothing downstream knew the pipeline had ever named a type.
+//
+// EXACT lowercase name match ONLY, deliberately. A slug-level fallback was proposed and dropped:
+// it would newly RESOLVE types that exact matching misses today, which is a live behaviour change
+// to document_type_id on real installs, smuggled into a slice whose kill switch is supposed to
+// make OFF byte-identical. If it's worth having it's worth measuring on its own.
+//
+// Returns { id, unmatchedName }. unmatchedName is set ONLY when a name was detected and matched
+// nothing — never for a detection that returned nothing at all (there is no name to offer).
+// Kill switch DETECTED_TYPE_NUDGE=0 ⇒ unmatchedName always null ⇒ column stays NULL ⇒ inert.
+function _resolveDetectedType(db, name) {
+  const out = { id: null, unmatchedName: null };
+  const detected = (name == null ? '' : String(name)).trim();
+  if (!detected) return out;
+  try {
+    const docTypes = require('../../../database/modules/document_types');
+    const match = docTypes.getAllWithFields(db).find(
+      dt => dt.name.toLowerCase() === detected.toLowerCase()
+    );
+    if (match) { out.id = match.id; return out; }
+  } catch { return out; }        // a lookup failure must never invent a suggestion
+  if (process.env.DETECTED_TYPE_NUDGE === '0') return out;
+  out.unmatchedName = detected;
+  return out;
+}
+
+function _reprocessGenericAdopt(db, priorTypeId, resultDocumentType) {
+  if (priorTypeId != null || resultDocumentType) return null;
+  return _genericFallbackId(db, null);
+}
+// Auto-Title spawn env (slice 4): AUTO_TITLE=1 reaches process_docs only when the
+// setting is on; the engine seam additionally fires only for detection-None docs.
+function _autoTitleEnv(db) {
+  try {
+    const learning = require('../../../database/modules/learning');
+    return learning.getSetting(db, 'auto_title_enabled', 'false') === 'true' ? { AUTO_TITLE: '1' } : {};
+  } catch { return {}; }
+}
+
+// OCR render-DPI spawn env: the extraction OCR renders each page at this DPI (ocr/tesseract.py
+// _RENDER_DPI). DEFAULT 300 (returns {} → byte-identical env); a lower 'ocr_dpi' setting (150/200)
+// is a large speed win — the OCR cost scales ~DPI^2 and smaller images parallelise far better — at
+// the cost of small-text accuracy on genuine high-res scans, so it is an operator opt-in. Coerced
+// to the same [100,600] band tesseract.py enforces; anything else falls back to the 300 default.
+function _ocrDpiEnv(db) {
+  try {
+    const learning = require('../../../database/modules/learning');
+    const raw = parseInt(learning.getSetting(db, 'ocr_dpi', '300'), 10);
+    const dpi = (Number.isFinite(raw) && raw >= 100 && raw <= 600) ? raw : 300;
+    return dpi === 300 ? {} : { OCR_RENDER_DPI: String(dpi) };
+  } catch { return {}; }
+}
+
+// Anchor-crop opt-in spawn env — two independent, owner-flippable crop fixes, each DEFAULT OFF so
+// an unset install yields {} → byte-identical spawn env. Both proven to heal their class with 0
+// collateral on the demo set (stress_test/demo_rightgrow_ab.js). Owner opt-ins like ocr_dpi.
+//  • ANCHOR_VALUE_RIGHT_GROW — the crop sizes from the TAUGHT box width + a fixed pad, so a ref
+//    value LONGER than the taught sample chops on the RIGHT (PO-58987 read as PO-5898). On →
+//    the crop's right edge extends to the value's MEASURED inline_box edge (anchor.py
+//    _label_right_limit); grow-only, ref-like keys with a validation pattern.
+//  • ANCHOR_LABEL_LEFT_CLAMP — a label-blind rigid crop intrudes the label tail on jittered scans,
+//    so debris prepends the value (PO-27425 read as PO9974A9C). On → clamp the crop's LEFT edge to
+//    the LOCATED label's expected-value-left (anchor.py); reverts to unclamped on a degenerate box.
+function _anchorCropEnv(db) {
+  try {
+    const learning = require('../../../database/modules/learning');
+    const env = {};
+    if (learning.getSetting(db, 'anchor_value_right_grow', 'false') === 'true') env.ANCHOR_VALUE_RIGHT_GROW = '1';
+    if (learning.getSetting(db, 'anchor_label_left_clamp', 'false') === 'true') env.ANCHOR_LABEL_LEFT_CLAMP = '1';
+    // STRUCT_CODE_READ (slice 1, prep-only): read tight code/date crops cleaner (cap-height upscale
+    // + quiet-zone + no-sharpen) so 'PO-17039' stops garbling to '»0-17039'. Default OFF; a
+    // sub-floor struct read falls through to today's rungs, so it heals where it can, never worse.
+    if (learning.getSetting(db, 'struct_code_read', 'false') === 'true') env.STRUCT_CODE_READ = '1';
+    return env;
+  } catch { return {}; }
+}
+
+// Extraction-reconcile opt-in spawn env. Two independent kill-switched fixes, each DEFAULT OFF (absent
+// key -> byte-identical), owner opt-in after its realdoc M=0 gate:
+//  • PREFIX_GARBLE_ADOPT (the Northgate PO-17039 class): a garbled leading code-prefix (a tight
+//    Stage-0.5 crop reads 'PO-17039' as '»0-17039') is healed from a confirmed-prefix distinct-stage
+//    peer in the S-B length-witness arm.
+//  • CROSSCHECK_OUTLIER_RECONCILE (the doc-09 PO-83150->PO-83160 class): the authoritative-crop cross-
+//    check's fresh full-page locate can ITSELF garble and flip a correct value to a lone outlier;
+//    post-merge, an uncorroborated flip is restored to a >=2-independent-family + page-present
+//    alternative (arms anchor.py's pre-flip stash + engine._reconcile_crosscheck_outlier together).
+//  • UNIVERSAL_VERIFY_RESTORE / UNIVERSAL_VERIFY_FLAG (Slice-2, Oracle SIGN-OFF-W/COND 2026-08-03):
+//    the universal post-merge verify over every field's winner — RESTORE tier (ref/date/whole-number
+//    numeric/percentage) and FLAG tier (text/structured, note-only), each independently gated.
+function _reconcileEnv(db) {
+  try {
+    const learning = require('../../../database/modules/learning');
+    const env = {};
+    if (learning.getSetting(db, 'prefix_garble_adopt', 'false') === 'true') env.PREFIX_GARBLE_ADOPT = '1';
+    if (learning.getSetting(db, 'crosscheck_outlier_reconcile', 'false') === 'true') env.CROSSCHECK_OUTLIER_RECONCILE = '1';
+    if (learning.getSetting(db, 'universal_verify_restore', 'false') === 'true') env.UNIVERSAL_VERIFY_RESTORE = '1';
+    if (learning.getSetting(db, 'universal_verify_flag', 'false') === 'true') env.UNIVERSAL_VERIFY_FLAG = '1';
+    if (learning.getSetting(db, 'universal_verify_numeric', 'false') === 'true') env.UNIVERSAL_VERIFY_NUMERIC = '1';
+    // Slice A edge-debris heal (Oracle 2026-08-03 evening; label-tail '. DN-60902' class).
+    if (learning.getSetting(db, 'template_code_edge_clean', 'false') === 'true') env.TEMPLATE_CODE_EDGE_CLEAN = '1';
+    // Slice B target word-snap (gated GREEN + flipped ON 2026-08-03 night; Oracle B-F1 met).
+    if (learning.getSetting(db, 'template_target_word_snap', 'false') === 'true') env.TEMPLATE_TARGET_WORD_SNAP = '1';
+    // NIGHT round (Oracle 2026-08-03): A2/C1 alnum label-tail fragment strip + C2a right-clip
+    // clean commit (both dark until their composed gate).
+    if (learning.getSetting(db, 'template_code_frag_clean', 'false') === 'true') env.TEMPLATE_CODE_FRAG_CLEAN = '1';
+    if (learning.getSetting(db, 'template_clip_commit', 'false') === 'true') env.TEMPLATE_CLIP_COMMIT = '1';
+    // Name-unclip reconcile (Oracle 2026-08-04 — DARK until the customer-corpus name gate).
+    if (learning.getSetting(db, 'name_unclip_reconcile', 'false') === 'true') env.NAME_UNCLIP_RECONCILE = '1';
+    // Jitter-crater arc (Oracle 2026-08-05, all gates green — docs/oracle_log.md): the abs-rung
+    // word-edge guard (grow a cut taught box's READ to the full word, witness-corroborated), the
+    // date-clip fragment gate + the locate digit-exactness guard. Dark until the owner flip.
+    if (learning.getSetting(db, 'template_abs_edge_guard', 'false') === 'true') env.TEMPLATE_ABS_EDGE_GUARD = '1';
+    if (learning.getSetting(db, 'template_date_clip_gate', 'false') === 'true') env.TEMPLATE_DATE_CLIP_GATE = '1';
+    if (learning.getSetting(db, 'template_label_digit_exact', 'false') === 'true') env.TEMPLATE_LABEL_DIGIT_EXACT = '1';
+    // Straighten pivot (Oracle 2026-08-05 late; corpus + Chris-vet GREEN): the level-frame
+    // composition — taught boxes rotated to the straightened frame by the teach sample's tilt.
+    if (learning.getSetting(db, 'teach_angle_compose', 'false') === 'true') env.TEACH_ANGLE_COMPOSE = '1';
+    // Placement pivot (Oracle 2026-08-06, NF gate +1/0-regress): when the edge-guard can't clean-heal
+    // a cut taught box, re-seat the value off the LOCAL located label + word-snap and prefer it over
+    // the garble (FLAGGED pre-fill for review). Co-requires template_target_word_snap (the y-cure).
+    if (learning.getSetting(db, 'template_edge_cut_relocate', 'false') === 'true') env.TEMPLATE_EDGE_CUT_RELOCATE = '1';
+    // Clip-commit trailing-glyph slack (Oracle 2026-08-06): a CLIP-misread FINAL glyph no longer
+    // false-flags a correct, double-witnessed, shape-confirmed inline read (WS-1493S vs WS-14939).
+    if (learning.getSetting(db, 'template_clip_commit_edge_slack', 'false') === 'true') env.TEMPLATE_CLIP_COMMIT_EDGE_SLACK = '1';
+    // Invalid taught date yields (Oracle 2026-08-06): an IMPOSSIBLE taught date ('33/04/2026') no
+    // longer wins over a valid, confident keyword date — the valid read is kept, flagged for review.
+    if (learning.getSetting(db, 'template_date_invalid_yield', 'false') === 'true') env.TEMPLATE_DATE_INVALID_YIELD = '1';
+    // Far-future taught date yields (Oracle 2026-08-06): a taught date OCR-misread into an absurdly
+    // future year ('2026'->'2096') no longer wins over a valid non-future keyword date; kept flagged.
+    if (learning.getSetting(db, 'template_date_future_yield', 'false') === 'true') env.TEMPLATE_DATE_FUTURE_YIELD = '1';
+    // Pad-window date read (Oracle 2026-08-06 — the date-crop read ROOT fix). A taught DATE box that
+    // clips the value's leading glyph commits a silent still-parses misread; a wider row-bounded read
+    // cross-checks it and FLAGS a confident disagreement (keeps the value, routes to review). Dates
+    // only (Slice 1); geometric neighbour guard; never silent-swaps. Default OFF, byte-identical off.
+    if (learning.getSetting(db, 'template_pad_window_read', 'false') === 'true') env.TEMPLATE_PAD_WINDOW_READ = '1';
+    // Pad-window CODE read — the code sibling of the date slice above. A taught CODE box too tight for
+    // its value clips the leading glyphs ('PO-48009' -> '-48009') or garbles it; a wider row-bounded
+    // re-read of the SAME box either recovers the fuller code (consented strict-suffix SWAP) or FLAGS
+    // the disagreement for review. TWO settings, and the LABELLED one is a STRICT SUBSET — it does
+    // nothing unless the parent is also on:
+    //   • template_pad_window_code          — LABEL-LESS taught boxes (Oracle 2026-08-09). Commits at
+    //     78, below the 88 auto-file floor, so it only makes an existing review correct + explained.
+    //   • template_pad_window_code_labelled — LABELLED taught boxes (Oracle 2026-08-06 C1..C7). This
+    //     one CAN auto-file (labelled tier = 90), which is the point: it replaces a silently
+    //     auto-filed CLIPPED value with the full one. Guarded by two-sided consent, a consent-strength
+    //     tier cap, a label-glue reject, and suppression whenever the inline reconcile actually formed
+    //     an opinion or the read was expanded / already edge-healed.
+    // Both default OFF and are byte-identical off. App RESTART to load the bridge.
+    if (learning.getSetting(db, 'template_pad_window_code', 'false') === 'true') {
+      env.TEMPLATE_PAD_WINDOW_CODE = '1';
+      if (learning.getSetting(db, 'template_pad_window_code_labelled', 'false') === 'true') {
+        env.TEMPLATE_PAD_WINDOW_CODE_LABELLED = '1';
+      }
+    }
+    // CURATED SUPPLIER vs a MISREAD LETTERHEAD (Oracle 2026-08-06). A taught template stores the
+    // supplier as a non-variable `fixed_value`, seeded at conf 95 (method `template_fixed`). The
+    // Stage-0.5 merge lets a mapping READ of the letterhead displace that seed on authority, so an
+    // edge-glyph misread ('Castellan Security Systems' -> 'tastellan Security Systems', or debris
+    // like 'ba)') committed a WRONG supplier — a wrong output folder AND a wrong learning scope.
+    // Worse, the more corrupted the string the more completely it evaded the branding cross-check,
+    // so the worst case was the silent one. These two decline such a read and KEEP the curated seed:
+    //   • template_fixed_near_match — the read is the SAME name merely misread (alnum-fold, <=1 edit)
+    //   • template_fixed_fragment   — the read is debris (<3 chars) against a real curated name
+    // A genuinely DIFFERENT company still wins, so a stale fixed value can still be corrected by
+    // re-teaching. Both default OFF, byte-identical off. App RESTART to load the bridge.
+    if (learning.getSetting(db, 'template_fixed_near_match', 'false') === 'true') env.TEMPLATE_FIXED_NEAR_MATCH_RECONCILE = '1';
+    if (learning.getSetting(db, 'template_fixed_fragment', 'false') === 'true') env.TEMPLATE_FIXED_FRAGMENT_DECLINE = '1';
+    // LARGE-TITLE TYPE RECOGNITION (Oracle/herald 2026-08-07). One owner switch enables the whole
+    // credit-note-typed-Invoice fix family (all type-changing → default OFF): rung-3 absent-title
+    // pixel re-read (the --dpi pass DROPPED the title), the wide-spaced-title gap collapse (a
+    // letter-tracked 'CREDIT    NOTE' split at the column-break marker), and the reprocess page-0
+    // geometry pass (so the heading rungs fire on a cached reprocess, not just fresh import). App
+    // RESTART to load the bridge.
+    if (learning.getSetting(db, 'heading_absent_reread', 'false') === 'true') {
+      env.HEADING_ABSENT_REREAD = '1';
+      env.HEADING_TITLE_GAP_COLLAPSE = '1';
+      env.REPROCESS_HEADING_GEOM = '1';
+    }
+    // CREDIT-NOTE SIGN COHERENCE (Oracle 2026-08-07, slice C — DETECTION only). The app has no
+    // representation of a signed money value: the readers strip a leading '-' at BOTH sites
+    // (anchor.py + keyword.py), so a -£160.32 CREDIT commits as a +£160.32 CHARGE and files silently.
+    // This flag adds a pure note-only predicate (validator.credit_sign_note) — it NEVER negates or
+    // swaps a value; it flags the incoherence so the doc routes to Review (trust.js:466 blocks
+    // auto-file on any noted field) and the operator types the minus. Arms: a credit-typed doc read
+    // POSITIVE, an invoice-typed doc read NEGATIVE, and a negative marker in the RAW text the reader
+    // did not commit. Slice A (preserve the sign at READ) is NOT built — until it is, this is the only
+    // thing standing between a credit note and a sign-inverted filing.
+    // Default OFF, byte-identical off. App RESTART to load the bridge.
+    if (learning.getSetting(db, 'credit_sign_coherence', 'false') === 'true') env.CREDIT_SIGN_COHERENCE = '1';
+    // VAT REGISTRATION NUMBER read as a TAX AMOUNT (Oracle 2026-08-07, gate green). A letterhead
+    // prints "... VAT Reg GB 651 0027 84"; the bare "VAT" label matches it, the scan is top-down, and
+    // number_format rule 3 mints "651 0027 84" into "651 0027.84" (a UK VAT number is grouped 3-4-2,
+    // so its last group is always two digits) — which then passes currency validation. Measured: an
+    // identical '0027.84' on all 13 documents of one supplier, poisoning subtotal+tax so ~12 CORRECT
+    // documents carried "the total doesn't add up" and were capped at conf 50.
+    //
+    // FLIP ORDER IS BLOCKING: credit_sign_coherence must be ON first. The poisoned-VAT note is the
+    // accidental checkpoint currently holding the sign-wrong credit notes; clearing it with the sign
+    // detector off would recreate the 2026-08-06 incident (a credit filed as a charge).
+    //
+    // PAIRED WITH net_misread_total_flag ON PURPOSE. Removing the phantom tax also disarms the
+    // "total looks like the subtotal (tax not included)" arm, which needs a tax to be present — so a
+    // NET-as-gross total would lose a TRUE flag. Measured over 288 corpus docs: false alarms 39 -> 0,
+    // true flags 16 -> 12 with the guard alone, restored to 15 by the net flag, which adds ZERO false
+    // flags. Flip them together; flipping vat_reg alone trades false alarms for four silent wrong
+    // totals. App RESTART to load the bridge.
+    // ORACLE C2 (BLOCKING): this is a CO-RESIDENCY condition, not merely a flip ORDER — the sign
+    // detector must be on WHENEVER this guard is, at every point in time. The two sit on separate
+    // Settings rows, so an operator could switch credit-sign off next month and silently recreate
+    // the incident. Arming this guard therefore FORCES the sign detector on for the run rather than
+    // trusting the rows to stay in step.
+    if (learning.getSetting(db, 'vat_reg_not_amount', 'false') === 'true') {
+      env.VAT_REG_NOT_AMOUNT = '1';
+      env.CREDIT_SIGN_COHERENCE = '1';
+    }
+    if (learning.getSetting(db, 'net_misread_total_flag', 'false') === 'true') env.NET_MISREAD_TOTAL_FLAG = '1';
+    // TAUGHT LABEL-ABOVE MAPPING read the caption instead of the value (007 rounds 1+2, `d3cca7c`).
+    // `_target_inline_with_anchor` answers "did the operator teach this value on the label's OWN
+    // ROW?" and answered it with max(anchor_h, target_h, _DRIFT_FLOOR). _DRIFT_FLOOR (0.02) is a
+    // DRIFT constant — "has the page moved a row?" — not a same-row tolerance: on an A4 render it is
+    // ~70px, i.e. 1.5-3 line pitches, so boxes one to three lines apart were called "inline" and the
+    // rung admitted exactly the label-ABOVE layouts its own docstring excludes. The caption then
+    // outscored the code on LSTM confidence and committed ('Delivery' as a delivery_number).
+    // Fix is the DEFINITION, not a constant: tol = (anchor_h + target_h) / 2. DPI-invariant.
+    // ONE PREDICATE GATES BOTH `_inline_code_reconcile` call sites (the drift rung and the absolute
+    // rung), which is why isolating one of them healed 1 of 5 and looked like a refutation.
+    // NAMED SEAM (what this DISABLES): a label-above mapping whose geometric read fails no longer
+    // gets a same-row second chance — it falls to the registration fallback and then omits the field,
+    // i.e. to REVIEW. A recall trade in the safe direction, not a free win.
+    // Gate: Pelican A/B 5 healed / 0 regressed with both reconciles still ARMED; the two other
+    // label-above mappings on that template (delivery_date, customer_name) 0 moved / 0 emptied;
+    // realdoc 714 docs report AND per-doc jsonl byte-identical; cross-template census 38 taught
+    // mappings, 35 already inline, 3 change and all 3 on one template. Default OFF. App RESTART.
+    if (learning.getSetting(db, 'template_inline_row_overlap', 'false') === 'true') env.TEMPLATE_INLINE_ROW_OVERLAP = '1';
+    // A CAPTION IS NOT A REFERENCE (reggie slice 1, `7a02422`). PO_REF_DIGIT_GATE encodes a
+    // corpus-proven fact — an order-family reference is a CODE, a spaceless run bearing >=2 digits,
+    // never a caption or footer prose. The PREDICATE was right; its ARMING was the literal pair
+    // ('po_number','sales_order_number'), so every OTHER reference field on every type had no
+    // value-side gate at all. Widened to the REF ROLE via _infer_validation(key) == 'alphanumeric',
+    // the same role inference Stage 1 already trusts to seed a custom field's format gate — so a
+    // CUSTOM type's reference field is covered on the same footing as a built-in one.
+    // Newly armed on this install: credit_note_number, delivery_number, invoice_number,
+    // reference_number. STRICT SUBSET: PO_REF_DIGIT_GATE=0 still disables both tiers.
+    // Recall measured BEFORE building: across all 713 CONFIRMED values of those fields, ZERO fail
+    // the digit predicate ('PD/26/6680', 'PO 22954', 'DN-98447' all still read).
+    // Gate: customer corpus 0 true->false, 7 false->true (ref 45.4% -> 47.9%), every other lane
+    // byte-identical; realdoc 714 byte-identical. The heals FALL THROUGH to the correct value —
+    // the gate's `continue` moves to the next label, which finds the real code.
+    // EXPECT A THROUGHPUT CHANGE, NOT AN ACCURACY ONE: a document that used to commit a caption may
+    // now arrive EMPTY and route to review. Default OFF. App RESTART to load the bridge.
+    if (learning.getSetting(db, 'ref_role_digit_gate', 'false') === 'true') env.REF_ROLE_DIGIT_GATE = '1';
+    return env;
+  } catch { return {}; }
+}
 
 // Coerce the stored processing_mode to a value the backend accepts. A stale/legacy value
 // (e.g. an old "light", or one from a restored settings backup) must never reach
@@ -31,6 +320,11 @@ function _diagEnabled(db) {
 
 let _currentBatchProcs = [];     // all running Python worker processes for the active batch (bounded pool)
 let _singleReprocessActive = false;  // a single reprocess-document is in flight (NOT in the pool array)
+// Live "Reprocess All" status, so a Review window that was CLOSED mid-batch can reconnect on reopen
+// (the batch runs in this main process and survives the window). Read via get-reprocess-status.
+// pendingCompletion: a batch FINISHED and its window-side completion (auto-file the reprocessed-to-100
+// docs + summary) has not yet been run by any window — consumed once via consume-reprocess-completion.
+let _reprocessStatus = { running: false, total: 0, done: 0, failed: 0, pendingCompletion: false };
 // ANY OCR/extraction work is in flight — a batch (import / reprocess-all) OR a single reprocess.
 // Used to SERIALISE heavy work: starting a second reprocess while one is running oversubscribes
 // the CPU (every worker + the single proc OCR at once) and can race two merges into the same doc,
@@ -78,6 +372,134 @@ function _recordDevTrace(ev) {
   if (!arr) { arr = []; _devSession.traceByDoc.set(key, arr); }
   arr.push(ev);
   if (arr.length > 4000) arr.shift();   // bound per-doc memory
+}
+
+// ── SFDEV bulk debug-table (dev-only, read-only) ────────────────────────────
+// Build a queue-wide field grid: rows = the review queue (needs_review + deferred),
+// columns = the union of the present types' declared fields (structural-first, then
+// each type's own order), cells = the extracted value + confidence + method from the
+// DB. PURE given `db` (no IPC, no fs) so it can be pinned with a fixture DB. The owner
+// uses this to see the CLASS of a detection failure across the whole queue at once,
+// not one screenshot at a time. Zero production/customer/auto-file/learning impact.
+function _buildDebugTable(db) {
+  const docTypes = require('../../../database/modules/document_types');
+  const typesAll = docTypes.getAllWithFieldsAll(db);
+  const bySlug = new Map();
+  const labels = {};
+  for (const t of typesAll) {
+    bySlug.set(t.slug, t);
+    for (const f of (t.fields || [])) if (!(f.key in labels)) labels[f.key] = f.label || f.key;
+  }
+
+  const docs = db.prepare(`
+    SELECT d.id, d.original_filename, d.supplier_name, d.status,
+           d.overall_confidence, dt.name AS type_name, dt.slug AS type_slug
+    FROM documents d
+    LEFT JOIN document_types dt ON dt.id = d.document_type_id
+    WHERE d.status IN ('needs_review','deferred')
+    ORDER BY d.id
+  `).all();
+
+  const exStmt = db.prepare(
+    'SELECT field_key, raw_value, display_value, confidence, extraction_method FROM extractions WHERE document_id = ?'
+  );
+
+  // Columns: for each present type in queue order, structural fields first then the
+  // rest — deduped, so a shared field (supplier_name) appears once, near the front.
+  const columns = [];
+  const seenCol = new Set();
+  const pushCol = (k) => { if (k && !seenCol.has(k)) { seenCol.add(k); columns.push(k); } };
+  const orderTypeCols = (t) => {
+    if (!t) return;
+    const fs2 = (t.fields || []);
+    for (const f of fs2) if (f.is_structural) pushCol(f.key);
+    for (const f of fs2) if (!f.is_structural) pushCol(f.key);
+  };
+
+  const rows = [];
+  for (const d of docs) {
+    const t = bySlug.get(d.type_slug);
+    orderTypeCols(t);
+    const fields = {};
+    for (const e of exStmt.all(d.id)) {
+      const dv = (e.display_value != null && String(e.display_value).trim() !== '') ? e.display_value : e.raw_value;
+      fields[e.field_key] = {
+        value: (dv == null || dv === '') ? null : String(dv),
+        confidence: e.confidence ?? null,
+        method: e.extraction_method || null,
+      };
+    }
+    rows.push({
+      id: d.id, filename: d.original_filename, supplier: d.supplier_name || null,
+      typeName: d.type_name || null, typeSlug: d.type_slug || null,
+      status: d.status, confidence: d.overall_confidence ?? null, fields,
+    });
+  }
+  return { columns, labels, rows };
+}
+
+// Debug-table output dir: <project>/Debug in dev, <userData>/debug when packaged —
+// mirrors modules/diaglog.js so the two dev artefacts sit together. __dirname is
+// src/modules/processing, so three levels up is the repo root.
+function _debugTableDir(app, path) {
+  const base = (app && app.isPackaged)
+    ? path.join(app.getPath('userData'), 'debug')
+    : path.join(__dirname, '..', '..', '..', 'Debug');
+  return path.join(base, 'debug_table');
+}
+
+// Persist the owner-assembled table to debug_values.json (+ copy any winning-crop
+// slices the renderer resolved). Only copies a slice PATH that resolves INSIDE the
+// dev slice dir (same path-validation as dev-get-slice) so the renderer can never
+// make this read an arbitrary file. Returns a summary the console shows as a toast.
+function _saveDebugTable(ctx, payload) {
+  const { path, fs } = ctx;
+  const app = require('electron').app;
+  const outDir = _debugTableDir(app, path);
+  const sliceOutDir = path.join(outDir, 'slices');
+  fs.mkdirSync(sliceOutDir, { recursive: true });
+
+  const rows = Array.isArray(payload && payload.rows) ? payload.rows : [];
+  const sliceRoot = path.resolve(ctx.devSliceDir || '');
+  let slices = 0, flags = 0;
+  const out = { generated_at: new Date().toISOString(), doc_count: rows.length, rows: [] };
+
+  for (const r of rows) {
+    const fieldsOut = {};
+    for (const [k, cell] of Object.entries((r && r.fields) || {})) {
+      let sliceRel = null;
+      const sp = cell && cell.slicePath;
+      if (sp && sliceRoot) {
+        try {
+          const abs = path.resolve(String(sp));
+          if (abs.startsWith(sliceRoot + path.sep) && fs.existsSync(abs)) {
+            const rel = path.join('slices', `${r.id}__${k}.png`);
+            fs.copyFileSync(abs, path.join(outDir, rel));
+            sliceRel = rel; slices++;
+          }
+        } catch {}
+      }
+      const wrong = !!(cell && cell.wrong);
+      if (wrong) flags++;
+      const correct = (cell && cell.correct != null && String(cell.correct).trim() !== '')
+        ? String(cell.correct).trim() : null;
+      fieldsOut[k] = {
+        value: cell ? (cell.value ?? null) : null,
+        method: cell ? (cell.method ?? null) : null,
+        confidence: cell ? (cell.confidence ?? null) : null,
+        wrong, correct, slice: sliceRel,
+      };
+    }
+    out.rows.push({
+      id: r.id, filename: r.filename, supplier: r.supplier || null,
+      type: r.typeName || null, type_slug: r.typeSlug || null, status: r.status || null,
+      fields: fieldsOut,
+    });
+  }
+
+  const file = path.join(outDir, 'debug_values.json');
+  fs.writeFileSync(file, JSON.stringify(out, null, 2));
+  return { ok: true, file, doc_count: rows.length, flags, slices };
 }
 
 // Supported input extensions — mirrors python_backend ocr.tesseract.SUPPORTED_EXTENSIONS
@@ -135,6 +557,26 @@ function mergeReprocessRows(existing, newRows, flip = null, onTrace = null) {
     const ex = existingMap[row.field_key];
     if (!ex) return row;
     if (ex.display_value && !row.display_value) {
+      // REPROCESS_ANNOTATED_EMPTY_WINS (2026-07-31; Oracle SIGN-OFF-W/COND): an ANNOTATED
+      // empty — no value but a non-empty validation_note — is a DECISION the engine explains
+      // (the abstain-speak class: the un-named/named branding blanks, logo-abstain,
+      // positional-read drop, shape/date withholds), NOT a failed read. kept_existing here
+      // silently UNDID every such arm on the reprocess path — the Ironbridge-as-Copperfield
+      // rows survived their own veto (live 2026-07-31). The new row wins: null value + its
+      // own note + its own method/suggested_supplier (so the named-blank "Use '<name>'"
+      // button now works on reprocess too). EXCLUSION (Oracle C1, blocking): a row the
+      // OPERATOR corrected (ex.corrected_to) keeps the human's answer unconditionally — an
+      // engine abstain never displaces it. An UN-annotated empty (the validator normaliser
+      // placeholder {value:None, conf:0, method:'unknown'}) keeps today's kept_existing
+      // byte-identically — that is THE shape this carry-over exists for (PINNED in
+      // test_reprocess_annotated_empty.js). NOTE: the realdoc M=0 harness runs FRESH
+      // extraction and is structurally blind to this merge — the unit battery is the gate.
+      if (String(row.validation_note || '').trim()
+          && !String(ex.corrected_to || '').trim()
+          && process.env.REPROCESS_ANNOTATED_EMPTY_WINS !== '0') {
+        trace(row.field_key, 'used_new_annotated', ex.display_value, row.display_value);
+        return row;
+      }
       trace(row.field_key, 'kept_existing', ex.display_value, row.display_value);
       return {
         ...row, raw_value: ex.raw_value,
@@ -163,6 +605,7 @@ function mergeReprocessRows(existing, newRows, flip = null, onTrace = null) {
         validation_note:   ex.validation_note || null,
         corrected_to:      ex.corrected_to || null,
         candidates:        ex.candidates || null,   // preserve the stored picker JSON on carry-over
+        suggested_supplier: ex.suggested_supplier || null,   // preserve the branding-detected name on carry-over
       });
     }
   }
@@ -178,6 +621,144 @@ function mergeReprocessRows(existing, newRows, flip = null, onTrace = null) {
   return mergedRows;
 }
 
+// Column-mirror predicate (Oracle C2; module-level so the unit test can pin it): TRUE when
+// the MERGED supplier_name row is an ANNOTATED empty — the doc-level supplier column (queue
+// grouping / filing + learning scope) must not outlive the blanked field, so the caller
+// writes an explicit NULL instead of the COALESCE keep. Same kill switch as the merge rule
+// (REPROCESS_ANNOTATED_EMPTY_WINS) — one seam, never split (Oracle C2).
+function supplierColumnBlanked(mergedRows) {
+  if (process.env.REPROCESS_ANNOTATED_EMPTY_WINS === '0') return false;
+  const r = (mergedRows || []).find(x => x && x.field_key === 'supplier_name');
+  return !!r && !r.display_value && !!String(r.validation_note || '').trim();
+}
+
+// Fill-only merge for the fast text-only re-extract (Slice B, DARK). Unlike
+// mergeReprocessRows — which CLOBBERS a stored value with a fresh read — this NEVER
+// overwrites and NEVER writes the DB: it returns ONLY additive suggestions for fields the
+// operator has no value for AND the system isn't already positioned to read. The renderer
+// surfaces these as dismissable pills that persist only on the operator's own confirm.
+//
+// A field becomes a suggestion ONLY when ALL hold (Oracle C4/C6):
+//   (a) the fast run produced a non-empty value with NO validation_note (Stage-4 clean);
+//   (b) the STORED field is genuinely empty — no display_value AND no validation_note
+//       (a flagged empty is a deliberate review state, not a hole to fill);
+//   (c) the field has NO learned anchor in (supplier,type) scope — an anchored empty means
+//       the taught position read nothing on purpose; a text-fallback must not override it.
+// `anchoredKeys` = Set<field_key> the caller built from learning.getTaughtFieldKeys.
+// Admission rule for the fast re-extract's known-template pick (module-level so the unit
+// test can pin it). Non-blank docs: any guarded identifyByFingerprint pick is admissible
+// (unchanged pre-2026-08-01 behaviour). Blank-supplier (unpinned collision-class) docs: the
+// pick is admissible ONLY when it differs from the stale stored link — the same id is the
+// collision re-arriving (the 930842e anti-recollision ruling), a different id is a template
+// born since (the just-confirmed-sibling case).
+function admitReextractPick(unpinBlank, storedTemplateId, pickId) {
+  if (pickId == null) return false;
+  if (!unpinBlank) return true;
+  return pickId !== (storedTemplateId || null);
+}
+
+function mergeReextractRows(existing, newExtractions, anchoredKeys = new Set(), opts = {}) {
+  const exMap = {};
+  for (const e of (existing || [])) exMap[e.field_key] = e;
+  const suggestions = [];
+  for (const [key, data] of Object.entries(newExtractions || {})) {
+    if (!data || typeof data !== 'object') continue;
+    const value = data.value != null ? String(data.value) : '';
+    if (!value.trim()) continue;                                   // (a) non-empty
+    const ex = exMap[key];
+    // BRANDING-BLANK LIVE FILL exception (owner + bob 2026-08-01; kill
+    // REEXTRACT_UNPIN_BLANK_SUPPLIER=0 upstream — the caller threads it as
+    // opts.brandingBlankSupplier). The one legitimate crack in the two "flagged" walls
+    // below: a VETO-BLANKED issuer (stored supplier_name EMPTY + the branding note whose
+    // '(confirm|set) the correct company' tail is the pinned marker, BOTH veto-class copies —
+    // the no-name blank ends 'confirm…', the logo-conflict blank ends 'set…'; one-copy
+    // matchers have broken twice before, cea79ef) re-checked against NOW-warmer
+    // learning that resolves the sender ('Company inferred from previously filed documents…'
+    // — or a clean read). Without this, the live ⟳ pill could never suggest the true sender
+    // on the collision class: the stored flag blocked (b) and the inferred note blocked (a).
+    // Suggestion-only as ever — nothing fills until the operator clicks; the stored flag
+    // stays until they accept.
+    const _bbException = opts.brandingBlankSupplier === true
+      && key === 'supplier_name'
+      && !!ex && !String(ex.display_value || '').trim()
+      && /(confirm|set) the correct company/i.test(String(ex.validation_note || ''))
+      && (!data.validation_note || /company inferred/i.test(String(data.validation_note)));
+    if (data.validation_note && !_bbException) continue;           // (a) Stage-4 clean
+    if (ex && ex.display_value && String(ex.display_value).trim()) continue;  // (b) stored has a value
+    if (ex && ex.validation_note && !_bbException) continue;       // (b) flagged empty — keep the flag
+    // (c) anchor-abstain — EXCEPT for the branding-blank issuer (2026-08-01 evening, the
+    // Saltmarsh sibling-batch measurement): EVERY confirm writes an authoritative
+    // supplier_name anchor for its scope, so after the FIRST sibling confirm the scope is
+    // always "anchored" and the wall killed the exception's one target case by
+    // construction. The abstain rationale ("the taught position read nothing on purpose")
+    // does not apply here: the imageless run never attempts anchors, the suggestion comes
+    // from template_identity (Stage 0), and the stored blank PREDATES the scope's anchor
+    // (it is the import-time collision veto, proven by the note marker the exception
+    // already requires). An anchored INTENTIONAL empty never carries that marker, so the
+    // marker keeps ordinary anchor-abstains intact.
+    if (anchoredKeys && anchoredKeys.has(key) && !_bbException) continue;
+    suggestions.push({
+      field_key:  key,
+      value,
+      confidence: data.confidence ?? null,
+      method:     data.method || null,
+    });
+  }
+  return suggestions;
+}
+
+// TEACH_ANGLE_COMPOSE lazy sample-angle heal (Oracle C4). Fire-and-forget: detects the pinned
+// sample's skew ONCE per template and stores it (0.0 = level, so level samples never re-spawn).
+// Session-scoped attempt cache: a gone/unreadable sample file never spawns twice per app run.
+const _angleHealTried = new Set();
+function _healSampleAngles(db, allTemplates, logger) {
+  if (!_pyHelpers || !_pyHelpers.pythonExe) { logger?.warn?.('[training] angle heal: _pyHelpers unset'); return; }
+  const { spawn } = require('child_process');
+  const fs = require('fs');
+  for (const t of allTemplates) {
+    if (!t || t.sample_deskew_angle != null || !t.sample_document_id) continue;
+    if (_angleHealTried.has(t.id)) continue;
+    _angleHealTried.add(t.id);
+    let file = null;
+    try {
+      const d = db.prepare('SELECT working_path, stored_path FROM documents WHERE id = ?')
+                  .get(t.sample_document_id);
+      file = (d && (d.working_path || d.stored_path)) || null;
+    } catch (eq) { logger?.warn?.(`[training] angle heal (template ${t.id}): sample query failed: ${eq && eq.message}`); file = null; }
+    if (!file || !fs.existsSync(file)) {
+      logger?.warn?.(`[training] angle heal (template ${t.id}): sample file missing (${file || 'no path'})`);
+      continue;
+    }
+    logger?.log?.(`[training] angle heal: detecting sample tilt for template ${t.id} (${file})`);
+    try {
+      const script = _pyHelpers.resourcePath('python_backend', 'ocr', 'detect_angle.py');
+      // ctx.pythonExe / ctx.pythonArgs are FUNCTIONS in main.js (resolved per call —
+      // dev 'py -3.12' vs packaged vendor python). Spawning the function object throws
+      // silently — the 2026-08-05 live-heal no-op bug. Call them like every other site.
+      const exe = typeof _pyHelpers.pythonExe === 'function' ? _pyHelpers.pythonExe() : _pyHelpers.pythonExe;
+      const pargs = typeof _pyHelpers.pythonArgs === 'function' ? _pyHelpers.pythonArgs() : (_pyHelpers.pythonArgs || []);
+      const p = spawn(exe, [...pargs, script, '--file', file], { windowsHide: true });
+      let out = '';
+      p.stdout.on('data', (d2) => { out += d2; });
+      p.on('close', (code) => {
+        try {
+          const r = JSON.parse(out.trim());
+          if (r && typeof r.angle === 'number' && isFinite(r.angle)) {
+            db.prepare('UPDATE templates SET sample_deskew_angle = ? WHERE id = ?')
+              .run(r.angle, t.id);
+            logger?.log?.(`[training] sample angle healed: template ${t.id} = ${r.angle.toFixed(2)} deg`);
+          } else {
+            logger?.warn?.(`[training] angle heal (template ${t.id}): detector returned no angle (exit ${code}, out=${(out || '').trim().slice(0, 120)})`);
+          }
+        } catch (ep) {
+          logger?.warn?.(`[training] angle heal (template ${t.id}): unparseable detector output (exit ${code}, out=${(out || '').trim().slice(0, 120)}): ${ep && ep.message}`);
+        }
+      });
+      p.on('error', (e2) => { logger?.warn?.(`[training] angle-heal spawn failed (template ${t.id}): ${e2 && e2.message}`); });
+    } catch (e3) { logger?.warn?.(`[training] angle heal (template ${t.id}): ${e3 && e3.message}`); }
+  }
+}
+
 function buildTrainingArgs(db, configPath, logger = null) {
   const docTypes  = require('../../../database/modules/document_types');
   const learning  = require('../../../database/modules/learning');
@@ -190,11 +771,25 @@ function buildTrainingArgs(db, configPath, logger = null) {
   const allAnchors   = learning.getAllAnchors(db);
   const allLogos     = learning.getAllLogos(db);
   const allTemplates = templates.getAll(db);
+  // TEACH_ANGLE_COMPOSE lazy heal (Oracle C4, 2026-08-05 late): templates with a pinned
+  // sample but no detected sample_deskew_angle get it detected ONCE (fire-and-forget spawn,
+  // never blocks the batch — THIS run serves the NULL and composes nothing, the NEXT run has
+  // the healed angle). Gated on the kill switch so the dark slice is byte-identical incl.
+  // zero spawns/writes. Renders the WORKING file (post-auto-rotate — the frame every teach
+  // surface drew on). Stores 0.0 for a level sample (NULL = only never/failed detection).
+  let _composeOn = process.env.TEACH_ANGLE_COMPOSE === '1';
+  if (!_composeOn) {
+    try { _composeOn = learning.getSetting(db, 'teach_angle_compose', 'false') === 'true'; }
+    catch { _composeOn = false; }
+  }
+  if (_composeOn) {
+    try { _healSampleAngles(db, allTemplates, logger); } catch (e) { logger?.warn?.(`[training] angle heal: ${e && e.message}`); }
+  }
   // Format model is the source of the qualification gate. The catch was SILENT,
   // which hid the cause when 0 formats reach the extractor despite many confirms
   // — log a throw (so a real failure is visible) and the resulting group count.
   let allFormats = [];
-  try { allFormats = learning.getFieldFormats(db); }
+  try { allFormats = learning.getFieldFormats(db, { includeProvisional: true }); }   // Python consent channel only
   catch (e) { logger?.warn?.(`[training] getFieldFormats failed: ${e && e.message}`); }
   // Admin keyword label overrides (per-installation; merged onto the shipped
   // patterns at processing time, scoped to the doc-type slug). Guarded so an
@@ -370,12 +965,94 @@ function _allowedOpenRoots(db) {
   try {
     const { app } = require('electron');
     roots.push(path.resolve(path.join(app.getPath('userData'), 'inbox')));
+    // Separator-sheet packs (Filing Slips): written ONLY by the generate-filing-slips
+    // IPC into this app-managed dir; the renderer round-trips the path through
+    // open-file/show-in-explorer to open the pack for printing.
+    roots.push(path.resolve(path.join(app.getPath('userData'), 'filing-slips')));
   } catch { /* ignore (e.g. unit tests without an electron app) */ }
   return roots;
 }
 
+// SEC-17 — REPARSE POINTS DEFEAT A TEXTUAL CONTAINMENT CHECK.
+// `path.resolve` collapses `..` but does NOT follow a Windows junction or symlink, so a reparse
+// point created INSIDE an approved root (output folder, inbox, filing-slips) produced a string that
+// passed `startsWith` while addressing anywhere on disk. `realpath` appeared nowhere in src/ before
+// this. Resolve BOTH sides so the comparison is between real locations.
+//
+// BOTH sides matters: a root that is ITSELF a junction is the common, legitimate case (a redirected
+// or OneDrive-backed Documents folder), and realpathing only the target would start refusing those
+// users' own files. Canonicalising both keeps every ordinary path behaving exactly as before — the
+// behaviour differs only where a reparse point actually redirects out of the root.
+//
+// FAIL CLOSED for a path that EXISTS and cannot be canonicalised.
+//
+// A MISSING path is the subtle case, and the first version of this function got it wrong (Oracle
+// B1, 2026-08-08). It returned the RAW resolved path on ENOENT while `_withinAnyRoot` canonicalises
+// the ROOT — two different frames in one comparison, which left the very hole SEC-17 exists to
+// close: with `Output\peek` a junction to somewhere else, `Output\peek\nope.pdf` does not exist, so
+// realpath threw, the raw string was returned, and `startsWith(Output\)` passed. The original
+// comment reasoned that a missing file "is refused later anyway (openPath would fail)" — true of
+// `open-file`, but NOT of `show-in-explorer`, whose shell call falls back to revealing the
+// CONTAINING directory, i.e. the junction's target. Containment must not depend on what the shell
+// happens to do with the string afterwards.
+//
+// So on ENOENT, walk up to the nearest ancestor that DOES exist, canonicalise that, and re-append
+// the unresolved tail. Both sides of the comparison then live in the same frame: a missing leaf
+// under a junction resolves through the junction and is refused, while a missing leaf genuinely
+// under the root still resolves inside it and is still allowed (a not-yet-created path must not be
+// refused wholesale — the caller's own existence check is what rejects it). Bounded by the path's
+// own depth; `path.dirname` is a fixed point at a drive/UNC root, which terminates the walk.
+// An ancestor that exists but cannot be canonicalised refuses, exactly like a target that can't.
+//
+// `SF_REALPATH_CONTAINMENT=0` reverts to returning the input unresolved. NOTE, and it is a real
+// limitation rather than a nicety: that switch does NOT restore the pre-SEC-17 comparison, because
+// the case-insensitive compare in `_withinAnyRoot` sits outside it. OFF is "no reparse-point
+// resolution", not "the old code". Pinned in test_path_containment.js so nobody re-reads the switch
+// as a full revert. Default ON, deliberately: the OFF state here is the vulnerable state, so a dark
+// default would ship no protection at all.
+function _realCanonical(p) {
+  if (process.env.SF_REALPATH_CONTAINMENT === '0') return p;
+  try {
+    return fs.realpathSync.native(p);
+  } catch (e) {
+    // Anything other than "it isn't there" (EPERM/EBUSY/ELOOP/…) is a path we cannot vouch for.
+    if (!e || e.code !== 'ENOENT') return null;
+  }
+  const tail = [path.basename(p)];
+  let dir = path.dirname(p);
+  while (dir && dir !== path.dirname(dir)) {
+    try {
+      return path.join(fs.realpathSync.native(dir), ...tail.slice().reverse());
+    } catch (e2) {
+      if (!e2 || e2.code !== 'ENOENT') return null;   // ancestor exists but is unverifiable → refuse
+      tail.push(path.basename(dir));
+      dir = path.dirname(dir);
+    }
+  }
+  // No existing ancestor at all (a missing drive, an unmounted share): there is nothing to follow,
+  // so the textual form is as canonical as it gets. It cannot match a canonicalised root by
+  // accident — a root that does not exist is itself refused above.
+  return p;
+}
+
 function _withinAnyRoot(resolved, roots) {
-  return roots.some(r => resolved === r || resolved.startsWith(r + path.sep));
+  const target = _realCanonical(resolved);
+  if (target === null) return false;                       // exists but unverifiable → refuse
+  // Case-insensitive on Windows is PART of this fix, not a separate loosening: realpathSync.native
+  // returns the filesystem's own casing, which routinely differs from the casing the user typed into
+  // the output-folder setting. Comparing case-sensitively would turn that difference into a false
+  // REFUSAL of the user's own files. It admits nothing new — on Windows those are the same directory.
+  const cmp = (a, b) => (process.platform === 'win32'
+    ? a.toLowerCase() === b.toLowerCase()
+    : a === b);
+  const under = (a, b) => (process.platform === 'win32'
+    ? a.toLowerCase().startsWith(b.toLowerCase() + path.sep)
+    : a.startsWith(b + path.sep));
+  return roots.some(r => {
+    const root = _realCanonical(r);
+    if (root === null) return false;
+    return cmp(target, root) || under(target, root);
+  });
 }
 
 // True only when `rawPath` is safe to hand to shell.openPath / showItemInFolder.
@@ -434,8 +1111,32 @@ function register(ctx) {
   const { ipcMain, getDb, pythonExe, pythonArgs, tesseractPath,
           backendScript, configPath, notifyMainWindow, notifyDevInspector,
           notifyReview, safeSend, spawn, path, fs, logger } = ctx;
-  _pyHelpers = { pythonExe, pythonArgs, backendScript };
+  _pyHelpers = { pythonExe, pythonArgs, backendScript, resourcePath: ctx.resourcePath };
   _notifyAll = ctx.notifyAllWindows;   // broadcast import/watch activity to Review (see _broadcastActivity)
+
+  // Warm OCR worker POOL (draw-tool UX plan Slice 2) — configured once; the ocr-region(-boxes)
+  // handlers route through it when ENABLED (default OFF: env OCR_WARM_WORKER=1 or setting
+  // ocr_warm_worker_enabled), falling back to a cold region.py spawn on any worker failure so a
+  // read never fails toward empty. See src/modules/processing/regionWorker.js.
+  const regionWorker = require('./regionWorker');
+  regionWorker.configure({
+    pythonExe, pythonArgs,
+    workerScript: ctx.resourcePath('python_backend', 'ocr', 'region_worker.py'),
+    tesseract: tesseractPath,
+    isEnabled: () => {
+      try {
+        const env = process.env.OCR_WARM_WORKER;      // explicit override wins: '1' on, '0' off
+        if (env === '1') return true;
+        if (env === '0') return false;
+        // DEFAULT ON (owner-enabled 2026-07-16 after validating the ~4.6x draw speedup); the
+        // Settings → Processing toggle sets 'false' to disable. Idle-kill (3 min) + crash-fallback
+        // bound the risk. Setting missing → on.
+        return require('../../../database/modules/learning')
+          .getSetting(getDb(), 'ocr_warm_worker_enabled', 'true') !== 'false';
+      } catch { return false; }
+    },
+  });
+  try { require('electron').app.on('before-quit', () => regionWorker.shutdown()); } catch {}
 
   // Startup holding-area reconciliation — GC crash debris (.part / orphaned /
   // already-confirmed inbox copies) so the holding queue agrees with the DB on
@@ -463,6 +1164,14 @@ function register(ctx) {
     notifyDevInspector?.(channel, msg);
   };
 
+  // Reprocess-All progress goes to the LIVE Review window (looked up fresh on every send), NOT the
+  // window that STARTED the batch — so the batch survives closing + reopening Review and the reopened
+  // window reconnects (see _reprocessStatus + get-reprocess-status). Plus the dev inspector.
+  const mirrorReprocess = (msg) => {
+    notifyReview?.('reprocess-progress', msg);
+    notifyDevInspector?.('reprocess-progress', msg);
+  };
+
   // Should the Python child emit the dev trace stream this run? True when the
   // hidden inspector window is open, OR diagnostic logging is on (passed in, since
   // it's computed per-handler), OR the in-Review dev console requested it
@@ -482,7 +1191,7 @@ function register(ctx) {
     diaglog.write(msg);
   };
 
-  const { requireRole, getCurrentUser, logAudit } = require('../auth/handler');
+  const { requireRole, requireLogin, getCurrentUser, hasRole, logAudit } = require('../auth/handler');
 
   // ── Folder picker ───────────────────────────────────────────────────────────
   const { dialog, shell } = require('electron');
@@ -493,6 +1202,12 @@ function register(ctx) {
   // even in packaged builds where the inspector WINDOW is disabled.
   ipcMain.handle('dev-get-session-docs', () => { requireRole('admin', 'edit'); return _devSession.docs.slice().reverse(); });
   ipcMain.handle('dev-get-session-doc',  (_e, key) => { requireRole('admin', 'edit'); return _devSession.traceByDoc.get(key) || []; });
+
+  // SFDEV bulk debug-table (dev-only, admin/edit-gated like the sibling dev IPCs). READ
+  // builds the queue-wide field grid from the DB; SAVE writes debug_values.json (+ copies
+  // the winning-crop slices the renderer resolved) to the Debug dir. No DB writes, no learning.
+  ipcMain.handle('dev-debug-table-data', () => { requireRole('admin', 'edit'); return _buildDebugTable(getDb()); });
+  ipcMain.handle('dev-debug-table-save', (_e, payload) => { requireRole('admin', 'edit'); return _saveDebugTable(ctx, payload); });
 
   // Source folder for "Process Documents" — part of the daily Admin/Edit workflow. A native folder
   // picker can't show the files inside (Windows: folders-only), so the Import view lists the folder's
@@ -574,28 +1289,69 @@ function register(ctx) {
     return r.canceled ? null : r.filePaths[0];
   });
 
-  // Opening a filed document in Explorer/its default app is part of "search/view
-  // documents" — available to every signed-in role, including Read Only.
+  // ROLE-GATED admin/edit (owner 2026-08-02, supersedes the old "every signed-in role"
+  // rule): a shell hand-out is uncontrolled access to the file — Read Only keeps the
+  // in-app preview and loses the hatch. NON-THROWING guard (these are send channels —
+  // a requireRole throw here would be an uncaught main-process exception).
+  // AUDITED: once a file leaves through the shell there is no control over what happens
+  // to it — so the act of handing it out is itself the audit event.
   ipcMain.on('show-in-explorer', (_e, filePath) => {
-    if (!getCurrentUser()) return;
+    if (!hasRole('admin', 'edit')) { logger?.warn?.('[security] show-in-explorer refused for role'); return; }
     if (!_isOpenablePath(getDb(), filePath)) {
       logger?.warn?.('[security] blocked show-in-explorer for a disallowed path');
       return;
     }
+    try {
+      logAudit(getDb(), { action: 'file_shown_in_explorer', action_category: 'document',
+        target_type: 'file', outcome: 'success', metadata: { file: path.basename(String(filePath || '')) } });
+    } catch { /* audit best-effort */ }
     shell.showItemInFolder(filePath);
   });
   ipcMain.on('open-file', (_e, filePath) => {
-    if (!getCurrentUser()) return;
+    if (!hasRole('admin', 'edit')) { logger?.warn?.('[security] open-file refused for role'); return; }
     if (!_isOpenablePath(getDb(), filePath)) {
       logger?.warn?.('[security] blocked open-file for a disallowed path');
       return;
     }
+    try {
+      logAudit(getDb(), { action: 'file_opened_externally', action_category: 'document',
+        target_type: 'file', outcome: 'success', metadata: { file: path.basename(String(filePath || '')) } });
+    } catch { /* audit best-effort */ }
     shell.openPath(filePath);
   });
+  // ── DOC-ID-RESOLVED opens (the de-pathing slice, owner 2026-08-02) ─────────────────
+  // The Search renderer no longer holds ANY filesystem path; these resolve the filed
+  // copy SERVER-SIDE from the doc row (stored_path only — the same semantics the old
+  // renderer guard had), re-run the containment policy, audit with the document id, and
+  // return {success,error} so a refusal is visible instead of a silently dropped send.
+  const _openResolvedDoc = (docId, mode) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const row = db.prepare('SELECT id, stored_path FROM documents WHERE id = ?').get(Number(docId));
+    if (!row) return { success: false, error: 'Document not found.' };
+    if (!row.stored_path || !fs.existsSync(row.stored_path)) return { success: false, error: 'This document has no filed copy on disk.' };
+    if (!_isOpenablePath(db, row.stored_path)) {
+      logger?.warn?.(`[security] blocked ${mode} for a disallowed resolved path`);
+      return { success: false, error: 'This file sits outside the app’s allowed folders.' };
+    }
+    try {
+      logAudit(db, { action: mode === 'open' ? 'file_opened_externally' : 'file_shown_in_explorer',
+        action_category: 'document', target_type: 'document', target_id: row.id, document_id: row.id,
+        outcome: 'success', metadata: { file: path.basename(row.stored_path) } });
+    } catch { /* audit best-effort */ }
+    if (mode === 'open') shell.openPath(row.stored_path);
+    else shell.showItemInFolder(row.stored_path);
+    return { success: true };
+  };
+  ipcMain.handle('open-document-file',        (_e, docId) => _openResolvedDoc(docId, 'open'));
+  ipcMain.handle('show-document-in-explorer', (_e, docId) => _openResolvedDoc(docId, 'show'));
+
   // Open a FOLDER (not a file) — the file allowlist requires an extension, so folders
   // need their own check: must be an app-managed root (e.g. the output folder), no UNC.
   ipcMain.on('open-folder', (_e, dir) => {
-    if (!getCurrentUser()) return;
+    // Same admin/edit gate: shell-browsing the output tree is uncontrolled access to EVERY
+    // filed document — strictly worse than the per-doc buttons Read Only already lost.
+    if (!hasRole('admin', 'edit')) { logger?.warn?.('[security] open-folder refused for role'); return; }
     let resolved;
     try { resolved = path.resolve(dir); } catch { return; }
     if (!dir || typeof dir !== 'string' || /^[\\/]{2}/.test(dir) || /^[\\/]{2}/.test(resolved)) return;
@@ -603,6 +1359,10 @@ function register(ctx) {
       logger?.warn?.('[security] blocked open-folder for a disallowed path');
       return;
     }
+    try {
+      logAudit(getDb(), { action: 'folder_opened_externally', action_category: 'document',
+        target_type: 'folder', outcome: 'success', metadata: { folder: path.basename(resolved) } });
+    } catch { /* audit best-effort */ }
     shell.openPath(resolved);
   });
 
@@ -635,7 +1395,7 @@ function register(ctx) {
       for (const proc of _currentBatchProcs) {
         try {
           require('child_process').spawnSync(
-            'taskkill', ['/F', '/T', '/PID', String(proc.pid)],
+            TASKKILL_EXE, ['/F', '/T', '/PID', String(proc.pid)],
             { windowsHide: true, stdio: 'ignore' }
           );
         } catch {}
@@ -669,7 +1429,7 @@ function register(ctx) {
     proc.on('error', () => done(null));
   });
 
-  async function _separateBatchDocuments(folderPath, templatesFile, log, onPhase, parallelism) {
+  async function _separateBatchDocuments(folderPath, templatesFile, log, onPhase, parallelism, slipsOn, trace) {
     let pdfs = [];
     try {
       pdfs = fs.readdirSync(folderPath, { withFileTypes: true })
@@ -701,20 +1461,36 @@ function register(ctx) {
         const name = pdfs[i];
         const filePath = path.join(folderPath, name);
         const det = await runPyJson(segScript,
-          ['--file', filePath, '--templates-file', templatesFile, '--tesseract', tesseractPath()], env);
+          buildSegmentArgs({ filePath, templatesFile, tesseract: tesseractPath(), slips: slipsOn }), env);
         done += 1;
         onPhase?.(`Preparing ${done}/${pdfs.length}…`);
         if (_cancelRequested) return;
-        const segments = det && det.success && Array.isArray(det.segments) ? det.segments : null;
-        if (!segments || segments.length < 2) continue;   // one document → leave it untouched
+        // Decision logic (incl. the Filing-Slips exclusion/rewrite rules) lives in the
+        // pure split_plan.js so it is pinned by test_split_plan.js.
+        const plan = buildSplitPlan(det);
+        if (plan.action === 'skip') continue;   // one document, no sheets → leave it untouched
 
-        // 0-based inclusive [start,end] → pdf_splitter's 1-based "a-b,c,…".
-        const ranges = segments.map(([s, e]) => (s === e ? `${s + 1}` : `${s + 1}-${e + 1}`)).join(',');
+        if (plan.action === 'consume') {
+          // The file is ONLY separator sheets — nothing to import. Keep it recoverable.
+          try {
+            const keepDir = path.join(folderPath, SEPARATED_DIR);
+            fs.mkdirSync(keepDir, { recursive: true });
+            fs.renameSync(filePath, path.join(keepDir, name));
+            log?.(`${name} contained only separator sheets — nothing to import (kept in ${SEPARATED_DIR})`);
+          } catch {
+            // Not movable → it imports as a normal (junk) doc and lands in Review — visible, never silent.
+            log?.(`${name} contains only separator sheets but could not be set aside — left in place`, 'warn');
+          }
+          continue;
+        }
+
+        // plan.action === 'split' — ranges already EXCLUDE separator-sheet pages; with
+        // sheets present ONE output is legal (the REWRITE case: doc + trailing sheet).
         const split  = await runPyJson(splitScript,
-          ['--file', filePath, '--ranges', ranges, '--outdir', folderPath], env);
+          ['--file', filePath, '--ranges', plan.ranges, '--outdir', folderPath], env);
         const made   = (split && split.success && Array.isArray(split.files))
           ? split.files.filter(f => fs.existsSync(f)) : [];
-        if (made.length < 2) continue;   // splitter failed → leave the original as one doc
+        if (made.length < plan.minFiles) continue;   // splitter failed → leave the original as one doc
 
         // Move the original OUT of the (non-recursive) scan so it isn't ALSO processed,
         // while keeping it recoverable.
@@ -730,7 +1506,12 @@ function register(ctx) {
           continue;
         }
         separated += 1;
-        log?.(`Detected ${made.length} documents in ${name} — separated`);
+        if (plan.separators) {
+          log?.(`${name} — ${plan.separators} separator sheet(s) found · ${made.length} document(s) imported · sheets removed · original kept safe`);
+          trace?.({ ev: 'slip_split', file: name, separators: plan.separators, payloads: plan.payloads, made: made.length });
+        } else {
+          log?.(`Detected ${made.length} documents in ${name} — separated`);
+        }
       }
     }
     await Promise.all(Array.from({ length: Math.min(P, pdfs.length) }, worker));
@@ -768,6 +1549,7 @@ function register(ctx) {
       outcome: 'success', metadata: { folder: folderPath } });
     const diagOn = _diagEnabled(db);
     if (diagOn) { diaglog.enable(); diaglog.write({ ev: 'batch_start', folder: folderPath }); }
+    _takeDrainTally(folderPath);   // clear any stale tally for THIS folder (prior runs); watch folders untouched
     let trainingArgs, tempFiles;
     try {
       ({ args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath, logger));
@@ -829,9 +1611,14 @@ function register(ctx) {
       // worker POOL is the parallelism; per-process OMP threading fights it. Capping
       // to cores/workers (threadCap) keeps total threads ≈ cores. threadCap=0 (the
       // single-worker path) leaves Tesseract free to use every core for the one proc.
-      const env = threadCap > 0
-        ? { ...process.env, OMP_THREAD_LIMIT: String(threadCap) }
-        : process.env;
+      const env = {
+        ...process.env,
+        ...(threadCap > 0 ? { OMP_THREAD_LIMIT: String(threadCap) } : {}),
+        ..._autoTitleEnv(db),
+        ..._ocrDpiEnv(db),
+        ..._anchorCropEnv(db),
+        ..._reconcileEnv(db),
+      };
       const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
         { windowsHide: true, env });
       _currentBatchProcs.push(proc);
@@ -896,12 +1683,22 @@ function register(ctx) {
 
     // ── Auto document separation (Stage 1) ── runs BEFORE the worker set is built, so
     // both the single-worker (scans the folder) and multi-worker (enumerates it) paths
-    // pick up the per-document segments. Gated by a setting (default on); fail-safe, so a
-    // detector/splitter failure just leaves the folder unchanged. See _separateBatchDocuments.
-    if (learning.getSetting(db, 'auto_separate_enabled', 'true') === 'true') {
+    // pick up the per-document segments. Fail-safe: a detector/splitter failure just
+    // leaves the folder unchanged. See _separateBatchDocuments. TWO independent arms
+    // (Oracle C2, docs/designs/FILING_SLIPS_2026-07-18.md): the template-signature
+    // heuristic needs `auto_separate_enabled` (default on) AND taught templates; the
+    // Filing-Slips separator-sheet scan (`filing_slips_enabled`, default OFF, env
+    // FILING_SLIPS=0 hard-kill) is explicit operator intent and must work on a
+    // zero-template install with the heuristic toggle off — it never re-arms template
+    // segmentation (its templates-file stays gated on the heuristic arm).
+    {
       const tIdx = trainingArgs.indexOf('--templates-file');
-      const templatesFile = tIdx >= 0 ? trainingArgs[tIdx + 1] : null;
-      if (templatesFile) {
+      const templatesFileRaw = tIdx >= 0 ? trainingArgs[tIdx + 1] : null;
+      const autoSep = learning.getSetting(db, 'auto_separate_enabled', 'true') === 'true';
+      const slipsOn = process.env.FILING_SLIPS !== '0'
+        && learning.getSetting(db, 'filing_slips_enabled', 'false') === 'true';
+      const templatesFile = (autoSep && templatesFileRaw) ? templatesFileRaw : null;
+      if (templatesFile || slipsOn) {
         // Run detection concurrently (each PDF is independent) so the pre-pass doesn't
         // serialise a Python cold-start per document. Cap at the CPU core count (≤6).
         const sepP = Math.max(1, Math.min(os.cpus().length || 1, 6));
@@ -909,7 +1706,8 @@ function register(ctx) {
           const n = await _separateBatchDocuments(folderPath, templatesFile,
             (text, level) => mirror(event.sender, 'process-progress', { type: 'log', text, level: level || '' }),
             (text) => mirror(event.sender, 'process-progress', { type: 'log', text, phase: true }),
-            sepP);
+            sepP, slipsOn,
+            (ev) => mirror(event.sender, 'process-trace', ev));
           if (n) logger?.log(`[separation] separated ${n} multi-document PDF(s) before processing`);
         } catch (e) {
           logger?.warn(`[separation] pre-pass failed (continuing without split): ${e.message}`);
@@ -981,6 +1779,18 @@ function register(ctx) {
     // exited, so the source PDFs are unlocked and the moves into Processed/ now succeed.
     await Promise.allSettled(pendingFileIo.splice(0));
     _flushPendingDrains(db, logger);
+    // Truthful post-run line (Chris r5 card 2): originals move at IMPORT, and the emptied
+    // source folder then looked like a mistake ("No documents found directly in this
+    // folder…"). Say what actually happened, once, where the run's log lines render.
+    {
+      const _drained = _takeDrainTally(folderPath);   // THIS folder's drains only (Oracle C1)
+      if (_drained > 0) {
+        mirror(event.sender, 'process-progress', {
+          type: 'log',
+          text: `✓ ${_drained} original scan${_drained === 1 ? '' : 's'} moved out of the source folder — Scan Finder now works from its own copies.`,
+        });
+      }
+    }
     cleanupFiles(tempFiles);
     cleanupFiles(shardFiles);
     // Remove any *_ocr.txt plaintext artifacts left by earlier versions of the
@@ -1007,26 +1817,24 @@ function register(ctx) {
   });
 
   // ── Stuck (failed) documents — the launchpad "couldn't be read" surface ──────
-  // Ungated reads (a count/list is not sensitive); the "Try again" action reuses
-  // the role-gated reprocess-document IPC below.
-  // CPU info for the Settings "Documents processed at once" control — lets the renderer
-  // size the picker to this machine's cores and explain the choice. Read-only.
-  // Current import/watch activity — so a Review window opened DURING a running batch can sync
-  // its "documents are being imported" bar immediately (the broadcast only fires on transitions).
-  ipcMain.handle('get-processing-activity', () => _activity
+  // SECURITY (Stage 2 — M13): require a signed-in session. get-stuck-docs returns document ROWS
+  // (filenames, which routinely carry supplier + reference numbers), so it was an unauthenticated
+  // metadata-disclosure surface; gate all four launchpad reads to any logged-in user. The "Try
+  // again" action reuses the role-gated reprocess-document IPC below.
+  ipcMain.handle('get-processing-activity', () => { requireLogin(); return _activity
     ? { active: true, source: _activity.source, done: _activity.done, total: _activity.total }
-    : { active: false });
+    : { active: false }; });
 
-  ipcMain.handle('get-concurrency-info', () => ({
+  ipcMain.handle('get-concurrency-info', () => { requireLogin(); return {
     cores: os.cpus().length || 1,
     maxConcurrency: maxConcurrency(),
     recommended: defaultConcurrency(),
-  }));
+  }; });
 
-  ipcMain.handle('get-stuck-count', () =>
-    require('../../../database/modules/documents').getStuckCount(getDb()));
-  ipcMain.handle('get-stuck-docs', () =>
-    require('../../../database/modules/documents').getStuckQueue(getDb()));
+  ipcMain.handle('get-stuck-count', () => { requireLogin();
+    return require('../../../database/modules/documents').getStuckCount(getDb()); });
+  ipcMain.handle('get-stuck-docs', () => { requireLogin();
+    return require('../../../database/modules/documents').getStuckQueue(getDb()); });
 
   // ── Reprocess single document ───────────────────────────────────────────────
   // Merge a fresh reprocess result into a document's stored extractions + identity,
@@ -1046,6 +1854,7 @@ function register(ctx) {
       corrected_to:      data.corrected_to || null,
       anchor_label:      data.anchor || null,
       candidates:        data.candidates ? JSON.stringify(data.candidates) : null,   // disambiguation picker
+      suggested_supplier: data.suggested_supplier || null,   // branding cross-check → "Use '<name>'" button
     }));
 
     const _emitMerge = (field, decision, oldV, newV) => {
@@ -1065,12 +1874,17 @@ function register(ctx) {
     const _prior = db.prepare('SELECT document_type_id FROM documents WHERE id = ?').get(docId);
     const priorTypeId = _prior ? _prior.document_type_id : null;
     let reprocDocTypeId = null, reprocType = null;
+    // Re-derived on EVERY reprocess, both directions (mig 51). Go-forward: a doc whose fresh
+    // detection names an uninstalled type gets the stamp; a doc that NOW resolves to a real type
+    // gets it CLEARED. The clear is what stops a stale suggestion outliving the type being added.
+    let reprocDetectedName = null;
     if (result.document_type) {
       const docTypesMod = require('../../../database/modules/document_types');
       reprocType = docTypesMod.getAllWithFields(db).find(
         dt => dt.name.toLowerCase() === result.document_type.toLowerCase()
       ) || null;
       if (reprocType) reprocDocTypeId = reprocType.id;
+      reprocDetectedName = _resolveDetectedType(db, result.document_type).unmatchedName;
     }
     let flip = null;
     if (reprocDocTypeId != null && priorTypeId != null && reprocDocTypeId !== priorTypeId) {
@@ -1089,12 +1903,22 @@ function register(ctx) {
       }
     }
 
+    // Generic fallback on reprocess (Oracle C1, direction-guarded — never drags a typed
+    // doc): only a NULL-type doc whose fresh detection is ALSO None adopts the generic id.
+    // Not a "flip" (priorTypeId is null), so no flip note — the trust refusal keeps it
+    // review-bound regardless.
+    if (reprocDocTypeId == null) {
+      const gid = _reprocessGenericAdopt(db, priorTypeId, result.document_type || null);
+      if (gid) reprocDocTypeId = gid;
+    }
+
     const mergedRows = mergeReprocessRows(existing, newRows, flip, _emitMerge);
 
     const learning = require('../../../database/modules/learning');
     learning.deleteExtractions(db, docId);
     learning.insertExtractions(db, docId, mergedRows);
 
+    const _supBlanked = supplierColumnBlanked(mergedRows);
     db.prepare(
       `UPDATE documents SET
          overall_confidence  = ?,
@@ -1104,8 +1928,9 @@ function register(ctx) {
          logo_phash          = ?,
          logo_detail_hash    = ?,
          keyword_fingerprint = ?,
-         supplier_name       = COALESCE(?, supplier_name),
+         supplier_name       = CASE WHEN ? THEN NULL ELSE COALESCE(?, supplier_name) END,
          ocr_text            = COALESCE(?, ocr_text),
+         detected_type_name  = ?,
          review_acknowledged_at = NULL
        WHERE id = ?`
     ).run(
@@ -1115,8 +1940,12 @@ function register(ctx) {
       result.logo_phash         || null,
       result.logo_detail_hash   || null,
       result.keyword_fingerprint ? JSON.stringify(result.keyword_fingerprint) : null,
+      _supBlanked ? 1 : 0,
       result.supplier_name      || null,
       result.ocr_text           || null,
+      // Plain assignment, NOT COALESCE: null must actually CLEAR the stamp. COALESCE here would
+      // make the suggestion permanent — it would survive the very act of adding the type.
+      reprocDetectedName,
       docId
     );
 
@@ -1135,7 +1964,7 @@ function register(ctx) {
   }
 
   ipcMain.handle('reprocess-document', async (event, { docId, folderPath, filename, enhanceParams, deskewOnce, forcedTypeSlug }) => {
-    requireRole('admin', 'edit');
+    const sess    = requireRole('admin', 'edit');
     const db      = getDb();
     // Multi-point licensing enforcement (F-01): reprocess re-runs the extraction
     // pipeline — same network-free cached-license re-check as bulk import.
@@ -1146,6 +1975,20 @@ function register(ctx) {
     // the same document, which presents as the app freezing.
     if (_anyProcessingBusy()) {
       return { success: false, busy: true, error: 'A reprocess is already running — please wait for it to finish.' };
+    }
+    // WORKFLOW_LOCK (Slice 1 Stage E): a document under an OPEN approval route must not be
+    // rewritten beneath its approver — the same rule confirm/defer/delete already enforce
+    // (review/handler requireUnlocked). Admin may override, audited (the same seam). Sits
+    // BEFORE the success audit below so a refusal never records outcome 'success'. Inert
+    // wherever no routes exist (every current install — the feature is dark).
+    {
+      const guard = require('../../services/workflowService').editGuard(db, docId, sess.role);
+      if (!guard.ok) return { success: false, error: guard.error, code: guard.code };
+      if (guard.overridden) {
+        logAudit(db, { action: 'workflow_lock_overridden', action_category: 'workflow',
+          target_type: 'document', target_id: docId, document_id: docId, outcome: 'success',
+          metadata: { action: 'reprocess' } });
+      }
     }
     logAudit(db, { action: 'reprocess', target_type: 'document', target_id: docId, document_id: docId,
       outcome: 'success', metadata: { enhanced: !!enhanceParams } });
@@ -1158,11 +2001,28 @@ function register(ctx) {
     // found" on a doc the preview could still render. Using one resolver keeps
     // reprocess able to find the file exactly wherever the preview can show it.
     const previewService = require('../../services/previewService');
+    // SECURITY (Stage 1 — H3 class, Oracle C1): resolve the on-disk location SERVER-SIDE from the doc
+    // row BEFORE handing it to the shared resolver. The client-supplied folderPath/filename are NOT
+    // trusted — via _resolveDocFile's sourcePath fallback (previewService.js) a compromised renderer
+    // could otherwise point reprocess's existsSync/copyFileSync at a UNC host (outbound SMB/NTLM) or any
+    // readable file, which reprocess would then OCR into the doc's own fields. `confirm` nulls
+    // working_path on filing, so for a confirmed/auto-filed doc the resolver would fall straight to the
+    // renderer path. Mirrors get-document-pages (review/handler.js); the resolver still prefers the
+    // working copy and recovers a moved source from the row.
+    const _row = db.prepare(
+      'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(docId);
+    const _pick = _row ? (_row.working_path || _row.stored_path
+      || (_row.folder_path && _row.original_filename ? path.join(_row.folder_path, _row.original_filename) : null)) : null;
+    const _rFolder = _pick ? path.dirname(_pick) : null;
+    const _rFile   = _pick ? path.basename(_pick) : null;
+    if (!_rFolder || !_rFile) {
+      return { success: false, error: 'File not found for this document.' };
+    }
     const srcFile = previewService.resolveDocFile(
-      db, { docId, folderPath, filename }, { fs, path, log: (m) => logger?.log?.(m) }
+      db, { docId, folderPath: _rFolder, filename: _rFile }, { fs, path, log: (m) => logger?.log?.(m) }
     );
     if (!srcFile || !fs.existsSync(srcFile)) {
-      return { success: false, error: 'File not found: ' + (srcFile || path.join(folderPath, filename)) };
+      return { success: false, error: 'File not found: ' + (srcFile || path.join(_rFolder, _rFile)) };
     }
 
     // Snapshot existing extractions
@@ -1170,9 +2030,9 @@ function register(ctx) {
       'SELECT * FROM extractions WHERE document_id = ?'
     ).all(docId);
 
-    // Copy to temp dir with unique name
+    // Copy to temp dir with unique name (extension from the RESOLVED source, not the renderer arg)
     const tmpDir      = fs.mkdtempSync(path.join(os.tmpdir(), 'docusnap-'));
-    const ext         = path.extname(filename);
+    const ext         = path.extname(srcFile);
     const tmpFilename = `reprocess_${Date.now()}${ext}`;
     fs.copyFileSync(srcFile, path.join(tmpDir, tmpFilename));
 
@@ -1241,13 +2101,27 @@ function register(ctx) {
       confirmedAt: _dtRow ? _dtRow.confirmed_at : null,
       forcedTypeSlug, templateId, knownSlugs: _knownSlugs,
     });
-    if (_typeArgs.knownTemplateId) {
+    // Operator supplier PIN (Part B) + B2 re-scope (Oracle C1): read the doc's pin; when it DIFFERS from
+    // the doc's current supplier, the linked template + assigned type belong to the OLD (wrong) supplier
+    // — SUPPRESS them so the engine re-detects the type and re-matches the template for the pinned
+    // supplier. Kill switch SUPPLIER_PIN; off → byte-identical (pin ignored, type args pushed as before).
+    let _supplierPin = null, _pinDiffers = false;
+    try {
+      const _sr = db.prepare('SELECT supplier_pin, supplier_name FROM documents WHERE id = ?').get(docId);
+      _supplierPin = _sr && _sr.supplier_pin ? String(_sr.supplier_pin).trim() : null;
+      _pinDiffers = !!_supplierPin
+        && _supplierPin.toLowerCase() !== String((_sr && _sr.supplier_name) || '').trim().toLowerCase();
+    } catch {}
+    const _pinOn = !!_supplierPin && process.env.SUPPLIER_PIN !== '0';
+    const _suppressTypeForPin = _pinOn && _pinDiffers;   // B2: drop stale template/type on a supplier change
+    if (_typeArgs.knownTemplateId && !_suppressTypeForPin) {
       scriptArgs.push('--known-template-id', String(_typeArgs.knownTemplateId));
     }
-    if (_typeArgs.knownDocSlug) {
+    if (_typeArgs.knownDocSlug && !_suppressTypeForPin) {
       scriptArgs.push('--known-doc-slug', String(_typeArgs.knownDocSlug));
       if (_typeArgs.authority) scriptArgs.push('--known-doc-slug-authority', _typeArgs.authority);
     }
+    if (_pinOn) scriptArgs.push('--known-supplier', _supplierPin);
     // Dev trace stream + OCR slice capture while the inspector is open OR
     // diagnostic logging is on (so the diagnostic file captures reprocess too).
     if (traceWanted(diagOn)) {
@@ -1287,8 +2161,22 @@ function register(ctx) {
     _singleReprocessActive = true;   // mark busy now we're committed to spawning (cleared in finish())
     return new Promise((resolve) => {
       const py   = pythonExe();
+      // Single-doc reprocess MAY use several cores (parallel full-page OCR = Option B; parallel
+      // field reads = Option C) so ONE document finishes faster on a slow CPU. Output is
+      // byte-identical (scheduling only) — see docs/designs/REPROCESS_PARALLELISM_BC_2026-07-17.md.
+      // Gated by a setting, DEFAULT OFF; passed ONLY here on the single-reprocess spawn, NEVER the
+      // batch/import/shard path (those already parallelise ACROSS docs with their own OMP cap, so
+      // nesting a per-doc pool inside them would oversubscribe). The python side caps OMP to 1.
+      let spawnEnv = { ...process.env, ..._ocrDpiEnv(db), ..._anchorCropEnv(db), ..._reconcileEnv(db) };   // ocr_dpi + crop + reconcile opt-ins on reprocess (all default = byte-identical)
+      try {
+        if (require('../../../database/modules/learning').getSetting(db, 'ocr_parallel_reprocess_enabled', 'false') === 'true') {
+          // B = parallel full-page OCR passes (straighten/enhance/first-import); C = parallel per-field
+          // crop reads (every reprocess). Both byte-identical, single-reprocess spawn only.
+          spawnEnv = { ...spawnEnv, DS_OCR_PARALLEL_FULLPAGE: '1', DS_OCR_PARALLEL_FIELDS: '1' };
+        }
+      } catch { /* setting read failed → sequential (default) */ }
       const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
-        { windowsHide: true });
+        { windowsHide: true, env: spawnEnv });
       let buf = '', result = null;
       let settled  = false;
       let watchdog = null;
@@ -1316,7 +2204,7 @@ function register(ctx) {
         logger?.err(`Reprocess timed out: ${filename}`);
         try {
           require('child_process').spawnSync(
-            'taskkill', ['/F', '/T', '/PID', String(proc.pid)],
+            TASKKILL_EXE, ['/F', '/T', '/PID', String(proc.pid)],
             { windowsHide: true, stdio: 'ignore' }
           );
         } catch {}
@@ -1335,6 +2223,10 @@ function register(ctx) {
             const msg = JSON.parse(trimmed);
             if (msg.type === 'trace') { routeTrace(msg); continue; }
             if (msg.type === 'file_done') _recordDevDoc(msg);
+            // Single-doc reprocess stays on event.sender (short, window-bound). NOTE the asymmetry:
+            // Reprocess-ALL uses mirrorReprocess (the LIVE review window) so it survives close+reopen.
+            // The two share the 'reprocess-progress' channel but the busy guard keeps them mutually
+            // exclusive — don't naively "unify" them without handling concurrent addressing.
             mirror(event.sender, 'reprocess-progress', msg);
             if (msg.type === 'file_done') result = msg;
           } catch {
@@ -1365,6 +2257,394 @@ function register(ctx) {
         finish({ success: true, ...applied, ruleCreated: ruleCreatedFor });
       });
     });
+  });
+
+  // ── Fast on-open text-only re-extract (Slice B, DARK) ───────────────────────
+  // Refresh a document's EMPTY fields from its already-cached full-page OCR WITHOUT a full
+  // reprocess — skips the full-page OCR (cached) AND the per-field crop OCR AND all image
+  // rendering (`--reextract`, process_docs.py). Read-only: returns fill-only SUGGESTIONS,
+  // writes NOTHING to the DB (persist happens on the operator's confirm). No renderer trigger
+  // yet — nothing invokes this channel until Slice B-2 wires _selectDoc, so it is inert.
+  // Oracle conditions honoured: C1 known-id honour (imageless → the engine applies the known
+  // template text-only), C4 (suggestion, no phantom human-correction), C6 (anchor-abstain,
+  // no 2nd auto-file site, no type/status mutation — this path never writes).
+  // ── Fast imageless re-extract CORE (Catch-up slice 2 refactor — byte-identical move) ──
+  // The body of `reextract-fields-fast` hoisted into a callable so the scope sweep can run
+  // it per candidate with buildTrainingArgs HOISTED ONCE (opts.trainingArgs). Behaviour is
+  // the IPC's, unchanged; the caller owns role/enable/license/busy gating. ZERO DB WRITES —
+  // temp files under os.tmpdir only. When opts.trainingArgs is provided the caller owns its
+  // temp-file cleanup; otherwise the core builds and cleans its own.
+  async function _reextractFastCore(db, docId, opts = {}) {
+    const learning  = require('../../../database/modules/learning');
+    const templates = require('../../../database/modules/templates');
+
+    const doc = db.prepare(`
+      SELECT d.id, d.ocr_text, d.template_id, d.supplier_name, d.original_filename,
+             d.logo_phash, d.logo_detail_hash, dt.slug AS document_type_slug
+        FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id
+       WHERE d.id = ?`).get(docId);
+    if (!doc) return { ok: false, reason: 'no-doc' };
+    // Cached OCR is the whole premise — no cache, no fast path (fall back to a real reprocess).
+    if (!doc.ocr_text || !doc.ocr_text.trim()) return { ok: false, reason: 'no-cache' };
+
+    // Known template: the doc's own link, else a NOW-available same-type template (the
+    // "newly-found template" gain case) via the SAME type-scoped fingerprint recheck the
+    // Teach-this-document CTA uses. Null is fine — a text-only re-extract still re-reads
+    // keyword fields from the cached OCR.
+    // STALE-COLLISION UNPIN (owner + bob 2026-08-01; kill REEXTRACT_UNPIN_BLANK_SUPPLIER=0):
+    // a stored template link with NO resolved supplier is the branding-blank collision class
+    // — the veto blanked a wrong fixed-name stamp (doc 218: a Vellum doc pinned to the
+    // Ridgeway template). Re-pinning that template re-runs the identical collision, so the
+    // stale stored id must never be honoured for this class.
+    // BLANK RE-IDENTIFY (owner 2026-08-01 evening; kill REEXTRACT_BLANK_REIDENTIFY=0): the
+    // unpin's original "let the engine's Stage-0 choose" expectation was DEAD imageless —
+    // the engine deliberately SKIPS live Stage-0 with no page image (Oracle C1: the text
+    // arms lack the logo-guard family), so an unpinned blank-supplier doc could never gain
+    // a supplier from the fast path at all (measured: Saltmarsh doc 400, 18-doc batch,
+    // zero suggestions with the sibling template present). Fix at the CALLER, with the
+    // guarded JS identifier this same path already trusts for non-blank docs
+    // (identifyByFingerprint: detail-hash veto + name-presence veto on BOTH arms,
+    // type-scoped): re-identify, and admit the pick as known-id ONLY when it differs from
+    // the stale stored link — a DIFFERENT pick is new information (a sibling template born
+    // since the collision, e.g. the operator just confirmed one of the batch); the SAME id
+    // is the collision re-arriving and stays unpinned. The engine's known-id honour path is
+    // the already-sanctioned imageless route (suggestion-only downstream: fill-only merge +
+    // operator confirm; reextract never auto-files).
+    const _unpinBlank = process.env.REEXTRACT_UNPIN_BLANK_SUPPLIER !== '0'
+      && !String(doc.supplier_name || '').trim();
+    let knownTemplateId = _unpinBlank ? null : (doc.template_id || null);
+    if (!knownTemplateId && (!_unpinBlank || process.env.REEXTRACT_BLANK_REIDENTIFY !== '0')) {
+      try {
+        const m = templates.identifyByFingerprint(db, {
+          logo_phash: doc.logo_phash, ocr_text: doc.ocr_text,
+          document_type_slug: doc.document_type_slug, logo_detail_hash: doc.logo_detail_hash,
+        });
+        if (m && admitReextractPick(_unpinBlank, doc.template_id, m.template.id)) {
+          knownTemplateId = m.template.id;
+        }
+      } catch { /* no match → keyword-only re-extract */ }
+    }
+
+    const existing = db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(docId);
+
+    // reextract NEVER reads the file bytes (process_docs.py:492) — so we do NOT resolve/copy
+    // the (possibly missing) source. A zero-byte placeholder with the right extension is all
+    // the folder-enumeration needs; this also works for a filed doc whose working copy was nulled.
+    const ext    = (doc.original_filename && path.extname(doc.original_filename)) || '.pdf';
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'docusnap-rx-'));
+    const cachedFile = path.join(tmpDir, 'cached_ocr.txt');
+    // Sweep callers pass HOISTED trainingArgs (built once per sweep) and own their cleanup;
+    // the solo path builds + cleans its own — byte-identical to the pre-refactor IPC body.
+    const _hoisted = Array.isArray(opts.trainingArgs);
+    let trainingArgs = _hoisted ? opts.trainingArgs : [], tempFiles = [];
+    try {
+      fs.writeFileSync(path.join(tmpDir, `reextract_${Date.now()}${ext}`), '');
+      fs.writeFileSync(cachedFile, doc.ocr_text, 'utf8');
+      if (!_hoisted) ({ args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath, logger));
+    } catch (e) {
+      try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
+      return { ok: false, reason: 'setup' };
+    }
+
+    const reprMode = _validMode(learning.getSetting(db, 'processing_mode', 'smart'));
+    const scriptArgs = [
+      '--folder',        tmpDir,
+      '--tesseract',     tesseractPath(),
+      '--mode',          reprMode,
+      ...trainingArgs,
+      '--reextract',
+      '--cached-ocr-file', cachedFile,
+    ];
+    if (knownTemplateId)        scriptArgs.push('--known-template-id', String(knownTemplateId));
+    if (doc.document_type_slug) scriptArgs.push('--known-doc-slug', doc.document_type_slug);   // honour the doc's own type
+
+    return new Promise((resolve) => {
+      let settled = false, watchdog = null, proc = null;
+      const finish = (v) => {
+        if (settled) return; settled = true;
+        if (watchdog) clearTimeout(watchdog);
+        try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
+        cleanupFiles(tempFiles);
+        resolve(v);
+      };
+      try {
+        proc = spawn(pythonExe(), pythonArgs(backendScript(), ...scriptArgs),
+          { windowsHide: true, env: { ...process.env, ..._ocrDpiEnv(db) } });
+      } catch (e) { return finish({ ok: false, reason: 'spawn' }); }
+
+      // Imageless + cached → seconds at most; a short watchdog keeps a hung child from leaking.
+      watchdog = setTimeout(() => { try { proc.kill(); } catch {} finish({ ok: false, reason: 'timeout' }); }, 60 * 1000);
+
+      let buf = '', result = null;
+      proc.stdout.on('data', (d) => {
+        buf += d.toString();
+        const lines = buf.split('\n'); buf = lines.pop();
+        for (const line of lines) {
+          const t = line.trim(); if (!t) continue;
+          try { const msg = JSON.parse(t); if (msg.type === 'file_done') result = msg; } catch { /* non-JSON log line */ }
+        }
+      });
+      proc.on('error', () => finish({ ok: false, reason: 'spawn' }));
+      proc.on('close', () => {
+        if (!result || !result.extractions) return finish({ ok: false, reason: 'no-result' });
+        let anchoredKeys = new Set();
+        try {
+          anchoredKeys = new Set(learning.getTaughtFieldKeys(db, {
+            supplier_name: doc.supplier_name || result.supplier_name || '',
+            document_type: doc.document_type_slug || null,
+          }).map(r => r.field_key));
+        } catch { /* no anchors → none abstained */ }
+        const suggestions = mergeReextractRows(existing, result.extractions, anchoredKeys,
+          { brandingBlankSupplier: process.env.REEXTRACT_UNPIN_BLANK_SUPPLIER !== '0' });
+        // `result`/`doc`/`existing` ride along for the scope sweep's consistency predicate;
+        // the reextract-fields-fast IPC return shape below is built from the same fields it
+        // always returned (byte-identical to the pre-refactor channel).
+        finish({ ok: true, docId, suggestions, templateId: knownTemplateId || null,
+                 result, doc, existing });
+      });
+    });
+  }
+
+  ipcMain.handle('reextract-fields-fast', async (_event, { docId } = {}) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    // DARK by default (Slice B). The whole fast path is inert unless EXPLICITLY enabled —
+    // setting `reextract_fast_enabled` = 'true', OR env REEXTRACT_TEXT_ONLY=1. OFF → the
+    // channel returns 'disabled' and nothing spawns, so wiring a renderer trigger (B-2) can
+    // never go live by accident. Byte-identical to the feature not existing.
+    const _fastOn = process.env.REEXTRACT_TEXT_ONLY === '1'
+      || require('../../../database/modules/learning').getSetting(db, 'reextract_fast_enabled', 'false') === 'true';
+    if (!_fastOn) return { ok: false, reason: 'disabled' };
+    // Same network-free cached-license re-check as reprocess (this re-runs the engine).
+    const licenseDenial = require('../licensing/handler').licenseDenied(db);
+    if (licenseDenial) return { ok: false, reason: 'license' };
+    // Never add load while a batch / single reprocess is running (shares the CPU + busy model).
+    if (_anyProcessingBusy()) return { ok: false, reason: 'busy' };
+    const r = await _reextractFastCore(db, docId);
+    return r.ok ? { ok: true, docId, suggestions: r.suggestions, templateId: r.templateId }
+                : { ok: false, reason: r.reason };
+  });
+
+  // ── Catch-up Filing slice 2: scope-sweep candidate evaluation (READ-ONLY) ──────────
+  // docs/designs/CATCHUP_FILING_2026-07-31.md. After same-scope confirms, re-ask the NORMAL
+  // auto-file trust gate on fresher data for the scope's still-queued docs. Tier 1: the stored
+  // rows pass trust.isAutoFileEligible NOW (scopeTrust is live — "stored 96, floor just
+  // graduated to 95" qualifies with zero machinery). Tier 2: fast imageless re-extract of the
+  // SAME stored ocr_text, then the pure consistency predicate (sweepPredicate.js — values the
+  // operator can SEE unchanged, both sides note-free) + isAutoFileEligible re-asked on the
+  // fresh-confidence overlay. NOTHING IS PERSISTED — evaluation only; the accept path is
+  // slice 3 (unbuilt). Kill: setting `scope_sweep_enabled` default OFF + env SCOPE_SWEEP=0
+  // hard-off / =1 force-on (test harnesses); OFF ⇒ {ok:false, reason:'disabled'}, zero spawns.
+  // Framing (Oracle): Tier 2 is a warmer-learning CONSISTENCY check on the same stored text,
+  // never corroboration or a re-read of the page.
+  ipcMain.handle('sweep-scope-candidates', async (_event, { supplier, typeSlug } = {}) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    if (process.env.SCOPE_SWEEP === '0') return { ok: false, reason: 'disabled' };
+    const _sweepOn = process.env.SCOPE_SWEEP === '1'
+      || require('../../../database/modules/learning').getSetting(db, 'scope_sweep_enabled', 'false') === 'true';
+    if (!_sweepOn) return { ok: false, reason: 'disabled' };
+    const licenseDenial = require('../licensing/handler').licenseDenied(db);
+    if (licenseDenial) return { ok: false, reason: 'license' };
+    if (_anyProcessingBusy()) return { ok: false, reason: 'busy' };
+    const sup = String(supplier || '').trim();
+    const slug = String(typeSlug || '').toLowerCase().trim();
+    if (!sup || !slug) return { ok: false, reason: 'bad-scope' };
+
+    const trust = require('../../../database/modules/trust');
+    const { evaluateSweepConsistency, extractionsFingerprint } = require('../../services/sweepPredicate');
+    const presence = require('../../services/presenceService').shared();
+
+    const dtRow = db.prepare('SELECT * FROM document_types WHERE LOWER(slug) = ?').get(slug);
+    if (!dtRow) return { ok: false, reason: 'unknown-type' };
+    const roleKeys = new Set(['supplier_name', dtRow.ref_field_key, dtRow.date_field_key].filter(Boolean));
+
+    // Candidates: still-queued docs of the scope, no workflow lock, capped (~25 by design).
+    const SWEEP_CAP = 25;
+    const docs = db.prepare(`
+      SELECT d.* FROM documents d
+       WHERE d.status = 'needs_review' AND d.document_type_id = ?
+         AND LOWER(TRIM(d.supplier_name)) = LOWER(TRIM(?))
+         AND COALESCE(d.workflow_status, '') NOT IN ('pending', 'claimed')
+       ORDER BY d.id LIMIT ?`).all(dtRow.id, sup, SWEEP_CAP);
+
+    const candidates = [], excluded = [];
+    let aborted = false;
+    const ctx = { trainingArgs: null, tempFiles: [] };
+    try {
+      for (const doc of docs) {
+        // A batch/import starting mid-sweep aborts the remainder (never compete for CPU).
+        if (_anyProcessingBusy()) { aborted = true; break; }
+        const v = await _evaluateSweepDoc(db, doc, roleKeys, ctx);
+        if (v.candidate) candidates.push(v.candidate);
+        else excluded.push(v.excluded);
+      }
+    } finally {
+      cleanupFiles(ctx.tempFiles);
+    }
+    // Consent-trail (design audit): an OFFER only exists at the renderer's ≥2 threshold — log it
+    // here (server-side, same threshold) so the consent flow is reconstructable end-to-end.
+    if (candidates.length >= 2) {
+      try {
+        logAudit(db, { action: 'scope_sweep_offered', target_type: 'scope', outcome: 'offered',
+          metadata: { supplier: sup, type_slug: slug,
+                      doc_ids: candidates.map(c => c.docId).join(','),
+                      tiers: candidates.map(c => c.tier).join(',') } });
+      } catch { /* audit is best-effort */ }
+    }
+    return { ok: true, scope: { supplier: sup, typeSlug: slug }, aborted,
+             candidates, excluded, evaluated: candidates.length + excluded.length };
+  });
+
+  // One doc's sweep evaluation (candidates IPC + the accept path's server-side RE-CHECK share
+  // this — the design's "accept re-runs the gate server-side" is literally the same code).
+  // ctx carries hoisted trainingArgs/tempFiles across a loop; caller owns cleanupFiles.
+  async function _evaluateSweepDoc(db, doc, roleKeys, ctx) {
+    const trust = require('../../../database/modules/trust');
+    const { evaluateSweepConsistency, extractionsFingerprint } = require('../../services/sweepPredicate');
+    const presence = require('../../services/presenceService').shared();
+    if (presence.viewers(doc.id).length) return { excluded: { docId: doc.id, reason: 'being-viewed' } };
+    const rows = db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(doc.id);
+    const fingerprint = extractionsFingerprint(rows);
+
+    // Tier 1 — stored rows pass the live gate as-is.
+    const t1 = trust.isAutoFileEligible(db, doc);
+    if (t1.eligible) return { candidate: { docId: doc.id, tier: 1, fingerprint } };
+
+    // Tier 2 — imageless re-extract consistency + the gate re-asked on the overlay.
+    if (!ctx.trainingArgs) {
+      const built = buildTrainingArgs(db, configPath, logger);
+      ctx.trainingArgs = built.args; ctx.tempFiles = built.tempFiles;
+    }
+    const r = await _reextractFastCore(db, doc.id, { trainingArgs: ctx.trainingArgs });
+    if (!r.ok) return { excluded: { docId: doc.id, reason: `recheck-${r.reason}` } };
+    // Type pinned via --known-doc-slug: assert the echo matches (design: type flip = out).
+    const freshTypeName = String(r.result.document_type || '');
+    const storedTypeName = String(db.prepare('SELECT name FROM document_types WHERE id = ?').get(doc.document_type_id)?.name || '');
+    const verdict = evaluateSweepConsistency({
+      storedRows: rows,
+      freshFields: r.result.extractions || {},
+      roleKeys,
+      storedSlug: storedTypeName,
+      freshSlug: freshTypeName || storedTypeName,
+    });
+    if (!verdict.pass) return { excluded: { docId: doc.id, reason: verdict.reason, field: verdict.field } };
+    const synth = { id: doc.id, document_type_id: doc.document_type_id,
+                    supplier_name: doc.supplier_name,
+                    overall_confidence: Number(r.result.overall_confidence) || 0 };
+    const gate = trust.isAutoFileEligible(db, synth, {
+      extractions: verdict.overlay,
+      templateMatched: !!r.templateId,
+    });
+    if (gate.eligible) return { candidate: { docId: doc.id, tier: 2, fingerprint } };
+    return { excluded: { docId: doc.id, reason: gate.reason } };
+  }
+
+  // ── Catch-up Filing slice 3: consent-gated ACCEPT (the only writer) ─────────────────
+  // Renderer sends the accepted subset of a candidates result: [{docId, fingerprint}] +
+  // untickedIds (audit only). Per doc, server-side: still queued/unlocked, the extraction
+  // FINGERPRINT unchanged since candidacy (SEAM 2 — a pill fill / OCR-enhance / edit between
+  // consent and accept drops the doc with a reason chip), the SAME evaluation re-run and
+  // passing NOW, then reviewService.confirm (bulk) with the INTERNAL via='scope_sweep' —
+  // confirmed_via is stamped server-side at claim; hint/template learning self-skip.
+  // NO second auto-file site: filing goes through the one shared confirm.
+  ipcMain.handle('sweep-scope-accept', async (_event, { supplier, typeSlug, accepts, untickedIds } = {}) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    if (process.env.SCOPE_SWEEP === '0') return { ok: false, reason: 'disabled' };
+    const _sweepOn = process.env.SCOPE_SWEEP === '1'
+      || require('../../../database/modules/learning').getSetting(db, 'scope_sweep_enabled', 'false') === 'true';
+    if (!_sweepOn) return { ok: false, reason: 'disabled' };
+    const licenseDenial = require('../licensing/handler').licenseDenied(db);
+    if (licenseDenial) return { ok: false, reason: 'license' };
+    if (_anyProcessingBusy()) return { ok: false, reason: 'busy' };
+    const sup = String(supplier || '').trim();
+    const slug = String(typeSlug || '').toLowerCase().trim();
+    if (!sup || !slug || !Array.isArray(accepts) || !accepts.length) return { ok: false, reason: 'bad-args' };
+
+    const documents = require('../../../database/modules/documents');
+    const { extractionsFingerprint } = require('../../services/sweepPredicate');
+    const reviewService = require('../review/handler').getReviewService();
+    if (!reviewService) return { ok: false, reason: 'not-ready' };
+    const actor = getCurrentUser() || {};
+    const dtRow = db.prepare('SELECT * FROM document_types WHERE LOWER(slug) = ?').get(slug);
+    if (!dtRow) return { ok: false, reason: 'unknown-type' };
+    const roleKeys = new Set(['supplier_name', dtRow.ref_field_key, dtRow.date_field_key].filter(Boolean));
+
+    const filed = [], dropped = [];
+    const ctx = { trainingArgs: null, tempFiles: [] };
+    try {
+      for (const a of accepts.slice(0, 25)) {
+        const docId = Number(a && a.docId);
+        const doc = docId ? documents.getById(db, docId) : null;
+        if (!doc || doc.status !== 'needs_review') { dropped.push({ docId, reason: 'not-queued' }); continue; }
+        if (['pending', 'claimed'].includes(String(doc.workflow_status || ''))) { dropped.push({ docId, reason: 'workflow-locked' }); continue; }
+        if (String(doc.supplier_name || '').trim().toLowerCase() !== sup.toLowerCase()
+            || Number(doc.document_type_id) !== Number(dtRow.id)) { dropped.push({ docId, reason: 'scope-mismatch' }); continue; }
+        // SEAM 2 — candidacy→accept mutation: any extraction change since the consent list drops it.
+        const rows = db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(docId);
+        if (extractionsFingerprint(rows) !== String(a.fingerprint || '')) { dropped.push({ docId, reason: 'changed' }); continue; }
+        // Re-run the SAME evaluation — must still pass at accept time.
+        const v = await _evaluateSweepDoc(db, doc, roleKeys, ctx);
+        if (!v.candidate) { dropped.push({ docId, reason: (v.excluded && v.excluded.reason) || 'no-longer-eligible' }); continue; }
+        // File through the one shared confirm — stored values verbatim, machine via.
+        const allValues = {};
+        for (const r of rows) allValues[r.field_key] = r.display_value ?? r.raw_value;
+        let res;
+        try {
+          res = await reviewService.confirm(db, actor, {
+            document_id: docId,
+            allValues,
+            corrections: {},
+            taught_fields: [],
+            supplier_name: doc.supplier_name,
+            document_type: dtRow.name,
+            document_type_slug: dtRow.slug,
+            bulk: true,
+          }, { via: 'scope_sweep' });
+        } catch (e) { res = { ok: false, code: 'ERROR', error: e && e.message }; }
+        if (res && res.ok) filed.push(docId);
+        else dropped.push({ docId, reason: (res && res.code) || 'confirm-failed' });
+      }
+    } finally {
+      cleanupFiles(ctx.tempFiles);
+    }
+    try {
+      logAudit(db, { action: 'scope_sweep_accepted', target_type: 'scope', outcome: 'success',
+        metadata: { supplier: sup, type_slug: slug, filed_ids: filed.join(','),
+                    dropped: dropped.map(d => `${d.docId}:${d.reason}`).join(','),
+                    unticked_ids: (Array.isArray(untickedIds) ? untickedIds : []).join(',') } });
+    } catch { /* audit is best-effort */ }
+    return { ok: true, filed, dropped };
+  });
+
+  // ── Catch-up Filing slice 3: Undo all (clean by construction) ───────────────────────
+  // Only docs whose row says confirmed_via='scope_sweep' can be undone here (server-verified —
+  // a human confirm can never be mass-reverted by this path). deconfirmDocument reverses the
+  // live-derived learning by construction (formats/shapes/prefix recompute from confirmed
+  // status) and the sweep skipped hints/template learning, so the undo copy is true. Filed
+  // copies stay on disk; stored_path is kept, so a later re-confirm replaces IN PLACE.
+  ipcMain.handle('sweep-scope-undo', (_event, { docIds } = {}) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const documents = require('../../../database/modules/documents');
+    const ids = (Array.isArray(docIds) ? docIds : []).map(Number).filter(Boolean).slice(0, 25);
+    const undone = [], refused = [];
+    for (const id of ids) {
+      const row = db.prepare('SELECT id, status, confirmed_via FROM documents WHERE id = ?').get(id);
+      if (!row || row.status !== 'confirmed' || row.confirmed_via !== 'scope_sweep') { refused.push(id); continue; }
+      const r = documents.deconfirmDocument(db, id);
+      if (r && r.changes) undone.push(id); else refused.push(id);
+    }
+    try {
+      if (undone.length) logAudit(db, { action: 'scope_sweep_undone', target_type: 'scope', outcome: 'success',
+        metadata: { doc_ids: undone.join(','), refused_ids: refused.join(',') } });
+    } catch { /* audit is best-effort */ }
+    try {
+      notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
+      notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+    } catch { /* count broadcast is best-effort */ }
+    return { ok: true, undone, refused };
   });
 
   // ── Reprocess All (batched) ───────────────────────────────────────────────
@@ -1404,9 +2684,23 @@ function register(ctx) {
     const manifest  = {};   // tmpName -> { known_template_id, known_doc_slug, enhance_params }
     const nameToDoc = {};   // tmpName -> { docId, filename, existing }
     const tmpNames  = [];
+    // WORKFLOW_LOCK (Slice 1 Stage E): SKIP-AND-REPORT, never abort — a locked doc is under
+    // an approver and must not be rewritten by a bulk pass (this is the second reprocess
+    // door; without it the batch silently sails past the single-doc guard). DELIBERATELY no
+    // admin auto-override here (PINNED in test_reprocess_lock.js): bulk mutation under an
+    // approver is exactly the class the lock exists for — the override stays a per-doc act
+    // via single-doc reprocess. Skipped count is surfaced in the summary.
+    // FYI slice (2026-07-19): the skip uses the shared LOCK predicate (workflowService.
+    // hasActiveWorkflowLock = approval routes only, WORKFLOW_ACK_LOCKS-aware) — a doc with
+    // only an open acknowledge/FYI route IS reprocessed (an FYI is a postcard, not a gate;
+    // the recipient's view always joins live fields). Same authority as editGuard, so the
+    // two reprocess doors can never disagree.
+    const wfLockSvc = require('../../services/workflowService');
+    let lockedSkipped = 0;
     for (const d of docs) {
       try {
-        const row = db.prepare('SELECT working_path, template_id, ocr_text, status, confirmed_at FROM documents WHERE id = ?').get(d.docId);
+        if (wfLockSvc.hasActiveWorkflowLock(db, d.docId)) { lockedSkipped++; continue; }
+        const row = db.prepare('SELECT working_path, template_id, ocr_text, status, confirmed_at, supplier_pin, supplier_name FROM documents WHERE id = ?').get(d.docId);
         const srcFile = (row && row.working_path && fs.existsSync(row.working_path))
           ? row.working_path
           : path.join(d.folderPath || '', d.filename || '');
@@ -1420,16 +2714,24 @@ function register(ctx) {
         const dtRow = db.prepare(
           `SELECT dt.slug AS slug FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id WHERE d.id = ?`
         ).get(d.docId);
+        // Operator supplier PIN (Part B3, per-doc, no global leak): carry the pin so batch reprocess
+        // forces the supplier, and — when it DIFFERS from the doc's current supplier — suppress the stale
+        // template/type (B2) so the type re-detects for the new supplier. Byte-identical when no pin
+        // (SUPPLIER_PIN off/unset): known_supplier absent, template/type unchanged.
+        const _pin = (row && row.supplier_pin) ? String(row.supplier_pin).trim() : null;
+        const _pinOn = !!_pin && process.env.SUPPLIER_PIN !== '0';
+        const _pinDiff = _pinOn && _pin.toLowerCase() !== String((row && row.supplier_name) || '').trim().toLowerCase();
         manifest[tmpName]  = {
-          known_template_id: (row && row.template_id) || null,
-          known_doc_slug:    (dtRow && dtRow.slug) || null,
+          known_template_id: _pinDiff ? null : ((row && row.template_id) || null),
+          known_doc_slug:    _pinDiff ? null : ((dtRow && dtRow.slug) || null),
           // Per-doc type authority (statuses differ across a batch — a global flag must
           // never leak, so this is manifest-only): a NEVER-confirmed doc's type is the
           // machine's own guess and a trusted contradicting title may re-type it on
           // reprocess; a confirmed doc stays pinned (human checkpoint). Key present only
           // when 'machine' — absent = pinned, today's behaviour.
-          ...(row && row.status !== 'confirmed' && !row.confirmed_at
+          ...(!_pinDiff && row && row.status !== 'confirmed' && !row.confirmed_at
               ? { known_doc_slug_authority: 'machine' } : {}),
+          ...(_pinOn ? { known_supplier: _pin } : {}),
           enhance_params:    enh,
           // Reuse stored full-page OCR text → skip the ~1.9s/page re-OCR (only when no
           // enhance is active and the text is non-empty; crop reads still re-run).
@@ -1450,16 +2752,19 @@ function register(ctx) {
     if (!tmpNames.length) {
       try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
       cleanupFiles(tempFiles);
-      return { success: true, done: 0, failed: 0 };
+      return { success: true, done: 0, failed: 0, lockedSkipped };
     }
 
     const manifestFile = writeTempJson('rbmanifest', manifest);
     let concurrency = parseInt(learning2.getSetting(db, 'processing_concurrency', String(defaultConcurrency())), 10);
     if (!Number.isFinite(concurrency)) concurrency = 1;
-    // Match the import cap (5): Reprocess All is pure cross-document parallelism (each
-    // doc's pipeline is unchanged); threadCap below keeps total OMP/onnx threads ≈ cores,
-    // and capping concurrency at 5 avoids oversubscribing the CPU on typical machines.
-    concurrency = Math.max(1, Math.min(5, concurrency));
+    // Reprocess All is pure cross-document parallelism (each doc's pipeline is unchanged); the
+    // threadCap below keeps total OMP/onnx threads ≈ cores, so more workers don't oversubscribe.
+    // Cap at 10 (raised from 5, owner request 2026-07-14): the effective count is still bounded by
+    // min(cap, processing_concurrency, files), and processing_concurrency defaults core-aware — so a
+    // low-core machine never actually reaches 10; a high-core box with a high concurrency setting now
+    // uses it (was throttled to 5). threadCap = cores/shards keeps the pool from thrashing.
+    concurrency = Math.max(1, Math.min(10, concurrency));
     const shards  = partitionRoundRobin(tmpNames, Math.min(concurrency, tmpNames.length));
     // Per-worker thread cap = cores / workers, so the pool doesn't oversubscribe the
     // CPU. Caps Tesseract's OpenMP threads (OMP_THREAD_LIMIT in the spawn env — without
@@ -1468,7 +2773,8 @@ function register(ctx) {
     const threadCap = shards.length > 1
       ? Math.max(1, Math.floor((os.cpus().length || 1) / shards.length)) : 0;
 
-    mirror(event.sender, 'reprocess-progress', { type: 'start', total: tmpNames.length });
+    _reprocessStatus = { running: true, total: tmpNames.length, done: 0, failed: 0, pendingCompletion: false };
+    mirrorReprocess({ type: 'start', total: tmpNames.length });
     let done = 0, failed = 0;
     const shardFiles = [];
     _currentBatchProcs = [];
@@ -1483,16 +2789,21 @@ function register(ctx) {
         scriptArgs.push('--trace');
         try { fs.mkdirSync(ctx.devSliceDir, { recursive: true }); scriptArgs.push('--slice-dir', ctx.devSliceDir); } catch {}
       }
-      const env = threadCap > 0
-        ? { ...process.env, OMP_THREAD_LIMIT: String(threadCap) }
-        : process.env;
+      const env = {
+        ...process.env,
+        ...(threadCap > 0 ? { OMP_THREAD_LIMIT: String(threadCap) } : {}),
+        ..._autoTitleEnv(db),
+        ..._ocrDpiEnv(db),
+        ..._anchorCropEnv(db),
+        ..._reconcileEnv(db),
+      };
       const proc = spawn(pythonExe(), pythonArgs(backendScript(), ...scriptArgs), { windowsHide: true, env });
       _currentBatchProcs.push(proc);
       let buf = '', settled = false, watchdog = null;
       const fin = () => { if (settled) return; settled = true; if (watchdog) clearTimeout(watchdog); resolve(); };
       watchdog = setTimeout(() => {
         logger?.err('reprocess-batch shard timed out');
-        try { require('child_process').spawnSync('taskkill', ['/F', '/T', '/PID', String(proc.pid)], { windowsHide: true, stdio: 'ignore' }); } catch {}
+        try { require('child_process').spawnSync(TASKKILL_EXE, ['/F', '/T', '/PID', String(proc.pid)], { windowsHide: true, stdio: 'ignore' }); } catch {}
         try { proc.kill(); } catch {}
         fin();   // settle directly — a kill that fails to fire proc.on('close') must not hang Promise.all
       }, 30 * 60 * 1000);
@@ -1510,10 +2821,10 @@ function register(ctx) {
               try { applyReprocessResult(db, nd.docId, nd.existing, msg, nd.filename, diagOn); done++; }
               catch (e) { failed++; logger?.err(`reprocess-batch merge ${nd.filename}: ${e.message}`); }
             } else if (nd) { failed++; }
-            mirror(event.sender, 'reprocess-progress',
-              { type: 'file_done', done, failed, total: tmpNames.length, docId: nd ? nd.docId : null });
+            _reprocessStatus.done = done; _reprocessStatus.failed = failed;
+            mirrorReprocess({ type: 'file_done', done, failed, total: tmpNames.length, docId: nd ? nd.docId : null });
           } else if (msg.type !== 'start') {
-            mirror(event.sender, 'reprocess-progress', msg);   // file_begin / log
+            mirrorReprocess(msg);   // file_begin / log
           }
         }
       });
@@ -1526,61 +2837,88 @@ function register(ctx) {
       await Promise.all(shards.map(runShard));
     } finally {
       _currentBatchProcs = [];
+      // Mark the batch finished + tell the LIVE Review window (which may be a REOPENED window that
+      // reconnected mid-run) so it can refresh the queue + re-enable its buttons. The window that
+      // STARTED the batch also resolves via this handler's return; a reopened one relies on this event.
+      _reprocessStatus = { ..._reprocessStatus, running: false, pendingCompletion: true };
+      mirrorReprocess({ type: 'batch_done', done, failed, total: _reprocessStatus.total });
       try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
       cleanupFiles([manifestFile, ...shardFiles, ...tempFiles]);
     }
-    return { success: true, done, failed };
+    return { success: true, done, failed, lockedSkipped };
+  });
+
+  // Live "Reprocess All" status — a Review window that was closed mid-batch reads this on reopen to
+  // reconnect (show progress + disable the reprocess buttons) instead of looking idle over a batch
+  // that is still running in this process. Any signed-in principal may read it (display-only).
+  ipcMain.handle('get-reprocess-status', () => ({ ..._reprocessStatus }));
+
+  // Consume-once: a batch's window-side completion (auto-file reprocessed-to-100 docs + summary).
+  // Returns the final counts the FIRST time it is called after a batch finishes, then null. Both the
+  // fresh-start window (which already ran its own completion) and a reopened window call it — so the
+  // completion runs exactly once, whether or not a window was open at the finish line.
+  ipcMain.handle('consume-reprocess-completion', () => {
+    if (!_reprocessStatus.pendingCompletion) return null;
+    _reprocessStatus.pendingCompletion = false;
+    return { done: _reprocessStatus.done, failed: _reprocessStatus.failed, total: _reprocessStatus.total };
   });
 
   // ── OCR region ──────────────────────────────────────────────────────────────
   // Zone-OCR + anchor/logo teaching tools — all part of the Review window's
   // "teach the system" workflow, so Admin/Edit (the same set that can confirm
   // and correct extractions there).
+  let _ocrTmpSeq = 0;   // disambiguates same-ms tmpFile names for the 3 parallel reads of one draw
+  // COLD region.py spawn (the always-available fallback; also the sole path when the pool is OFF).
+  // Does NOT unlink — the caller (_runRegion) owns the tmpFile lifecycle via its finally.
+  const _coldRegion = (tmpFile, boxes) => new Promise((resolve) => {
+    const extra = boxes ? ['--boxes'] : [];
+    const proc = spawn(pythonExe(), pythonArgs(ctx.resourcePath('python_backend', 'ocr', 'region.py'),
+      '--image-file', tmpFile, '--tesseract', tesseractPath(), ...extra), { windowsHide: true });
+    let out = '', err = '';
+    proc.stdout.on('data', d => { out += d.toString(); });
+    proc.stderr.on('data', d => { err += d.toString(); });
+    proc.on('close', () => {
+      if (err) console.error(`ocr_region${boxes ? '_boxes' : ''} stderr:`, err);
+      if (boxes) { try { resolve(JSON.parse(out.trim())); } catch { resolve(null); } }
+      else resolve(out.trim());
+    });
+    proc.on('error', () => resolve(boxes ? null : ''));   // spawn failure -> empty (never hang)
+  });
+  // Shared read path. Writes the tmpFile ONCE, routes through the warm worker pool when enabled
+  // (fallback to a cold spawn on ANY worker failure), and unlinks the tmpFile ONCE in finally —
+  // regardless of path (Oracle: single unlink point, no per-request close race under the pool). The
+  // seq suffix keeps the 3 PARALLEL reads of one draw from colliding on the same-ms filename.
+  const _runRegion = async (base64png, boxes) => {
+    const tmpFile = path.join(os.tmpdir(), `ds_ocr${boxes ? 'b' : ''}_${Date.now()}_${_ocrTmpSeq++}.png`);
+    fs.writeFileSync(tmpFile, Buffer.from(base64png, 'base64'));
+    try {
+      if (regionWorker.enabled()) {
+        try {
+          const r = await regionWorker.run({ imageFile: tmpFile, boxes });
+          return boxes ? { text: r.text, box: r.box, words: r.words, lines: r.lines } : (r.text || '');
+        } catch (e) {
+          console.error('ocr-region warm-worker fallback:', e && e.message);   // -> cold spawn below
+        }
+      }
+      return await _coldRegion(tmpFile, boxes);
+    } finally {
+      try { fs.unlinkSync(tmpFile); } catch {}
+    }
+  };
+
+  // Zone-OCR + anchor teaching tools — Admin/Edit (the set that can confirm/correct in Review).
   ipcMain.handle('ocr-region', async (_e, base64png) => {
     requireRole('admin', 'edit');
-    const tmpFile = path.join(os.tmpdir(), `ds_ocr_${Date.now()}.png`);
-    fs.writeFileSync(tmpFile, Buffer.from(base64png, 'base64'));
-    const script = ctx.resourcePath('python_backend', 'ocr', 'region.py');
-    const py = pythonExe();
-
-    return new Promise((resolve) => {
-      const proc = spawn(py, pythonArgs(script,
-        '--image-file', tmpFile, '--tesseract', tesseractPath()),
-        { windowsHide: true });
-      let out = '', err = '';
-      proc.stdout.on('data', d => { out += d.toString(); });
-      proc.stderr.on('data', d => { err += d.toString(); });
-      proc.on('close', () => {
-        try { fs.unlinkSync(tmpFile); } catch {}
-        if (err) console.error('ocr_region stderr:', err);
-        resolve(out.trim());
-      });
-    });
+    return _runRegion(base64png, false);
   });
 
-  // Like ocr-region but returns {text, box:[l,t,w,h]} where box is the union of
-  // detected word boxes in the crop's ORIGINAL pixels. The ⊕ tool uses this to
-  // capture the taught LABEL's position so a drift-invariant label→value offset
-  // can be stored (see review/renderer.js captureAnchorContext, learning.saveAnchor).
+  // Like ocr-region but returns {text, box:[l,t,w,h], words, lines} where box is the union of
+  // detected word boxes in the crop's ORIGINAL pixels. The ⊕ tool uses this to capture the taught
+  // LABEL's position so a drift-invariant label→value offset can be stored (see review/renderer.js
+  // captureAnchorContext, learning.saveAnchor).
   ipcMain.handle('ocr-region-boxes', async (_e, base64png) => {
     requireRole('admin', 'edit');
-    const tmpFile = path.join(os.tmpdir(), `ds_ocrb_${Date.now()}.png`);
-    fs.writeFileSync(tmpFile, Buffer.from(base64png, 'base64'));
-    const script = ctx.resourcePath('python_backend', 'ocr', 'region.py');
-    const py = pythonExe();
-    return new Promise((resolve) => {
-      const proc = spawn(py, pythonArgs(script,
-        '--image-file', tmpFile, '--tesseract', tesseractPath(), '--boxes'),
-        { windowsHide: true });
-      let out = '', err = '';
-      proc.stdout.on('data', d => { out += d.toString(); });
-      proc.stderr.on('data', d => { err += d.toString(); });
-      proc.on('close', () => {
-        try { fs.unlinkSync(tmpFile); } catch {}
-        if (err) console.error('ocr_region_boxes stderr:', err);
-        try { resolve(JSON.parse(out.trim())); } catch { resolve(null); }
-      });
-    });
+    return _runRegion(base64png, true);
   });
 
   // Straighten a rendered page for the Review DISPLAY: returns {angle, image} where image is a
@@ -1695,10 +3033,63 @@ function register(ctx) {
     return result?.match || null;
   });
 
-  ipcMain.handle('save-logo-fingerprint', (_e, { supplier_name, phash, ahash, detail_hash }) => {
+  ipcMain.handle('save-logo-fingerprint', (_e, { supplier_name, phash, ahash, detail_hash, document_id }) => {
     requireRole('admin', 'edit');
     const learning = require('../../../database/modules/learning');
-    learning.saveLogoFingerprint(getDb(), { supplier_name, phash, ahash, detail_hash });
+    const db = getDb();
+    // CONFIRM-TIME PLANT GATE (identity text-first, Oracle C4). The text-agreement gate stops the
+    // ENGINE asserting a contradicted identity, but a human can still rubber-stamp a plausible
+    // wrong prefill — and this plant would then teach the wrong company that page's logo, making
+    // the next batch worse (the measured anti-healing loop: cross-supplier min hamming 2). So a
+    // plant now requires the confirmed issuer to be corroborated by the DOCUMENT'S OWN text.
+    // Gated on positive corroboration, NOT on "the field carries a note" — every template-less
+    // new supplier carries one, and that shape would starve legitimate first-contact enrolment.
+    // FAILS OPEN (no doc id, no ocr_text, nothing distinctive ⇒ plant) and can only ever skip a
+    // LEARNING write — never a filed value. Kill switch LOGO_PLANT_TEXT_GATE=0.
+    if (document_id != null && process.env.LOGO_PLANT_TEXT_GATE !== '0') {
+      try {
+        const bf = require('../../../database/modules/branding_fingerprint');
+        const doc = db.prepare('SELECT ocr_text FROM documents WHERE id = ?').get(Number(document_id));
+        const fps = db.prepare(
+          `SELECT t.keyword_fingerprint FROM templates t
+             WHERE t.keyword_fingerprint IS NOT NULL AND LOWER(TRIM(t.name)) = LOWER(TRIM(?))`
+        ).all(String(supplier_name || '')).map(r => { try { return JSON.parse(r.keyword_fingerprint) || []; } catch { return []; } });
+        const verdict = bf.nameCorroboratedByText(supplier_name, fps, doc && doc.ocr_text);
+        if (verdict.judgeable && !verdict.corroborated) {
+          logger?.warn?.(`[identity] logo plant SKIPPED for '${supplier_name}' — doc ${document_id} text does not corroborate it`);
+          try {
+            logAudit(db, { action: 'logo_plant_skipped', action_category: 'processing',
+              target_type: 'document', target_id: Number(document_id), document_id: Number(document_id),
+              outcome: 'success', details: `supplier=${supplier_name} reason=text_not_corroborated` });
+          } catch { /* audit must never break the confirm */ }
+          return false;
+        }
+      } catch (e) { logger?.warn?.(`[identity] plant gate check failed (planting anyway): ${e.message}`); }
+    }
+    // DETAIL-HASH ENROLMENT THREAD (Phillip R2 / Oracle C5, 2026-07-23; LOGO_DETAIL_ENROL=1 arms).
+    // ⚠ SHIPS DARK (default OFF) — the C5 activation A/B (starved copy vs backfilled copy,
+    // 390 docs, stress_test/out/act_{base,on}.md) measured what population does: M 9→3 (real
+    // healing — six poisoned-GT wrong-auto-files die) BUT would-auto-file 268→131, because with
+    // SPARSE detail sets (one reference per row) the anchor-path detail-primary picker
+    // (LOGO_DETAIL_PRIMARY, default ON in anchor.py, inert only while this table is starved)
+    // abstains across the same-supplier drift tail (histogram: 27% of genuine pairs exceed the
+    // veto distance; multi-reference sets are the load-bearing structure). Populating detail_hash
+    // by ANY route — this thread or scripts/logo-detail-backfill.js — ARMS that picker, so
+    // neither may default-ON until a minimum-set-size guard lands on the Python side (its own
+    // design round). The mechanics below are correct and gated for that day.
+    // The renderer's confirm-time caller never sends detail_hash (why the table sat 0/N). Thread
+    // it SERVER-side from the doc's processing-time hash (documents.logo_detail_hash, mig 47) —
+    // never renderer-computed: the canvas image varies with render resolution/enhancement.
+    // saveLogoFingerprint's guards apply unchanged (COALESCE fills empty rows only;
+    // _detailCrossPlantCloser refuses rival-matching marks). No doc id / no hash ⇒ exactly today.
+    let _detail = detail_hash;
+    if (!_detail && document_id != null && process.env.LOGO_DETAIL_ENROL === '1') {
+      try {
+        const _dr = db.prepare('SELECT logo_detail_hash FROM documents WHERE id = ?').get(Number(document_id));
+        _detail = (_dr && _dr.logo_detail_hash) || null;
+      } catch { _detail = detail_hash; }
+    }
+    learning.saveLogoFingerprint(db, { supplier_name, phash, ahash, detail_hash: _detail });
     return true;
   });
 
@@ -1748,32 +3139,96 @@ function register(ctx) {
   // Thin wrapper around pdf_splitter.py (pypdf). Splits a single PDF into
   // page-range sub-documents that can then be dropped into the normal process-
   // folder pipeline. outDir is optional (defaults to a safe system-temp path).
+  // ── Filing Slips: generate a printable separator-sheet pack ─────────────────
+  // docs/designs/FILING_SLIPS_2026-07-18.md §5. Writes the PDF into userData/
+  // filing-slips/ (never a caller-supplied path — no path-taking IPC surface); the
+  // renderer opens it via the existing open-file/show-in-explorer bridges and the
+  // user prints from their PDF viewer. The numbering counter advances ONLY on a
+  // successful generation. requireRole holds the read-only wall (mutating IPC).
+  ipcMain.handle('generate-filing-slips', async (_e, count) => {
+    requireRole('admin', 'edit');
+    const { app } = require('electron');
+    const learning = require('../../../database/modules/learning');   // per-function require, matching this file's convention
+    const db = getDb();
+    const n = clampSlipCount(count);
+    const cur = parseInt(learning.getSetting(db, 'filing_slip_next_number', '1'), 10);
+    const { first, last, next } = nextSlipRange(cur, n);
+    const outDir = path.join(app.getPath('userData'), 'filing-slips');
+    try { fs.mkdirSync(outDir, { recursive: true }); }
+    catch (err) { return { success: false, error: `Could not create the output folder: ${err.message}` }; }
+    const outPath = path.join(outDir, slipPackName(first, last));
+
+    const script = path.join(path.dirname(backendScript()), 'filing_slips.py');
+    const res = await new Promise((resolve) => {
+      let stdout = '';
+      let proc;
+      try {
+        proc = spawn(pythonExe(),
+          pythonArgs(script, '--count', String(n), '--start', String(first), '--out', outPath),
+          { windowsHide: true });
+      } catch (err) { return resolve({ success: false, error: err.message }); }
+      // Deliberately NOT in the batch Stop/kill registry — pack generation is
+      // independent of any import; a 30 s timer guards a leaked child instead.
+      const timer = setTimeout(() => { try { proc.kill(); } catch {} }, 30000);
+      proc.stdout.on('data', (d) => { stdout += d.toString(); });
+      proc.on('close', () => {
+        clearTimeout(timer);
+        try { resolve(JSON.parse(stdout.trim())); }
+        catch { resolve({ success: false, error: 'slip generator returned non-JSON output' }); }
+      });
+      proc.on('error', (err) => { clearTimeout(timer); resolve({ success: false, error: err.message }); });
+    });
+    if (!res || !res.success || !fs.existsSync(outPath)) {
+      return { success: false, error: (res && res.error) || 'Sheet generation failed' };
+    }
+    learning.setSetting(db, 'filing_slip_next_number', String(next));
+    // Sweep old packs (keep the newest 5) so the folder never grows unbounded.
+    try {
+      const packs = fs.readdirSync(outDir).filter(f => f.toLowerCase().endsWith('.pdf'))
+        .map(f => ({ f, t: fs.statSync(path.join(outDir, f)).mtimeMs }))
+        .sort((a, b) => b.t - a.t);
+      for (const p of packs.slice(5)) { try { fs.unlinkSync(path.join(outDir, p.f)); } catch {} }
+    } catch { /* best-effort */ }
+    return { success: true, path: outPath, first, last };
+  });
+
   ipcMain.handle('split-pdf', async (_e, filePath, ranges, outDir, docId, every) => {
     requireRole('admin', 'edit');
     // `every` (split every N pages, 1 = every page) is an alternative to an
     // explicit range string; exactly one is required.
     const everyN = Number(every) > 0 ? Math.floor(Number(every)) : null;
-    if (!filePath || (!ranges && !everyN)) {
-      return { success: false, error: 'filePath and ranges or every are required' };
+    if (docId == null || (!ranges && !everyN)) {
+      return { success: false, error: 'docId and ranges or every are required' };
     }
 
-    // Resolve the ACTUAL source file: prefer the app-managed working copy. The original
-    // is DRAINED out of the intake folder into Processed/ once a working copy exists, so
-    // splitting from `filePath` (the original location) would fail "file not found" after
-    // a normal process. Mirrors the reprocess path's working-copy-first resolution.
-    let srcFile = filePath;
-    try {
-      if (docId) {
-        const wp = getDb().prepare('SELECT working_path FROM documents WHERE id = ?').get(docId);
-        if (wp && wp.working_path && fs.existsSync(wp.working_path)) srcFile = wp.working_path;
-      }
-    } catch { /* fall back to filePath */ }
+    // SECURITY (Stage 1 — H2): resolve the source PDF, the output directory, AND the delete target
+    // SERVER-SIDE from the doc row. The renderer-supplied `filePath`/`outDir` are NOT trusted for any
+    // filesystem operation — a compromised/replaced renderer could otherwise write split PDFs to an
+    // arbitrary directory and unlink an arbitrary host file (the read swapped to the working copy while
+    // the delete still hit the caller's path). All three now derive from paths the app itself recorded
+    // for this document.
+    const db = getDb();
+    const documents = require('../../../database/modules/documents');
+    const row = db.prepare(
+      'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(docId);
+    if (!row) return { success: false, error: 'document not found' };
+    const recordedOriginal = (row.folder_path && row.original_filename)
+      ? path.join(row.folder_path, row.original_filename) : null;
+    // Read source: prefer the app-managed working copy (stable + app-owned); then the filed copy; then
+    // the recorded original. `folder_path`/`original_filename` track the CURRENT recorded location — they
+    // are updated to the Processed/ folder when the source is drained after a normal import — so
+    // recordedOriginal stays valid; the working copy is preferred only because it's the reliable
+    // app-owned path that doesn't depend on the user's folder.
+    const srcFile = [row.working_path, row.stored_path, recordedOriginal].find(p => p && fs.existsSync(p)) || null;
     if (!srcFile || !fs.existsSync(srcFile)) {
       return { success: false, error: 'Source PDF not found — the original may have been moved into the Processed folder after processing.' };
     }
-    // Write the split pages next to the ORIGINAL location (a real user folder), never the
-    // hidden inbox where the working copy lives.
-    const splitOutDir = outDir || (filePath ? path.dirname(filePath) : path.dirname(srcFile));
+    // Write the split pages next to the doc's own RECORDED location (a real user folder the app already
+    // recorded for it), never the hidden inbox where the working copy lives, and never a renderer-chosen
+    // directory.
+    const splitOutDir = recordedOriginal ? path.dirname(recordedOriginal)
+                      : row.stored_path ? path.dirname(row.stored_path)
+                      : path.dirname(srcFile);
 
     const py             = pythonExe();
     const splitterScript = path.join(path.dirname(backendScript()), 'pdf_splitter.py');
@@ -1793,11 +3248,6 @@ function register(ctx) {
 
     if (!raw.success) return raw;
 
-    // Register split files as pending documents and remove the original.
-    // Only deletes the original after all outputs are confirmed on disk.
-    const documents = require('../../../database/modules/documents');
-    const db        = getDb();
-
     const createdFiles = (raw.files || []).filter(f => fs.existsSync(f));
     if (createdFiles.length === 0) {
       return { success: false, error: 'Splitter reported success but no output files were found on disk.' };
@@ -1813,12 +3263,11 @@ function register(ctx) {
       docIds.push(info.lastInsertRowid);
     }
 
-    // Remove original from DB and disk — only after outputs are confirmed.
-    if (docId) {
-      documents.deleteDoc(db, docId);
-    }
-    if (filePath && fs.existsSync(filePath)) {
-      try { fs.unlinkSync(filePath); } catch (e) { logger?.warn('Could not delete original after split:', e.message); }
+    // Remove the original from DB + disk — only after outputs are confirmed. The delete target is the
+    // doc's RECORDED original location (resolved above), never a renderer-supplied path.
+    documents.deleteDoc(db, docId);
+    if (recordedOriginal && fs.existsSync(recordedOriginal)) {
+      try { fs.unlinkSync(recordedOriginal); } catch (e) { logger?.warn('Could not delete original after split:', e.message); }
     }
 
     notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
@@ -1896,6 +3345,26 @@ function drainOriginalToFolder(fs, path, srcPath, destDir, originalFilename, opt
 // Try to move an original NOW (the worker closes each PDF as it finishes it, so the
 // handle is usually free by file_done → the file moves live, "as processed"). If it is
 // still momentarily locked, queue it for the post-worker flush instead of blocking.
+// Per-SOURCE-FOLDER drain tally for the truthful post-run line (Chris r5 card 2; Oracle C1):
+// a plain per-batch counter was contaminated by concurrent WATCH drains (watch messages run
+// through the same _drainNowOrDefer while a manual import is mid-flight — watch defers its
+// batch behind a manual one, but not the reverse). Keying on the item's source folder means
+// the manual emit reads ONLY its own folder's tally; watch drains sit under the watch
+// folder's key and never leak into the manual line. Pure helpers exported for the pin test.
+const _drainTally = new Map();   // lower-cased source folder -> drains completed
+function _drainTallyKey(p) { try { return path.dirname(path.resolve(p)).toLowerCase(); } catch { return ''; } }
+function _recordDrain(srcPath) {
+  const k = _drainTallyKey(srcPath);
+  if (k) _drainTally.set(k, (_drainTally.get(k) || 0) + 1);
+}
+function _takeDrainTally(folder) {
+  let k = '';
+  try { k = path.resolve(folder).toLowerCase(); } catch { return 0; }
+  const n = _drainTally.get(k) || 0;
+  _drainTally.delete(k);
+  return n;
+}
+
 function _drainNowOrDefer(db, logger, item) {
   try {
     // retry:false → a single non-blocking attempt on the main thread; a locked file is
@@ -1907,6 +3376,7 @@ function _drainNowOrDefer(db, logger, item) {
         db.prepare('UPDATE documents SET original_filename = ? WHERE id = ?').run(moved.filename, item.docId);
       }
       logger?.log(`Drained to ${item.kind}: ${item.originalFilename} → ${moved.folder}`);
+      _recordDrain(item.srcPath);
       return;
     }
   } catch (e) {
@@ -1929,6 +3399,7 @@ function _flushPendingDrains(db, logger) {
           db.prepare('UPDATE documents SET original_filename = ? WHERE id = ?').run(moved.filename, item.docId);
         }
         logger?.log(`Drained to ${item.kind}: ${item.originalFilename} → ${moved.folder}`);
+        _recordDrain(item.srcPath);
       } else if (fs.existsSync(item.srcPath)) {
         keep.push(item);   // still locked → retry on the next flush
       }
@@ -2142,12 +3613,22 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
   // Resolve document_type_id from the detected type name so the review queue
   // has type_slug populated and anchors/hints are tagged correctly.
   let document_type_id = null;
+  let detectedTypeName = null;
   if (msg.document_type) {
-    const allTypes = docTypes.getAllWithFields(db);
-    const match = allTypes.find(
-      dt => dt.name.toLowerCase() === msg.document_type.toLowerCase()
-    );
-    if (match) document_type_id = match.id;
+    const res = _resolveDetectedType(db, msg.document_type);
+    document_type_id = res.id;
+    // The type was NAMED but this install doesn't have it. Keep the name so Review can offer to
+    // add it. The doc deliberately stays UNTYPED rather than adopting the generic type: generic is
+    // equally unfilable (trust.js refuses 'generic-type' as flatly as 'no-type'), but it would
+    // overwrite the type with one we KNOW is wrong when a better answer is one admin click away,
+    // and it would move the filing {docType} token and the learning scope onto general_document.
+    // Generic remains the answer for detection == None only — do not move it out of the else.
+    detectedTypeName = res.unmatchedName;
+  } else {
+    // Generic Document fallback: detection returned None → adopt the General Document
+    // type when enabled (kill-switched; review-bound via the trust.js refusal).
+    const gid = _genericFallbackId(db, msg.document_type);
+    if (gid) document_type_id = gid;
   }
 
   // _supplier_name metadata is only populated via logo/hint matching, which is
@@ -2169,6 +3650,7 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
       ? JSON.stringify(msg.keyword_fingerprint) : null,
     ocr_text:           msg.ocr_text      || null,
     page_count:         msg.page_count    || null,
+    detected_type_name: detectedTypeName,
   });
 
   const docId = docResult.lastInsertRowid;
@@ -2184,6 +3666,7 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
       corrected_to:      data.corrected_to || null,
       anchor_label:      data.anchor || null,
       candidates:        data.candidates ? JSON.stringify(data.candidates) : null,   // disambiguation picker
+      suggested_supplier: data.suggested_supplier || null,   // branding cross-check → "Use '<name>'" button
     }));
     learning.insertExtractions(db, docId, rows);
   }
@@ -2329,7 +3812,19 @@ async function _autoFileDoc(db, docId, folderPath, notifyMainWindow, logger) {
     return;
   }
   documents.update(db, docId, { stored_filename: fr.filename, stored_path: fr.filePath });
+  // Routing slice (SEAM A): capture the total's trust context BEFORE the note-clear below (Oracle A1).
+  // Kill-switch-gated ⇒ OFF = no DB read = byte-identical. corrections={} ⇒ wasCorrected=false (a pure
+  // machine read — the doc already passed isAutoFileEligible).
+  const amountRouting = require('../../services/amountRouting');
+  const _routeCtx = amountRouting.amountRoutingEnabled()
+    ? amountRouting.captureTotalContext(db, docId, {}, { getExtractedTotalContext: documents.getExtractedTotalContext })
+    : null;
   try { db.prepare('UPDATE extractions SET validation_note = NULL, corrected_to = NULL WHERE document_id = ?').run(docId); } catch {}
+  // P2 — drop FOREIGN extraction rows (keys not on this doc's type) AFTER the auto-file gate at
+  // isAutoFileEligible above has already run on the FULL row set, so a garbled foreign field still
+  // HELD this doc exactly as today (the drop can never open the gate — ordering is load-bearing).
+  // Kill switch FOREIGN_FIELD_DROP=0. Shared predicate with reviewService + _buildTemplateFields.
+  try { require('../../lib/foreignFields').dropForeignExtractions(db, docId, dtInfo); } catch (e) { logger?.warn?.(`foreign-field drop skipped for docId=${docId}: ${e && e.message}`); }
   if (doc.working_path) {
     try { if (fs.existsSync(doc.working_path)) fs.unlinkSync(doc.working_path); } catch {}
     try { documents.update(db, docId, { working_path: null }); } catch {}
@@ -2349,6 +3844,46 @@ async function _autoFileDoc(db, docId, folderPath, notifyMainWindow, logger) {
     notifyMainWindow?.('doc-auto-filed', { docId, count: getAutoFiledIds(db).length });
     notifyMainWindow?.('review-count-changed', documents.getReviewCount(db));
   } catch {}
+  // Slice 1 (learn-on-commit): auto-file is the THIRD commit route — keep the matched template's
+  // identity converging on it too, or a supplier whose docs all auto-file would never converge past
+  // its first frozen sample. Self-gated on the kill switch (DEFAULT OFF ⇒ byte-identical) + a
+  // resolvable same-type/same-supplier template. fail-open — the doc is already filed above.
+  try { require('../../../database/modules/templates').learnTemplateOnCommit(db, docId, { document_type_slug: dtInfo.slug, supplier_name: allValues.supplier_name || doc.supplier_name || null }); }
+  catch (e) { logger?.warn?.(`[auto-file] learn-on-commit skipped for docId=${docId}: ${e && e.message}`); }
+
+  // Routing slice (SEAM A): auto-create an approval route from the extracted total/type — detached +
+  // fail-open (can NEVER disturb the already-completed file). System sender via assignSystem (no human
+  // confirmer on auto-file). Self-gated on the kill switch + REAL entitlement (master const, false
+  // today) + hasActiveRoute, so a dark build never routes and a running build never strands a locked doc.
+  if (amountRouting.amountRoutingEnabled()) {
+    Promise.resolve().then(() => amountRouting.startDefaultRoute(db, docId, _routeCtx, {
+      supplierName: allValues.supplier_name || doc.supplier_name || null,
+      slug: dtInfo.slug, documentTypeId: doc.document_type_id,
+    }, _autoFileRouteDeps(db))).catch(() => {});
+  }
+}
+
+// Deps for the auto-file routing engine (Oracle C2 — the SAME gates as the confirm path, incl. the REAL
+// entitlement, not merely the kill switch). assign → assignSystem (NULL "Auto-filed" sender: auto-file
+// has no human confirmer). A throwing dep is swallowed by the detached .catch above (fail-open).
+function _autoFileRouteDeps(db) {
+  const wfDb     = require('../../../database/modules/workflow');
+  const trust    = require('../../../database/modules/trust');
+  const authDb   = require('../../../database/modules/auth');
+  const learning = require('../../../database/modules/learning');
+  const { logAudit } = require('../auth/handler');
+  const svc = require('../../services/workflowService').createWorkflowService({ audit: (e) => logAudit(db, e) });
+  return {
+    entitled: (d) => { try { return !!require('../../services/entitlementService').checkClientEntitlement(d).workflow.entitled; } catch { return false; } },
+    hasActiveRoute: (d, id) => wfDb.hasActiveRoute(d, id),
+    currencyConsistent: (d, sup, slug, fk, v) => trust.currencyConsistentForField(d, sup, slug, fk, v),
+    floor: (d) => parseInt(learning.getSetting(d, 'critical_field_conf_floor', '88'), 10) || 0,
+    listActiveRules: (d) => wfDb.listActiveRouteRules(d),
+    usersByRole: (d, role) => authDb.getAllUsers(d).filter(u => u.role === role),
+    assign: (_actor, opts) => svc.assignSystem(db, opts),   // NULL sender — auto-file has no human confirmer
+    audit: (e) => logAudit(db, e),
+    summarizeRule: (rule) => wfDb.summarizeRule(db, rule),
+  };
 }
 
 // Rolling list of recently auto-filed doc ids (the "auto-committed" set the Review window
@@ -2380,7 +3915,7 @@ function killAll() {
   for (const proc of _currentBatchProcs) {
     try {
       require('child_process').spawnSync(
-        'taskkill', ['/F', '/T', '/PID', String(proc.pid)],
+        TASKKILL_EXE, ['/F', '/T', '/PID', String(proc.pid)],
         { windowsHide: true, stdio: 'ignore' });
     } catch {}
     try { proc.kill(); } catch {}
@@ -2398,7 +3933,16 @@ module.exports = {
   cleanupTempFiles: cleanupFiles,
   handleFileMessage: _handleFileMessage,
   flushPendingDrains: _flushPendingDrains,
+  _withinAnyRoot,            // SEC-17 reparse-point containment pins (test_path_containment.js)
+  _realCanonical,            // ditto — exported so the pin asserts the shipped predicate, not a copy
+  _genericFallbackId,        // Generic Document fallback pins (test_generic_fallback_mapping.js)
+  _resolveDetectedType,      // mig-51 detected-type-nudge pins (test_detected_type_nudge.js)
+  _reprocessGenericAdopt,
+  _autoTitleEnv,             // Auto-Title spawn env (shared with the watch batch)
+  _anchorCropEnv,            // crop opt-in spawn env: right-grow + label left-clamp (shared with the watch batch)
+  _reconcileEnv,             // extraction-reconcile opt-in spawn env: prefix-garble adopt (shared with the watch batch)
   drainOriginalToFolder,
+  _recordDrain, _takeDrainTally,   // drain-tally pins (test_drain_tally.js — Oracle C1)
   ensureWorkingCopy,
   ensureWorkingCopyAsync,
   reconcileHolding,
@@ -2417,4 +3961,10 @@ module.exports = {
   _isOpenablePath,
   // Exposed for the reprocess type-flip persistence unit test (test_reprocess_type_flip.js).
   _mergeReprocessRows: mergeReprocessRows,
+  _supplierColumnBlanked: supplierColumnBlanked,
+  // Exposed for the fast re-extract fill-only merge unit test (test_reextract_merge.js).
+  _mergeReextractRows: mergeReextractRows,
+  _admitReextractPick: admitReextractPick,
+  // Exposed for the SFDEV debug-table builder pin (test_debug_table.js).
+  _buildDebugTable, _saveDebugTable, _debugTableDir,
 };

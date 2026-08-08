@@ -11,6 +11,7 @@ const { app, BrowserWindow, ipcMain, screen, shell, Tray, Menu, Notification } =
 const path = require('path');
 const fs   = require('fs');
 const { repairKeyboardFocus } = require('./lib/focusRepair');
+const { closeCoverWindows, scheduleCoverTeardown } = require('./lib/coverTeardown');
 
 // ── App-data directory (brand rename: DocuSnap → ScanFinder) ──────────────────
 // On-disk data lives under userData (SQLite DB, users, cached license tokens,
@@ -33,6 +34,16 @@ try {
   if (fs.existsSync(_legacyDataDir)) _resolvedUserData = _legacyDataDir;
 }
 app.setPath('userData', _resolvedUserData);
+// DEV-ONLY SANDBOX OVERRIDE (owner 2026-08-02): DOCUSNAP_USERDATA points the WHOLE data
+// world (DB, inbox copies, debug logs, window-state) at an isolated folder, so a second,
+// fully-sandboxed instance can run beside the real app without touching its data. Ignored
+// in packaged builds — a customer install can never be re-pointed by an env var.
+if (!app.isPackaged && process.env.DOCUSNAP_USERDATA) {
+  try {
+    fs.mkdirSync(process.env.DOCUSNAP_USERDATA, { recursive: true });
+    app.setPath('userData', process.env.DOCUSNAP_USERDATA);
+  } catch { /* fall through to the normal userData */ }
+}
 // Brand the app name so native JS dialogs (confirm/alert) are headed "ScanFinder", not the
 // package name "docusnap". Safe: userData is explicitly setPath'd above, so this never
 // moves the on-disk data folder.
@@ -49,6 +60,11 @@ app.setName('ScanFinder');
 // (If reclaiming GPU acceleration is ever wanted, try the narrower
 //  commandLine.appendSwitch('disable-gpu-compositing') instead and re-test.)
 app.disableHardwareAcceleration();
+// NOTE: `disable-print-preview` was TRIED 2026-07-18 to get the native Windows print dialog
+// out of webContents.print({silent:false}) — it did NOT reroute the programmatic print path
+// on Electron 31 (still Chromium's stubbed preview WebUI, physically verified). There is no
+// working way to raise the classic native Windows print dialog from webContents.print; do
+// not re-add the switch expecting it to.
 
 // Windows toast attribution: without an explicit AppUserModelID, notifications are
 // labelled "Electron". Match the installer's shortcut AUMID (build.appId in
@@ -74,6 +90,7 @@ const licensingModule      = require('./modules/licensing/handler');
 const apiModule            = require('./modules/api/handler');
 const workflowModule       = require('./modules/workflow/handler');
 const tutorialModule       = require('./modules/tutorial/handler');
+const printModule          = require('./modules/print/handler');
 
 // ── DB ────────────────────────────────────────────────────────────────────────
 let _db = null;
@@ -136,6 +153,7 @@ let pendingReviewDocId = null;
 // Full-text query to pre-fill when the Search window opens via the Home "Quick find" card.
 // Pulled by the search renderer via get-search-target, or pushed if the window is already open.
 let pendingSearchQuery = null;
+let pendingSearchView = null;   // Search window's initial view target (e.g. 'mailbox' from Home)
 // Same pattern for "open Settings focused on a template" (from Review's "Add to
 // Template Manager") — pulled by the settings renderer after loadTemplates(), or
 // delivered immediately if the settings window is already open.
@@ -147,7 +165,24 @@ let pendingTeachDocId = null;
 const MAIN_WINDOW_OPTIONS    = { width: 1100, height: 750, minWidth: 800, minHeight: 560 };
 const LOGIN_WINDOW_OPTIONS   = { width: 460, height: 660, resizable: false, minimizable: false, maximizable: false };
 const LICENSE_WINDOW_OPTIONS = { width: 460, height: 560, resizable: false, minimizable: false, maximizable: false };
-const ONBOARDING_WINDOW_OPTIONS = { width: 720, height: 720, resizable: false, minimizable: false, maximizable: false };
+// The wizard is a FIXED-SIZE window (resizable:false), so its height must fit its TALLEST
+// step, not its average one. Step 1 grows by ~95px the moment "Choose a folder" reveals the
+// processed-scans path row — at 720 that tipped the panel into its own overflow, so a
+// scrollbar appeared and vanished as the card was toggled. Sized for that tallest state.
+// The panel keeps its internal overflow-y as the backstop for an unusual theme/font metric.
+const ONBOARDING_WINDOW_OPTIONS = { width: 720, height: 820, resizable: false, minimizable: false, maximizable: false };
+
+// …but a fixed 820 must never exceed the screen, or on a 768-high laptop the footer's
+// Next button would sit below the taskbar with no way to resize the window. Clamp to the
+// work area at open time (screen isn't available at module load).
+function onboardingWindowOptions() {
+  const opts = { ...ONBOARDING_WINDOW_OPTIONS };
+  try {
+    const wa = screen.getPrimaryDisplay().workArea;
+    if (wa && wa.height > 0) opts.height = Math.max(600, Math.min(opts.height, wa.height - 40));
+  } catch { /* screen unavailable — keep the nominal height */ }
+  return opts;
+}
 const LEGAL_WINDOW_OPTIONS = { width: 720, height: 680, resizable: false, minimizable: false, maximizable: false };
 // Bump this (and LEGAL.txt's "Version:" header) to re-prompt everyone for acceptance.
 const LEGAL_VERSION = '2026-07-01';
@@ -173,29 +208,49 @@ function showLoginScreen() {
   // Destroy (not hide) every other window — especially the main shell, so logging
   // out can't leave a hidden previous-user session reachable from the tray.
   Object.keys(windows).forEach((name) => { if (name !== 'login') destroyWindow(name); });
+  _wfDigestShown = false;   // re-arm the at-login workflow digest for the NEXT login (Slice 1)
   refreshTrayMenu();   // reflect logged-out state (disable Review/Settings)
 }
 
 // Raw shell open — only ever reached AFTER the licensing gate has allowed it.
 function openMainShell() {
+  // P3 fix (kill switch WIZARD_TEARDOWN_FIX=0 restores the exact legacy path below).
+  // Was `main` already alive BEFORE this call? Capture it BEFORE createWindow, because
+  // createWindow('main') returns the EXISTING window on its reuse branch (a "Re-run setup"
+  // → finish/skip re-enters here). On reuse the shell is already painted, so
+  // 'ready-to-show' will NEVER re-fire and the old 12s backstop would be the ONLY teardown
+  // — leaving the wizard on screen and clickable until it vanished mid-interaction.
+  const P3 = process.env.WIZARD_TEARDOWN_FIX !== '0';
+  const mainExisted = !!windows['main'] && !windows['main'].isDestroyed();
   const main = createWindow('main', MAIN_WINDOW_OPTIONS, 'index.html');
-  // Keep the current cover window (login / license / onboarding) on screen until the main
-  // shell has actually PAINTED (ready-to-show), so a slow first run never flashes a blank /
-  // naked swap (the "loaded with icons but no text" report). Backstop-destroy so the cover
-  // windows are never leaked if ready-to-show never fires.
-  const teardown = () => {
-    destroyWindow('login');
-    destroyWindow('license');
-    destroyWindow('onboarding');
-  };
-  if (main && !main.isDestroyed()) {
-    main.once('ready-to-show', teardown);   // createWindow also shows main here, so it's a seamless swap
-    setTimeout(teardown, 12000);            // never leak the cover windows if ready-to-show never fires
+
+  if (!P3) {
+    // ── legacy behaviour (byte-identical to pre-P3) ──
+    const teardown = () => {
+      destroyWindow('login');
+      destroyWindow('license');
+      destroyWindow('onboarding');
+    };
+    if (main && !main.isDestroyed()) {
+      main.once('ready-to-show', teardown);
+      setTimeout(teardown, 12000);
+    } else {
+      teardown();
+    }
   } else {
-    teardown();
+    // Keep the current cover window (login / license / onboarding) on screen until the main
+    // shell has actually PAINTED, so a slow first run never flashes a blank / naked swap (the
+    // "loaded with icons but no text" report). Identity-scope the teardown: capture the ACTUAL
+    // cover-window instances NOW so a later fire closes only what was on screen at THIS call —
+    // never a newer wizard that reused the same slot. scheduleCoverTeardown does the arm/cancel
+    // (reuse ⇒ tear down now; fresh ⇒ on ready-to-show with a stored, cleared 12s backstop).
+    const covers = [windows['login'], windows['license'], windows['onboarding']];
+    scheduleCoverTeardown({ main, mainExisted, teardown: () => closeCoverWindows(covers) });
   }
+
   refreshTrayMenu();   // reflect logged-in state (enable Review/Settings)
   startLicenseRevalidation();   // P0: catch a server-side revoke WHILE running, not only at launch
+  maybeShowWorkflowDigest();    // Slice 1: one-shot at-login "N waiting for your approval" (latched)
 }
 
 // First-run setup wizard. Shows ONLY when `first_run_completed` !== 'true' (a
@@ -210,7 +265,7 @@ function needsOnboarding() {
 }
 
 function showOnboarding() {
-  createWindow('onboarding', ONBOARDING_WINDOW_OPTIONS, 'index.html');
+  createWindow('onboarding', onboardingWindowOptions(), 'index.html');
   destroyWindow('login');
   destroyWindow('license');
 }
@@ -371,7 +426,11 @@ function createSplash() {
     skipTaskbar: true, alwaysOnTop: true, show: false, center: true,
     backgroundColor: '#0c0e14',
     icon: path.join(__dirname, '..', 'assets', 'icon.ico'),
-    webPreferences: { contextIsolation: true },
+    // SEC-18: stated, not inherited. These are already the Electron 31 defaults, so this is a
+    // zero-behaviour-change assertion of intent — the point is that the safety of every renderer
+    // no longer rests on a default a future webPreferences edit could flip silently.
+    // The splash has no preload at all, so `sandbox` costs it nothing.
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   const query = {
     version:   app.getVersion(),
@@ -422,8 +481,8 @@ function launchStartupWindow() {
 // click its toolbar button to bring it back. Non-modal keeps the main window usable, and
 // createWindow() already restores + focuses the existing window when its button is clicked
 // again. (A future window can still opt INTO modal by being a CHILD_WINDOW not listed here.)
-const CHILD_WINDOWS   = new Set(['review', 'settings', 'search', 'teach', 'dev-inspector', 'welcome', 'tutorial']);
-const NON_MODAL_CHILD = new Set(['dev-inspector', 'review', 'settings', 'search', 'teach', 'welcome', 'tutorial']);
+const CHILD_WINDOWS   = new Set(['review', 'settings', 'search', 'teach', 'dev-inspector', 'welcome', 'tutorial', 'stamped-viewer']);
+const NON_MODAL_CHILD = new Set(['dev-inspector', 'review', 'settings', 'search', 'teach', 'welcome', 'tutorial', 'stamped-viewer']);
 // Top-level "primary" windows that hide to the tray on a user close (the app then
 // fully quits ONLY via tray Exit). Their programmatic transitions destroy them
 // via destroyWindow(). Child windows close normally.
@@ -535,6 +594,11 @@ function createWindow(name, options, htmlFile) {
     webPreferences: {
       preload:          path.join(__dirname, 'preload.js'),
       contextIsolation: true,
+      // SEC-18: stated, not inherited (see the splash window above). Verified safe before setting
+      // `sandbox`: preload.js requires ONLY `electron` (contextBridge + ipcRenderer), both of which
+      // are available to a sandboxed preload — it touches no fs/path/os module.
+      nodeIntegration:  false,
+      sandbox:          true,
     },
     icon: path.join(__dirname, '..', 'assets', 'icon.ico'),   // src/../assets (was '..','..' — off-by-one that silently dropped the window icon)
   });
@@ -666,6 +730,77 @@ function maybeShowTrayHint() {
   } catch { /* best-effort */ }
 }
 
+// ── Workflow notifications (Slice 1) — ONE shared sink for BOTH transports ─────
+// Wired as the workflowService `notifyWorkflow` hook by the desktop workflow handler
+// AND the /v1 API handler, so the toast policy + debounce state live in exactly one
+// place (eric: two sinks = double toasts under mixed transports). Fan-out MUST use
+// notifyAllWindows — notifyMainWindow reaches main+review only and would starve the
+// SEARCH window's open mailbox (the cross-user /v1 case is the headline fix; pinned
+// in test_workflow_ipc.js). Pull model: the event carries no data; renderers re-pull.
+// Decision logic is pure + tested in src/lib/workflowNotify.js; guards run at FIRE
+// time (Oracle condition 3 — a toast queued just before logout must not show).
+const workflowNotify = require('./lib/workflowNotify');
+let _wfToastAgg = null;
+let _wfToastTimer = null;
+let _wfDigestShown = false;   // per-login latch; showLoginScreen re-arms it
+function notifyWorkflowEvent(ev) {
+  try {
+    // ORDERING IS LOAD-BEARING (Oracle C4): the badge broadcast fires BEFORE the aggregate
+    // early-return below, so an unlisted event ('auto_closed' — route closed by doc delete)
+    // still refreshes every window's counts. A refactor that hoists the early-return above
+    // this line kills the badge for exactly those events. Pinned in test_workflow.js.
+    notifyAllWindows('workflow-counts-changed');
+    const next = workflowNotify.aggregate(_wfToastAgg, ev || {});
+    if (next === _wfToastAgg) return;         // badge-ping-only event (claim/recall/auto_closed)
+    _wfToastAgg = next;
+    clearTimeout(_wfToastTimer);
+    _wfToastTimer = setTimeout(_fireWorkflowToast, 2000);   // trailing debounce: bulk = ONE toast
+  } catch { /* notifications are best-effort — never disturb the action */ }
+}
+function _fireWorkflowToast() {
+  const agg = _wfToastAgg; _wfToastAgg = null;
+  try {
+    let settingEnabled = true;
+    try { settingEnabled = require('../database/modules/learning').getSetting(getDb(), 'workflow_toasts_enabled', 'true') !== 'false'; } catch { /* fail-open */ }
+    const { getCurrentUser } = require('./modules/auth/handler');
+    const toast = workflowNotify.decideToast(agg, {
+      isQuitting,
+      notificationsSupported: !!(Notification.isSupported && Notification.isSupported()),
+      settingEnabled,
+      currentUser: getCurrentUser ? getCurrentUser() : null,
+    });
+    if (toast) new Notification({ ...toast, icon: path.join(__dirname, '..', 'assets', 'icon.ico') }).show();
+  } catch { /* best-effort */ }
+}
+// At-login digest (Slice 1): ONE toast when items await the signing-in user. Flat delay —
+// never coupled to ready-to-show (documented can-never-fire mode; openMainShell carries its
+// own 12s backstop for exactly that). Latched per login; showLoginScreen clears the latch,
+// so a license-revalidation re-entry of openMainShell can never re-fire it (eric).
+function maybeShowWorkflowDigest() {
+  if (_wfDigestShown) return;
+  _wfDigestShown = true;
+  setTimeout(() => {
+    try {
+      if (isQuitting) return;
+      if (!(Notification.isSupported && Notification.isSupported())) return;
+      const learning = require('../database/modules/learning');
+      if (learning.getSetting(getDb(), 'workflow_toasts_enabled', 'true') === 'false') return;
+      const ent = require('./services/entitlementService').checkClientEntitlement(getDb());
+      if (!ent.workflow || !ent.workflow.entitled) return;   // dark / unlicensed ⇒ silent
+      const { getCurrentUser } = require('./modules/auth/handler');
+      const me = getCurrentUser && getCurrentUser();
+      if (!me) return;
+      const n = require('../database/modules/workflow').countInbox(getDb(), me.id);
+      if (!n) return;
+      new Notification({
+        title: n === 1 ? '1 document waiting for your approval' : `${n} documents waiting for your approval`,
+        body: 'Open the Mailbox in Search to act.',
+        icon: path.join(__dirname, '..', 'assets', 'icon.ico'),
+      }).show();
+    } catch { /* best-effort */ }
+  }, 3000);
+}
+
 // Best-effort startup integrity sweep of the managed import inbox. Copy-on-
 // import writes userData/inbox/<docId><ext> and then sets documents.working_path;
 // a crash between those two steps would leave a stray file with no DB reference.
@@ -719,6 +854,9 @@ function notifyAllWindows(channel, ...args) {
 // Single instance: relaunching (e.g. the shortcut while the app is hidden in the
 // tray) must re-show the running instance, NOT spawn a second core that would
 // double-bind the API/watch. The loser quits; the winner re-shows on 'second-instance'.
+// NOTE: this lock is naturally PER-userData-dir (Electron keys it on the userData path,
+// which the sandbox override above re-points before we get here) — so a DOCUSNAP_USERDATA
+// sandbox instance runs beside the real app without fighting over one lock.
 const _gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!_gotSingleInstanceLock) app.quit();
 app.on('second-instance', () => revealAppGated());
@@ -734,6 +872,37 @@ app.whenReady().then(() => {
   // key events, not just the window frame — whenever it is actually shown.
   // Registered before any window is created so it covers the splash, the
   // login/main/license swap, child windows (settings/review/search), and any
+  // ── Navigation / new-window / drop lockdown (audit M4, defence-in-depth) ─────
+  // Every app window is a local file:// page under src/windows/. Nothing legitimately
+  // navigates off that tree — the Help window navigates BETWEEN its own local pages,
+  // which the dir check permits; every EXTERNAL open goes through main-process shell.*
+  // via IPC, which these guards never touch. A dropped local .html or a
+  // window.open('file://…') would otherwise load a page that KEEPS the preload
+  // (privileged IPC) but LOSES the per-page <meta> CSP. Deny all of it. Registered here,
+  // before any window is created, so it covers the splash/login/print-ghost too.
+  // Kill switch: NAV_GUARD_DISABLED=1. (eric-designed, code-verified against every
+  // shell.openExternal/openPath and the Help window's inter-page links.)
+  const _appWindowsRoot = (path.join(__dirname, 'windows') + path.sep).toLowerCase();
+  const _isInAppWindow = (targetUrl) => require('./lib/navGuard').isInAppWindow(targetUrl, _appWindowsRoot);
+  // SECURITY (Stage 2 — M9): the navigation lockdown is ALWAYS on — a security boundary must not
+  // have an environment kill switch (the old NAV_GUARD_DISABLED=1 let a local attacker who can edit
+  // the shortcut / set a user env var disable the whole guard, and — since the CSP is meta-only —
+  // re-open the drop-a-local-HTML → privileged-preload-with-no-CSP path).
+  app.on('web-contents-created', (_e, contents) => {
+    // No renderer opens a new window (external links go via the open-external IPC →
+    // shell.openExternal). Still hand a genuine http(s) URL to the OS browser so a
+    // future <a target="_blank"> keeps working; deny the in-app new window either way.
+    contents.setWindowOpenHandler(({ url }) => {
+      try { const u = new URL(url); if (u.protocol === 'https:' || u.protocol === 'http:') shell.openExternal(u.href); } catch { /* noop */ }
+      return { action: 'deny' };
+    });
+    // The initial loadFile is NOT a "navigation" and never reaches here; only
+    // page/user-driven navigations (links, location=, a dropped file) do.
+    contents.on('will-navigate', (e, url) => { if (!_isInAppWindow(url)) e.preventDefault(); });
+    contents.on('will-redirect', (e, url) => { if (!_isInAppWindow(url)) e.preventDefault(); });
+    contents.on('will-attach-webview', (e) => e.preventDefault());   // no <webview> anywhere
+  });
+
   // window added later. Re-fires on every show so restore-from-minimise re-focuses.
   app.on('browser-window-created', (_e, win) => {
     const grabFocus = () => {
@@ -828,6 +997,57 @@ app.whenReady().then(() => {
   logger.init(logFile, fs);
   diaglog.init(app);   // deep diagnostic log target (enabled lazily when the flag is on)
 
+  // ── Diagnostic completeness (owner ask 2026-08-02: "check log → know the problem") ──────
+  // Four always-on, zero-behaviour-change taps. Everything below is log-only and guarded.
+  // 1. STARTUP CONTEXT BLOCK — versions, armed kill-switch envs, key settings — so every
+  //    later line has its context without asking the owner what state the app was in.
+  try {
+    const pkg = require('../package.json');
+    logger.log(`startup: ScanFinder ${pkg.version}${pkg.buildRev ? ` (${pkg.buildRev})` : ''} · electron ${process.versions.electron} · node ${process.versions.node} · packaged=${app.isPackaged}`);
+    const armed = Object.keys(process.env)
+      .filter(k => /^(ANCHOR_|SCOPE_|DIGIT_|REEXTRACT_|CANDIDATE_|REG_|TEMPLATE_|PREFIX_|DATE_IN_|REF_LENGTH|BLIND_|DOCUSNAP_|SNAP_|NAME_|TYPE_|HEADING_|GATE_|CROSSCHECK_|SUPPLIER_|LETTERHEAD_|WORKFLOW_)/.test(k))
+      .map(k => `${k}=${process.env[k]}`);
+    if (armed.length) logger.log(`startup: armed env switches: ${armed.join(' ')}`);
+    try {
+      const learning = require('../database/modules/learning');
+      const db = getDb();
+      const snap = ['processing_mode', 'ocr_dpi', 'auto_file_threshold', 'critical_field_conf_floor',
+                    'scope_sweep_enabled', 'auto_rotate_enabled', 'registration_enabled',
+                    'born_digital_enabled', 'diagnostic_logging', 'auto_file_enabled']
+        .map(k => `${k}=${learning.getSetting(db, k, '(default)')}`).join(' ');
+      const mig = db.prepare('SELECT MAX(version) v FROM migrations').get();
+      logger.log(`startup: settings: ${snap} · migrations=${mig && mig.v}`);
+    } catch (e) { logger.warn(`startup settings snapshot failed: ${e.message}`); }
+  } catch { /* context block is best-effort */ }
+  // 2. MAIN-PROCESS crash visibility — MONITOR hooks only (default exit/warning semantics
+  //    are preserved exactly; these never swallow anything).
+  process.on('uncaughtExceptionMonitor', (e) => { try { logger.err(`uncaughtException: ${e && (e.stack || e.message || e)}`); } catch {} });
+  process.on('unhandledRejection', (r) => { try { logger.err(`unhandledRejection: ${r && (r.stack || r.message || r)}`); } catch {} });
+  // 3. IPC failure visibility — every ipcMain.handle registered after this point logs its
+  //    thrown errors (message the renderer already received, now also in the log) and
+  //    RETHROWS unchanged, so behaviour is byte-identical.
+  try {
+    const _origHandle = ipcMain.handle.bind(ipcMain);
+    ipcMain.handle = (channel, fn) => _origHandle(channel, async (...args) => {
+      try { return await fn(...args); }
+      catch (e) { try { logger.err(`ipc ${channel}: ${e && (e.stack || e.message || e)}`); } catch {} throw e; }
+    });
+  } catch { /* wrap is best-effort */ }
+  // 4. RENDERER error sink — preload forwards window errors/unhandled rejections here (the
+  //    "screenshot the red text" class now lands in the log by itself). Per-sender cap so a
+  //    render-loop error can't flood the file.
+  const _rendererErrCount = new Map();
+  ipcMain.on('renderer-error', (e, info) => {
+    try {
+      const id = e.sender.id;
+      const n = (_rendererErrCount.get(id) || 0) + 1;
+      _rendererErrCount.set(id, n);
+      if (n > 50) return;                                   // cap per window per session
+      const where = (info && info.href ? String(info.href).split('/').slice(-2).join('/') : 'unknown');
+      logger.err(`renderer[${where}]: ${info && info.message}${info && info.stack ? `\n${String(info.stack).slice(0, 1200)}` : ''}${n === 50 ? ' (further errors from this window suppressed)' : ''}`);
+    } catch { /* sink must never throw */ }
+  });
+
   // Best-effort: clean up any crash-orphaned managed import copies. Never blocks
   // startup (fully guarded inside the helper).
   sweepInboxOrphans();
@@ -840,6 +1060,15 @@ app.whenReady().then(() => {
     const { recordOutputPath } = require('./lib/outputPathRegistry');
     recordOutputPath(require('../database/modules/learning').getSetting(getDb(), 'output_folder', null));
   } catch (e) { try { logger?.warn?.(`[output-path-registry] startup hook skipped: ${e.message}`); } catch {} }
+
+  // ── Tamper-evident audit chain (Stage 5b) ──────────────────────────────────────
+  // Inject the per-install HMAC key (userData/.audit-key, DPAPI-wrapped) into the key-agnostic
+  // DB layer, so every subsequent audit row is hash-chained. Set BEFORE the archive run and
+  // before any startup audit write. Fully guarded — a missing/undecryptable key leaves the chain
+  // INERT (older behaviour, NULL hmac), never blocks launch.
+  try {
+    require('../database/modules/auth').setAuditKey(require('./lib/auditKey').getAuditKey(logger));
+  } catch (e) { try { logger?.warn?.(`[audit-chain] key wiring skipped: ${e.message}`); } catch {} }
 
   // Best-effort audit-log retention: archive audit_log rows older than the window
   // (settings `audit_retention_days`, default 180; 0 disables) into monthly files
@@ -892,6 +1121,9 @@ app.whenReady().then(() => {
     resourcePath, pythonExe, pythonArgs, tesseractPath,
     backendScript, configPath, templatesDir,
     createWindow, getMainWindow, notifyMainWindow, notifyAllWindows, safeSend,
+    // Slice 1: the ONE workflow-notification sink shared by the desktop + /v1 transports
+    // (fan-out to ALL windows + debounced toast policy — see notifyWorkflowEvent above).
+    notifyWorkflowEvent,
     // Read-only telemetry mirror target for the hidden dev inspector (no-op when closed).
     // safeSend guards a destroyed/missing webContents, not just a missing window.
     notifyDevInspector: (channel, ...args) => safeSend(windows['dev-inspector']?.webContents, channel, ...args),
@@ -919,12 +1151,25 @@ app.whenReady().then(() => {
   // The login window owns these transitions but has no window-management
   // powers of its own (by design — preload only exposes auth IPC there);
   // it just signals "I'm done" and main.js performs the swap.
-  ipcMain.on('auth-enter-app',   () => enterMainApp());
+  // SECURITY (Stage 2 — M2): only the LOGIN window, with a live session, may swap into the main
+  // shell. Without this a compromised pre-auth renderer could send 'auth-enter-app' and land in the
+  // main shell unauthenticated (the data IPCs would still refuse individually, but "login is the
+  // door" would be defeated). Sender-scoped like legal-accept (fromLegalWindow, below).
+  ipcMain.on('auth-enter-app',   (e) => {
+    if (BrowserWindow.fromWebContents(e.sender) !== windows['login']) return;
+    if (!authModule.getCurrentUser()) return;
+    enterMainApp();
+  });
   ipcMain.on('auth-show-login',  () => showLoginScreen());
   // Licensing gate signal (Phase 2): the renderer can only REQUEST entry; the
   // main process re-runs decideAccess() and refuses unless the state allows.
-  // The renderer can never self-grant access into the main shell.
-  ipcMain.on('license-enter-app', () => enterMainApp());
+  // The renderer can never self-grant access into the main shell. Sender+session
+  // scoped (Stage 2 — M2): only the LICENCE window (shown post-login) may signal.
+  ipcMain.on('license-enter-app', (e) => {
+    if (BrowserWindow.fromWebContents(e.sender) !== windows['license']) return;
+    if (!authModule.getCurrentUser()) return;
+    enterMainApp();
+  });
 
   // Manual "re-check licence now" (Settings → Licensing "Refresh"). Runs the SAME
   // authoritative gate as startup/periodic, so a server-side revoke or expiry takes effect
@@ -1034,6 +1279,11 @@ app.whenReady().then(() => {
   // In-process mailbox/approval workflow for the core app's enhanced Search
   // (entitlement + role gated; reuses workflowService). See modules/workflow/handler.js.
   workflowModule.register(ctx);
+
+  // Document printing through the customer's printer driver (print-document /
+  // print-available). Kill switch: setting printing_enabled (default OFF). See
+  // modules/print/handler.js.
+  printModule.register(ctx);
   tutorialModule.register(ctx);
 
   // Diagnostics lifecycle (all gated on consent INSIDE telemetry → inert until opt-in;
@@ -1096,6 +1346,11 @@ app.whenReady().then(() => {
   // --trace and the process-trace route in processing/handler.js. Opens NO window
   // — the console is just a hidden panel inside the existing Review window.
   ipcMain.handle('review-trace-set', (_e, on, password) => {
+    // SECURITY (Stage 2 — L2): role-gate as well as the SFDEV password. The password ships in the
+    // asar (not a secret under the local threat model); the trace it arms dumps cropped document
+    // imagery to a temp dir, so keep it behind the same admin/edit boundary as the rest of the dev
+    // surface (dev-inspector-running / dev-get-slice above).
+    if (!(authModule.hasRole && authModule.hasRole('admin', 'edit'))) return false;
     if (on) {
       if (password !== 'SFDEV') return false;
       ctx.reviewTraceActive = true;
@@ -1195,7 +1450,10 @@ app.whenReady().then(() => {
   // ── First-run setup wizard ───────────────────────────────────────────────────
   // The wizard writes individual settings through the existing set-setting path;
   // these signals only own the FLAG + the window/shell swap (main is the decider).
-  ipcMain.on('onboarding-complete', () => {
+  ipcMain.on('onboarding-complete', (e) => {
+    // SECURITY (Stage 2 — M2): only the onboarding window may retire first-run setup and open the
+    // main shell. Without this any renderer could permanently set first_run_completed + openMainShell.
+    if (BrowserWindow.fromWebContents(e.sender) !== windows['onboarding']) return;
     try {
       const learning = require('../database/modules/learning');
       learning.setSetting(getDb(), 'first_run_completed', 'true');
@@ -1249,7 +1507,10 @@ app.whenReady().then(() => {
   // accepts it — otherwise onboarding "finishes" into a path nothing can file to.
   // Creates the folder if missing (so the suggested default works one-click), then
   // round-trips a probe file to prove writability.
-  ipcMain.handle('onboarding-validate-folder', (_e, folder) => {
+  ipcMain.handle('onboarding-validate-folder', (e, folder) => {
+    // SECURITY (Stage 2 — E-5): only the onboarding window may drive this mkdir + probe-write.
+    // Otherwise any renderer could create arbitrary directories on disk pre-auth.
+    if (BrowserWindow.fromWebContents(e.sender) !== windows['onboarding']) return { ok: false, reason: 'forbidden' };
     try {
       if (!folder || !String(folder).trim()) return { ok: false, reason: 'empty' };
       fs.mkdirSync(folder, { recursive: true });
@@ -1289,6 +1550,21 @@ app.whenReady().then(() => {
   ipcMain.on('open-teach-window', () => {
     if (!authModule.hasRole('admin', 'edit')) return;
     createWindow('teach', { width: 1200, height: 820, minWidth: 960, minHeight: 640 });
+  });
+  // Secure stamped-copy viewer (owner 2026-08-02): in-app page-image viewing of a workflow
+  // decision copy — no shell open, no path in any renderer. Any logged-in user may OPEN the
+  // window; the pages IPC enforces the real party-or-admin + entitlement gate server-side.
+  let pendingStampedRouteId = null;
+  ipcMain.on('open-stamped-viewer', (_e, routeId) => {
+    if (!authModule.hasRole('admin', 'edit', 'readonly')) return;   // any signed-in role; the pages IPC re-gates for real
+    const alreadyOpen = !!windows['stamped-viewer'] && !windows['stamped-viewer'].isDestroyed();
+    pendingStampedRouteId = Number(routeId) || null;
+    createWindow('stamped-viewer', { width: 900, height: 950, minWidth: 640, minHeight: 480 });
+    if (alreadyOpen) safeSend(windows['stamped-viewer']?.webContents, 'stamped-viewer-load', pendingStampedRouteId);
+  });
+  ipcMain.handle('get-stamped-viewer-target', () => {
+    const id = pendingStampedRouteId;
+    return id;
   });
   ipcMain.on('open-teach-window-at', (_e, docId) => {
     if (!authModule.hasRole('admin', 'edit')) return;
@@ -1367,6 +1643,28 @@ app.whenReady().then(() => {
     const q = pendingSearchQuery;
     pendingSearchQuery = null;
     return q;
+  });
+
+  // Open the Search window LANDED on a named view (Home "Open Mailbox" → 'mailbox').
+  // Independent of the Quick-find query channel above (do NOT overload get-search-target).
+  // A view toggle carries no privileged mutation, so it matches open-search-window's trust
+  // level; the mailbox view itself is entitlement-gated in the renderer (a no-op if the
+  // add-on is off), and the Home card is hidden unless licensed.
+  ipcMain.on('open-search-window-at', (_e, view) => {
+    if (!authModule.getCurrentUser()) return;
+    const alreadyOpen = !!windows['search'];
+    pendingSearchView = (view === 'mailbox') ? 'mailbox' : null;
+    createWindow('search', { width: 1200, height: 780, minWidth: 1000, minHeight: 600 });
+    if (alreadyOpen && pendingSearchView) {
+      safeSend(windows['search']?.webContents, 'search-goto', pendingSearchView);
+      pendingSearchView = null;
+    }
+  });
+  // The search renderer pulls this once on load to land on its initial view (else null).
+  ipcMain.handle('get-search-view-target', () => {
+    const v = pendingSearchView;
+    pendingSearchView = null;
+    return v;
   });
 
   // All IPC handlers are registered — now serialize the startup windows: the

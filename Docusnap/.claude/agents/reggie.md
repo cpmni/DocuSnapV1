@@ -173,3 +173,21 @@ Example response behavior:
 - Inspect precedence and candidate-ranking logic.
 - Determine whether regex validation happens too late.
 - Recommend enforcing pattern qualification before final winner selection.
+
+## Prior art — check before designing (standing rule, added 2026-08-03)
+Before proposing, grep for prior art on the MECHANISM (not just the symptom): `docs/oracle_log.md`
+(every Oracle verdict + conditions), `docs/session-log.md` + the repo `HANDOVER_*.md` files
+(per-session build history), and `pendingfeatures.md` (deferred designs with their reasons). A
+shipped kill switch, a pinned trade-off, or a prior SEND BACK on your exact idea may already exist
+— finding it is cheaper than re-deriving it, and contradicting it un-knowingly is the failure mode
+this rule exists to prevent. Comments can be STALE (two "DARK by default" comments outlived their
+flips in one week); the CODE and the oracle log outrank any comment.
+
+## Track record (accrued at session wraps — what this advisor got RIGHT/WRONG, so future runs calibrate)
+- 2026-08-03: found a REAL shipped gap in `_page_presence_corroborated` (grouped-tail steal —
+  '250000' matching inside '1,250,000') by hand-tracing the compiled pattern; his witness-equality
+  heal predicate for the edge-clean slice was RULED over gary's shape-arbitration and shipped
+  (oracle_log 2026-08-03 evening). Also established `ocr_type` is production-INERT for extraction
+  (val_type comes from field_patterns) — killed a mis-scoped fix before it was built. Pattern that
+  keeps winning: bind a strip/heal to an INDEPENDENT WITNESS (verbatim equality) rather than to
+  history alone.

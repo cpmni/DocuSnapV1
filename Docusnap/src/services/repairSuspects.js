@@ -190,7 +190,7 @@ function detectAnomalousValues(vals) {
         const q = learning.nameQuality ? learning.nameQuality(r.value) : 1;
         const multi = r.value.split(/\s+/).filter(Boolean).length >= 2;
         const badSupplier = (field === 'supplier_name' || field === 'customer_name')
-          && learning.isPlausibleSupplierName && !learning.isPlausibleSupplierName(r.value);
+          && learning.isPlausibleSupplierNameBase && !learning.isPlausibleSupplierNameBase(r.value);
         if ((q < 0.5 && multi) || badSupplier) {
           out.push({ id: r.doc, kind: 'data', field, value: r.value,
             text: `The ${field.replace(/_/g, ' ')} “${r.value}” doesn't read like the others — you may want to check it.`,
@@ -251,6 +251,95 @@ function explainOutlierFields(vals, outlierIds) {
   return out;
 }
 
+// ── Detector B4: reference-PREFIX outlier (a wrong-document-type misfile) ──────────
+// shapeSignature() folds EVERY letter to '@', so "PO-21275" and "DN-70795" both reduce to
+// "@@-#####" — a purchase order filed as a delivery note keeps the SAME shape, so B1 and
+// explainOutlierFields (shape-only) are STRUCTURALLY blind to it; no threshold tuning on
+// shapes can ever surface it. This learns the dominant LITERAL alpha prefix per (type, field)
+// — the document-type signature (DN/PO/SO/INV) — and flags a lone value whose prefix
+// disagrees. Precision-first; every gate is AND-ed:
+//   1. >= PREFIX_MIN_POOL confirmed values (a dominance judgement needs more evidence than a
+//      shape one — matched to the phash-pool gate, not B1's lower 6).
+//   2. structured / ref-like field, not name-like (the SAME class B1 uses, no new classifier).
+//   3. prefixes are the NORM: >= PREFIX_NORM_FRAC of values carry an alpha prefix — otherwise a
+//      "dominant prefix" is meaningless (e.g. a mostly-bare-number field, or the live
+//      service_worksheet/reference_number where only 29% are prefixed → this field self-skips).
+//   4. ONE prefix dominates: seen >= PREFIX_DOM_MIN times AND >= PREFIX_DOM_SHARE of the
+//      PREFIXED values. (Two DIFFERENT denominators on purpose: gate 3 asks "are prefixes the
+//      norm?" over ALL rows; gate 4 asks "is there a single dominant prefix?" over the prefixed
+//      ones. A future maintainer must not collapse them.)
+// Then flag each value whose prefix != dominant AND is a SINGLETON — a prefix used by >=2 docs
+// is treated as a learned rare-but-real format and left alone (mirrors B1's ">=2 shape recurs =
+// learned" exemption). PRECISION: zero-FP on the observed 185-doc corpus, but this is precision-
+// FIRST, not zero-FP on the class — it fails toward review. ACCEPTED RESIDUALS (Oracle-noted):
+//   • a legitimately-rare MINORITY-SUPPLIER prefix (one doc of a real GDN-/DEL- supplier in a
+//     DN-dominated pool) is a genuine false positive — acceptable: suggestion-only, self-
+//     correcting on inspection, and "may be filed under the wrong type" already hedges. Catching
+//     it correctly needs a supplier-COHESION check (do the odd-prefix docs cluster on identity?),
+//     a separate build, NOT a looser threshold.
+//   • 2+ IDENTICAL wrong-prefix misfiles are missed (they stop being singletons) — same cohesion
+//     build would recover them.
+//   • a code field whose KEY looks name-like (customer_order_number, company_reg_no) is excluded
+//     by gate 2 (isNameLike), so a misfile there is invisible — a MISS not a false-flag, inherited
+//     verbatim from B1; the motivating field delivery_number is unaffected.
+// Runs on the FULL type pool — a misfile is by definition a different
+// supplier, so a supplier browse filter must not scope it away (same rule as the outlier
+// detectors; see the computeSuspects comment).
+// ⚠ MIRROR NOTE: python_backend/extraction/format_anomaly_checker.shape_signature is prefix-
+// blind too, but it runs at EXTRACTION time on confidence/veto/auto-file. Do NOT port these
+// gates there verbatim — at extraction a genuinely-new supplier with a legitimately different
+// prefix would be FALSE-HELD against thin learned history (a fail-toward-review violation at the
+// wrong moment). A Python-side prefix rule needs new-supplier-safe calibration; logged to the
+// backlog. shapeSignature itself stays byte-identical to its Python twin (this rule adds an
+// orthogonal signal alongside it, never changes it).
+const PREFIX_MISMATCH_ENABLED = process.env.REPAIR_PREFIX_MISMATCH !== '0';   // kill switch (default ON)
+const PREFIX_MIN_POOL  = 8;      // gate 1
+const PREFIX_NORM_FRAC = 0.80;   // gate 3
+const PREFIX_DOM_MIN   = 5;      // gate 4a
+const PREFIX_DOM_SHARE = 0.85;   // gate 4b
+// Leading run of >=2 ASCII letters, uppercased; null if none. >=2 is load-bearing: >=3 would
+// never fire (DN/PO/SO are two letters); >=1 manufactures singletons from any stray leading
+// letter. Strict — no leading-punctuation tolerance (a systematically-symbol-prefixed field
+// returns null throughout and disables via gate 3, a safe fail-toward-silence).
+function alphaPrefix(v) {
+  const m = /^\s*([A-Za-z]{2,})/.exec(String(v == null ? '' : v));
+  return m ? m[1].toUpperCase() : null;
+}
+function detectRefPrefixOutliers(vals) {
+  if (!PREFIX_MISMATCH_ENABLED) return [];
+  const byField = new Map();
+  for (const r of (vals || [])) {
+    const v = (r.value == null ? '' : String(r.value)).trim();
+    if (!v) continue;
+    if (!byField.has(r.field_key)) byField.set(r.field_key, { type: r.field_type || null, rows: [] });
+    byField.get(r.field_key).rows.push({ doc: r.document_id, value: v });
+  }
+  const out = [];
+  for (const [field, g] of byField) {
+    const rows = g.rows;
+    if (rows.length < PREFIX_MIN_POOL) continue;                                            // gate 1
+    const structured = ((g.type && STRUCTURED_CLASSES.has(g.type)) || isRefLike(field)) && !isNameLike(field);
+    if (!structured) continue;                                                              // gate 2
+    const prefixed = [];
+    for (const r of rows) { const p = alphaPrefix(r.value); if (p) prefixed.push({ doc: r.doc, value: r.value, pfx: p }); }
+    if (prefixed.length / rows.length < PREFIX_NORM_FRAC) continue;                         // gate 3
+    const counts = new Map();
+    for (const r of prefixed) counts.set(r.pfx, (counts.get(r.pfx) || 0) + 1);
+    let dominant = null, domCount = 0;
+    for (const [p, c] of counts) if (c > domCount) { domCount = c; dominant = p; }
+    if (domCount < PREFIX_DOM_MIN) continue;                                                // gate 4a
+    if (domCount / prefixed.length < PREFIX_DOM_SHARE) continue;                            // gate 4b
+    const label = field.replace(/_/g, ' ');
+    for (const r of prefixed) {
+      if (r.pfx === dominant) continue;
+      if (counts.get(r.pfx) !== 1) continue;                                               // singleton only
+      out.push({ id: r.doc, kind: 'data', field, value: r.value, example: dominant, severity: 3,
+        text: `The ${label} “${r.value}” starts with “${r.pfx}”, but every other ${label} here starts with “${dominant}” — this document may be filed under the wrong type.` });
+    }
+  }
+  return out;
+}
+
 // ── Public: compute the suspect map for a scope ───────────────────────────────────
 function computeSuspects(db, { document_type_slug, supplier_name } = {}) {
   const empty = { byId: {}, count: 0 };
@@ -298,8 +387,12 @@ function computeSuspects(db, { document_type_slug, supplier_name } = {}) {
   for (const s of outliers) add(s.id, { kind: 'belong', text: s.text }, 3);
   for (const s of detectAnomalousValues(valRowsScoped)) add(s.id, { kind: 'data', field: s.field, value: s.value, example: s.example || null, text: s.text }, s.severity || 2);
   for (const s of explainOutlierFields(valRowsFull, outliers.map(o => o.id))) add(s.id, { kind: 'data', field: s.field, value: s.value, example: s.example || null, text: s.text }, 2);
+  // B4 — ref-PREFIX outlier (a wrong-type misfile that keeps the same shape; see the function).
+  // On the FULL pool (a misfile is a different supplier — must not be scoped away). Added LAST so
+  // a higher-precision existing reason keeps the field slot via the one-reason-per-field dedupe.
+  for (const s of detectRefPrefixOutliers(valRowsFull)) add(s.id, { kind: 'data', field: s.field, value: s.value, example: s.example || null, text: s.text }, s.severity || 3);
 
   return { byId, count: Object.keys(byId).length };
 }
 
-module.exports = { computeSuspects, detectOutlierDocs, detectAnomalousValues, explainOutlierFields, shapeSignature, hammingHex, jaccard, isNameLike, isRefLike };
+module.exports = { computeSuspects, detectOutlierDocs, detectAnomalousValues, explainOutlierFields, detectRefPrefixOutliers, alphaPrefix, shapeSignature, hammingHex, jaccard, isNameLike, isRefLike };

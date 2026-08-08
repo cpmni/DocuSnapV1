@@ -44,17 +44,99 @@ function loadConfig(ctx) {
   if (_config) return _config;
   const cfgPath = ctx.resourcePath('config', 'license.json');
   _config = JSON.parse(ctx.fs.readFileSync(cfgPath, 'utf8'));
+  // SEC (offline forge hardening): the verification keys come from a constant baked INSIDE the
+  // asar, NOT from this loose extraResources file. config/license.json ships as a plain, editable
+  // file in the packaged app's resources/ dir, so trusting its `public_keys` let an attacker swap
+  // in their own key and sign a token offline (a full licence bypass with a text editor). The baked
+  // keys equal the shipped config keys (a rotation must update BOTH — pinned by
+  // test_license_pinned_keys.js), so a legitimate install is byte-identical; only a TAMPERED loose
+  // file diverges, and there the baked keys win. base_url / product_id still come from the file
+  // (deployment-specific, and un-forgeable-into-access on their own). Kill switch
+  // LICENSE_PINNED_KEYS=0 restores the legacy loose-file keys (reversibility / the red-vs-green pin).
+  if (process.env.LICENSE_PINNED_KEYS !== '0') {
+    try {
+      const pinned = require('../../lib/license/pinnedKeys');
+      if (pinned && pinned.PINNED_PUBLIC_KEYS) {
+        _config.public_keys = pinned.PINNED_PUBLIC_KEYS;
+        if (pinned.PINNED_ACTIVE_KID) _config.active_kid = pinned.PINNED_ACTIVE_KID;
+      }
+    } catch { /* baked module unreachable — fall back to the loose file (never brick the gate) */ }
+  }
   return _config;
 }
 
+// SEC-05: the high-water mark is mirrored OUTSIDE the app database (lib/license/timeAnchor.js,
+// under LOCALAPPDATA — a different root from the roaming docusnap.db). Restoring a DB snapshot
+// therefore no longer rolls the clock defence back; the gate takes the max of both. Reads are
+// clamped and fail OPEN (0) — a corrupt anchor must never lock a paying user out offline, which is
+// the failure direction that actually matters here (eff >= end ⇒ locked).
+const timeAnchor = require('../../lib/license/timeAnchor');
+
+// INVARIANT (Oracle C1): NO UNCLAMPED VALUE EVER ENTERS OR LEAVES THE HIGH-WATER MARK.
+// The clamp used to guard only the anchor, which left two unclamped inputs able to reach — and
+// then be PERSISTED into — the durable root:
+//   (a) the DB setting itself (never clamped since day one), and
+//   (b) Date.parse(decodeUnverifiedClaims(...).issued_at) at the two evaluate sites below — a
+//       claim read from a blob NOBODY HAS VERIFIED at that point.
+// Either could put an absurd future timestamp in LOCALAPPDATA, where writeAnchor structurally
+// refuses to lower it — permanently locking a PAYING customer offline (eff >= end ⇒ locked), and
+// defeating the old "delete docusnap.db" rescue. Clamping both directions costs nothing and also
+// fixes the pre-existing unclamped-DB exposure.
+// Stage 6c: bind the LOCALAPPDATA anchor to THIS install via an HMAC keyed by the device-fingerprint
+// hash — so a foreign anchor copied from another machine, or a naive text-edit, reads as "no opinion"
+// (fail-open, never a lock). Computed ONCE and cached: computeFpHash spawns reg.exe, far too costly to
+// repeat on every gate-check. Kill switch ANCHOR_HMAC=0 withholds the key → the anchor stays the legacy
+// bare integer (byte-identical); a missing config resolves to null and does the same.
+let _anchorKey;   // undefined = unresolved; null = disabled/unavailable; string = active fp hash
+function anchorDeps() {
+  if (process.env.ANCHOR_HMAC === '0') return {};
+  if (_anchorKey === undefined) {
+    try {
+      const cfg = _ctx ? loadConfig(_ctx) : null;
+      _anchorKey = (cfg && cfg.product_id) ? fingerprintLib.computeFpHash(cfg.product_id) : null;
+    } catch { _anchorKey = null; }
+  }
+  return _anchorKey ? { hmacKey: _anchorKey } : {};
+}
 function readHwm(db) {
-  const n = Number(getSetting(db, HWM_KEY));
-  return Number.isFinite(n) ? n : 0;
+  const now = Date.now();
+  const raw = Number(getSetting(db, HWM_KEY));
+  const fromDb = timeAnchor.sanitiseAnchor(Number.isFinite(raw) ? raw : 0, now);
+  let fromAnchor = 0;
+  try { fromAnchor = timeAnchor.readAnchor(now, anchorDeps()); } catch { fromAnchor = 0; }
+  return Math.max(fromDb, fromAnchor);
 }
 function bumpHwm(db, t) {
-  const next = Math.max(readHwm(db), Number(t) || 0);
+  const now = Date.now();
+  const next = timeAnchor.sanitiseAnchor(Math.max(readHwm(db), Number(t) || 0), now);
+  if (!next) return 0;                      // absurd input → record nothing (never brick on it)
   setSetting(db, HWM_KEY, String(next));
+  // Best-effort mirror; a read-only/locked-down profile just keeps the DB-only behaviour.
+  try { timeAnchor.writeAnchor(next, now, anchorDeps()); } catch { /* never break the gate */ }
   return next;
+}
+
+// RECOVERY (Oracle C2) — the ONLY way back for a customer whose mark is wrongly high. Called on a
+// SUCCESSFUL ONLINE refresh: the returned token's issued_at is server-stamped for THIS fingerprint
+// and unforgeable by the client, so a mark far beyond it is provably wrong. Resetting to it cannot
+// grant entitlement — an expired trial still evaluates eff = now >= trial_end and stays locked —
+// but it un-bricks a machine whose clock/DB/anchor went bad, which deleting the database no longer
+// fixes now that the anchor lives outside it. Audited so support can see it happened.
+const HWM_RESET_SLACK_MS = 24 * 60 * 60 * 1000;
+function maybeHealHwm(db, issuedAtStr, auditFn) {
+  try {
+    const issued = Date.parse(issuedAtStr || '');
+    if (!Number.isFinite(issued) || issued <= 0) return false;
+    const current = readHwm(db);
+    if (current <= issued + HWM_RESET_SLACK_MS) return false;
+    setSetting(db, HWM_KEY, String(issued));
+    timeAnchor.writeAnchor(issued, Date.now(), anchorDeps(), { force: true });
+    try {
+      if (auditFn) auditFn({ action: 'license.hwm_reset', action_category: 'licensing', outcome: 'success',
+        details: `high-water mark reset from ${current} to server issued_at ${issued}` });
+    } catch { /* audit must never break the gate */ }
+    return true;
+  } catch { return false; }
 }
 
 // Store a JWS returned by the backend into the read-only cache.
@@ -201,6 +283,17 @@ function register(ctx) {
   function persistAndReturn(db, fpHash, body) {
     licensing.recordDevice(db, fpHash);
     cacheFromResponse(db, fpHash, body);
+    // ONLINE SELF-HEAL (Oracle C2): the single funnel every successful backend response passes
+    // through. If the stored high-water mark sits implausibly far beyond the token the server
+    // just stamped, it is provably wrong — reset it down (both DB and anchor) so a machine whose
+    // clock/DB/anchor went bad can be recovered by simply getting online once. Cannot grant
+    // entitlement: an expired trial still evaluates eff = now >= trial_end and stays locked.
+    try {
+      const c = token.decodeUnverifiedClaims(body && body.token) || {};
+      if (c.issued_at) {
+        maybeHealHwm(db, c.issued_at, (e) => { try { addAuditEntry(db, e); } catch { /* best-effort */ } });
+      }
+    } catch { /* never disturb a successful activation */ }
     return { ok: true, ...readable(body) };
   }
 

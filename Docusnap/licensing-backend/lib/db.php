@@ -13,6 +13,11 @@ $__ds_env = __DIR__ . '/../set-env.php';
 if (is_file($__ds_env)) { require_once $__ds_env; }
 unset($__ds_env);
 
+// Runtime hardening (SEC-13/SEC-15): display_errors off, baseline security headers, and a
+// last-resort fatal handler that emits a detail-free 500 instead of leaking server paths.
+// Loaded here because EVERY entry point requires db.php — one chokepoint, nothing to forget.
+require_once __DIR__ . '/harden.php';
+
 function db(): PDO
 {
     static $pdo = null;

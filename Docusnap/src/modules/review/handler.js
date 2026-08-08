@@ -63,7 +63,16 @@ function register(ctx) {
   const templates  = require('../../../database/modules/templates');
   const previewService = require('../../services/previewService');
   const workflowService = require('../../services/workflowService');
+  const accessService = require('../../services/accessService');
   const { requireRole, requireLogin, hasRole, logAudit, getCurrentUser } = require('../auth/handler');
+  // Per-document read authz (Slice 0). Throws a FORBIDDEN error (crosses IPC as the
+  // rejection reason) when the gate is on and the actor may not read this document.
+  // not_found also denies (hide existence). Kill switch ACCESS_GATE_ENABLED (default ON).
+  const _assertDocAccess = (db, sess, docId) => {
+    if (!accessService.gateEnabled()) return;
+    const acc = accessService.canAccessDocument(db, sess, docId);
+    if (!acc.allow) throw Object.assign(new Error('You do not have permission to view this document.'), { code: 'FORBIDDEN' });
+  };
   // Shared in-process presence map (the "being reviewed by" signal) — the SAME instance the /v1
   // client API publishes to, so a desktop reviewer is visible to clients and vice-versa.
   const presence = require('../../services/presenceService').shared();
@@ -72,7 +81,7 @@ function register(ctx) {
   // Transport-agnostic review orchestration — the SAME confirm/defer/restore the detached-client
   // /v1 API will call (Phase 3). The desktop injects its Electron-only steps as hooks so this
   // path stays byte-identical; auth + the workflow lock are enforced at the edge (requireUnlocked).
-  const reviewService = require('../../services/reviewService').createReviewService({
+  const reviewService = _sharedReviewServiceInstance = require('../../services/reviewService').createReviewService({
     documents, learning, doctypes,
     filing: require('../filing/handler'),
     fs, path, logger,
@@ -80,16 +89,38 @@ function register(ctx) {
     onScheduleSourceMove: (args) => _scheduleSourceMove(ctx, getDb(), documents, args),
     onTaughtConfirm: (db, docId, info) => _upsertTemplate(ctx, db, docId, info),
     onScopeGraduated: (db, docId, info) => _maybeGraduationTemplate(ctx, db, docId, info),
+    // Slice 1 (learn-on-commit) — keep a matched/graduated template's identity converging on
+    // EVERY confirm, not only a taught one (kill switch template_learn_on_confirm, DEFAULT OFF).
+    learnTemplateOnCommit: (db, docId, info) => templates.learnTemplateOnCommit(db, docId, info),
     captureSample: async (tId, docId) => {
       if (ctx.captureSampleWords) {
         await ctx.captureSampleWords(tId, docId);
         if (ctx.generateLandmarks) await ctx.generateLandmarks(tId);
+        if (ctx.generateSampleAngle) await ctx.generateSampleAngle(tId);
       }
     },
     notifyCounts: (db) => {
       notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
       notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
     },
+    // Slice 3 (amount routing): capture the total's trust context before the note-clear, and — detached +
+    // fail-open — auto-create an approval route from it. Both no-op unless WORKFLOW_AMOUNT_ROUTING is armed
+    // AND the workflow feature is entitled (a const, false today), so this is byte-identical + un-strandable.
+    captureRouteContext: (db, docId, corrections) =>
+      require('../../services/amountRouting').captureTotalContext(db, docId, corrections,
+        { getExtractedTotalContext: documents.getExtractedTotalContext }),
+    startDefaultRoute: (db, docId, routeCtx, meta) =>
+      require('../../services/amountRouting').startDefaultRoute(db, docId, routeCtx, meta, {
+        entitled: (d) => { try { return !!require('../../services/entitlementService').checkClientEntitlement(d).workflow.entitled; } catch { return false; } },
+        hasActiveRoute: (d, id) => require('../../database/modules/workflow').hasActiveRoute(d, id),
+        currencyConsistent: (d, sup, slug, fk, v) => require('../../database/modules/trust').currencyConsistentForField(d, sup, slug, fk, v),
+        floor: (d) => parseInt(learning.getSetting(d, 'critical_field_conf_floor', '88'), 10) || 0,
+        listActiveRules: (d) => require('../../database/modules/workflow').listActiveRouteRules(d),
+        usersByRole: (d, role) => require('../../database/modules/auth').getAllUsers(d).filter(u => u.role === role),
+        assign: (actor, opts) => require('../../services/workflowService').createWorkflowService({ audit: (e) => logAudit(db, e) }).assign(db, actor, opts),
+        audit: (e) => logAudit(db, e),
+        summarizeRule: (rule) => require('../../database/modules/workflow').summarizeRule(db, rule),
+      }),
     // releaseDelayMs stays 0 (the default): the old 150ms "release the preview file handle" wait
     // before filing was vestigial — the preview is an in-memory data URL, not an OS handle, and the
     // source-file delete is already deferred + retry-guarded — so it only added confirm latency
@@ -217,6 +248,18 @@ function register(ctx) {
     requireRole('admin', 'edit');
     try { return learning.getTaughtFieldKeys(getDb(), scope || {}); } catch { return []; }
   });
+  // How many CONFIRMED docs already exist for a (supplier, doc-type) scope. Drives the Review
+  // renderer's live suppression of the stale "heading names a type that doesn't match this
+  // supplier's saved layout" note: once ONE doc of that type is confirmed for the supplier, the
+  // type IS valid for them and the (already-stored) note is out of date. Forgiving supplier match
+  // (getConfirmedDocsForScope uses LIKE) so a slightly-garbled variant still counts.
+  ipcMain.handle('scope-confirmed-count', (_e, scope) => {
+    requireRole('admin', 'edit');
+    const { supplier_name, document_type_slug } = scope || {};
+    if (!document_type_slug) return 0;
+    try { return documents.getConfirmedDocsForScope(getDb(), { supplier_name, document_type_slug }).length; }
+    catch { return 0; }
+  });
   // Delete ONE mis-stored learned anchor (learning-history → 🗑). Admin/edit; audited.
   ipcMain.handle('delete-field-anchor', (_e, payload) => {
     requireRole('admin', 'edit');
@@ -265,6 +308,26 @@ function register(ctx) {
     const trust = require('../../../database/modules/trust');
     const rows = (Array.isArray(docIds) ? docIds : []).map(id => documents.getById(db, id)).filter(Boolean);
     return { ids: trust.autoFileEligibleIds(db, rows) };
+  });
+
+  // WHY is this one document not filing itself? Returns the SAME predicate's verdict verbatim, so
+  // Review can state the real reason instead of re-deriving one from the confidence threshold.
+  // It re-derived it before, and got it WRONG in two directions: a doc held by the structural gate
+  // was told "just below the X% you've set — lower the threshold" (the threshold cannot help; the
+  // gate refuses at any floor), and a graduated doc ABOVE its floor was told "Ready to file" —
+  // asserting readiness for a document this very predicate had refused.
+  ipcMain.handle('get-auto-file-reason', (_e, docId) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const trust = require('../../../database/modules/trust');
+    const doc = documents.getById(db, Number(docId));
+    if (!doc) return null;
+    const r = trust.isAutoFileEligible(db, doc) || {};
+    // reason is 'kind:field_key' (e.g. unverifiable-value:customer_name) — split so the renderer
+    // never has to parse it, and can name the field in plain English.
+    const [kind, field] = String(r.reason || '').split(':');
+    return { eligible: !!r.eligible, kind: kind || null, field: field || null,
+             floor: r.floor ?? null, trusted: !!r.trusted };
   });
 
   // Graduation roster + per-supplier opt-out (Slice 5 UX — the "Suppliers handled automatically"
@@ -338,6 +401,66 @@ function register(ctx) {
     } catch {}
     return { ok: true, accepted: list, cleared };
   });
+  // "Use '<name>'" resolve → the operator supplier PIN (Part B). Writes documents.supplier_pin so a
+  // REPROCESS forces this supplier (--known-supplier) instead of reverting to the coarse-logo pick. Local
+  // to the doc — writes NO logo/hint learning; the pin is cleared on confirm (documents.confirm). The
+  // engine keeps a pinned read REVIEW-BOUND (method 'operator_pin' + note). Admin/edit; audited.
+  ipcMain.handle('resolve-issuer', (_e, p) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const value = p && typeof p.value === 'string' ? p.value.trim() : '';
+    const docId = p && p.docId;
+    if (!value || !docId) return { ok: false, error: 'missing-value-or-doc' };
+    let changed = 0;
+    try { changed = db.prepare('UPDATE documents SET supplier_pin = ? WHERE id = ?').run(value, docId).changes; }
+    catch (e) { return { ok: false, error: e.message }; }
+    try {
+      logAudit(db, { action: 'supplier_resolved', action_category: 'learning',
+        outcome: 'success', metadata: { value, doc_id: docId } });
+    } catch {}
+    return { ok: true, changed };
+  });
+  // ── CORRECTION RIPPLE (identity text-first, slice 2) ─────────────────────────────────
+  // One correction should heal the batch. Siblings are found BY TEXT (the same distinctive
+  // branding tokens), never by the logo layer — nearest-neighbour would keep favouring the
+  // bigger WRONG pool, which is exactly why the owner's single correction didn't heal the
+  // other 19 Larkspur dockets. Read-only; the apply goes through the existing supplier-PIN
+  // rail, so everything stays review-bound and plants no learning.
+  // Kill switch SUPPLIER_RIPPLE=0 (additive feature; the IPCs simply report nothing).
+  ipcMain.handle('find-issuer-siblings', (_e, p) => {
+    requireRole('admin', 'edit');
+    if (process.env.SUPPLIER_RIPPLE === '0') return { ok: true, siblings: [] };
+    const docId = p && p.docId, value = p && p.value;
+    if (!docId || !value) return { ok: true, siblings: [] };
+    try {
+      const siblings = require('../../../database/modules/supplierSiblings')
+        .findSiblings(getDb(), docId, value);
+      return { ok: true, siblings };
+    } catch (e) {
+      logger?.warn?.(`find-issuer-siblings: ${e.message}`);
+      return { ok: true, siblings: [] };   // advisory — never break the resolve it follows
+    }
+  });
+  ipcMain.handle('apply-issuer-ripple', (_e, p) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const value = p && typeof p.value === 'string' ? p.value.trim() : '';
+    const ids = Array.isArray(p && p.docIds) ? p.docIds.map(Number).filter(Number.isInteger) : [];
+    if (!value || !ids.length) return { ok: false, error: 'missing-value-or-docs' };
+    let applied = 0;
+    // Same single-doc write as resolve-issuer, per document: a PIN only — no logo/hint learning,
+    // cleared on confirm, and the engine keeps a pinned read review-bound ('operator_pin' + note).
+    const stmt = db.prepare('UPDATE documents SET supplier_pin = ? WHERE id = ? AND status IN (\'needs_review\',\'deferred\')');
+    for (const id of ids.slice(0, 100)) {
+      try { applied += stmt.run(value, id).changes; } catch { /* skip the row, never abort the ripple */ }
+    }
+    try {
+      logAudit(db, { action: 'supplier_ripple_applied', action_category: 'learning',
+        outcome: 'success', metadata: { value, doc_ids: ids.slice(0, 100), applied } });
+    } catch {}
+    return { ok: true, applied, docIds: ids.slice(0, 100) };
+  });
+
   ipcMain.handle('rename-field-value', (_e, scope) => {
     requireRole('admin', 'edit');
     const db = getDb();
@@ -349,17 +472,48 @@ function register(ctx) {
     return { changed };
   });
 
-  // get-document-with-extractions / get-document-pages are shared with the
-  // Search window (Read Only previews filed documents there too) — gate to
-  // "any signed-in user", not a specific role.
+  // get-document-with-extractions is the FULL detail (paths + ocr_text ride along via
+  // getById SELECT *) — REVIEW-ONLY since the Document-detail DTO follow-up (owner
+  // 2026-08-02, Oracle C3): Review genuinely consumes doc.folder_path (page fetch) and
+  // doc.ocr_text (name-presence), and the Review window is admin/edit by construction.
+  // Every OTHER surface (Search preview, mailbox click, resubmit — incl. Read Only)
+  // uses the PROJECTED get-document-detail below. get-document-pages stays any-role
+  // (it returns page images, never fields or paths).
   ipcMain.handle('get-document-with-extractions', (_e, id) => {
-    const sess = requireLogin();
+    const sess = requireRole('admin', 'edit');
     const db  = getDb();
+    _assertDocAccess(db, sess, id);
     // Pure data assembly (doc + extractions + resolved slug + digit-only fields)
     // lives in the shared service so a detached client can reuse it; auth + audit
     // stay here at the transport edge.
     const doc = previewService.getDocumentDetail(db, id, { learning });
     if (doc) {
+      // Per-template field HIDING (migration 54): the fields hidden for THIS doc's matched template,
+      // so the renderer can skip their rows (a layout that lacks a field stops showing it empty).
+      // When the doc matched NO template (a Stage-0 miss — the "No template match" case), fall back to
+      // resolving the supplier's layout by the issuer name / branding, so the hidden-field config still
+      // applies (owner 2026-07-25). Kill switch FIELD_VIS_LIVE_RESOLVE=0 restores template_id-only.
+      // Empty [] ⇒ show all fields (fail-safe; byte-identical when nothing resolves).
+      try {
+        const _t = require('../../../database/modules/templates');
+        // Start with the MATCHED template's hidden fields (unchanged when the resolver is off).
+        let _hidden = doc.template_id ? _t.getHiddenFields(db, doc.template_id) : [];
+        // UNION the (supplier, type) config across ALL sibling templates — so a per-supplier hide applies
+        // regardless of WHICH duplicate template the logo matched, and EVEN when a template matched (the
+        // old code resolved by name+type only on a Stage-0 MISS, so a doc matching the empty duplicate
+        // sibling showed the fields the owner had hidden on the other sibling). Owner 2026-07-27:
+        // same-supplier same-type templates are treated as one AUTOMATICALLY, no manual merge. Display-
+        // only + fail-safe (show all when nothing resolves). FIELD_VIS_LIVE_RESOLVE=0 ⇒ matched-only ⇒
+        // byte-identical to before.
+        if (process.env.FIELD_VIS_LIVE_RESOLVE !== '0' && doc.type_slug) {
+          const _mode = String((db.prepare('SELECT value FROM settings WHERE key = ?').get('field_visibility_resolve_mode') || {}).value) === '2' ? 2 : 1;
+          let _fp = null; try { _fp = JSON.parse(doc.keyword_fingerprint || 'null'); } catch {}
+          const _res = _t.getHiddenFieldsForSupplierType(db, { supplier_name: doc.supplier_name,
+            document_type_slug: doc.type_slug, keyword_fingerprint: Array.isArray(_fp) ? _fp : null, mode: _mode });
+          _hidden = [...new Set([..._hidden, ..._res])];
+        }
+        doc.hidden_fields = _hidden;
+      } catch { doc.hidden_fields = []; }
       logAudit(db, { action: 'document_open', target_type: 'document', target_id: id,
         document_id: id, outcome: 'success', metadata: { type: doc.type_slug || null, status: doc.status || null } });
       // Publish desktop REVIEW presence so clients see "being reviewed by <name>" — only for a
@@ -370,6 +524,25 @@ function register(ctx) {
       }
     }
     return doc;
+  });
+
+  // PROJECTED single-document detail (the Document-detail DTO follow-up, Oracle C3): what
+  // the Search/mailbox/resubmit surfaces actually render — display fields + extractions —
+  // through the /v1 trust-boundary shape (dto.projectDocumentDetail) REUSED VERBATIM, so
+  // the desktop and wire projections cannot drift. No paths, no ocr_text, no hashes cross
+  // to those renderers on the single-doc click any more (the row surface was de-pathed in
+  // the prior slice). Same access gate + document_open audit as the full read.
+  ipcMain.handle('get-document-detail', (_e, id) => {
+    const sess = requireLogin();
+    const db = getDb();
+    _assertDocAccess(db, sess, id);
+    const doc = previewService.getDocumentDetail(db, id, { learning });
+    if (doc) {
+      logAudit(db, { action: 'document_open', target_type: 'document', target_id: id,
+        document_id: id, outcome: 'success',
+        metadata: { type: doc.type_slug || null, status: doc.status || null, via: 'detail' } });
+    }
+    return require('../../services/dto').projectDocumentDetail(doc);
   });
 
   // Renderer-driven presence refresh: the open Review window beats every ~25s so a desktop
@@ -398,14 +571,60 @@ function register(ctx) {
     try { const u = getCurrentUser(); if (u) presence.release(docId, _desktopKey(u.id)); } catch {}
   });
 
+  // LIVE field visibility by the ENTERED supplier + type (2026-07-25, owner request). Review calls this
+  // on issuer-blur and on load for a doc that matched NO template, so a supplier's hidden-field config
+  // still applies (the per-template config is keyed on template_id, which is null on a "No template match"
+  // doc). Read-only. FAIL-SAFE: returns hidden:[] (show ALL fields) whenever nothing resolves — the owner's
+  // stated rule. Kill switch FIELD_VIS_LIVE_RESOLVE=0 ⇒ {disabled:true}; the renderer then keeps the
+  // template_id-keyed set from get-document-with-extractions ⇒ byte-identical to before. Mode (setting
+  // `field_visibility_resolve_mode`): 1 = entered name, doc branding fingerprint as backup (default);
+  // 2 = entered name ONLY (the dev A/B switch — flip via set-setting to test).
+  ipcMain.handle('resolve-field-visibility', (_e, payload = {}) => {
+    try {
+      requireLogin();
+      if (process.env.FIELD_VIS_LIVE_RESOLVE === '0') return { disabled: true };
+      const db = getDb();
+      const templatesMod = require('../../../database/modules/templates');
+      const { supplier_name, document_type_slug, doc_id } = payload || {};
+      if (!document_type_slug) return { hidden: [], templateId: null };
+      const modeRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('field_visibility_resolve_mode');
+      const mode = String(modeRow && modeRow.value) === '2' ? 2 : 1;
+      let fp = null;
+      if (mode === 1 && doc_id) {
+        try { fp = JSON.parse(db.prepare('SELECT keyword_fingerprint FROM documents WHERE id = ?').get(doc_id)?.keyword_fingerprint || 'null'); } catch {}
+      }
+      const tid = templatesMod.findForSupplierType(db, {
+        supplier_name, document_type_slug, keyword_fingerprint: Array.isArray(fp) ? fp : null, mode });
+      // UNION the hidden-field config across ALL (supplier, type) sibling templates (duplicate-proof),
+      // not just the single tie-broken pick — same automatic resolution as get-document-with-extractions.
+      const hidden = templatesMod.getHiddenFieldsForSupplierType(db, {
+        supplier_name, document_type_slug, keyword_fingerprint: Array.isArray(fp) ? fp : null, mode });
+      return { hidden, templateId: tid || null, mode };
+    } catch { return { hidden: [], templateId: null }; }
+  });
+
   // ── Document pages for preview ──────────────────────────────────────────────
   ipcMain.handle('get-document-pages', async (_e, docId, folderPath, filename, scale) => {
-    requireLogin();
-    if (!folderPath || !filename) {
-      console.log(`[pages] docId=${docId} missing path — folderPath=${folderPath} filename=${filename}`);
+    const sess = requireLogin();
+    const db = getDb();
+    _assertDocAccess(db, sess, docId);
+    // SECURITY (mirror /v1 F-02): resolve the on-disk location SERVER-SIDE from the doc
+    // row ONLY — the client-supplied folderPath/filename are NOT read (a compromised/replaced
+    // renderer could otherwise path.join arbitrary host paths through the render pipeline).
+    // Precedence matches the in-process preview: working copy -> filed copy -> recorded source.
+    const row = db.prepare(
+      'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(docId);
+    let rFolder = null, rFile = null;
+    if (row) {
+      const pick = row.working_path || row.stored_path
+        || (row.folder_path && row.original_filename ? path.join(row.folder_path, row.original_filename) : null);
+      if (pick) { rFolder = path.dirname(pick); rFile = path.basename(pick); }
+    }
+    if (!rFolder || !rFile) {
+      console.log(`[pages] docId=${docId} no resolvable file`);
       return [];
     }
-    const sourcePath = path.join(folderPath, filename);
+    const sourcePath = path.join(rFolder, rFile);
 
     // A new document loading is our signal that the previous one's preview
     // has moved on — fire any deferred source-file move now (unless, oddly,
@@ -417,7 +636,7 @@ function register(ctx) {
 
     // Transport-agnostic page render lives in the shared service so the detached
     // client can reuse it; Electron collaborators are injected via deps.
-    return previewService.getDocumentPages(getDb(), { docId, folderPath, filename, scale }, {
+    return previewService.getDocumentPages(db, { docId, folderPath: rFolder, filename: rFile, scale }, {
       fs, path, spawn, pythonExe, pythonArgs,
       renderScript: ctx.resourcePath('python_backend', 'render', 'pages.py'),
     });
@@ -425,21 +644,42 @@ function register(ctx) {
 
   // ── Small page-1 thumbnail for the document lists + add-template picker ──────
   ipcMain.handle('get-document-thumbnail', async (_e, docId, folderPath, filename) => {
-    requireLogin();
-    if (!folderPath || !filename) return null;
-    return previewService.getThumbnail(getDb(), { docId, folderPath, filename }, {
+    const sess = requireLogin();
+    const db = getDb();
+    _assertDocAccess(db, sess, docId);
+    // Same server-side path resolution as get-document-pages (never trust client paths).
+    const row = db.prepare(
+      'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(docId);
+    let rFolder = null, rFile = null;
+    if (row) {
+      const pick = row.working_path || row.stored_path
+        || (row.folder_path && row.original_filename ? path.join(row.folder_path, row.original_filename) : null);
+      if (pick) { rFolder = path.dirname(pick); rFile = path.basename(pick); }
+    }
+    if (!rFolder || !rFile) return null;
+    return previewService.getThumbnail(db, { docId, folderPath: rFolder, filename: rFile }, {
       fs, path, spawn, pythonExe, pythonArgs,
       renderScript: ctx.resourcePath('python_backend', 'render', 'pages.py'),
     });
   });
 
   // ── OCR preprocessing preview ────────────────────────────────────────────────
-  ipcMain.handle('get-enhanced-preview', async (_e, { folderPath, filename, page, enhanceParams }) => {
-    requireLogin();
-    if (!folderPath || !filename || !enhanceParams) return null;
-
-    const filePath = path.join(folderPath, filename);
-    if (!fs.existsSync(filePath)) return null;
+  ipcMain.handle('get-enhanced-preview', async (_e, { docId, page, enhanceParams }) => {
+    const sess = requireLogin();
+    if (docId == null || !enhanceParams) return null;
+    const db = getDb();
+    _assertDocAccess(db, sess, docId);
+    // SECURITY (Stage 1 — H3, mirror get-document-pages): resolve the on-disk file SERVER-SIDE from
+    // the doc row ONLY — the client-supplied folderPath/filename are NOT read. A compromised/replaced
+    // renderer could otherwise render (and read back as an image) any file on disk, or point a UNC
+    // path at an attacker host to trigger an outbound SMB/NTLM authentication.
+    const row = db.prepare(
+      'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(docId);
+    const filePath = row
+      ? (row.working_path || row.stored_path
+         || (row.folder_path && row.original_filename ? path.join(row.folder_path, row.original_filename) : null))
+      : null;
+    if (!filePath || !fs.existsSync(filePath)) return null;
 
     const enhanceFile = path.join(os.tmpdir(), `ds_enh_preview_${Date.now()}.json`);
     fs.writeFileSync(enhanceFile, JSON.stringify(enhanceParams));
@@ -498,11 +738,36 @@ function register(ctx) {
   // reprocess — but not permanent deletion of a scanned document).
   // Delete is now a SOFT delete → the document goes to the RECYCLE BIN (status='deleted',
   // recoverable; files are KEPT). Permanent removal is the separate purge below.
+  // Close any OPEN routes on a doc that was just soft-deleted (FYI slice, Oracle C1/C2):
+  // 'recalled' + "Document deleted by <name>" — an honest Completed-list tombstone instead of a
+  // silent vanish (ack, newly deletable) or a stranded-open inbox item (approve via admin
+  // override / the previously-unguarded bulk doors). Audits + notifies ONLY when something
+  // closed; ONE notify per call (a batch door passes many docs' worth through one call site).
+  // 'auto_closed' is deliberately UNKNOWN to workflowNotify.eventDirection ⇒ badge-ping only,
+  // no toast (the recipient finds the tombstone in Completed; a toast for a dead doc is noise).
+  function _closeRoutesForDeleted(db, docIds, deletedByName) {
+    let closed = 0;
+    for (const id of docIds) {
+      const res = workflowService.closeOpenRoutesForDeletedDoc(db, { documentId: id, deletedByName });
+      if (res.closed.length) {
+        closed += res.closed.length;
+        logAudit(db, { action: 'workflow_route_closed_on_delete', action_category: 'workflow',
+          target_type: 'document', target_id: id, document_id: id, outcome: 'success',
+          metadata: { routes: res.closed.map(r => r.id), deleted_by: deletedByName } });
+      }
+    }
+    if (closed > 0) { try { ctx.notifyWorkflowEvent && ctx.notifyWorkflowEvent({ event: 'auto_closed' }); } catch { /* best-effort */ } }
+    return closed;
+  }
+
   ipcMain.handle('delete-document', async (_e, docId /*, filePath */) => {
     requireRole('admin', 'edit');
     const db = getDb();
-    requireUnlocked(db, docId, 'delete'); // blocked while under an open approval route
+    // Blocked while under an open APPROVAL route (an open FYI route never blocks — FYI slice);
+    // admin override proceeds and the route-close below leaves the honest tombstone.
+    const sess = requireUnlocked(db, docId, 'delete');
     documents.softDelete(db, docId);
+    _closeRoutesForDeleted(db, [docId], sess.displayName || sess.username);
     logAudit(db, { action: 'document_deleted', action_category: 'document', target_type: 'document',
       target_id: docId, document_id: docId, outcome: 'success', metadata: { soft: true } });
     notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
@@ -511,7 +776,13 @@ function register(ctx) {
   });
 
   // Recycle bin: list, restore, and permanently remove deleted documents.
-  ipcMain.handle('get-deleted-queue', () => { requireRole('admin', 'edit'); return documents.getDeletedQueue(getDb()); });
+  // Same de-pathing projection as the search rows — the bin renders in the SAME window
+  // (getDeletedQueue is SELECT d.*; the search renderer is its only consumer).
+  ipcMain.handle('get-deleted-queue', () => {
+    requireRole('admin', 'edit');
+    const { projectSearchRow } = require('../../services/searchService');
+    return documents.getDeletedQueue(getDb()).map(projectSearchRow);
+  });
 
   ipcMain.handle('restore-document', (_e, docId) => {
     requireRole('admin', 'edit');
@@ -555,26 +826,31 @@ function register(ctx) {
   // ── Bulk delete of a whole queue (Admin only) ───────────────────────────────
   // Permanent deletion of scanned documents is Admin-exclusive, like the
   // single-doc delete above. Each helper is scoped to exactly one status so it
-  // can never reach confirmed documents; source files are unlinked best-effort
-  // first, then the rows (and their cascaded extractions) are removed in one
-  // statement. Returning the deleted count lets the renderer report it.
-  function _deleteQueue(status, rows, countEvent) {
+  // can never reach confirmed documents. SOFT delete: every row goes to the recycle
+  // bin (status='deleted' + deleted_at; restorable from Search; files on disk KEPT) —
+  // the renderer's dialogs promise exactly that recoverability, so this must NEVER be
+  // "restored" to a hard delete without rewriting those dialogs in the same commit.
+  // Returning the deleted count lets the renderer report it.
+  function _deleteQueue(status, rows, countEvent, deletedByName) {
     const db = getDb();
     let n = 0;
     for (const r of rows) { documents.softDelete(db, r.id); n++; }   // → recycle bin (recoverable; files kept)
+    // Previously-unguarded door: open routes (approve included) were stranded pending-forever
+    // against the deleted docs. One notify for the whole batch (Oracle C2).
+    _closeRoutesForDeleted(db, rows.map(r => r.id), deletedByName);
     notifyMainWindow(countEvent, status === 'needs_review'
       ? documents.getReviewCount(db) : documents.getDeferredCount(db));
     return { success: true, deleted: n };
   }
 
   ipcMain.handle('delete-all-review', async () => {
-    requireRole('admin');
-    return _deleteQueue('needs_review', documents.getReviewQueue(getDb()), 'review-count-changed');
+    const sess = requireRole('admin');
+    return _deleteQueue('needs_review', documents.getReviewQueue(getDb()), 'review-count-changed', sess.displayName || sess.username);
   });
 
   ipcMain.handle('delete-all-deferred', async () => {
-    requireRole('admin');
-    return _deleteQueue('deferred', documents.getDeferredQueue(getDb()), 'deferred-count-changed');
+    const sess = requireRole('admin');
+    return _deleteQueue('deferred', documents.getDeferredQueue(getDb()), 'deferred-count-changed', sess.displayName || sess.username);
   });
 
   // ── Confirm review ──────────────────────────────────────────────────────────
@@ -591,11 +867,12 @@ function register(ctx) {
     // the shared reviewService does the claim-before-file, filing, learning and cleanup so the
     // desktop and the /v1 client API file documents through ONE race-safe path.
     const sess = requireUnlocked(db, payload.document_id, 'confirm');
-    const r = await reviewService.confirm(db, { username: sess.username, role: sess.role }, payload);
+    const r = await reviewService.confirm(db, { userId: sess.id, username: sess.username, role: sess.role }, payload);
     if (!r.ok) {
       return { success: false, error: r.error,
                ...(r.code ? { code: r.code } : {}),
-               ...(r.confirmedBy ? { confirmedBy: r.confirmedBy } : {}) };
+               ...(r.confirmedBy ? { confirmedBy: r.confirmedBy } : {}),
+               ...(r.code === 'PREFIX_OUTLIER' ? { prefixOutlier: { field: r.field, dominant: r.dominant, prefix: r.prefix } } : {}) };
     }
     return r;   // { ok:true, success:true, ...filingResult }
   });
@@ -612,7 +889,7 @@ function register(ctx) {
     requireRole('admin', 'edit');
     const db  = getDb();
     const doc = db.prepare(
-      `SELECT d.template_id, d.logo_phash, d.ocr_text, dt.slug AS document_type_slug
+      `SELECT d.template_id, d.logo_phash, d.logo_detail_hash, d.ocr_text, dt.slug AS document_type_slug
          FROM documents d
          LEFT JOIN document_types dt ON dt.id = d.document_type_id
         WHERE d.id = ?`
@@ -629,6 +906,11 @@ function register(ctx) {
       logo_phash: doc.logo_phash,
       ocr_text:   doc.ocr_text,
       document_type_slug: doc.document_type_slug,
+      // 256-bit isolated-mark evidence (mig 47, populated at processing time): arms the
+      // detail-hash veto so this recheck — which also picks the Template Wizard's SAVE
+      // TARGET via resolveWizardTemplate — can never name a template whose enrolled mark
+      // positively contradicts this page's mark (the Thornbury-on-Copperfield pill).
+      logo_detail_hash: doc.logo_detail_hash,
     });
     if (!match) return { matched: false };
 
@@ -671,6 +953,9 @@ function register(ctx) {
       const result = await _upsertTemplate(ctx, db, document_id, {
         allValues, document_type_slug, supplier_name, dtInfo,
       });
+      if (result && result.skipped === 'generic-type') {
+        return { success: false, error: 'General Documents are filed without templates — there is nothing to add to the Template Manager.' };
+      }
       // Pin the promoted document as the template's sample so the template
       // editor, opened straight from here, has it loaded in the preview pane
       // (no second manual browse). This is the doc the admin just curated, so
@@ -685,6 +970,10 @@ function register(ctx) {
         // resolves (never rejects) and the template still works via anchors meanwhile.
         try { if (ctx.generateLandmarks) await ctx.generateLandmarks(result.templateId); }
         catch (e) { console.error('promote-to-template landmarks:', e.message); }
+        // TEACH_ANGLE_COMPOSE enabler: record the sample's tilt NOW so the first process of a
+        // sibling composes the teach coords to level (else the lazy heal lands it one batch late).
+        try { if (ctx.generateSampleAngle) await ctx.generateSampleAngle(result.templateId); }
+        catch (e) { console.error('promote-to-template sample-angle:', e.message); }
         // Same for the keyword FINGERPRINT — a teach-promoted born-digital template
         // (whose sample doc may have an empty stored ocr_text) would otherwise be born
         // fingerprint-less and only matchable by an unreliable logo phash. Fills only
@@ -721,12 +1010,16 @@ function register(ctx) {
       const result = await _upsertTemplate(ctx, db, document_id, {
         allValues, document_type_slug, supplier_name, dtInfo,
       });
+      if (result && result.skipped === 'generic-type') {
+        return { success: false, error: 'General Documents are filed without templates — retype the document first if it belongs with this template.' };
+      }
       const newId = result.templateId;
       // Only pin/derive on a genuinely NEW template — never disturb an existing one's sample.
       if (newId && result.created) {
         templates.setSampleDocument(db, newId, document_id);
         try { if (ctx.generateLandmarks)  await ctx.generateLandmarks(newId); }  catch (e) { console.error('link landmarks:', e.message); }
         try { if (ctx.generateFingerprint) await ctx.generateFingerprint(newId); } catch (e) { console.error('link fingerprint:', e.message); }
+        try { if (ctx.generateSampleAngle) await ctx.generateSampleAngle(newId); } catch (e) { console.error('link sample-angle:', e.message); }
       }
       // 2) Put both templates in the SAME group (reuse the target's group, else make one).
       let groupId = target.group_id || null;
@@ -749,11 +1042,22 @@ function register(ctx) {
   });
 }
 
-module.exports = { register, _buildTemplateFields };   // _buildTemplateFields exported for test_build_template_fields.js
+// The ONE shared reviewService instance (set in register) — the Catch-up sweep accept files
+// through it so there is never a second confirm/filing implementation. Null until register runs.
+let _sharedReviewServiceInstance = null;
+module.exports = { register, _buildTemplateFields, _upsertTemplate,   // _buildTemplateFields + _upsertTemplate exported for tests (test_build_template_fields.js, test_upsert_type_link.js)
+                   getReviewService: () => _sharedReviewServiceInstance };
 
 // ── Template create / update ──────────────────────────────────────────────────
 
 async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_slug, supplier_name, dtInfo }) {
+  // Generic Document (docs/designs/GENERIC_DOCTYPE_2026-07-18.md §3, pinned trade-off):
+  // the heterogeneous "General Document" pile must NEVER mint templates — a generic-born
+  // template could later Stage-0-match and stamp generic over a doc a real type fits.
+  // No template learning on the pile in v1; the Teach-Me Funnel is the later graduation path.
+  if (document_type_slug === require('../../../database/modules/document_types').GENERIC_SLUG) {
+    return { skipped: 'generic-type' };
+  }
   const { path, fs, templatesDir } = ctx;
   const templates = require('../../../database/modules/templates');
 
@@ -765,7 +1069,7 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
 
   const logo_phash           = doc.logo_phash || null;
   const logo_detail_hash     = doc.logo_detail_hash || null;   // Slice B: isolated-mark discriminator, enrolled into the template set
-  const keyword_fingerprint  = _parseJson(doc.keyword_fingerprint, []);
+  let keyword_fingerprint    = _parseJson(doc.keyword_fingerprint, []);
 
   // Build template field rules from confirmed values
   const fields = _buildTemplateFields(db, allValues, dtInfo);
@@ -781,6 +1085,30 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
     || (allValues && allValues.customer_name)
     || ''
   ).trim();
+
+  // FINGERPRINT_HYGIENE (slice 3 of the distinctive-token train, Oracle-signed 2026-07-20): the
+  // doc-side fingerprint can carry the RECIPIENT's name when the recipient marker OCR'd garbled
+  // ("Bill To" → "Bi Te" defeated the harvest truncation) — the live Vellum template froze its
+  // sample's customer ("Ashcombe Care Homes") into its permanent identity, diluting its own rival
+  // ratio below the naming bar exactly when it was the true supplier. At CONFIRM time the
+  // recipient is GROUND TRUTH (the operator just confirmed customer_name), so subtract those
+  // tokens — never fuzzy-match garbled markers (difflib on 5-7 char markers scores ~0.67, below
+  // any safe bar; both advisors rejected it). Oracle condition E: a token also present in the
+  // confirmed ISSUER is never subtracted (a company billing its own branch must not strip its own
+  // identity). On the UPDATE path stabiliseFingerprint INTERSECTS stored∩incoming, so a stored
+  // leak ('Ashcombe') heals on the very next confirm without a migration — pinned.
+  // Skipped entirely when the issuer identity CAME from the customer field (the confirmedIssuer
+  // fallback above) — subtracting there would strip the issuer's own identity.
+  if (process.env.FINGERPRINT_HYGIENE !== '0' && allValues && allValues.customer_name
+      && confirmedIssuer && confirmedIssuer !== String(allValues.customer_name).trim()) {
+    const toks = (s) => new Set((String(s || '').toLowerCase().match(/[a-z0-9]{2,}/g)) || []);
+    const custToks = toks(allValues.customer_name);
+    const issuerToks = toks(confirmedIssuer);
+    keyword_fingerprint = keyword_fingerprint.filter(w => {
+      const wl = String(w == null ? '' : w).toLowerCase();
+      return !(custToks.has(wl) && !issuerToks.has(wl));
+    });
+  }
 
   // `doc.template_id` reflects whatever Stage 0 matched DURING PROCESSING —
   // which, for a freshly-scanned batch, runs before any of that batch's own
@@ -809,6 +1137,64 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
   //      — instead of spawning a near-duplicate template. Same-slug + keyword floor
   //      keep this from merging two different suppliers with similar logos.
   let templateId = doc.template_id || null;
+  // Part D (TYPE-heading authority) — DETACH a WRONG-TYPE Stage-0 link before reuse. doc.template_id
+  // reflects whatever Stage 0 matched during processing, which for a same-logo supplier can be a
+  // SIBLING OF THE WRONG TYPE (a worksheet logo-matched to the delivery-note template). Confirming
+  // as-is runs templates.update() on that wrong-type template — reinforcing it — and NEVER borns the
+  // correct-type one, so the cluster never separates (root cause #3, self-reinforcing; it is why no
+  // worksheet template with a logo is ever created). If the linked template's slug is PRESENT and
+  // DIFFERS from the type the operator CONFIRMED, drop the link so the type-scoped reuse/create below
+  // re-points the doc to a RIGHT-type template carrying this doc's logo. Detach ONLY on a real slug
+  // mismatch — a legacy null-slug template stays attached (Oracle C4b). Kill switch TEMPLATE_TYPE_LINK_GUARD.
+  let retypedLink = false;
+  if (templateId && process.env.TEMPLATE_TYPE_LINK_GUARD !== '0') {
+    const linked = templates.getById(db, templateId);
+    const linkedSlug = linked && linked.document_type_slug;
+    if (linkedSlug && document_type_slug && linkedSlug !== document_type_slug) {
+      templateId = null;
+      retypedLink = true;
+    }
+  }
+  // Part E (TEMPLATE_SUPPLIER_LINK_GUARD — Oracle condition A, the confirm-time reinforcement
+  // loop, 2026-07-20): never REUSE a template whose established supplier identity is NAME-DISJOINT
+  // from the issuer the operator just confirmed. Without this, a foreign doc that Stage-0
+  // logo-matched another supplier's template (the misfiled docs sit at hamming 4-6 — INSIDE the
+  // logo append band) would, on its corrected taught-confirm/promote, bump that template's count,
+  // APPEND its phash into the wrong reference set (making the collision match BETTER next time),
+  // dilute its dominant issuer and rewrite its fields. Applied to the surviving doc link here AND
+  // to the logo/branding reuse acquisitions below (the same foreign template is re-acquirable by
+  // findByLogoHash at the same distance). Unjudgeable identity ⇒ reuse (fail toward today);
+  // detached ⇒ fall through to CREATE — a genuinely different sender gets its OWN template.
+  const _supplierLinkOk = (tid) => {
+    if (!tid || !confirmedIssuer || process.env.TEMPLATE_SUPPLIER_LINK_GUARD === '0') return true;
+    // SELF-INDEPENDENT identity (TEMPLATE_GUARD_SELF_INDEPENDENT, 2026-07-21): this runs from the
+    // detached onTaughtConfirm hook AFTER the doc is confirmed + supplier_name=confirmedIssuer, so —
+    // exactly like the reviewService arm — a plain establishedIdentity counts the doc against itself.
+    // Exclude document_id (in scope from the _upsertTemplate signature). OFF ⇒ null ⇒ byte-identical.
+    const _selfIndep = process.env.TEMPLATE_GUARD_SELF_INDEPENDENT !== '0';
+    const ident = templates.establishedIdentity(db, tid, _selfIndep ? document_id : null);
+    return !(ident && templates.supplierNamesDisjoint(confirmedIssuer, ident));
+  };
+  let supplierDetached = false;
+  if (templateId && !_supplierLinkOk(templateId)) {
+    templateId = null;
+    supplierDetached = true;
+  }
+  // NAME-PRIMARY REUSE (Lever 1, TEMPLATE_REUSE_BY_NAME default ON, Phillip/Oracle SIGN-OFF-WITH-CONDITIONS
+  // 2026-07-27): the CONFIRMED ISSUER is the one clean reuse signal — the 64-bit logo phash can't separate
+  // suppliers (it folds a FOREIGN nearest template) and branding overlap is polluted by per-doc OCR-garble /
+  // recipient tokens, so BOTH the logo + branding arms below can MISS the true same-supplier sibling and mint
+  // a DUPLICATE (the measured id33/id34 birth). Reuse a same-TYPE template whose established (dominant
+  // confirmed) identity EXACTLY matches this doc's confirmed issuer, BEFORE the unreliable logo/branding arms.
+  // Part-E-again (below) re-validates the acquisition (establishedIdentity == confirmedIssuer ⇒ non-disjoint ⇒
+  // kept). Reversible LINK; OFF ⇒ byte-identical (arm skipped). Precision (Oracle C1) lives in
+  // templates.reuseByEstablishedName: establishedIdentity not the cosmetic name, EXACT _normNameForVis
+  // equality (never containment), same slug, plausible + len>=3, canonical = richest sibling.
+  // TODO (same lever, follow-up): mirror this arm before graduationTemplate's create (a separate birth path).
+  if (!templateId && process.env.TEMPLATE_REUSE_BY_NAME !== '0' && confirmedIssuer && document_type_slug) {
+    const _nmReuse = templates.reuseByEstablishedName(db, confirmedIssuer, document_type_slug, document_id);
+    if (_nmReuse) { templateId = _nmReuse; supplierDetached = true; }   // supplierDetached => relink the doc to the reused canonical
+  }
   if (!templateId && logo_phash) {
     // TYPE-SCOPED reuse: a template is per (supplier, TYPE), and a supplier issuing several types on
     // one letterhead has same-logo siblings — so reusing the nearest logo BLINDLY would fold e.g. an
@@ -823,6 +1209,34 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
                && templates.keywordOverlap(keyword_fingerprint, _parseJson(reuse.keyword_fingerprint, [])) >= 0.60) {
       templateId = reuse.id;
     }
+  }
+
+  // M2 — BRANDING-FINGERPRINT REUSE (docs/designs/TEMPLATE_CONVERGENCE_2026-07-17.md +
+  // TEMPLATE_DEFRAG_2026-07-25.md; kill switch TEMPLATE_REUSE_BY_BRANDING, DEFAULT ON since 2026-07-25 —
+  // set '0' to disable). On scans the coarse logo phash drifts past the accept band (measured up to 36
+  // Hamming for the SAME supplier), so the logo arms above miss a drifted doc's own template and the
+  // CREATE branch below spawns a DUPLICATE (the fragmentation birth path). Reuse the canonical SAME-TYPE
+  // template identified by DISTINCTIVE branding tokens instead. Placed under `!templateId` (NOT nested in
+  // the logo_phash guard) so it also converges logo-LESS suppliers (Oracle cond 3). The far-drifted logo
+  // is NOT folded into the reused template's set — update()'s append stays bounded at LOGO_APPEND_BAND=13.
+  // WHY DEFAULT ON IS SAFE (Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-25): this is a CONFIRM-TIME path the
+  // corpus harness never exercises, so its safety is a live REPLAY not a corpus run — 534 confirmed docs
+  // gave 482 same-supplier reuses and 0 cross-supplier false matches at 0.80. The real guard is NOT that
+  // number but the BLAST RADIUS: a mis-bind is a reversible `template_id` LINK, never a value write, and
+  // the Part-E `_supplierLinkOk` re-check below detaches a name-disjoint acquisition. TODO (Phillip's
+  // Slice-2 condition, follow-up): harden findByBrandingFingerprint against short/generic-token collisions
+  // (two "___ Services Ltd" sharing 3 boilerplate tokens) via a per-DB IDF/rarity weight — a synthetic
+  // corpus can't expose it. Real gate before wide rollout = one live owner batch that reuses cleanly.
+  if (!templateId && process.env.TEMPLATE_REUSE_BY_BRANDING !== '0') {
+    const bg = templates.findByBrandingFingerprint(db, keyword_fingerprint, document_type_slug, 0.80);
+    if (bg) templateId = bg.id;
+  }
+  // Part E again, on the reuse ACQUISITIONS: the same foreign template the doc-link check above
+  // detached is re-acquirable by findByLogoHash at the same hamming distance (the Vellum docs sit
+  // at dist 4 from the Copperfield set — inside the strict reuse gate).
+  if (templateId && !_supplierLinkOk(templateId)) {
+    templateId = null;
+    supplierDetached = true;
   }
 
   if (templateId) {
@@ -847,7 +1261,10 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
         try { templates.rename(db, templateId, confirmedIssuer); } catch {}
       }
     }
-    if (!doc.template_id) {
+    // Relink when the doc had no template, OR when Part D detached a wrong-type link and the
+    // type-scoped reuse found a RIGHT-type template to converge onto (Oracle C4a), OR when Part E
+    // detached a wrong-SUPPLIER link and a different (same-supplier) template was legitimately reused.
+    if (!doc.template_id || retypedLink || supplierDetached) {
       db.prepare('UPDATE documents SET template_id = ? WHERE id = ?').run(templateId, document_id);
     }
     _writeTemplateFile(db, templateId, path, fs, templatesDir());
@@ -929,8 +1346,9 @@ function _buildTemplateFields(db, allValues, dtInfo) {
   // can't pollute this template. Keep-all fallback when the type has no field metadata (mirrors
   // graduationTemplate._variableOnlyFields). Never drop the issuer or the type's ref/date role keys,
   // even if `fields` is malformed (defensive — those are load-bearing for filing).
-  const roleKeys = new Set([...companyKeys, dtInfo?.ref_field_key, dtInfo?.date_field_key].filter(Boolean));
-  const ownField = (key) => fieldMeta.size === 0 || fieldMeta.has(key) || roleKeys.has(key);
+  // Shared with the P2 foreign-row drop (reviewService.confirm + _autoFileDoc) via foreignFields.js,
+  // so the keep-predicate can't drift between the template builder and the storage-scope fix.
+  const ownField = require('../../lib/foreignFields').ownFieldPredicate(dtInfo);
 
   return Object.entries(allValues)
     .filter(([key, v]) => v && String(v).trim() && ownField(key))
@@ -981,6 +1399,7 @@ async function _maybeGraduationTemplate(ctx, db, document_id, info) {
     try { templates.setSampleDocument(db, res.templateId, document_id); } catch (e) { console.warn('Graduation sample pin failed:', e.message); }
     try { if (ctx.generateLandmarks)   await ctx.generateLandmarks(res.templateId); }   catch (e) { console.warn('Graduation landmarks failed:', e.message); }
     try { if (ctx.generateFingerprint) await ctx.generateFingerprint(res.templateId); } catch (e) { console.warn('Graduation fingerprint failed:', e.message); }
+    try { if (ctx.generateSampleAngle) await ctx.generateSampleAngle(res.templateId); } catch (e) { console.warn('Graduation sample-angle failed:', e.message); }
     console.log(`[graduation] auto-created template "${res.name}" (id ${res.templateId}${res.keywordOnly ? ', keyword-only' : ''}) on scope graduation`);
   }
 }

@@ -9,24 +9,144 @@ const LOGO_HASH_CAP    = 8;    // max stored hashes per template
 const LOGO_DEDUP_FLOOR = 2;    // <= this to the nearest existing ref -> already covered, skip
 const LOGO_APPEND_BAND = 13;   // append only within this Hamming of an existing ref (= the matcher candidate net)
 
+// Shared distinctive-branding primitives (the ONE source of truth for template convergence by
+// branding rather than the unstable logo — see branding_fingerprint.js + the M2 design doc).
+const brandingFp = require('./branding_fingerprint');
+const logoDetail = require('./logoDetail');   // 256-bit isolated-mark veto arithmetic (mig 47)
+const namePresence = require('./namePresence');   // per-supplier name-presence veto (Oracle 2026-07-24)
+const typePresence = require('./typePresence');    // per-template type-heading presence (Type Slice 1, 2026-07-28)
+const safe = (fn, dflt) => { try { return fn(); } catch { return dflt; } };
+
+// The stored templates.confirmed_count is bumped ONLY by templates.update(), which runs on the
+// taught-confirm reuse branch (_upsertTemplate via onTaughtConfirm) — so an ordinary confirm never
+// touches it and a real install reads 0 next to 20 confirmed documents (owner's DB, 2026-07-20:
+// 0 / 1 / 0 against 20 / 20 / 19). That is not only a cosmetic roster bug: this column feeds the
+// same-type sibling TIEBREAKS in template_matcher.py:179 and engine.py:696 ("prefer the
+// most-confirmed sibling") and the ORDER templates are handed to the matcher — all three of which
+// are INERT while every value is 0, silently degrading sibling choice to first-seen/name order.
+// So the pipeline reader now serves the LIVE count (documents linked to the template and confirmed
+// — the same truth the Template Manager already shows), which cannot drift because it is derived,
+// not maintained. ONE grouped query per call; getAll runs once per batch. The stored column is left
+// alone (mergeInto still sums it) but is no longer authoritative anywhere.
+// Kill switch TEMPLATE_LIVE_COUNTS=0 restores the stored column + SQL ordering byte-identically.
 function getAll(db) {
-  const rows = db.prepare(
-    'SELECT * FROM templates ORDER BY confirmed_count DESC, name'
-  ).all();
+  const useLive = process.env.TEMPLATE_LIVE_COUNTS !== '0';
+  const rows = useLive
+    ? db.prepare('SELECT * FROM templates').all()
+    : db.prepare('SELECT * FROM templates ORDER BY confirmed_count DESC, name').all();
+  const counts = useLive ? liveConfirmedCounts(db) : null;
+  const npCache = new Map();   // per-call memo: distinct fixed supplier → name-presence stats
+  if (counts) {                                   // null ⇒ uncountable, keep the stored column
+    for (const t of rows) t.confirmed_count = counts.get(t.id) || 0;
+    // Re-create the SQL ordering in JS so "shown count" and "order" still agree.
+    rows.sort((a, b) => (b.confirmed_count - a.confirmed_count)
+      || String(a.name || '').localeCompare(String(b.name || '')));
+  } else if (useLive) {
+    rows.sort((a, b) => ((b.confirmed_count || 0) - (a.confirmed_count || 0))
+      || String(a.name || '').localeCompare(String(b.name || '')));
+  }
   for (const t of rows) {
     t.fields              = getFields(db, t.id);
     t.field_mappings      = getMappings(db, t.id);
     t.landmarks           = getLandmarks(db, t.id);
     t.logo_phashes        = getLogoHashes(db, t.id);
     t.logo_detail_hashes = getLogoDetailHashes(db, t.id);
+    // HIDDEN_FIELD_SCORING: the operator's "this layout lacks this field" declaration rides the
+    // templates JSON so the Python engine can exclude a declared-absent EMPTY field from the
+    // document score (template_matcher.hidden_fields_for_scope). Additive key — the matcher
+    // ignores it; [] on a DB without migration 54.
+    t.hidden_fields       = getHiddenFields(db, t.id);
     t.keyword_fingerprint = _parseJson(t.keyword_fingerprint, []);
     t.ocr_auto_params     = _parseJson(t.ocr_auto_params, null);
     const dom             = getDominantSupplier(db, t.id);
     t.dominant_supplier       = dom ? dom.value  : null;
     t.dominant_supplier_count = dom ? dom.count  : 0;
     t.dominant_supplier_total = dom ? dom.total  : 0;
+    // TYPE_PRESENCE_VETO (Type Slice 1): thread this template's type-heading reliability + the token
+    // set so the Python consume seam can HOLD a wrong-type logo-collision pick whose heading is absent
+    // from the candidate. Additive keys, INERT until the Python kill switch TYPE_PRESENCE_VETO is on.
+    const th              = typePresence.templateTypeHeadingPresence(db, t);
+    t.type_heading_ratio  = th.ratio;
+    t.type_heading_n      = th.count;
+    t.type_heading_tokens = th.tokens;
+    // TEMPLATE_FIXED_NAME_PRESENCE_VETO (2026-07-31, gary+Oracle signed): thread the name-presence
+    // stats for the supplier this row would STAMP as method 'template_fixed' — the fixed_value of
+    // its supplier_name field (the template_matcher seed AND engine._doctype_fixed_supplier both
+    // stamp exactly this value). The Python un-named branding branch uses it to BLANK a frozen
+    // stamp whose name-printing supplier is absent from the page (the Ironbridge-as-Copperfield
+    // phash-collision class) instead of leaving the wrong prefill standing. Additive key — an old
+    // payload without it leaves the engine byte-identical. Memoized per distinct supplier;
+    // never throws (getAll is the pipeline reader).
+    const fx = (t.fields || []).find(f =>
+      f && f.field_key === 'supplier_name' && f.fixed_value && String(f.fixed_value).trim());
+    if (fx) {
+      const sup = String(fx.fixed_value).trim();
+      let st = npCache.get(sup);
+      if (!st) {
+        st = safe(() => namePresence.supplierNamePresenceRatio(db, sup), { ratio: 0, count: 0 });
+        npCache.set(sup, st);
+      }
+      t.supplier_prints_name = { supplier: sup, ratio: st.ratio, count: st.count };
+    }
   }
   return rows;
+}
+
+// N — LIVE confirmed-document counts for the Template Manager (docs/designs/TEMPLATE_CONVERGENCE_2026-07-17.md).
+// The stored templates.confirmed_count is under-counted (bumped only on the taught-confirm reuse branch,
+// never on create / graduation-link), so the roster shows "confirmed 0×" despite many linked docs. It is
+// DISPLAY-ONLY — graduation counts confirmed DOCUMENTS live via trust.scopeTrust (never this column) and
+// mergeInto sums it — so these readers show the live truth WITHOUT touching the stored column or getAll()
+// (which feeds the extraction pipeline + Python matcher and MUST NOT change). ONE grouped query (no index
+// on documents.template_id → a per-template correlated subquery would full-scan), map-joined.
+// FAIL-SAFE (2026-07-20): getAll — the pipeline reader — now calls this, so it must never throw.
+// A caller whose schema has `templates` but not `documents` (the promote/template unit fixtures,
+// and any future minimal harness) would otherwise take a "no such table: documents" straight
+// through template reading and break extraction.
+// Returns NULL when the count could not be taken at all — deliberately distinct from an EMPTY map,
+// which is a legitimate answer meaning "no confirmed documents yet" (0 is then the truth). getAll
+// keeps the stored column on null and overwrites on a map, so a broken query degrades to exactly
+// the pre-change behaviour instead of zeroing every template.
+function liveConfirmedCounts(db) {
+  const m = new Map();
+  try {
+    for (const r of db.prepare(
+      "SELECT template_id, COUNT(*) c FROM documents WHERE status = 'confirmed' AND template_id IS NOT NULL GROUP BY template_id"
+    ).all()) m.set(r.template_id, r.c);
+  } catch {
+    return null;   // no documents table / unreadable → caller keeps the stored column
+  }
+  return m;
+}
+
+// Template Manager roster (get-templates): getAll's rows with confirmed_count replaced by the LIVE
+// confirmed-doc count. getAll() itself is left untouched.
+//
+// P5 (2026-07-22): the roster is a DISPLAY concern only. This wrapper is viewer-only — its sole
+// non-test caller is the get-templates IPC; the matcher reads templates.getAll() DIRECTLY
+// (processing/handler.js, review/handler.js), and getAll's count-desc SQL order feeds the sibling
+// tiebreaks + "the order templates reach the matcher" (277a107 / TEMPLATE_LIVE_COUNTS). So we sort
+// the ROSTER alphabetically by name here without touching getAll's matcher-facing order.
+// Kill switch TEMPLATE_VIEWER_ALPHA=0 restores the legacy count-desc roster order byte-identically.
+function getAllWithLiveCounts(db) {
+  const rows   = getAll(db);
+  const counts = liveConfirmedCounts(db);
+  for (const t of rows) t.confirmed_count = counts.get(t.id) || 0;
+  if (process.env.TEMPLATE_VIEWER_ALPHA !== '0') {
+    rows.sort((a, b) =>
+      String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' })
+      || ((a.id || 0) - (b.id || 0)));                                       // stable tiebreak on same-name templates
+  } else {
+    rows.sort((a, b) => (b.confirmed_count - a.confirmed_count) || String(a.name || '').localeCompare(String(b.name || '')));
+  }
+  return rows;
+}
+
+// Live confirmed-doc count for ONE template (the detail view — same truth as the roster).
+function confirmedDocCount(db, templateId) {
+  return db.prepare(
+    "SELECT COUNT(*) c FROM documents WHERE template_id = ? AND status = 'confirmed'"
+  ).get(templateId).c;
 }
 
 // The issuer identity the template's CONFIRMED docs actually carry, as a distribution — NOT the
@@ -43,22 +163,78 @@ function getAll(db) {
 // (count*2 > total is false when the top two are equal), so the engine returns None for it anyway,
 // making any tie-break pick unobservable — and requiring confirmed_at would couple this to the full
 // documents schema for no behavioural gain.
-function getDominantSupplier(db, templateId) {
+// `excludeDocId` (TEMPLATE_GUARD_SELF_INDEPENDENT, 2026-07-21): omit ONE document from the tally.
+// The supplier-link guard (reviewService confirm seam + _upsertTemplate) runs AFTER the doc being
+// confirmed is already status='confirmed', supplier_name=confirmedIssuer, and still template-linked
+// — so a plain getDominantSupplier COUNTS THE DOC AGAINST ITSELF: on a template with no other
+// confirmed docs, the intruder becomes its own "established identity", supplierNamesDisjoint(x,x)
+// is false, the guard never detaches, and the wrong template is permanently poisoned (its dominant
+// flips, which then disarms the Stage-0 rival-branding gate for every sibling doc). The guard passes
+// `document_id` here to judge identity from the OTHER confirmed docs only. Default null ⇒ the
+// `@ex IS NULL` short-circuit matches every row ⇒ BYTE-IDENTICAL to the old positional query for the
+// getAll / establishedIdentity-internal / test callers, which never pass it. ALL-NAMED binds
+// deliberately (Oracle C1): better-sqlite3 refuses a mix of positional `?` and named `@ex` and
+// throws, and this function's `catch` would swallow that throw and silently revert to the bug.
+function getDominantSupplier(db, templateId, excludeDocId = null) {
   try {
     const rows = db.prepare(`
       SELECT supplier_name AS value, COUNT(*) AS n
       FROM documents
-      WHERE template_id = ? AND status = 'confirmed'
+      WHERE template_id = @tid AND status = 'confirmed'
         AND supplier_name IS NOT NULL AND TRIM(supplier_name) <> ''
+        AND (@ex IS NULL OR id != @ex)
       GROUP BY supplier_name
       ORDER BY n DESC
-    `).all(templateId);
+    `).all({ tid: templateId, ex: excludeDocId });
     if (!rows.length) return null;
     const total = rows.reduce((s, r) => s + r.n, 0);
     return { value: rows[0].value, count: rows[0].n, total };
   } catch {
     return null;
   }
+}
+
+// ── Supplier-link guard primitives (Oracle condition A, template-misfile fix 2026-07-20) ──────
+// The identity a template ASSERTS when matched/reused: its DOMINANT confirmed issuer (live
+// truth), else its frozen supplier_name fixed value (what template_fixed would stamp). The
+// cosmetic `name` is deliberately NOT consulted — it is first-confirm luck, can be an OCR garble
+// ("50 Asia"), and plays no role in matching/filing/learning scope. Null = unjudgeable; callers
+// keep the link on null (fail toward today's behaviour).
+// `excludeDocId`: forwarded to getDominantSupplier so the guard judges a template's identity from
+// the OTHER confirmed docs, never the one under judgement (see getDominantSupplier). Order is
+// unchanged: dominant-confirmed-issuer (now optionally self-excluded) → frozen supplier_name fixed
+// value → null. `name` is STILL never consulted (Oracle C3): a self-excluded null must fail toward
+// KEEP-link, not toward detaching a legitimate cold first-confirm against a garbled/cosmetic name.
+function establishedIdentity(db, templateId, excludeDocId = null) {
+  const dom = getDominantSupplier(db, templateId, excludeDocId);
+  if (dom && dom.value) return dom.value;
+  try {
+    const row = db.prepare(
+      "SELECT fixed_value FROM template_fields WHERE template_id = ? AND field_key = 'supplier_name' " +
+      "AND is_variable = 0 AND fixed_value IS NOT NULL AND TRIM(fixed_value) <> ''").get(templateId);
+    return row ? row.fixed_value : null;
+  } catch { return null; }
+}
+
+// Zero shared DISTINCTIVE name tokens ⇒ the two names denote different companies. Deliberately
+// PRECISION-FIRST: any shared token ("Copperfield Electrical" vs "Copperfield Electrical Ltd")
+// keeps the link — the guard only fires on an unambiguously FOREIGN name, because its false
+// positive merely spawns a duplicate template (the known fragmentation cost, convergeable later)
+// while its false negative re-arms the confirm-time reinforcement loop it exists to close.
+// Generic corporate-suffix tokens carry no identity and are ignored on both sides.
+const GENERIC_NAME_TOKENS = new Set([
+  'ltd', 'limited', 'plc', 'inc', 'llc', 'llp', 'gmbh', 'co', 'corp', 'company',
+  'group', 'holdings', 'the', 'and', 'of', 'uk',
+]);
+function _nameTokens(s) {
+  const m = String(s || '').toLowerCase().normalize('NFKC').match(/[a-z0-9]{2,}/g) || [];
+  return new Set(m.filter(t => !GENERIC_NAME_TOKENS.has(t)));
+}
+function supplierNamesDisjoint(a, b) {
+  const ta = _nameTokens(a), tb = _nameTokens(b);
+  if (!ta.size || !tb.size) return false;          // unjudgeable ⇒ not disjoint
+  for (const t of ta) if (tb.has(t)) return false;
+  return true;
 }
 
 function getById(db, id) {
@@ -194,6 +370,80 @@ function recordMappingTest(db, templateId, fieldKey, { value, confidence, status
   `).run(value ?? null, confidence ?? null, status || null, templateId, fieldKey);
 }
 
+// ── Per-template field HIDING (migration 54, owner-approved 2026-07-24) ───────────────────────
+// A DISPLAY/EXPECTATION mask: hide a field the TYPE has but THIS supplier's layout lacks, so Review
+// stops showing it as an empty "not found" row and stops counting it a missing-required blocker FOR
+// THIS TEMPLATE. Never a data delete (extraction still runs + stores whatever it reads). HIDE-ONLY,
+// superset-locked (only a field the type actually has), structural roles (issuer/date/ref) NEVER
+// hideable — enforced here in setHiddenField. INERT: with no rows, every consumer clause is a no-op.
+function _thfTableExists(db) {
+  try {
+    return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='template_hidden_fields'").get();
+  } catch { return false; }
+}
+
+function _structuralKeysForTemplate(db, templateId) {
+  // Keys that can NEVER be hidden: the identity/company key(s) + customer_name + the type's ref/date
+  // roles. Mirrors document_types.COMPANY_KEYS + the structural-role definition (CLAUDE.md).
+  const { COMPANY_KEYS } = require('./document_types');
+  const keys = new Set([...(COMPANY_KEYS || ['supplier_name']), 'customer_name']);
+  const row = safe(() => db.prepare(
+    `SELECT dt.ref_field_key AS ref, dt.date_field_key AS date
+       FROM templates t LEFT JOIN document_types dt ON dt.slug = t.document_type_slug
+      WHERE t.id = ?`).get(templateId), null);
+  if (row) { if (row.ref) keys.add(row.ref); if (row.date) keys.add(row.date); }
+  return keys;
+}
+
+function getHiddenFields(db, templateId) {
+  if (!_thfTableExists(db)) return [];
+  return db.prepare('SELECT field_key FROM template_hidden_fields WHERE template_id = ? ORDER BY field_key')
+           .all(templateId).map(r => r.field_key);
+}
+
+function isFieldHideable(db, templateId, fieldKey) {
+  // Superset-lock: the field must exist on the template's TYPE, and must not be a structural role.
+  if (_structuralKeysForTemplate(db, templateId).has(fieldKey)) return false;
+  const t = safe(() => db.prepare('SELECT document_type_slug FROM templates WHERE id = ?').get(templateId), null);
+  if (!t) return false;
+  const exists = safe(() => db.prepare(
+    `SELECT 1 FROM fields f JOIN document_types dt ON dt.id = f.document_type_id
+      WHERE dt.slug = ? AND f.key = ? LIMIT 1`).get(t.document_type_slug, fieldKey), null);
+  return !!exists;
+}
+
+function getTypeFieldsForHiding(db, templateId) {
+  // The template's TYPE fields with per-field {structural, hidden} flags — everything the Template
+  // Manager needs to render a hide toggle per field (structural rows are shown locked). Includes
+  // fields that have NO drawn mapping (the whole point: hide a field the layout simply lacks).
+  const t = safe(() => db.prepare('SELECT document_type_slug FROM templates WHERE id = ?').get(templateId), null);
+  if (!t) return [];
+  const structural = _structuralKeysForTemplate(db, templateId);
+  const hidden = new Set(getHiddenFields(db, templateId));
+  const rows = safe(() => db.prepare(
+    `SELECT f.key, f.label FROM fields f JOIN document_types dt ON dt.id = f.document_type_id
+      WHERE dt.slug = ? AND COALESCE(f.enabled, 1) = 1
+      ORDER BY COALESCE(f.sort_order, 100), f.id`).all(t.document_type_slug), []);
+  return rows.map(r => ({ key: r.key, label: r.label, structural: structural.has(r.key), hidden: hidden.has(r.key) }));
+}
+
+function setHiddenField(db, templateId, fieldKey, hidden) {
+  // Returns {ok, reason?}. Refuses a structural role or a field not on the type (superset-lock).
+  if (hidden && !isFieldHideable(db, templateId, fieldKey)) {
+    const structural = _structuralKeysForTemplate(db, templateId).has(fieldKey);
+    return { ok: false, reason: structural ? 'structural-role' : 'not-a-type-field' };
+  }
+  if (!_thfTableExists(db)) return { ok: false, reason: 'no-table' };
+  if (hidden) {
+    db.prepare('INSERT OR IGNORE INTO template_hidden_fields (template_id, field_key) VALUES (?, ?)')
+      .run(templateId, fieldKey);
+  } else {
+    db.prepare('DELETE FROM template_hidden_fields WHERE template_id = ? AND field_key = ?')
+      .run(templateId, fieldKey);
+  }
+  return { ok: true };
+}
+
 // 8-region coarse grid: 2 columns × 4 rows of the page, indexed 0-7
 // (row-major, top-left = 0). Purely an optimisation HINT recorded alongside
 // the real anchor/target geometry — see CLAUDE.md: "do not make the fixed
@@ -250,6 +500,14 @@ function setSampleDocument(db, templateId, documentId) {
 function reassignDocuments(db, fromTemplateId, toTemplateId) {
   if (!fromTemplateId || !toTemplateId || fromTemplateId === toTemplateId) {
     return { moved: 0, sampleAdopted: false, from: fromTemplateId, to: toTemplateId };
+  }
+  // Target must EXIST (2026-07-31 hardening): reassigning onto a nonexistent id previously
+  // relied on the DB-level FK alone — a mid-transaction throw surfaced as an unexplained IPC
+  // error and the audit row still claimed success. Refuse cleanly instead; ok:false threads
+  // to the handler's audit outcome.
+  if (!db.prepare('SELECT id FROM templates WHERE id = ?').get(toTemplateId)) {
+    return { ok: false, reason: 'target-missing', moved: 0, sampleAdopted: false,
+             from: fromTemplateId, to: toTemplateId };
   }
   let sampleAdopted = false;
   const tx = db.transaction(() => {
@@ -425,6 +683,132 @@ function findByKeywordFingerprint(db, ocrText, threshold = 75, document_type_slu
   return (best && best.confidence >= threshold) ? best : null;
 }
 
+// Branding-fingerprint REUSE target (M2, docs/designs/TEMPLATE_CONVERGENCE_2026-07-17.md): the
+// canonical SAME-TYPE template a drifted-logo doc should reuse, identified by DISTINCTIVE branding
+// tokens (not the unstable logo). Requires >= DISTINCTIVE_MIN shared distinctive tokens AND a SYMMETRIC
+// ratio >= threshold; TYPE-SCOPED by slug (a same-branding sibling of another type is never a reuse
+// target — the letterhead fingerprint is type-blind). Returns the best-ratio same-type template or null.
+// threshold defaults to 0.80 — the measured 0% cross-supplier false-match point; the MUTATING reuse path
+// (_upsertTemplate → update() folds fingerprint/fields) gets the strict bar (link paths use a lower one).
+function findByBrandingFingerprint(db, docFingerprint, document_type_slug, threshold = 0.80) {
+  if (!document_type_slug) return null;
+  if (brandingFp.distinctiveTokens(docFingerprint).length < brandingFp.DISTINCTIVE_MIN) return null;
+  const rows = db.prepare(
+    "SELECT id, name, document_type_slug, keyword_fingerprint FROM templates WHERE keyword_fingerprint IS NOT NULL AND LOWER(COALESCE(document_type_slug, '')) = LOWER(?)"
+  ).all(document_type_slug);
+  let best = null, bestRatio = 0;
+  for (const t of rows) {
+    const { shared, ratio } = brandingFp.symmetricDistinctiveOverlap(docFingerprint, _parseJson(t.keyword_fingerprint, []));
+    if (shared >= brandingFp.DISTINCTIVE_MIN && ratio >= threshold && ratio > bestRatio) {
+      bestRatio = ratio;
+      best = { id: t.id, name: t.name, document_type_slug: t.document_type_slug, match_ratio: ratio, shared };
+    }
+  }
+  return best;
+}
+
+// LIVE field-visibility resolver (2026-07-25, owner request): the template whose hidden-field config
+// applies to a (supplier, type) — used by Review to hide a supplier's absent fields even when Stage-0
+// matched NO template (the "No template match" case). Returns a template id or null; null ⇒ the caller
+// shows ALL fields (the fail-safe the owner asked for). mode 1 = entered NAME first, doc branding
+// fingerprint as backup (default); mode 2 = entered NAME only (a dev A/B switch). Name match is normalised
+// exact-first then containment; ties broken by confirmed_count so the richest (post-merge canonical) wins.
+function _normNameForVis(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+
+function findForSupplierType(db, { supplier_name, document_type_slug, keyword_fingerprint = null, mode = 1 } = {}) {
+  if (!document_type_slug) return null;
+  const slug = document_type_slug;
+  const byName = () => {
+    const q = _normNameForVis(supplier_name);
+    if (q.length < 3) return null;   // too short to match safely (fail toward "show all")
+    const rows = db.prepare(
+      "SELECT id, name, confirmed_count FROM templates WHERE LOWER(COALESCE(document_type_slug, '')) = LOWER(?) AND name IS NOT NULL"
+    ).all(slug);
+    let exact = null, partial = null;
+    for (const t of rows) {
+      const n = _normNameForVis(t.name);
+      if (!n) continue;
+      const cc = t.confirmed_count || 0;
+      if (n === q) { if (!exact || cc > (exact.confirmed_count || 0)) exact = t; }
+      else if (n.includes(q) || q.includes(n)) { if (!partial || cc > (partial.confirmed_count || 0)) partial = t; }
+    }
+    const best = exact || partial;
+    return best ? best.id : null;
+  };
+  const byBranding = () => {
+    if (!Array.isArray(keyword_fingerprint) || !keyword_fingerprint.length) return null;
+    const m = findByBrandingFingerprint(db, keyword_fingerprint, slug, 0.80);
+    return m ? m.id : null;
+  };
+  return (mode === 2) ? byName() : (byName() || byBranding());
+}
+
+// UNION of the hidden-field configs across EVERY template that shares this doc's (supplier NAME, type)
+// — so a per-supplier "hide item/serial" setting applies regardless of WHICH duplicate sibling template
+// the logo matched (2026-07-27, owner: visibly-same same-supplier same-type templates must be treated as
+// one AUTOMATICALLY, no manual merge). Same name-normalisation + type scoping + branding backup as
+// findForSupplierType, but returns the UNIONED field_key list instead of a single template id. Display-
+// only; fail-safe [] (⇒ show ALL fields) when nothing resolves or the table is absent.
+function getHiddenFieldsForSupplierType(db, { supplier_name, document_type_slug, keyword_fingerprint = null, mode = 1 } = {}) {
+  if (!document_type_slug || !_thfTableExists(db)) return [];
+  const slug = document_type_slug;
+  const ids = new Set();
+  const q = _normNameForVis(supplier_name);
+  if (q.length >= 3) {
+    const rows = safe(() => db.prepare(
+      "SELECT id, name FROM templates WHERE LOWER(COALESCE(document_type_slug, '')) = LOWER(?) AND name IS NOT NULL"
+    ).all(slug), []);
+    for (const t of rows) {
+      const n = _normNameForVis(t.name);
+      if (n && (n === q || n.includes(q) || q.includes(n))) ids.add(t.id);
+    }
+  }
+  // Branding backup (mode 1 only), same as findForSupplierType — only when the NAME resolved nothing.
+  if (mode !== 2 && ids.size === 0 && Array.isArray(keyword_fingerprint) && keyword_fingerprint.length) {
+    const m = safe(() => findByBrandingFingerprint(db, keyword_fingerprint, slug, 0.80), null);
+    if (m) ids.add(m.id);
+  }
+  // C3 (2026-07-27, group activation): also include GROUP siblings (group_id) of any resolved template —
+  // so once the owner-run backfill groups the duplicates, config resolves group-wide too. ADDITIVE
+  // (group_id ∪ name), never a replacement, so a name-matched-but-ungrouped cluster never loses its config.
+  for (const tid of [...ids]) {
+    const gid = safe(() => (db.prepare('SELECT group_id FROM templates WHERE id = ?').get(tid) || {}).group_id, null);
+    if (gid != null) for (const s of safe(() => db.prepare('SELECT id FROM templates WHERE group_id = ?').all(gid), [])) ids.add(s.id);
+  }
+  const out = new Set();
+  for (const id of ids) for (const k of getHiddenFields(db, id)) out.add(k);
+  return [...out].sort();
+}
+
+// NAME-PRIMARY REUSE (TEMPLATE_REUSE_BY_NAME, Phillip/Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-27): the id
+// of the SAME-SLUG template whose ESTABLISHED (dominant confirmed) identity EXACTLY equals `confirmedIssuer`
+// (_normNameForVis; NEVER containment — "northgate services" contains "gate services"), preferring the
+// RICHEST (most confirmed docs). Keys on establishedIdentity, NOT the cosmetic `name` (first-confirm luck /
+// OCR garble). Both names must be a plausible supplier shape + normalised length >= 3. null ⇒ no exact
+// same-identity same-type sibling ⇒ caller mints standalone (today's behaviour). Cross-supplier reuse is
+// structurally impossible (exact identity + slug). ACCEPTED residual (Oracle, pinned): two DIFFERENT real
+// companies whose confirmed issuer normalises identically + same slug DO fold — but that identical-name
+// collision already merges supplier-scoped hints/anchors/corrections, so it adds no NEW class, and the
+// operator sees the values at teach time. The CALLER links + Part-E re-validates the acquisition.
+function reuseByEstablishedName(db, confirmedIssuer, document_type_slug, excludeDocId = null) {
+  if (!document_type_slug) return null;
+  const q = _normNameForVis(confirmedIssuer);
+  if (q.length < 3) return null;
+  const { isPlausibleSupplierNameBase } = require('./learning');   // lazy — avoids a load-order knot
+  if (!safe(() => isPlausibleSupplierNameBase(confirmedIssuer), false)) return null;
+  const rows = safe(() => db.prepare(
+    "SELECT id FROM templates WHERE LOWER(COALESCE(document_type_slug, '')) = LOWER(?)").all(document_type_slug), []);
+  let best = null, bestCount = -1;
+  for (const t of rows) {
+    const ident = safe(() => establishedIdentity(db, t.id, excludeDocId), null);   // dominant confirmed issuer, self-excluded (empty sibling ⇒ null ⇒ skipped)
+    if (!ident || _normNameForVis(ident) !== q) continue;         // EXACT normalised identity, NEVER containment
+    if (!safe(() => isPlausibleSupplierNameBase(ident), false)) continue;
+    const cc = safe(() => confirmedDocCount(db, t.id), 0) || 0;   // canonical = richest confirmed sibling (never the empty duplicate)
+    if (cc > bestCount) { bestCount = cc; best = t.id; }
+  }
+  return best;
+}
+
 // Lightweight current-template recheck — given a document's already-stored
 // logo_phash/ocr_text (no page image, no OCR, no extraction pipeline), tries
 // the same logo-then-keyword identification order and accept thresholds as
@@ -432,14 +816,40 @@ function findByKeywordFingerprint(db, ocrText, threshold = 75, document_type_slu
 // confidence >= 75. Used by the review queue to detect that a template added
 // via "Add to Template Manager" now covers a document that was queued before
 // it existed.
-function identifyByFingerprint(db, { logo_phash, ocr_text, document_type_slug = null }) {
+function identifyByFingerprint(db, { logo_phash, ocr_text, document_type_slug = null, logo_detail_hash = null }) {
   if (logo_phash) {
     const logoMatch = findByLogoHash(db, logo_phash, 13, document_type_slug);
     if (logoMatch && logoMatch.confidence >= 60) {
-      return { template: { id: logoMatch.id, name: logoMatch.name }, confidence: logoMatch.confidence, method: 'logo' };
+      // DETAIL-HASH VETO (TEMPLATE_LOGO_DETAIL_VETO, default ON; Oracle-signed 2026-07-23).
+      // The 64-bit phash's histograms have CROSSED on real scans — measured cross-supplier
+      // separation 2/64 bits vs SAME-supplier scan drift 18/64 — so no distance threshold can
+      // make a logo-alone accept correct (the "Template available: Thornbury" on a Copperfield
+      // docket incident). When the caller supplies the doc's 256-bit isolated-mark hash and the
+      // matched template has an enrolled detail set, a positive CONTRADICTION (min-over-set
+      // distance > veto dist 72; measured impostor 114-124 vs genuine drift 30-56) refuses the
+      // logo arm and falls through to the text-based keyword arm — abstain-or-text, never
+      // pick-another-template-by-hash. Fail-open on missing detail (callers not passing the new
+      // param, detail-less template rows, pre-mig-47 installs) ⇒ byte-identical. This extends
+      // the 2026-07-20 identity invariant — "a logo match never asserts identity alone" — to
+      // its last JS holdout; see logoDetail.js for the deliberate Stage-0 semantic divergence.
+      const vetoed = logo_detail_hash && process.env.TEMPLATE_LOGO_DETAIL_VETO !== '0'
+        && logoDetail.shouldVetoLogo(logo_detail_hash, getLogoDetailHashes(db, logoMatch.id));
+      // NAME-PRESENCE VETO (Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-24): a supplier that reliably
+      // prints its own name can't be suggested for a page lacking it — the JS twin of the Python
+      // TEMPLATE_LOGO_TEXT_GATE, keyed on a learned per-supplier ratio. Sibling to the detail veto:
+      // both only turn accept->abstain (monotonic) and fall through to the text keyword arm. It is
+      // MORE load-bearing than the detail veto here — it also guards the wizard save-target and the
+      // graduation link that share identifyByFingerprint. See namePresence.js.
+      const nameVetoed = !vetoed && namePresence.nameBearingButAbsent(db, logoMatch.id, ocr_text);
+      if (!vetoed && !nameVetoed) {
+        return { template: { id: logoMatch.id, name: logoMatch.name }, confidence: logoMatch.confidence, method: 'logo' };
+      }
     }
   }
-  return findByKeywordFingerprint(db, ocr_text, 75, document_type_slug);
+  // Gate the keyword arm too (Oracle: both arms) — a keyword-fingerprint match to a name-bearing
+  // supplier whose name is absent on this page is the same cross-supplier suggestion.
+  const kw = findByKeywordFingerprint(db, ocr_text, 75, document_type_slug);
+  return (kw && namePresence.nameBearingButAbsent(db, kw.template.id, ocr_text)) ? null : kw;
 }
 
 // Cheap name-based lookup for the Learning Recovery tab — shows managed
@@ -506,8 +916,8 @@ function _looksLikeNonName(name) {
   const t = String(name || '').trim();
   if (!t) return true;
   if (/\btemplate$/i.test(t)) return true;                       // the generic auto-name
-  const { isPlausibleSupplierName } = require('./learning');     // lazy: avoids load-order knots
-  if (!isPlausibleSupplierName(t)) return true;                  // "IN", "36552" shapes
+  const { isPlausibleSupplierNameBase } = require('./learning'); // lazy: avoids load-order knots
+  if (!isPlausibleSupplierNameBase(t)) return true;              // "IN"/"36552" shapes (BASE — a real short name like "Dell" is NOT chrome-demoted here)
   if (_UK_POSTCODE.test(t)) return true;                         // "BT23 1BE"
   const toks = t.toLowerCase().split(/\s+/);
   if (toks.length === 1 && _CAPTION_WORDS.has(toks[0].replace(/[.:#]+$/, ''))) return true;
@@ -517,8 +927,8 @@ function _looksLikeNonName(name) {
 function shouldAdoptIssuerName(currentName, confirmedIssuer) {
   const issuer = String(confirmedIssuer || '').trim();
   if (!issuer) return false;
-  const { isPlausibleSupplierName } = require('./learning');
-  if (!isPlausibleSupplierName(issuer)) return false;            // never adopt junk
+  const { isPlausibleSupplierNameBase } = require('./learning');
+  if (!isPlausibleSupplierNameBase(issuer)) return false;        // never adopt junk (BASE — a real short issuer is not chrome-demoted)
   if (_UK_POSTCODE.test(issuer)) return false;                   // …or a postcode-as-issuer
   if (issuer.toLowerCase() === String(currentName || '').trim().toLowerCase()) return false;
   return _looksLikeNonName(currentName);
@@ -606,28 +1016,42 @@ function chooseLogoPhash(existing, incoming) {
   return (incoming == null || String(incoming).trim() === '') ? null : incoming;
 }
 
-function update(db, id, { logo_phash, logo_detail_hash, keyword_fingerprint, fields } = {}) {
-  const sets   = ["confirmed_count = confirmed_count + 1", "updated_at = datetime('now')"];
-  const params = [];
+// Converge a template's IDENTITY (keyword fingerprint + logo-hash set) toward one
+// document's signals, WITHOUT bumping confirmed_count or touching fields (count-free,
+// field-free — safe to call on any commit, not only a taught one). The fingerprint is
+// INTERSECTED (stabiliseFingerprint) so per-document noise (customer tokens, a one-off
+// misread) erodes and stable branding survives: this is the healer that strips the
+// customer-token pollution a graduation-frozen template carries. The logo is the
+// fragile axis — a single phash drifts double-digit Hamming per render — so it is
+// SEEDED once when empty then APPENDED within the drift band, never overwritten.
+//
+// appendLogoOnly (Oracle C-A — set by the automatic learn-on-commit hook + backfill):
+// NEVER seed a NEW primary logo. Enrich the logo set only when the template ALREADY
+// carries a primary; a template with no primary (a graduation-C3 KEYWORD-ONLY template,
+// whose logo was deliberately withheld on a cross-supplier logo collision) is left with
+// NO logo at all. Re-planting that withheld logo would be a silent cross-supplier
+// misfile (the 64-bit phash hashes letterhead LAYOUT, so same-layout/different-supplier
+// is the danger zone). The fingerprint intersect — the real healer — still runs in
+// every mode; only the logo SEED is suppressed.
+function enrichIdentity(db, id, { logo_phash, logo_detail_hash, keyword_fingerprint, appendLogoOnly = false } = {}) {
+  const cur  = db.prepare('SELECT logo_phash, keyword_fingerprint FROM templates WHERE id = ?').get(id) || {};
+  const sets = [], params = [];
 
-  // Identity must STABILISE across confirms, never be overwritten by one noisy
-  // sample — read the established identity and merge the incoming sample into it
-  // (see stabiliseFingerprint / chooseLogoPhash above).
-  if (logo_phash !== undefined || keyword_fingerprint !== undefined) {
-    const cur = db.prepare('SELECT logo_phash, keyword_fingerprint FROM templates WHERE id = ?').get(id) || {};
-    if (logo_phash !== undefined) {
-      sets.push('logo_phash = ?');
-      params.push(chooseLogoPhash(cur.logo_phash, logo_phash));
-    }
-    if (keyword_fingerprint !== undefined) {
-      const merged = stabiliseFingerprint(_parseJson(cur.keyword_fingerprint, []), keyword_fingerprint);
-      sets.push('keyword_fingerprint = ?');
-      params.push(JSON.stringify(merged));
-    }
+  if (keyword_fingerprint !== undefined) {
+    const merged = stabiliseFingerprint(_parseJson(cur.keyword_fingerprint, []), keyword_fingerprint);
+    sets.push('keyword_fingerprint = ?');
+    params.push(JSON.stringify(merged));
   }
-  params.push(id);
-  db.prepare(`UPDATE templates SET ${sets.join(', ')} WHERE id = ?`).run(...params);
-  if (fields && fields.length) _upsertFields(db, id, fields);
+  // Seed/keep the primary logo column ONLY on the taught-update path. Under
+  // appendLogoOnly the column is untouched so a null primary can never be seeded.
+  if (logo_phash !== undefined && !appendLogoOnly) {
+    sets.push('logo_phash = ?');
+    params.push(chooseLogoPhash(cur.logo_phash, logo_phash));
+  }
+  if (sets.length) {
+    params.push(id);
+    db.prepare(`UPDATE templates SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+  }
 
   // Multi-reference logo-hash maintenance (migration 26): seed the established
   // primary into the reference set, then APPEND this scan's hash when it's a
@@ -635,10 +1059,94 @@ function update(db, id, { logo_phash, logo_detail_hash, keyword_fingerprint, fie
   // converges to span this supplier's render drift. addLogoHash dedups + caps.
   if (logo_phash) {
     const primary = (db.prepare('SELECT logo_phash FROM templates WHERE id = ?').get(id) || {}).logo_phash;
-    if (primary) addLogoHash(db, id, primary);   // seed's own detail hash unknown here → backfills on re-confirm
+    if (appendLogoOnly && !primary) return;       // C-A: no established primary → never enrich the logo
+    if (primary) addLogoHash(db, id, primary);    // seed's own detail hash unknown here → backfills on re-confirm
     const minD = minLogoDistance(db, id, logo_phash, primary);
     if (minD > LOGO_DEDUP_FLOOR && minD <= LOGO_APPEND_BAND) addLogoHash(db, id, logo_phash, logo_detail_hash);
   }
+}
+
+function update(db, id, { logo_phash, logo_detail_hash, keyword_fingerprint, fields } = {}) {
+  // confirmed_count bump + timestamp stay here (identity convergence is delegated).
+  db.prepare("UPDATE templates SET confirmed_count = confirmed_count + 1, updated_at = datetime('now') WHERE id = ?").run(id);
+  // Taught-confirm identity convergence — NOT appendLogoOnly, so a first taught confirm
+  // still seeds the primary logo exactly as before (byte-identical to the old inline body).
+  enrichIdentity(db, id, { logo_phash, logo_detail_hash, keyword_fingerprint });
+  if (fields && fields.length) _upsertFields(db, id, fields);
+}
+
+// Slice 1 — LEARN-ON-COMMIT. Re-run identity convergence for a document's ALREADY-resolved
+// template on ANY commit route (single confirm / File-All / auto-file), so a matched or
+// graduation-born template keeps converging toward its supplier's real branding instead of
+// freezing at its first sample (a customer-token-polluted fingerprint + a single logo hash).
+// Historically this ran ONLY on a taught confirm (via update()); a frozen template lets the
+// same-supplier invoice "letterhead magnet" out-score the real PO template → refuse / misfile.
+//   · Kill switch template_learn_on_confirm — DEFAULT ON since the flip (setting='false' disables); env
+//     TEMPLATE_LEARN_ON_CONFIRM=1/0 hard-forces it for the flip gate + route tests.
+//   · TYPE-SCOPED     — only a template of the confirmed type is enriched.
+//   · SUPPLIER-VALIDATED — a doc whose confirmed issuer is a provably DIFFERENT company from the
+//     template's established identity donates nothing (a mislinked doc can't plant a foreign hash).
+//   · appendLogoOnly  — Oracle C-A: never seeds a NEW primary logo (a graduation-C3 keyword-only
+//     template stays logo-less; only the fingerprint intersect heals it).
+//   · SYMMETRIC across all types. Pure DB (no ctx) — safe to call from any commit path.
+function learnTemplateOnCommit(db, document_id, { document_type_slug, supplier_name } = {}) {
+  const learning = require('./learning');   // lazy — avoids a load-order knot
+  const env = process.env.TEMPLATE_LEARN_ON_CONFIRM;
+  const on  = env === '1' ? true : env === '0' ? false
+            : learning.getSetting(db, 'template_learn_on_confirm', 'true') !== 'false';
+  if (!on) return;
+
+  const doc = db.prepare(
+    'SELECT template_id, logo_phash, logo_detail_hash, keyword_fingerprint FROM documents WHERE id = ?'
+  ).get(document_id);
+  // Catch-up Filing seam (named NOW so the two signed designs never cross — Oracle 2026-08-01):
+  // a machine 'scope_sweep' confirm must not drive template learning OR the link below; only an
+  // operator-reviewed confirm is the trust anchor. Guarded read — pre-mig-57 fixtures lack the column.
+  let _via = null;
+  try { _via = (db.prepare('SELECT confirmed_via FROM documents WHERE id = ?').get(document_id) || {}).confirmed_via; } catch {}
+  if (_via === 'scope_sweep') return;
+  let tid = doc && doc.template_id;
+  if (!tid) {
+    // ── R1: LINK-ON-CONFIRM (herald→Oracle SIGN-OFF-W/COND 2026-08-01; kill
+    // TEMPLATE_LINK_ON_CONFIRM=0). The learning DEADLOCK cure: a type-refused doc carries
+    // template_id NULL, this function bailed here, so the young same-type template never
+    // gained hashes and its minted fingerprint (poisoned with a counterparty name the
+    // harvest didn't truncate) was never intersect-flushed — every subsequent doc of the
+    // type refused again, forever (doc 259 / the 13-doc Vellum PO class, measured).
+    // Resolution ONLY — resolve the id via the Oracle-signed name-primary reuse (EXACT
+    // normalised established identity + same slug + plausibility, reuseByEstablishedName)
+    // and REVERSIBLE-link the doc, then fall through the EXISTING arm body unchanged, so
+    // every safety property is inherited: type-scope guard, supplier-disjoint validation,
+    // intersect floor, hash append band, collision-suppressed logo seeding. N=1 by ruling:
+    // the confirm is the same trust anchor every other learning lever acts on at one
+    // confirm; a single mis-confirm is bounded by those floors and reversible via
+    // de-confirm + Learning Repair. Mirrors review/handler.js:1153 (the :1152 TODO).
+    if (process.env.TEMPLATE_LINK_ON_CONFIRM !== '0' && supplier_name && document_type_slug) {
+      tid = safe(() => reuseByEstablishedName(db, supplier_name, document_type_slug, document_id), null);
+      if (tid) {
+        db.prepare('UPDATE documents SET template_id = ? WHERE id = ?').run(tid, document_id);
+      }
+    }
+  }
+  if (!tid) return;                          // no resolved template on this doc → nothing to enrich
+
+  const tmpl = db.prepare('SELECT document_type_slug FROM templates WHERE id = ?').get(tid);
+  if (!tmpl) return;
+  // TYPE-SCOPE: never let a same-logo sibling of another type absorb this doc's fingerprint.
+  if (document_type_slug && tmpl.document_type_slug && tmpl.document_type_slug !== document_type_slug) return;
+
+  // SUPPLIER-VALIDATE: exclude this doc from the identity read (a plain establishedIdentity would
+  // count the doc against itself); enrich only if the OTHER samples' issuer is not provably foreign.
+  const ident = establishedIdentity(db, tid, document_id);
+  if (ident && supplier_name && supplierNamesDisjoint(supplier_name, ident)) return;
+
+  const fp = _parseJson(doc.keyword_fingerprint, null);
+  enrichIdentity(db, tid, {
+    logo_phash:          doc.logo_phash || undefined,
+    logo_detail_hash:    doc.logo_detail_hash || undefined,
+    keyword_fingerprint: Array.isArray(fp) ? fp : undefined,
+    appendLogoOnly:      true,          // C-A — never seed a new primary logo automatically
+  });
 }
 
 function _upsertFields(db, templateId, fields) {
@@ -970,17 +1478,20 @@ function unfreezeAutoFrozenRecipientNames(db) {
 }
 
 module.exports = {
-  getAll, getById, getFields, findByLogoHash, findByKeywordFingerprint, identifyByFingerprint,
+  getAll, getAllWithLiveCounts, liveConfirmedCounts, confirmedDocCount, getById, getFields, findByLogoHash, findByKeywordFingerprint, findByBrandingFingerprint, findForSupplierType, identifyByFingerprint,
+  getDominantSupplier, establishedIdentity, supplierNamesDisjoint,
   unfreezeAutoFrozenRecipientNames,
   searchByName,
-  create, update, remove, rename, shouldAdoptIssuerName, hammingDistance,
+  create, update, enrichIdentity, learnTemplateOnCommit, remove, rename, shouldAdoptIssuerName, hammingDistance,
   stabiliseFingerprint, chooseLogoPhash,
   getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
   recordMappingTest, setSampleDocument, reassignDocuments, mergeInto, setFieldFixedValue,
+  getHiddenFields, getHiddenFieldsForSupplierType, reuseByEstablishedName, isFieldHideable, setHiddenField, getTypeFieldsForHiding,
+  _normNameForVis,   // exported for the JS↔Python parity pin (vis_norm_vectors.json)
   setOcrAutoParams, setOcrAutoEnabled,
   getLandmarks, setLandmarks, clearLandmarks, hasManualLandmarks, hasCrossSampleLandmarks,
   replaceSampleWords, countSampleDocs, getSampleWordsByDoc,
-  getLogoHashes, addLogoHash, minLogoDistance, keywordOverlap: _keywordOverlap,
+  getLogoHashes, addLogoHash, getLogoDetailHashes, minLogoDistance, keywordOverlap: _keywordOverlap,
   getAllGroups, createGroup, deleteGroup, setTemplateGroup, getSiblings,
   GRID_COLS, GRID_ROWS,
 };

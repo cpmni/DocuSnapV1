@@ -44,36 +44,24 @@ const trust     = require('./trust');
 const templates = require('./templates');
 const learning  = require('./learning');
 
-// Mirror of engine.py `_BRANDING_STOPWORDS` — doc-type words that are NOT a supplier's
-// distinctive branding. The >=K gate below strips these so it counts the same "distinctive
-// tokens" that engine._flag_branding_conflict counts (keep the two lists in sync).
-const BRANDING_STOPWORDS = new Set([
-  'delivery', 'docket', 'note', 'notes', 'invoice', 'order', 'purchase', 'sales',
-  'statement', 'remittance', 'receipt', 'quote', 'quotation', 'worksheet',
-  'credit', 'debit', 'advice', 'proforma', 'job', 'copy', 'original',
-]);
-const DISTINCTIVE_MIN = 3;    // K in engine._flag_branding_conflict (engine.py:1017)
+// Distinctive-branding primitives now live in the shared branding_fingerprint module (ONE source of
+// truth, so _upsertTemplate's M2 reuse and this create gate can never disagree about "same supplier" —
+// Oracle SEAM condition). BRANDING_STOPWORDS + DISTINCTIVE_MIN + distinctiveTokens are re-exported below
+// for backward compatibility (test_graduation_template.js imports them).
+const { BRANDING_STOPWORDS, DISTINCTIVE_MIN, distinctiveTokens } = require('./branding_fingerprint');
 const COLLISION_DIST  = 10;   // seed-logo cross-supplier danger band (Oracle C3)
 
 function _parseJson(s, fb) { try { const v = JSON.parse(s); return v == null ? fb : v; } catch { return fb; } }
 
-// Distinctive branding tokens = fingerprint tokens (len>=3, lowercased, doc-type stopword
-// removed), de-duplicated. Mirrors engine.py:1013-1016. Exported for the test.
-function distinctiveTokens(keywordFingerprint) {
-  const out = new Set();
-  for (const w of (keywordFingerprint || [])) {
-    const wl = String(w == null ? '' : w).trim().toLowerCase();
-    if (wl.length >= 3 && !BRANDING_STOPWORDS.has(wl)) out.add(wl);
-  }
-  return [...out];
-}
-
 // Cross-supplier collision pre-check (Oracle C3): is the seed logo phash within the danger band
-// of ANY same-type template's logo set? We only reach create() when identifyByFingerprint
-// returned null (no accept-gate match — the nearest same-type logo is already >6 away, or the
-// keyword arm didn't reach 75%), so any same-type template within COLLISION_DIST is a near-miss
-// collision → don't plant the logo (fall back to keyword-only identity). Conservative by design:
-// a doubtful logo becomes keyword-only (safe), never a colliding logo identity (a silent misfile).
+// of ANY same-type template's logo set? ⚠ Since the 2026-07-23 detail-hash veto, create() is
+// ALSO reachable when a nearby-phash match (even dist ≤6) was VETOED as a detail-contradicted
+// impostor — so "reaching here" no longer implies the nearest same-type logo is >6 away. This
+// check is what keeps that composition safe: the vetoed impostor's logo sits well inside
+// COLLISION_DIST, so the new template is created KEYWORD-ONLY and no colliding logo identity is
+// ever planted (pinned in test_graduation_template.js §detail-veto). Do NOT weaken this check
+// on the old ">6 away" assumption. Conservative by design: a doubtful logo becomes keyword-only
+// (safe), never a colliding logo identity (a silent misfile).
 function seedLogoCollides(db, seedPhash, slug) {
   if (!seedPhash || !slug) return false;
   const rows = db.prepare(
@@ -119,7 +107,7 @@ function decide(db, docId, info = {}, opts = {}) {
   if (!slug) return { action: 'skip', reason: 'no-doctype' };            // Oracle C4
 
   const doc = db.prepare(
-    'SELECT id, template_id, supplier_name, logo_phash, keyword_fingerprint, ocr_text FROM documents WHERE id = ?'
+    'SELECT id, template_id, supplier_name, logo_phash, logo_detail_hash, keyword_fingerprint, ocr_text FROM documents WHERE id = ?'
   ).get(docId);
   if (!doc) return { action: 'skip', reason: 'no-doc' };
   if (doc.template_id) return { action: 'skip', reason: 'already-linked' };   // e.g. a taught confirm just made one
@@ -136,11 +124,29 @@ function decide(db, docId, info = {}, opts = {}) {
 
   // Existence: is this scope's layout already covered by a SAME-TYPE template (logo OR keyword)?
   // On a match, LINK only — never update-fold (Oracle C1).
+  // logo_detail_hash arms the detail-hash veto: 'link' WRITES documents.template_id, and a
+  // false cross-supplier link pollutes getDominantSupplier tallies — the establishedIdentity
+  // other guards (Part E) consume. A vetoed impostor match falls to the keyword arm or 'create'
+  // (whose own C2-C3 gates apply). Fail-open when either side lacks a detail hash.
   const match = templates.identifyByFingerprint(db, {
     logo_phash: doc.logo_phash, ocr_text: doc.ocr_text, document_type_slug: slug,
+    logo_detail_hash: doc.logo_detail_hash,
   });
   if (match && match.template) {
     return { action: 'link', templateId: match.template.id, name: match.template.name || null, reason: 'exists' };
+  }
+
+  // NAME-PRIMARY REUSE (Lever 1, TEMPLATE_REUSE_BY_NAME default ON, Phillip/Oracle 2026-07-27): the
+  // fingerprint existence check above (logo>=60 OR keyword>=75) can MISS a drifted same-supplier template
+  // — OR deliberately abstain (name-presence/detail veto) — and fall to CREATE, minting a duplicate. Before
+  // creating, reuse a same-type template whose ESTABLISHED (dominant confirmed) identity EXACTLY equals this
+  // graduated scope's supplier — the confirmed-identity signal the fingerprint arms lack (Oracle §3c: keyed
+  // on confirmed identity, stronger than a logo suggestion; fires even when identifyByFingerprint abstained
+  // — intentional, not a veto leak). LINK only (Oracle C1 — never update-fold on graduation). OFF ⇒
+  // byte-identical (arm skipped ⇒ falls to the unchanged create).
+  if (process.env.TEMPLATE_REUSE_BY_NAME !== '0') {
+    const _nmId = templates.reuseByEstablishedName(db, supplier, slug, docId);
+    if (_nmId) return { action: 'link', templateId: _nmId, name: null, reason: 'name-reuse' };
   }
 
   // C2: only auto-create with a >=K distinctive-token identity (downstream-judgeable, and a real

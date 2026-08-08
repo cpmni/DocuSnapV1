@@ -180,8 +180,13 @@ function showConnect(reason) { showOnly('connect'); $('connect-err').textContent
 function showConnLost() { $('conn-lost')?.classList.remove('hidden'); setConn('block', 'Connection lost'); }
 function hideConnLost() { $('conn-lost')?.classList.add('hidden'); }
 function wireConnLost() {
-  api.onConnectionLost?.(showConnLost);
-  api.onConnectionRestored?.(() => { hideConnLost(); setConn('ok', 'Reconnected'); });
+  api.onConnectionLost?.(() => { _connAlive = false; showConnLost(); });   // Slice 1: pause the badge poll too
+  api.onConnectionRestored?.(() => {
+    _connAlive = true; hideConnLost(); setConn('ok', 'Reconnected');
+    // One immediate FULL refresh on reconnect — fresh myOpenRoutes + badges after an outage.
+    if (role && workflowEntitled) refreshBadges();
+    if (role && canDecide()) refreshReviewCounts();
+  });
   const btn = $('conn-lost-retry');
   if (btn) btn.addEventListener('click', async () => {
     const orig = btn.innerHTML;
@@ -306,6 +311,7 @@ $('login-btn').addEventListener('click', async () => {
     $('unc-wrap').classList.toggle('hidden', !canDecide());
     $('login').classList.add('hidden');
     $('app').classList.remove('hidden');
+    startBadgePoll();  // Slice 1: gentle 60s badge refresh while signed in (entitlement-gated inside)
     setView('home');   // Home dashboard is the default landing view
     renderChips();
     return;
@@ -327,6 +333,7 @@ for (const id of ['u', 'p', 'totp']) {
 
 function doLogout() {
   rvLeave();   // release any review presence before the session ends
+  stopBadgePoll();   // Slice 1: no polling while signed out
   api.logout();
   role = null; recipientsCache = null;
   $('app').classList.add('hidden');
@@ -1037,10 +1044,10 @@ function confLevel(c) { return c == null ? '' : c >= 85 ? '' : c >= 60 ? 'warn' 
 // A context banner + decision bar shown when the open document is routed TO me.
 function decisionBar(route) {
   const wrap = document.createElement('div'); wrap.className = 'wf decision';
-  const kind = route.action_required === 'approve' ? 'Approval requested' : 'Acknowledgement requested';
+  const kind = route.action_required === 'approve' ? "they'd like your approval" : 'just for information';
   const canAct = route.action_required === 'approve' && canDecide();
   wrap.innerHTML = `
-    <div class="dec-banner">${ico('inbox')}<span>Routed to you by <strong>${esc(route.from_username)}</strong> — ${kind}${route.comment ? ': “' + esc(route.comment) + '”' : ''}</span></div>
+    <div class="dec-banner">${ico('inbox')}<span>Sent to you by <strong>${esc(route.from_username)}</strong> — ${kind}${route.comment ? ': “' + esc(route.comment) + '”' : ''}</span></div>
     ${canAct ? `<input class="dec-note" placeholder="Add a note (optional — required to reject)" />` : ''}
     <div class="dec-acts"></div>`;
   const acts = wrap.querySelector('.dec-acts');
@@ -1059,11 +1066,11 @@ function decisionBar(route) {
     run(api.workflow.resolve(route.id, decision, note || null, route.version));
   };
   if (route.action_required === 'acknowledge') {
-    acts.appendChild(mkBtn({ label: 'Acknowledge', icon: 'check', variant: 'primary', sm: false, onClick: () => run(api.workflow.resolve(route.id, 'acknowledge', null, route.version)) }));
+    // Display copy only — the resolve decision string stays 'acknowledge' (/v1 contract).
+    acts.appendChild(mkBtn({ label: 'Got it', icon: 'check', variant: 'primary', sm: false, onClick: () => run(api.workflow.resolve(route.id, 'acknowledge', null, route.version)) }));
   } else if (canDecide()) {
     acts.appendChild(mkBtn({ label: 'Approve',   icon: 'check',  variant: 'primary',   sm: false, onClick: () => decide('approve') }));
     acts.appendChild(mkBtn({ label: 'Reject',    icon: 'reject', variant: 'danger',    sm: false, onClick: () => decide('reject') }));
-    acts.appendChild(mkBtn({ label: 'Mark Paid', icon: 'check',  variant: 'secondary', sm: false, onClick: () => decide('paid') }));
   }
   // Disposition: route the document back to the sender or on to another user. Admin/edit
   // only (reuses the assign control, which lists the sender for a route-back).
@@ -1203,34 +1210,37 @@ function closeBinMenu() { document.getElementById('bin-menu')?.remove(); }
 document.addEventListener('click', closeBinMenu);
 document.addEventListener('scroll', closeBinMenu, true);
 
-async function assignControl(docId, senderUsername) {
+// Generalised prefill (Slice 1): `preselectUsername` marks + selects ANY recipient
+// (Forward… passes the original SENDER for a route-back; Send-again passes the original
+// RECIPIENT) — extra { tag, title, actionRequired, resubmitOf } label and prefill the rest.
+async function assignControl(docId, preselectUsername, extra = {}) {
   const wrap = document.createElement('div'); wrap.className = 'wf';
   if (!recipientsCache) {
     const rr = await api.workflow.recipients();
     recipientsCache = (rr.json && rr.json.recipients) || [];
   }
-  // When forwarding a routed doc, pre-select + mark the original sender for a "route back".
   const opts = recipientsCache.map((u) => {
-    const isSender = senderUsername && u.username === senderUsername;
-    return `<option value="${u.id}"${isSender ? ' selected' : ''}>${esc(u.displayName || u.username)} (${esc(u.role)})${isSender ? ' — sender' : ''}</option>`;
+    const pre = preselectUsername && u.username === preselectUsername;
+    return `<option value="${u.id}"${pre ? ' selected' : ''}>${esc(u.displayName || u.username)} (${esc(u.role)})${pre ? ` — ${esc(extra.tag || 'sender')}` : ''}</option>`;
   }).join('');
   wrap.innerHTML = `
-    <h3>${ico('assign')}${senderUsername ? 'Forward / route onward' : 'Route for approval / acknowledgement'}</h3>
+    <h3>${ico('assign')}${esc(extra.title || (preselectUsername ? 'Send on to someone else' : 'Send to a colleague'))}</h3>
     <div class="wf-row">
       <select class="a-to">${opts}</select>
-      <select class="a-action"><option value="approve">Approve</option><option value="acknowledge">Acknowledge</option></select>
+      <select class="a-action"><option value="approve">Needs their approval</option><option value="acknowledge">Just for information</option></select>
       <input class="a-comment" placeholder="Note (optional)" />
       <span class="msg"></span>
     </div>`;
-  const btn = mkBtn({ label: 'Assign', icon: 'assign', variant: 'primary', sm: false, onClick: async () => {
+  if (extra.actionRequired) wrap.querySelector('.a-action').value = extra.actionRequired;
+  const btn = mkBtn({ label: 'Send', icon: 'assign', variant: 'primary', sm: false, onClick: async () => {
     const toUserId = Number(wrap.querySelector('.a-to').value);
     const action = wrap.querySelector('.a-action').value;
     const comment = wrap.querySelector('.a-comment').value.trim() || undefined;
     const msg = wrap.querySelector('.msg');
     if (!toUserId) { msg.className = 'msg err'; msg.textContent = 'Pick a recipient.'; return; }
-    const res = await api.workflow.assign(docId, toUserId, action, comment);
-    if (res.status === 200) { msg.className = 'msg ok'; msg.textContent = 'Routed.'; refreshBadges(); }
-    else { msg.className = 'msg err'; msg.textContent = (res.json && res.json.error) || 'Could not route.'; }
+    const res = await api.workflow.assign(docId, toUserId, action, comment, extra.resubmitOf);
+    if (res.status === 200) { msg.className = 'msg ok'; msg.textContent = 'Sent.'; refreshBadges(); }
+    else { msg.className = 'msg err'; msg.textContent = (res.json && res.json.error) || 'Could not send.'; }
   } });
   wrap.querySelector('.wf-row').appendChild(btn);
   return wrap;
@@ -1263,10 +1273,12 @@ async function loadMailbox() {
 function mbRow(rt) {
   const el = document.createElement('div'); el.className = 'mb-row fade';
   const who = currentBox === 'sent' ? `to ${esc(rt.to_username)}` : `from ${esc(rt.from_username)}`;
-  const kind = rt.action_required === 'approve' ? 'Approval request' : 'Acknowledgement request';
+  const kind = rt.action_required === 'approve' ? 'Approval request' : 'For your information';
+  // Chip LABEL only — the CSS class keeps the raw state. 'seen' = resolved FYI (Barry, FYI slice).
+  const stateLabel = rt.state === 'acknowledged' ? 'seen' : rt.state;
   el.innerHTML = `
     <div class="t1"><span class="nm">${esc(rt.supplier_name || ('Document #' + rt.document_id))}</span>
-      <span class="chip ${esc(rt.state)}">${esc(rt.state)}</span></div>
+      <span class="chip ${esc(rt.state)}">${esc(stateLabel)}</span></div>
     <div class="t2">${ico(rt.action_required === 'approve' ? 'check' : 'inbox')}<span>${kind} · ${who} · ${esc(rt.doc_date || '')}</span></div>
     ${rt.comment ? `<div class="quote">“${esc(rt.comment)}”</div>` : ''}
     ${rt.resolution_comment ? `<div class="quote">Reason: ${esc(rt.resolution_comment)}</div>` : ''}
@@ -1288,21 +1300,29 @@ function mbRow(rt) {
 
   if (currentBox === 'sent') {
     if (rt.state === 'pending') acts.appendChild(mkBtn({ label: 'Recall', icon: 'recall', variant: 'ghost', onClick: () => act(api.workflow.recall(rt.id, rt.version)) }));
+    // Send again (Slice 1): a rejection is never a dead-end — inline prefilled re-route
+    // (original recipient + action) carrying the resubmit lineage for the audit trail.
+    if (rt.state === 'rejected' && canDecide()) acts.appendChild(mkBtn({ label: 'Send again', icon: 'assign', variant: 'secondary', onClick: async () => {
+      if (el.querySelector('.wf')) return;          // one inline control per row
+      el.appendChild(await assignControl(rt.document_id, rt.to_username, {
+        tag: 'previous recipient', title: 'Send again — the previous request was rejected',
+        actionRequired: rt.action_required, resubmitOf: rt.id }));
+    } }));
   } else if (currentBox === 'inbox' || currentBox === 'assigned') {
     if (open) {
       if (rt.action_required === 'acknowledge') {
-        acts.appendChild(mkBtn({ label: 'Acknowledge', icon: 'check', variant: 'primary', onClick: () => act(api.workflow.resolve(rt.id, 'acknowledge', null, rt.version)) }));
+        // Display copy only — the resolve decision string stays 'acknowledge' (/v1 contract).
+        acts.appendChild(mkBtn({ label: 'Got it', icon: 'check', variant: 'primary', onClick: () => act(api.workflow.resolve(rt.id, 'acknowledge', null, rt.version)) }));
       } else if (canDecide()) {
         acts.appendChild(mkBtn({ label: 'Approve',   icon: 'check',  variant: 'primary',   onClick: () => decide('approve') }));
         acts.appendChild(mkBtn({ label: 'Reject',    icon: 'reject', variant: 'danger',    onClick: () => decide('reject') }));
-        acts.appendChild(mkBtn({ label: 'Mark Paid', icon: 'check',  variant: 'secondary', onClick: () => decide('paid') }));
       }
       if (rt.state === 'pending') acts.appendChild(mkBtn({ label: 'Claim', icon: 'claim', variant: 'secondary', onClick: () => act(api.workflow.claim(rt.id, rt.version)) }));
     }
   }
   const actionable = (currentBox === 'inbox' || currentBox === 'assigned') && open;
   acts.appendChild(mkBtn({ label: 'View doc', icon: 'view', variant: 'ghost', onClick: () => { setView('search'); openDocument(rt.document_id, actionable ? rt : null); } }));
-  if (rt.has_stamp) {   // a stamped APPROVED/REJECTED/PAID copy was filed for this decision
+  if (rt.has_stamp) {   // a stamped APPROVED/REJECTED copy was filed (legacy PAID stamps still served)
     acts.appendChild(mkBtn({ label: 'View stamped copy', icon: 'doc', variant: 'ghost', onClick: () => viewStamped(rt.id) }));
   }
   return el;
@@ -1333,6 +1353,14 @@ async function viewStamped(routeId) {
   document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); } });
 }
 
+// Paint one box's badge (segmented tab count + the nav inbox badge). Shared by the full
+// refreshBadges (list lengths) and the 60s counts poll (COUNT queries) so they can't drift.
+function paintWfCount(box, n) {
+  const seg = document.querySelector(`.segmented .seg[data-box="${box}"] [data-count]`);
+  if (seg) { seg.textContent = String(n); seg.classList.toggle('hidden', n === 0); }
+  if (box === 'inbox') { const b = $('inbox-badge'); b.textContent = String(n); b.classList.toggle('hidden', n === 0); }
+}
+
 // Per-tab counts (inbox/sent/assigned/completed) + the nav inbox badge.
 async function refreshBadges() {
   const boxes = ['inbox', 'sent', 'assigned', 'completed'];
@@ -1342,9 +1370,7 @@ async function refreshBadges() {
       const r = await api.workflow.list(box);
       const routes = (r.json && r.json.routes) || [];
       const n = routes.length; counts[box] = n;
-      const seg = document.querySelector(`.segmented .seg[data-box="${box}"] [data-count]`);
-      if (seg) { seg.textContent = String(n); seg.classList.toggle('hidden', n === 0); }
-      if (box === 'inbox') { const b = $('inbox-badge'); b.textContent = String(n); b.classList.toggle('hidden', n === 0); }
+      paintWfCount(box, n);
       // Routes I can act on (addressed to me, still open) → drive the preview decision bar.
       if (box === 'inbox' || box === 'assigned') {
         for (const rt of routes) if (rt.state === 'pending' || rt.state === 'claimed') open[rt.document_id] = rt;
@@ -1354,6 +1380,31 @@ async function refreshBadges() {
   myOpenRoutes = open;
   return { counts, open };   // Home dashboard reuses these instead of re-fetching
 }
+
+// ── Badge poll (Slice 1) — gentle 60s counts refresh while signed in + entitled + the
+// connection is alive. Fetches /v1/workflow/counts (ONE cheap request, not four list
+// fetches) and paints badge numbers ONLY — it must NEVER write myOpenRoutes (that map
+// drives the decision bar and comes only from the full refreshBadges on view-load /
+// action / manual refresh). Cleared on logout; paused while disconnected (the 5s
+// heartbeat owns reachability); one immediate full refresh on reconnect.
+let _wfPollTimer = null;
+let _connAlive = true;
+async function pollWfCounts() {
+  if (!role || !_connAlive) return;
+  try {
+    if (workflowEntitled) {
+      const r = await api.workflow.counts();
+      if (r.status === 200 && r.json && r.json.counts) {
+        for (const box of ['inbox', 'sent', 'assigned', 'completed']) {
+          if (typeof r.json.counts[box] === 'number') paintWfCount(box, r.json.counts[box]);
+        }
+      }
+    }
+    if (canDecide()) refreshReviewCounts();
+  } catch { /* the heartbeat flips the connection state; nothing queues */ }
+}
+function startBadgePoll() { stopBadgePoll(); _wfPollTimer = setInterval(pollWfCounts, 60000); }
+function stopBadgePoll()  { if (_wfPollTimer) { clearInterval(_wfPollTimer); _wfPollTimer = null; } }
 
 // Draggable pane dividers — resize the search/review columns. `data-resize="prev"` widens the
 // pane to the LEFT of the grip (the list), `"next"` the pane to the RIGHT (the review fields);

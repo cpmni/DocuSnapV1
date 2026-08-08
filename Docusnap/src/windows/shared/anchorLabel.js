@@ -25,17 +25,21 @@
       .sort((a, b) => a.l - b.l);
     if (!ws.length) return null;
     // A real inter-COLUMN gap is several text-heights wide — far larger than the inter-word
-    // space inside one caption. Tie the threshold to the median word height so it scales with
-    // DPI/zoom rather than a brittle pixel constant.
+    // space inside one caption. Tie the threshold to word height so it scales with DPI/zoom
+    // rather than a brittle pixel constant.
     const heights = ws.map(w => w.h).filter(h => h > 0).sort((a, b) => a - b);
     const medH = heights[Math.floor(heights.length / 2)] || 0;
-    const gapThresh = Math.max(medH * 1.2, 8);
-    // Walk left→right; a gap past the threshold starts a new column, discarding everything to
-    // its left. The surviving block is the rightmost (nearest) column.
+    // Walk left→right; a gap past the threshold starts a new column, DISCARDING everything to its
+    // left. The surviving block is the rightmost (nearest) column. The threshold is PER-GAP, scaled
+    // to the RIGHT word's height (the caption side, nearest the value) — NOT a global median — so a
+    // big BANNER heading sharing the OCR row ("PURCHASE ORDER   Order No. PO-83175") can't inflate
+    // the median and swallow the real inter-column gap, gluing the heading onto the caption (the
+    // "the label grabs the whole line" class). medH is the fallback when a word has no height.
     let block = [ws[0]];
     for (let i = 1; i < ws.length; i++) {
       const prev = ws[i - 1];
-      const gap = ws[i].l - (prev.l + prev.w);
+      const gap  = ws[i].l - (prev.l + prev.w);
+      const gapThresh = Math.max((ws[i].h || medH) * 1.2, 8);
       if (gap > gapThresh) block = [ws[i]];
       else block.push(ws[i]);
     }
@@ -168,6 +172,93 @@
     // is an OCR FRAGMENT (a word split across the strip edge), never a real caption — flag it so
     // the existing suspicious->position-only downgrade drops it instead of staging garble.
     if (/,\s*\p{L}\.?\s*$/u.test(label.trim())) return true;
+    // DECAPITATION FRAGMENTS (2026-07-31, the teach "oe ee No." class): >=2 CONSECUTIVE short
+    // (<=2 alpha chars) all-lowercase tokens that aren't caption vocabulary are the bottom/top
+    // halves of a vertically-clipped caption, never a real label. Consecutive + vocab-exempt so
+    // "a/c no." (ac then vocab 'no'), "p/o no." ('po' is vocab), "Date of Issue" (lone 'of'),
+    // "Ship To" (uppercase T) all stay clean — pinned in test_anchor_label.js.
+    {
+      const alpha = label.split(/\s+/).map(t => t.replace(/[^a-zA-Z]/g, '')).filter(Boolean);
+      let run = 0;
+      for (const t of alpha) {
+        if (t.length <= 2 && t === t.toLowerCase() && !LABEL_VOCAB.has(t)) {
+          if (++run >= 2) return true;
+        } else run = 0;
+      }
+    }
+    return false;
+  }
+
+  // ── TEACH LABEL PASS-2 (clip-gated re-read) — pure geometry/decision helpers ────────────────
+  // (2026-07-31, gary + Oracle signed; the "oe ee No." class.) The teach LEFT/ABOVE label band
+  // derives its vertical extent ONLY from the user's drawn value box, so a low/short draw slices
+  // the caption glyphs and OCR reads half-letter junk — which sanitize/suspicious can't always
+  // catch. The renderer re-reads a TIGHT crop around the picked cluster's own word boxes, but
+  // ONLY when there is mechanism evidence of a clip (edge-touch, below) or the pass-1 label is
+  // suspicious — a clean unclipped draw never pays a second OCR and cannot be degraded.
+
+  // TRUE when the picked cluster's word-box union touches the band crop's clipping edge —
+  // decapitated glyph fragments sit AT the edge by construction (the missing half is outside the
+  // crop). LEFT bands clip at BOTH edges (band centred on the drawn box); ABOVE bands only at the
+  // TOP (their bottom edge abuts the value row by construction — nearestAboveRow's bottom row
+  // touching it is healthy, Oracle C3). `clusterBox` = [l,t,w,h] in the crop's own px; `cropHpx`
+  // = the crop's pixel height in the SAME frame.
+  function clusterTouchesClipEdge(clusterBox, cropHpx, dir, tolPx) {
+    if (!Array.isArray(clusterBox) || clusterBox.length < 4 || !(cropHpx > 0)) return false;
+    const tol = (typeof tolPx === 'number' && tolPx >= 0) ? tolPx : 1.5;
+    const t = +clusterBox[1], b = +clusterBox[1] + +clusterBox[3];
+    if (!isFinite(t) || !isFinite(b)) return false;
+    if (t <= tol) return true;                                  // top clip (both directions)
+    return dir !== 'above' && b >= cropHpx - tol;               // bottom clip (left bands only)
+  }
+
+  // The pass-2 re-read rectangle, in page-norm coords: the pass-1 cluster box expanded by pads
+  // keyed to the LARGER of the cluster height and the drawn value-box height (the cluster height
+  // is the CLIPPED height, so a fraction of it alone undershoots — gary). Vertical ±0.8×,
+  // horizontal ±0.5× (fragment unions can clip the leading glyph), clamped to the page.
+  function labelRereadRect(clusterNorm, valueNorm) {
+    const h = Math.max(clusterNorm.h || 0, (valueNorm && valueNorm.h) || 0);
+    const vPad = h * 0.8, hPad = h * 0.5;
+    const x = Math.max(0, clusterNorm.x - hPad);
+    const y = Math.max(0, clusterNorm.y - vPad);
+    const right  = Math.min(1, clusterNorm.x + clusterNorm.w + hPad);
+    const bottom = Math.min(1, clusterNorm.y + clusterNorm.h + vPad);
+    return { x, y, w: Math.max(0, right - x), h: Math.max(0, bottom - y) };
+  }
+
+  // Convert an OCR word/cluster box from a CROP's own pixel frame back to page-norm coords.
+  // `rect` = the crop's page-norm rectangle, `srcBox` = [l,t,w,h] in the crop's SENT pixels,
+  // `ds` = the downscale the crop was sent at (1.0 native under TEACH_NATIVE_CROP). Getting ds
+  // wrong here is the 1ef3e50 frame-math class (a phantom 0.42× put every label box in the wrong
+  // place) — pinned in test_anchor_label.js with ds≠1.
+  function cropBoxToPageNorm(rect, srcBox, natW, natH, ds) {
+    if (!Array.isArray(srcBox) || srcBox.length < 4) return null;
+    const [l, t, w, h] = srcBox.map(Number);
+    const nW = natW * ds, nH = natH * ds;
+    if (!(nW > 0 && nH > 0 && w > 0 && h > 0)) return null;
+    return { x: rect.x + l / nW, y: rect.y + t / nH, w: w / nW, h: h / nH };
+  }
+
+  // TRUE when the candidate label IS a document-type heading ("SALES ORDER", "Invoice", a type's
+  // "Also appears as" alias) — a decapitated caption under a big type banner lets the padded
+  // pass-2 crop read the BANNER clean, and saving that as the anchor re-opens the a666b83
+  // teach-safety class (a type heading appears on EVERY doc of that type, so the anchor
+  // re-locates on the wrong row everywhere). Exact match after normalisation; `typeNames` =
+  // every install doc-type NAME + title_aliases + the just-created type (the caller retains
+  // them from getAllDocTypes). Tolerant of alias lists arriving as JSON strings.
+  function _normHeading(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+  function isTypeHeadingLabel(label, typeNames) {
+    const n = _normHeading(label);
+    if (!n) return false;
+    for (const raw of (typeNames || [])) {
+      let names = raw;
+      if (typeof raw === 'string' && raw.trim().startsWith('[')) {
+        try { names = JSON.parse(raw); } catch { names = raw; }
+      }
+      for (const one of (Array.isArray(names) ? names : [names])) {
+        if (_normHeading(one) === n) return true;
+      }
+    }
     return false;
   }
 
@@ -191,12 +282,64 @@
   // goes to LEFT (the status-quo direction). BOTH 0 -> position-only (empty label, never a staged
   // garble). Returns {label, direction:'left'|'above'|null}. This replaces the left-first EARLY
   // RETURN that let a garbled left strip ('esha, i') beat a clean caption above ('Customer').
+  // ── FORM-LABEL WORD VOCABULARY (2026-07-17) — steer the ⊕ teach direction toward the side whose
+  // caption reads like a real FORM LABEL. A general dictionary can't do this ("Rote" IS an English
+  // word); a curated caption vocabulary can ("rote"=no, "site"/"customer"=yes). Original in-repo
+  // constant (no external word-list bundled → licence-clean). STEER only — never a reject list.
+  // C4 INVARIANT: ship/to/deliver/customer/serial/no/order/site MUST stay listed or the tie pins in
+  // test_anchor_label.js (Ship To / Deliver To, etc.) flip. Product-code abbreviations (sku/eori/
+  // mpn/gtin/iban/utr) are DELIBERATELY excluded — they are the exposed non-vocab class (see the
+  // pinned mis-steer test); the operator [← Left]/[↑ Above] toggle corrects a mis-steer.
+  const LABEL_VOCAB = new Set([
+    'customer','client','supplier','vendor','seller','buyer','name','company','business',
+    'account','acct','site','address','premises','location','invoice','order','purchase','sales',
+    'po','so','reference','ref','number','num','no','serial','id','code','date','dated','due',
+    'total','subtotal','net','gross','vat','tax','gst','qty','quantity','amount','price','unit',
+    'cost','description','desc','item','details','detail','bill','billing','ship','shipping',
+    'shipped','sold','deliver','delivery','delivered','to','from','for','terms','payment','method',
+    'currency','discount','balance','note','notes','contact','phone','tel','telephone','fax',
+    'email','mobile','website','work','job','ticket','worksheet','sheet','project','department',
+    'dept','branch','office','manager','engineer','status','type','product','service','model',
+    'part','period','month','year'
+  ]);
+  const _LABEL_RATIO_MARGIN   = 0.5;   // above must out-score left by this to flip a tie
+  const _LABEL_MIN_ABOVE_HITS = 2;     // ...AND carry >=2 vocab words (C2: a lone word can't flip)
+  let _ratioTiebreak = true;
+  function setRatioTiebreak(on) { _ratioTiebreak = !!on; }   // kill switch → OFF = unconditional LEFT
+  // Split on caption separators (NOT '.', so dotted stems "S.O."/"P.O."/"No." survive as one token),
+  // lowercase + strip to alnum, drop empties.
+  function _labelTokens(label) {
+    return String(label || '').split(/[\s/\\|,;:\-]+/)
+      .map(t => t.toLowerCase().replace(/[^a-z0-9]+/g, '')).filter(Boolean);
+  }
+  function labelVocabHits(label) { return _labelTokens(label).filter(t => LABEL_VOCAB.has(t)).length; }
+  function labelWordRatio(label) {
+    const t = _labelTokens(label);
+    return t.length ? t.filter(x => LABEL_VOCAB.has(x)).length / t.length : 0;
+  }
+
   function pickLabelCandidate(leftLabel, aboveLabel, fieldCaptions) {
     const L = (leftLabel || '').trim(), A = (aboveLabel || '').trim();
     const sL = scoreLabelCandidate(L, fieldCaptions), sA = scoreLabelCandidate(A, fieldCaptions);
     if (sL === 0 && sA === 0) return { label: '', direction: null };   // position-only
     if (sA > sL) return { label: A, direction: 'above' };
-    return { label: L, direction: 'left' };                            // sL >= sA incl. tie -> LEFT
+    if (sL > sA) return { label: L, direction: 'left' };
+    // TIE. Consult the form-label word ratio ONLY on a score-1 tie (both clean, NEITHER a known field
+    // caption — a score-2 caption is the field's own gold signal, never second-guessed: C3). Flip
+    // LEFT→ABOVE only with POSITIVE evidence: the above side carries >=2 form-label words (C2) AND
+    // out-scores the left by >= the margin — so a lone dictionary word can't override a real single-
+    // token abbreviation left (EORI/SKU); only a decisively-cleaner multi-word caption ("Site /
+    // Customer" over "Rote,") flips. STEER only — the label is never rejected; the operator's Left/
+    // Above toggle overrides a mis-steer. NOTE (was "C5, the Teach wizard does NOT share this
+    // picker" — NO LONGER TRUE as of 2026-08-08): teach/renderer.js `autoLabel` now calls this
+    // function too, so BOTH surfaces steer identically and a change here moves both. Teach pins it
+    // in src/windows/teach/test_teach_label_pick.js.
+    if (_ratioTiebreak && sL === 1 && sA === 1
+        && labelVocabHits(A) >= _LABEL_MIN_ABOVE_HITS
+        && (labelWordRatio(A) - labelWordRatio(L)) >= _LABEL_RATIO_MARGIN) {
+      return { label: A, direction: 'above' };
+    }
+    return { label: L, direction: 'left' };                            // tie default stays LEFT
   }
 
   // DESKEW BACK-TRANSFORM (2026-07-12): map a point given in the STRAIGHTENED (display) frame back
@@ -253,7 +396,7 @@
     return out;
   }
 
-  root.AnchorLabel = { nearestLeftCluster, nearestAboveRow, nearestRowTo, extractLabel, sanitizeAnchorLabel, labelLooksSuspicious, scoreLabelCandidate, pickLabelCandidate, deskewedNormToRaw, deskewFinalizeAnchor };
+  root.AnchorLabel = { nearestLeftCluster, nearestAboveRow, nearestRowTo, extractLabel, sanitizeAnchorLabel, labelLooksSuspicious, scoreLabelCandidate, pickLabelCandidate, labelWordRatio, labelVocabHits, setRatioTiebreak, deskewedNormToRaw, deskewFinalizeAnchor, clusterTouchesClipEdge, labelRereadRect, isTypeHeadingLabel, cropBoxToPageNorm };
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));
 
 // Node/test interop (the browser path uses window.AnchorLabel).

@@ -95,5 +95,29 @@ console.log('\ntemplates.create / addLogoHash — seed + store + backfill detail
   db.close();
 }
 
+// ── C2(i) [Slice-1d DO-NOTHING ledger 2026-07-24] — the Store-B detail write is UNCONDITIONAL ────────
+// The whole do-nothing verdict RESTS on template_logo_hashes.detail_hash accruing at confirm-time
+// REGARDLESS of LOGO_DETAIL_ENROL (that flag gates ONLY Store A = logo_fingerprints, at
+// processing/handler.js). The confirm call-site is review/handler.js -> templates.create/update ->
+// addLogoHash. If a "consistency" refactor ever gates THIS write behind LOGO_DETAIL_ENROL, the LIVE
+// Stage-0 detail veto silently starves — this pin goes RED first.
+console.log('\nC2(i) — Store-B detail write is UNCONDITIONAL (not gated by LOGO_DETAIL_ENROL):');
+{
+  for (const envVal of ['0', undefined]) {
+    const prev = process.env.LOGO_DETAIL_ENROL;
+    if (envVal === undefined) delete process.env.LOGO_DETAIL_ENROL; else process.env.LOGO_DETAIL_ENROL = envVal;
+    const db = makeDb();
+    const tid = templates.create(db, { name: 'Z', document_type_slug: 'invoice', logo_phash: HX('1'),
+      logo_detail_hash: HX('d', 64), keyword_fingerprint: [], fields: [] });
+    check(`create writes Store-B detail_hash with LOGO_DETAIL_ENROL=${envVal}`,
+      db.prepare('SELECT detail_hash FROM template_logo_hashes WHERE template_id=? AND phash=?').get(tid, HX('1')).detail_hash === HX('d', 64));
+    templates.addLogoHash(db, tid, HX('2'), HX('e', 64));
+    check(`addLogoHash writes Store-B detail_hash with LOGO_DETAIL_ENROL=${envVal}`,
+      db.prepare('SELECT detail_hash FROM template_logo_hashes WHERE template_id=? AND phash=?').get(tid, HX('2')).detail_hash === HX('e', 64));
+    db.close();
+    if (prev === undefined) delete process.env.LOGO_DETAIL_ENROL; else process.env.LOGO_DETAIL_ENROL = prev;
+  }
+}
+
 console.log('\n' + (fails === 0 ? 'ALL PASS' : `${fails} FAILED`));
 process.exit(fails ? 1 : 0);

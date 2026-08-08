@@ -22,7 +22,7 @@ function createRecoveryService(deps = {}) {
   const learning  = deps.learning  || require('../../database/modules/learning');
 
   const _count = (db, table, sn, dt) => db.prepare(
-    `SELECT COUNT(*) AS n FROM ${table} WHERE (@sn IS NULL OR supplier_name = @sn) AND (@dt IS NULL OR document_type = @dt)`
+    `SELECT COUNT(*) AS n FROM ${table} WHERE (@sn IS NULL OR supplier_name = @sn COLLATE NOCASE) AND (@dt IS NULL OR document_type = @dt)`
   ).get({ sn: sn || null, dt: dt || null }).n;
 
   // Light, READ-ONLY diagnosis: confirmed docs in THIS scope whose reference number or
@@ -38,7 +38,7 @@ function createRecoveryService(deps = {}) {
              AND o.document_type_id <> d.document_type_id
              AND ( (d.reference_number IS NOT NULL AND TRIM(d.reference_number) <> '' AND o.reference_number = d.reference_number)
                 OR (o.original_filename = d.original_filename) )
-        WHERE d.status = 'confirmed' AND (@sn IS NULL OR d.supplier_name = @sn)
+        WHERE d.status = 'confirmed' AND (@sn IS NULL OR d.supplier_name = @sn COLLATE NOCASE)
       `).all({ sn: sn || null, dt }).map(r => r.id);
     } catch { return []; }
   }
@@ -78,10 +78,21 @@ function createRecoveryService(deps = {}) {
 
     const scope = { supplier_name: sn, document_type: dt };
     const summary = { setAside: 0, anchors: 0, hints: 0, fieldRules: 0, corrections: 0, requeued: 0 };
+    const closedRoutes = [];   // open routes closed by the set-aside (FYI slice) — caller audits/notifies AFTER commit (Oracle C2)
 
     db.transaction(() => {
       // 1) Set aside the offending documents (recycle bin — reversible; stops them feeding the derived model).
-      for (const id of ids) summary.setAside += (documents.softDelete(db, id).changes || 0);
+      //    Close any open routes on each with the honest tombstone (previously a stranded-open hole);
+      //    INSIDE the transaction so a rollback never leaves half-closed routes announced.
+      for (const id of ids) {
+        const changes = documents.softDelete(db, id).changes || 0;
+        summary.setAside += changes;
+        if (changes) {
+          const r = require('./workflowService').closeOpenRoutesForDeletedDoc(db,
+            { documentId: id, deletedByName: (actor && (actor.displayName || actor.username)) || 'an administrator' });
+          closedRoutes.push(...r.closed);
+        }
+      }
 
       // 2) Forget the scope's active learning artifacts (they re-learn from the remaining good docs).
       if (forgetLearning) {
@@ -97,7 +108,7 @@ function createRecoveryService(deps = {}) {
       if (requeue) summary.requeued = documents.requeueConfirmedDocsForScope(db, { supplier_name: sn, document_type_slug: dt }).changes || 0;
     })();
 
-    return { ok: true, summary, setAsideIds: ids };
+    return { ok: true, summary, setAsideIds: ids, closedRoutes };
   }
 
   return { overview, apply };

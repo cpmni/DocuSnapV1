@@ -32,7 +32,7 @@
 const {
   DEFAULT_PATTERN, validatePattern,
   sanitiseFilenameStem,
-  buildFilename, resolveDuplicateFilename,
+  buildFilename, resolveDuplicateFilename, resolveDuplicate, previewDuplicateName, DUPLICATES_SUBFOLDER,
   DEFAULT_FOLDER_PATTERN, FIELD_TOKENS, buildFolderSegments, buildFilenameStem,
 } = require('./filename_pattern');
 
@@ -248,6 +248,52 @@ function main() {
       resolveDuplicateFilename(base, '.pdf', n => threeCollisions.has(n)) === 'Invoice.15-12-2025.INV-001-DUPLICATE-3.pdf')) failures++;
   }
 
+  // 7b. Policy-aware duplicate resolution (2026-07-17) — suffix styles + Duplicates subfolder
+  {
+    console.log('Duplicate policy: suffix styles + Duplicates subfolder');
+    const base = 'Invoice.15-12-2025.INV-001.pdf';
+    const inDir = (set) => (name, sub) => set.has((sub ? sub + '/' : '') + name);
+
+    let r = resolveDuplicate(base, '.pdf', inDir(new Set()), { policy: 'suffix', suffix: 'DUPLICATE' });
+    if (!check('no collision -> base, no subfolder', r.filename === base && r.subfolder === '')) failures++;
+
+    const two = new Set([base, 'Invoice.15-12-2025.INV-001-DUPLICATE.pdf']);
+    r = resolveDuplicate(base, '.pdf', inDir(two), { policy: 'suffix', suffix: 'DUPLICATE' });
+    if (!check('DEFAULT suffix DUPLICATE byte-identical (-DUPLICATE-2)',
+      r.filename === 'Invoice.15-12-2025.INV-001-DUPLICATE-2.pdf' && r.subfolder === '')) failures++;
+
+    r = resolveDuplicate(base, '.pdf', inDir(new Set([base])), { policy: 'suffix', suffix: 'COPY' });
+    if (!check('suffix COPY -> -COPY', r.filename === 'Invoice.15-12-2025.INV-001-COPY.pdf')) failures++;
+
+    r = resolveDuplicate(base, '.pdf', inDir(new Set([base, 'Invoice.15-12-2025.INV-001-2.pdf'])), { policy: 'suffix', suffix: 'number' });
+    if (!check('suffix number -> -3 (pure counter)', r.filename === 'Invoice.15-12-2025.INV-001-3.pdf')) failures++;
+
+    r = resolveDuplicate(base, '.pdf', inDir(new Set([base])), { policy: 'suffix', suffix: 'date', now: new Date(2026, 2, 5) });
+    if (!check('suffix date -> -2026-03-05', r.filename === 'Invoice.15-12-2025.INV-001-2026-03-05.pdf')) failures++;
+
+    r = resolveDuplicate(base, '.pdf', inDir(new Set([base])), { policy: 'suffix', suffix: 'ARCHIVE' });
+    if (!check('custom suffix -> -ARCHIVE', r.filename === 'Invoice.15-12-2025.INV-001-ARCHIVE.pdf')) failures++;
+
+    // previewDuplicateName — the Settings live preview; mirrors the FIRST-collision 'suffix' result (pure).
+    if (!check('preview DUPLICATE', previewDuplicateName(base, '.pdf', 'DUPLICATE') === 'Invoice.15-12-2025.INV-001-DUPLICATE.pdf')) failures++;
+    if (!check('preview COPY',      previewDuplicateName(base, '.pdf', 'COPY')      === 'Invoice.15-12-2025.INV-001-COPY.pdf')) failures++;
+    if (!check('preview number -> -2', previewDuplicateName(base, '.pdf', 'number') === 'Invoice.15-12-2025.INV-001-2.pdf')) failures++;
+    if (!check('preview date',      previewDuplicateName(base, '.pdf', 'date', new Date(2026, 2, 5)) === 'Invoice.15-12-2025.INV-001-2026-03-05.pdf')) failures++;
+    if (!check('preview default (unset) === DUPLICATE', previewDuplicateName(base, '.pdf', null) === 'Invoice.15-12-2025.INV-001-DUPLICATE.pdf')) failures++;
+
+    r = resolveDuplicate(base, '.pdf', inDir(new Set([base])), { policy: 'suffix', suffix: 'a/b:c' });
+    if (!check('custom suffix sanitised (no path sep / illegal chars)',
+      r.subfolder === '' && !/[\\/:]/.test(r.filename) && r.filename.startsWith('Invoice.15-12-2025.INV-001-'))) failures++;
+
+    r = resolveDuplicate(base, '.pdf', inDir(new Set([base])), { policy: 'subfolder' });
+    if (!check('subfolder policy -> Duplicates/, same name',
+      r.filename === base && r.subfolder === DUPLICATES_SUBFOLDER)) failures++;
+
+    r = resolveDuplicate(base, '.pdf', inDir(new Set([base, 'Duplicates/' + base])), { policy: 'subfolder' });
+    if (!check('subfolder dup-of-dup -> -2 inside Duplicates',
+      r.subfolder === DUPLICATES_SUBFOLDER && r.filename === 'Invoice.15-12-2025.INV-001-2.pdf')) failures++;
+  }
+
   // ── Folder-pattern builder (Settings → Output Structure) ────────────────────
   console.log('\nFolder-pattern builder:');
   const fv = { supplier: 'Acme Supplies Ltd', docType: 'Invoice', year: '2025', month: 'December', ref: 'INV-001', date: '15-12-2025' };
@@ -265,8 +311,8 @@ function main() {
     JSON.stringify(buildFolderSegments('{supplier}/{ref}/{year}', { ...fv, ref: '' })) === JSON.stringify(['Acme-Supplies-Ltd', '2025']))) failures++;
   if (!check('reserved device name as a folder level is defused',
     buildFolderSegments('{docType}', { ...fv, docType: 'CON' })[0] === 'CON_')) failures++;
-  if (!check('builder blocks are the meaningful field tokens only',
-    FIELD_TOKENS.map(t => t.token).join(',') === '{supplier},{docType},{date},{ref},{year},{month}')) failures++;
+  if (!check('builder blocks are the meaningful field tokens only ({title} joined 2026-07-18)',
+    FIELD_TOKENS.map(t => t.token).join(',') === '{supplier},{docType},{date},{ref},{year},{month},{title}')) failures++;
 
   // #10: empty-sanitising supplier keeps a company folder (never files under Year/Month directly).
   for (const bad of ['..', '///', '***', '   ', '.']) {
@@ -278,6 +324,22 @@ function main() {
   }
   if (!check('a real supplier is untouched by the fallback',
     supplierFolderFallback('Acme Supplies Ltd') === 'Acme Supplies Ltd')) failures++;
+
+  // ── {title} token + the slice-6 default (Generic Document design §6/§7) ────────
+  console.log('\n{title} token + new default pattern:');
+  const typed = { docType: 'Invoice', date: '15-12-2025', ref: 'INV-001', supplier: 'Acme', year: '2025', month: 'December', originalName: 'scan1', title: '' };
+  if (!check('{title} is a registered token (pattern with it does NOT fall back)',
+    buildFilename({ pattern: '{docType}.{title}', values: { ...typed, title: 'Boiler Service Certificate' }, ext: '.pdf' }).fellBack === false)) failures++;
+  if (!check('title value is sanitised (spaces→dashes)',
+    buildFilename({ pattern: '{title}', values: { ...typed, title: 'Boiler Service Certificate' }, ext: '.pdf' }).filename === 'Boiler-Service-Certificate.pdf')) failures++;
+  // PIN (slice 6): the new default is BYTE-IDENTICAL for typed docs — title empty ⇒ collapses.
+  const oldDefault = buildFilename({ pattern: '{docType}.{date}.{ref}', values: typed, ext: '.pdf' }).filename;
+  const newDefault = buildFilename({ pattern: DEFAULT_PATTERN, values: typed, ext: '.pdf' }).filename;
+  if (!check(`new default byte-identical for typed docs (${newDefault})`, newDefault === oldDefault)) failures++;
+  if (!check('generic doc (no ref) + title under the new default',
+    buildFilename({ pattern: DEFAULT_PATTERN,
+      values: { ...typed, docType: 'General Document', ref: '', title: 'Tenancy Agreement' }, ext: '.pdf' }).filename
+      === 'General-Document.15-12-2025.Tenancy-Agreement.pdf')) failures++;
 
   console.log();
   if (failures) {

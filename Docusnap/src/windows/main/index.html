@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'">
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
   <title>ScanFinder</title>
   <link rel="stylesheet" href="../shared/theme.css" />
   <style>
@@ -310,7 +310,9 @@
       flex-shrink: 0; display: grid; grid-template-columns: minmax(220px, 1.4fr) auto auto; gap: 20px;
       align-items: start; padding: 18px 24px; border-bottom: 1px solid var(--border); background: var(--surface);
     }
-    .import-actions { display: flex; flex-direction: column; gap: 8px; min-width: 200px; align-self: stretch; justify-content: center; }
+    /* Top-aligned (owner 2026-07-18): the action buttons sit at the top of the header row,
+       level with the source-folder label and the stats card — not floating mid-height. */
+    .import-actions { display: flex; flex-direction: column; gap: 8px; min-width: 200px; align-self: start; justify-content: flex-start; }
     .import-stats { display: flex; flex-direction: column; gap: 0; min-width: 220px; }
     .results-empty { padding: 22px 16px; font-size: 12.5px; color: var(--muted); text-align: center; }
     .sidebar-label { display: flex; align-items: center; gap: 6px; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
@@ -374,11 +376,13 @@
 
     /* "Stuck docs" surface — documents that failed extraction (status='error') */
     .stuck-chip {
-      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      display: flex; flex-direction: column; gap: 6px;
       margin-top: 6px; padding: 8px 10px; border-radius: 7px; font-size: 11px;
       background: var(--warn-bg); border: 1px solid var(--warn); color: var(--warn);
     }
+    .stuck-chip .stuck-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .stuck-chip .stuck-msg { line-height: 1.35; }
+    .stuck-chip .stuck-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
     .stuck-retry {
       flex-shrink: 0; padding: 3px 10px; border-radius: 6px; cursor: pointer;
       border: 1px solid var(--warn); background: transparent; color: var(--warn);
@@ -386,6 +390,26 @@
     }
     .stuck-retry:hover    { background: var(--warn); color: #fff; }
     .stuck-retry:disabled { opacity: .5; cursor: default; }
+    /* Details toggle (text link) + dismiss (×) — same warm palette as the chip */
+    .stuck-link {
+      flex-shrink: 0; padding: 3px 6px; border: none; background: transparent;
+      color: var(--warn); font-family: var(--sans); font-size: 11px; font-weight: 600;
+      text-decoration: underline; cursor: pointer;
+    }
+    .stuck-link:hover { color: var(--err); }
+    .stuck-dismiss {
+      flex-shrink: 0; width: 20px; height: 20px; line-height: 1; padding: 0;
+      border: 1px solid transparent; border-radius: 5px; background: transparent;
+      color: var(--warn); font-size: 15px; font-weight: 700; cursor: pointer;
+    }
+    .stuck-dismiss:hover { border-color: var(--warn); color: var(--err); }
+    .stuck-list {
+      list-style: none; margin: 0; padding: 6px 2px 2px; border-top: 1px solid var(--warn);
+      max-height: 132px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px;
+    }
+    .stuck-list li { line-height: 1.3; word-break: break-word; }
+    .stuck-list .stuck-name { font-weight: 600; }
+    .stuck-list .stuck-why  { opacity: .85; }
 
     /* Stats: one prominent "processed of found" headline, OK/Errors as quiet
        semantic chips (Bob's hierarchy fix — not four equal competing tiles). */
@@ -807,6 +831,18 @@
               </button>
             </div>
 
+            <!-- Waiting on you (approval workflow — shown only when the add-on is licensed) -->
+            <div class="dash-card" id="dash-workflow" data-help-key="workflow" style="display:none;">
+              <div class="dash-card-head">
+                <svg class="ico ico-sm" aria-hidden="true"><use href="#i-check"/></svg>
+                <span>Waiting on you</span>
+              </div>
+              <div class="dash-attn-body" id="dash-workflow-body">&hellip;</div>
+              <button class="dash-btn primary" id="dash-workflow-open">
+                Open Mailbox <svg class="ico ico-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+              </button>
+            </div>
+
             <!-- Today's pulse (stats) -->
             <div class="dash-card" id="dash-pulse" data-help-key="pulse">
               <div class="dash-card-head">
@@ -815,7 +851,7 @@
               </div>
               <div class="pulse-grid">
                 <div class="pulse-stat"><span class="pulse-val" id="stat-today">0</span><span class="pulse-lbl">filed today</span></div>
-                <div class="pulse-stat"><span class="pulse-val" id="stat-week">0</span><span class="pulse-lbl">this week</span></div>
+                <div class="pulse-stat"><span class="pulse-val" id="stat-week">0</span><span class="pulse-lbl">last 7 days</span></div>
                 <div class="pulse-stat"><span class="pulse-val" id="stat-month">0</span><span class="pulse-lbl">this month</span></div>
               </div>
             </div>
@@ -976,9 +1012,18 @@
               <svg class="ico" aria-hidden="true"><use href="#i-stop"/></svg><span class="btn-label">Stop Processing</span>
             </button>
             <div class="stuck-chip" id="stuck-chip" data-help-key="stuck" style="display:none;">
-              <span class="stuck-msg" id="stuck-msg"></span>
-              <button class="stuck-retry" id="btn-stuck-retry">Try again</button>
+              <div class="stuck-row">
+                <span class="stuck-msg" id="stuck-msg"></span>
+                <div class="stuck-actions">
+                  <button class="stuck-link" id="btn-stuck-details" type="button">Details</button>
+                  <button class="stuck-retry" id="btn-stuck-retry">Try again</button>
+                  <button class="stuck-dismiss" id="btn-stuck-dismiss" type="button" title="Hide until more documents fail" aria-label="Dismiss">×</button>
+                </div>
+              </div>
+              <ul class="stuck-list" id="stuck-list" hidden></ul>
             </div>
+            <button class="btn" id="btn-print-slips" title="Print numbered separator sheets to slot between documents in your scan pile — the batch splits at each sheet">Print separator sheets</button>
+            <span id="print-slips-msg" style="display:none; font-size:12px; color: var(--muted);"></span>
           </div>
           <div class="import-stats">
             <div class="stats-block" data-help-key="stats">
@@ -1014,7 +1059,7 @@
             </thead>
             <tbody id="table-body"></tbody>
           </table>
-          <div class="results-empty" id="results-empty">No documents processed yet. Pick a source folder above and press Process.</div>
+          <div class="results-empty" id="results-empty">No documents processed yet. Pick a source folder above and press Process Documents.</div>
         </div>
       </div>
 
@@ -1057,6 +1102,8 @@
 <script src="../shared/theme.js"></script>
 <script src="../shared/helpmode.js"></script>
 <script src="../shared/modalFocus.js"></script>
+<script src="../shared/dialogFocus.js"></script>   <!-- arm native confirm()/alert() focus repair + focusField -->
+
 <script src="renderer.js"></script>
 </body>
 </html>

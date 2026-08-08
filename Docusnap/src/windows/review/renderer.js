@@ -175,6 +175,7 @@ let deferredQueue    = [];
 let bulkFiling       = false; // true while File All Ready runs; suppresses the auto-refresh listener so its per-doc confirm broadcasts can't clobber the loop's local queue mid-run
 let allDocTypes      = [];
 let currentDoc       = null;
+let _lastRenderedDoc = null;   // the FULL doc object renderFields last drew (≠ currentDoc, which is the queue stub) — the live field-visibility re-resolve mutates + re-renders THIS one
 let currentPage      = 0;
 let pageImages       = [];
 let fieldDefs        = [];
@@ -342,6 +343,30 @@ window.addEventListener('beforeunload', () => {
 });
 
 // ── Load queue ────────────────────────────────────────────────────────────────
+// Decide what the Review window lands on when it opens — PURE and side-effect-free so it can be
+// unit-pinned (test_review_initial_selection.js). Returns exactly one of:
+//   { navigate: <docId> } — an "Edit in Review" target was requested → go there, ONLY
+//   { select: <doc> }     — auto-land on this document
+//   { none: true }        — land on nothing (empty queue, or 2+ sender piles that deliberately
+//                           start collapsed → the pick-a-doc CTA shows instead of a dead pane)
+// The navigate and select outcomes are MUTUALLY EXCLUSIVE by construction, so the window can never
+// fire two selectDoc calls at once — this removes the pre-existing double-select race where the
+// un-awaited init auto-select and the "Edit in Review" navigation both selected a document.
+function decideInitialSelection({ targetId, queueGrouped, queue, groups }) {
+  if (targetId) return { navigate: targetId };
+  if (!queue || queue.length === 0) return { none: true };
+  if (!queueGrouped) return { select: queue[0] };   // flat "Newest first" — land on the top row (unchanged)
+  // Grouped view: only auto-land when there is a SINGLE sender pile. That is exactly the cold-DB /
+  // single-sender case where an all-collapsed list would strand a first-time user on an empty pane
+  // with just a "—" bar. With 2+ piles, keep the deliberate "pick a group" landing so the
+  // many-senders overview is preserved (widening this is what would revive the double-select race).
+  if (groups && groups.length === 1 && groups[0].docs && groups[0].docs.length) {
+    return { select: groups[0].docs[0] };
+  }
+  return { none: true };
+}
+/* __PIN_END:decideInitialSelection__ */
+
 async function loadQueue() {
   // Resolve role first so the admin-only bulk-delete footers render correctly
   // (visibility is a convenience — the delete IPCs are admin-gated server-side).
@@ -350,6 +375,7 @@ async function loadQueue() {
     isAdmin = !!(me && me.role === 'admin');
     canEdit = !!(me && (me.role === 'admin' || me.role === 'edit'));
   } catch { isAdmin = false; canEdit = false; }
+  loadAutoFileConfig();      // for the "nothing flagged — just below your auto-file setting" panel
   applyAnchorWizardGate();   // Template Wizard is admin-only (mapping IPC is admin-gated server-side)
   // "+ New type" header launcher — admin only (the create IPC is admin-gated server-side).
   const _newTypeBtn = document.getElementById('btn-new-doctype');
@@ -379,12 +405,37 @@ async function loadQueue() {
   populateTypeDropdown();
   updateTabCounts();
   renderQueueList();
-  if (queue.length > 0 && !queueGrouped) selectDoc(queue[0]);   // grouped starts all-collapsed; user picks a group
-  refreshAutoCommittedBar();   // surface recently auto-filed docs for re-checking
+  refreshAutoCommittedBar();   // surface recently auto-filed docs for re-checking (independent of the selection below)
 
-  // If opened via "Edit in Review" from Search, navigate to the requested doc.
+  // Reconnect to a "Reprocess All" that Review was closed during. If it's STILL running, show
+  // progress + lock the buttons (reconnectRunningBatch). If it FINISHED while Review was closed, its
+  // window-side completion (auto-file the reprocessed-to-100 docs + summary) never ran — consume it
+  // once here so those docs still auto-file. Best-effort; never blocks the queue load.
+  try {
+    const _rs = await window.docusnap.getReprocessStatus();
+    if (_rs && _rs.running) {
+      reconnectRunningBatch(_rs);
+    } else {
+      const _c = await window.docusnap.consumeReprocessCompletion();
+      if (_c) {
+        try { await autoCommitFullConfidence(); } catch { /* best-effort */ }
+        showToast(`Reprocess finished — ${_c.done} document${_c.done !== 1 ? 's' : ''} updated${_c.failed ? `, ${_c.failed} failed` : ''}`, _c.failed ? 'warn' : 'ok');
+      }
+    }
+  } catch { /* non-fatal */ }
+
+  // Decide what to land on ONCE. getReviewTarget is consume-once, so read it first, then let
+  // decideInitialSelection choose target-nav XOR auto-land — the two can never both fire selectDoc
+  // (removes the old double-select race). The single-group branch is the cold-start fix: a first
+  // import (no learned senders yet) is one "—" pile, so we auto-expand it and open the first
+  // document instead of leaving the user on a collapsed bar over an empty pane.
   const targetId = await window.docusnap.getReviewTarget();
-  if (targetId) _navigateToDoc(targetId);
+  const decision = decideInitialSelection({
+    targetId, queueGrouped, queue, groups: reviewDisplayGroups(),
+  });
+  if (decision.navigate)    _navigateToDoc(decision.navigate);   // "Edit in Review" target
+  else if (decision.select) selectDoc(decision.select);          // flat top row, or the sole sender pile's first doc
+  else if (queue.length)    showPreviewCta();                    // docs waiting but nothing auto-landed (2+ piles) → offer a next step, not a dead pane
 }
 
 // ── "Auto-committed" re-surface ──────────────────────────────────────────────
@@ -408,8 +459,8 @@ async function refreshAutoCommittedBar() {
   _autoFiledDocs = res.docs || [];
   if (_autoFiledDocs.length) {
     bar.innerHTML = `<span class="acb-dismiss" title="Dismiss this notice" aria-label="Dismiss">×</span>`
-      + `<b>✓ ${_autoFiledDocs.length}</b> document${_autoFiledDocs.length === 1 ? '' : 's'} auto-committed on the last pass — `
-      + `<span class="acb-back">click here to review them</span>`;
+      + `<b>✓ ${_autoFiledDocs.length}</b> document${_autoFiledDocs.length === 1 ? '' : 's'} filed automatically in the last run — `
+      + `<span class="acb-back">click to see the list — they stay filed; nothing is changed</span>`;
     bar.style.display = 'block';
   } else {
     bar.style.display = 'none';
@@ -434,6 +485,13 @@ document.getElementById('auto-committed-bar')?.addEventListener('click', async (
   renderQueueList();
   if (queue.length) selectDoc(queue[0]);
   refreshAutoCommittedBar();
+});
+
+// "Start reviewing →" in the empty-pane CTA: land on the first document in the visible order
+// (selectDoc expands its group). Same landing the ↑/↓ nav treats as first.
+document.getElementById('btn-start-reviewing')?.addEventListener('click', () => {
+  const order = reviewDisplayOrder();
+  if (order.length) selectDoc(order[0]);
 });
 
 async function exitAutoFiledView() {
@@ -488,6 +546,32 @@ function updateEditTypeBtn() {
   if (b) b.disabled = !selectedTypeSlug;
 }
 
+// Generic Document chip: one click = pick the General Document type via the normal
+// change path (field list updates, staged teaching rules apply — no side channel).
+window.__genericFallbackOn = false;
+(async () => {
+  try { window.__genericFallbackOn = (await window.docusnap.getSetting('generic_fallback_enabled')) === 'true'; }
+  catch { /* stays false — chip hidden */ }
+})();
+
+// Draw-tool perf (lever 1) — overlap the anchor-LABEL OCR reads with the VALUE read so a drawn box
+// costs ~ONE OCR wall-time on the warm worker pool instead of TWO serial waves (value fills, THEN
+// the left/above label reads run — the visible post-fill wait). DEFAULT OFF = byte-identical: the
+// label reads run serially after the value, exactly as before. Flip via the
+// draw_concurrent_anchor_reads setting AFTER an eric/Oracle review of the focus-repair seam + a live
+// draw smoke (concurrent OCR spawns can re-fire the page-focus edge).
+window.__drawConcurrentAnchor = false;
+(async () => {
+  try { window.__drawConcurrentAnchor = (await window.docusnap.getSetting('draw_concurrent_anchor_reads')) === 'true'; }
+  catch { /* stays false — serial path */ }
+})();
+document.getElementById('generic-chip')?.addEventListener('click', () => {
+  const sel = document.getElementById('doctype-select');
+  sel.value = 'general_document';
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
+  document.getElementById('generic-chip').style.display = 'none';
+});
+
 document.getElementById('doctype-select').addEventListener('change', (e) => {
   if (e.target.value === NEW_TYPE_SENTINEL) {
     e.target.value = selectedTypeSlug || '';   // revert — the sentinel never becomes a chosen type
@@ -539,7 +623,11 @@ document.getElementById('doctype-select').addEventListener('change', (e) => {
 let _newTypeModalOpen = false;
 let _catalogPickerOpen = false;   // catalog picker stacked OVER the new-type modal; gates its Esc handler
 let _catalogOpening   = false;    // set SYNCHRONOUSLY on launch so a double-click can't stack two pickers
-function openNewTypeModal() {
+// _onCreated: optional override for what happens AFTER a type is created/added. Default (and every
+// pre-existing caller) keeps the auto-select tail. The untyped-document notice passes its own,
+// because auto-selecting a brand-new type on a doc that was extracted without it blanks every field
+// on screen — see _addDetectedType (Oracle C3).
+function openNewTypeModal(_onCreated) {
   if (_newTypeModalOpen || !isAdmin) return;
   if (!window.DocTypeEditor || typeof window.DocTypeEditor.create !== 'function') {
     _newTypeToast('The document-type editor didn’t load. Try reopening the Review window.');
@@ -629,6 +717,7 @@ function openNewTypeModal() {
       close();
       try { allDocTypes = await window.docusnap.getAllDocTypes(); } catch {}
       populateTypeDropdown();
+      if (typeof _onCreated === 'function') { _onCreated(newSlug); return; }
       const sel = document.getElementById('doctype-select');
       sel.value = newSlug;
       sel.dispatchEvent(new Event('change'));    // reuse the existing handler: select + rebuild field rows
@@ -640,14 +729,32 @@ function openNewTypeModal() {
 
   document.addEventListener('keydown', onKey, true);
   // Chromium drops focus on a just-appended element — defer to the next frame.
-  requestAnimationFrame(() => { const inp = host.querySelector('input, select'); if (inp) inp.focus(); });
+  requestAnimationFrame(() => {
+    const inp = host.querySelector('input, select');
+    if (!inp) return;
+    inp.focus();
+    // Programmatic focus bypasses the text-field pointerdown chokepoint that normally triggers the
+    // page-focus repair, so on a desynced page (e.g. just after a Confirm/native dialog) the modal
+    // shows a caret but keystrokes don't route ("caret but no text input"). Arm + run the repair
+    // edge, then re-assert the caret past the cross-process transition — the proven pattern used for
+    // the reconcile input (~line 2731). The edge is the gated blurWebView→wc.focus restore, safe here.
+    try {
+      window.docusnap.markFocusSuspect?.();
+      window.docusnap.ensureWindowFocus?.();
+      window.repairModalInputFocus?.(inp);
+    } catch {}
+  });
 }
 
 // Catalog picker STACKED over the new-type modal: tick a shipped preset type, add it (fields +
 // labels seeded), then hand its slug back so the caller can select it for the current doc. Mirrors
 // Settings' openCatalogModal + this file's own modal conventions. `onAdded(firstNewSlug)` fires on
 // a successful add. No new IPC — reuses get-doctype-catalog / add-doctype-presets (admin-gated).
-async function openTypeCatalogModal(onAdded) {
+// _preselectName: tick the catalog row whose NAME matches a type the pipeline DETECTED but this
+// install doesn't have, so "Add 'Delivery Note'" opens with Delivery Note already ticked. Matched
+// on NAME, not slug, deliberately — the renderer has no safeSlug and duplicating the slug rules
+// here would be a second source of truth that silently drifts from database/modules/slug.js.
+async function openTypeCatalogModal(onAdded, _preselectName) {
   // _catalogOpening is set SYNCHRONOUSLY (before the await) so a double-click can't pass the guard
   // twice and stack two overlays; _catalogPickerOpen is set only once the overlay exists, so the
   // parent modal's Esc stays live during the (brief) catalog LOAD. Restore focus to the launcher on
@@ -668,7 +775,10 @@ async function openTypeCatalogModal(onAdded) {
       : '';
     return `
       <label style="display:flex; gap:10px; align-items:flex-start; padding:8px 6px; border-radius:8px; cursor:pointer;">
-        <input type="checkbox" data-slug="${escHtml(p.slug)}" ${p.already_present ? 'checked disabled' : ''} style="margin-top:3px;">
+        <input type="checkbox" data-slug="${escHtml(p.slug)}" data-name="${escHtml(p.name)}"
+               ${p.already_present ? 'checked disabled'
+                 : (_preselectName && p.name.toLowerCase() === _preselectName.toLowerCase() ? 'checked' : '')}
+               style="margin-top:3px;">
         <div style="flex:1;">
           <div style="font-size:12px; font-weight:500;">${escHtml(p.name)} ${tag}</div>
           <div style="font-size:11px; color:var(--muted); line-height:1.5;">${fieldList}</div>
@@ -812,7 +922,12 @@ function renderQueueList() {
   list.innerHTML = '';
 
   if (queue.length === 0) {
-    empty.style.display = '';
+    // 'block', NOT '' — clearing the inline style falls back to the stylesheet's
+    // `#queue-empty { display:none }`, so this message NEVER showed (Chris card 2;
+    // verified live). The text is re-set per tab because the deferred branch
+    // overwrites the shared element (the latent copy-clobber both advisors named).
+    empty.style.display = 'block';
+    empty.textContent = '✓ All reviewed';
     reviewActions.style.display = 'none';
     const vb0 = document.getElementById('queue-view-bar');
     if (vb0) vb0.style.display = 'none';
@@ -824,8 +939,10 @@ function renderQueueList() {
   setQueueWrapVisible(true);
   // The whole left action block (Skip/Defer · File All · Delete All) is shown on
   // the review tab; the destructive "Delete All Review" stays admin-only (also
-  // enforced server-side).
-  reviewActions.style.display = 'flex';
+  // enforced server-side). HIDDEN in the auto-filed view (Oracle A1): there `queue`
+  // holds CONFIRMED docs, so "Delete All Review" would show the wrong count over the
+  // wrong list while the server deletes the real needs_review set it re-derives.
+  reviewActions.style.display = _viewingAutoFiled ? 'none' : 'flex';
   document.getElementById('btn-delete-all-review').style.display = isAdmin ? '' : 'none';
 
   // View toggle: grouped by sender (default) vs newest-first. Grouping turns a long
@@ -838,13 +955,15 @@ function renderQueueList() {
   if (viewLbl) viewLbl.textContent = queueGrouped ? 'Grouped by sender' : 'Newest first';
 
   if (queueGrouped) {
-    for (const g of reviewDisplayGroups()) {
+    const groups = reviewDisplayGroups();
+    for (const g of groups) {
       const open = expandedSuppliers.has(g.supplier);
       const head = document.createElement('div');
       head.className = 'queue-group-head' + (open ? ' open' : '');
       const attn = g.need ? ` · <span class="qgh-attn">${g.need} need${g.need > 1 ? '' : 's'} a look</span>` : '';
+      const title = groupTitle(g.supplier, groups.length);   // '—' pile → readable copy; the expand/nav KEY stays g.supplier
       head.innerHTML = `<span class="qgh-caret" aria-hidden="true"></span>`
-                     + `<span class="qgh-name" title="${escHtml(g.supplier)}">${escHtml(g.supplier)}</span>`
+                     + `<span class="qgh-name" title="${escHtml(title)}">${escHtml(title)}</span>`
                      + `<span class="qgh-meta">${g.docs.length} document${g.docs.length > 1 ? 's' : ''}${attn}</span>`;
       head.setAttribute('role', 'button');
       head.setAttribute('aria-expanded', open ? 'true' : 'false');
@@ -857,8 +976,14 @@ function renderQueueList() {
       if (open) for (const doc of g.docs) list.appendChild(buildQueueItem(doc));
     }
   } else {
-    for (const doc of queue) list.appendChild(buildQueueItem(doc));
+    for (const doc of _sweepVisibleQueue()) list.appendChild(buildQueueItem(doc));
   }
+}
+
+// Catch-up "Review them" filter: when armed, the queue list (grouped AND flat — both paths
+// route through here) shows only the consent bar's candidates; the bar's own button clears it.
+function _sweepVisibleQueue() {
+  return _sweepFilterIds ? queue.filter(d => _sweepFilterIds.has(d.id)) : queue;
 }
 
 // The review queue's DISPLAY grouping: sender -> its docs, most attention-needing /
@@ -866,7 +991,7 @@ function renderQueueList() {
 // by renderQueueList (DOM) and reviewDisplayOrder (the ↑/↓ nav) so they always agree.
 function reviewDisplayGroups() {
   const groups = new Map();
-  for (const doc of queue) {
+  for (const doc of _sweepVisibleQueue()) {
     const key = (doc.supplier_name || '').trim() || '—';
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(doc);
@@ -877,9 +1002,25 @@ function reviewDisplayGroups() {
   }));
   // STABLE within a review session: order by HAS-attention (a boolean that only flips
   // when a group's LAST flagged doc clears) rather than the raw count, which would
-  // reshuffle the list on every confirm. Then biggest batch first, then name.
-  entries.sort((a, b) => (b.need > 0) - (a.need > 0) || b.docs.length - a.docs.length || a.supplier.localeCompare(b.supplier));
+  // reshuffle the list on every confirm. Then push the "not yet identified" (—) pile DOWN —
+  // but only BELOW the attention term, so a FLAGGED unidentified batch still surfaces above
+  // clean named piles and is never buried. Then biggest batch first, then name. This sort is
+  // shared with reviewDisplayOrder (the ↑/↓ nav), so the list and the arrows stay in lockstep.
+  entries.sort((a, b) =>
+       (b.need > 0) - (a.need > 0)
+    || (a.supplier === '—') - (b.supplier === '—')
+    || b.docs.length - a.docs.length
+    || a.supplier.localeCompare(b.supplier));
   return entries;
+}
+
+// Human display title for a sender group. The null-supplier pile's KEY stays '—' (shared by
+// reviewDisplayGroups/reviewDisplayOrder + selectDoc's expand branch, so it MUST NOT change), but
+// a bare "—" reads as broken to a first-time user. Show real copy instead, chosen by whether the
+// pile stands alone (a whole cold-DB batch, no senders learned yet) or sits among named piles.
+function groupTitle(supplier, groupCount) {
+  if (supplier !== '—') return supplier;
+  return groupCount <= 1 ? 'Your scanned documents' : 'Sender not identified';
 }
 
 // The flat doc order the queue is actually SHOWN in (grouped or chronological). The nav
@@ -926,8 +1067,14 @@ function buildQueueItem(doc) {
                 : blocked        ? 'Missing a required field — can’t file yet'
                 : sev === 'mid'  ? 'Needs a quick check'
                 :                  'Looks good';
+  // HONEST BADGE: a flagged / un-fileable doc must NOT wear a reassuring "100%" — the overall
+  // score ignores the flagged field (e.g. a branding-conflict issuer capped at 69), so a bare
+  // "100%" contradicts the warning beside it. For the orange (mid) state show the review word,
+  // not the number; genuinely-low (red) keeps its honest number; clean (green) is unchanged.
   const confBadge = conf == null ? '' :
-    `<span class="conf-badge ${sev}" style="flex-shrink:0;" title="${sevWord} — ${conf}% confidence">${conf}%</span>`;
+    sev === 'mid'
+      ? `<span class="conf-badge mid" style="flex-shrink:0;" title="${sevWord} — overall ${conf}%, but a field needs a look">Check</span>`
+      : `<span class="conf-badge ${sev}" style="flex-shrink:0;" title="${sevWord} — ${conf}% confidence${sev === 'high' && doc.status !== 'confirmed' ? ' · waiting for your OK' : ''}">${conf}%</span>`;
   // Lead with the actual blocker (the missing field), not the reassuring score.
   const blockerLine = blocked
     ? `<div class="qi-blocker" title="Can’t be filed until this is filled in"
@@ -941,7 +1088,7 @@ function buildQueueItem(doc) {
       <div style="flex:1; min-width:0;">
         <span class="qi-name" title="${escHtml(doc.original_filename)}">${escHtml(doc.original_filename)}</span>
         <div style="display:flex; align-items:center; gap:6px;">
-          <span class="qi-supplier" style="flex:1; min-width:0;">${escHtml(doc.supplier_name || '—')}</span>
+          <span class="qi-supplier" style="flex:1; min-width:0;">${escHtml(doc.supplier_name || 'Not yet identified')}</span>
           ${doc.page_count > 1 ? `<span class="qi-multipage" title="Multi-page document (${doc.page_count} pages)" style="flex-shrink:0;display:inline-flex;color:var(--muted)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></svg></span>` : ''}
           ${confBadge}
         </div>
@@ -971,8 +1118,8 @@ function renderDeferredList() {
   list.innerHTML = '';
 
   if (deferredQueue.length === 0) {
-    empty.style.display = '';
-    empty.textContent = 'No deferred documents';
+    empty.style.display = 'block';   // 'block', not '' — see renderQueueList's empty branch
+    empty.textContent = 'Nothing set aside. Documents you press "↻ Defer" on wait here until you come back to them.';
     footer.style.display = 'none';
     setQueueWrapVisible(false);
     return;
@@ -991,7 +1138,7 @@ function renderDeferredList() {
       <div style="display:flex; align-items:flex-start; gap:4px;">
         <div style="flex:1; min-width:0;">
           <span class="qi-name" title="${escHtml(doc.original_filename)}">${escHtml(doc.original_filename)}</span>
-          <span class="qi-supplier">${escHtml(doc.supplier_name || '—')}</span>
+          <span class="qi-supplier">${escHtml(doc.supplier_name || 'Not yet identified')}</span>
         </div>
         <div style="display:flex; gap:3px; flex-shrink:0;" onclick="event.stopPropagation()">
           <button class="qi-btn qi-review-now" title="Move back to review queue" style="padding:2px 6px; font-size:10px;">Review</button>
@@ -1015,7 +1162,7 @@ function renderDeferredList() {
     });
     el.querySelector('.qi-delete').addEventListener('click', async (e) => {
       e.stopPropagation();
-      if (!confirm(`Delete "${doc.original_filename}"? This cannot be undone.`)) return;
+      if (!confirm(`Delete "${doc.original_filename}"?\n\nIt goes to the app's recycle bin — you can restore it from Search.`)) return;
       const filePath = doc.folder_path ? `${doc.folder_path}\\${doc.original_filename}` : null;
       await window.docusnap.deleteDocument(doc.id, filePath);
       deferredQueue = deferredQueue.filter(d => d.id !== doc.id);
@@ -1083,12 +1230,24 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
   document.getElementById('btn-split-pdf').style.display  = isPdf ? '' : 'none';
   document.getElementById('split-bar').style.display      = 'none';
   document.getElementById('split-ranges-input').value     = '';
+  // Print button — PDFs only, and only when the printing feature is on (Print-Slice 1).
+  { const pb = document.getElementById('btn-print-doc'); if (pb) pb.style.display = (isPdf && _printAvailable) ? '' : 'none'; }
 
   // Set doc type dropdown
   selectedTypeSlug = doc.type_slug || null;
   const sel = document.getElementById('doctype-select');
   sel.value = selectedTypeSlug || '';
   updateEditTypeBtn();
+  // Generic Document chip (docs/designs/GENERIC_DOCTYPE_2026-07-18.md §6): a one-click
+  // "file it as General" affordance for docs that arrived with NO type — shown only when
+  // the fallback feature is on and the General Document type exists (pre-enable backlog
+  // docs and any doc the operator prefers to hand-route).
+  const _genericChip = document.getElementById('generic-chip');
+  if (_genericChip) {
+    _genericChip.style.display =
+      (!selectedTypeSlug && window.__genericFallbackOn && allDocTypes.some(t => t.slug === 'general_document'))
+        ? '' : 'none';
+  }
   const dt = allDocTypes.find(t => t.slug === selectedTypeSlug);
   fieldDefs = dt ? dt.fields : (allDocTypes[0]?.fields || []);
 
@@ -1133,7 +1292,40 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
       supplier_name: currentDoc?.supplier_name, document_type: selectedTypeSlug });
     if (currentDoc?.id === doc.id) for (const r of (_tk || [])) taughtFieldKeys.add(r.field_key);
   } catch {}
+  // LIVE suppression of the STALE type-mismatch note. The engine plants "the heading names a type
+  // that doesn't match this supplier's saved layout" when the supplier had no saved template of the
+  // detected type AT PROCESSING TIME. Once ONE doc of that type is confirmed for the supplier, the
+  // type is valid for them and that (already-stored) note is out of date — so strip it on load before
+  // rendering, so it neither displays nor counts toward "needs a quick check". The engine already
+  // self-heals on the next import (a template of the type now exists); this clears docs processed
+  // BEFORE the confirm without a reprocess. Best-effort + doc-guarded (a slow query can't clobber a
+  // newer doc); only removes THIS note, never a value.
+  try {
+    const _exs = renderedDoc.extractions || [];
+    // ONE shared refuse-class matcher (Oracle cond 2, 2026-08-01): covers the LEGACY copy
+    // ("…doesn't match this supplier's saved layout") AND the reworded copy shipped with the
+    // R1 deadlock cure ("Couldn't match this document to the supplier's saved <Type> layout…").
+    // The reword silently broke this live suppressor for an hour (matcher knew only the old
+    // wording) — keep the two in lockstep with the gate matchers (demo_notes_gate et al).
+    // Class-scoped by design: this must never widen into a generic "hide notes the re-check
+    // disagrees with" mechanism (that would be the SENT-BACK Option B one note at a time).
+    const _STALE_TYPE_NOTE = /doesn't match this supplier's saved layout|match this document to (?:the supplier's|a) saved/i;
+    if (_exs.some(e => e.validation_note && _STALE_TYPE_NOTE.test(e.validation_note))
+        && currentDoc?.supplier_name && selectedTypeSlug) {
+      const _n = await window.docusnap.scopeConfirmedCount?.({
+        supplier_name: currentDoc.supplier_name, document_type_slug: selectedTypeSlug });
+      if (currentDoc?.id === doc.id && (_n || 0) > 0) {
+        for (const e of _exs) {
+          if (e.validation_note && _STALE_TYPE_NOTE.test(e.validation_note)) e.validation_note = null;
+        }
+      }
+    }
+  } catch {}
   renderFields(renderedDoc);
+
+  // (LIVE field visibility for a "No template match" doc is resolved SERVER-SIDE in
+  // get-document-with-extractions, so renderedDoc.hidden_fields is already correct here. The renderer
+  // only re-resolves on a LIVE issuer edit — see _resolveFieldVisibility on the issuer blur/teach hooks.)
 
   // Lightweight current-template recheck — this doc had no template match at
   // processing time, but a template covering its layout may have been added
@@ -1156,6 +1348,13 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
       renderExtractionStatus(renderedDoc);
     });
   }
+
+  // Fast on-open re-extract (Slice B, DARK — inert unless `reextract_fast_enabled`). Fire-and-forget
+  // AFTER the fields are painted: refresh the EMPTY, non-anchored fields from this doc's already-cached
+  // OCR without a reprocess, surfacing each as an unconfirmed PILL suggestion. Skipped in fieldsOnly
+  // (bulk). See _scheduleReextractFast — debounced, doc-guarded, edit-guarded; the kill-switch OFF path
+  // returns {ok:false} so this is a no-op end-to-end.
+  if (!fieldsOnly) _scheduleReextractFast(doc.id);
 }
 
 // ── Page rendering ────────────────────────────────────────────────────────────
@@ -1373,6 +1572,203 @@ function _deskewFixPending(fieldKey, snap) {
   try { showToast('Straighten changed while reading — please draw the box again.', 'warn'); } catch {}
 }
 
+// ── Print (option a, owner-directed 2026-07-18) ─────────────────────────────────
+// A custom modal (the owner liked the preview) carrying the options Electron's silent
+// print genuinely honours — printer / copies / duplex / colour / range / pages-per-sheet
+// (N-up). "Print" = silent:true to the CHOSEN device (its saved driver preferences +
+// these overrides). "Full printer dialog…" = silent:false → the printer's OWN dialog,
+// the ONLY place for BOOKLET / trays / stapling / quality (the driver owns those; Electron
+// exposes no way to load them back into this modal — eric). The REAL vector PDF spools;
+// the preview images never print. NOTE: the preview pane INSIDE the Windows dialog shows
+// "This app doesn't support print preview" — a hard Electron platform limitation.
+let _printAvailable = false;
+(async () => { try { _printAvailable = await window.docusnap.printAvailable?.(); } catch { _printAvailable = false; } })();
+
+// Parse a 1-based "1-3, 5" range into Electron 0-based pageRanges [{from,to}]. Empty/All ⇒ null.
+function _parsePageRanges(text, pageCount) {
+  const s = String(text || '').trim();
+  if (!s) return null;
+  const out = [];
+  for (const part of s.split(',')) {
+    const m = part.trim().match(/^(\d+)\s*-\s*(\d+)$/) || part.trim().match(/^(\d+)$/);
+    if (!m) continue;
+    let a = parseInt(m[1], 10), b = parseInt(m[2] || m[1], 10);
+    if (isNaN(a) || isNaN(b)) continue;
+    a = Math.max(1, a); b = Math.min(pageCount || b, Math.max(a, b));
+    out.push({ from: a - 1, to: b - 1 });
+  }
+  return out.length ? out : null;
+}
+
+// The 0-based page indices the preview should show, honouring the Range selection
+// (empty/invalid range ⇒ all pages, matching the print behaviour where null = all).
+function _selectedPageIndices() {
+  const n = (pageImages && pageImages.length) || 0;
+  const all = Array.from({ length: n }, (_, i) => i);
+  if (document.getElementById('print-pages-mode')?.value !== 'range') return all;
+  const ranges = _parsePageRanges(document.getElementById('print-pages-range')?.value, n);
+  if (!ranges) return all;
+  const set = new Set();
+  for (const r of ranges) for (let i = r.from; i <= r.to; i++) if (i >= 0 && i < n) set.add(i);
+  return [...set].sort((a, b) => a - b);
+}
+
+// Re-render the preview to REFLECT the modal's settings — mono (greyscale), page range
+// (only those pages), and pages-per-sheet (N-up grid). Copies/Sides have no visual, so
+// they're not shown. Purely visual: the real print still sends the vector PDF + options.
+// Default (colour / all / 1-up) renders identically to the plain page images.
+function _renderPrintPreview() {
+  const pane = document.getElementById('print-preview-pane');
+  if (!pane) return;
+  pane.innerHTML = '';
+  const note = (txt) => {
+    const d = document.createElement('div');
+    d.style.cssText = 'color:var(--muted); font-size:12px; padding:24px;';
+    d.textContent = txt; pane.appendChild(d);
+  };
+  if (!pageImages || !pageImages.length) return note('Preview unavailable — you can still print the document.');
+  const mono = document.getElementById('print-color')?.value === 'false';
+  const nup  = Math.max(1, parseInt(document.getElementById('print-nup')?.value, 10) || 1);
+  const pages = _selectedPageIndices();
+  if (!pages.length) return note('No pages in that range.');
+  const monoCss = mono ? 'filter:grayscale(1);' : '';
+  if (nup === 1) {
+    for (const i of pages) {
+      const img = document.createElement('img');
+      img.src = pageImages[i]; img.alt = `Page ${i + 1}`;
+      img.style.cssText = 'max-width:100%; box-shadow:0 2px 10px rgba(0,0,0,.2); background:#fff;' + monoCss;
+      pane.appendChild(img);
+    }
+    return;
+  }
+  // N-up: group pages into page-shaped "sheets", each a grid in reading order.
+  const cols = Math.ceil(Math.sqrt(nup));
+  for (let s = 0; s < pages.length; s += nup) {
+    const sheet = document.createElement('div');
+    sheet.style.cssText = 'width:100%; max-width:100%; box-sizing:border-box; background:#fff; '
+      + 'box-shadow:0 2px 10px rgba(0,0,0,.2); padding:6px; display:grid; gap:6px; '
+      + `grid-template-columns:repeat(${cols},1fr);`;
+    for (const i of pages.slice(s, s + nup)) {
+      const img = document.createElement('img');
+      img.src = pageImages[i]; img.alt = `Page ${i + 1}`;
+      img.style.cssText = 'width:100%; height:auto; display:block; background:#fff;' + monoCss;
+      sheet.appendChild(img);
+    }
+    pane.appendChild(sheet);
+  }
+}
+
+const _printModal = document.getElementById('print-modal');
+function _closePrintModal() { if (_printModal) _printModal.style.display = 'none'; }
+
+async function _openPrintModal() {
+  if (!currentDoc?.id || !_printModal) return;
+  const msg = document.getElementById('print-modal-msg');
+  if (msg) msg.textContent = '';
+  // Always re-enable the action buttons on (re)open — an in-flight print may have left them disabled.
+  { const g = document.getElementById('print-modal-go'); if (g) g.disabled = false;
+    const d = document.getElementById('print-modal-dialog'); if (d) d.disabled = false; }
+  // Preview pane — reflects the current settings (mono / range / N-up).
+  _renderPrintPreview();
+  // Printer list.
+  const sel = document.getElementById('print-printer');
+  if (sel) {
+    sel.innerHTML = '<option>Loading printers…</option>';
+    try {
+      const printers = await window.docusnap.listPrinters?.() || [];
+      sel.innerHTML = '';
+      if (!printers.length) { sel.innerHTML = '<option value="">(no printers found)</option>'; }
+      for (const p of printers) {
+        const o = document.createElement('option');
+        o.value = p.name; o.textContent = p.displayName || p.name;
+        if (p.isDefault) o.selected = true;
+        sel.appendChild(o);
+      }
+    } catch { sel.innerHTML = '<option value="">(couldn\'t list printers)</option>'; }
+  }
+  _printModal.style.display = 'flex';
+}
+
+// silent=true  → quick print to the chosen device with the modal's options.
+// silent=false → the printer's own full dialog (booklet/trays/quality live there).
+async function _doModalPrint(silent) {
+  const msg = document.getElementById('print-modal-msg');
+  const go = document.getElementById('print-modal-go');
+  const dlg = document.getElementById('print-modal-dialog');
+  const deviceName = document.getElementById('print-printer')?.value || undefined;
+  // Safety invariant (eric): a silent print MUST target an explicit device — never let it
+  // fall through to a silent spool on the default printer. No printer picked ⇒ steer to the
+  // full dialog instead of quietly printing somewhere unexpected.
+  if (silent && !deviceName) {
+    if (msg) msg.textContent = 'Choose a printer above, or use the full printer dialog.';
+    return;
+  }
+  if (go) go.disabled = true; if (dlg) dlg.disabled = true;
+  if (msg) msg.textContent = silent ? 'Sending to printer…' : 'Opening your printer’s dialog…';
+  const copies = parseInt(document.getElementById('print-copies')?.value, 10) || 1;
+  const pagesMode = document.getElementById('print-pages-mode')?.value;
+  const pageRanges = pagesMode === 'range'
+    ? _parsePageRanges(document.getElementById('print-pages-range')?.value, pageImages.length) : null;
+  const duplexMode = document.getElementById('print-duplex')?.value || undefined;
+  const colorVal = document.getElementById('print-color')?.value;
+  const color = colorVal === '' ? undefined : (colorVal === 'true');
+  const pagesPerSheet = parseInt(document.getElementById('print-nup')?.value, 10) || 1;
+  const payload = { docId: currentDoc.id, source: 'original', silent, deviceName, copies, pageRanges, duplexMode, color, pagesPerSheet };
+  const reenable = () => { if (go) go.disabled = false; if (dlg) dlg.disabled = false; };
+
+  if (!silent) {
+    // "Advanced printing": hand off ENTIRELY to Windows' own driver dialog. CLOSE our modal so that
+    // dialog is the SOLE print surface (owner-directed 2026-07-18) — no competing overlay to fight it
+    // for z-order. The main process forces that dialog TOPMOST so it stays above the app when clicked
+    // (modules/print/handler.js). The print callback is unreliable (fires on a successful print but not
+    // always on cancel / virtual-printer prompts), so we don't await a result to keep any UI alive;
+    // feedback + errors surface as a toast since the modal is gone. A cancel is silent (the dialog handled it).
+    reenable();               // clear the disabled state before closing so a later reopen isn't stuck
+    _closePrintModal();
+    showToast?.('Opening your printer’s dialog…');
+    window.docusnap.printDocument(payload).then((res) => {
+      if (res && res.ok) showToast?.('Sent to your printer.');
+      else if (res && res.reason === 'disabled') showToast?.('Printing is turned off in Settings.', 'warn');
+      else if (res && res.reason === 'file_missing') showToast?.("Couldn't find this document's file.", 'err');
+      // cancelled / closed / no callback: nothing to report — the dialog handled it.
+    }).catch(() => {});
+    return;
+  }
+
+  // Silent quick-print. Electron's print callback is UNRELIABLE — it may not fire on a user
+  // cancel, on a virtual printer's "Save as…" prompt (Microsoft Print to PDF), or even on a
+  // normal real-printer job (owner saw it hang on the Ricoh). So NEVER lock the modal waiting
+  // on it: report the outcome IF/WHEN the callback lands, but a watchdog re-enables the modal
+  // so a slow/absent callback can't freeze it. The vector PDF still spools regardless.
+  let settled = false;
+  const done = (apply) => { if (settled) return; settled = true; reenable(); if (apply) apply(); };
+  window.docusnap.printDocument(payload).then((res) => {
+    done(() => {
+      if (res && res.ok) { _closePrintModal(); showToast?.('Sent to your printer.'); }
+      else if (res && res.outcome === 'cancelled') { if (msg) msg.textContent = 'Cancelled.'; }
+      else if (res && res.reason === 'file_missing') { if (msg) msg.textContent = "Couldn't find this document's file."; }
+      else if (res && res.reason === 'disabled') { if (msg) msg.textContent = 'Printing is turned off in Settings.'; }
+      else { if (msg) msg.textContent = "Couldn't print this document."; }
+    });
+  }).catch(() => done(() => { if (msg) msg.textContent = "Couldn't print this document."; }));
+  setTimeout(() => done(() => { if (msg) msg.textContent = 'Sent to your printer — complete any prompt it shows.'; }), 4000);
+}
+
+document.getElementById('btn-print-doc')?.addEventListener('click', _openPrintModal);
+document.getElementById('print-modal-close')?.addEventListener('click', _closePrintModal);
+document.getElementById('print-modal-go')?.addEventListener('click', () => _doModalPrint(true));
+document.getElementById('print-modal-dialog')?.addEventListener('click', () => _doModalPrint(false));
+document.getElementById('print-pages-mode')?.addEventListener('change', (e) => {
+  const r = document.getElementById('print-pages-range');
+  if (r) r.style.display = e.target.value === 'range' ? '' : 'none';
+  _renderPrintPreview();   // All ⇄ Range changes which pages show
+});
+// Live-update the preview as the visual settings change (mono / range text / N-up).
+document.getElementById('print-color')?.addEventListener('change', _renderPrintPreview);
+document.getElementById('print-nup')?.addEventListener('change', _renderPrintPreview);
+document.getElementById('print-pages-range')?.addEventListener('input', _renderPrintPreview);
+_printModal?.addEventListener('click', (e) => { if (e.target === _printModal) _closePrintModal(); });
+
 document.getElementById('btn-deskew')?.addEventListener('click', toggleDeskew);
 document.getElementById('btn-deskew-all')?.addEventListener('click', openDeskewAllFlyout);
 document.getElementById('btn-deskew-all-apply')?.addEventListener('click', applyDeskewSession);
@@ -1393,13 +1789,15 @@ function renderExtractionStatus(doc) {
 
   const recheck = doc._templateRecheck;
 
-  let idLabel, idCls;
-  if (hasTemplate && hasLogo && hasKw)  { idLabel = 'Logo & keyword';    idCls = 'ok'; }
-  else if (hasTemplate && hasLogo)      { idLabel = 'Logo match';         idCls = 'info'; }
-  else if (hasTemplate && hasKw)        { idLabel = 'Keyword match';      idCls = 'info'; }
-  else if (hasTemplate)                 { idLabel = 'Template match';     idCls = 'info'; }
-  else if (recheck?.matched)            { idLabel = `Template available: ${recheck.templateName}`; idCls = 'info'; }
-  else                                  { idLabel = 'No template match';  idCls = 'warn'; }
+  // Plain words on the chip, technical term in the tooltip (Chris, card 4): a standard
+  // user reads "Recognised by: its logo and wording"; the hover keeps the admin detail.
+  let idLabel, idCls, idTip;
+  if (hasTemplate && hasLogo && hasKw)  { idLabel = 'Its logo and wording'; idCls = 'ok';   idTip = 'Matched a saved template by logo & keyword fingerprint'; }
+  else if (hasTemplate && hasLogo)      { idLabel = 'Its logo';             idCls = 'info'; idTip = 'Matched a saved template by its logo'; }
+  else if (hasTemplate && hasKw)        { idLabel = 'Its wording';          idCls = 'info'; idTip = 'Matched a saved template by its keyword fingerprint'; }
+  else if (hasTemplate)                 { idLabel = 'A saved layout';       idCls = 'info'; idTip = 'Matched a saved template'; }
+  else if (recheck?.matched)            { idLabel = `Layout available: ${recheck.templateName}`; idCls = 'info'; idTip = 'A saved template matches this layout — reprocess to apply it'; }
+  else                                  { idLabel = 'Not seen before';      idCls = 'warn'; idTip = 'No saved template matched this document'; }
 
   // ── Extraction method summary ──────────────────────────────────────────────
   // Strip +corrected/+denoised suffixes, then categorise each field's method.
@@ -1412,19 +1810,20 @@ function renderExtractionStatus(doc) {
   const keywordN  = baseMethods.filter(m => m === 'keyword').length;
   const knownN    = baseMethods.filter(m => m && m !== 'unknown').length;
 
-  let extLabel, extCls;
-  if (knownN === 0)                              { extLabel = 'Unknown';          extCls = 'muted'; }
+  let extLabel, extCls, extTip;
+  if (knownN === 0)                              { extLabel = 'Unknown';              extCls = 'muted'; extTip = ''; }
   else if (mappingN > 0 && mappingN >= Math.max(anchorN, keywordN)) {
-                                                   extLabel = 'Template mappings'; extCls = 'ok'; }
-  else if (anchorN > 0 && anchorN >= keywordN)  { extLabel = 'Learned anchors';   extCls = 'info'; }
-  else if (keywordN > 0)                         { extLabel = 'Keyword patterns';  extCls = 'info'; }
-  else                                           { extLabel = 'Mixed methods';     extCls = 'info'; }
+                                                   extLabel = 'Taught positions';     extCls = 'ok';   extTip = 'Template mappings — the boxes drawn when this layout was taught'; }
+  else if (anchorN > 0 && anchorN >= keywordN)  { extLabel = 'Remembered positions'; extCls = 'info'; extTip = 'Learned anchors — positions learned from your confirmations'; }
+  else if (keywordN > 0)                         { extLabel = 'Printed labels';       extCls = 'info'; extTip = 'Keyword patterns — values found beside their printed labels'; }
+  else                                           { extLabel = 'A mix of methods';     extCls = 'info'; extTip = ''; }
 
   // ── Render ─────────────────────────────────────────────────────────────────
-  const pill = (text, cls) => {
+  const pill = (text, cls, tip) => {
     const s = document.createElement('span');
     s.className   = `method-pill ${cls}`;
     s.textContent = text;
+    if (tip) s.title = tip;
     return s;
   };
   const row = (labelText, ...pills) => {
@@ -1441,10 +1840,10 @@ function renderExtractionStatus(doc) {
     return d;
   };
 
-  el.appendChild(row('ID:', pill(idLabel, idCls)));
-  const extPills = [pill(extLabel, extCls)];
-  if (mappingN > 0) extPills.push(pill(`${mappingN} mapping${mappingN === 1 ? '' : 's'}`, 'ok'));
-  el.appendChild(row('Extraction:', ...extPills));
+  el.appendChild(row('Recognised by:', pill(idLabel, idCls, idTip)));
+  const extPills = [pill(extLabel, extCls, extTip)];
+  if (mappingN > 0) extPills.push(pill(`${mappingN} taught field${mappingN === 1 ? '' : 's'}`, 'ok', 'Fields read from the taught template mapping'));
+  el.appendChild(row('Fields read by:', ...extPills));
 
   renderTeachCta(doc);   // the "Teach this document" CTA above the preview keys off the SAME id state
 }
@@ -1612,12 +2011,200 @@ function updateAcknowledgeButton() {
 // processing check flagged), plus the verbatim per-field notes already produced
 // during processing. Keeps the two "orange" causes — low confidence vs a format
 // flag — distinguishable as two labelled cues.
+// Auto-file config, cached for the "why is this clean doc waiting?" explanation below.
+// Defaults MIRROR the backend (_maybeAutoFile): auto_file_full_confidence 'true',
+// auto_file_threshold 100. Read once per window; the panel is advisory, so a stale value
+// after a settings change costs nothing but a reopen.
+let _autoFileCfg = { enabled: true, threshold: 100 };
+async function loadAutoFileConfig() {
+  try {
+    const [en, thr] = await Promise.all([
+      window.docusnap.getSetting('auto_file_full_confidence'),
+      window.docusnap.getSetting('auto_file_threshold'),
+    ]);
+    _autoFileCfg.enabled = String(en ?? 'true') !== 'false';
+    const n = parseInt(thr ?? '100', 10);
+    _autoFileCfg.threshold = Number.isFinite(n) && n >= 1 ? n : 100;
+  } catch { /* keep the backend-mirroring defaults */ }
+}
+
+// A document with NOTHING flagged still sits in Review when it didn't reach the auto-file
+// threshold — and until now the panel said nothing at all, so a clean 98% doc looked stuck for
+// no reason while its 100% siblings filed themselves (owner report, 2026-07-20: 9 of 20 filed,
+// the rest waited silently). Say why, in the user's own numbers, and point at the setting.
+// ⚠ This used to claim "truthful by construction: a clean doc that is WAITING always sits below the
+// user's threshold". That is FALSE whenever graduation is active — a trusted scope's effective floor
+// is min(user threshold, 95), so a doc at 97 can sit ABOVE its floor and still be held by the
+// structural gate. The threshold-derived copy below is therefore only correct for a genuine
+// below-floor hold; every other case is answered by the real verdict at the top of the function.
+// The REAL verdict for the doc on screen, fetched alongside it (null until it arrives, and null
+// for a doc the predicate can't judge). Populated by loadHoldReason below.
+let _holdVerdict = null;
+
+// Plain-English name for the field a gate refused on, using the on-screen label where we have one.
+function _holdFieldLabel(key) {
+  if (!key) return null;
+  const f = (fieldDefs || []).find(x => x.key === key);
+  return (f && f.label) || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function renderCleanHoldReason(el, doc) {
+  const conf = Number(doc.overall_confidence);
+  const thr  = _autoFileCfg.threshold;
+  let lead, cue, hint = '';
+  // THE REAL REASON FIRST (Oracle, 2026-07-20). Everything below re-derives a reason from the
+  // confidence threshold, which is only correct when the threshold is genuinely what is holding
+  // the doc. It was wrong in BOTH directions: a doc refused by the structural gate was told to
+  // lower a threshold that cannot help it, and a graduated doc sitting ABOVE its floor was told
+  // "Ready to file" — asserting readiness for a document the predicate had refused. Never invent
+  // a reason when the authoritative one is available.
+  const v = _holdVerdict;
+  if (v && !v.eligible && v.kind && v.kind !== 'below-floor') {
+    const fieldName = _holdFieldLabel(v.field);
+    const why = {
+      'unverifiable-value': fieldName
+        ? `<strong>${escHtml(fieldName)}</strong> couldn't be checked automatically, so this one is waiting for your eye.`
+        : 'one of the values couldn\'t be checked automatically, so this one is waiting for your eye.',
+      'flagged': fieldName
+        ? `<strong>${escHtml(fieldName)}</strong> was flagged by a formatting check.`
+        : 'a value was flagged by a formatting check.',
+      'no-template': 'this layout hasn\'t been matched to a template yet.',
+      'no-type': 'it has no document type yet.',
+      'generic-type': 'General Documents are always checked by a person before filing.',
+      // The critical-floor hold (trust.js weak-critical-field): a filing-critical field was read
+      // below the automatic-filing bar. Copy names the FIELD from the real verdict and gives NO
+      // threshold advice (the floor applies at every threshold — Oracle C7); the shared hint
+      // below already says the confidence setting can't file it.
+      'weak-critical-field': fieldName
+        ? `<strong>${escHtml(fieldName)}</strong> wasn't read certainly enough for automatic `
+          + `filing, so this one is waiting for your eye. If the value is wrong, `
+          + `teaching it (&#8853;) usually fixes it for good — if it's right, just confirm.`
+        : "a filing field wasn't read certainly enough for automatic filing.",
+    }[v.kind] || 'an automatic check didn\'t pass.';
+    el.classList.add('rr-calm');
+    el.innerHTML = `<div class="rr-lead">Nothing looks wrong — ${why}</div>`
+                 + `<div class="rr-cues"><span class="rr-cue info">${Number.isFinite(conf) ? `Overall ${conf}% · waiting for your check` : 'Waiting for your check'}</span></div>`
+                 + `<div class="rr-hint">Confirm it and it files. This isn't the confidence setting — `
+                 + `changing that won't file this one.</div>`;
+    el.hidden = false;
+    return;
+  }
+  if (!_autoFileCfg.enabled) {
+    lead = 'Nothing was flagged on this document — it\'s waiting because automatic filing is turned off.';
+    cue  = 'Ready to file';
+    hint = 'Turn it on in Settings → Processing to let clean documents file themselves.';
+  } else if (Number.isFinite(conf) && conf < thr) {
+    // Chris r5 card 4: "just below" only when it IS (gap ≤5); and when the identity field
+    // is empty, SAY SO — an empty required box dragging the overall down while every visible
+    // field reads High was the confusing case. "Pulls the score down", never "so it scores
+    // N%" — we don't compute the counterfactual, so we don't claim the arithmetic (bob).
+    const _issuerEmpty = !String(doc.supplier_name || '').trim();
+    lead = _issuerEmpty
+      ? `The Document Issuer box is still empty — an empty box pulls the overall score down. `
+        + `Read at ${conf}%, below the ${thr}% you've set for filing without a check, so it's waiting for you.`
+      : `Nothing was flagged — this was read at ${conf}%, ${thr - conf <= 5 ? 'just below' : 'below'} the ${thr}% you've set for `
+        + 'filing without a check, so it\'s waiting for you.';
+    cue  = `Read at ${conf}% · your setting ${thr}%`;
+    hint = _issuerEmpty
+      ? 'Filling it in usually fixes this — type the company name, or use ⊕ to teach where it sits.'
+      : `If documents like this are consistently right, lower the auto-file bar in Settings → Processing.`;
+  } else {
+    lead = 'Nothing was flagged on this document — check the values and confirm to file it.';
+    cue  = 'Ready to file';
+  }
+  el.classList.add('rr-calm');
+  el.innerHTML = `<div class="rr-lead">${escHtml(lead)}</div>`
+               + `<div class="rr-cues"><span class="rr-cue info">${escHtml(cue)}</span></div>`
+               + (hint ? `<div class="rr-hint">${escHtml(hint)}</div>` : '');
+  el.hidden = false;
+}
+
+// "Add '<detected type>'" from the untyped-document notice. Opens the PRESET catalog with that
+// type pre-ticked (most missing types are presets — Delivery Note, Statement, Remittance), falling
+// back to the full type builder with the name prefilled when it isn't one.
+//
+// THEN REPROCESSES, and that is the load-bearing part (Oracle C3). The extraction ran against the
+// union of ALL installed types' field keys, so the new type's own fields (delivery_note_number…)
+// were never extracted. The existing add-a-type tail auto-SELECTS the new slug, and the dropdown
+// handler rebuilds the rows by matching key — which for a freshly-added type matches nothing, so
+// every field on screen goes BLANK with Confirm still disabled. The user clicks a helpful-looking
+// button and lands somewhere that looks worse. Re-reading the document with the type installed is
+// the only thing that actually fills those fields.
+//
+// Safe by construction: reprocess forces status='needs_review' (processing/handler.js) and
+// _maybeAutoFile has exactly ONE call site — the import file_done path — so nothing here can file
+// a document. The human checkpoint stays put.
+async function _addDetectedType(detName) {
+  if (!detName || !isAdmin) return;
+  const afterAdd = () => {
+    showToast(`“${detName}” added — reading this document again…`, 'ok');
+    // Reuse the existing Reprocess button rather than calling reprocessDocument directly, so this
+    // inherits its in-flight guards, progress wiring and post-reprocess refresh (same pattern as
+    // the grouped-template path).
+    document.getElementById('btn-reprocess')?.click();
+  };
+  let catalog = [];
+  try { catalog = await window.docusnap.getDoctypeCatalog(); } catch { catalog = []; }
+  const preset = (Array.isArray(catalog) ? catalog : [])
+    .find(p => p && p.name && p.name.toLowerCase() === detName.toLowerCase() && !p.already_present);
+  if (preset) openTypeCatalogModal(afterAdd, detName);
+  else {
+    _newTypeToast(`“${detName}” isn't one of the ready-made types — create it here, then the `
+                + `document will be read again.`);
+    openNewTypeModal(afterAdd);
+  }
+}
+
 function renderReviewReason(doc) {
   const el = document.getElementById('review-reason');
   if (!el) return;
   el.innerHTML = '';
   el.hidden    = true;
+  el.classList.remove('rr-calm');
   if (!doc) return;
+
+  // NO TYPE = the whole reason it's here, and it must be said FIRST (Oracle C1, 2026-07-20).
+  // Everything below this branch is wrong for an untyped document:
+  //   • below_threshold_count JOINs fields ON f.document_type_id = d.document_type_id
+  //     (documents.js getReviewQueue), so with a NULL type it is STRUCTURALLY always 0;
+  //   • flagN is 0 too, so the doc fell through to renderCleanHoldReason, which told the user
+  //     "read at 93%, just below the 100% you've set — lower the threshold in Settings".
+  // That advice is FALSE for every null-type doc: trust.js isAutoFileEligible refuses with
+  // 'no-type' at ANY confidence and ANY threshold, so lowering the slider to 0 changes nothing.
+  // Sending a user to a setting that cannot possibly help is worse than saying nothing.
+  // Deliberately gated on the TYPE, not on any detected-name enrichment — the advice is wrong
+  // for EVERY untyped doc, including the ones where detection returned nothing at all.
+  if (!doc.document_type_id && (doc.status === 'needs_review' || doc.status === 'deferred')) {
+    // ENRICHMENT ONLY (mig 51): when the pipeline named a type this install doesn't have, say so
+    // and offer to add it. The BRANCH above does not depend on this — an untyped doc with no
+    // detected name still gets the correction, which is the common case.
+    const detName = (doc.detected_type_name || '').trim();
+    el.classList.add('rr-calm');
+    el.innerHTML =
+        `<div class="rr-lead">`
+      + (detName
+          ? `This looks like a <strong>${escHtml(detName)}</strong>, but you don't have that `
+            + `document type yet — so it can't be filed, and it will never file itself `
+            + `automatically, whatever the confidence setting.`
+          : `This document doesn't have a document type yet, so it can't be filed — and it will `
+            + `never file itself automatically, whatever the confidence setting.`)
+      + `</div>`
+      + `<div class="rr-cues"><span class="rr-cue info">`
+      + (detName ? `${escHtml(detName)} · not set up` : 'No document type')
+      + `</span></div>`
+      + (detName && isAdmin
+          ? `<div class="rr-hint"><button type="button" class="btn btn-sm" id="rr-add-type">`
+            + `Add “${escHtml(detName)}”</button> — or choose an existing type above.</div>`
+          : detName
+            ? `<div class="rr-hint">Ask an administrator to add “${escHtml(detName)}”, or choose an `
+              + `existing type above.</div>`
+            : `<div class="rr-hint">Choose a type above. If the right one isn't in the list, an `
+              + `administrator can add it from that same menu.</div>`);
+    el.hidden = false;
+    const addBtn = document.getElementById('rr-add-type');
+    if (addBtn) addBtn.addEventListener('click', () => _addDetectedType(detName));
+    return;
+  }
 
   const lowN = doc.below_threshold_count || 0;
   // Only surface flags for fields that belong to THIS document's CURRENT type — a stale
@@ -1631,7 +2218,13 @@ function renderReviewReason(doc) {
     ? _relevant.filter(e => e.validation_note || e.corrected_to).length
     : (doc.review_flag_count || 0);
 
-  if (lowN === 0 && flagN === 0) return;   // clean — no banner
+  // Clean: nothing flagged, nothing low. It's still HERE, so explain why rather than sitting
+  // mute (the auto-file threshold is the usual answer). Confirmed docs being re-opened for
+  // editing aren't waiting on anything, so they keep the silent treatment.
+  if (lowN === 0 && flagN === 0) {
+    if (doc.status === 'needs_review' || doc.status === 'deferred') renderCleanHoldReason(el, doc);
+    return;
+  }
 
   const parts = [];
   if (lowN)  parts.push(`${lowN} field${lowN === 1 ? ' was' : 's were'} read with low confidence`);
@@ -1764,8 +2357,34 @@ function _stripCurrencySymbol(s) {
 }
 const _DRAWN_MONTHS = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
 function _fmtDMY(d, mo, y) { const p = n => String(n).padStart(2, '0'); return `${p(d)}-${p(mo)}-${y}`; }
+// OCR date pre-clean — TWIN of validator._date_preclean (python_backend/extraction/validator.py);
+// keep the three aligned (this + filing/handler.js). Rejoin an OCR-split number ("1 5" -> "15",
+// "2 0 2 6" -> "2026") without touching a digit/letter boundary ("15 Jun" stays), then collapse
+// whitespace around date separators. Lookbehind is zero-width + REQUIRED (a /(\d)\s+(\d)/ replace
+// consumes the trailing digit and misses the next split space); V8 (Electron 31) supports it.
+// A month NAME lets a space legitimately separate a day from a year ("Aug 3 2024"), where the
+// digit-join would wrongly fuse "3 2024" -> "32024" — so gate the join on the ABSENCE of a month
+// name (numeric dates never contain a month token).
+function _datePreclean(text) {
+  let s = String(text);
+  if (!/jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec/i.test(s)) {
+    s = s.replace(/(?<=\d)\s+(?=\d)/g, '');   // numeric-only: "1 5/06/2026" -> "15/06/2026"
+  }
+  return s
+    .replace(/\s*([/.\-])\s*/g, '$1')         // "16 / 03 / 2026" -> "16/03/2026"
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
 function _parseDrawnDate(raw, order) {
-  const t = String(raw).trim();
+  // Preclean (rejoin split digits) then edge-trim a leading "Date:" label + edge punctuation, so a
+  // drawn box that captured a bit of the caption or a stray char still parses instead of surfacing
+  // raw junk via normalizeDrawnValue's `|| text`. The colon requirement means a month-first date
+  // ("Jun 15 2026") is never mistaken for a label; the non-alnum strips never touch a leading day
+  // digit or a trailing year digit. The strict ^…$ matchers + their day/month gates stay unchanged.
+  const t = _datePreclean(raw)
+    .replace(/^[A-Za-z][A-Za-z ]*?:\s*/, '')   // drop a leading "Date:" / "Invoice Date:" label (colon required)
+    .replace(/^[^0-9A-Za-z]+/, '')             // leading "(", "#", …
+    .replace(/[^0-9A-Za-z]+$/, '');            // trailing ".", ")", …
   let m = t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);   // a/b/yyyy — order-dependent
   if (m) {
     const a = +m[1], b = +m[2], y = +m[3];
@@ -1803,6 +2422,7 @@ async function normalizeDrawnValue(fieldKey, text) {
 
 // ── Fields panel ──────────────────────────────────────────────────────────────
 function renderFields(doc) {
+  _lastRenderedDoc = doc;   // capture the FULL doc object so the live field-visibility re-resolve re-renders THIS one (not the currentDoc queue stub)
   const scroll = document.getElementById('fields-scroll');
   scroll.innerHTML = '';
   // The ⊕ "wrong value?" prompt only makes sense with a document loaded — show it
@@ -1811,19 +2431,98 @@ function renderFields(doc) {
   if (sub) sub.style.display = doc ? '' : 'none';
   renderExtractionStatus(doc);
   renderReviewReason(doc);
+  // Fetch the AUTHORITATIVE hold verdict and re-render the reason once it lands. Deliberately
+  // async-after-paint: the panel must never block on an IPC, and the threshold-derived copy is a
+  // safe interim for the fraction of a second before the real answer arrives. The verdict is
+  // cleared first so a stale one from the previous document can't be shown against this one.
+  _holdVerdict = null;
+  if (doc && doc.id && (doc.status === 'needs_review' || doc.status === 'deferred')) {
+    const _forDoc = doc.id;
+    Promise.resolve(window.docusnap.getAutoFileReason?.(doc.id)).then((v) => {
+      if (!v || !currentDoc || currentDoc.id !== _forDoc) return;   // user moved on → drop it
+      _holdVerdict = v;
+      renderReviewReason(currentDoc);
+    }).catch(() => {});
+  }
+  _renderDocSnippet(doc);
   if (!doc) { validateConfirm(); return; }
 
   const extMap = {};
   for (const e of (doc.extractions || [])) extMap[e.field_key] = e;
 
+  // Per-template field HIDING (migration 54): fields hidden for this doc's matched template.
+  // Structural roles are never in this set (the backend refuses to hide them), so roles always show.
+  const hiddenKeys = new Set(doc.hidden_fields || []);
   for (const key of reviewFields()) {
     const ext = extMap[key] || {};
     const val = ext.display_value ?? ext.raw_value ?? '';
-    appendFieldRow(scroll, key, val, ext.confidence ?? null, ext.validation_note || null, ext.corrected_to || null, ext.anchor_label || null, ext.extraction_method || null, ext.candidates || null);
+    // Skip a hidden field WHEN it read empty (the layout lacks it — the noise the owner asked to
+    // remove). A hidden field that unexpectedly HAS a value is still shown: hiding is a display
+    // mask, never a way to lose real data. Inert when nothing is hidden (empty set).
+    if (hiddenKeys.has(key) && String(val).trim() === '') continue;
+    appendFieldRow(scroll, key, val, ext.confidence ?? null, ext.validation_note || null, ext.corrected_to || null, ext.anchor_label || null, ext.extraction_method || null, ext.candidates || null, ext.suggested_supplier || null);
   }
+  _prefillGenericScanDate(doc, scroll);
   validateConfirm();
   updateAcknowledgeButton();
   updateTotalsVerifiedBadge();
+}
+
+// ── Generic Document glance aids (docs/designs/GENERIC_DOCTYPE_2026-07-18.md §4/§6) ────
+// Provenance strip + 2-line ocr_text snippet for generic/untyped docs — client-side only.
+function _renderDocSnippet(doc) {
+  const box = document.getElementById('doc-snippet');
+  if (!box) return;
+  const strip = box.querySelector('.snippet-strip');
+  const body  = box.querySelector('.snippet-text');
+  const generic = selectedTypeSlug === 'general_document';
+  const untyped = !selectedTypeSlug;
+  if (!doc || !(generic || untyped) || !doc.ocr_text) { box.hidden = true; return; }
+  if (strip) {
+    strip.hidden = !generic;
+    if (generic) strip.textContent = "ScanFinder didn't recognise this document, so it's set to file as a "
+      + 'General Document — change the type above if that\'s wrong.';
+  }
+  if (body) {
+    // Tidy the raw OCR preview: collapse whitespace, drop lone symbol/punctuation noise (e.g. "\ \"),
+    // and when the page scanned too poorly to read, show a calm note instead of a wall of garble.
+    const toks = String(doc.ocr_text).replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+    const wordish = t => (t.length >= 3 && (t.match(/[A-Za-z]/g) || []).length >= t.length * 0.6)
+                      || (t.match(/[0-9]/g) || []).length >= 2;
+    const legible = toks.length ? toks.filter(wordish).length / toks.length : 0;
+    const cleaned = toks.filter(t => /[A-Za-z0-9]/.test(t)).join(' ').slice(0, 260);
+    body.textContent = (legible >= 0.5 && cleaned)
+      ? cleaned
+      : "The text on this page didn't scan clearly enough to preview.";
+  }
+  box.hidden = false;
+}
+
+// Scan-date PREFILL (owner Q4: prefill-with-provenance): a General Document that read no
+// date gets the LOCAL import date pre-filled and recorded as a correction — it flows
+// through the normal confirm → normaliseDate path, zero new IPC. Review-time only, so it
+// is human-gated by construction (auto-file eligibility was decided at import). The
+// cosmetic UTC→local conversion is deliberate: an overnight off-by-one must be visible
+// and editable, never silent.
+function _prefillGenericScanDate(doc, scroll) {
+  if (selectedTypeSlug !== 'general_document' || !doc || !doc.processed_at) return;
+  const gdt = allDocTypes.find(t => t.slug === 'general_document');
+  const dateKey = (gdt && gdt.date_field_key) || 'date';
+  const inp = scroll.querySelector(`.field-input[data-key="${dateKey}"]`);
+  if (!inp || String(inp.value || '').trim()) return;
+  const d = new Date(String(doc.processed_at).replace(' ', 'T') + 'Z');
+  if (isNaN(d)) return;
+  const pad = (n) => String(n).padStart(2, '0');
+  inp.value = `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()}`;
+  corrections[dateKey] = { original_value: '', corrected_value: inp.value };
+  const row = inp.closest('.field-row');
+  if (row && !row.querySelector('.scan-date-note')) {
+    const note = document.createElement('div');
+    note.className = 'field-note scan-date-note';
+    note.textContent = 'Scan date — edit if the document shows its own date.';
+    Object.assign(note.style, { fontSize: '11px', color: 'var(--muted)', marginTop: '3px' });
+    row.appendChild(note);
+  }
 }
 
 // ── Per-field "position taught" dot ────────────────────────────────────────────
@@ -1832,23 +2531,101 @@ function renderFields(doc) {
 function _fieldIsTaught(key) { return taughtFieldKeys.has(key) || !!pendingAnchors[key]; }
 function _taughtDotTitle(taught) {
   return taught
-    ? 'Taught — a learned position is saved for this field on this supplier + document type'
-    : 'Not taught for this document type yet — click ⊕ to teach it (a position taught on a different type doesn’t apply here)';
+    ? 'Taught — Scan Finder knows where this field sits on this supplier’s documents of this type'
+    : 'Not taught for this document type yet — click ⊕ and draw a box to show Scan Finder where it lives (a spot taught on a different document type doesn’t apply here)';
 }
 // Re-fetch the taught-field set for the CURRENT supplier + selected type and repaint every dot.
 // The dots are TYPE-scoped, so changing the document type must re-query — a field taught on the
 // OLD type must not stay green under the new one (and vice-versa). Doc-guarded against races.
+// The LIVE Document-Issuer value: the current (possibly operator-edited) issuer input, else the
+// stored supplier. The taught dots are (supplier + type)-scoped, so a correction to the issuer must
+// re-scope them to the NEW supplier — reading the input keeps them honest the moment it changes.
+function _currentIssuerValue() {
+  const inp = document.querySelector('#fields-scroll .field-input[data-key="supplier_name"]');
+  const live = inp ? (inp.value || '').trim() : '';
+  return live || (currentDoc?.supplier_name || '');
+}
+
+// Debounced taught-dot re-query for an ISSUER edit (a re-key fires many input events). A NEW/untaught
+// issuer -> dots go off (honest "not learned for this supplier yet"); an existing issuer with taught
+// fields for this type -> they light. Mirrors the type-change re-query.
+let _issuerTaughtTimer = null;
+function _scheduleTaughtRefreshForIssuer() {
+  clearTimeout(_issuerTaughtTimer);
+  _issuerTaughtTimer = setTimeout(() => { _refreshTaughtForType().catch(() => {}); }, 300);
+}
+
+// A field VALUE read from a supplier-SCOPED learned source (a taught anchor, a template mapping /
+// fixed value, or a supplier hint) is INVALID once the issuer is corrected to a DIFFERENT supplier —
+// that position/mapping/value belonged to the previous supplier. Keyword/pattern reads and typed
+// (manual) values are supplier-INDEPENDENT and are kept. (Owner's "clear only suspect reads" choice.)
+function _isSupplierScopedRead(method) {
+  const m = String(method || '');
+  return /^anchor/.test(m) || /^template/.test(m) || m === 'hint' || m === 'late_rescue';
+}
+// After the issuer settles on a different supplier, clear the suspect (old-supplier-scoped) reads so
+// they aren't mistaken for valid values. Fires only on a settled change (⊕ teach / blur), never
+// mid-type. No-op when the issuer is unchanged/blank. The issuer field itself is never cleared.
+function _clearSuspectReadsForNewIssuer() {
+  const issuer = _currentIssuerValue().trim();
+  const orig   = (currentDoc?.supplier_name || '').trim();
+  if (!issuer || issuer.toLowerCase() === orig.toLowerCase()) return;   // unchanged / same supplier
+  let cleared = 0;
+  document.querySelectorAll('#fields-scroll .field-input[data-key]').forEach(input => {
+    const key = input.dataset.key;
+    if (key === 'supplier_name') return;                          // never the issuer being corrected
+    if (!input.value.trim()) return;                              // already empty
+    if (!_isSupplierScopedRead(input.dataset.method)) return;     // keyword / manual / logo -> keep
+    const o = input.dataset.original;
+    input.value = '';
+    input.classList.remove('corrected');
+    corrections[key] = { original_value: o, corrected_value: '' };   // persist the clear on Confirm
+    const row = input.closest('.field-row');
+    if (row) { try { dismissServerNote(row, key); } catch {} try { clearFieldWarning(row, input); } catch {} }
+    cleared++;
+  });
+  if (cleared) { validateConfirm(); try { showToast(cleared > 1 ? `Cleared ${cleared} fields that were read from the previous supplier — teach them for ${issuer}.` : `Cleared 1 field that was read from the previous supplier — teach it for ${issuer}.`, 'ok'); } catch {} }
+}
+
 async function _refreshTaughtForType() {
   const forDoc = currentDoc?.id;
   taughtFieldKeys = new Set();
   try {
+    // Live issuer value (not currentDoc.supplier_name) so an operator's issuer CORRECTION re-scopes
+    // the dots to the new supplier — a new supplier has no learned positions, so the dots go off.
     const _tk = await window.docusnap.getTaughtFieldKeys?.({
-      supplier_name: currentDoc?.supplier_name, document_type: selectedTypeSlug });
+      supplier_name: _currentIssuerValue(), document_type: selectedTypeSlug });
     if (currentDoc?.id !== forDoc) return;
     for (const r of (_tk || [])) taughtFieldKeys.add(r.field_key);
   } catch {}
   if (currentDoc?.id !== forDoc) return;
   document.querySelectorAll('#fields-scroll .taught-dot[data-key]').forEach(dot => _refreshTaughtDot(dot.dataset.key));
+}
+
+// LIVE field visibility (2026-07-25, owner request): resolve which of the ENTERED supplier+type's fields
+// the layout hides, and re-render — so a doc that matched NO template still honours the supplier's
+// hidden-field config, and typing/correcting the issuer re-scopes the visible fields ("enter Thornbury →
+// its fields appear"). FAIL-SAFE: nothing resolves ⇒ hidden [] ⇒ ALL fields show (the owner's rule).
+// Async-after-paint (never blocks render), doc-guarded, no-op when unchanged or the kill switch is off
+// (the IPC returns {disabled:true}). The Confirm gate follows automatically — validateConfirm requires
+// only fields actually on screen (fieldExists), and structural roles are never hideable.
+async function _resolveFieldVisibility() {
+  const doc = _lastRenderedDoc;   // the FULL rendered doc (has extractions); currentDoc is the queue stub
+  if (!doc || !currentDoc || currentDoc.id !== doc.id || !selectedTypeSlug) return;
+  const forDoc = doc.id;
+  let r;
+  try {
+    r = await window.docusnap.resolveFieldVisibility?.({
+      supplier_name: _currentIssuerValue(), document_type_slug: selectedTypeSlug, doc_id: doc.id });
+  } catch { return; }
+  if (!r || r.disabled) return;
+  if (currentDoc?.id !== forDoc || _lastRenderedDoc?.id !== forDoc) return;   // user moved on → drop it
+  const next = Array.isArray(r.hidden) ? r.hidden : [];
+  const cur  = doc.hidden_fields || [];
+  const same = next.length === cur.length && next.every(k => cur.includes(k));
+  if (same) return;                                       // no change → no churn
+  doc.hidden_fields = next;
+  renderFields(doc);
 }
 
 // Flip one field's dot live after a ⊕ teach stages or is C1-dropped (no full re-render).
@@ -1860,13 +2637,23 @@ function _refreshTaughtDot(key) {
   dot.title = _taughtDotTitle(taught);
 }
 
-function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, method, candidates) {
+function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, method, candidates, suggestedSupplier) {
   const low      = conf !== null && conf < 70;
   const confClass = conf === null ? '' : conf >= 70 ? 'high' : conf >= 40 ? 'mid' : 'low';
   // Pair the % with a plain word so non-technical users read it at a glance.
   const confWord = conf === null ? '' : conf >= 70 ? 'High' : conf >= 40 ? 'Check' : 'Low';
-  const confLabel = conf !== null
-    ? `<span class="conf-badge ${confClass}" title="${confWord} confidence — the app is ${conf}% sure of this reading">${confWord} · ${conf}%</span>`
+  // Demystify the amber/red dot so a CORRECT-but-not-High read doesn't push people to teach an
+  // anchor they don't need (which is how a fragile taught position gets created). "Check" ≠ broken.
+  const confTitle = confWord === 'High'
+    ? `High confidence — the app is ${conf}% sure of this reading`
+    : confWord === 'Check'
+      ? `Read at ${conf}% — worth a glance, but the value may well be right. Only teach this field (⊕) if the value shown is actually WRONG.`
+      : `Low confidence (${conf}%) — please check this value and correct it if it's wrong. Teaching (⊕) only helps if the app can't read the value here.`;
+  // No badge on an EMPTY field: the % describes a read that put nothing in the box —
+  // "High · 87%" beside a "Not found" placeholder (or "Low · 0%" under a later ⟳
+  // suggestion fill) reads as nonsense to a non-technical reviewer (Chris, card 3).
+  const confLabel = (conf !== null && String(val ?? '').trim())
+    ? `<span class="conf-badge ${confClass}" title="${confTitle}">${confWord} · ${conf}%</span>`
     : '';
   // A correction that was ALREADY APPLIED to the value (Stage 4.5 strong auto-fix:
   // an OCR misread of a near-universal learned token, e.g. "Lid"→"Ltd") shows as a
@@ -1876,10 +2663,13 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   // which the engine guarantees (value/display_value/corrected_to all set to the
   // repair on auto-apply).
   const isApplied = !!correctedTo && val === correctedTo;
-  // An "Accept" button is shown ONLY for unapplied correction CANDIDATES. The button
-  // copies the suggestion into the input; it never confirms or persists.
+  // Correction CANDIDATES get two value-labelled buttons (explicit consent — the operator
+  // sees exactly what each click keeps; Chris, card 1): "Use <suggestion>" copies it into
+  // the input; "Keep <current>" hides the note display-side. Neither confirms or persists.
+  const _btnVal = (s) => { const t = String(s ?? ''); return escHtml(t.length > 18 ? t.slice(0, 17) + '…' : t); };
   const acceptHtml = (correctedTo && !isApplied)
-    ? ` <button type="button" class="accept-btn" data-key="${key}">Accept</button>`
+    ? ` <button type="button" class="accept-btn" data-key="${key}" title="Replace the value with ${escHtml(correctedTo)} — saved when you confirm">Use “${_btnVal(correctedTo)}”</button>`
+      + ` <button type="button" class="keep-btn" data-key="${key}" title="Keep the value as it is and hide this note">${String(val ?? '').trim() ? `Keep “${_btnVal(val)}”` : 'Leave as is'}</button>`
     : '';
   // "This name is correct" — for a NAME field flagged by the wordness/truncation signal
   // (a legitimate acronym-bearing company like "Cloud VPS" reads low on the character
@@ -1901,17 +2691,27 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   const issuerAcceptHtml = isIssuerFlag
     ? ` <button type="button" class="issuer-accept-btn" data-key="${key}" title="Confirm this really is the correct issuer, so Scan Finder stops flagging it — even though a different name appears in the letterhead. Applies to future documents from this issuer too.">✓ Issuer is correct</button>`
     : '';
+  // "Use '<name>'" — the branding cross-check DETECTED the true issuer (the page branding reads a
+  // different known name than the resolved supplier). One click accepts the detected name for the
+  // Document Issuer — it fills the value (persisted on Confirm, like a typed correction). The regex is
+  // DISJOINT from the issuer-accept regex above, so the two buttons can never double-render on one note.
+  const isBrandingFlag = !!note && !isApplied
+    && key === 'supplier_name' && !!suggestedSupplier
+    && /page branding reads|confirm the correct company/i.test(note);
+  const brandingResolveHtml = isBrandingFlag
+    ? ` <button type="button" class="branding-resolve-btn" data-key="${key}" data-name="${escHtml(suggestedSupplier)}" title="Set the Document Issuer to the company the letterhead reads. Saved when you confirm this document.">Use “${escHtml(suggestedSupplier)}”</button>`
+    : '';
   // "⑂ Resolve" — when the engine emitted >=2 distinct candidate readings for a flagged NAME field,
   // offer a one-click picker (openResolveOverlay) instead of leaving the operator to retype. v1 scope:
   // name-like fields only (the backend already excludes supplier_name + non-name fields).
   const resolvable = Array.isArray(candidates) && candidates.filter(c => c && c.value).length >= 2 && _isNameLikeField(key);
   const resolveHtml = resolvable
-    ? ` <button type="button" class="resolve-btn" data-key="${key}" title="See the readings the app found and click the correct one">⑂ Resolve</button>`
+    ? ` <button type="button" class="resolve-btn" data-key="${key}" title="See the readings the app found and click the correct one"><svg class="resolve-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h5M9 12l9-6M18 6h-4M18 6v4M9 12l9 6M18 18h-4M18 18v-4"/></svg>Resolve</button>`
     : '';
   const noteHtml = isApplied
     ? `<div class="field-note corrected"><span class="corrected-badge" title="An OCR misread was auto-corrected to the spelling that recurs in your confirmed data">✓ auto-corrected</span> ${escHtml(note || '')}</div>`
     : (note || correctedTo)
-      ? `<div class="field-note">${escHtml(note || '')}${acceptHtml}${nameAcceptHtml}${issuerAcceptHtml}${resolveHtml}</div>`
+      ? `<div class="field-note">${escHtml(note || '')}${acceptHtml}${nameAcceptHtml}${issuerAcceptHtml}${brandingResolveHtml}${resolveHtml}</div>`
       : '';
   // Anchor provenance: only for anchor-based extraction sources, and only when a
   // label was captured. Other methods (keyword, template, llm, manual) show nothing.
@@ -1928,17 +2728,24 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   const _issuerHint = (key === 'supplier_name')   // RC2: only the issuer gets the "sender" gloss; customer_name is the recipient
     ? ' title="The company the document is FROM — the sender who issued it (e.g. the supplier on an invoice). Not your own company."'
     : '';
+  // The Document Issuer (supplier_name) has NO "position taught" dot: it's identified by its NAME
+  // (logo / letterhead / hint / typed value), never by a taught POSITION — a positional teach only
+  // applies to captioned value fields. A hidden spacer keeps the label aligned with the other rows;
+  // no data-key, so the dot refresh / re-scope logic skips it entirely.
+  const _dotSpan = (key === 'supplier_name')
+    ? `<span class="taught-dot" style="visibility:hidden" aria-hidden="true"></span>`
+    : `<span class="taught-dot ${_fieldIsTaught(key) ? 'on' : ''}" data-key="${key}" title="${escHtml(_taughtDotTitle(_fieldIsTaught(key)))}"></span>`;
   row.innerHTML = `
     <div class="field-row-header">
-      <span class="taught-dot ${_fieldIsTaught(key) ? 'on' : ''}" data-key="${key}" title="${escHtml(_taughtDotTitle(_fieldIsTaught(key)))}"></span>
+      ${_dotSpan}
       <span class="field-row-label" data-key="${key}"${_issuerHint}>${escHtml(labelFor(key))}</span>
       ${confLabel}
     </div>
     <div class="field-input-wrap">
       <input type="text" class="field-input ${low ? 'low-conf' : ''}"
-             data-key="${key}" data-original="${escHtml(val)}"
+             data-key="${key}" data-original="${escHtml(val)}" data-method="${escHtml(method || '')}"
              value="${escHtml(val)}" placeholder="Not found">
-      <button class="pick-btn" data-key="${key}" title="Teach this field — draw a box round its value; Scan Finder learns where it sits and reads it on every future document from this supplier">&#8853;</button>
+      <button class="pick-btn" data-key="${key}" title="Teach this field — only if it's showing the WRONG value. Draw a box round the correct value; Scan Finder pins that position and reads it on every future document from this supplier. A field already reading correctly doesn't need teaching.">&#8853;</button>
     </div>
     ${noteHtml}${anchorHtml}
   `;
@@ -1961,6 +2768,9 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     if (input.value.trim() !== (orig || '').trim()) dismissServerNote(row, key);
     validateConfirm();
     updateTotalsVerifiedBadge();   // live-update the "mathematically verified" total badge
+    // Re-scope the "position taught" dots when the ISSUER is corrected — they're (supplier + type)-
+    // scoped, so a new/other supplier changes which learned positions apply (debounced re-query).
+    if (key === 'supplier_name') _scheduleTaughtRefreshForIssuer();
   });
 
   // Immediate regex/type validation on focus-out. Synchronous + warn-only: it sets
@@ -1972,6 +2782,10 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     const msg = fieldValidationError(key, input.value);
     if (msg) setFieldWarning(row, input, msg);
     else clearFieldWarning(row, input);
+    // The ISSUER settled on a (possibly new) supplier -> re-scope the taught dots and clear the
+    // old-supplier-scoped reads (anchor/template/hint); keyword/typed values are kept. No-op if
+    // unchanged or the same supplier.
+    if (key === 'supplier_name') { _refreshTaughtForType().catch(() => {}); _clearSuspectReadsForNewIssuer(); _resolveFieldVisibility(); }
   });
 
   // Right-click → field cleanup-rule toolkit (strip a leaked heading/column). Gated
@@ -2056,6 +2870,17 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
       input.dispatchEvent(new Event('input', { bubbles: true }));
       acceptBtn.disabled = true;
       acceptBtn.textContent = 'Applied';
+      row.querySelector('.keep-btn')?.remove();   // the choice is made — drop the alternative
+    });
+  }
+
+  // "Keep <current>" — explicit dismissal of the suggestion. Display-only: hides the note
+  // (the DB note is untouched; Confirm keeps the on-screen value and clears it server-side).
+  const keepBtn = row.querySelector('.keep-btn');
+  if (keepBtn) {
+    keepBtn.addEventListener('click', () => {
+      const note = keepBtn.closest('.field-note');
+      if (note) note.style.display = 'none';
     });
   }
 
@@ -2119,6 +2944,34 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   const resolveBtn = row.querySelector('.resolve-btn');
   if (resolveBtn) {
     resolveBtn.addEventListener('click', () => openResolveOverlay(key, candidates, row, input));
+  }
+
+  // "Use '<name>'" — accept the branding-detected issuer. (A) Fills the value via the SAME path as the
+  // customer picker / Accept (synthetic 'input' → corrections + validateConfirm + the issuer-changed
+  // hooks) and clears the branding note in-memory (DOM only — Oracle C6, never touches the server
+  // review_flag_count, so it can't file). No page box → no position teach. Persists on Confirm.
+  // (B) Writes the per-doc supplier PIN so a REPROCESS forces this supplier instead of reverting to the
+  // coarse-logo pick. The pin is local to the doc, cleared on confirm; the engine keeps it review-bound.
+  const brandingBtn = row.querySelector('.branding-resolve-btn');
+  if (brandingBtn) {
+    brandingBtn.addEventListener('click', async () => {
+      const name = brandingBtn.dataset.name || '';
+      if (!name) return;
+      input.value = name;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      const noteEl = row.querySelector('.field-note');
+      if (noteEl) noteEl.remove();
+      clearFieldWarning(row);
+      const ex = (currentDoc?.extractions || []).find(e => e.field_key === key);
+      if (ex) ex.validation_note = null;
+      validateConfirm();
+      // Best-effort: the value fill above already sticks on Confirm even if this pin write fails.
+      const _srcDocId = currentDoc?.id;
+      try { await window.docusnap.resolveIssuer?.({ docId: _srcDocId, value: name }); } catch {}
+      // (C) CORRECTION RIPPLE (slice 2): one fix should heal the batch — offer the siblings that
+      // look like the same sender BY TEXT. Advisory + non-blocking; nothing happens without a click.
+      try { await offerIssuerRipple(_srcDocId, name, row); } catch { /* never disturb the correction */ }
+    });
   }
 
   scroll.appendChild(row);
@@ -2279,8 +3132,18 @@ function resolveCandidatePick(key, cand, row, input) {
 function validateConfirm() {
   const btn = document.getElementById('btn-confirm');
 
-  // Need a doc type selected
+  const _note0 = document.getElementById('confirm-config-note');
+  // Need a doc type selected. SAY SO (Oracle C1, 2026-07-20): this used to disable Confirm and
+  // write no note at all, so an untyped document showed a greyed-out button with nothing on
+  // screen explaining it — the same dead-end class as the dangling-role trap below, which we
+  // already talk about. An untyped doc reaches this state on a FRESH INSTALL whenever detection
+  // names a type the install doesn't have (delivery dockets, 2026-07-20), so it is not an edge case.
   if (!selectedTypeSlug) {
+    if (_note0) {
+      _note0.textContent = 'Choose a document type above before filing this document.';
+      Object.assign(_note0.style, { display: '', color: 'var(--warn)', fontSize: '12px',
+        lineHeight: '1.4', padding: '6px 14px' });
+    }
     btn.disabled = true;
     markRequiredMissing([]);
     return;
@@ -2364,7 +3227,13 @@ function validateConfirm() {
   // app's review-not-reject posture) — name the consequence and let the user file anyway.
   if (note) note.style.display = 'none';
   if (issuerNote) {
-    if (issuerKey) {
+    if (issuerKey && selectedTypeSlug === 'general_document') {
+      // Generic Document: a blank issuer is DESIGNED, not a failure — calm-informational.
+      issuerNote.textContent = 'No Document Issuer — that\'s fine for a General Document; it will be '
+        + 'filed under “General”. Add the sender above if you want the app to learn it.';
+      Object.assign(issuerNote.style, { display: '', color: 'var(--muted)', fontSize: '12px',
+        lineHeight: '1.4', padding: '6px 14px' });
+    } else if (issuerKey) {
       issuerNote.textContent = 'No Document Issuer yet — if you file now it will be saved under '
         + '“Unknown Company” and the app won’t learn this sender. Add the issuer above, or file anyway.';
       Object.assign(issuerNote.style, { display: '', color: 'var(--warn)', fontSize: '12px',
@@ -2539,7 +3408,26 @@ async function runZoneOcr(rect, fieldKey) {
 
     // Read via the --boxes path so we also learn the line COUNT (for the tall-box auto-rule).
     // result.text is the same cleaned, multi-line-aware value the plain path returns.
-    const boxes  = await window.docusnap.ocrRegionBoxes?.(base64);
+    // Lever 1 (kill switch): start the value read as a PROMISE so the anchor-LABEL reads (inside
+    // captureAnchorContext — geometry-only, independent of the value text) can OVERLAP it on the warm
+    // worker pool instead of running as a second serial wave. supplier_name is excluded: its anchor
+    // scope reads the just-populated issuer input, so it must stay serial to see the new value.
+    const _valueReadP = window.docusnap.ocrRegionBoxes?.(base64);
+    let _anchorP = null;
+    if (window.__drawConcurrentAnchor && fieldKey !== 'supplier_name') {
+      const _valTextP = (async () => {
+        const _b  = await _valueReadP;
+        const _rt = ((_b && _b.text) || (await window.docusnap.ocrRegion(base64)) || '').trim();
+        return _rt ? await normalizeDrawnValue(fieldKey, _rt) : _rt;
+      })();
+      // Start the label reads NOW, concurrent with the value read. captureAnchorContext consumes the
+      // value only for its diagnostic tee + an empty-guard (both AFTER its own reads; the anchor
+      // record carries no value), so feeding it a promise is safe. .catch keeps an abandoned start
+      // (empty read → the if(text) block below is skipped, _anchorP never awaited) quiet.
+      _anchorP = captureAnchorContext(rect, fieldKey, _valTextP, imgW, imgH, scaleX, scaleY, null, deskewSnap)
+                   .catch(() => null);
+    }
+    const boxes  = await _valueReadP;
     const rawText = ((boxes && boxes.text) || (await window.docusnap.ocrRegion(base64)) || '').trim();
     // Tidy to the field type — strip a currency symbol, parse a date to canonical DD-MM-YYYY
     // (region-aware). Used for the input value, the correction, and the learned anchor value.
@@ -2587,7 +3475,9 @@ async function runZoneOcr(rect, fieldKey) {
         try { showToast('Looks like this value wraps onto the next line — wrapping enabled, saved on Confirm.', 'ok'); } catch {}
       }
       lastTeachCtx = { fieldKey, rect, imgW, imgH, scaleX, scaleY, value: text, deskewSnap };
-      const detected = await captureAnchorContext(rect, fieldKey, text, imgW, imgH, scaleX, scaleY, null, deskewSnap);
+      // Lever 1: if the concurrent capture was started above, await it; else run the serial call.
+      const detected = _anchorP ? await _anchorP
+                                : await captureAnchorContext(rect, fieldKey, text, imgW, imgH, scaleX, scaleY, null, deskewSnap);
       if (detected) {
         anchorTaughtFields.add(fieldKey);
         // The Document Issuer (company/supplier name) is usually a top-corner logo/letterhead
@@ -2615,6 +3505,10 @@ async function runZoneOcr(rect, fieldKey) {
         }
       }
       _refreshTaughtDot(fieldKey);   // reflect the staged (or C1-dropped) teach on the field's dot
+      // If the ISSUER was just taught, its value IS the resolved supplier for this doc — re-scope
+      // EVERY field's taught dot to the new supplier (a new/untaught supplier -> the other fields'
+      // dots go off). A DIRECT re-query, not the datalist-popping synthetic 'input' avoided above.
+      if (fieldKey === 'supplier_name') { _refreshTaughtForType().catch(() => {}); _clearSuspectReadsForNewIssuer(); _resolveFieldVisibility(); }
     }
   } catch (err) {
     console.error('Zone OCR error:', err);
@@ -2880,15 +3774,19 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
   // If extraction later reads something else at these same coords, the review
   // preview and the extraction render aren't the same pixels. No-op unless
   // diagnostic logging is on (main checks the flag).
-  try {
+  // `value` may be a string (serial caller) or a Promise (lever 1 concurrent caller). The diag tee
+  // is a best-effort no-op unless diagnostic logging is on — fire it with the RESOLVED value, and
+  // do NOT block the label reads below on it. A string caller takes the sync branch = byte-identical.
+  const _fireDiag = (v) => { try {
     window.docusnap.diagTeach?.({
-      field_key: fieldKey, value, x_norm: xNorm, y_norm: yNorm,
+      field_key: fieldKey, value: v, x_norm: xNorm, y_norm: yNorm,
       w_norm: rect.w / imgW, h_norm: rect.h / imgH,
       rect, imgW, imgH, scaleX, scaleY,
       naturalW: docImg.naturalWidth, naturalH: docImg.naturalHeight,
       page: currentPage, preview_active: !!previewActive,
     });
-  } catch {}
+  } catch {} };
+  if (value && typeof value.then === 'function') value.then(_fireDiag); else _fireDiag(value);
 
   // Best-effort: try to find a real label to the left of the box, then above.
   // Search the WHOLE row to the LEFT of the value (not a fixed 300px window): on wide
@@ -2907,8 +3805,13 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
   // would let a neighbouring row's caption outscore the true left one — Oracle).
   const fieldCaptions = [];
   try { const _fl = (typeof labelFor === 'function') ? labelFor(fieldKey) : null; if (_fl) fieldCaptions.push(_fl); } catch {}
-  let leftCand = null, aboveCand = null;
-  if (forceDir !== 'below') try {
+  // Draw-tool UX Slice 2b: read the LEFT and ABOVE captions CONCURRENTLY. They're independent (each
+  // yields its own candidate; neither needs the other or the value text), so the two OCR round-trips
+  // OVERLAP instead of running back-to-back — one fewer read of wall-clock per draw. Each is wrapped
+  // in a self-guarded closure returning its candidate (or null); the per-strip logic is unchanged.
+  const _readLeftCand = async () => {
+   if (forceDir === 'below') return null;
+   try {
     const leftPad    = rect.x;   // full span from the page's left edge to the value box
     // VERTICAL EXPANSION (oscar+007, 2026-07-10): the strip was exactly rect.h tall at the
     // VALUE's y, so a bolder/slightly-higher caption ("SO #") had its ascenders DECAPITATED
@@ -2944,18 +3847,22 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
       const leftLabel = sanitizeAnchorLabel(extractLabel(leftText) || '');
       if (leftLabel) {
         // Drift-invariant offset: the located label's page position → value centre.
-        // Origin of the left crop in DISPLAY px is (rect.x - leftPad, lTop). D1: STORE the
-        // candidate (don't stage/return yet) so the above strip is also read and compared.
+        // Origin of the left crop in DISPLAY px is (rect.x - leftPad, lTop).
         const off = labelOffsetFromBox(leftBox, rect.x - leftPad, lTop, xNorm, yNorm, imgW, imgH);
-        leftCand = { label: leftLabel, direction: 'right', off,
-                     normBox: labelNormBox(leftBox, rect.x - leftPad, lTop, imgW, imgH) };
+        return { label: leftLabel, direction: 'right', off,
+                 normBox: labelNormBox(leftBox, rect.x - leftPad, lTop, imgW, imgH) };
       }
     }
-  } catch (err) {
+    return null;
+   } catch (err) {
     console.warn('Anchor capture: left-label lookup failed (non-critical):', err);
-  }
+    return null;
+   }
+  };
 
-  if (forceDir !== 'right') try {
+  const _readAboveCand = async () => {
+   if (forceDir === 'right') return null;
+   try {
     // The strip must be TALL ENOUGH TO CONTAIN the caption line above: line spacing routinely
     // exceeds the value box's own height (a spaced address block, a section heading), so the
     // old one-line strip (max(rect.h,20)) caught only the caption's bottom pixel-tips + its
@@ -2996,15 +3903,27 @@ async function captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, s
       // stops the snap latching onto the MAC above instead of the label to the left.
       const aboveLabel = sanitizeAnchorLabel(extractLabel(aboveText) || '');
       if (aboveLabel) {
-        // Origin of the above crop in DISPLAY px is (rect.x, aboveTop). D1: STORE the candidate.
+        // Origin of the above crop in DISPLAY px is (rect.x, aboveTop).
         const off = labelOffsetFromBox(aboveBox, rect.x, aboveTop, xNorm, yNorm, imgW, imgH);
-        aboveCand = { label: aboveLabel, direction: 'below', off,
-                      normBox: labelNormBox(aboveBox, rect.x, aboveTop, imgW, imgH) };
+        return { label: aboveLabel, direction: 'below', off,
+                 normBox: labelNormBox(aboveBox, rect.x, aboveTop, imgW, imgH) };
       }
     }
-  } catch (err) {
+    return null;
+   } catch (err) {
     console.warn('Anchor capture: above-label lookup failed (non-critical):', err);
-  }
+    return null;
+   }
+  };
+
+  // Both caption reads run CONCURRENTLY (Slice 2b): the two OCR round-trips OVERLAP instead of
+  // back-to-back. Independent, self-guarded → order-free; the pick logic below is unchanged.
+  const [leftCand, aboveCand] = await Promise.all([_readLeftCand(), _readAboveCand()]);
+
+  // Lever 1: a concurrent caller passes a value PROMISE and starts this before the drawn box has
+  // been read. If the read yielded nothing, teach nothing — matching the serial caller, which is
+  // gated on a truthy value upstream (so this is inert for it → byte-identical).
+  if (value && typeof value.then === 'function') { if (!(await value)) return null; }
 
   // D1 — PICK between the left and above captions. forceDir pins one side; else pickLabelCandidate
   // scores each (2 = matches this field's caption · 1 = clean · 0 = suspicious/empty), higher wins,
@@ -3059,13 +3978,27 @@ document.addEventListener('pointerdown', (e) => {
   if (e.target?.closest?.('.field-input')) hideAnchorReadout();
 }, true);
 function showAnchorReadout(detected, value) {
-  try { if (detected.normBox) drawTraceBbox(detected.normBox, 'anchor', 'manual'); } catch {}
+  // Own the overlay exclusively: wipe any PRIOR anchor highlight first, so a stale box from an
+  // earlier field/teach can't be mistaken for the anchor of THIS draw. Then show where THIS teach
+  // anchors: the label box (blue) when a caption was found, else the VALUE spot (amber) for a
+  // position-only anchor — so "anchored by position" always has a visible spot on the page.
+  try {
+    clearTraceHighlight();
+    if (detected.normBox) {
+      drawTraceBbox(detected.normBox, 'anchor', 'manual');
+    } else if (lastTeachCtx?.rect && lastTeachCtx.imgW && lastTeachCtx.imgH) {
+      const r = lastTeachCtx.rect;
+      drawTraceBbox([r.x / lastTeachCtx.imgW, r.y / lastTeachCtx.imgH,
+                     r.w / lastTeachCtx.imgW, r.h / lastTeachCtx.imgH], 'target', 'manual');
+    }
+  } catch {}
   const bar = document.getElementById('anchor-readout');
   if (!bar) return;
   const val   = escHtml((value || '').trim());
   const isLeft  = detected.direction === 'right';
   const isAbove = detected.direction === 'below';
-  const suspicious = !detected.fallback && labelLooksSuspicious(detected.anchor_label);
+  const typeHeading = !detected.fallback && labelIsTypeHeading(detected.anchor_label);
+  const suspicious = !detected.fallback && (labelLooksSuspicious(detected.anchor_label) || typeHeading);
   const warn = detected.fallback || suspicious;
   // Garble verdict → never keep the misread caption staged: fall back to a POSITION-ONLY anchor
   // (empty label + registration/position relocation), the same safe fallback used for a cleared
@@ -3081,16 +4014,18 @@ function showAnchorReadout(detected, value) {
   }
   let msg;
   if (detected.fallback) {
-    msg = `<span class="ar-msg">&#9888; No label found — anchored by position. Read: <span class="ar-val">${val}</span></span>`;
+    msg = `<span class="ar-msg">&#10003; No label word sits next to this value, so Scan Finder will <strong>remember this exact spot</strong> (highlighted on the page) and read whatever prints here on future documents from this supplier. Read: <span class="ar-val">${val}</span></span>`;
   } else {
     // The label is EDITABLE — an auto-detect off a noisy scan can be misread ("verial No."),
     // and a wrong label never re-locates. The operator can correct it here before Confirm.
     // GARBLE is never displayed (product rule: never ask the user to vouch for junk they
     // can't find on the page) — the input starts EMPTY (= position-only, already staged
     // below) and the message says so plainly; typing the printed caption upgrades it.
-    const lead = suspicious
-      ? '&#9888; Couldn&#39;t read the caption beside this value &mdash; anchored by position. Type it to anchor on text:'
-      : `&#10003; Anchor (label ${isAbove ? 'above' : 'to the left'}):`;
+    const lead = typeHeading
+      ? '&#9888; That&#39;s the document&#39;s <strong>title</strong>, not a label for this field &mdash; so Scan Finder will <strong>remember this spot</strong> (highlighted) and read whatever prints here on future documents. If a real label word sits beside the value, type it below to anchor on the word instead:'
+      : suspicious
+        ? '&#9888; Couldn&#39;t read the label beside this value &mdash; so Scan Finder will <strong>remember this spot</strong> (highlighted) and read whatever prints here on future documents. Type the label as printed to anchor on the word instead:'
+        : `&#10003; Anchor (label ${isAbove ? 'above' : 'to the left'}):`;
     msg = `<span class="ar-msg">${lead} `
       + `<input class="ar-label-edit" spellcheck="false" title="The caption this field sits beside — edit if it was misread" `
       + `style="font:inherit;font-weight:600;padding:1px 5px;min-width:90px;border:1px solid var(--border2);border-radius:5px;background:var(--surface)"> `
@@ -3239,7 +4174,7 @@ function extractLabel(text) { return window.AnchorLabel.extractLabel(text); }
 // blindly — and the on-screen-image steps (logo-fingerprint save + image-clear
 // animation) are skipped, since File All cycles documents itself. The file-by-
 // file behaviour is otherwise unchanged.
-async function confirmCurrentDoc({ bulk = false, expectId = null } = {}) {
+async function confirmCurrentDoc({ bulk = false, expectId = null, acknowledgePrefixOutlier = null } = {}) {
   if (!currentDoc) return { error: 'No document selected.' };
   // Bulk-race guard: the caller (File All Ready) captures the doc it intends to
   // file; if a delete / row-click reassigned the module-global `currentDoc` in an
@@ -3271,7 +4206,11 @@ async function confirmCurrentDoc({ bulk = false, expectId = null } = {}) {
     const issuerKey = ['supplier_name'].find(k => k in allValues);   // RC2: identity = supplier_name only
     if (issuerKey && !(allValues[issuerKey] || '').trim()) {
       if (bulk) return { skipped: true, reason: 'issuer blank' };
-      if (!confirm('Document Issuer is blank.\n\nThis document will be filed under "Unknown Company" and '
+      // Generic Document: blank issuer is DESIGNED (files under 'General') — no dialog in
+      // single mode, or the one-keystroke promise dies on every generic doc. The inline
+      // issuer note already names the consequence. Bulk stays unchanged (fails toward review).
+      if (selectedTypeSlug !== 'general_document'
+          && !confirm('Document Issuer is blank.\n\nThis document will be filed under "Unknown Company" and '
                  + 'the app won’t learn this sender. File it anyway?')) {
         return { cancelled: true };
       }
@@ -3291,7 +4230,9 @@ async function confirmCurrentDoc({ bulk = false, expectId = null } = {}) {
       // "Straighten + Reprocess" or OCR-Preview session can't write a drifted fingerprint that
       // poisons this supplier's identity for future raw imports (Oracle C1).
       const logoB64 = getRawPageBase64(currentPage);
-      saveLogoOnConfirm(supplierForLogo, logoB64).catch(() => {});
+      // Pass the doc id so the main process can apply the confirm-time plant gate (Oracle C4):
+      // a plant is skipped when the confirmed issuer isn't corroborated by THIS document's text.
+      saveLogoOnConfirm(supplierForLogo, logoB64, currentDoc?.id).catch(() => {});
     }
     selCanvas.width = 0; selCanvas.height = 0;   // clear any ⊕ selection overlay for the next doc
   }
@@ -3313,6 +4254,8 @@ async function confirmCurrentDoc({ bulk = false, expectId = null } = {}) {
     // In bulk the fields-only path never loaded the preview image, so there is
     // no img.src file handle to wait on — let the backend skip its 150ms release.
     bulk,
+    // Slice 1: ref field(s) the operator explicitly "Confirm anyway"-ed past the prefix-outlier hold.
+    acknowledgePrefixOutlier,
   });
 
   if (!result?.success) {
@@ -3322,7 +4265,8 @@ async function confirmCurrentDoc({ bulk = false, expectId = null } = {}) {
     }
     // Pass the backend code through so bulk filing can tell a license lapse
     // (abort the whole run once) from an ordinary per-doc failure (skip + continue).
-    return { error: result?.error || 'Confirm failed. Check settings.', code: result?.code || null };
+    return { error: result?.error || 'Confirm failed. Check settings.', code: result?.code || null,
+             prefixOutlier: result?.prefixOutlier || null };
   }
 
   // Persist anchors taught with ⊕ this cycle — DEFERRED to commit so an un-confirmed
@@ -3374,6 +4318,35 @@ async function confirmCurrentDoc({ bulk = false, expectId = null } = {}) {
   return { filed: true };
 }
 
+// Slice 1: render the prefix-outlier HOLD inline on the reference field — a plain-language note + a
+// "Confirm anyway" button that re-confirms with the field acknowledged. Reuses the `.field-note`
+// class so editing the field (a correction) auto-dismisses it (dismissServerNote) AND exempts the
+// value on the backend, mirroring the accept-btn wiring in appendFieldRow.
+function showPrefixOutlierHold(detail, idx, supplier) {
+  const field = detail && detail.field;
+  const row = field ? document.querySelector(`#fields-scroll .field-row[data-key="${field}"]`) : null;
+  if (!row) { showToast('This reference looks unusual for this sender - please check it.', 'err'); return; }
+  row.querySelector('.field-note.prefix-hold')?.remove();
+  const dom = detail.dominant ? escHtml(detail.dominant) : 'the usual';
+  const pfx = detail.prefix ? escHtml(detail.prefix) : '';
+  const note = document.createElement('div');
+  note.className = 'field-note prefix-hold';
+  note.innerHTML = `Starts "${pfx}-" but this sender's references usually start "${dom}-". Fix it above, or `
+    + `<button type="button" class="prefix-ack-btn">Confirm anyway</button>`;
+  row.appendChild(note);
+  const inp = row.querySelector('.field-input'); if (inp) { try { inp.focus(); inp.select?.(); } catch {} }
+  note.querySelector('.prefix-ack-btn')?.addEventListener('click', async () => {
+    const r2 = await confirmCurrentDoc({ acknowledgePrefixOutlier: [field] });
+    if (r2.cancelled) return;
+    if (r2.error || r2.code) { showToast(r2.error || 'Confirm failed.', 'err'); return; }
+    updateTabCounts();
+    advanceAfterAction(idx, supplier);
+    _scheduleScopeSweep(supplier, selectedTypeSlug || '');   // catch-up offer after the acknowledged confirm
+    try { window.docusnap.markFocusSuspect?.(); } catch {}
+    window.docusnap.notifyReviewComplete();
+  });
+}
+
 document.getElementById('btn-confirm').addEventListener('click', async () => {
   // Remember where the doc sits BEFORE confirmCurrentDoc removes it from the list,
   // so we can advance to the NEXT doc (the one that shifts into this slot) rather
@@ -3384,11 +4357,19 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
   const list = activeTab === 'deferred' ? deferredQueue : reviewDisplayOrder();
   const idx  = list.findIndex(d => d.id === currentDoc?.id);
   const supplier = (currentDoc?.supplier_name || '').trim();   // finish this sender's docs before moving on
+  // Catch-up: capture the scope BEFORE confirm mutates/advances the selection. The confirmed
+  // supplier may differ from the row (operator typed/accepted one) — prefer the on-screen value.
+  const _sweepSupplier = (document.querySelector('#fields-scroll .field-input[data-key="supplier_name"]')?.value || supplier || '').trim();
+  const _sweepSlug     = selectedTypeSlug || currentDoc?.type_slug || '';
   const r = await confirmCurrentDoc();
   if (r.cancelled) return;
+  // Slice 1: a suspicious-reference HOLD — surface the note + a "Confirm anyway" affordance on the
+  // ref field instead of a transient error toast (editing the field also clears it and exempts it).
+  if (r.code === 'PREFIX_OUTLIER') { showPrefixOutlierHold(r.prefixOutlier, idx, supplier); return; }
   if (r.error) { showToast(r.error, 'err'); return; }
   updateTabCounts();
   advanceAfterAction(idx, supplier);
+  _scheduleScopeSweep(_sweepSupplier, _sweepSlug);   // consent-gated catch-up offer (dark unless enabled)
   // FOCUS (eric, 2026-07-10): Confirm & File can desync the RenderWidget's keyboard
   // focus (post-confirm teardown/rebuild of the sidebar + fields pane, snappier since
   // the detached-learning change) WITHOUT a native dialog — and the repair's
@@ -3471,6 +4452,7 @@ async function fileAllReady() {
   barFill.style.width = '0';
 
   let filed = 0, skipped = 0, noType = 0, aborted = false;
+  const _fileAllScopes = new Map();   // JSON([supplier, slug]) -> filed count (catch-up trigger)
 
   try {
     for (let i = 0; i < docs.length; i++) {
@@ -3498,6 +4480,11 @@ async function fileAllReady() {
         const r = await confirmCurrentDoc({ bulk: true, expectId: doc.id });
         if (r.filed) {
           filed++;
+          const _sup = (doc.supplier_name || '').trim(), _slug = doc.type_slug || '';
+          if (_sup && _slug) {
+            const k = JSON.stringify([_sup, _slug]);
+            _fileAllScopes.set(k, (_fileAllScopes.get(k) || 0) + 1);
+          }
           // Drop the row the moment it's filed, so the queue shrinks live.
           document.querySelector(`.queue-item[data-id="${doc.id}"]`)?.remove();
         } else if (r.code === 'license_required') {
@@ -3520,10 +4507,18 @@ async function fileAllReady() {
   }
 
   updateTabCounts();
-  renderQueueList();
-  if (queue.length > 0 && !queueGrouped) selectDoc(queue[0]);   // grouped starts all-collapsed; user picks a group
-  else { currentDoc = null; clearDocPanel(); }
+  // Batch done: keep the operator moving — land on the first document still in the visible order
+  // (grouped view included), or clear to the "all reviewed" done-state when none remain, instead of
+  // showing "All documents reviewed ✓" over a queue that still has skipped docs. (advanceAfterAction
+  // re-renders the list itself, so the explicit renderQueueList above is folded in.)
+  advanceAfterAction(0, null);
   if (filed) window.docusnap.notifyReviewComplete();
+  // Catch-up: after a File-All run, offer the sweep for the run's dominant scope (the docs it
+  // just filed are exactly the "you just confirmed" evidence the sweep re-checks against).
+  if (filed && _fileAllScopes.size) {
+    const top = [..._fileAllScopes.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (top) { try { const [sup, slug] = JSON.parse(top[0]); _scheduleScopeSweep(sup, slug); } catch {} }
+  }
 
   // Banner done-state, then auto-dismiss. Already-filed docs stay filed.
   const stoppedNote = _bulkFileStopped ? ' (stopped)' : '';
@@ -3604,6 +4599,160 @@ async function autoCommitFullConfidence() {
     }
   } catch (e) { console.warn('auto-commit 100% failed:', e.message); }
 }
+
+// ── Catch-up Filing slice 3 (design 2026-07-31, dark unless scope_sweep_enabled) ──────
+// After a HUMAN confirm, ask the server whether the same scope's still-queued docs now pass
+// the normal auto-file gate ("checked against the documents you just confirmed") and offer a
+// consent bar: File N · Review them · Not now, with a per-doc untick list. The accept path
+// re-validates EVERYTHING server-side (fingerprint + the same gate) and files through the one
+// shared confirm with confirmed_via='scope_sweep'; Undo all reverses cleanly.
+let _sweepTimer = null, _sweepState = null;
+const _sweepDismissed = new Set();          // per-scope "Not now" (session-only)
+let _sweepFilterIds = null;                 // "Review them" queue filter (Set<docId> | null)
+
+const _SWEEP_REASON_COPY = {
+  'being-viewed':        'being viewed by someone',
+  'changed':             'its fields changed after the offer',
+  'not-queued':          'it was handled in the meantime',
+  'workflow-locked':     'it is in an approval workflow',
+  'scope-mismatch':      'its sender or type changed',
+  'role-empty-fresh':    'a key field read empty on re-check',
+  'role-empty-stored':   'a key field is empty',
+  'role-mismatch':       'a key field read differently on re-check',
+  'contradiction':       'a field read differently on re-check',
+  'fresh-value-on-empty': 'found a new value on re-check',
+  'stored-flagged':      'it is flagged for review',
+  'fresh-flagged':       'the re-check flagged it',
+  'type-flip':           'the document type read differently on re-check',
+};
+function _sweepReason(r) {
+  if (!r) return 'it did not pass the checks';
+  if (_SWEEP_REASON_COPY[r]) return _SWEEP_REASON_COPY[r];
+  if (String(r).startsWith('recheck-')) return 'it needs a full re-read';
+  return 'it did not pass the checks';
+}
+const _sweepScopeKey = (s, t) => `${String(s || '').trim().toLowerCase()}|${String(t || '').toLowerCase()}`;
+
+function _scheduleScopeSweep(supplier, typeSlug) {
+  const sup = String(supplier || '').trim(), slug = String(typeSlug || '').trim();
+  if (!sup || !slug) return;
+  if (_sweepDismissed.has(_sweepScopeKey(sup, slug))) return;
+  clearTimeout(_sweepTimer);
+  _sweepTimer = setTimeout(async () => {
+    if (bulkFiling || _batchActive) return;
+    let res = null;
+    try { res = await window.docusnap.sweepScopeCandidates?.(sup, slug); } catch { return; }
+    if (!res || !res.ok || !Array.isArray(res.candidates) || res.candidates.length < 2) return;
+    if (_sweepDismissed.has(_sweepScopeKey(sup, slug))) return;
+    const byId = new Map(queue.map(d => [d.id, d]));
+    _sweepState = {
+      phase: 'offer', supplier: sup, typeSlug: slug,
+      candidates: res.candidates.filter(c => byId.has(c.docId))
+        .map(c => ({ ...c, filename: byId.get(c.docId)?.original_filename || `#${c.docId}` })),
+      excluded: res.excluded || [], unticked: new Set(), listOpen: false,
+    };
+    if (_sweepState.candidates.length < 2) { _sweepState = null; return; }
+    renderSweepConsentBar();
+  }, 2500);
+}
+
+function renderSweepConsentBar() {
+  const bar = document.getElementById('sweep-consent-bar');
+  if (!bar) return;
+  const s = _sweepState;
+  if (!s) {
+    bar.style.display = 'none'; bar.innerHTML = '';
+    if (_sweepFilterIds) { _sweepFilterIds = null; renderQueueList(); }
+    return;
+  }
+  const typeName = (allDocTypes.find(t => t.slug === s.typeSlug)?.name) || s.typeSlug;
+  if (s.phase === 'offer' || s.phase === 'filing') {
+    const n = s.candidates.length - s.unticked.size;
+    const held = (s.excluded || []).length;
+    const heldLine = held
+      ? `<div class="scb-muted">${held} more from this sender need a closer look — they stay in Review.</div>` : '';
+    const rows = s.listOpen ? `<div class="scb-list">` + s.candidates.map(c =>
+        `<div class="scb-row"><input type="checkbox" data-scb-doc="${c.docId}" ${s.unticked.has(c.docId) ? '' : 'checked'}>`
+      + `<label title="${escHtml(c.filename)}">${escHtml(c.filename)}</label></div>`).join('') + `</div>` : '';
+    bar.innerHTML =
+        `<b>${n}</b> more <b>${escHtml(s.supplier)}</b> ${escHtml(typeName)} document${n === 1 ? '' : 's'} `
+      + `match what you've confirmed and pass the same checks.`
+      + heldLine + rows
+      + `<div class="scb-actions">`
+      + `<button class="scb-btn primary" data-scb="file" ${n === 0 || s.phase === 'filing' ? 'disabled' : ''}>`
+      + (s.phase === 'filing' ? 'Filing…' : `✓ File ${n}`) + `</button>`
+      + `<button class="scb-btn" data-scb="review" ${s.phase === 'filing' ? 'disabled' : ''}>Review them</button>`
+      + `<button class="scb-btn" data-scb="later" ${s.phase === 'filing' ? 'disabled' : ''}>Not now</button>`
+      + `<span class="scb-toggle" data-scb="toggle">${s.listOpen ? 'Hide list' : 'Choose which…'}</span>`
+      + `</div>`;
+    bar.style.display = 'block';
+    return;
+  }
+  if (s.phase === 'done') {
+    const kept = (s.dropped || []).map(d =>
+      `<div class="scb-row scb-muted">kept back — ${escHtml(_sweepReason(d.reason))} (${escHtml((s.candidates.find(c => c.docId === d.docId) || {}).filename || ('#' + d.docId))})</div>`).join('');
+    bar.innerHTML =
+        `<b>✓ Filed ${s.filed.length}</b> from <b>${escHtml(s.supplier)}</b> — checked against the documents you just confirmed. `
+      + `<span class="scb-undo" data-scb="undo">Undo all</span>`
+      + (kept ? `<div class="scb-list">${kept}</div>` : '');
+    bar.style.display = 'block';
+    clearTimeout(s._doneTimer);
+    s._doneTimer = setTimeout(() => { if (_sweepState === s) { _sweepState = null; renderSweepConsentBar(); } }, 20000);
+  }
+}
+
+document.getElementById('sweep-consent-bar')?.addEventListener('click', async (e) => {
+  const s = _sweepState;
+  if (!s) return;
+  const cb = e.target.closest('input[data-scb-doc]');
+  if (cb) {
+    const id = Number(cb.dataset.scbDoc);
+    if (cb.checked) s.unticked.delete(id); else s.unticked.add(id);
+    renderSweepConsentBar();
+    return;
+  }
+  const act = e.target.closest('[data-scb]')?.dataset.scb;
+  if (!act) return;
+  if (act === 'toggle') { s.listOpen = !s.listOpen; renderSweepConsentBar(); return; }
+  if (act === 'later')  { _sweepDismissed.add(_sweepScopeKey(s.supplier, s.typeSlug)); _sweepState = null; renderSweepConsentBar(); return; }
+  if (act === 'review') {
+    _sweepFilterIds = _sweepFilterIds ? null : new Set(s.candidates.map(c => c.docId));
+    renderQueueList();
+    return;
+  }
+  if (act === 'file' && s.phase === 'offer') {
+    const accepts = s.candidates.filter(c => !s.unticked.has(c.docId))
+      .map(c => ({ docId: c.docId, fingerprint: c.fingerprint }));
+    if (!accepts.length) return;
+    s.phase = 'filing'; renderSweepConsentBar();
+    let res = null;
+    try { res = await window.docusnap.sweepScopeAccept?.(s.supplier, s.typeSlug, accepts, [...s.unticked]); } catch {}
+    if (!res || !res.ok) {
+      s.phase = 'offer'; renderSweepConsentBar();
+      showToast('Couldn\'t file those documents — please try again.', 'warn');
+      return;
+    }
+    s.phase = 'done'; s.filed = res.filed || []; s.dropped = res.dropped || [];
+    _sweepFilterIds = null;
+    queue         = await window.docusnap.getReviewQueue();
+    deferredQueue = await window.docusnap.getDeferredQueue();
+    updateTabCounts(); renderQueueList();
+    if (currentDoc && !queue.some(d => d.id === currentDoc.id)) { currentDoc = null; clearDocPanel(); if (queue.length) selectDoc(queue[0]); }
+    renderSweepConsentBar();
+    if (s.filed.length) window.docusnap.notifyReviewComplete();
+    return;
+  }
+  if (act === 'undo' && s.phase === 'done') {
+    let res = null;
+    try { res = await window.docusnap.sweepScopeUndo?.(s.filed); } catch {}
+    _sweepState = null;
+    queue         = await window.docusnap.getReviewQueue();
+    deferredQueue = await window.docusnap.getDeferredQueue();
+    updateTabCounts(); renderQueueList(); renderSweepConsentBar();
+    showToast(res && res.ok ? `Sent ${res.undone.length} document${res.undone.length === 1 ? '' : 's'} back to Review.`
+                            : 'Undo failed — check the queue.', res && res.ok ? 'ok' : 'warn');
+  }
+});
 
 // Cooperative Stop: the in-flight document finishes filing, no new one starts,
 // everything already filed stays filed (this is not an undo). Mirrors Reprocess-All.
@@ -3745,22 +4894,28 @@ document.getElementById('btn-skip').addEventListener('click', () => {
 // ── Defer ─────────────────────────────────────────────────────────────────────
 document.getElementById('btn-defer').addEventListener('click', async () => {
   if (!currentDoc || currentDoc.status === 'deferred') return;
+  // Remember the slot + sender BEFORE removing, so we advance to the NEXT doc (finishing this
+  // sender first) instead of snapping to the top or clearing the pane — mirrors single-doc Confirm.
+  const idx      = reviewDisplayOrder().findIndex(d => d.id === currentDoc.id);
+  const supplier = (currentDoc.supplier_name || '').trim();
   await window.docusnap.deferDocument(currentDoc.id);
   deferredQueue = await window.docusnap.getDeferredQueue();
   queue         = queue.filter(d => d.id !== currentDoc.id);
   updateTabCounts();
-  renderQueueList();
-  if (queue.length > 0 && !queueGrouped) selectDoc(queue[0]);   // grouped starts all-collapsed; user picks a group
-  else { currentDoc = null; clearDocPanel(); }
+  advanceAfterAction(idx, supplier);   // re-renders + lands on the next doc (or clears if none remain)
   window.docusnap.notifyReviewComplete();
 });
 
 // ── Delete All Review (admin only) ────────────────────────────────────────────
 document.getElementById('btn-delete-all-review').addEventListener('click', async () => {
   if (!isAdmin || queue.length === 0) return;
+  // Truthful copy (Chris card 1 + bob): _deleteQueue SOFT-deletes — recycle bin, restorable,
+  // files kept. The old "permanently removed / cannot be undone" was FALSE and devalued the
+  // app's real cannot-be-undone warnings (purge/restore/template-delete, which stay accurate).
   if (!confirm(`Delete ALL ${queue.length} document(s) in the Review queue?\n\n` +
-               `Their files and extracted data are permanently removed. Confirmed and deferred ` +
-               `documents are NOT affected. This cannot be undone.`)) return;
+               `They go to the app's recycle bin — you can restore them any time from ` +
+               `Search → Show the recycle bin. Files on disk are kept. Confirmed and ` +
+               `deferred documents are NOT affected.`)) return;
 
   let res;
   try { res = await window.docusnap.deleteAllReview(); }
@@ -3768,7 +4923,12 @@ document.getElementById('btn-delete-all-review').addEventListener('click', async
   if (!res?.success) { showToast(res?.error || 'Delete failed.', 'err'); return; }
   const hadCurrent = queue.some(d => d.id === currentDoc?.id);
   queue = [];
-  if (hadCurrent) { currentDoc = null; clearDocPanel(); }
+  if (hadCurrent) {
+    currentDoc = null;
+    // A delete is not a review — the emptied panel says what actually happened (Chris r5).
+    // Set the one-shot BEFORE renderQueueList: its empty branch performs the clear.
+    _placeholderMsg = `Queue cleared — ${res.deleted} document${res.deleted === 1 ? '' : 's'} moved to the recycle bin. You can bring them back from Search → Recycle bin.`;
+  }
   updateTabCounts();
   renderQueueList();
   window.docusnap.notifyReviewComplete();
@@ -3779,7 +4939,8 @@ document.getElementById('btn-delete-all-review').addEventListener('click', async
 document.getElementById('btn-delete-all').addEventListener('click', async () => {
   if (!isAdmin || deferredQueue.length === 0) return;
   if (!confirm(`Delete ALL ${deferredQueue.length} deferred document(s)?\n\n` +
-               `Their files and extracted data are permanently removed. This cannot be undone.`)) return;
+               `They go to the app's recycle bin — you can restore them any time from ` +
+               `Search → Show the recycle bin. Files on disk are kept.`)) return;
 
   let res;
   try { res = await window.docusnap.deleteAllDeferred(); }
@@ -3797,7 +4958,7 @@ document.getElementById('btn-delete-all').addEventListener('click', async () => 
 // ── Delete ────────────────────────────────────────────────────────────────────
 document.getElementById('btn-delete').addEventListener('click', async () => {
   if (!currentDoc) return;
-  if (!confirm(`Delete "${currentDoc.original_filename}"? This cannot be undone.`)) return;
+  if (!confirm(`Delete "${currentDoc.original_filename}"?\n\nIt goes to the app's recycle bin — you can restore it from Search.`)) return;
 
   const filePath = currentDoc.folder_path
     ? `${currentDoc.folder_path}\\${currentDoc.original_filename}`
@@ -3820,7 +4981,7 @@ document.getElementById('btn-delete').addEventListener('click', async () => {
 // server-side). Reuses the same delete flow as the action-bar Delete button.
 async function deleteFromQueue(doc) {
   if (!doc) return;
-  if (!confirm(`Delete "${doc.original_filename}"? This cannot be undone.`)) return;
+  if (!confirm(`Delete "${doc.original_filename}"?\n\nIt goes to the app's recycle bin — you can restore it from Search.`)) return;
   const filePath = doc.folder_path ? `${doc.folder_path}\\${doc.original_filename}` : null;
   await window.docusnap.deleteDocument(doc.id, filePath);
   queue         = queue.filter(d => d.id !== doc.id);
@@ -3869,27 +5030,110 @@ function getRawPageBase64(page = currentPage) {
   return LogoSource.rawPageBase64(pageImages, page);
 }
 
+// CORRECTION RIPPLE (identity text-first slice 2) — after the operator resolves the issuer on one
+// document, offer to apply it to the unfiled documents that look like the SAME SENDER by page text.
+// Why text and not the logo: the owner corrected one Larkspur docket and the other 19 still didn't
+// match — nearest-neighbour keeps favouring the bigger WRONG pool (and the hint path needs three
+// confirms before it upgrades). Applying goes through the per-doc supplier PIN, so every rippled
+// document comes back REVIEW-BOUND and plants no learning: a wrong ripple costs a click, never a
+// wrong filed value.
+async function offerIssuerRipple(srcDocId, name, row) {
+  if (!srcDocId || !name || !window.docusnap.findIssuerSiblings) return;
+  document.querySelector('.ripple-bar')?.remove();
+  const res = await window.docusnap.findIssuerSiblings(srcDocId, name);
+  const siblings = (res && res.siblings) || [];
+  if (!siblings.length) return;
+  const bar = document.createElement('div');
+  bar.className = 'field-note ripple-bar';
+  const label = document.createElement('div');
+  label.textContent = `${siblings.length} more unfiled document${siblings.length === 1 ? '' : 's'} `
+    + `look${siblings.length === 1 ? 's' : ''} like the same sender.`;
+  bar.appendChild(label);
+  const apply = document.createElement('button');
+  apply.type = 'button';
+  apply.className = 'branding-resolve-btn';
+  apply.textContent = `Apply “${name}” to ${siblings.length} & re-read`;
+  apply.title = 'Sets the sender on those documents and re-reads them. They stay in Review for you to check.';
+  const dismiss = document.createElement('button');
+  dismiss.type = 'button';
+  dismiss.className = 'accept-btn';
+  dismiss.textContent = 'Not now';
+  dismiss.addEventListener('click', () => bar.remove());
+  apply.addEventListener('click', async () => {
+    apply.disabled = dismiss.disabled = true;
+    apply.textContent = 'Applying…';
+    try {
+      const ids = siblings.map(s => s.id);
+      const out = await window.docusnap.applyIssuerRipple(ids, name);
+      if (!out || out.ok !== true) { apply.textContent = 'Could not apply'; return; }
+      bar.remove();
+      // Re-read them through the SAME batched rail Reprocess-this-sender uses; the pins make the
+      // engine read them as this supplier instead of reverting to the coarse-logo pick.
+      const docs = (queue || []).filter(d => ids.includes(d.id));
+      if (docs.length) await runReprocessBatch(docs, `${docs.length} from “${name}”`);
+    } catch {
+      apply.disabled = dismiss.disabled = false;
+      apply.textContent = `Apply “${name}” to ${siblings.length} & re-read`;
+    }
+  });
+  bar.append(apply, dismiss);
+  row.appendChild(bar);
+}
+
+// LOGO SUGGESTION — OFFERED, never auto-applied (identity text-first slice 1c, Oracle C5).
+// This used to SILENTLY fill the empty issuer field, mark it `.corrected` AND write
+// corrections['supplier_name'] — so a Confirm rubber-stamped a guess from the 64-bit logo hash,
+// which is MEASURED to have zero separating power on scans (cross-supplier min hamming 2). That
+// was the renderer half of the poison loop: the engine's text-agreement gate would abstain, and
+// this would put the wrong name straight back in. Now it renders a CLICK affordance in the same
+// style as the branding "Use '<name>'" button: the app shows what the logo saw and says why it
+// isn't sure; the human decides. Nothing is written until they click.
+// Does the matched supplier's NAME actually appear in the page text? The 64-bit logo phash
+// collides across suppliers (a red mark ≈ another red mark), so a logo match alone suggested e.g.
+// "Saltmarsh Seafoods" on a Copperfield invoice. Mirrors the engine's identity text-first rule:
+// abstain ONLY on POSITIVE disagreement — require a real body of page text, then check the name's
+// distinctive tokens; too little text (or a name with no distinctive token) → fail-open (show).
+function _supplierNameOnPage(name, pageText) {
+  const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const page = norm(pageText);
+  if (page.split(' ').filter(Boolean).length < 8) return true;      // too little text to judge → fail-open
+  const STOP = new Set(['ltd','limited','plc','llp','inc','co','company','corp','the','and','group',
+                        'holdings','services','solutions','trading','uk','gmbh','llc','sa','bv','ag']);
+  const toks = norm(name).split(' ').filter(t => t.length >= 2 && !STOP.has(t));
+  if (!toks.length) return true;                                    // nothing distinctive to judge → fail-open
+  const padded = ' ' + page + ' ';
+  return toks.some(t => padded.includes(' ' + t + ' '));            // any distinctive token present as a whole word
+}
+
 async function attemptLogoMatch() {
   if (!docImg.complete || !docImg.naturalWidth) return;
   try {
     const b64   = getRawPageBase64(currentPage);
     if (!b64) return;
     const match = await window.docusnap.matchLogoHash(b64);
-    if (match && match.confidence >= 60) {
-      const supplierInput = document.querySelector('.field-input[data-key="supplier_name"]');
-      if (supplierInput && !supplierInput.value.trim()) {
-        supplierInput.value = match.supplier_name;
-        supplierInput.classList.add('corrected');
-        corrections['supplier_name'] = { original_value: '', corrected_value: match.supplier_name };
-        validateConfirm();
-        const header = document.getElementById('fields-header');
-        const note = document.createElement('div');
-        note.style.cssText = 'font-size:10px; color:var(--ok); margin-top:3px;';
-        note.textContent = `Logo matched: ${match.supplier_name} (${match.confidence}%)`;
-        header.appendChild(note);
-        setTimeout(() => note.remove(), 4000);
-      }
-    }
+    if (!match || match.confidence < 60 || !match.supplier_name) return;
+    // NAME-PRESENCE VETO (owner 2026-07-31): the logo alone is not enough — only offer the name when
+    // it actually appears on the page, so a phash collision can't suggest an off-page company.
+    if (!_supplierNameOnPage(match.supplier_name, (currentDoc && currentDoc.ocr_text) || '')) return;
+    const supplierInput = document.querySelector('.field-input[data-key="supplier_name"]');
+    if (!supplierInput || supplierInput.value.trim()) return;      // never overwrite a read/typed value
+    if (document.querySelector('.logo-suggest-btn')) return;        // one offer at a time
+    const wrap = supplierInput.closest('.field-input-wrap') || supplierInput.parentElement;
+    if (!wrap || !wrap.parentElement) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'branding-resolve-btn logo-suggest-btn';
+    btn.textContent = `Use “${match.supplier_name}” — the logo looks similar`;
+    btn.title = 'The logo resembles this company, but the page text didn’t confirm it. '
+              + 'Click to use this name, or type the correct one.';
+    btn.addEventListener('click', () => {
+      supplierInput.value = match.supplier_name;
+      supplierInput.classList.add('corrected');
+      corrections['supplier_name'] = { original_value: '', corrected_value: match.supplier_name };
+      validateConfirm();
+      btn.remove();
+    });
+    wrap.parentElement.insertBefore(btn, wrap.nextSibling);
   } catch (err) {
     console.warn('Logo match failed (non-critical):', err);
   }
@@ -3900,7 +5144,7 @@ async function attemptLogoMatch() {
 // snapshot image — reading the live docImg here would fingerprint the NEXT doc against
 // the previous supplier (eric R1). With no b64 we fall back to the live docImg (the
 // legacy bulk/confirmCurrentDoc callers, which run before any advance).
-async function saveLogoOnConfirm(supplierName, b64 = null) {
+async function saveLogoOnConfirm(supplierName, b64 = null, documentId = null) {
   if (!supplierName) return;
   try {
     if (!b64) {
@@ -3913,6 +5157,9 @@ async function saveLogoOnConfirm(supplierName, b64 = null) {
         supplier_name: supplierName,
         phash:         hashes.phash,
         ahash:         hashes.ahash || hashes.phash,
+        // The main process gates the plant on this document's own text (Oracle C4); absent id
+        // ⇒ the gate fails open, so older callers keep working unchanged.
+        document_id:   documentId ?? currentDoc?.id ?? null,
       });
     }
   } catch (err) {
@@ -3973,9 +5220,18 @@ document.getElementById('fields-scroll')?.addEventListener('focusin', (e) => {
   }
 });
 
-document.getElementById('btn-advanced').addEventListener('click', () => {
-  const bar = document.getElementById('advanced-bar');
-  bar.style.display = (bar.style.display === 'block') ? 'none' : 'block';
+// DIRECT Learning-History button (2026-07-15, bob): the ⚙ Advanced flyout held only "View learning
+// history", so a gear (which reads as Settings) + an extra click for one action was pure friction.
+// This button now opens the learning-history modal DIRECTLY (same as #btn-view-learning). The
+// #advanced-bar flyout markup + its #btn-view-learning handler stay dormant (display:none), so a
+// future 2nd advanced item can re-enable the flyout cheaply.
+document.getElementById('btn-advanced').addEventListener('click', async (ev) => {
+  try { ev.currentTarget.blur(); } catch {}   // keep Blink's page-focus flag (dead-caret guard)
+  document.getElementById('advanced-bar').style.display = 'none';
+  document.getElementById('lh-overlay').style.display = 'block';
+  makeLhDraggable();
+  if (lastFocusedFieldKey) await loadLearningHistoryFor(lastFocusedFieldKey);
+  else showLearningHistoryEmpty();
 });
 
 let _lhData = [];                          // unsorted rows from the backend
@@ -4359,7 +5615,27 @@ function _clearPreviewState() {
   const banner = document.getElementById('preview-banner');
   if (banner) banner.classList.remove('visible');
   const btn = document.getElementById('btn-preview-ocr');
-  if (btn) { btn.innerHTML = '&#9658; Preview OCR'; btn.classList.remove('active'); }
+  if (btn) { btn.innerHTML = '&#9658; Preview the read'; btn.classList.remove('active'); }
+  hidePreviewCta();   // a real doc is being shown (or the panel cleared) → drop the pick-a-doc CTA
+}
+
+// The "pick a document to start" call-to-action shown in the empty preview pane when the queue
+// HAS documents but none is auto-selected (the returning-user case: 2+ sender piles that start
+// collapsed). It replaces a bland/dead pane with a clear next step and doubles as insurance for
+// any other "nothing selected" moment. Hidden the instant any doc is selected or the panel is
+// cleared — both routes run through _clearPreviewState above. The button lands on the first
+// document in the CURRENT display order (reviewDisplayOrder — what the ↑/↓ nav treats as first);
+// selectDoc then expands that doc's group.
+function showPreviewCta() {
+  const cta = document.getElementById('preview-cta');
+  if (!cta) return;
+  const ph = document.getElementById('doc-placeholder');
+  if (ph) ph.style.display = 'none';   // don't stack the plain placeholder behind the CTA
+  cta.style.display = 'flex';
+}
+function hidePreviewCta() {
+  const cta = document.getElementById('preview-cta');
+  if (cta) cta.style.display = 'none';
 }
 
 function deactivatePreview() {
@@ -4373,8 +5649,7 @@ async function generateEnhancedPreview(page) {
   if (!params) return null;
   try {
     return await window.docusnap.getEnhancedPreview({
-      folderPath:    currentDoc.folder_path,
-      filename:      currentDoc.original_filename,
+      docId:         currentDoc.id,
       page,
       enhanceParams: params,
     });
@@ -4464,6 +5739,71 @@ function hasPendingReviewEdits() {
   const detected = currentDoc && currentDoc.type_slug;
   if (selectedTypeSlug && detected && selectedTypeSlug !== detected) return true;   // manual type override
   return false;
+}
+
+// ── Fast on-open re-extract (Slice B, DARK) ─────────────────────────────────────
+// Debounced, doc-guarded trigger for the text-only re-extract. Rapid ↑/↓ cycling must NOT spawn a
+// worker per selection, so it waits for the operator to settle on a doc; it never fires while there
+// are unsaved edits (a suggestion must never fight a human), and it skips the IPC entirely unless
+// there's an EMPTY non-anchored field to gain (fill-only can't touch a filled or taught field, so a
+// fully-populated doc has nothing to add). The kill switch (server-side) OFF path returns
+// {ok:false,reason:'disabled'} — so even when this fires, nothing spawns until the feature is enabled.
+let _reextractTimer = null;
+function _scheduleReextractFast(docId) {
+  clearTimeout(_reextractTimer);
+  _reextractTimer = setTimeout(() => {
+    if (!currentDoc || currentDoc.id !== docId) return;        // moved on during the debounce
+    if (hasPendingReviewEdits()) return;                        // don't fight a human
+    // Only-when-gain (client pre-check): at least one EMPTY, non-taught field. Saves a spawn on a
+    // fully-read doc; the server re-checks the anchor scope authoritatively.
+    const inputs = Array.from(document.querySelectorAll('#fields-scroll .field-input'));
+    const hasGain = inputs.some(i => !String(i.value || '').trim() && !taughtFieldKeys.has(i.dataset.key));
+    if (!hasGain) return;
+    Promise.resolve(window.docusnap.reextractFieldsFast?.(docId)).then(res => {
+      if (!res || !res.ok || !Array.isArray(res.suggestions) || !res.suggestions.length) return;
+      if (!currentDoc || currentDoc.id !== docId) return;      // moved on during the spawn
+      if (hasPendingReviewEdits()) return;                      // started editing while it ran
+      _applyReextractSuggestions(res.suggestions);
+    }).catch(() => {});
+  }, 450);
+}
+
+// Paint the fill-only suggestions into the still-empty field inputs. Sets .value DIRECTLY (no input
+// event, no `corrections` entry) so a confirmed-untouched suggestion is treated as an ordinary
+// extracted value, NOT a human correction (Oracle C4). Each filled field gets a subtle marker + a
+// pill note; the operator's Confirm reads the input value and persists/learns it normally.
+function _applyReextractSuggestions(suggestions) {
+  const scroll = document.getElementById('fields-scroll');
+  if (!scroll) return;
+  let applied = 0;
+  for (const s of (suggestions || [])) {
+    if (!s || !s.field_key || !String(s.value ?? '').trim()) continue;
+    let inp = null;
+    try { inp = scroll.querySelector(`.field-input[data-key="${CSS.escape(s.field_key)}"]`); } catch { inp = null; }
+    if (!inp) continue;
+    if (String(inp.value || '').trim()) continue;              // only ever fill a STILL-empty input
+    inp.value = s.value;                                        // NO input event, NO corrections[] (Oracle C4)
+    inp.classList.add('reextract-suggested');
+    inp.title = 'Scan Finder took another look at this document and suggests this value — check it, then Confirm to keep.';
+    inp.style.borderColor = 'var(--accent2)';                  // subtle "this is a suggestion" cue
+    const row = inp.closest('.field-row');
+    // DISPLAY-ONLY supersede (owner 2026-08-01: "why am I still seeing the messages"): a
+    // stale stored flag ("couldn't confirm which company…") above a field the suggestion
+    // just filled reads as a contradiction. Hide the note element while the suggestion is
+    // showing — the DB note is untouched (the flag legally stays until the operator's
+    // Confirm clears it server-side; any re-render without a suggestion brings it back).
+    // Oracle precedent: display-only note handling SIGNED, persisted clears SENT BACK.
+    row?.querySelectorAll('.field-note:not(.reextract-pill)')?.forEach(n => { n.style.display = 'none'; });
+    if (row && !row.querySelector('.reextract-pill')) {
+      const pill = document.createElement('div');
+      pill.className = 'field-note reextract-pill';
+      pill.textContent = '⟳ Found on a second look — check it, then Confirm to keep.';
+      Object.assign(pill.style, { fontSize: '11px', color: 'var(--accent2)', marginTop: '3px' });
+      row.appendChild(pill);
+    }
+    applied++;
+  }
+  if (applied) validateConfirm();   // a required empty field may have just gained a value — re-eval the gate
 }
 const REPROCESS_DISCARD_WARNING =
   'Reprocessing re-reads this document with the latest learned data and REPLACES the '
@@ -4566,13 +5906,13 @@ document.getElementById('btn-reprocess').addEventListener('click', async (e) => 
     btn.style.borderColor = 'var(--ok)';
     setTimeout(() => {
       btn.disabled = false;
-      btn.innerHTML = '&#9654;&#9654; Reprocess with Learned Data';
+      btn.innerHTML = '&#9654;&#9654; Reprocess';
       btn.style.color = '';
       btn.style.borderColor = '';
     }, 3000);
   } else {
     btn.disabled = false;
-    btn.innerHTML = '&#9654;&#9654; Reprocess with Learned Data';
+    btn.innerHTML = '&#9654;&#9654; Reprocess';
     btn.style.color = 'var(--err)';
     setTimeout(() => { btn.style.color = ''; }, 2000);
     // Surface WHY (e.g. "A reprocess is already running") instead of a silent red flash.
@@ -4645,6 +5985,78 @@ document.getElementById('btn-stop-reprocess').addEventListener('click', () => {
   btnStop.innerHTML = 'Stopping…';
 });
 
+// RECONNECT to a "Reprocess All" that is still running in the main process after Review was closed
+// and reopened (Option A — the batch is never interrupted). Enters the same in-progress UI as a
+// fresh start (banner + locked buttons + Stop) and drives it from the broadcast progress events; the
+// batch's 'batch_done' event (emitted to the LIVE Review window) triggers the same refresh + re-enable
+// the fresh path does in its finally. Called once from loadQueue when get-reprocess-status says running.
+async function reconnectRunningBatch(status) {
+  if (_batchActive || !status || !status.running) return;
+  const btnAll  = document.getElementById('btn-reprocess-all');
+  const btnSup  = document.getElementById('btn-reprocess-supplier');
+  const btnOne  = document.getElementById('btn-reprocess');
+  const btnStop = document.getElementById('btn-stop-reprocess');
+  const banner  = document.getElementById('reprocess-progress');
+  if (!btnAll || !btnStop || !banner) return;
+
+  _batchActive  = true;
+  _batchStopped = false;
+  btnAll.disabled = true;
+  if (btnSup) btnSup.disabled = true;
+  if (btnOne) btnOne.disabled = true;
+  btnStop.disabled = false;
+  btnStop.innerHTML = '&#9632; Stop';
+  btnStop.style.display = '';
+  banner.classList.remove('done');
+  banner.classList.add('show');
+  const total = status.total || 0;
+  banner.textContent = `Reprocessing ${status.done || 0} of ${total} · the queue (already running)…`;
+
+  // Completion — the same refresh the fresh-start path runs in its finally. Guarded so the batch_done
+  // event and the race-recheck below can't both fire it.
+  let finished = false;
+  const finish = async (done, failed) => {
+    if (finished) return; finished = true;
+    window.docusnap.removeReprocessProgress();
+    try {
+      if (currentDoc) {
+        const full = await window.docusnap.getDocumentWithExtractions(currentDoc.id);
+        if (full && currentDoc && currentDoc.id === full.id) {
+          currentDoc = full; corrections = {}; pendingAnchors = {}; pendingFieldRules = {};
+          syncDocTypeFromRecord(full); renderFields(full);
+        }
+      }
+    } catch { /* panel refresh is best-effort */ }
+    queue         = await window.docusnap.getReviewQueue();
+    deferredQueue = await window.docusnap.getDeferredQueue();
+    updateTabCounts();
+    renderQueueList();
+    _batchActive          = false;
+    btnAll.disabled       = false;
+    if (btnOne) btnOne.disabled = false;
+    btnStop.style.display = 'none';
+    updateReprocessSupplierButton();
+    await autoCommitFullConfidence();
+    try { await window.docusnap.consumeReprocessCompletion(); } catch { /* this window ran the completion — clear the once-flag */ }
+    banner.classList.add('done');
+    banner.textContent = _batchStopped ? `Stopped — ${done} reprocessed`
+      : (failed ? `Completed — ${done} OK, ${failed} failed` : `Completed ${done} of ${total}`);
+    setTimeout(() => { if (!_batchActive) { banner.classList.remove('show', 'done'); banner.textContent = ''; } }, 4000);
+    showToast(_batchStopped ? `Stopped — ${done} reprocessed`
+      : (failed ? `Reprocessed ${done} — ${failed} failed` : `Reprocessed ${done} document${done !== 1 ? 's' : ''}`),
+      (failed || _batchStopped) ? 'warn' : 'ok');
+  };
+
+  window.docusnap.removeReprocessProgress();
+  window.docusnap.onReprocessProgress((msg) => {
+    if (msg.type === 'file_done') banner.textContent = `Reprocessing ${msg.done || 0} of ${msg.total || total} · the queue…`;
+    else if (msg.type === 'batch_done') finish(msg.done || 0, msg.failed || 0);
+  });
+  // RACE GUARD: the batch may have finished between get-reprocess-status (in loadQueue) and this
+  // subscription — in which case batch_done already fired and was missed. Re-read and finalise now.
+  try { const st2 = await window.docusnap.getReprocessStatus(); if (!st2 || !st2.running) await finish((st2 && st2.done) || 0, (st2 && st2.failed) || 0); } catch { /* leave the batch subscription in place */ }
+}
+
 // Reprocess a set of documents (the whole queue, or just one sender's) through the shared
 // batched-worker path. scopeLabel is shown in the progress banner + toast.
 async function runReprocessBatch(docs, scopeLabel) {
@@ -4687,6 +6099,7 @@ async function runReprocessBatch(docs, scopeLabel) {
     else if (msg.type === 'log')   console.log('[Reprocess]', msg.text);
   });
 
+  let lockedSkipped = 0;   // Slice 1 Stage E: docs skipped because they sit in an approval workflow
   try {
     const res = await window.docusnap.reprocessBatch(
       docs.map(d => ({ docId: d.id, folderPath: d.folder_path, filename: d.original_filename })),
@@ -4694,6 +6107,7 @@ async function runReprocessBatch(docs, scopeLabel) {
     );
     done   = (res && res.done)   || 0;
     failed = (res && res.failed) || 0;
+    lockedSkipped = (res && res.lockedSkipped) || 0;
     // Refused because a single reprocess (or another batch) is already running — clear the
     // just-shown banner and explain, rather than leaving "Reprocessing 0 of N…" stuck.
     if (res && res.success === false) {
@@ -4730,13 +6144,19 @@ async function runReprocessBatch(docs, scopeLabel) {
     updateReprocessSupplierButton();   // re-enable + relabel the per-sender button for the open doc
     // Auto-commit any docs that reprocessed to 100% (setting-gated) + toast.
     await autoCommitFullConfidence();
+    // This window ran the completion — clear the main-side once-flag so a later reopen doesn't re-fire
+    // a stale "reprocess finished" auto-commit + summary (the closed-till-done path consumes it there).
+    try { await window.docusnap.consumeReprocessCompletion(); } catch { /* best-effort */ }
   }
 
   const stopped = _batchStopped;
-  const summary = stopped
+  // Slice 1 Stage E: locked docs are skipped (never silently rewritten under an approver) —
+  // say so, or the skip reads as a miscount.
+  const lockedText = lockedSkipped ? ` · ${lockedSkipped} skipped (in an approval workflow)` : '';
+  const summary = (stopped
     ? `Stopped — ${done} reprocessed`
     : (failed ? `Completed — ${done} OK, ${failed} failed`
-              : `Completed ${done} of ${total}`);
+              : `Completed ${done} of ${total}`)) + lockedText;
   banner.classList.add('done');
   banner.textContent = summary;
   setTimeout(() => {
@@ -4744,10 +6164,10 @@ async function runReprocessBatch(docs, scopeLabel) {
   }, 4000);
 
   showToast(
-    stopped ? `Stopped — ${done} reprocessed, ${queue.length} remaining`
-            : (failed ? `Reprocessed ${done} — ${failed} failed`
-                      : `Reprocessed ${done} document${done !== 1 ? 's' : ''}`),
-    (failed || stopped) ? 'warn' : 'ok'
+    (stopped ? `Stopped — ${done} reprocessed, ${queue.length} remaining`
+             : (failed ? `Reprocessed ${done} — ${failed} failed`
+                       : `Reprocessed ${done} document${done !== 1 ? 's' : ''}`)) + lockedText,
+    (failed || stopped || lockedSkipped) ? 'warn' : 'ok'
   );
 }
 
@@ -4797,6 +6217,12 @@ document.getElementById('split-mode').addEventListener('change', () => {
 });
 
 document.getElementById('btn-split-pdf').addEventListener('click', () => {
+  // 1-page guard (Chris r5 card 7): a valid split of a 1-pager "succeeds" — it deletes the
+  // original and re-imports an identical doc behind the "permanently removed" warning.
+  // STRICT === 1: pages array is authoritative when loaded; page_count fallback is
+  // NULL-tolerant (pre-mig-37 unknown must never block).
+  const _pc = (Array.isArray(pageImages) && pageImages.length) ? pageImages.length : currentDoc?.page_count;
+  if (_pc === 1) { showToast('This document is only one page — there\'s nothing to split.', 'warn'); return; }
   const bar = document.getElementById('split-bar');
   bar.style.display = 'flex';
   document.getElementById('split-mode').value = 'ranges';
@@ -4822,7 +6248,12 @@ async function doSplitPdf() {
   } else {
     const input = document.getElementById('split-ranges-input');
     ranges = input.value.trim();
-    if (!ranges) { input.focus(); return; }
+    if (!ranges) {
+      // Never a silent no-op after a destructive-sounding warning (Chris r5 card 7).
+      showToast('Type a page range first — e.g. 1-2,3.', 'warn');
+      input.focus();
+      return;
+    }
   }
 
   const filePath  = currentDoc.folder_path + '\\' + currentDoc.original_filename;
@@ -4864,6 +6295,7 @@ document.getElementById('split-ranges-input').addEventListener('keydown', (e) =>
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+let _placeholderMsg = null;   // one-shot override for the cleared-panel message (cause-aware)
 function clearDocPanel() {
   _clearPreviewState();
   const _rsBtn = document.getElementById('btn-reprocess-supplier');
@@ -4871,7 +6303,11 @@ function clearDocPanel() {
   docImgWrap.style.display = 'none';
   const ph = document.getElementById('doc-placeholder');
   ph.style.display = '';
-  ph.textContent   = 'All documents reviewed ✓';
+  // Per-cause placeholder (Chris r5 card 6): "All documents reviewed ✓" was shown for EVERY
+  // road to an empty queue — including a Delete All, which is not a review. Callers with a
+  // different truth pass it; the reviewed-it-all default stays for everyone else.
+  ph.textContent   = _placeholderMsg || 'All documents reviewed ✓';
+  _placeholderMsg  = null;
   document.getElementById('doc-name').textContent = '—';
   document.getElementById('fields-scroll').innerHTML = '';
   document.getElementById('doctype-select').value = '';
@@ -4879,6 +6315,7 @@ function clearDocPanel() {
   document.getElementById('btn-confirm').disabled = true;
   document.getElementById('btn-split-pdf').style.display  = 'none';
   document.getElementById('split-bar').style.display      = 'none';
+  { const pb = document.getElementById('btn-print-doc'); if (pb) pb.style.display = 'none'; }
   const extStatus = document.getElementById('extraction-status');
   if (extStatus) extStatus.innerHTML = '';
   // Blank the per-document review aids too, so an empty queue ("All documents
@@ -4963,6 +6400,16 @@ window.docusnap.onDocTypesChanged?.(async () => {
   const cur = sel ? sel.value : '';
   populateTypeDropdown();
   if (sel) sel.value = cur || sel.value;
+});
+
+// LIVE field-visibility (migration 54): an admin changed which fields a layout shows in
+// Settings → Field visibility. If the doc on screen belongs to that template, refresh its hidden
+// set and re-render the fields immediately — no close/reopen. The payload carries the fresh array
+// so we don't re-fetch. Ignored when the change is for a different template (or nothing is open).
+window.docusnap.onReviewVisibilityChanged?.(({ templateId, hidden } = {}) => {
+  if (!currentDoc || currentDoc.template_id !== templateId) return;
+  currentDoc.hidden_fields = hidden || [];
+  renderFields(currentDoc);
 });
 
 // Auto-refresh the queue when the main process signals the review count changed. DEBOUNCED: as a
@@ -5159,7 +6606,6 @@ function captureWizardDraft(key) {
     fixedMode:   !!wizard.fixedMode,
     fixedValue:  document.getElementById('wiz-fixed-value')?.value || '',
     anchorText:  document.getElementById('wiz-anchor-text')?.value || '',
-    ocrType:     document.getElementById('wiz-ocr-type')?.value || 'text',
     draftAnchor: wizard.draftAnchor ? { ...wizard.draftAnchor } : null,
     draftTarget: wizard.draftTarget ? { ...wizard.draftTarget } : null,
   };
@@ -5207,7 +6653,6 @@ function loadWizardField(i) {
   const f = wizard.fields[wizard.index];
   const fixedInput  = document.getElementById('wiz-fixed-value');
   const anchorInput = document.getElementById('wiz-anchor-text');
-  const ocrInput    = document.getElementById('wiz-ocr-type');
 
   // Restore priority: in-session DRAFT (unsaved edits) > saved FIXED value >
   // saved BOXES (this page) > empty. So you always see what's there + don't lose
@@ -5219,12 +6664,11 @@ function loadWizardField(i) {
     wizard.fixedMode    = draft.fixedMode;
     fixedInput.value    = draft.fixedValue;
     anchorInput.value   = draft.anchorText;
-    ocrInput.value      = draft.ocrType;
     wizard.draftAnchor  = draft.draftAnchor ? { ...draft.draftAnchor } : null;
     wizard.draftTarget  = draft.draftTarget ? { ...draft.draftTarget } : null;
   } else if (savedFixed != null && savedFixed !== '') {
     wizard.fixedMode = true; fixedInput.value = savedFixed;
-    anchorInput.value = ''; ocrInput.value = 'text';
+    anchorInput.value = '';
   } else if (saved && saved.anchor_x_norm != null && saved.target_x_norm != null
              && (saved.page_number || 0) === currentPage) {   // box belongs to this page
     wizard.fixedMode = false; fixedInput.value = '';
@@ -5232,10 +6676,10 @@ function loadWizardField(i) {
                            w_norm: saved.anchor_w_norm, h_norm: saved.anchor_h_norm };
     wizard.draftTarget = { x_norm: saved.target_x_norm, y_norm: saved.target_y_norm,
                            w_norm: saved.target_w_norm, h_norm: saved.target_h_norm };
-    anchorInput.value = saved.anchor_text || ''; ocrInput.value = saved.ocr_type || 'text';
+    anchorInput.value = saved.anchor_text || '';
   } else {
     wizard.fixedMode = false; fixedInput.value = '';
-    anchorInput.value = ''; ocrInput.value = 'text';
+    anchorInput.value = '';
   }
 
   wizard._loadedKey = f.key;
@@ -5454,7 +6898,6 @@ document.getElementById('wiz-show-resolved')?.addEventListener('click', async ()
     target_w_norm: wizard.draftTarget.w_norm, target_h_norm: wizard.draftTarget.h_norm,
     offset_dx_norm: wizard.draftTarget.x_norm - wizard.draftAnchor.x_norm,
     offset_dy_norm: wizard.draftTarget.y_norm - wizard.draftAnchor.y_norm,
-    ocr_type:       document.getElementById('wiz-ocr-type').value,
     search_expansion: 0.04, enabled: true,
   };
   let out = {};
@@ -5589,6 +7032,27 @@ function advanceWizardField() {
 function sanitizeAnchorLabel(label) { return window.AnchorLabel.sanitizeAnchorLabel(label); }
 function labelLooksSuspicious(label) { return window.AnchorLabel.labelLooksSuspicious(label); }
 
+// A caption that is actually the document's TYPE HEADING ("INVOICE", "PURCHASE ORDER") — not a
+// field label — must NOT become an anchor label. The heading is large/ambiguous and relocating off
+// it is fragile: it is exactly what made every SuperStore invoice hold at 69% (a taught invoice_number
+// anchor whose auto-label grabbed the "INVOICE" title, which then never re-located, tripping the
+// taught-ownership guard on the correct keyword read). Treat it like a garbled caption → fall back to
+// a POSITION-ONLY anchor (registration-relocated, robust). EXACT-match against the install's type
+// names + their printed-title aliases, so a real caption that merely CONTAINS a type word
+// ("Invoice No", "Order Date") is never caught.
+function labelIsTypeHeading(label) {
+  const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const n = norm(label);
+  if (!n) return false;
+  for (const t of (allDocTypes || [])) {
+    if (norm(t.name) === n) return true;
+    let aliases = t.title_aliases;
+    if (typeof aliases === 'string') { try { aliases = JSON.parse(aliases); } catch { aliases = []; } }
+    for (const a of (aliases || [])) if (norm(a) === n) return true;
+  }
+  return false;
+}
+
 // OCR a NORMALISED box on the current page image (docImg) via the existing
 // ocr-region IPC (same light-first region.py recipe the target read-back uses).
 // Returns trimmed text, or '' on failure. Used to auto-derive the anchor label.
@@ -5657,7 +7121,6 @@ async function wizardSave() {
         anchor_w_norm: wizard.draftAnchor.w_norm, anchor_h_norm: wizard.draftAnchor.h_norm,
         target_x_norm: wizard.draftTarget.x_norm, target_y_norm: wizard.draftTarget.y_norm,
         target_w_norm: wizard.draftTarget.w_norm, target_h_norm: wizard.draftTarget.h_norm,
-        ocr_type:         document.getElementById('wiz-ocr-type').value,
         search_expansion: 0.04,
         enabled:          true,
       };
@@ -5754,12 +7217,15 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
       else if (ev.event === 'transform') get(ev.field).transforms.push(ev);   // Stage 2.5 denoise/correct
       else if (ev.event === 'validation') get(ev.field).validations.push(ev);  // Stage 4/4.5 normalise/flag/withhold
       else if (ev.event === 'final') get(ev.field).final = ev;
-      else if (ev.event === 'slice' && ev.bbox) {
+      else if (ev.event === 'slice' && (ev.bbox || ev.path)) {
+        // Keep the saved crop PATH too (served by devGetSlice) so the panel can SHOW the
+        // exact image OCR'd — and capture a path-only slice (no bbox) as well, so a read
+        // with no located box still shows its crop.
         const f = ev.field;
         if (!sliceMap[f]) sliceMap[f] = {};
         const key = ev.stage || '_';
         if (!sliceMap[f][key]) sliceMap[f][key] = [];
-        sliceMap[f][key].push({ kind: ev.kind || 'target', bbox: ev.bbox, page: ev.page ?? 0, stage: ev.stage || '_' });
+        sliceMap[f][key].push({ kind: ev.kind || 'target', bbox: ev.bbox || null, page: ev.page ?? 0, stage: ev.stage || '_', method: ev.method || null, path: ev.path || null });
       }
     }
     // Map a candidate's METHOD to the slice-event stage it produced. The slice
@@ -5783,9 +7249,25 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
     // Pick the slice that the candidate's METHOD actually produced — never a
     // fallback to "any slice for the field" (that was the wrong-box bug: a winning
     // inline read borrowed the rejected rigid crop's stale coordinates).
-    function pickSlice(field, method) {
+    function pickSlice(field, method, geom) {
       const m = sliceMap[field];
-      if (!m || !method) return null;
+      if (!m) return null;
+      // PRIMARY: match the captured crop whose box == the winning value's ACTUAL read box
+      // (target_geom, emitted on the merge event). A relocate / registration / edge / footer
+      // rung carries its OWN box, so this shows the crop the value was TRULY read from — not
+      // the first same-stage (abs) capture, which mislabelled a relocated read (the "slice
+      // shows PO-90621 but the value is IM.ANKI1" bug). Tolerance ~2% of the page per axis.
+      if (Array.isArray(geom) && geom.length === 4) {
+        let best = null, bestD = 0.02;
+        for (const k of Object.keys(m)) for (const s of m[k]) {
+          if (s.kind !== 'target' || !Array.isArray(s.bbox) || s.bbox.length !== 4) continue;
+          const d = Math.max(...s.bbox.map((v, i) => Math.abs(v - geom[i])));
+          if (d <= bestD) { best = s; bestD = d; }
+        }
+        if (best) return best;
+      }
+      // FALLBACK (no geom, e.g. a rejected rung): the method's own captured crop.
+      if (!method) return null;
       const key = METHOD_TO_SLICE[method];
       if (!key) return null;                  // text/inline read — no crop region
       const arr = m[key];
@@ -5804,13 +7286,36 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
       for (const k of Object.keys(m)) { const hit = m[k].find(s => s.kind === 'anchor'); if (hit) return hit; }
       return null;
     }
-    if (!byField.size) {
+    // Every field's captured crops (path-bearing slices), flattened across stages — shown as
+    // thumbnails at the bottom of the field so you can SEE exactly what was OCR'd for each read.
+    function allSlices(field) {
+      const mm = sliceMap[field];
+      if (!mm) return [];
+      const out = [];
+      for (const k of Object.keys(mm)) for (const s of mm[k]) if (s.path) out.push(s);
+      return out;
+    }
+
+    // Show a block for EVERY field, not only those that produced a merge/final event: union the
+    // type's declared fields (in their own order) with any traced field and any field that
+    // produced ONLY a crop. A flagged-but-vanished field (e.g. a date whose taught + full-page
+    // reads disagreed) now ALWAYS appears — with its crops — instead of silently dropping out.
+    const orderedFields = [];
+    const seenF = new Set();
+    const pushF = (k) => { if (k && !seenF.has(k)) { seenF.add(k); orderedFields.push(k); } };
+    for (const f of (fieldDefs || [])) pushF(f.key);   // declared order first
+    for (const k of byField.keys()) pushF(k);           // then any traced extras
+    for (const k of Object.keys(sliceMap)) pushF(k);    // then crop-only fields
+    if (!orderedFields.length) {
       elEmpty.hidden = false; elFields.innerHTML = '';
       return;
     }
     elEmpty.hidden = true;
+    const EMPTY_M = { merges: [], rejects: [], transforms: [], validations: [], final: null, reconcile: null };
     const blocks = [];
-    for (const [field, m] of byField) {
+    for (const field of orderedFields) {
+      const m = byField.get(field) || EMPTY_M;
+      const hadEvents = byField.has(field);
       const finalVal = m.final ? m.final.value : null;
       const emptyCls = (finalVal == null || finalVal === '') ? ' empty' : '';
       const winLine  = m.final
@@ -5827,7 +7332,7 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
             ? `lost — lower confidence (${c.confidence}% < ${wc}%)`
             : (c.vs && c.vs.value != null ? `lost — superseded by "${shown(c.vs.value)}"` : 'lost — superseded');
         }
-        rows.push(cand(STAGE_LABEL[c.stage] || c.stage, c.value, c.confidence, c.method, won ? 'won' : 'lost', won ? '' : reason, pickSlice(field, c.method), rxBadge(field, c.value), anchorSlice(field)));
+        rows.push(cand(STAGE_LABEL[c.stage] || c.stage, c.value, c.confidence, c.method, won ? 'won' : 'lost', won ? '' : reason, pickSlice(field, c.method, c.geom), rxBadge(field, c.value), anchorSlice(field)));
       }
       for (const r of m.rejects) {
         // A rejected rung IS keyed by its method (e.g. "anchor_crop") — show the
@@ -5868,15 +7373,41 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
           + ` &nbsp;vs total <b>${escHtml(String(rc.total))}</b> &nbsp;(Δ ${escHtml(String(rc.delta))}, tol ${escHtml(String(rc.tol))}) → ${rc.reconciles ? 'reconciles' : "doesn't reconcile"}`;
         rows.push(noteRow('reconcile', calc + (rc.verdict ? `<div class="rdc-why">${escHtml(String(rc.verdict))}</div>` : ''), 'valid'));
       }
-      if (!rows.length) rows.push(`<div class="rdc-cand"><span class="rdc-reason" style="padding-left:0">matched on the OCR text layer (no per-stage crop trace)</span></div>`);
+      if (!rows.length) rows.push(hadEvents
+        ? `<div class="rdc-cand"><span class="rdc-reason" style="padding-left:0">matched on the OCR text layer (no per-stage crop trace)</span></div>`
+        : `<div class="rdc-cand"><span class="rdc-reason" style="padding-left:0">no candidate reached this field on the last trace run${allSlices(field).length ? ' — see the crops below for what was read' : ''}</span></div>`);
+
+      // Bottom strip: every crop this field was OCR'd from (lazy-loaded via devGetSlice), so you
+      // can see the exact image behind each read — incl. a disagreeing taught crop vs full-page.
+      // The crop the WINNING value was actually read from is badged "← read" (bbox-matched to the
+      // winning merge's target_geom) and its vertical page position is shown, so two same-stage
+      // captures (e.g. the abs box vs a relocated footer read) are no longer indistinguishable.
+      const winGeoms = (m.merges || []).filter(x => x.decision === 'win' && Array.isArray(x.geom)).map(x => x.geom);
+      const bboxMatch = (bb, g) => Array.isArray(bb) && bb.length === 4 && Math.max(...bb.map((v, i) => Math.abs(v - g[i]))) <= 0.02;
+      const slices = allSlices(field);
+      const sliceStrip = slices.length
+        ? `<div class="rdc-slices">` + slices.map(s => {
+            const isRead = winGeoms.some(g => bboxMatch(s.bbox, g));
+            const pos = (Array.isArray(s.bbox) && s.bbox.length === 4) ? ` @${Math.round(s.bbox[1] * 100)}%` : '';
+            return `<figure class="rdc-slice${isRead ? ' read' : ''}"><img data-slice-path="${escHtml(s.path)}" alt="crop" loading="lazy">`
+            + `<figcaption>${escHtml(s.method || s.kind || 'crop')}${escHtml(pos)}${isRead ? ' · ← read' : ''}</figcaption></figure>`; }).join('')
+          + `</div>`
+        : '';
 
       blocks.push(
-        `<div class="rdc-field" data-f="${escHtml(field)}">`
+        `<div class="rdc-field${hadEvents ? '' : ' noevents'}" data-f="${escHtml(field)}">`
         + `<div class="rdc-fhead"><span class="rdc-fname">${escHtml(field)}</span>`
         + `<span class="rdc-fwin${emptyCls}">${winLine}</span></div>`
-        + `<div class="rdc-cands">${rows.join('')}</div></div>`);
+        + `<div class="rdc-cands">${rows.join('')}${sliceStrip}</div></div>`);
     }
     elFields.innerHTML = blocks.join('');
+    // Lazy-load the crop images (dev-only; devGetSlice returns a data: URL under devSliceDir, or null).
+    elFields.querySelectorAll('img[data-slice-path]').forEach(async (img) => {
+      try {
+        const url = await window.docusnap.devGetSlice(img.dataset.slicePath);
+        if (url) img.src = url; else img.closest('.rdc-slice')?.classList.add('missing');
+      } catch { img.closest('.rdc-slice')?.classList.add('missing'); }
+    });
     elFields.querySelectorAll('.rdc-fhead').forEach((h) => {
       h.addEventListener('click', () => h.parentElement.classList.toggle('open'));
     });
@@ -5909,8 +7440,8 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
 
   function cand(stage, value, conf, method, tag, reason, slice, rx, aslice) {
     const tagTxt = tag === 'rej' ? 'rejected' : tag;
-    const tAttr = slice ? ` data-bbox="${escHtml(JSON.stringify(slice.bbox))}" data-kind="${escHtml(slice.kind || 'target')}" data-page="${slice.page ?? 0}" data-stage="${escHtml(slice.stage || '_')}"` : '';
-    const aAttr = aslice ? ` data-anchor-bbox="${escHtml(JSON.stringify(aslice.bbox))}" data-anchor-page="${aslice.page ?? 0}" data-anchor-stage="${escHtml(aslice.stage || 'anchor_label')}"` : '';
+    const tAttr = (slice && slice.bbox) ? ` data-bbox="${escHtml(JSON.stringify(slice.bbox))}" data-kind="${escHtml(slice.kind || 'target')}" data-page="${slice.page ?? 0}" data-stage="${escHtml(slice.stage || '_')}"` : '';
+    const aAttr = (aslice && aslice.bbox) ? ` data-anchor-bbox="${escHtml(JSON.stringify(aslice.bbox))}" data-anchor-page="${aslice.page ?? 0}" data-anchor-stage="${escHtml(aslice.stage || 'anchor_label')}"` : '';
     const clickAttr = (slice || aslice) ? ` style="cursor:pointer" title="Click to highlight the value box (amber)${aslice ? ' + anchor box (blue)' : ''} on the page"` : '';
     const bboxAttr = tAttr + aAttr + clickAttr;
     return `<div class="rdc-cand"${bboxAttr}>`
@@ -6059,7 +7590,11 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && active && !modalOpen) { close(); return; }
-    if (modalOpen || inField(e.target)) return;
+    if (modalOpen) return;
+    // Ctrl+Shift held is NEVER text entry, so the chord works even with focus in a field
+    // box (2026-08-04: the old inField guard here silently ate the chord after a reprocess
+    // left focus in a field — diagnosed as "SFDEV is broken". inField still guards nothing
+    // else: without Ctrl+Shift we disarm and return immediately.)
     if (!(e.ctrlKey && e.shiftKey)) { armed = false; return; }
     if (e.code === 'KeyD') { armed = true; armedAt = Date.now(); return; }
     if (e.code === 'KeyM' && armed && (Date.now() - armedAt) < 1000) {
@@ -6122,6 +7657,166 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
       (window.repairModalInputFocus || ((el) => el.focus()))(input);
     });
   }
+})();
+
+// ── SFDEV bulk debug-table (dev-only) — queue-wide field grid ──────────────────
+// Rows = the review queue (needs_review + deferred), columns = the union of the
+// present types' fields, cells = the extracted value + method + confidence. Click a
+// cell to flag it wrong (toggle) and optionally type the CORRECT value; Submit writes
+// debug_values.json to the Debug dir so the main session sees the CLASS of a detection
+// failure across the whole queue, not one screenshot at a time. Reachable only once the
+// trace console (#rdc) is unlocked. All state is in-renderer — no DB writes, no learning.
+(() => {
+  const overlay  = document.getElementById('rdt');
+  if (!overlay) return;
+  const elTable   = document.getElementById('rdt-table');
+  const elEmpty   = document.getElementById('rdt-empty');
+  const elStats   = document.getElementById('rdt-stats');
+  const elToast   = document.getElementById('rdt-toast');
+  const btnOpen   = document.getElementById('rdc-table');
+  const btnClose  = document.getElementById('rdt-close');
+  const btnSubmit = document.getElementById('rdt-submit');
+
+  let open = false;
+  let data = null;                      // { columns, labels, rows }
+  const flagged = new Set();            // `${id}::${field}` for cells the owner marked wrong
+  const skey = (id, f) => `${id}::${f}`;
+  const esc = (s) => String(s == null ? '' : s)
+    .replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function toast(msg) {
+    elToast.textContent = msg; elToast.classList.add('show');
+    setTimeout(() => elToast.classList.remove('show'), 3200);
+  }
+  function updateStats() {
+    elStats.textContent = data
+      ? `${data.rows.length} docs · ${data.columns.length} fields · ${flagged.size} flagged`
+      : '';
+  }
+
+  function cellHtml(row, f) {
+    const cell = (row.fields || {})[f];
+    const val    = cell && cell.value != null ? cell.value : '';
+    const method = cell && cell.method ? cell.method : '';
+    const conf   = cell && cell.confidence != null ? `${cell.confidence}%` : '';
+    const cls = 'rdt-cell' + (val === '' ? ' empty' : '') + (flagged.has(skey(row.id, f)) ? ' wrong' : '');
+    let inner = `<span class="cv">${val === '' ? '—' : esc(val)}</span>`;
+    const meta = [method, conf].filter(Boolean).join(' ');
+    if (meta) inner += ` <span class="cm">${esc(meta)}</span>`;
+    return `<td class="${cls}" data-id="${row.id}" data-f="${esc(f)}">${inner}</td>`;
+  }
+
+  function renderTable() {
+    if (!data || !data.rows.length) {
+      elEmpty.hidden = false; elEmpty.textContent = 'Review queue is empty.'; elTable.innerHTML = ''; updateStats(); return;
+    }
+    elEmpty.hidden = true;
+    const head = `<thead><tr><th class="doc-col">Document</th>`
+      + data.columns.map(f => `<th title="${esc(f)}">${esc(data.labels[f] || f)}</th>`).join('') + `</tr></thead>`;
+    const body = data.rows.map(row => {
+      const docCell = `<td class="doc-col" data-id="${row.id}"><div class="rdt-fname" title="${esc(row.filename)}">${esc(row.filename || '(' + row.id + ')')}</div>`
+        + `<div class="rdt-dmeta"><span class="type">${esc(row.typeName || 'untyped')}</span>${row.supplier ? ' · ' + esc(row.supplier) : ''}</div></td>`;
+      return `<tr data-id="${row.id}">${docCell}${data.columns.map(f => cellHtml(row, f)).join('')}</tr>`;
+    }).join('');
+    elTable.innerHTML = head + `<tbody>${body}</tbody>`;
+    updateStats();
+  }
+
+  // Click a VALUE cell → toggle its wrong flag. That is ALL the owner does — the main
+  // session reads the flagged doc to work out the correct value (owner rule: don't make
+  // me populate 77 correct values for one test round). Click the DOCUMENT cell → select
+  // that doc in the queue so the preview BEHIND this movable panel shows it.
+  elTable.addEventListener('click', (e) => {
+    const docTd = e.target.closest('.doc-col');
+    if (docTd) {
+      const id = Number(docTd.dataset.id);
+      const doc = (typeof queue !== 'undefined' && queue && queue.find) ? queue.find(d => d.id === id) : null;
+      if (doc && typeof selectDoc === 'function') { try { selectDoc(doc); } catch {} }
+      elTable.querySelectorAll('tr.sel').forEach(tr => tr.classList.remove('sel'));
+      docTd.closest('tr')?.classList.add('sel');
+      return;
+    }
+    const td = e.target.closest('.rdt-cell'); if (!td) return;
+    const k = skey(Number(td.dataset.id), td.dataset.f);
+    if (flagged.has(k)) { flagged.delete(k); td.classList.remove('wrong'); }
+    else { flagged.add(k); td.classList.add('wrong'); }
+    updateStats();
+  });
+
+  async function openTable() {
+    if (open) return;
+    if (document.getElementById('rdc').hidden) return;   // console must be unlocked first
+    open = true; overlay.hidden = false;
+    elEmpty.hidden = false; elEmpty.textContent = 'Loading queue…'; elTable.innerHTML = '';
+    let err = null;
+    try {
+      if (typeof window.docusnap.devDebugTableData !== 'function')
+        throw new Error('bridge missing — reopen the Review window');
+      data = await window.docusnap.devDebugTableData();
+    } catch (e) { data = null; err = e; }
+    if (!data) {
+      // Surface WHY. "no handler registered" ⇒ the main process is stale (restart the whole
+      // app so the new IPC registers); any other message is the real builder/DB error.
+      const m = (err && err.message) ? err.message : 'returned no data';
+      elEmpty.textContent = /no handler|not.*registered|not a function|bridge missing/i.test(m)
+        ? 'Failed to load: the app’s main process is stale — fully QUIT and relaunch (reprocessed data is kept). Details: ' + m
+        : 'Failed to load the queue: ' + m;
+      return;
+    }
+    renderTable();
+  }
+  function closeTable() { if (!open) return; open = false; overlay.hidden = true; }
+
+  async function submit() {
+    if (!data) return;
+    btnSubmit.disabled = true;
+    const rows = data.rows.map(row => ({
+      id: row.id, filename: row.filename, supplier: row.supplier,
+      typeName: row.typeName, typeSlug: row.typeSlug, status: row.status,
+      // Emit only fields that HAVE a value or were flagged — keeps the JSON to the
+      // signal (present reads + the owner's wrong-marks), not one empty cell per column.
+      fields: Object.fromEntries(data.columns
+        .filter(f => (row.fields || {})[f] || flagged.has(skey(row.id, f)))
+        .map(f => {
+          const cell = (row.fields || {})[f] || {};
+          return [f, { value: cell.value ?? null, method: cell.method ?? null, confidence: cell.confidence ?? null,
+                       wrong: flagged.has(skey(row.id, f)), correct: null, slicePath: null }];
+        })),
+    }));
+    let res = null;
+    try { res = await window.docusnap.devDebugTableSave({ rows }); } catch {}
+    btnSubmit.disabled = false;
+    if (res && res.ok) toast(`Saved ${res.doc_count} docs · ${res.flags} flagged · ${res.slices} slices → ${res.file}`);
+    else toast('Save failed.');
+  }
+
+  btnOpen?.addEventListener('click', openTable);
+  btnClose?.addEventListener('click', closeTable);
+  btnSubmit?.addEventListener('click', submit);
+  // Esc closes the table FIRST (capture phase + stop) so it doesn't also close the console underneath.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && open) { e.stopPropagation(); e.preventDefault(); closeTable(); }
+  }, true);
+
+  // Drag the panel by its header (buttons excluded) so it can be shoved aside to read
+  // the document preview behind it. Resizing is native (CSS resize:both on #rdt).
+  const head = document.getElementById('rdt-head');
+  let drag = null;
+  head?.addEventListener('mousedown', (e) => {
+    if (e.target.closest('button')) return;
+    const r = overlay.getBoundingClientRect();
+    drag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+    overlay.style.left = r.left + 'px'; overlay.style.top = r.top + 'px';
+    overlay.style.right = 'auto'; document.body.style.userSelect = 'none'; e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!drag) return;
+    const maxL = Math.max(0, window.innerWidth  - overlay.offsetWidth);
+    const maxT = Math.max(0, window.innerHeight - 40);
+    overlay.style.left = Math.min(Math.max(0, e.clientX - drag.dx), maxL) + 'px';
+    overlay.style.top  = Math.min(Math.max(0, e.clientY - drag.dy), maxT) + 'px';
+  });
+  window.addEventListener('mouseup', () => { if (drag) { drag = null; document.body.style.userSelect = ''; } });
 })();
 
 // ── Init ──────────────────────────────────────────────────────────────────────

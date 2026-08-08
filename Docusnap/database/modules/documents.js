@@ -2,19 +2,25 @@
 
 const path = require('path');
 
+// Best-effort single-row query — returns null instead of throwing (used to probe optional
+// schema like template_hidden_fields, migration 54, so an older DB / test fixture is unaffected).
+function safeQ(db, sql) { try { return db.prepare(sql).get(); } catch { return null; } }
+
 function insert(db, { original_filename, folder_path, document_type_id,
                       supplier_name, overall_confidence, status,
                       template_id, logo_phash, logo_detail_hash, keyword_fingerprint,
-                      ocr_text, page_count }) {
+                      ocr_text, page_count, detected_type_name }) {
   return db.prepare(`
     INSERT INTO documents
       (original_filename, folder_path, document_type_id,
        supplier_name, overall_confidence, status,
-       template_id, logo_phash, logo_detail_hash, keyword_fingerprint, ocr_text, page_count)
+       template_id, logo_phash, logo_detail_hash, keyword_fingerprint, ocr_text, page_count,
+       detected_type_name)
     VALUES
       (@original_filename, @folder_path, @document_type_id,
        @supplier_name, @overall_confidence, @status,
-       @template_id, @logo_phash, @logo_detail_hash, @keyword_fingerprint, @ocr_text, @page_count)
+       @template_id, @logo_phash, @logo_detail_hash, @keyword_fingerprint, @ocr_text, @page_count,
+       @detected_type_name)
   `).run({
     original_filename, folder_path,
     document_type_id:    document_type_id    || null,
@@ -27,6 +33,7 @@ function insert(db, { original_filename, folder_path, document_type_id,
     keyword_fingerprint: keyword_fingerprint || null,
     ocr_text:            ocr_text            || null,
     page_count:          page_count          || null,
+    detected_type_name:  detected_type_name  || null,   // mig 51 — set ONLY when the detected type isn't installed
   });
 }
 
@@ -35,7 +42,10 @@ function update(db, id, changes) {
                    'status', 'overall_confidence', 'supplier_name',
                    'doc_date', 'reference_number', 'confirmed_at',
                    'error_message', 'template_id', 'working_path',
-                   'review_acknowledged_at', 'page_count', 'confirmed_by_username'];
+                   'review_acknowledged_at', 'page_count', 'confirmed_by_username', 'supplier_pin',
+                   // mig 51. This whitelist SILENTLY DROPS anything not listed, so a column added
+                   // to insert() but not here writes once and can never be cleared again.
+                   'detected_type_name'];
   const sets = Object.keys(changes)
     .filter(k => allowed.includes(k))
     .map(k => `${k} = @${k}`)
@@ -47,6 +57,37 @@ function update(db, id, changes) {
 
 function getById(db, id) {
   return db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
+}
+
+// The extracted total as a DISPLAY STRING ("£1,046.16"), or NULL when the doc has no total field
+// (delivery notes, acknowledge-only routes, any type without a total). NULL-safe by design — the
+// decision snapshot (Slice 2) must still record a row for a total-less doc. Uses the same total
+// field keys as the search total-filter (search() below).
+function getExtractedTotalDisplay(db, documentId) {
+  const row = db.prepare(
+    `SELECT COALESCE(display_value, raw_value) AS v FROM extractions
+      WHERE document_id = ? AND field_key IN ('total_amount','total','grand_total')
+        AND COALESCE(display_value, raw_value) IS NOT NULL
+      ORDER BY confidence DESC LIMIT 1`
+  ).get(documentId);
+  return row ? (row.v ?? null) : null;
+}
+
+// The full trust context of the extracted total, from the SAME highest-confidence total row: its
+// field_key, value (display), confidence, and validation_note. Used by Slice-3 amount routing, which
+// must read the note + confidence BEFORE reviewService.confirm clears the note. NULL when the doc has
+// no total field. (was_corrected-this-cycle is derived by the caller from the corrections payload, not
+// the sticky row flag.)
+function getExtractedTotalContext(db, documentId) {
+  const row = db.prepare(
+    `SELECT field_key, COALESCE(display_value, raw_value) AS value, confidence, validation_note
+       FROM extractions
+      WHERE document_id = ? AND field_key IN ('total_amount','total','grand_total')
+        AND COALESCE(display_value, raw_value) IS NOT NULL
+      ORDER BY confidence DESC LIMIT 1`
+  ).get(documentId);
+  if (!row) return null;
+  return { fieldKey: row.field_key, value: row.value, confidence: row.confidence, note: row.validation_note };
 }
 
 // Clear any FK reference into documents that has NO ON DELETE action, so the
@@ -130,6 +171,14 @@ function getReviewQueue(db) {
   // correction candidate — lets the review list colour "corrected/flagged" rows
   // distinctly without loading every field. Read-only enrichment; no change to
   // confidence calculation.
+  // Per-template field HIDING (migration 54): a field HIDDEN for the doc's matched template is not
+  // counted as a missing-required blocker. Conditional on the table existing so an older DB / a test
+  // fixture without it is byte-identical (empty fragment). Inert when nothing is hidden.
+  const _hasHidden = !!safeQ(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='template_hidden_fields'");
+  const _hiddenExcl = _hasHidden
+    ? `AND NOT EXISTS (SELECT 1 FROM template_hidden_fields h
+                        WHERE h.template_id = d.template_id AND h.field_key = f.key)`
+    : '';
   return db.prepare(`
     SELECT d.*, dt.name as type_name, dt.slug as type_slug,
       (SELECT COUNT(*) FROM extractions e
@@ -158,6 +207,7 @@ function getReviewQueue(db) {
           AND ( f.key = dt.ref_field_key
                 OR f.key = dt.date_field_key
                 OR (f.required = 1 AND f.key NOT IN ('supplier_name','customer_name')) )
+          ${_hiddenExcl}
           AND NOT EXISTS (
                 SELECT 1 FROM extractions e
                  WHERE e.document_id = d.id AND e.field_key = f.key
@@ -244,7 +294,7 @@ function requeueConfirmedDocsForScope(db, { supplier_name, document_type_slug } 
     UPDATE documents
        SET status = 'needs_review', confirmed_at = NULL, confirmed_by_username = NULL
      WHERE status = 'confirmed'
-       AND (@sn IS NULL OR supplier_name = @sn)
+       AND (@sn IS NULL OR supplier_name = @sn COLLATE NOCASE)
        AND document_type_id = (SELECT id FROM document_types WHERE slug = @slug)
   `).run({ sn, slug: document_type_slug });
 }
@@ -255,8 +305,11 @@ function requeueConfirmedDocsForScope(db, { supplier_name, document_type_slug } 
 // "previously filed" signal that lets reviewService re-file IN PLACE on re-confirm
 // (no -DUPLICATE). Status-guarded: only a currently-confirmed doc moves.
 function deconfirmDocument(db, id) {
+  // Also clears confirmed_via (when the column exists): a doc sent back to the queue is no
+  // longer "confirmed by" anything — a later human re-confirm stamps its own via at claim.
+  const viaClear = _hasConfirmedVia(db) ? ', confirmed_via = NULL' : '';
   return db.prepare(
-    "UPDATE documents SET status = 'needs_review', confirmed_at = NULL, confirmed_by_username = NULL WHERE id = ? AND status = 'confirmed'"
+    `UPDATE documents SET status = 'needs_review', confirmed_at = NULL, confirmed_by_username = NULL${viaClear} WHERE id = ? AND status = 'confirmed'`
   ).run(id);
 }
 
@@ -391,6 +444,7 @@ function confirm(db, id, { stored_filename, stored_path, confirmed_by_username =
     stored_path,
     confirmed_at: new Date().toISOString(),
     confirmed_by_username,
+    supplier_pin: null,   // clear the operator "Resolve" pin — the name is now learned; a stale pin must not override later
   });
 }
 
@@ -407,14 +461,22 @@ function confirm(db, id, { stored_filename, stored_path, confirmed_by_username =
 // — for the desktop re-file path — already confirmed when allowRefile is set. stored_* may
 // be null when claiming BEFORE filing (the caller fills them in via update() afterwards).
 function confirmIfReviewable(db, id, { stored_filename = null, stored_path = null,
-                                       confirmed_by_username = null, allowRefile = false } = {}) {
+                                       confirmed_by_username = null, allowRefile = false,
+                                       confirmed_via = null } = {}) {
+  // confirmed_via (mig 57, Catch-up Filing): 'scope_sweep' for a machine batch-file, NULL for a
+  // human confirm. Written AT CLAIM time so every later reader in the same confirm (the
+  // learn-on-commit guard reads it back from the row) sees the truth. Guarded on column
+  // presence for pre-mig-57 fixture DBs (same pattern as trust.js).
+  const hasVia = _hasConfirmedVia(db);
   return db.prepare(`
     UPDATE documents
        SET status                = 'confirmed',
            confirmed_at          = @confirmed_at,
            confirmed_by_username = @confirmed_by_username,
+           ${hasVia ? 'confirmed_via = @confirmed_via,' : ''}
            stored_filename       = @stored_filename,
-           stored_path           = @stored_path
+           stored_path           = @stored_path,
+           supplier_pin          = NULL
      WHERE id = @id
        AND ( status IN ('needs_review','deferred')
           OR (status = 'confirmed' AND @allowRefile = 1) )
@@ -423,7 +485,21 @@ function confirmIfReviewable(db, id, { stored_filename = null, stored_path = nul
     stored_filename, stored_path, confirmed_by_username,
     confirmed_at: new Date().toISOString(),
     allowRefile: allowRefile ? 1 : 0,
+    ...(hasVia ? { confirmed_via } : {}),
   });
+}
+
+// Column-presence cache for documents.confirmed_via (mig 57) — WeakMap per DB handle so a
+// pre-migration fixture DB (tests ALTER it in manually or not at all) never throws here.
+const _viaPresence = new WeakMap();
+function _hasConfirmedVia(db) {
+  let has = _viaPresence.get(db);
+  if (has === undefined) {
+    try { has = db.prepare("SELECT 1 FROM pragma_table_info('documents') WHERE name='confirmed_via'").get() != null; }
+    catch { has = false; }
+    _viaPresence.set(db, has);
+  }
+  return has;
 }
 
 // Move a document to deferred ONLY if it is currently needs_review.
@@ -574,7 +650,7 @@ function getWorkingPaths(db) {
 }
 
 module.exports = {
-  insert, update, getById, getWithExtractions,
+  insert, update, getById, getExtractedTotalDisplay, getExtractedTotalContext, getWithExtractions,
   getReviewQueue, getDeferredQueue, getByIds,
   getReviewCount, getDeferredCount, getStuckCount, getStuckQueue, getFiledCounts,
   softDelete, restoreDeleted, getDeletedQueue, getDeletedCount,

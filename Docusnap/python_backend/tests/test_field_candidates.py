@@ -103,6 +103,42 @@ def main():
         {"customer_name": {"value": "V", "method": "keyword", "confidence": 78}})
     check("box-less produced dict → ledger box None", fake2._field_candidates["customer_name"][0]["box"] is None)
 
+    # ── Guard A: candidate OCR-validation (Oracle C4, 2026-07-15) ─────────────
+    os.environ.pop("CANDIDATE_OCR_VALIDATE", None)
+    def emit_ocr(results, ledger, ocr):
+        fake = types.SimpleNamespace(_field_candidates=ledger)
+        return ExtractionEngine._build_candidate_emit(fake, results, ocr)
+    OCR = "Copperfield Electrical Delivery Docket Deliver To Stonegate Property Mgmt Durham DH1 3RW"
+    # doc-14 bleed: an un-boxed HINT value NOT on the page is dropped → only the chosen remains → suppressed
+    sand = {"customer_name": [cand("Stonegate Property Mgmt", "anchor_crop_relocated", 82, BOX),
+                              cand("Sandpiper Hotels", "hint", 75, box=None)]}
+    check("Guard A: off-page un-boxed hint dropped → only chosen left → picker SUPPRESSED",
+          "customer_name" not in emit_ocr({"customer_name": noted("Stonegate Property Mgmt")}, sand, OCR))
+    check("Guard A FAIL-SAFE: without ocr_text the Sandpiper candidate is KEPT (byte-identical)",
+          "customer_name" in emit({"customer_name": noted("Stonegate Property Mgmt")}, sand))
+    # a BOXED off-page candidate is KEPT (a box = a located on-page read); only un-boxed off-page is dropped
+    mix = {"customer_name": [cand("Stonegate Property Mgmt", "anchor_crop_relocated", 82, BOX),
+                             cand("Boxed Elsewhere Ltd", "anchor_inline", 80, BOX),   # off-page BUT boxed
+                             cand("Sandpiper Hotels", "hint", 75, box=None)]}          # off-page + un-boxed
+    vals = [c["value"] for c in emit_ocr({"customer_name": noted("Stonegate Property Mgmt")}, mix, OCR)["customer_name"]]
+    check("Guard A: boxed off-page candidate KEPT", "Boxed Elsewhere Ltd" in vals)
+    check("Guard A: un-boxed off-page candidate DROPPED", "Sandpiper Hotels" not in vals)
+    # the CHOSEN winner is kept even if off-page + un-boxed (re-injected after the loop)
+    chosen_out = emit_ocr({"customer_name": noted("Offpage Chosen Value")},
+                          {"customer_name": [cand("Real Co On Page", "anchor_inline", 80, BOX)]},
+                          "Header Real Co On Page footer")["customer_name"]
+    check("Guard A: the CHOSEN value is kept even if off-page/un-boxed",
+          any(_cmp_norm(c["value"]) == _cmp_norm("Offpage Chosen Value") for c in chosen_out))
+    # a keyword candidate whose tokens ARE on the page is never dropped
+    kept = [c["value"] for c in emit_ocr({"customer_name": noted("Stonegate Property Mgmt")},
+                {"customer_name": [cand("Stonegate Property Mgmt", "anchor_crop_relocated", 82, BOX),
+                                   cand("Durham DH1", "keyword", 60, box=None)]}, OCR)["customer_name"]]
+    check("Guard A: an un-boxed candidate that IS on the page is kept", "Durham DH1" in kept)
+    os.environ["CANDIDATE_OCR_VALIDATE"] = "0"
+    check("Guard A kill switch=0 → off-page hint kept even with ocr_text",
+          "customer_name" in emit_ocr({"customer_name": noted("Stonegate Property Mgmt")}, sand, OCR))
+    os.environ.pop("CANDIDATE_OCR_VALIDATE", None)
+
     # ── kill switch ──────────────────────────────────────────────────────────
     os.environ["FIELD_CANDIDATES_EMIT"] = "0"
     check("FIELD_CANDIDATES_EMIT=0 → nothing emitted", emit(results, ledger) == {})

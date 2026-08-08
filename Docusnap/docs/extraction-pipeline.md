@@ -334,6 +334,35 @@ process_docs.py → ExtractionEngine.extract()
            the good join for the truncation + flagging it "looks shorter"). A genuinely
            DIFFERENT relocate (the rigid drifted to a wrong row) does not prefix-match, so it
            still wins — the drift fix is preserved.
+           LABEL-TAIL LEFT CLAMP (kill `ANCHOR_LABEL_LEFT_CLAMP`, DEFAULT OFF — 007+Oracle
+           SIGN-OFF-W/COND 2026-08-01, built 2026-08-02): the rigid crop's fixed +20px pad is
+           label-BLIND while scans jitter (141px width spread on the Saltmarsh batch), so a
+           direction-right crop swallows the LOCATED label's tail ("Vo. WS-73541") and the read
+           TRIFURCATES on what the tail OCRs as (clean → files · ≤2-char debris → recovered@85
+           holds every batch · 3+ chars → inline rescue files · opposite jitter → the ws09
+           near-miss wrong-value class; 47 recovered rows / 4+ suppliers = corpus-wide tight-gap
+           topology). Fix at CROP DERIVATION (`_crop_and_ocr` left_limit_norm — the horizontal
+           mirror of the (P) caption-band exclusion): the caller passes the expected value LEFT
+           edge computed IN THE LOCATED FRAME — located label top-left + STORED OFFSET gives the
+           value CENTRE (the offset convention), minus half the taught width (helper
+           `_label_left_limit`). C1 FRAME TRAP: never derived from the TAUGHT box — on a drifted
+           page a taught-frame boundary silently no-ops exactly on the worst-drift docs (pinned
+           by a fixture a taught-frame impl FAILS). C2: authoritative + real label + direction
+           right + stored offset + locate; the RIGID site additionally requires
+           `_located_at_taught_position` (a taught-frame crop may only be clamped with a
+           located-frame boundary when the frames COINCIDE); the relocate/cross-check sites are
+           located-frame native. C3: structured val_types only (`_LEFT_CLAMP_TYPES` ==
+           `_CAPTION_STRIP_TYPES`; free-text keeps its ladder/preview regime, currency already
+           `_skip_rigid`s). C4: ALL FOUR crop sites pass it (rigid + label-lock + below-label
+           cross-check + drift relocate — a clamped-clean rigid vs a tail-dirty cross-check
+           would manufacture a disagreement); the label-lock rung's types are DISJOINT today
+           (pinned asymmetry). C5: a degenerate clamp reverts to UNCLAMPED, never refuses; the
+           edge moves RIGHTWARD only (ws09 mechanically cannot worsen) with a 3px guard for the
+           first glyph column. C7: the rigid-site locate reuses line_cache (the later
+           authoritative-locate verification becomes a cache hit; OFF ⇒ no locate, byte-identical).
+           Pins: tests/test_label_left_clamp.py (26). Gates: stress_test/clamp_gate_diff.js over
+           two RR_CONSENSUS realdoc runs (G1 OFF==ON outside the class · M zero flips · G2
+           recovered shrink-never-lift · G6 flag count · Saltmarsh · G5 throughput).
            ⊕ AUTO-ANCHOR LABEL SEARCH (review/renderer.js captureAnchorContext): the
            left-label search scans the WHOLE row to the left of the value (was a fixed 300px
            window), one line tall — so on wide two-column key/value rows a TIGHT value box
@@ -446,6 +475,26 @@ process_docs.py → ExtractionEngine.extract()
            clean keyword), while a clean/inline read (ocr_min_conf None) still wins.
            Guarded by tests/test_precedence.py (garbled yields / clean still wins) +
            the fence that a passive anchor_crop can't displace keyword_override.
+           ── 2026-08-01 NARROWING (Oracle-signed S-C, kill BLIND_GEOM_DISAGREE_RECONCILE,
+           DARK until owner flip): Tier-A's outright win is RECONCILABLE post-merge for
+           method == anchor_registration EXACTLY — the fiat-located rung (located_ok by
+           membership, ocr_min_conf None for structured fields, coverage patterns admit
+           dates) whose #141 win ('21/07/2026'@83 over keyword_override 'DN-24408'@93 +
+           template_mapping@90) proved a registration-resolved authoritative read can
+           overrule the very witnesses the corroboration lift rules it INADMISSIBLE to
+           join. When such a winner FAILS its own-supplier learned shape: ≥2 distinct-
+           stage witnesses (0_template/0.5_mapping/1_keyword) agreeing on one shape-
+           passing value → ADOPT that value NON-authoritatively at the witness's own
+           confidence; exactly 1 witness → FLAG (cap 69, both values named). anchor_inline
+           / anchor_crop_relocated winners are UNTOUCHED (pinned — the re-teach fix (1)
+           above depends on it). Sibling deterministic flags at the same seam, both ON:
+           S-A DATE_IN_REF_FLAG (a ref-role value that fully parses as a calendar date →
+           cap 69 + note, floor-independent, scope self-disarms via its own learned class)
+           and S-B REF_LENGTH_OUTLIER_GUARD (per-scope digit-run profile dominance with
+           the prefix guard's self-heal bars — the axis the length-folded shape is blind
+           to by design). Pass order pinned: suffix-reconcile → S-C → S-A → prefix-outlier
+           → S-B (tests/test_blind_geom_reconcile.py §4). Guards: test_date_in_ref_flag.py
+           + test_ref_length_outlier.py + test_blind_geom_reconcile.py.
            ── 2026 RELIABILITY PASS (find → follow → read, across doc types) ──
            PREVIEW-SCALE FREE-TEXT READ (anchor._noise_smooth_retry + the
            _ocr_crop_laddered fast-path, 2026-06 — "read it the way the draw tool does"):

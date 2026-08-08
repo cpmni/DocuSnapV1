@@ -65,6 +65,14 @@ const UNTRUSTED_FLOOR        = 100;  // ungraduated scopes keep today's full-con
 //   extra margin at the cost of more review, or set 0 to disable.
 const CRITICAL_FIELD_FLOOR   = 88;
 
+// SECURITY (Stage 2 — M6): parse a percent-valued SETTING and coerce anything outside [min,100]
+// (negative, non-numeric, >100) back to the safe default. Closes the `parseInt(...) || N` trap
+// where a stored '-1' set an auto-file floor below 0 and silently auto-filed every document.
+function _settingPct(raw, dflt, min) {
+  const n = parseInt(raw, 10);
+  return (Number.isFinite(n) && n >= min && n <= 100) ? n : dflt;
+}
+
 // Types whose validation pattern genuinely CONSTRAINS the value, so a clean read (no
 // validation_note) is trustworthy on the type alone. Deliberately EXCLUDES 'alphanumeric'
 // (too loose — matches a dictionary word like "Information") and free text, which must fall
@@ -106,6 +114,17 @@ function _matchesTypePattern(type, value) {
   const arr = pats && pats[type];
   if (!Array.isArray(arr) || !arr.length) return true;     // no pattern for this type → can't judge
   return arr.some(p => { const re = _compile(p); return re ? re.test(String(value)) : true; });
+}
+
+// documents.confirmed_via presence (mig 57) — cached per DB handle so older fixture DBs
+// (and pre-migration installs) keep the legacy single-query trust computation untouched.
+const _viaCache = new WeakMap();
+function _hasConfirmedVia(db) {
+  if (_viaCache.has(db)) return _viaCache.get(db);
+  let ok = false;
+  try { db.prepare('SELECT confirmed_via FROM documents LIMIT 0'); ok = true; } catch { ok = false; }
+  _viaCache.set(db, ok);
+  return ok;
 }
 
 const _digits     = v => /^\d+$/.test(String(v).trim());
@@ -224,6 +243,109 @@ function classifyLearnedShape(sampleValues) {
   return 'freetext';                                     // mixed / wordy → cannot auto-verify
 }
 
+/**
+ * The DOMINANT structured class of a scope's confirmed samples, or null when the field is
+ * genuinely free text (Oracle, 2026-07-20).
+ *
+ * WHY THIS EXISTS. `classifyLearnedShape` above is all-or-nothing — "every non-empty sample must
+ * share the class" — so it CONFLATES two completely different fields:
+ *   • 15 distinct customer names  → freetext, correctly: there is nothing to verify against;
+ *   • 14 product codes + 1 misread word ("Information") → ALSO freetext, wrongly: 14 samples say
+ *     exactly what this field looks like.
+ * That conflation is what forced a false choice between a dead-end gate (block the customer name
+ * forever, unclearable by any user action) and an open door (exempt every freetext field, which
+ * un-guards the contaminated code field). Distinguishing them dissolves it.
+ *
+ * THE INVERSION THIS CLOSES. The item="Information" class is a misread that gets CONFIRMED — by a
+ * hurried operator, or by an auto-file at 100 where the gate is off by default. The moment one is
+ * confirmed it joins the scope history and collapses the field to freetext. Under a blanket
+ * freetext exemption, the very event that poisons a field is the event that disables the guard
+ * against it. Under this rule the 14 codes still outvote the intruder and the guard holds.
+ *
+ * Requires ≥5 non-empty samples and ≥75% agreement, so it can only ever FIRE on real evidence;
+ * below that it returns null and the caller falls back to its own (stricter) handling.
+ *
+ * DELIBERATELY SEPARATE from classifyLearnedShape, which must NOT change: that feeds
+ * scopeTrust's required-field verifiability check, and reclassifying a contaminated required
+ * field as 'code' there would silently widen GRADUATION itself — the seam inside the fix.
+ */
+/**
+ * Is the non-role shape leniency ON? DEFAULT ON since 2026-07-20; `TRUST_NONROLE_SHAPE_LENIENT=0`
+ * restores the old blanket block. Defined ONCE and exported so the tests assert against the same
+ * default the product uses — a test that hard-codes its own copy of a default silently stops
+ * testing the shipped behaviour the moment the default moves, which is how a pin quietly dies.
+ *
+ * Flipped ON after both gate conditions were met, not on the strength of the argument:
+ *   • corpus A/B (realdoc_regression, 156 docs, OFF vs ON): would-auto-file 50 → 82, silent
+ *     would-auto-file-WRONG (M) UNCHANGED at 1 (the pre-existing #108), M_type 0, and per-field
+ *     accuracy byte-identical on all six scored fields;
+ *   • live-DB re-judge under this exact rule: 29 documents flip, 0 with a ROLE blocking key,
+ *     0 whose blocking field had any dominant structure.
+ */
+function _nonRoleLenientEnabled() {
+  return process.env.TRUST_NONROLE_SHAPE_LENIENT !== '0';
+}
+
+// TRUST_SHADOW_ROW_SKIP (gary design, 2026-08-07; Oracle SIGN-OFF-W/COND 2026-08-08) — the
+// SHADOW-ROW AUTO-FILE DEADLOCK.
+// `_shadow_reconcile_components` (engine.py:2800,2820-2828) writes extraction rows with
+// extraction_method='shadow_reconcile' purely to back the "totals add up" check. It writes ONLY
+// the four money roles ('subtotal','vat_tax','shipping','discount') and only for a role the
+// document's type does NOT cover — so a shadow key is FOREIGN TO THE TYPE BY CONSTRUCTION, at
+// write time. Those rows are EXCLUDED from learning (learning.js:1237) and DELETED at confirm
+// (reviewService.js:251, processing/handler.js:3749, both AFTER their filing decision), and they
+// are not filing inputs — but docTrustGate judged filability on them anyway. With no learned
+// format for a key the type does not define, `_scopeFormats` can never hold one, so the gate
+// returns `unverifiable-value:<field>` permanently. The document can NEVER auto-file and the
+// operator can never see, let alone clear, the row that blocked it. SEALED TWICE. Live proof:
+// three documents at conf 97 on a graduated scope (floor 95), no note, `unverifiable-value:subtotal`.
+//
+// WHY THE ROW IS INVISIBLE (Oracle C6 — the original citation here was BACKWARDS): Review renders
+// `for (const key of reviewFields())` (review/renderer.js:2456; reviewFields() at :506-509 returns
+// the TYPE's field keys, never extraction keys), so a foreign key has no row to render. Note that
+// review/renderer.js:2313 does the OPPOSITE of skipping — it CONSUMES shadow rows to drive the
+// "✓ mathematically verified" badge. So a shadow row IS user-facing, as a badge and not as a value.
+// (There is NO at100 precedent for this skip, contrary to an earlier draft of this comment: the
+// at100 arm ignores such rows only as a side effect of being history-blind, it is method-blind, and
+// it is `strict_100_autofile`-gated, DEFAULT OFF because it over-blocked in the field.)
+//
+// SKIP ONLY when the row is genuinely inert: shadow method AND not a defined field of this type AND
+// not a structural role key. FAIL-OPEN means THE GATE STAYS SHUT: a type carrying no field metadata
+// skips nothing, so every row is judged and the document routes to review.
+// PLACED AFTER the validation_note check, so a FLAGGED shadow row still blocks — the note is real
+// information about the page even when the row itself is invisible.
+// Default OFF; OFF = byte-identical.
+//
+// FLIP MECHANISM (Oracle C5): a SETTING read here, not `process.env` set at startup — an
+// env-at-startup toggle silently does nothing until the app is restarted, and this codebase has
+// been bitten by the stale-main-process class repeatedly. The env var is retained as the
+// dev/harness escape and WINS IN BOTH DIRECTIONS so an A/B arm is unambiguous. try/catch defaults
+// OFF so a fixture DB with no settings table cannot throw inside the auto-file gate. Hoisted to
+// ONE read per docTrustGate call and threadable via `opts.shadowRowSkip` (Oracle C4) — the
+// per-row call site would otherwise be N indexed queries per document.
+function _shadowRowSkipEnabled(db) {
+  const env = process.env.TRUST_SHADOW_ROW_SKIP;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try {
+    return require('./learning').getSetting(db, 'trust_shadow_row_skip', 'false') === 'true';
+  } catch { return false; }
+}
+
+const _DOMINANT_MIN_SAMPLES = 5;
+const _DOMINANT_MIN_SHARE   = 0.75;
+function _dominantStructuredClass(sampleValues) {
+  const vals = (sampleValues || []).map(v => String(v == null ? '' : v).trim()).filter(Boolean);
+  if (vals.length < _DOMINANT_MIN_SAMPLES) return null;
+  const tests = [['digits', _digits], ['date', _dateish], ['currency', _currencyish], ['code', _codeish]];
+  let best = null, bestShare = 0;
+  for (const [cls, fn] of tests) {
+    const share = vals.filter(v => { try { return fn(v); } catch { return false; } }).length / vals.length;
+    if (share > bestShare) { bestShare = share; best = cls; }
+  }
+  return bestShare >= _DOMINANT_MIN_SHARE ? best : null;
+}
+
 /** Does a value match a learned shape class? Empty is the caller's concern; 'freetext'/'none' never match. */
 function valueMatchesShape(value, cls, sampleValues) {
   const v = String(value == null ? '' : value).trim();
@@ -281,21 +403,44 @@ function scopeTrust(db, supplier, slug, opts = {}) {
     'SELECT key, type FROM fields WHERE document_type_id = ? AND required = 1 AND COALESCE(enabled, 1) = 1'
   ).all(dt.id);
 
-  const confirmed = db.prepare(`
-    SELECT d.id FROM documents d
+  // ── Catch-up Filing slice 1 (mig 57 confirmed_via; docs/designs/CATCHUP_FILING_2026-07-31.md) ──
+  // The graduation WINDOW counts HUMAN confirms only (confirmed_via NULL = human/legacy): a
+  // 'scope_sweep' machine confirm must never fill the trust window — a 25-doc sweep could
+  // otherwise fill all W slots with machine echoes whose wrongs never get corrected (they left
+  // the review surface). The corrections SPAN, by contrast, covers ALL in-scope confirmed docs
+  // (any confirmed_via) at-or-after the OLDEST of those W human confirms, in the SAME
+  // (confirmed_at DESC, id DESC) total order as the window cut — so a correction on a
+  // sweep-FILED doc still revokes trust (Oracle SEAM 1: a naive human-only window would disarm
+  // self-revocation). With ZERO machine rows — every DB today — the span set is EXACTLY the
+  // naive last-W window (same total-order cut, timestamp ties land the same side on both), so
+  // behaviour is byte-identical by construction; pinned in test_scope_trust.js. An unmigrated
+  // DB (no confirmed_via column — older fixtures/harnesses) keeps the legacy single query.
+  const hasVia = _hasConfirmedVia(db);
+  const _confirmedSql = (viaFilter) => `
+    SELECT d.id, COALESCE(d.confirmed_at, '') AS ts FROM documents d
     JOIN document_types dt ON dt.id = d.document_type_id
     WHERE d.status = 'confirmed' AND LOWER(TRIM(d.supplier_name)) = ? AND LOWER(dt.slug) = ?
+      ${viaFilter ? "AND COALESCE(d.confirmed_via, '') <> 'scope_sweep'" : ''}
     ORDER BY d.confirmed_at DESC, d.id DESC
-  `).all(sup, sl).map(r => r.id);
-  const confirmedCount = confirmed.length;
+  `;
+  const human = db.prepare(_confirmedSql(hasVia)).all(sup, sl);
+  const confirmedCount = human.length;
   if (confirmedCount < W) return no('volume', { confirmedCount, needed: W - confirmedCount });
 
-  const windowIds = confirmed.slice(0, W);
-  const ph = windowIds.map(() => '?').join(',');
+  const windowRows = human.slice(0, W);
+  const windowIds = windowRows.map(r => r.id);
+  let spanIds = windowIds;
+  if (hasVia) {
+    const b = windowRows[windowRows.length - 1];             // the OLDEST of the W human confirms
+    spanIds = db.prepare(_confirmedSql(false)).all(sup, sl)
+      .filter(r => r.ts > b.ts || (r.ts === b.ts && r.id >= b.id))
+      .map(r => r.id);
+  }
+  const ph = spanIds.map(() => '?').join(',');
   const corrections = db.prepare(
     `SELECT COUNT(*) c FROM corrections WHERE document_id IN (${ph})
        AND COALESCE(original_value, '') <> COALESCE(corrected_value, '')`
-  ).get(...windowIds).c;
+  ).get(...spanIds).c;
   if (corrections > MAXC) return no('recent-correction', { confirmedCount, corrections });
 
   const fmts = _scopeFormats(db, sup, sl, opts.formats);
@@ -340,15 +485,58 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
     db.prepare('SELECT key, type FROM fields WHERE document_type_id = ?').all(doc.document_type_id)
       .map(r => [r.key, r.type])
   );
+  // extraction_method is selected for the SHADOW-ROW skip below. It is also the field the two
+  // harness overlays (stress_test/realdoc_regression.js, services/sweepPredicate.js) were missing,
+  // which would have made the gate for that skip VACUOUSLY GREEN — they now thread it too.
   const exs = opts.extractions || db.prepare(
-    'SELECT field_key, display_value, raw_value, validation_note FROM extractions WHERE document_id = ?'
+    'SELECT field_key, display_value, raw_value, validation_note, extraction_method FROM extractions WHERE document_id = ?'
   ).all(docId);
+
+  // STRUCTURAL ROLE keys — the issuer plus the type's ref/date roles. These decide the folder path
+  // and the filename and cannot be corrected after filing without a re-file, so they keep the FULL
+  // verifiability requirement on the sub-100 path.
+  const _dtRow = opts.dtRow
+    || db.prepare('SELECT ref_field_key, date_field_key FROM document_types WHERE id = ?').get(doc.document_type_id)
+    || {};
+  // COMPANY_KEYS, not a hardcoded 'supplier_name' (Oracle C3). foreignFields.ownFieldPredicate —
+  // the CONFIRM-TIME drop that decides the same "is this row visible to the operator" question —
+  // builds its role set from COMPANY_KEYS ∪ {ref,date}. Sharing the constant makes the two sets
+  // unable to drift: COMPANY_KEYS held customer_name before migration 44 and could grow again, and
+  // if it did, a row foreignFields keeps VISIBLE would have become skippable here.
+  const roleKeys = new Set([
+    ...require('./document_types').COMPANY_KEYS,
+    _dtRow.ref_field_key, _dtRow.date_field_key,
+  ].filter(Boolean));
+  // NULL-ROLE GUARD (Oracle). An earlier draft of this claimed a dangling role key "falls back to
+  // the strict treatment". That was FALSE and backwards: if ref_field_key is NULL, the document's
+  // real reference field is still an ordinary field, is NOT in roleKeys, and would become the most
+  // LENIENT field on the document — while the 88 critical-field floor is ALREADY a no-op there
+  // (it filters on the same two role keys). Two guards off at once, on a class the codebase knows
+  // happens: repairStructuralRoles() deliberately CLEARS a dangling role to NULL. So when either
+  // role is unset, no leniency applies to this document at all.
+  const _rolesComplete = !!(_dtRow.ref_field_key && _dtRow.date_field_key);
+  const _nonRoleLenientOn = _nonRoleLenientEnabled() && _rolesComplete;
+  // ONE read per document, not one per row (Oracle C4) — mirrors how formats/gradOn/optOut are
+  // hoisted through opts by autoFileEligibleIds so a whole queue costs one lookup, not N×rows.
+  const _shadowSkipOn = (opts.shadowRowSkip !== undefined)
+    ? !!opts.shadowRowSkip : _shadowRowSkipEnabled(db);
 
   for (const e of exs) {
     const v = String(e.display_value ?? e.raw_value ?? '').trim();
     if (!v) continue;                                                    // empty → safe
     if (e.validation_note && String(e.validation_note).trim())           // any flag → not safe
       return { ok: false, reason: `flagged:${e.field_key}` };
+    // SHADOW-ROW SKIP (see _shadowRowSkipEnabled). Deliberately AFTER the note check above: a
+    // flagged shadow row still blocks. A row that is VISIBLE to the operator — a defined field of
+    // this type, or a structural role — is never skipped, whatever its method, which preserves the
+    // 2026-07-22 foreignFields condition that a visible foreign row must still block.
+    if (_shadowSkipOn
+        && String(e.extraction_method || '') === 'shadow_reconcile'
+        && fieldTypes.size > 0                        // no field metadata → skip nothing → gate shut
+        && !fieldTypes.has(e.field_key)
+        && !roleKeys.has(e.field_key)) {
+      continue;
+    }
     const _t = String(fieldTypes.get(e.field_key) || '').toLowerCase();
     if (STRICT_TYPES.has(_t)) {
       // Defence-in-depth for strict types (reggie T1/T2/T3/T5): don't trust note-absence alone —
@@ -389,8 +577,36 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
         return { ok: false, reason: `unverifiable-value:${e.field_key}` };
       continue;
     }
-    if (!f || !valueMatchesShape(v, f.cls, f.sampleValues))
+    // A field with NO confirmed history at all still blocks, role or not — a graduated scope has
+    // ≥10 confirms, so a value appearing in a field nothing has ever confirmed is genuinely odd.
+    // (Deliberately TIGHTER than the at100 arm, which tolerates it.)
+    // No history at all still blocks, role or not — a graduated scope has ≥10 confirms, so a value
+    // in a field nothing has ever confirmed is genuinely odd. 'none' (a format row with no usable
+    // samples) is the same thing wearing a different hat, so it blocks identically.
+    if (!f || f.cls === 'none') return { ok: false, reason: `unverifiable-value:${e.field_key}` };
+    if (_nonRoleLenientOn && !roleKeys.has(e.field_key)) {
+      // NON-ROLE field. Exempt ONLY when the scope's confirmed history offers nothing to verify
+      // against. A field whose history is genuinely free text (a per-document recipient name,
+      // address, description) is UNVERIFIABLE BY CONSTRUCTION — valueMatchesShape returns false for
+      // 'freetext' by design — so requiring it to verify made graduation PERMANENTLY unreachable
+      // for every type carrying one: no confirm, correction or teach could ever clear it. Measured
+      // on the live DB: 29 documents held by exactly this, every one on customer_name, which is NOT
+      // a filing input (COMPANY_KEYS is ['supplier_name'] alone since migration 44), so the doc
+      // still lands in the right folder under the right name.
+      //
+      // But 'freetext' ALSO covers a field of codes with ONE misread word confirmed into it, and
+      // exempting that would disarm the guard exactly when the field has been poisoned. So a
+      // DOMINANT structured class (≥5 samples, ≥75% agreement) is enforced even though the strict
+      // classifier gave up on the field. 'constant' stays enforced as-is: a ≤2-distinct-value field
+      // reading a third value is evidence, not an abstention.
+      const dom = ['constant', 'digits', 'date', 'currency', 'code'].includes(f.cls)
+        ? f.cls                                        // strict classifier already agreed
+        : _dominantStructuredClass(f.sampleValues);    // …else does the history still vote?
+      if (dom && !valueMatchesShape(v, dom, f.sampleValues))
+        return { ok: false, reason: `unverifiable-value:${e.field_key}` };
+    } else if (!valueMatchesShape(v, f.cls, f.sampleValues)) {
       return { ok: false, reason: `unverifiable-value:${e.field_key}` };
+    }
   }
   return { ok: true };
 }
@@ -422,12 +638,26 @@ function isAutoFileEligible(db, doc, opts = {}) {
   if (!doc || !doc.id || !doc.document_type_id)
     return { eligible: false, floor: UNTRUSTED_FLOOR, reason: 'no-type' };
   const learning = require('./learning');
-  const userThr = parseInt(learning.getSetting(db, 'auto_file_threshold', '100'), 10) || 100;
+  // SECURITY (Stage 2 — M6): coerce an out-of-range / garbage settings value back to the safe
+  // default. The old `parseInt(...) || N` let a NEGATIVE through (`-1 || 100` is -1), which set the
+  // auto-file floor to -1 so `overall_confidence < -1` was never true and EVERY doc auto-filed
+  // unreviewed. A valid threshold is 1..100; anything else (negative, 0, >100, non-numeric) falls
+  // back to 100 (the "only perfect docs auto-file" default the `|| 100` intended but only gave for 0).
+  const userThr = _settingPct(learning.getSetting(db, 'auto_file_threshold', '100'), 100, 1);
   // SELECT * (not named role columns) so this is resilient to a minimal test fixture whose
   // document_types omits ref_field_key/date_field_key — absent → undefined → the critical-field
   // floor below simply finds no keys and is a no-op.
   const dtRow = db.prepare('SELECT * FROM document_types WHERE id = ?').get(doc.document_type_id);
   const slug = dtRow && dtRow.slug;
+  // Generic Document refusal (docs/designs/GENERIC_DOCTYPE_2026-07-18.md §3, Oracle C4):
+  // the "General Document" fallback type is REVIEW-BOUND BY CONSTRUCTION. With a type
+  // assigned, the 'no-type' refusal above no longer covers these docs — and at overall
+  // confidence 100 the structural gate below is GATE-FREE by default (strict_100_autofile
+  // is opt-in), so this refusal is the ENTIRE wall between a generic doc and auto-file.
+  // Unconditional: any confidence, any slider, any graduation. PINNED by
+  // test_generic_autofile_refusal.js — do not weaken or move below the floor logic.
+  if (slug === require('./document_types').GENERIC_SLUG)
+    return { eligible: false, floor: UNTRUSTED_FLOOR, reason: 'generic-type' };
   const t = scopeTrust(db, doc.supplier_name, slug, opts);
   // Graduation is gated by the master switch + a per-scope opt-out (the visible controls). If
   // either is off, a trusted scope keeps the user's threshold — no 98 floor.
@@ -452,7 +682,7 @@ function isAutoFileEligible(db, doc, opts = {}) {
   // at EVERY floor (incl. 100). Empty/absent critical fields are the concern of other gates + Review,
   // not this one. Data source: opts.extractions (batch/harness) else the DB row.
   const critFloor = (opts.criticalFieldFloor !== undefined) ? opts.criticalFieldFloor
-    : (parseInt(learning.getSetting(db, 'critical_field_conf_floor', String(CRITICAL_FIELD_FLOOR)), 10) || 0);
+    : _settingPct(learning.getSetting(db, 'critical_field_conf_floor', String(CRITICAL_FIELD_FLOOR)), CRITICAL_FIELD_FLOOR, 0);
   if (critFloor > 0 && dtRow) {
     const critKeys = [dtRow.ref_field_key, dtRow.date_field_key].filter(Boolean);
     if (critKeys.length) {
@@ -505,9 +735,14 @@ function autoFileEligibleIds(db, docs, opts = {}) {
   const formats = opts.formats || require('./learning').getFieldFormats(db);
   const gradOn  = _graduationEnabled(db);
   const optOut  = _optedOutScopes(db);
+  // Same hoist as the three above (Oracle C4): the shadow-row switch is a settings read, so
+  // resolving it once per BATCH keeps a whole-queue evaluation at one lookup instead of one per
+  // document. An explicit opts.shadowRowSkip from the caller still wins.
+  const shadowRowSkip = (opts.shadowRowSkip !== undefined)
+    ? !!opts.shadowRowSkip : _shadowRowSkipEnabled(db);
   const ids = [];
   for (const d of (docs || [])) {
-    if (isAutoFileEligible(db, d, { ...opts, formats, gradOn, optOut }).eligible) ids.push(d.id);
+    if (isAutoFileEligible(db, d, { ...opts, formats, gradOn, optOut, shadowRowSkip }).eligible) ids.push(d.id);
   }
   return ids;
 }
@@ -547,11 +782,25 @@ function setScopeOptOut(db, supplier, slug, optedOut) {
   return cur;
 }
 
+// Slice-3 amount-routing helper: is `value` dp-consistent with the confirmed history for this
+// (supplier, doc-type, field) scope? Reuses the SAME sample source + rule the auto-file currency gate
+// uses (_scopeFormats -> _currencyDpConsistent), so routing and auto-file agree. No history for the
+// field ⇒ true (can't judge — mirrors _currencyDpConsistent's <5-sample behaviour). Additive/inert
+// until amountRouting (Slice 3) calls it, so it changes no existing trust/auto-file decision.
+function _currencyConsistentForField(db, supplier, slug, fieldKey, value) {
+  const fmts = _scopeFormats(db, _norm(supplier), String(slug || '').toLowerCase().trim());
+  const f = fmts.get(fieldKey);
+  return f ? _currencyDpConsistent(value, f.sampleValues) : true;
+}
+
 module.exports = {
   TRUST_WINDOW, TRUST_MAX_CORRECTIONS, TRUSTED_FLOOR, UNTRUSTED_FLOOR, STRICT_TYPES,
   classifyLearnedShape, valueMatchesShape, fieldVerifiable,
+  _dominantStructuredClass,        // exported for the contaminated-history pin (test_scope_trust.js §18b)
+  _nonRoleLenientEnabled,          // single source of the default, so tests can't drift from it
+  _shadowRowSkipEnabled,           // ditto for the shadow-row skip (TRUST_SHADOW_ROW_SKIP)
   validDate: _validDate, validIban: _validIban, validVatGb: _validVatGb,
-  currencyDpConsistent: _currencyDpConsistent, matchesTypePattern: _matchesTypePattern,
+  currencyDpConsistent: _currencyDpConsistent, currencyConsistentForField: _currencyConsistentForField, matchesTypePattern: _matchesTypePattern,
   scopeTrust, docTrustGate, isAutoFileEligible, autoFileEligibleIds,
   listGraduatedScopes, setScopeOptOut,
 };

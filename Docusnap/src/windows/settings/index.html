@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; img-src 'self' data:">
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; img-src 'self' data:; form-action 'none'; base-uri 'none'; object-src 'none'">
   <title>ScanFinder — Settings</title>
   <link rel="stylesheet" href="../shared/theme.css" />
   <style>
@@ -87,17 +87,20 @@
     .folders-group .group-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); align-items: start; }
     .folders-group .group-body > .section { flex: none; }
     .folders-group .group-body .section-desc { min-height: 4.8em; }
-    /* Top-level section headings: stronger contrast/weight so they read as the
-       primary label of each block. Restrained — no colour/decoration, same
-       uppercase tracking as before, just promoted from muted 10px to text 11px. */
-    .section-title { font-size:14px; font-weight:600; letter-spacing:0; text-transform:none; color:var(--text); margin-bottom:10px; }
-    /* Card header row: a section title with a right-aligned status pill. */
+    /* Top-level section headings: small-caps ACCENT "eyebrows" with a hairline rule —
+       the same idiom as .dash-cards-subhead and the sidebar .side-head — so a section
+       title reads as a different SPECIES of text from control labels and body copy,
+       not just a different size (2026-07-18 hierarchy restyle, barry+eric consult). */
+    .section-title { font-size:11.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+      color:var(--accent2); margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid var(--border); }
+    /* Card header row: a section title with a right-aligned status pill — stays one clean line. */
     .card-head { margin-bottom:10px; }
-    .card-head > .section-title { margin-bottom:0; }
+    .card-head > .section-title { margin-bottom:0; border-bottom:none; padding-bottom:0; }
     /* Subordinate (sub-section) headings: kept muted/light so they sit clearly
        below a top-level .section-title. Apply `sub` to nested headings. */
-    .section-title.sub { font-size:10px; font-weight:500; letter-spacing:.1em; color:var(--muted); margin-bottom:8px; }
-    .section-desc { font-size:12px; color:var(--muted); line-height:1.6; margin-bottom:10px; }
+    .section-title.sub { font-size:10px; font-weight:600; letter-spacing:.1em; text-transform:uppercase;
+      color:var(--muted); margin-bottom:8px; padding-bottom:0; border-bottom:none; }
+    .section-desc { font-size:12px; color:var(--muted); line-height:1.6; margin-bottom:10px; max-width:68ch; }
     /* Progressive-disclosure expander: a clean chevron summary for tucking advanced/rare
        options or long explanations behind a click. */
     details > summary.disclose { cursor:pointer; color:var(--accent2); font-size:13px; font-weight:700;
@@ -137,8 +140,11 @@
     /* ── Threshold / toggle rows ── */
     .threshold-row { display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border); }
     .threshold-row:last-child { border-bottom:none; }
-    .threshold-label { font-size:13px; }
-    .threshold-sub { font-size:11px; color:var(--muted); margin-top:2px; }
+    /* The type ladder per row: label = the medium-weight hero of the row; sub = visibly
+       secondary (small, muted, line-length CAPPED — full-width 200-char lines were half
+       the "wall of text" impression). Copy stays 100% visible, styled as secondary. */
+    .threshold-label { font-size:13px; font-weight:500; color:var(--text); }
+    .threshold-sub { font-size:11px; color:var(--muted); margin-top:3px; line-height:1.55; max-width:65ch; }
     /* Sub-heading that separates non-watch-specific toggles within the Watch Folder card. */
     .settings-subgroup-divider { font-size:11px; color:var(--muted); margin:14px 0 2px; padding-top:12px;
       border-top:1px solid var(--border); text-transform:uppercase; letter-spacing:.04em; }
@@ -192,6 +198,12 @@
     .dt-list-header .lbl { font-size:16px; font-weight:600; color:var(--text); }
     .doctype-row { cursor:pointer; }
     .doctype-row.active { border-color:var(--accent); background:var(--accent-bg); }
+    /* Drag-to-reorder handle on each type row — same ⠿ affordance as the field rows in
+       the type editor (a drag only starts from the handle, so click-to-select is safe). */
+    .doctype-row .doctype-handle { flex:0 0 auto; cursor:grab; color:var(--muted);
+      font-size:15px; line-height:1; user-select:none; padding:0 2px; }
+    .doctype-row .doctype-handle:active { cursor:grabbing; }
+    .doctype-row.dragging { opacity:.45; }
     .doctype-count { font-size:10px; color:var(--muted); font-family:var(--mono); }
     .dt-detail-header { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:18px; }
     .dt-detail-header h3 { margin:0; font-size:16px; }
@@ -399,6 +411,7 @@
     <button class="tab" data-tab="learning" data-help-key="tab-learning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1 2.7 2 6 2s6-1 6-2v-5"/></svg>Learning</button>
     <button class="tab" data-tab="repair" data-help-key="tab-repair"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.3 2.3-2.5-.7-.7-2.5z"/></svg>Learning Repair</button>
     <button class="tab" data-tab="users" data-help-key="tab-users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>Users &amp; activity</button>
+    <button class="tab" data-tab="workflow" data-help-key="tab-workflow" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="10.7" x2="15.4" y2="6.3"/><line x1="8.6" y1="13.3" x2="15.4" y2="17.7"/></svg>Workflow</button>
     <button class="tab" data-tab="audit" data-help-key="tab-audit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="18" rx="2"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>Audit</button>
     <button class="tab" data-tab="licensing" data-help-key="tab-licensing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 21 2"/><path d="M16 7l3 3"/><path d="M18 5l3 3"/></svg>Licensing</button>
     <button class="tab" data-tab="searchclient" data-help-key="tab-searchclient"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><line x1="8" y1="20" x2="16" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/></svg>Search client</button>
@@ -493,9 +506,29 @@
         <div id="output-path-preview" class="pattern-preview">…</div>
         <p class="section-desc" style="margin-top:8px;">
           Forbidden characters (<span class="field-key">&lt; &gt; : " / \ | ? *</span>) are
-          stripped from folder and file names, reserved device names are defused, and
-          duplicate files get a <span class="field-key">-DUPLICATE</span> suffix automatically.
+          stripped from folder and file names, and reserved device names are defused. Duplicate
+          files are labelled using the setting below.
         </p>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Duplicate files</div>
+        <p class="section-desc">
+          If a new document would be filed under a name that already exists, the newer copy is kept
+          with a label added to its file name, so nothing is ever overwritten. Choose the label:
+        </p>
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <select id="dup-suffix-select" style="min-width:240px;">
+            <option value="DUPLICATE">DUPLICATE — Invoice….INV-001-DUPLICATE.pdf</option>
+            <option value="COPY">COPY — Invoice….INV-001-COPY.pdf</option>
+            <option value="number">Number only — Invoice….INV-001-2.pdf</option>
+            <option value="date">Import date — Invoice….INV-001-2026-07-28.pdf</option>
+            <option value="__custom">Custom label…</option>
+          </select>
+          <input id="dup-suffix-custom" type="text" maxlength="40" placeholder="e.g. OLD"
+                 style="display:none; min-width:160px;">
+        </div>
+        <div id="dup-preview" class="pattern-preview" style="margin-top:10px;">…</div>
       </div>
 
     </div>
@@ -505,6 +538,10 @@
       <div class="section">
         <div class="section-title">Document Types</div>
         <p class="section-desc">Select a type to edit its fields and filing roles, or create a new one. Each type's Company, Date and Reference roles drive filing and learning.</p>
+        <div style="margin:0 0 12px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <button class="btn" id="btn-field-visibility" data-help-key="field-visibility">Field visibility…</button>
+          <span class="section-desc" style="margin:0;">Choose which fields each sender's layout shows — hide ones a layout doesn't print.</span>
+        </div>
         <div id="dt-master-detail">
           <div id="dt-list-col">
             <div class="dt-list-header"><span class="lbl">Type Name</span></div>
@@ -562,6 +599,209 @@
               </div>
               <label class="toggle"><input type="checkbox" id="auto-rotate-toggle"><span class="toggle-slider"></span></label>
             </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Recover long reference numbers cut off by the crop</div>
+                <div class="threshold-sub">When a taught reference is longer than the example it was taught on, the reader can clip the last character (e.g. “PO-58987” read as “PO-5898”). Turn this on to extend the read to the full value. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="right-grow-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Trim the label off the start of a read value</div>
+                <div class="threshold-sub">On slightly shifted scans the reader can pick up the label text just before a value (e.g. “PO-27425” read as “PO9974A9C”). Turn this on to clamp the read to just the value. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="left-clamp-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Recover a reference whose prefix was misread</div>
+                <div class="threshold-sub">When a reference's letter prefix is garbled to a symbol (e.g. “PO-17039” read as “0-17039”) but another read on the page has it right, use the correct one automatically — only for a sender whose references all share that prefix. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="prefix-garble-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Correct a reference that lost a cross-check</div>
+                <div class="threshold-sub">When ScanFinder re-checks a taught reference against a fresh read of the whole page and the two disagree, it can occasionally trust a mis-read of the page over the correct value. When the correct value is backed by the document's other reads and is present on the page, ScanFinder keeps it instead of the mis-read. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="crosscheck-reconcile-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Double-check references and dates against the whole document</div>
+                <div class="threshold-sub">After reading, ScanFinder compares each reference and date against every other read it made of the same field. If the chosen value can't be found anywhere else but a different value is backed by several independent reads and printed on the page, ScanFinder uses the backed value instead. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="universal-verify-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Tidy stray marks from taught reference reads</div>
+                <div class="threshold-sub">When a taught box accidentally catches a stray dot or mark from the label next to it (e.g. “. DN-60902”), and a second independent read of the same spot shows the clean value, ScanFinder files the clean value. The two reads must agree exactly. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="edge-clean-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Snap taught boxes to the printed text</div>
+                <div class="threshold-sub">When a taught reading spot lands slightly off on a tilted or shifted scan, ScanFinder adjusts the box to cover the full printed value it overlaps — never grabbing neighbouring text — so references and dates aren't cut short. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="word-snap-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Remove label fragments from taught reads</div>
+                <div class="threshold-sub">When a taught box catches the tail of its own label (e.g. the “o.” of “No.” read as “o. DN-67428”), and an independent read of the same spot shows the value without it, ScanFinder files the clean value. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="frag-clean-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Complete a cut-short taught read</div>
+                <div class="threshold-sub">When a taught box cuts a reference short (e.g. “DN-6742” for “DN-67428”) and two further reads of the same spot agree on the full value in the sender's usual format, ScanFinder files the full value instead of asking you to verify. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="clip-commit-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Grow a taught box that cuts through the printed value</div>
+                <div class="threshold-sub">When a taught reading spot's edge lands mid-word on a document (a longer reference than the one it was taught on, or a shifted scan), ScanFinder widens just that read to the full word and files it only when an independent check of the same spot agrees — otherwise the shortened reading is sent for review instead of filing silently. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="edge-guard-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Catch cut-short dates</div>
+                <div class="threshold-sub">A date read with its year cut off (e.g. “07-01-20-” from “07-01-2026”) is no longer accepted as-is — ScanFinder retries the read or sends the document for review, so a shortened date can't be filed as the wrong year. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="date-clip-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Stricter matching for number-like reading spots</div>
+                <div class="threshold-sub">A taught reading spot identified by a number (rather than a printed label) must match that number exactly — so a different date or reference nearby can never be mistaken for it. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="label-digit-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Align taught reading spots on straightened pages</div>
+                <div class="threshold-sub">When a document was taught on a straightened page, ScanFinder aligns every taught reading spot to the straightened view of each new document — so a slightly tilted scan reads the same values the teaching showed. The first re-read of a sender measures the teaching page's tilt; reads after that use it automatically. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="angle-compose-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Re-read a taught spot off its label when the box clips the value</div>
+                <div class="threshold-sub">When a taught reading spot lands a hair off on a new document and cuts through the value, ScanFinder re-reads it from where the printed label actually sits — so the right value is shown (flagged for a quick check) instead of a garbled one. Works best with word-snapping on. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="edge-cut-relocate-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't flag a taught value when only its last character was misread</div>
+                <div class="threshold-sub">When a taught reading spot clips the last character of a code but the label-anchored re-read (confirmed by a second reading and matching this sender's usual format) recovers the full value, ScanFinder files it without a needless "check this" flag. Only applies when the fuller read is clearly more confident. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="clip-slack-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Never file an impossible date over a valid one</div>
+                <div class="threshold-sub">If a taught date reading spot misreads a date into something impossible (e.g. day 33), ScanFinder keeps the clearly-read date from elsewhere on the page instead — flagged for a quick check. Only when the other read is confident and a genuine calendar date. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="date-invalid-yield-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Never file a wildly-future date over a valid one</div>
+                <div class="threshold-sub">If a taught date reading spot misreads the year into the far future (e.g. 2096 instead of 2026), ScanFinder keeps the clearly-read date from elsewhere on the page instead — flagged for a quick check. Only for dates more than ~3 years out, so a genuine post-dated document is never affected. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="date-future-yield-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Double-check a taught date when the box clips a digit</div>
+                <div class="threshold-sub">When a taught date-reading spot is drawn tightly and clips the first digit on a slightly-tilted scan (e.g. “03/04/2026” read as “01/04/2026”), ScanFinder takes a second, wider reading of the same spot; if it clearly disagrees, the date is flagged for a quick check instead of being filed silently. Never changes a value on its own. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="pad-window-read-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Recognise a document's type from a large title heading</div>
+                <div class="threshold-sub">When a document's big title (e.g. “CREDIT NOTE”) is printed large or widely letter-spaced, the reader can drop it or split it, and the document is mis-typed (a credit note read as an invoice). ScanFinder takes a quick second look at the title and corrects the type — on both new imports and reprocessing. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="heading-absent-reread-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Check a credit note's total for a missing minus sign</div>
+                <div class="threshold-sub">A credit note's total is money going back to you, but the minus sign in front of it can be lost when the page is read — so a £160.32 credit is filed as a £160.32 charge. ScanFinder checks the total's sign against the document's type and flags it for a quick check instead of filing it silently. It never changes the amount itself — you type the minus. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="credit-sign-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Trust a template's saved sender name over a misread letterhead</div>
+                <div class="threshold-sub">When you save a template you tell ScanFinder who the sender is. If the letterhead on a later scan reads badly — a stray mark turning “Castellan Security Systems” into “tastellan Security Systems”, or into a scrap like “an:” — that misreading can currently replace the name you saved, filing the document under the wrong sender. This keeps your saved name when the reading is clearly the same name misread, or is too short to be a company name at all. A genuinely different company still wins, so re-teaching a template still works. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="template-fixed-supplier-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Take a wider second look when a taught box clips a reference code</div>
+                <div class="threshold-sub">When a taught reading spot is drawn slightly too tight for its code, the first characters can be cut off (“PO-48009” read as “-48009”). ScanFinder re-reads the same spot a little wider and either recovers the full code or flags the disagreement for a quick check. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="pad-window-code-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't mistake a VAT registration number for a VAT amount</div>
+                <div class="threshold-sub">Most letterheads print a VAT registration number (“VAT Reg GB 651 0027 84”). ScanFinder could read those digits as the VAT amount, which then made the totals look like they didn't add up — so documents that were perfectly correct came to you saying “please check”, with nothing wrong to find. This tells the two apart and reads the real VAT line further down instead. It also flags a total that looks like a part-total, so a net figure filed as the grand total is still caught. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="vat-reg-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Read a taught value that sits under its heading, not the heading itself</div>
+                <div class="threshold-sub">When you teach ScanFinder where a value is, it also notes the wording beside it so it can find that value again on the next document. If you drew the value <em>underneath</em> its heading — common on delivery notes, where “Delivery Note No.” is on one line and the number on the next — ScanFinder could treat anything within a few lines as being “on the same line”, and file the heading word itself (“Delivery”) as the reference number. This measures the two boxes properly, so a value you taught below its heading is read from where you actually drew it. Where it then can't read the value confidently the document comes to you instead of guessing. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="inline-row-overlap-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Never accept a heading word as a reference number</div>
+                <div class="threshold-sub">A reference number — an invoice number, credit note number, delivery number — is always a code with digits in it, never a plain word. ScanFinder already refused word-only readings for order numbers; this applies the same rule to every reference field, including the ones on document types you create yourself, so a heading like “Despatch” or the sender's own name can't be filed as the document's reference. When a word is refused ScanFinder usually reads on and finds the real code beside it. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="ref-role-digit-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't let a hidden working figure block a document from filing itself</div>
+                <div class="threshold-sub">To check that a document's totals add up, ScanFinder sometimes reads figures your document type has no field for — a subtotal or a VAT line on a form that only shows a grand total. Those working figures are never shown to you, never learned, and are thrown away the moment you confirm. Until now one of them could quietly stop a perfectly good document from filing itself, and because it isn't on your form there was nothing on screen to look at or clear. This lets those hidden figures out of the filing decision, while still holding back any document where one of them looks wrong. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="shadow-row-skip-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Read small reference/date print more clearly</div>
+                <div class="threshold-sub">Enlarges a tightly-cropped reference or date before reading it and drops an over-sharpen step, so small print (e.g. “PO-17039” misread as “»0-17039”) reads correctly. Only helps where it can, never changes a read it can't improve. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="struct-code-read-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Faster field reads (warm OCR helper)</div>
+                <div class="threshold-sub">Keeps a small OCR helper warm in the background so drawing a box around a value reads in a fraction of a second instead of a couple of seconds. Reads work either way — turn this off only if you ever notice extra background activity.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="warm-ocr-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Faster single-document reprocessing (uses more CPU cores)</div>
+                <div class="threshold-sub">When you Reprocess or Straighten &amp; Reprocess one document, spreads the work across several CPU cores so it finishes faster on a slower PC. The result is identical either way — this only changes the speed. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="parallel-reprocess-toggle"><span class="toggle-slider"></span></label>
+            </div>
           </div>
         </div>
       </div>
@@ -579,6 +819,17 @@
               <!-- Options are populated by the renderer, sized to this PC's CPU cores (get-concurrency-info). -->
               <select id="processing-concurrency" class="field-select" style="width:80px;">
                 <option value="1">1</option>
+              </select>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Scan reading detail (OCR resolution)</div>
+                <div class="threshold-sub">How finely each page is read for text. <b>High (300 DPI)</b> is most accurate for genuine paper scans. <b>Balanced (200)</b> and <b>Fast (150)</b> read noticeably quicker and use far less memory — ideal when your documents are already low-resolution. Lower detail can miss very small print, so check accuracy after changing it.</div>
+              </div>
+              <select id="ocr-dpi-select" class="field-select" style="width:230px;">
+                <option value="150">Fast (150 DPI)</option>
+                <option value="200">Balanced (200 DPI)</option>
+                <option value="300">High — most accurate (300 DPI)</option>
               </select>
             </div>
             <div class="threshold-row">
@@ -632,6 +883,66 @@
               </div>
               <label class="toggle">
                 <input type="checkbox" id="auto-separate-toggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Recognise separator sheets</div>
+                <div class="threshold-sub">Split a scanned pile wherever a printed ScanFinder separator sheet appears — the sheet page is removed from the filed documents. Print sheets below, slot them between documents, and scan the lot as one batch. If a sheet can't be read, nothing is split — the batch just arrives as one document in Review.</div>
+                <div class="threshold-sub" id="filing-slips-watch-warn" style="display:none; color: var(--warn);">Separator sheets are detected on manual Import only — not yet in the auto-import (watch) folder.</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="filing-slips-toggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Print separator sheets</div>
+                <div class="threshold-sub">Creates a PDF pack of numbered sheets and opens it — print from your PDF viewer (double-sided if you can). Sheets are reusable; keep the pack by the scanner.</div>
+                <div class="threshold-sub" id="filing-slips-result" style="display:none"></div>
+              </div>
+              <div style="display:flex; gap:8px; align-items:center; flex-shrink:0;">
+                <input type="number" id="filing-slips-count" min="1" max="50" value="10" title="How many sheets to print" style="width:64px;">
+                <button class="btn" id="filing-slips-print">Print separator sheets…</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Printing</div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Enable document printing</div>
+                <div class="threshold-sub">Adds a Print button in Review. It opens your printer's own dialog so you choose the tray, sides, paper and copies your printer supports — nothing is printed until you confirm there. Every print is recorded in the audit log.</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="printing-toggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Unrecognised documents</div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">File unrecognised documents as General Documents</div>
+                <div class="threshold-sub">When ScanFinder can't tell what kind of document something is, it becomes a "General Document" — reviewed as usual, filed under a General folder, and found later by searching its text. Never applies to anything ScanFinder recognises, and these documents never file themselves automatically.</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="generic-fallback-toggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Suggest a title from the document's own heading</div>
+                <div class="threshold-sub">General Documents get a suggested Title picked from the page's main heading ("Boiler Service Certificate") — editable at review, searchable, and usable in filenames. If no clean heading is found the Title is simply left blank.</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="auto-title-toggle">
                 <span class="toggle-slider"></span>
               </label>
             </div>
@@ -754,6 +1065,18 @@
         <p class="section-desc" style="border-left:2px solid var(--warn); padding-left:8px; color:var(--warn); margin-top:6px;">
           Advanced: use only when standard extraction is repeatedly failing for a supplier layout.
         </p>
+      </div>
+      <div class="section" id="tpl-cleanup-section">
+        <div class="section-title">Suggested cleanups</div>
+        <p class="section-desc">
+          Find duplicate templates of the same supplier &amp; type (they can fragment when a scanned logo drifts) and re-link documents that ended up with no template. A merge takes a database backup and asks you to confirm first.
+        </p>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button class="btn" id="btn-scan-duplicates">Scan for duplicate templates</button>
+          <button class="btn" id="btn-relink-strays">Re-link stray documents</button>
+          <span id="tpl-cleanup-msg" class="section-desc" style="margin:0;"></span>
+        </div>
+        <div id="tpl-cleanup-results" style="margin-top:12px;"></div>
       </div>
       <div id="tpl-layout">
         <div id="tpl-list-col">
@@ -893,15 +1216,12 @@
                       <label>Anchor text</label>
                       <input type="text" id="tpl-map-anchor-text" placeholder="auto-detected" style="width:220px;" title="Label text to find on the document — auto-filled from drawn box">
                     </div>
-                    <div class="form-group">
-                      <label>OCR type</label>
-                      <select id="tpl-map-ocr-type" class="field-select" title="Expected value format — affects post-processing">
-                        <option value="text">Text</option>
-                        <option value="number">Number</option>
-                        <option value="date">Date</option>
-                        <option value="currency">Currency</option>
-                      </select>
-                    </div>
+                    <!-- The "OCR type" select was removed 2026-08-08 (owner decision). Its title
+                         claimed it affected post-processing; it did not. It wrote
+                         template_field_mappings.ocr_type, which NO production code reads — the
+                         value format comes from engine._seed_field_patterns, keyed on the document
+                         TYPE's field definitions. Three surfaces offered three different
+                         vocabularies for it and none changed a read. -->
                     <div class="form-group">
                       <label>Expansion</label>
                       <div class="conf-row">
@@ -957,7 +1277,7 @@
               <p class="section-desc">Click a row to edit. The “Last test” column shows the raw mapped read; the filed value (Review/Search) is normalised later (spacing, date format).</p>
               <table class="fields-table" id="tpl-mappings-table">
                 <thead>
-                  <tr><th>Field</th><th>Anchor label</th><th>OCR type</th><th>Search expansion</th><th>Last test</th><th>Enabled</th></tr>
+                  <tr><th>Field</th><th>Anchor label</th><th>Search expansion</th><th>Last test</th><th>Enabled</th></tr>
                 </thead>
                 <tbody id="tpl-mappings-tbody"></tbody>
               </table>
@@ -1319,6 +1639,45 @@
     </div>
 
     <!-- ══ AUDIT ══ -->
+    <div class="panel" id="panel-workflow" data-help-key="tab-workflow">
+      <div class="section-title">Document routing</div>
+      <p style="color:var(--muted); max-width:65ch;">Automatically send a filed document to someone — for approval or just for information — based on its type and amount. Rules run on <b>every</b> document as it's filed, whether it was auto-filed or reviewed.</p>
+
+      <div class="card" id="wf-builder" style="margin-top:14px; padding:16px;">
+        <div style="font-weight:600; margin-bottom:10px;" id="wf-builder-title">Add a routing rule</div>
+        <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; line-height:2.4;">
+          <span>When a</span>
+          <select id="wf-b-type" style="min-width:150px;"></select>
+          <span>is filed</span>
+          <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;"><input type="checkbox" id="wf-b-amount-on"> and it's £</label>
+          <input type="text" id="wf-b-amount" inputmode="decimal" placeholder="0.00" style="width:90px; display:none;">
+          <span id="wf-b-amount-suffix" style="display:none;">or more</span>
+          <span>, send it to</span>
+          <select id="wf-b-person" style="min-width:160px;"></select>
+          <select id="wf-b-action" style="min-width:150px;">
+            <option value="approve">for approval</option>
+            <option value="acknowledge">for information</option>
+          </select>
+          <span>.</span>
+        </div>
+        <div style="margin-top:10px; font-size:11px; color:var(--muted);">Approval holds the document until they decide. For-information never holds anything — filing carries on as normal.</div>
+        <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
+          <button class="btn primary" id="wf-b-save">Add rule</button>
+          <button class="btn" id="wf-b-dryrun">Show me what this would do</button>
+          <button class="btn" id="wf-b-cancel" style="display:none;">Cancel</button>
+        </div>
+        <div id="wf-b-msg" style="font-size:12px; color:var(--muted); min-height:16px; margin-top:10px;"></div>
+        <div id="wf-dryrun" style="margin-top:8px;"></div>
+      </div>
+
+      <div style="font-weight:600; margin:20px 0 8px;">Your rules</div>
+      <div id="wf-rules-list"><p style="color:var(--muted);">Loading…</p></div>
+
+      <div style="font-weight:600; margin:20px 0 8px;">Open routes</div>
+      <p class="section-desc" style="max-width:65ch;">Everything currently waiting on someone — including automatic routes, which don't appear in anyone's Sent box. Cancelling removes it from the recipient's inbox and leaves an honest note in their Completed list.</p>
+      <div id="wf-open-list"><p style="color:var(--muted);">Loading…</p></div>
+    </div>
+
     <div class="panel" id="panel-audit" data-help-key="tab-audit">
       <style>
         #panel-audit .aud-lbl { display:block; font-size:10px; color:var(--muted); margin-bottom:3px; letter-spacing:.04em; }
@@ -1332,6 +1691,18 @@
         #panel-audit .aud-pill.failure { background:var(--err-bg); color:var(--err); }
         #panel-audit .aud-pill.denied  { background:var(--warn-bg); color:var(--warn); }
         #panel-audit .aud-detail td { background:var(--bg); color:var(--muted); font-family:var(--mono); font-size:10.5px; white-space:pre-wrap; word-break:break-word; }
+        /* Inline "View" affordance in the Target cell — a compact accent pill (was a bare default
+           button); fills the accent on hover, matching the app's button language. */
+        #panel-audit .aud-view-btn {
+          display:inline-flex; align-items:center; margin-left:6px; padding:2px 9px; vertical-align:middle;
+          border-radius:var(--r-pill, 999px); border:1px solid var(--accent-border, var(--border2));
+          background:var(--accent-bg); color:var(--accent2);
+          font-family:var(--sans); font-size:10px; font-weight:600; letter-spacing:.02em; line-height:1.5;
+          cursor:pointer; transition:background .15s, border-color .15s, color .15s, transform .1s;
+        }
+        #panel-audit .aud-view-btn:hover { background:var(--accent); border-color:var(--accent); color:#fff; transform:translateY(-1px); }
+        #panel-audit .aud-view-btn:active { transform:translateY(0); }
+        #panel-audit .aud-view-btn:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
       </style>
       <div class="section">
         <div class="section-title">Audit log</div>
@@ -1357,7 +1728,9 @@
           <button class="btn primary" id="aud-apply">Apply</button>
           <button class="btn" id="aud-clear">Clear</button>
           <button class="btn" id="aud-csv">Export CSV</button>
+          <button class="btn" id="aud-verify" title="Re-walk the tamper-evident hash chain across the live log and all archived months, and report the first break.">Verify integrity</button>
         </div>
+        <div id="aud-verify-result" style="font-size:12px; margin-bottom:6px; display:none;"></div>
 
         <div id="aud-summary" style="font-size:11px; color:var(--muted); margin-bottom:6px;"></div>
         <table class="fields-table" id="aud-table" style="width:100%">
@@ -1408,7 +1781,7 @@
         <div id="lic-activate-msg" class="section-desc" style="font-size:12px; min-height:1em;"></div>
       </div>
 
-      <div class="section" id="wf-section">
+      <div class="section" id="wf-section" style="display:none;">
         <div class="card-head"><div class="section-title">Workflow add-on</div><span class="chip" id="wf-chip" style="display:none;"></span></div>
         <p class="section-desc">Unlocks the enhanced Search experience — confidence cues, approval workflow and mailbox. Set by your licence (read‑only).</p>
         <div class="threshold-row">

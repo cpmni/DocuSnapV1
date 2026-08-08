@@ -102,7 +102,9 @@ async function refreshDashboard() {
   }
   const dashLast = document.getElementById('dash-last-run');
   if (dashLast) dashLast.textContent = _lastRunSummary
-    ? `Last run: ${_lastRunSummary.ok} filed${_lastRunSummary.err ? `, ${_lastRunSummary.err} with errors` : ''}.`
+    ? `Last run: ${_lastRunSummary.ok} processed`
+      + (_lastRunSummary.filed != null ? ` — ${_lastRunSummary.filed} filed, ${_lastRunSummary.review} to review` : '')
+      + (_lastRunSummary.err ? `, ${_lastRunSummary.err} with errors` : '') + '.'
     : '';
 
   // One confirmed-docs fetch feeds BOTH recent activity and the throughput strip.
@@ -185,7 +187,7 @@ async function renderLearning(confirmed) {
   const lay = layouts == null ? ''
     : ` · learned <span class="n">${layouts}</span> ${layouts === 1 ? 'layout' : 'layouts'}`;
   body.innerHTML = na > 0
-    ? `<span class="n">${na}</span> ${na === 1 ? 'supplier' : 'suppliers'} now file automatically${lay}.`
+    ? `<span class="n">${na}</span> ${na === 1 ? 'supplier now files' : 'suppliers now file'} automatically${lay}.`
     : `No suppliers file automatically yet — they graduate after a run of clean confirmations${lay}.`;
 }
 
@@ -214,8 +216,8 @@ async function renderDashboardExtra() {
 
   const af = document.getElementById('dash-autofile-body');
   if (af) af.innerHTML = (x.autoFiled && x.autoFiled.total > 0)
-    ? `<div class="big-num">${x.autoFiled.pct}%</div><div class="dash-card-note">filed automatically this week — ${x.autoFiled.auto} of ${x.autoFiled.total} documents.</div>`
-    : `<div class="dash-card-note">No documents filed yet this week.</div>`;
+    ? `<div class="big-num">${x.autoFiled.pct}%</div><div class="dash-card-note">filed automatically in the last 7 days — ${x.autoFiled.auto} of ${x.autoFiled.total} documents.</div>`
+    : `<div class="dash-card-note">No documents filed in the last 7 days.</div>`;
 
   const st = document.getElementById('dash-storage-body');
   if (st) {
@@ -244,7 +246,38 @@ async function renderDashboardExtra() {
     }
   }
   applyDashboardCardPrefs();   // a user-hide still wins over the entitlement-driven show above
+  renderWorkflowCard();        // Slice 1: its own tiny IPC — never part of this heavy pipeline
 }
+
+// Workflow "Waiting on you" card (Slice 1). Deliberately fed by the tiny
+// get-workflow-counts IPC, NOT get-dashboard-extra — the per-event repaint path must
+// never pay fs.statfsSync + five blocks (eric). Hidden entirely while the workflow
+// add-on is dark/unlicensed (the dash-clients precedent); a user-hide still wins.
+async function renderWorkflowCard() {
+  const card = document.getElementById('dash-workflow');
+  if (!card) return;
+  let c = null;
+  try { c = await window.docusnap.workflow?.counts?.(); } catch { /* leave hidden */ }
+  if (!c || !c.entitled) { card.style.display = 'none'; applyDashboardCardPrefs(); return; }
+  card.style.display = '';
+  const body = document.getElementById('dash-workflow-body');
+  if (body) body.innerHTML = `
+    <div class="dash-attn-row"><span class="dash-attn-num">${c.inbox}</span> waiting for you</div>
+    <div class="dash-attn-row"${c.openSent ? '' : ' style="display:none;"'}><span class="dash-attn-num">${c.openSent}</span> sent, awaiting others</div>`;
+  applyDashboardCardPrefs();
+}
+document.getElementById('dash-workflow-open')?.addEventListener('click', () => {
+  // The mailbox lives in the Search window — land the user ON the mailbox view, not a cold
+  // search (the button promised a place it wasn't taking them to).
+  window.docusnap.openSearchWindowAt('mailbox');
+});
+// Repaint on the workflow invalidation ping, debounced (a bulk /v1 assign of 20 docs
+// must coalesce, mirroring the _dashRefreshTimer idiom).
+let _wfCardTimer = null;
+window.docusnap.onWorkflowCountsChanged?.(() => {
+  clearTimeout(_wfCardTimer);
+  _wfCardTimer = setTimeout(renderWorkflowCard, 400);
+});
 
 // First-run setup checklist — shown only until the core steps are done, then hidden.
 async function renderSetupChecklist(confirmed) {
@@ -675,7 +708,7 @@ const HELP_TEXTS = {
   'buy-licence':   'Open the Scan Finder website to purchase a licence.',
   'setup-checklist':'First-time setup steps still to do — this card disappears once you’re set up.',
   'attention':     'What needs you: documents waiting in Review, set aside (deferred), or that couldn’t be read.',
-  'pulse':         'How many documents you’ve filed today, this week and this month.',
+  'pulse':         'How many documents you’ve filed today, in the last 7 days and this calendar month. (The 7-day count can exceed the month figure just after a new month starts.)',
   'dash-import':   'Your last source folder and a shortcut to the Import screen.',
   'auto-import':   'Watch a folder and import any scans dropped into it automatically (admin).',
   'learning':      'How many suppliers now file automatically (the graduation roster), plus the layouts learned.',
@@ -777,6 +810,10 @@ async function startProcessing() {
   setBtnLabel(btnRun, 'Process Documents');
   btnStop.classList.remove('visible');
   clearStage();
+  // Imported originals have drained to Processed/, so the pick-time
+  // "N documents ready to import" count is now stale — re-scan the folder so
+  // the preview reflects what's actually left (and disables Process if empty).
+  if (selectedFolder) showFolderPreview(selectedFolder);
   if (processResult && processResult.stopped) {
     logStatus.textContent = 'Stopped';
     progressText.textContent = `Stopped — ${batch.done} of ${batch.total} processed`;
@@ -804,7 +841,9 @@ async function startProcessing() {
   // this run for the dashboard's "last run" line.
   if (batch.done > 0) {
     if (_userCanReview) btnReviewDocs.classList.add('visible');
-    _lastRunSummary = { ok: batch.ok, err: batch.err };
+    // filed/review split kept for the dashboard line — "20 filed" was FALSE when the run
+    // only QUEUED them (Chris r5: processing ≠ filing).
+    _lastRunSummary = { ok: batch.ok, err: batch.err, filed, review };
   }
 }
 
@@ -887,13 +926,31 @@ async function checkGraduationAnnounce() {
 function showGradAnnounce(scopes) {
   const b = document.getElementById('grad-announce');
   if (!b) return;
-  const names = [...new Set(scopes.map(s => s.supplier))];
-  const who = names.length === 1
-    ? `<b>${_gaEsc(names[0])}</b>`
-    : `<b>${_gaEsc(names[0])}</b> and ${names.length - 1} other supplier${names.length > 2 ? 's' : ''}`;
+  // Graduation is PER (supplier, DOCUMENT TYPE) scope — say so (owner 2026-08-01: the old
+  // supplier-only wording implied ALL of a supplier's documents would auto-file). One scope
+  // names both plainly; a same-supplier pair lists the types; a mixed batch lists
+  // "Supplier (Type)" pairs, first two + a count.
+  const bySupplier = new Map();
+  for (const s of scopes) {
+    const list = bySupplier.get(s.supplier) || [];
+    list.push(s.doctype || s.slug || 'documents');
+    bySupplier.set(s.supplier, list);
+  }
+  let who, what;
+  if (bySupplier.size === 1) {
+    const [sup, types] = [...bySupplier.entries()][0];
+    who = `<b>${_gaEsc(sup)}</b>`;
+    const t = types.map(x => `<b>${_gaEsc(x)}</b>`);
+    what = `their clean ${t.length === 1 ? t[0] : t.slice(0, -1).join(', ') + ' and ' + t[t.length - 1]} documents`;
+  } else {
+    const pairs = scopes.map(s => `<b>${_gaEsc(s.supplier)}</b> (${_gaEsc(s.doctype || s.slug)})`);
+    who = pairs.slice(0, 2).join(' and ')
+      + (pairs.length > 2 ? ` and ${pairs.length - 2} more` : '');
+    what = 'their clean documents of these types';
+  }
   b.innerHTML = `<span class="af-ico">★</span>`
-    + `<span>Scan Finder has learned ${who} — it will now file their clean documents automatically. `
-    + `You can still open any filed doc, or turn this off per supplier in Settings.</span>`
+    + `<span>Scan Finder has learned ${who} — ${what} will now file automatically. `
+    + `You can still open any filed doc, or turn this off in Settings.</span>`
     + `<a href="#" class="af-link" id="grad-manage">Manage</a>`
     + `<span class="grad-dismiss" id="grad-dismiss" title="Dismiss">×</span>`;
   b.style.display = 'flex';
@@ -922,7 +979,10 @@ function handleProgress(msg) {
       { const _ab = document.getElementById('autofiled-banner'); if (_ab) _ab.style.display = 'none'; }  // clear last run's auto-filed summary
       _autoFiledThisRun = 0;
       batch.total  = msg.total;     // this run, for the progress bar
-      stats.total += msg.total;     // add the batch to the cumulative session "Found"
+      // Session "Found" now counts docs ACTUALLY processed (incremented per
+      // file_done below, mirroring the watch path at handleWatchProgress) — NOT
+      // this up-front folder total, which re-inflated "Found" by the whole count
+      // on every re-run of the same folder and on an early Stop.
       updateStats();
       updateProgressCount();
       logStatus.textContent = 'Processing';
@@ -951,6 +1011,7 @@ function handleProgress(msg) {
     case 'file_done':
       batch.done++;
       stats.done++;
+      stats.total++;                // Session "Found" = docs actually processed this session (mirrors the watch path)
       if (msg.success) { batch.ok++; stats.ok++; if (msg.needs_review) batch.review++; } else { batch.err++; stats.err++; }
       updateStats();
       updateProgressCount();
@@ -1050,6 +1111,28 @@ function updateStats() {
   document.getElementById('stat-ok').textContent    = stats.ok;
   document.getElementById('stat-err').textContent   = stats.err;
 }
+
+// Print separator sheets (Filing Slips) — creates a numbered PDF pack (default 10,
+// duplex pairs) and opens it in the system viewer to print. Errors surface inline
+// (no native alert — the focus-repair rule). Settings → Processing has the count field.
+document.getElementById('btn-print-slips')?.addEventListener('click', async () => {
+  const btn = document.getElementById('btn-print-slips');
+  const msg = document.getElementById('print-slips-msg');
+  btn.disabled = true;
+  if (msg) { msg.style.display = ''; msg.textContent = 'Creating sheets…'; }
+  try {
+    const res = await window.docusnap.generateFilingSlips(10);
+    if (res && res.success) {
+      window.docusnap.openFile(res.path);
+      if (msg) msg.textContent = `Sheets ${String(res.first).padStart(4, '0')}–${String(res.last).padStart(4, '0')} created — print from the viewer.`;
+    } else if (msg) {
+      msg.textContent = `Couldn't create sheets: ${(res && res.error) || 'unknown error'}`;
+    }
+  } catch (e) {
+    if (msg) msg.textContent = `Couldn't create sheets: ${e.message}`;
+  }
+  btn.disabled = false;
+});
 
 // Clear Stats — reset the cumulative Session Stats (and the per-run batch +
 // progress bar) back to zero. Session Stats no longer reset per run, so this is
@@ -1207,17 +1290,29 @@ window.docusnap.onWatchProgress?.(handleWatchProgress);
 // A doc that fails extraction now holds at status='error' (no longer silently
 // dropped). Surface the count with a "Try again" that reprocesses them through
 // the existing per-doc reprocess path; on success they become needs_review.
-const stuckChip     = document.getElementById('stuck-chip');
-const stuckMsg      = document.getElementById('stuck-msg');
-const btnStuckRetry = document.getElementById('btn-stuck-retry');
+const stuckChip      = document.getElementById('stuck-chip');
+const stuckMsg       = document.getElementById('stuck-msg');
+const btnStuckRetry  = document.getElementById('btn-stuck-retry');
+const stuckList      = document.getElementById('stuck-list');
+const btnStuckDetails = document.getElementById('btn-stuck-details');
+const btnStuckDismiss = document.getElementById('btn-stuck-dismiss');
+
+// Per-session acknowledge: the count the user last dismissed at. The chip re-surfaces only when
+// MORE documents fail (count grows past it), and the dismiss resets when the queue clears — so an
+// acknowledge hides today's errors without ever hiding a NEW failure. Errored docs are never lost
+// (they hold at status='error' and stay in getStuckDocs); dismiss is display-only.
+let _stuckDismissedAt = -1;
 
 function renderStuckChip(n) {
   _stuckCount = n || 0;
   updateAttention();   // keep the dashboard attention card in sync (cheap)
   if (!stuckChip) return;
-  if (!n || n < 1) { stuckChip.style.display = 'none'; return; }
-  stuckMsg.textContent = `${n} document${n === 1 ? "" : "s"} couldn't be read`;
+  if (!n || n < 1) { stuckChip.style.display = 'none'; _stuckDismissedAt = -1; return; }  // cleared → reset ack
+  if (n <= _stuckDismissedAt) { stuckChip.style.display = 'none'; return; }                // acknowledged, nothing new
+  _stuckDismissedAt = -1;                                                                  // a new/extra failure → re-surface
+  stuckMsg.textContent = `${n} document${n === 1 ? "" : "s"} couldn't be read — held for retry (not filed, not lost).`;
   stuckChip.style.display = '';
+  if (stuckList) { stuckList.hidden = true; stuckList.innerHTML = ''; }   // collapse stale details on re-render
   // "Try again" runs reprocess (Admin/Edit only) — hide the action for read-only.
   if (btnStuckRetry) btnStuckRetry.style.display = _userCanReview ? '' : 'none';
 }
@@ -1226,6 +1321,35 @@ async function refreshStuckCount() {
 }
 refreshStuckCount();
 window.docusnap.onStuckCountChanged?.((n) => renderStuckChip(n));
+
+// "Details" — name each held document + WHY it couldn't be read (documents.error_message), so the
+// banner explains itself instead of a bare count. Toggles a collapsible list; values go in via
+// textContent (never innerHTML) so an error string can't inject markup.
+btnStuckDetails?.addEventListener('click', async () => {
+  if (!stuckList) return;
+  if (!stuckList.hidden) { stuckList.hidden = true; return; }   // toggle closed
+  let docs = [];
+  try { docs = await window.docusnap.getStuckDocs(); } catch {}
+  stuckList.innerHTML = '';
+  if (!docs.length) {
+    const li = document.createElement('li'); li.textContent = 'No details available.'; stuckList.appendChild(li);
+  } else {
+    for (const d of docs) {
+      const li = document.createElement('li');
+      const name = document.createElement('span'); name.className = 'stuck-name'; name.textContent = d.original_filename || `Document #${d.id}`;
+      const why  = document.createElement('span'); why.className  = 'stuck-why';  why.textContent  = d.error_message ? ` — ${d.error_message}` : ' — couldn’t be read';
+      li.append(name, why);
+      stuckList.appendChild(li);
+    }
+  }
+  stuckList.hidden = false;
+});
+
+// Dismiss (×) — acknowledge the current count for this session (display-only; the docs stay held).
+btnStuckDismiss?.addEventListener('click', () => {
+  _stuckDismissedAt = _stuckCount;
+  if (stuckChip) stuckChip.style.display = 'none';
+});
 
 btnStuckRetry?.addEventListener('click', async () => {
   if (running) return;                       // don't fight a manual batch
@@ -1304,6 +1428,11 @@ function applyCurrentUser(user) {
   // nothing visible (§4a #1). Hide it so the rail reflects what the role can actually do.
   const btnImport = document.getElementById('btn-import');
   if (btnImport) btnImport.style.display = (user.role === 'readonly') ? 'none' : '';
+  // "Open folder" on the output card shells into the output tree — now admin/edit only
+  // (the main-side open-folder gate refuses readonly; hide the button so it isn't a
+  // silent dead control).
+  const btnOpenOut = document.getElementById('dash-open-output');
+  if (btnOpenOut) btnOpenOut.style.display = (user.role === 'readonly') ? 'none' : '';
   refreshDashboard();   // reflect role in the dashboard's Open Review visibility
 }
 
@@ -1323,7 +1452,19 @@ function refreshThemeMenuLabel() {
     isDarkMode() ? 'Switch to light theme' : 'Switch to dark theme';
   if (railDarkToggle) railDarkToggle.checked = isDarkMode();
 }
-async function setLightDark(next) {   // canonical light/dark flip (shared by menu + rail toggle)
+// Resolve which theme a light/dark flip lands on: the remembered theme of that family
+// (last one the user actually selected) so the flip round-trips back to their choice —
+// e.g. Nordic Slate ⇄ chosen dark ⇄ Nordic Slate — not the base 'light'/'dark'. Falls
+// back to the base theme of the family on first use. Anchors are kept current by
+// theme.js applyTheme() on every theme change (menu flip, rail toggle, Settings pick).
+function _themeForFamily(family) {
+  const key = family === 'dark' ? 'docusnap_theme_dark' : 'docusnap_theme_light';
+  const fallback = family === 'dark' ? 'dark' : 'warm';
+  let t = null; try { t = localStorage.getItem(key); } catch {}
+  return t || fallback;
+}
+async function setLightDark(family) {   // canonical light/dark flip (shared by menu + rail toggle)
+  const next = _themeForFamily(family);
   applyTheme(next);
   refreshThemeMenuLabel();
   try { await window.docusnap.setSetting('theme', next); } catch {}
@@ -1388,6 +1529,12 @@ window.docusnap.onWelcomeGotoImport?.(() => showView('import'));
 document.getElementById('about-legal')?.addEventListener('click', () => window.docusnap.openLegal?.());
 document.getElementById('about-close')?.addEventListener('click', closeAbout);
 aboutOverlay?.addEventListener('click', (e) => { if (e.target === aboutOverlay) closeAbout(); });
+// Escape closes the About overlay (Chris round 2 — "pressed Escape twice like a man rattling a
+// locked door"). Gate POSITIVELY on 'flex' (what openAbout sets): before first open the inline
+// style is '' and this must not fire.
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && aboutOverlay && aboutOverlay.style.display === 'flex') closeAbout();
+});
 document.getElementById('about-licenses')?.addEventListener('click', async () => {
   const r = await window.docusnap.openThirdPartyLicenses();
   if (r && !r.ok) console.warn('Could not open the licenses file:', r.error);
@@ -1487,7 +1634,10 @@ function showChangePasswordDialog() {
     || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT');
 
   document.addEventListener('keydown', (e) => {
-    if (modalOpen || inField(e.target)) return;
+    if (modalOpen) return;
+    // Ctrl+Shift held is NEVER text entry, so the chord works even with focus in a field
+    // (2026-08-04: the old inField guard silently ate the chord and cost a "SFDEV is
+    // broken" diagnosis). Without Ctrl+Shift we disarm and return immediately.
     if (!(e.ctrlKey && e.shiftKey)) { armed = false; return; }
     if (e.code === 'KeyD') { armed = true; armedAt = Date.now(); return; }
     if (e.code === 'KeyM' && armed && (Date.now() - armedAt) < 1000) {

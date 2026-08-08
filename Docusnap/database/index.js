@@ -16,6 +16,12 @@ function open() {
   _db = new Database(dbPath);
   _db.pragma('journal_mode = WAL');
   _db.pragma('foreign_keys = ON');
+  // Audit M1 — "deletion isn't erasure". Without secure_delete, a deleted row's pages
+  // (including the up-to-50k-char ocr_text) go to the SQLite freelist INTACT and are
+  // recoverable with `strings docusnap.db`. secure_delete=ON zeroes freed pages on every
+  // delete, so purge/recycle-bin/reset actually remove content. Per-connection pragma, set
+  // at open. (Disk-theft of LIVE docs is a separate concern — BitLocker is the control there.)
+  _db.pragma('secure_delete = ON');
   runMigrations(_db);
   seedDefaults(_db);
   return _db;
@@ -56,6 +62,42 @@ function runMigrations(db) {
 }
 
 function runJsMigrations(db, applied) {
+  // ── Workflow 'paid' heal — MUST run BEFORE any stamped block (Workflow Slice 1, Oracle
+  // condition 1). The half-wired 'paid' route state was removed for v1: it sat in neither
+  // OPEN_STATES nor CLOSED_STATES, so a paid route was invisible in inbox/assigned/completed.
+  // Heal any dark-era rows to 'approved' (their true semantics: an approve-type route resolved
+  // by its recipient — healing RESTORES their visibility in Completed). UNSTAMPED + idempotent:
+  // re-running is free and self-heals restored/worktree DBs every boot. Placed at the TOP of
+  // this function so a FUTURE stamped table-rebuild that adds a CHECK constraint (Workflow
+  // Slice 4) can never see a nonconforming 'paid' row, even on the first boot of a dark-era
+  // DB. Do NOT move this below the stamped blocks — pinned by
+  // database/modules/test_workflow_paid_heal.js. `version` is deliberately NOT bumped ('paid'
+  // is terminal; no CAS can act on it — also pinned).
+  if (tableExists(db, 'document_routes')) {
+    try {
+      const routesHealed = db.prepare(`UPDATE document_routes SET state='approved' WHERE state='paid'`).run().changes;
+      const docsHealed = (tableExists(db, 'documents') && hasColumn(db, 'documents', 'workflow_status'))
+        ? db.prepare(`UPDATE documents SET workflow_status='approved' WHERE workflow_status='paid'`).run().changes
+        : 0;
+      if (routesHealed || docsHealed) {
+        console.log(`Workflow heal: 'paid' -> 'approved' (${routesHealed} route(s), ${docsHealed} doc(s))`);
+        try {
+          require('./modules/auth').addAuditEntry(db, {
+            user_id: null, action: 'workflow_paid_migrated', action_category: 'workflow',
+            outcome: 'success', metadata: { routes: routesHealed, docs: docsHealed },
+          });
+        } catch { /* audit is best-effort — must never abort migrations */ }
+      }
+    } catch (e) { console.warn(`  workflow paid heal: ${e.message}`); }
+  }
+
+  // Stage 5b (unconditional heal): clear a stale audit-archive bypass flag left by a crash mid-archive,
+  // so the audit_log DELETE trigger is never silently disarmed across a restart. Guarded — audit_ctl
+  // exists only after migration 55. Idempotent, unstamped.
+  if (tableExists(db, 'audit_ctl')) {
+    try { db.prepare("UPDATE audit_ctl SET v = 0 WHERE k = 'archiving'").run(); } catch { /* best-effort */ }
+  }
+
   // Migration 2: upgrade v1 fields table to v2 (adds document_type_id)
   if (!applied.has(2)) {
     upgradeFieldsTable(db);
@@ -956,6 +998,249 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 48 applied: extractions.candidates column added (NULL-inert)');
   }
 
+  // Migration 49 (2026-07-16): extractions.suggested_supplier — the branding cross-check's fuzzy
+  // DETECTED supplier name (engine _flag_branding_conflict), for the "Use '<name>'" resolve button on
+  // a branding-conflict issuer. NULLABLE / NULL-inert: a non-conflict row has none and the renderer
+  // shows today's behaviour. Written by insertExtractions/applyReprocessResult; read via SELECT *. Idempotent.
+  if (!applied.has(49)) {
+    if (tableExists(db, 'extractions') && !hasColumn(db, 'extractions', 'suggested_supplier')) {
+      try { db.exec('ALTER TABLE extractions ADD COLUMN suggested_supplier TEXT'); }
+      catch (e) { console.warn(`  migration 49 extractions.suggested_supplier: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (49)').run();
+    console.log('JS migration 49 applied: extractions.suggested_supplier column added (NULL-inert)');
+  }
+
+  // Migration 50 (2026-07-16): documents.supplier_pin — the operator "Resolve" supplier PIN (Part B).
+  // Written when the operator clicks "Use '<name>'" on a branding-conflict issuer; a REPROCESS reads it
+  // and forces that supplier (--known-supplier) so a colliding-logo doc stops reverting to the wrong
+  // one. Local to the doc (writes NO logo/hint learning). NULLABLE / NULL-inert; CLEARED on confirm
+  // (once the name is learned, a stale pin must never override a later legit resolution). Idempotent.
+  if (!applied.has(50)) {
+    if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'supplier_pin')) {
+      try { db.exec('ALTER TABLE documents ADD COLUMN supplier_pin TEXT'); }
+      catch (e) { console.warn(`  migration 50 documents.supplier_pin: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (50)').run();
+    console.log('JS migration 50 applied: documents.supplier_pin column added (NULL-inert)');
+  }
+
+  // Migration 51: the type the pipeline DETECTED when this install doesn't HAVE it.
+  // Detection scores types from the SHIPPED config/keyword_patterns.json document_type_keywords
+  // buckets, which exist independently of the types an install actually has (Delivery Note is a
+  // PRESET, not a built-in). A confident "Delivery Note" that maps to no installed type used to be
+  // discarded, leaving the doc untyped with the name nowhere on record. Stored so Review can offer
+  // to ADD the type. NULL-inert: NULL means "nothing to suggest", which is the normal case.
+  // Deliberately name-only — no confidence column. The emitted type_confidence is a keyword-bucket
+  // heading score, not OCR character accuracy, and document_type can be overridden by a matched
+  // template while type_confidence never is, so the pair is not reliably about the same thing
+  // (Oracle C2). Showing it as a "%" would invite exactly the wrong reading.
+  if (!applied.has(51)) {
+    if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'detected_type_name')) {
+      try { db.exec('ALTER TABLE documents ADD COLUMN detected_type_name TEXT'); }
+      catch (e) { console.warn(`  migration 51 documents.detected_type_name: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (51)').run();
+    console.log('JS migration 51 applied: documents.detected_type_name column added (NULL-inert)');
+  }
+
+  // Migration 52: field_anchors.max_w_norm — the MONOTONIC high-water crop width for a
+  // taught field (box-width learning). A ⊕ teach stores its drawn box width in w_norm, but
+  // w_norm is NOT monotonic (an authoritative re-teach REPLACES it; the passive within-spot
+  // path BLENDS toward narrower samples), so teaching a short value ("Tesco") then a longer
+  // one ("Billies Hardware Store") truncates the long value at the short box. max_w_norm
+  // records the widest width ever drawn for the anchor's scope so the crop can extend RIGHT up
+  // to it. INERT until the Python reader is switched on (ANCHOR_MAX_CROP_WIDTH) — this column
+  // alone changes no extraction behaviour. Backfilled to w_norm so every legacy anchor's
+  // effective width == its current width (byte-identical) until it is re-taught. (Oracle
+  // SIGN-OFF-WITH-CONDITIONS 2026-07-21; write-the-column-unconditionally, gate-only-the-crop.)
+  if (!applied.has(52)) {
+    if (tableExists(db, 'field_anchors') && !hasColumn(db, 'field_anchors', 'max_w_norm')) {
+      try {
+        db.exec('ALTER TABLE field_anchors ADD COLUMN max_w_norm REAL NOT NULL DEFAULT 0');
+        db.exec('UPDATE field_anchors SET max_w_norm = w_norm');   // backfill: high-water = current width
+      } catch (e) { console.warn(`  migration 52 field_anchors.max_w_norm: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (52)').run();
+    console.log('JS migration 52 applied: field_anchors.max_w_norm column added (box-width; NULL-inert)');
+  }
+
+  // Migration 53: documents.learning_retracted_at — the delete/restore LEARNING-SYMMETRY marker
+  // (C6 of the repair un-plant, owner-ruled 2026-07-23). A Learning-Repair DELETE of a confirmed
+  // doc retracts its confirm-planted hints (same inverse as send-back); a recycle-bin RESTORE
+  // returns the doc to 'confirmed' and must RE-PLANT them — but ONLY when the delete actually
+  // retracted (a doc deleted BEFORE this feature, or with the switch off, was never retracted;
+  // a blind re-plant would DOUBLE-count its hints forever). This timestamp is that proof: set at
+  // retract time, consumed + cleared at restore. NULL-inert — no reader changes behaviour on it.
+  if (!applied.has(53)) {
+    if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'learning_retracted_at')) {
+      try {
+        db.exec('ALTER TABLE documents ADD COLUMN learning_retracted_at TEXT');
+      } catch (e) { console.warn(`  migration 53 documents.learning_retracted_at: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (53)').run();
+    console.log('JS migration 53 applied: documents.learning_retracted_at column added (delete/restore learning symmetry; NULL-inert)');
+  }
+
+  // Migration 54: template_hidden_fields — per-template field HIDING (owner-approved 2026-07-24).
+  // A DISPLAY/EXPECTATION mask: hide a field the TYPE has but THIS supplier's layout lacks (e.g.
+  // ITEM/SERIAL on a worksheet that doesn't print them) so Review stops showing it as an empty
+  // "not found" row and stops counting it as a missing-required blocker FOR THAT TEMPLATE. It is a
+  // MASK, never a data delete — extraction still runs and stores whatever it reads; only the review
+  // EXPECTATION for this template changes. HIDE-ONLY + superset-locked (you can only hide a field the
+  // type already has; you can never ADD one) and structural roles (issuer/date/ref) can NEVER be
+  // hidden — both enforced in templates.setHiddenField. Keyed by template_id → per-supplier-layout,
+  // not per-type. ADDITIVE + INERT: with zero rows every consumer clause is a no-op ⇒ byte-identical.
+  if (!applied.has(54)) {
+    if (tableExists(db, 'templates') && !tableExists(db, 'template_hidden_fields')) {
+      try {
+        db.exec(`CREATE TABLE template_hidden_fields (
+          template_id INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+          field_key   TEXT    NOT NULL,
+          hidden_at   TEXT    DEFAULT (datetime('now')),
+          PRIMARY KEY (template_id, field_key)
+        )`);
+      } catch (e) { console.warn(`  migration 54 template_hidden_fields: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (54)').run();
+    console.log('JS migration 54 applied: template_hidden_fields table added (per-template field-hiding mask; INERT with no rows)');
+  }
+
+  // Stage 5b — audit_log tamper-EVIDENCE. Two additive columns carry a per-row HMAC hash chain
+  // (row_hmac keyed from a DPAPI-held secret kept OUTSIDE the DB — see src/lib/auditKey.js; the DB
+  // module stays key-agnostic and only computes when auth.setAuditKey has been called). The chain
+  // makes an EDIT / REORDER / middle-DELETE detectable via database/modules/auth.verifyAuditChain.
+  // Two append-only triggers mirror route_decisions_noupd/_nodel: UPDATE is always blocked (the
+  // archiver never updates); DELETE is blocked UNLESS the archiver's controlled bypass flag
+  // (audit_ctl.archiving=1) is set — this stops the trivial `DELETE FROM audit_log` tail-erase (the
+  // H5 attack) while still letting the sanctioned archive path move rows. HONEST LIMIT: a same-user
+  // attacker who obtains the DPAPI-held key can forge a consistent chain; the chain detects tampering
+  // by anything WITHOUT the key (bugs, partial compromise, a naive attacker), and Stage-3 signing +
+  // Stage-6 DB encryption raise that bar. INERT until auth.setAuditKey is called (older rows: NULL hmac).
+  // CONSTRAINT: audit_log rows are now immutable. The app DEACTIVATES users (never hard-deletes), so the
+  // audit_log.user_id FK (ON DELETE SET NULL) never cascades; if a future feature hard-deletes a user
+  // with foreign_keys=ON, that cascade is an UPDATE on audit_log → the append-only trigger blocks it (and
+  // it would break the HMAC anyway). The actor is already snapshotted (actor_username/actor_role, mig 25),
+  // so a hard delete is unnecessary — deactivate, or NULL the FK under the archiver bypass if ever needed.
+  if (!applied.has(55)) {
+    try {
+      if (tableExists(db, 'audit_log')) {
+        if (!hasColumn(db, 'audit_log', 'prev_hash')) db.exec('ALTER TABLE audit_log ADD COLUMN prev_hash TEXT');
+        if (!hasColumn(db, 'audit_log', 'row_hmac'))  db.exec('ALTER TABLE audit_log ADD COLUMN row_hmac TEXT');
+        // A pre-mig-55 audit write (the workflow-paid heal) may have cached the OLD column set; drop it
+        // so post-migration writes see row_hmac and actually chain.
+        try { require('./modules/auth').invalidateAuditColumns(db); } catch { /* best-effort */ }
+        db.exec(`CREATE TABLE IF NOT EXISTS audit_ctl (k TEXT PRIMARY KEY, v INTEGER)`);
+        db.exec(`INSERT OR IGNORE INTO audit_ctl (k, v) VALUES ('archiving', 0)`);
+        db.exec(`CREATE TRIGGER IF NOT EXISTS audit_log_noupd BEFORE UPDATE ON audit_log
+                 BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END`);
+        db.exec(`CREATE TRIGGER IF NOT EXISTS audit_log_nodel BEFORE DELETE ON audit_log
+                 WHEN COALESCE((SELECT v FROM audit_ctl WHERE k = 'archiving'), 0) = 0
+                 BEGIN SELECT RAISE(ABORT, 'audit_log is append-only (archive via the maintenance path)'); END`);
+      }
+    } catch (e) { console.warn(`  migration 55 audit chain: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (55)').run();
+    console.log('JS migration 55 applied: audit_log tamper-evidence (prev_hash/row_hmac + append-only triggers)');
+  }
+
+  // Migration 56 (Stage 8 GROUNDWORK — INERT): doctype_grants scaffold for future per-doc-type /
+  // per-user authorization. NO consumer reads it yet — accessService.doctypeGrantDecision is a no-op
+  // seam — so this is purely additive and byte-identical (empty table ⇒ no behaviour change). Design +
+  // activation semantics: docs/designs/STAGE8_DOCTYPE_AUTHZ_2026-07-27.md. Polarity in `access`
+  // ('allow'|'deny') is reserved for that design; role NULL + user_id set = a per-user grant, role set
+  // + user_id NULL = a per-role grant. FK cascades keep it clean when a type or user is removed.
+  if (!applied.has(56)) {
+    if (tableExists(db, 'document_types') && !tableExists(db, 'doctype_grants')) {
+      try {
+        db.exec(`CREATE TABLE doctype_grants (
+          id                INTEGER PRIMARY KEY AUTOINCREMENT,
+          role              TEXT,
+          user_id           INTEGER REFERENCES users(id) ON DELETE CASCADE,
+          document_type_id  INTEGER NOT NULL REFERENCES document_types(id) ON DELETE CASCADE,
+          access            TEXT NOT NULL DEFAULT 'allow',
+          created_at        TEXT DEFAULT (datetime('now'))
+        )`);
+        db.exec('CREATE INDEX IF NOT EXISTS idx_doctype_grants_role ON doctype_grants(role, document_type_id)');
+        db.exec('CREATE INDEX IF NOT EXISTS idx_doctype_grants_user ON doctype_grants(user_id, document_type_id)');
+      } catch (e) { console.warn(`  migration 56 doctype_grants: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (56)').run();
+    console.log('JS migration 56 applied: doctype_grants scaffold (INERT — per-doc-type authorization groundwork, unused until Stage 8)');
+  }
+
+  // Migration 57 (Catch-up Filing slice 1 — docs/designs/CATCHUP_FILING_2026-07-31.md):
+  // documents.confirmed_via — WHO/WHAT performed the confirm. TEXT, NULL = legacy/human (every
+  // existing row). The scope-sweep accept path (slice 3, unbuilt) will set 'scope_sweep'
+  // SERVER-SIDE from the call site — never client/payload-suppliable. Read-side consumer today:
+  // trust.scopeTrust's graduation window EXCLUDES 'scope_sweep' rows (machine confirms must not
+  // fill the human trust window) while its corrections SPAN still covers them (a correction on a
+  // sweep-filed doc still revokes trust — the Oracle SEAM-1 ruling). Purely additive: with every
+  // row NULL the trust computation is byte-identical (pinned in test_scope_trust.js).
+  if (!applied.has(57)) {
+    if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'confirmed_via')) {
+      try { db.exec('ALTER TABLE documents ADD COLUMN confirmed_via TEXT'); }
+      catch (e) { console.warn(`  migration 57 confirmed_via: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (57)').run();
+    console.log('JS migration 57 applied: documents.confirmed_via (NULL = human/legacy; scope-sweep confirms excluded from trust graduation)');
+  }
+
+  // Migration 58 (TEACH_ANGLE_COMPOSE, Oracle SIGN-OFF-W/COND 2026-08-05 late — the canonical
+  // level-frame pivot): templates.sample_deskew_angle — the pinned SAMPLE doc's detected skew
+  // angle (degrees, detect_skew_angle's PIL-CCW convention). Stored teach coords live in the
+  // sample's RAW frame with this tilt baked in; under Straighten-ON processing the engine
+  // composes mapping/landmark COPIES to the level frame by rotating by -angle. NULL = never
+  // detected (no composition — today's behaviour); 0.0 = detected level (so level samples
+  // never re-spawn detection). Healed lazily at buildTrainingArgs when the kill switch is on.
+  // NOTE: values are DETECTED, not ground truth — if detect_skew_angle's algorithm is re-tuned,
+  // healed angles for old teaches drift with it (sub-floor concern; re-heal by NULLing).
+  if (!applied.has(58)) {
+    if (tableExists(db, 'templates') && !hasColumn(db, 'templates', 'sample_deskew_angle')) {
+      try { db.exec('ALTER TABLE templates ADD COLUMN sample_deskew_angle REAL'); }
+      catch (e) { console.warn(`  migration 58 sample_deskew_angle: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (58)').run();
+    console.log('JS migration 58 applied: templates.sample_deskew_angle (teach-frame tilt for level-frame composition; NULL-inert)');
+  }
+
+  // Migration 59: delivery_number is a CODE, not free text — owner decision 2026-08-08.
+  // The field shipped as type 'text', and `text` is the least-gated state in the system: there is
+  // no `validation_patterns.text` at all, and `text` is not in trust.js STRICT_TYPES, so the field
+  // had NO type-keyed format gate anywhere. That is how the caption 'Delivery' came to be stored as
+  // a delivery number and auto-filed. Measured on the live install before changing anything: of 126
+  // distinct delivery_number values, exactly ONE has no digit — 'Delivery', 5 occurrences, i.e. the
+  // bug itself. Every other value (DN-98447, PD267010, …) carries digits, so `reference_code`
+  // (which requires at least one digit) withholds precisely the defect class and nothing else.
+  //
+  // SCOPE — this deliberately does NOT change extraction, and that was verified rather than
+  // assumed. Stage 1 keeps reading via the SHIPPED `field_patterns.delivery_number` entry, whose
+  // `validation` stays `alphanumeric`; `engine._seed_field_patterns` skips any key already present
+  // in the shipped config, so Stage 0.5/2 `val_type` is unchanged too. What moves is the
+  // TYPE-keyed gate at the filing boundary: `reference_code` IS in trust.js STRICT_TYPES (pinned in
+  // test_scope_trust.js), so a digit-free read now returns `invalid-type:delivery_number` and is
+  // routed to review instead of auto-filed, and the Review on-blur validator warns on it.
+  // `process_docs.py` coerces the ref-role field's type only when it is 'text'/empty, so this
+  // stronger type survives that coercion rather than being overwritten by it.
+  //
+  // Applied as a MIGRATION rather than through updateField because delivery_number is the Delivery
+  // Note's structural ref role, and structural fields are retype-blocked server-side by design.
+  // The consequence is deliberate and worth knowing: the Settings UI will not let this be changed
+  // back — reverting means another migration.
+  if (!applied.has(59)) {
+    if (tableExists(db, 'fields') && tableExists(db, 'document_types')) {
+      try {
+        const r = db.prepare(`
+          UPDATE fields SET type = 'reference_code'
+           WHERE key = 'delivery_number' AND LOWER(COALESCE(type,'text')) IN ('text','')
+             AND document_type_id IN (SELECT id FROM document_types WHERE ref_field_key = 'delivery_number')
+        `).run();
+        if (r.changes) console.log(`  migration 59: retyped ${r.changes} delivery_number field(s) text -> reference_code`);
+      } catch (e) { console.warn(`  migration 59 delivery_number retype: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (59)').run();
+    console.log('JS migration 59 applied: delivery_number typed reference_code (a digit-free caption can no longer auto-file)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the
@@ -996,6 +1281,68 @@ function runJsMigrations(db, applied) {
   if (tableExists(db, 'document_routes') && !hasColumn(db, 'document_routes', 'stamped_path')) {
     try { db.exec(`ALTER TABLE document_routes ADD COLUMN stamped_path TEXT`); console.log('Workflow schema: added document_routes.stamped_path'); }
     catch (e) { console.warn(`  document_routes.stamped_path: ${e.message}`); }
+  }
+  // Routing slice: the immutable "why it routed" rule-sentence snapshot on the route (Oracle C6).
+  if (tableExists(db, 'document_routes') && !hasColumn(db, 'document_routes', 'matched_rule_summary')) {
+    try { db.exec(`ALTER TABLE document_routes ADD COLUMN matched_rule_summary TEXT`); console.log('Workflow schema: added document_routes.matched_rule_summary'); }
+    catch (e) { console.warn(`  document_routes.matched_rule_summary: ${e.message}`); }
+  }
+
+  // Decision snapshot (Workflow Slice 2): an APPEND-ONLY record of each approve/reject/acknowledge,
+  // capturing the extracted fields AT THE INSTANT OF RESOLVE (supplier/ref/date/total/confidence) so a
+  // later reprocess can never rewrite what was decided. Its OWN idempotent guard — NOT nested inside the
+  // document_routes block above (a DB that already has document_routes must still get this table). NO FK on
+  // route_id/document_id BY DESIGN: document_routes.document_id AND extractions.document_id both cascade on
+  // doc-delete, so this denormalised row is the ONLY surviving audit — an FK would cascade-destroy it.
+  // (Slice-4's document_routes stamped rebuild MUST preserve document_routes.id so route_id soft-refs stay
+  // valid — see docs/designs/WORKFLOW_SUITE_2026-07-18.md §5.) Two triggers make append-only STRUCTURAL: a
+  // row-level UPDATE/DELETE is blocked; a whole-table DROP+recreate migration is still allowed (DROP is DDL
+  // and does not fire these), and this ensure-block recreates the triggers afterward.
+  if (!tableExists(db, 'route_decisions')) {
+    db.exec(`CREATE TABLE route_decisions (
+      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+      route_id              INTEGER,   -- soft-ref to document_routes.id (NO FK by design; Slice-4 rebuild MUST preserve the id)
+      document_id           INTEGER,   -- denormalised so the record survives the route/doc delete cascade
+      actor_user_id         INTEGER,
+      actor_username        TEXT,
+      decision              TEXT,       -- approved | rejected | acknowledged (the committed resulting state)
+      comment               TEXT,
+      snapshot_json         TEXT,       -- extracted fields at the instant of resolve (self-describing JSON)
+      snapshot_total_amount TEXT,       -- the extracted total DISPLAY STRING at resolve (may be NULL)
+      chain_position        INTEGER NOT NULL DEFAULT 1,   -- Slice-4 multi-step fills; 1 for single-hop
+      on_behalf_of_user_id  INTEGER,    -- Slice-5 delegation; NULL in v1
+      on_behalf_of_username TEXT,
+      decided_at            TEXT
+    )`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_route_decisions_doc   ON route_decisions(document_id)`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_route_decisions_route ON route_decisions(route_id)`);
+    db.exec(`CREATE TRIGGER IF NOT EXISTS route_decisions_noupd BEFORE UPDATE ON route_decisions
+             BEGIN SELECT RAISE(ABORT, 'route_decisions is append-only'); END`);
+    db.exec(`CREATE TRIGGER IF NOT EXISTS route_decisions_nodel BEFORE DELETE ON route_decisions
+             BEGIN SELECT RAISE(ABORT, 'route_decisions is append-only'); END`);
+    console.log('Workflow schema: created route_decisions');
+  }
+
+  // Amount-threshold routing rules (Workflow Slice 3): "documents of type T with a total in
+  // [min,max) -> route to <role|user> for <approve|acknowledge>". Own idempotent guard, additive.
+  // NO FK on target_user_id BY DESIGN: a deleted target user must make a rule resolve-to-missing
+  // (the engine HOLDS + audits), never cascade-delete the rule. Amounts are INTEGER PENNIES so a
+  // banding decision is exact (never float). Dev/test-seeded in v1 (no rules-management UI yet).
+  if (!tableExists(db, 'workflow_route_rules')) {
+    db.exec(`CREATE TABLE workflow_route_rules (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      document_type_id   INTEGER,                       -- NULL = any type
+      min_amount_pennies INTEGER NOT NULL,              -- inclusive lower bound
+      max_amount_pennies INTEGER,                       -- exclusive upper bound; NULL = unbounded
+      target_role        TEXT,                          -- prefer role; resolves to the single active member
+      target_user_id     INTEGER,                       -- NO FK by design (see above)
+      action_required    TEXT NOT NULL DEFAULT 'approve', -- approve | acknowledge
+      step_order         INTEGER NOT NULL DEFAULT 1,    -- present but unused in v1 (single-hop)
+      active             INTEGER NOT NULL DEFAULT 1,
+      created_at         TEXT,
+      CHECK (target_role IS NOT NULL OR target_user_id IS NOT NULL)
+    )`);
+    console.log('Workflow schema: created workflow_route_rules');
   }
 }
 

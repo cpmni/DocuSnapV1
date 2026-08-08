@@ -33,7 +33,22 @@ def ocr_image(img: Image.Image, config: str = "--oem 3 --psm 3") -> str:
 # segmentation drops (see reconstruct_page_text). Confidence-gated so only clean words are merged.
 _SUPP_CONFIG   = "--oem 3 --psm 6"
 _SUPP_MIN_CONF = 50
-_RENDER_DPI    = 300               # PDF pages are rasterised at this DPI; told to Tesseract via --dpi
+def _resolve_render_dpi():
+    """Extraction OCR render DPI. Env OCR_RENDER_DPI is set from the 'ocr_dpi' processing setting
+    (handler.js _ocrDpiEnv). DEFAULT 300 = byte-identical to the old hardcoded value. A LOWER DPI is
+    a large speed win — the OCR cost scales ~DPI^2 (150 is ~2.8x faster than 300) AND smaller page
+    images scale far better across parallel workers (less memory-bandwidth contention) — traded
+    against small-text OCR accuracy on genuine high-res scans, so it is an operator OPT-IN. Garbage /
+    out-of-band falls back to 300 (never a broken render). The same value drives BOTH the render scale
+    and the --dpi told to Tesseract, so they can't diverge."""
+    try:
+        v = int(os.environ.get("OCR_RENDER_DPI", "300") or "300")
+    except (TypeError, ValueError):
+        return 300
+    return v if 100 <= v <= 600 else 300
+
+
+_RENDER_DPI    = _resolve_render_dpi()   # PDF pages rasterised at this DPI; told to Tesseract via --dpi
 
 
 def _words_from_data(data) -> list:
@@ -82,7 +97,7 @@ def _with_dpi(cfg: str, dpi) -> str:
         return cfg
 
 
-def _group_words_into_lines(words, med_h) -> list:
+def _group_words_into_lines(words, med_h, rows_out=None) -> list:
     """Group image_to_data words into reading LINES by visual row, then order columns within each
     row (a label and its far-right value on the SAME physical row stay on one line; a wide intra-row
     x-gap emits a 4-space column break so keyword.py's column-split still separates real columns).
@@ -139,6 +154,12 @@ def _group_words_into_lines(words, med_h) -> list:
     lines = []
     for r in rows:
         row_ws = sorted(r["words"], key=lambda w: w[0])         # left-to-right within the row
+        # rows_out (geometry hand-off, 2026-07-20): the per-row WORD TUPLES, appended PARALLEL to
+        # the returned line strings — rows_out[i] is exactly the words `lines[i]` was built from.
+        # Opt-in and inert (None = no extra work); the letterhead height ranker needs LINE-level
+        # heights ("Cit" h=64 + "Office" h=101 on one row — word heights are noisy, the row is not).
+        if rows_out is not None:
+            rows_out.append(row_ws)
         out = [row_ws[0][4]]
         for a, b in zip(row_ws, row_ws[1:]):
             gap = b[0] - (a[0] + a[2])
@@ -148,7 +169,8 @@ def _group_words_into_lines(words, med_h) -> list:
     return lines
 
 
-def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3", dpi=None) -> str:
+def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3", dpi=None,
+                          words_out: dict | None = None) -> str:
     """Full-page OCR text with reading lines rebuilt from word GEOMETRY.
 
     Tesseract's page segmentation (the plain image_to_string in ocr_image) treats a wide
@@ -175,34 +197,127 @@ def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3", dpi
     leaves the PSM-3 result untouched — it can never read worse. (oscar's sparse-column diagnosis.)
     """
     main_cfg = _with_dpi(config, dpi)
-    try:
-        data = pytesseract.image_to_data(img, config=main_cfg, output_type=pytesseract.Output.DICT)
-    except Exception:
-        return ocr_image(img, config)
+    supp_cfg = _with_dpi(_SUPP_CONFIG, dpi)
+
+    # OBTAIN THE TWO INDEPENDENT FULL-PAGE PASSES (PSM-3 main + PSM-6 supplementary). The MERGE
+    # below is unchanged and single-source, so only HOW these are fetched differs:
+    #   OFF (default): sequential — PSM-3, and PSM-6 only if PSM-3 read words (today's behaviour,
+    #                  byte-identical).
+    #   ON  (DS_OCR_PARALLEL_FULLPAGE != '0'): both submitted concurrently to a 2-worker pool —
+    #        each pytesseract call shells out to a GIL-releasing tesseract.exe, so this is the
+    #        ~2x lever on the full-page OCR of a single reprocess (Option B, 2026-07-17 design).
+    #        Byte-identical because the merge takes PSM-3 as a FIXED base and APPENDS PSM-6
+    #        survivors, never order-of-completion. OMP capped to 1 so the 2 tesseract.exe can't
+    #        oversubscribe (LSTM is 1-core-bound → throughput-neutral + recognition-identical).
+    #        ANY pool/import failure falls through to the sequential path. Gated ON only by the
+    #        single-reprocess spawn — never batch/import (those already parallelise across docs).
+    data = supp = None
+    if os.environ.get('DS_OCR_PARALLEL_FULLPAGE', '0') != '0':
+        try:
+            import concurrent.futures as _cf
+            os.environ['OMP_THREAD_LIMIT'] = '1'   # floor; never raises a parent cap (1 is the min)
+            with _cf.ThreadPoolExecutor(max_workers=2) as _ex:
+                _fm = _ex.submit(pytesseract.image_to_data, img, config=main_cfg, output_type=pytesseract.Output.DICT)
+                _fs = _ex.submit(pytesseract.image_to_data, img, config=supp_cfg, output_type=pytesseract.Output.DICT)
+                try:
+                    data = _fm.result()
+                except Exception:
+                    return ocr_image(img, config)           # PSM-3 failed → same fallback as sequential
+                try:
+                    supp = _fs.result()
+                except Exception:
+                    supp = None                             # supplementary is additive-only
+        except Exception:
+            data = supp = None                              # pool construction failed → sequential below
+
+    if data is None:                                        # OFF / fallback: sequential PSM-3
+        try:
+            data = pytesseract.image_to_data(img, config=main_cfg, output_type=pytesseract.Output.DICT)
+        except Exception:
+            return ocr_image(img, config)
+
     words = _words_from_data(data)
     if not words:
         return ""
-    try:
-        supp = pytesseract.image_to_data(img, config=_with_dpi(_SUPP_CONFIG, dpi), output_type=pytesseract.Output.DICT)
-        boxes = [(w[0], w[1], w[2], w[3]) for w in words]
-        for sw in _words_from_data(supp):
-            if sw[5] >= _SUPP_MIN_CONF and any(ch.isalnum() for ch in sw[4]) \
-                    and not _center_in_any(sw, boxes):
-                words.append(sw)
-    except Exception:
-        pass   # supplementary recovery is additive-only; never break the PSM-3 result
+
+    # Supplementary PSM-6 recovery (fetched now only if not already obtained in parallel above —
+    # OFF path preserves today's behaviour of skipping PSM-6 when PSM-3 read nothing).
+    if supp is None:
+        try:
+            supp = pytesseract.image_to_data(img, config=supp_cfg, output_type=pytesseract.Output.DICT)
+        except Exception:
+            supp = None   # supplementary recovery is additive-only; never break the PSM-3 result
+    if supp is not None:
+        try:
+            boxes = [(w[0], w[1], w[2], w[3]) for w in words]
+            for sw in _words_from_data(supp):
+                if sw[5] >= _SUPP_MIN_CONF and any(ch.isalnum() for ch in sw[4]) \
+                        and not _center_in_any(sw, boxes):
+                    words.append(sw)
+        except Exception:
+            pass   # supplementary recovery is additive-only; never break the PSM-3 result
     heights = sorted(wd[3] for wd in words if wd[3] > 0)
     med_h = heights[len(heights) // 2] if heights else 10
-    return "\n".join(_group_words_into_lines(words, med_h))
+    _rows = [] if words_out is not None else None
+    lines = _group_words_into_lines(words, med_h, rows_out=_rows)
+    # GEOMETRY HAND-OFF (2026-07-20). Everything above computes per-word boxes, per-word confidence
+    # and the page's MEDIAN WORD HEIGHT — and the join below has always thrown all of it away, so
+    # everything downstream reasons over a bare string. That is why "the biggest text at the top of
+    # the page" is not merely unimplemented but UNREPRESENTABLE in extraction/keyword.py, and why a
+    # letterhead issuer that is the largest text on its page reads as null (measured: 0 of 14 real
+    # invoices identified, extraction/letterhead.py).
+    #
+    # OPT-IN and inert: `words_out` defaults to None, so with no caller asking, this function is
+    # byte-identical — no extra OCR pass, no extra work, same return value. A caller that passes a
+    # dict receives the geometry alongside the text it belongs to. Units are IMAGE-NATURAL PIXELS
+    # of the preprocessed page bitmap, origin TOP-LEFT, box = (left, top, width, height) — the
+    # convention this module produces. Do NOT hand these to anchor space, which is CENTRE-based and
+    # normalised: mixing the two is a documented source of drift bugs in this project.
+    if words_out is not None:
+        words_out["words"] = words          # [(left, top, w, h, text, conf)]
+        words_out["med_h"] = med_h          # the DPI-invariant scale reference: compare RATIOS to it
+        words_out["lines"] = lines          # the same visual rows the returned text is built from
+        words_out["rows"] = _rows           # per-row word tuples, PARALLEL to `lines` (rows_out)
+        words_out["size"] = getattr(img, "size", None)
+    return "\n".join(lines)
+
+
+# SECURITY (Stage 2 — F6/L5): crafted-document DoS caps ahead of pdfium. Extraction parses an
+# attacker-supplied PDF in-process, today bounded only by the per-file watchdog. These caps bound the
+# THREE cheap vectors: an oversized file, a huge page count, and a decompression/pixel bomb (a tiny
+# page declaring enormous dimensions that renders to a giant bitmap). All three are set FAR above any
+# real business document (the corpus max is 2 pages, A4 at 300 DPI is ~3500 px) so they are INERT on
+# real docs — the render scale below is min(dpi/72, …) which equals dpi/72 for every normal page, so
+# extraction output is byte-identical. Env-overridable. An over-cap doc RAISES → the process_docs
+# per-file handler surfaces it as status=error (drained to Errors/, visible), never a silent truncation.
+_MAX_PAGES        = int(os.environ.get("OCR_MAX_PAGES", "300") or "300")
+_MAX_RENDER_DIM   = int(os.environ.get("OCR_MAX_RENDER_DIM", "10000") or "10000")   # px per axis
+_MAX_FILE_BYTES   = int(os.environ.get("OCR_MAX_FILE_MB", "500") or "500") * 1024 * 1024
 
 
 def pdf_to_images(filepath: Path, dpi: int = 300) -> list[Image.Image]:
-    """Convert each PDF page to a PIL Image using pypdfium2."""
+    """Convert each PDF page to a PIL Image using pypdfium2. DoS-capped (see _MAX_* above)."""
+    try:
+        _sz = os.path.getsize(str(filepath))
+        if _sz > _MAX_FILE_BYTES:
+            raise ValueError(f"PDF is {_sz // (1024 * 1024)} MB, over the {_MAX_FILE_BYTES // (1024 * 1024)} MB safety cap")
+    except OSError:
+        pass
     doc    = pdfium.PdfDocument(str(filepath))
     images = []
     try:
+        _n = len(doc)
+        if _n > _MAX_PAGES:
+            raise ValueError(f"PDF has {_n} pages, over the {_MAX_PAGES}-page safety cap")
         for page in doc:
-            bitmap = page.render(scale=dpi / 72)
+            scale = dpi / 72
+            try:
+                _w, _h = page.get_size()                       # points; clamp so a bomb page can't render huge
+                if _w > 0 and _h > 0:
+                    scale = min(scale, _MAX_RENDER_DIM / _w, _MAX_RENDER_DIM / _h)
+            except Exception:
+                pass
+            bitmap = page.render(scale=scale)
             images.append(bitmap.to_pil())
             try: page.close()
             except Exception: pass
@@ -248,14 +363,41 @@ def detect_skew_angle(img: Image.Image, min_angle: float = 0.2) -> float:
     return best if abs(best) >= max(0.2, min_angle) else 0.0
 
 
+# S1 DESKEW_SS_ROTATE (007 + Oracle SIGN-OFF-W/COND C1-C5, 2026-08-05 — docs/oracle_log.md).
+# A single BICUBIC rotate at render resolution DEGRADES marginal-resolution print: on a
+# 150-DPI-native scan an ~8pt glyph has 1-2px strokes, the rotation's subpixel phase varies
+# across the page (strokes alternately thin/thicken) and BICUBIC's negative lobes add halos —
+# probe-proven on live doc 561 ('Delivery Note No. DN-98447' reads PERFECTLY raw, garbles to
+# 'Dobrery/Not/Ne:/DN/er!' after its own +1.9° deskew). Supersample 2× (LANCZOS) → rotate →
+# downsample to the ORIGINAL size (LANCZOS): geometrically IDENTICAL (same centre/angle/output
+# size/mode — zero coordinate impact anywhere), only the pixels get the anti-aliased rotation.
+# C2: pages beyond the megapixel clamp keep the single-resample path (transient supersample
+# memory ~4× — an A4@300 is ~9MP, the clamp only trips on outliers).
+# DEFAULT OFF (=1 arms): the doc-561 probe REFUTED the interpolation hypothesis — the
+# supersampled rotation garbles the same header the same way, so the degradation is NOT the
+# resample quality (suspect: the scan's noise field smearing into strokes under ANY rotation;
+# raw+tilted reads perfectly because Tesseract self-tolerates <=~2°). Oracle C5: default ON
+# only after the C4 gate is green — it is not. The Oracle-banked S4 (raw-preferring frame
+# election) / read-path angle floor now carry the evidence bar instead.
+_SS_ROTATE_ON = os.environ.get('DESKEW_SS_ROTATE', '0') != '0'
+_SS_ROTATE_MAX_PIXELS = 24_000_000   # ~A3 @ 300 DPI; beyond this the 4× transient is unreasonable
+
+
 def _apply_skew_rotation(img: Image.Image, angle: float) -> Image.Image:
     """Rotate `img` by a PRE-DETECTED skew `angle` (PIL CCW-positive), or return it UNCHANGED when
     angle is 0.0 (a below-floor page). Factored out of `_deskew` so a caller can detect the angle
-    ONCE (to decide fast-path cache reuse) and apply it here without a second projection sweep —
-    the rotation is byte-identical to `_deskew`'s (same white fill + BICUBIC resample)."""
+    ONCE (to decide fast-path cache reuse) and apply it here without a second projection sweep.
+    ONE rotation implementation for the whole system (Oracle C1): the pipeline, the Review display
+    deskew and the teach window's straightened render all route through here, so the operator
+    always validates against the SAME pixels the pipeline reads."""
     if not angle:
         return img  # no meaningful skew — identical pixels, so an OCR read would be unchanged
-    fill = 255 if img.mode == 'L' else (255, 255, 255)
+    fill = 255 if img.mode in ('L', '1') else (255, 255, 255)   # ('1' parity — region.py callers)
+    w, h = img.size
+    if _SS_ROTATE_ON and 0 < w * h <= _SS_ROTATE_MAX_PIXELS:
+        big = img.resize((w * 2, h * 2), Image.LANCZOS)
+        big = big.rotate(angle, expand=False, fillcolor=fill, resample=Image.BICUBIC)
+        return big.resize((w, h), Image.LANCZOS)
     return img.rotate(angle, expand=False, fillcolor=fill, resample=Image.BICUBIC)
 
 
@@ -324,6 +466,8 @@ def extract_text_and_images(
     deskew_pages: bool = False,
     deskew_min_angle: float = 0.2,
     raw_pages_out: list | None = None,
+    page0_words_out: dict | None = None,
+    deskew_angles_out: list | None = None,
 ) -> tuple[str, list[Image.Image]]:
     """
     Extract OCR text from a document file.
@@ -451,6 +595,8 @@ def extract_text_and_images(
                 if _angle:
                     img = _apply_skew_rotation(img, _angle)
                     any_scanned_tilted = True
+                if deskew_angles_out is not None:
+                    deskew_angles_out.append(_angle)   # per-page applied angle (0.0 = untouched) — SFDEV/raw-witness observability
                 if deskew_pages and raw_pages_out is not None:
                     raw_pages_out.append(raw_img)   # parallel to pages (raw==img on a born-digital / level page)
                 pages.append(img)
@@ -480,7 +626,11 @@ def extract_text_and_images(
             if layer_text is not None:
                 texts.append(layer_text)                                                 # fresh born-digital
             elif needs_scanned_ocr:
-                texts.append(engine.read_page(pages[i], enhance_params, dpi=_RENDER_DPI))  # fresh (straightened) OCR
+                # page0_words_out: the PAGE-0 geometry hand-off (letterhead height ranking) —
+                # filled only on a fresh page-0 OCR read; born-digital page 0 has no word boxes
+                # (exact vector text) and a cache-honoured run reads nothing (cleared below).
+                texts.append(engine.read_page(pages[i], enhance_params, dpi=_RENDER_DPI,
+                                              words_out=(page0_words_out if i == 0 else None)))  # fresh (straightened) OCR
             else:
                 all_fresh = False                                                        # scanned page -> honour cache
     else:
@@ -504,19 +654,27 @@ def extract_text_and_images(
         _angle = detect_skew_angle(img, deskew_min_angle) if deskew_pages else 0.0
         if _angle:
             img = _apply_skew_rotation(img, _angle)
+        if deskew_angles_out is not None:
+            deskew_angles_out.append(_angle)   # per-page applied angle — parity with the PDF path
         if deskew_pages and raw_pages_out is not None:
             raw_pages_out.append(raw_img)
         pages = [img]
         if provenance_out is not None:
             provenance_out.append('ocr')   # a raster image has no text layer — always OCR
         if (not use_cache) or (deskew_pages and ((_angle != 0.0) or not _deskew_cache_fast)):
-            texts.append(engine.read_page(img, enhance_params, dpi=_idpi))
+            texts.append(engine.read_page(img, enhance_params, dpi=_idpi,
+                                          words_out=page0_words_out))   # a raster IS page 0
         else:
             all_fresh = False   # level raster under cache -> honour the OCR cache
 
     # Prefer freshly-derived text whenever we have it for EVERY page (fully born-digital, or a
     # non-cache run); only fall back to the cache when a scanned/mixed page was skipped under it.
     if use_cache and not all_fresh:
+        # The CACHED text is being returned, so any page-0 geometry captured above belongs to
+        # lines the caller will never see — a stale pairing is worse than none (the documented
+        # cached-reprocess caveat: geometry consumers fall back to text-only on a reprocess).
+        if page0_words_out is not None:
+            page0_words_out.clear()
         return cached_text, pages
     return "\n\n--- PAGE BREAK ---\n\n".join(texts), pages
 

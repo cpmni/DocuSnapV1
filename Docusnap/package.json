@@ -6,7 +6,7 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "build": "node scripts/check-vendor-python.js && node scripts/check-licenses.js && node -e \"const c=require('child_process');process.env.BUILD_REV=require('./scripts/build-rev').buildRev();c.execSync('electron-builder --win --x64 --config.extraMetadata.buildRev=' + process.env.BUILD_REV,{stdio:'inherit',env:process.env})\"",
+    "build": "node scripts/check-vendor-python.js && node scripts/check-licenses.js && node scripts/compile-python-bytecode.js && node -e \"const c=require('child_process');process.env.BUILD_REV=require('./scripts/build-rev').buildRev();c.execSync('electron-builder --win --x64 --config.extraMetadata.buildRev=' + process.env.BUILD_REV,{stdio:'inherit',env:process.env})\"",
     "check:licenses": "node scripts/check-licenses.js",
     "check:vendor": "node scripts/check-vendor-python.js",
     "check:help": "node scripts/check-help-coverage.js",
@@ -16,6 +16,7 @@
     "appId": "com.scanfinder.app",
     "productName": "ScanFinder",
     "copyright": "Copyright © 2026 Six Mile Software",
+    "afterPack": "./scripts/afterPack-fuses.js",
     "win": {
       "target": [
         {
@@ -30,7 +31,7 @@
     "nsis": {
       "artifactName": "ScanFinder Setup ${version}-r${env.BUILD_REV}.exe",
       "oneClick": false,
-      "perMachine": false,
+      "perMachine": true,
       "allowToChangeInstallationDirectory": true,
       "allowElevation": true,
       "createDesktopShortcut": true,
@@ -53,16 +54,10 @@
         "to": "LEGAL.txt"
       },
       {
-        "from": "python_backend/",
+        "from": "build_python/",
         "to": "python_backend",
         "filter": [
-          "**/*",
-          "!**/__pycache__/**",
-          "!**/*.pyc",
-          "!**/*.pyo",
-          "!artifacts/**",
-          "!test_harness/**",
-          "!tests/**"
+          "**/*"
         ]
       },
       {
@@ -91,7 +86,10 @@
       "src/**/*",
       "database/**/*",
       "assets/**/*",
-      "package.json"
+      "package.json",
+      "!**/test_*.js",
+      "!**/*.test.js",
+      "!**/__tests__/**"
     ],
     "asarUnpack": [
       "**/*.node"
@@ -102,6 +100,7 @@
     }
   },
   "devDependencies": {
+    "@electron/fuses": "^2.1.3",
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3"
   },

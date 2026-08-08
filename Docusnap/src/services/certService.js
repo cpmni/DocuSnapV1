@@ -118,7 +118,12 @@ function readCaFingerprint({ caCrtPath, fs, pem } = {}) {
  * NOT invalidate already-pinned clients.
  * @returns {{caCrtPath,caKeyPath,serverCrtPath,serverKeyPath,caReused,caFingerprintSha256,serverSans,notAfter}}
  */
-function generateServerCerts({ certsDir, sans, customer = 'ScanFinder', days = 825, caDays = 3650, reuseCa = true, fs, forge } = {}) {
+// Encrypt-at-rest for the CA private key (audit H1). Default = PASSTHROUGH, so callers that
+// pass no `secret` (and every existing test) write/read plaintext byte-identically. The real
+// caller injects `require('../lib/secretStore')` unless CERT_KEY_ENCRYPT_DISABLED=1.
+const _CA_KEY_PASSTHRU = { encrypt: (x) => x, decrypt: (x) => x, isEncrypted: () => false, available: () => false };
+
+function generateServerCerts({ certsDir, sans, customer = 'ScanFinder', days = 825, caDays = 3650, reuseCa = true, fs, forge, secret = _CA_KEY_PASSTHRU } = {}) {
   fs = fs || require('fs');
   forge = forge || getForge();
   const pki = forge.pki;
@@ -135,12 +140,24 @@ function generateServerCerts({ certsDir, sans, customer = 'ScanFinder', days = 8
 
   let ca, caReused = false;
   if (reuseCa && exists(f.caCrt) && exists(f.caKey)) {
-    ca = { cert: pki.certificateFromPem(fs.readFileSync(f.caCrt, 'utf8')), key: pki.privateKeyFromPem(fs.readFileSync(f.caKey, 'utf8')) };
+    const rawCaKey = fs.readFileSync(f.caKey, 'utf8');
+    // FAIL-LOUD: if this ca.key is encrypted and cannot be decrypted (profile moved to a
+    // different Windows user/machine, or corruption), secret.decrypt THROWS and the error
+    // propagates — we must NOT fall through to the else branch and mint a NEW CA, which would
+    // invalidate every already-pinned client. Recovery = delete the certs dir and re-issue.
+    ca = { cert: pki.certificateFromPem(fs.readFileSync(f.caCrt, 'utf8')), key: pki.privateKeyFromPem(secret.decrypt(rawCaKey)) };
     caReused = true;
+    // Opportunistic at-rest migration: a legacy PLAINTEXT ca.key is re-written encrypted once,
+    // transparently, on the next reuse. Best-effort — never blocks issuance.
+    try {
+      if (secret.available() && !secret.isEncrypted(rawCaKey)) {
+        fs.writeFileSync(f.caKey, secret.encrypt(pki.privateKeyToPem(ca.key)), { mode: 0o600 });
+      }
+    } catch { /* migration is best-effort; the plaintext key still works */ }
   } else {
     ca = makeCa(customer, caDays, forge);
     fs.writeFileSync(f.caCrt, pki.certificateToPem(ca.cert));
-    fs.writeFileSync(f.caKey, pki.privateKeyToPem(ca.key), { mode: 0o600 }); // private — never served
+    fs.writeFileSync(f.caKey, secret.encrypt(pki.privateKeyToPem(ca.key)), { mode: 0o600 }); // private — never served; encrypt-at-rest (H1)
   }
 
   const srv = makeServerCert(addr[0], buildAltNames(addr), ca, days, forge);

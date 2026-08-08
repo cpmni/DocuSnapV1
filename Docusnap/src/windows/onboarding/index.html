@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self';" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'" />
 <title>Welcome to Scan Finder</title>
 <script src="../shared/theme.js"></script>
 <link rel="stylesheet" href="../shared/theme.css" />
@@ -47,15 +47,32 @@
   .btn.ghost:hover{color:var(--text);border-color:var(--border)}
   .hint{font-size:12px;margin-top:8px;min-height:16px}
   .hint.ok{color:var(--ok)} .hint.err{color:var(--err)} .hint.muted{color:var(--muted)}
-  .cards{display:flex;gap:12px;flex-wrap:wrap}
-  .card{flex:1;min-width:150px;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;
-    padding:15px;cursor:pointer;transition:border-color .15s,background .15s,transform .15s,box-shadow .15s;
+  /* ⚠ theme.css carries `.card + .card{margin-top:16px}` for cards STACKED in a column.
+     These cards sit in a ROW, so that rule pushed every card after the first down by
+     16px — the long-standing "second card doesn't line up" in this wizard. Cancel it
+     here or no amount of align-items will square the row up. */
+  .cards{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start}
+  .cards > .card{margin-top:0}
+  /* A shared min-height so every UNSELECTED card in a row matches its siblings exactly,
+     whether its description runs to one line or two. The focused card overrides it below
+     and is the only card that differs. */
+  .card{flex:1;min-width:150px;min-height:104px;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;
+    padding:15px;cursor:pointer;
+    transition:border-color .15s,background .15s,transform .15s,box-shadow .15s,flex-grow .18s ease;
     -webkit-app-region:no-drag}
   .card:hover{border-color:var(--border2)}
-  /* The chosen card is marked by the accent border, tint and a soft lift. No scale —
-     on wide rows (e.g. the 2-card Accuracy row) scaling overlapped the neighbour. */
+  /* The chosen card is BIGGER as well as accented, so the current choice is obvious at a
+     glance. Sized with flex-grow, NOT transform:scale() — scale was tried here before and
+     backed out because on wide rows (e.g. the 2-card Accuracy row) it overlapped the
+     neighbour. Flex takes the extra width OUT of the siblings instead, so overlap is
+     impossible by construction and the row still fills exactly. */
   .card.sel{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 9%,var(--surface));
-    box-shadow:0 6px 18px rgba(0,0,0,.10);position:relative;z-index:1}
+    box-shadow:0 6px 18px rgba(0,0,0,.10);position:relative;z-index:1;
+    /* The focused card is the ONLY one that differs: taller than its siblings (which all
+       share .card's min-height) and wider, growing DOWNWARD from a common top edge now
+       that the theme.css margin leak is cancelled. flex-grow (not scale) keeps the row
+       summing to exactly the container width, so nothing can overlap. */
+    min-height:136px;flex-grow:1.55}
   .card .ttl{font-size:14px;font-weight:600;margin-bottom:4px}
   .card .desc{font-size:12px;color:var(--muted);line-height:1.45}
   .footer{display:flex;align-items:center;gap:10px;padding:18px 40px;border-top:1px solid var(--border);background:var(--surface)}
@@ -114,8 +131,8 @@
     <!-- 1 Output folder (required) -->
     <section class="panel" data-step="1">
       <h2>Where should filed documents go?</h2>
-      <p class="sub">When you confirm a document, Scan Finder files a tidy copy here, organised by
-        type, year and month. This is the only thing it needs to get started.</p>
+      <p class="sub">When you confirm a document, Scan Finder files a tidy copy here &mdash; a folder
+        for each company, then year and month. This is the only thing it needs to get started.</p>
       <div class="field">
         <label class="lbl">Output folder</label>
         <div class="pathrow">
@@ -126,7 +143,7 @@
       </div>
 
       <div class="field">
-        <label class="lbl">Where should original scans go after they&rsquo;re filed?</label>
+        <label class="lbl">Where should original scans go after they&rsquo;re brought in?</label>
         <div class="cards">
           <div class="card" data-copy="no"><div class="ttl">Default</div>
             <div class="desc">Move them into a &ldquo;Processed&rdquo; folder alongside your scans.</div></div>
@@ -199,7 +216,7 @@
       <p class="sub">Pick the theme that's easiest on your eyes. You'll see it change instantly.</p>
       <div class="cards">
         <div class="card" data-theme-choice="dark"><div class="ttl">Dark</div>
-          <div class="desc">Easy in low light. The default.</div></div>
+          <div class="desc">Easy in low light.</div></div>
         <div class="card" data-theme-choice="light"><div class="ttl">Light</div>
           <div class="desc">Bright, high-contrast.</div></div>
       </div>
@@ -214,7 +231,7 @@
         <div class="card" data-threads="1"><div class="ttl">Gentle</div>
           <div class="desc">One at a time. Lightest on the PC.</div></div>
         <div class="card" data-threads="2"><div class="ttl">Balanced</div>
-          <div class="desc">A good default for most machines.</div></div>
+          <div class="desc">A safe choice for most machines.</div></div>
         <div class="card" data-threads="4"><div class="ttl">Fast</div>
           <div class="desc">Best for a powerful PC.</div></div>
       </div>
@@ -257,7 +274,7 @@
       <div class="privacy">
         <div class="lock">🔒</div>
         <div class="txt"><b>Private by design.</b><br>
-          Offline OCR and filing — nothing leaves this machine. Change any setting later under Settings.</div>
+          Reading and filing happen entirely on this computer — nothing leaves this machine. Change any setting later under Settings.</div>
       </div>
     </section>
 

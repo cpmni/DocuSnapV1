@@ -173,9 +173,10 @@ function createClient(opts = {}) {
 
   // ── Mailbox / approval workflow ───────────────────────────────────────────────
   const wfList    = (view) => request('GET', `/v1/workflow/${view}`, { withAuth: true });
+  const wfCounts  = () => request('GET', '/v1/workflow/counts', { withAuth: true });   // badge poll (COUNTs only)
   const recipients = () => request('GET', '/v1/workflow/recipients', { withAuth: true });
-  const assign = (documentId, toUserId, actionRequired, comment) =>
-    request('POST', '/v1/workflow/routes', { withAuth: true, body: { documentId, toUserId, actionRequired, comment } });
+  const assign = (documentId, toUserId, actionRequired, comment, resubmitOf) =>
+    request('POST', '/v1/workflow/routes', { withAuth: true, body: { documentId, toUserId, actionRequired, comment, resubmitOf } });
   const claim   = (id, version) => request('POST', `/v1/workflow/routes/${id}/claim`, { withAuth: true, body: { version } });
   const resolve = (id, decision, comment, version) =>
     request('POST', `/v1/workflow/routes/${id}/resolve`, { withAuth: true, body: { decision, comment, version } });
@@ -231,7 +232,7 @@ function createClient(opts = {}) {
 
   return {
     connect, login, logout, changePassword, entitlement, search, getDocument, getPages, getThumbnail, ping, fetchCa, enroll,
-    workflow: { list: wfList, recipients, assign, claim, resolve, recall, stamped: wfStamped },
+    workflow: { list: wfList, counts: wfCounts, recipients, assign, claim, resolve, recall, stamped: wfStamped },
     recycle: { list: binList, delete: binDelete, restore: binRestore, purge: binPurge, purgeAll: binPurgeAll },
     review: { queue: revQueue, deferred: revDeferred, counts: revCounts, docTypes,
               confirm: revConfirm, defer: revDefer, undefer: revUndefer, viewing: revViewing, release: revRelease,

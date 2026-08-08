@@ -7,6 +7,12 @@ import sys, os, json, argparse, base64
 from io import BytesIO
 import pypdfium2 as pdfium
 
+# SECURITY (Stage 2 — F6/L5, Oracle C2): the crafted-document render-dimension clamp also applies on
+# THIS preview/thumbnail render path (the same PDF reaches here when the queue shows it, before OCR).
+# Bounds a decompression/pixel-bomb page (a tiny page declaring enormous dimensions). INERT on real
+# docs — min(scale, …) equals `scale` for every normal page (A4 at scale 1.5 is ~1240px « 10000).
+_MAX_RENDER_DIM = int(os.environ.get("OCR_MAX_RENDER_DIM", "10000") or "10000")   # px per axis
+
 def _win_long_path(path):
     """Win32 silently strips trailing dots/spaces from path components
     (legacy DOS 8.3 behaviour), so a real folder named e.g. 'Acme Inc.'
@@ -28,6 +34,12 @@ def _win_long_path(path):
     return '\\\\?\\' + path
 
 def _render_page(page, scale):
+    try:
+        _w, _h = page.get_size()                       # points; clamp so a bomb page can't render huge
+        if _w > 0 and _h > 0:
+            scale = min(scale, _MAX_RENDER_DIM / _w, _MAX_RENDER_DIM / _h)
+    except Exception:
+        pass
     bitmap = page.render(scale=scale)
     img    = bitmap.to_pil()
     buf    = BytesIO()

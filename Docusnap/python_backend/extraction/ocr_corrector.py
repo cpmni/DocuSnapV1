@@ -38,7 +38,9 @@ Common OCR confusions addressed:
     T ← 7
 """
 
+import os
 import re
+import math
 from collections import Counter
 
 # ── Confusion maps ────────────────────────────────────────────────────────────
@@ -457,6 +459,16 @@ def lookup_dominant(dominant_index: dict, field_key: str,
 # set. The prefix-outlier guard is the only thing that can see it: "this prefix disagrees with the
 # field's own confirmed history". FLAG-ONLY (the engine caps conf + notes; the value is never touched
 # — the digits are per-doc variable, so the misread can't be corrected, only refused).
+# WEIGHT-AWARE PREFIX SUPPORT BAR (2026-07-19): a same-length Hamming-1 neighbour of the dominant
+# code prefix is only trusted (exempt from the outlier flag) once its OWN confirmed count clears
+# this corpus-proportional bar — mirrors format_anomaly_checker._SHAPE_ACCEPT_MIN/RATIO/ABS. Below
+# it, even an already-confirmed STRAY prefix still flags (the DN->IN self-poison fix — a single
+# mis-confirmed 'IN' no longer immunises it forever). Env PREFIX_OUTLIER_SUPPORT_FLOOR forces a flat
+# count bar (=1 restores the pre-2026-07-19 count-1 membership immunization — the OFF==baseline pin).
+_PREFIX_ACCEPT_MIN   = 3
+_PREFIX_ACCEPT_RATIO = 0.10
+_PREFIX_ACCEPT_ABS   = 8
+
 _LEAD_ALPHA_RE = re.compile(r'^[A-Za-z]{2,}')   # >=2 leading letters; {2,} is the precision gate
 
 def code_prefix(value):
@@ -497,7 +509,8 @@ def build_prefix_index(formats_data):
         supplier = (entry.get('supplier_name') or '').lower().strip()
         doc_type = (entry.get('document_type') or '').lower().strip()
         if supplier and doc_type:
-            index[(supplier, doc_type, field_key)] = {'dominant': dom_p, 'known': known}
+            index[(supplier, doc_type, field_key)] = {'dominant': dom_p, 'known': known,
+                                                      'counts': dict(prefix_counts), 'total': total_all}
     return index
 
 def lookup_prefix(prefix_index, field_key, supplier_name, doc_type):
@@ -510,18 +523,134 @@ def lookup_prefix(prefix_index, field_key, supplier_name, doc_type):
 
 def is_prefix_outlier(read_prefix, rec):
     """True when read_prefix is a SAME-LENGTH single-substitution (Hamming-1) neighbour of the
-    dominant prefix but is NOT itself a confirmed prefix — a likely single-glyph misread (DN->IN).
-    NOT a confusion table: D->I / D->Y are skew artefacts, not canonical OCR pairs, and a shared
-    table would over-correct other fields. Length-changing misreads fall through (caught by the
-    shape checker). A confirmed prefix (self-heal) is never flagged."""
+    dominant prefix whose OWN confirmed count is below the support bar — a likely single-glyph
+    misread (DN->IN) that must be reviewed rather than trusted. WEIGHT-AWARE (2026-07-19): a prefix
+    is exempted only once its confirmed count clears max(_PREFIX_ACCEPT_MIN,
+    ceil(_PREFIX_ACCEPT_RATIO*total)) OR the absolute escape _PREFIX_ACCEPT_ABS — so a stray misread
+    that self-poisoned `known` (2 of 15) is STILL caught, while a genuinely-established second prefix
+    self-heals. This REPLACES the old pure membership immunization (`read_prefix in known` exempted a
+    prefix forever after a SINGLE confirm — the poison hole). NOT a confusion table: D->I / D->Y are
+    skew artefacts. Length-changing misreads fall through (caught by the shape checker). Env
+    PREFIX_OUTLIER_SUPPORT_FLOOR forces a flat count bar (=1 restores the pre-change behaviour)."""
     if not read_prefix or not rec:
         return False
     dom = rec.get('dominant')
-    if not dom or read_prefix == dom or read_prefix in (rec.get('known') or set()):
+    if not dom or read_prefix == dom:
         return False
     if len(read_prefix) != len(dom):
         return False
-    return sum(1 for a, b in zip(read_prefix, dom) if a != b) == 1
+    if sum(1 for a, b in zip(read_prefix, dom) if a != b) != 1:
+        return False
+    # WEIGHT-AWARE support gate: the read prefix is trusted (not flagged) only once its confirmed
+    # count clears the corpus-proportional bar; a low-count known stray (poison) still flags.
+    counts = rec.get('counts') or {}
+    total  = int(rec.get('total') or 0)
+    c = int(counts.get(read_prefix, 0) or 0)
+    floor_env = os.environ.get('PREFIX_OUTLIER_SUPPORT_FLOOR')
+    if floor_env not in (None, ''):
+        try:
+            return not (c >= int(floor_env))
+        except ValueError:
+            pass
+    thr = max(_PREFIX_ACCEPT_MIN, math.ceil(_PREFIX_ACCEPT_RATIO * total))
+    return not (c >= _PREFIX_ACCEPT_ABS or c >= thr)
+
+
+# ── S-B: per-scope ref digit-run LENGTH profile (Oracle SIGN-OFF-W/COND 2026-08-01;
+# kill REF_LENGTH_OUTLIER_GUARD in the engine, built OFF, flip on its realdoc gate) ──────────
+# The learned-SHAPE model folds the digit-run LENGTH of any single-run shape BY DESIGN
+# ('@@-#####' -> '@@-#', format_anomaly_checker._fold_shape — do NOT revert: length-invariance
+# is what cured the INV999->INV1000 rollover withhold). That leaves digit ACCRETION
+# ('INV-121' read 'INV-12110') and glyph DUPLICATION ('PO-64334' read 'PO-643224') invisible
+# to every shape gate. This model sees exactly that axis: the per-scope digit-run length
+# PROFILE — ('DN-24408')->(5,), ('7602-1354-4')->(4,4,1) — with the SAME dominance and
+# weight-aware self-heal bars as the prefix model, so a legitimately-new length confirms in
+# (~_PREFIX_ACCEPT_MIN docs flag during a genuine rollover — the accepted, pinned trade-off)
+# and a mixed-length scope (>=20% share) never presents a dominant profile at all.
+
+def digit_run_profile(v):
+    """Tuple of consecutive-digit-run lengths in the value ('DN-24408' -> (5,)), or None
+    when the value carries no digits. Exact-tuple comparisons only — run COUNT and each
+    run's length both matter ('7602-1354-4' -> (4,4,1))."""
+    runs = re.findall(r'\d+', str(v or ''))
+    return tuple(len(r) for r in runs) if runs else None
+
+
+def build_length_index(formats_data):
+    """Per (supplier, doctype, field): the DOMINANT digit-run profile + per-profile confirmed
+    counts. Mirrors build_prefix_index: count-weighted over ALL confirmed values, dominant
+    requires DOMINANT_MIN_COUNT and DOMINANT_MIN_SHARE; supplier+doctype scope only (length
+    conventions are per-supplier; no cross-supplier fallback)."""
+    index = {}
+    for entry in (formats_data or []):
+        field_key = entry.get('field_key', '')
+        counts    = entry.get('value_counts') or {}
+        if not field_key or not counts:
+            continue
+        total_all = sum(max(1, int(c or 1)) for c in counts.values())
+        prof_counts = {}
+        for value, c in counts.items():
+            p = digit_run_profile(value)
+            if p is None:
+                continue
+            prof_counts[p] = prof_counts.get(p, 0) + max(1, int(c or 1))
+        if not prof_counts or total_all <= 0:
+            continue
+        dom_p, dom_n = max(prof_counts.items(), key=lambda kv: kv[1])
+        if dom_n < DOMINANT_MIN_COUNT or dom_n < DOMINANT_MIN_SHARE * total_all:
+            continue                                # no trustworthy profile -> scope disarmed
+        supplier = (entry.get('supplier_name') or '').lower().strip()
+        doc_type = (entry.get('document_type') or '').lower().strip()
+        if supplier and doc_type:
+            index[(supplier, doc_type, field_key)] = {'dominant': dom_p,
+                                                      'counts': dict(prof_counts),
+                                                      'total': total_all}
+    return index
+
+
+def lookup_length(length_index, field_key, supplier_name, doc_type):
+    """Exact (supplier, doctype, field) lookup — no fallback (same contract as lookup_prefix)."""
+    if not length_index:
+        return None
+    s  = (supplier_name or '').lower().strip()
+    dt = (doc_type or '').lower().strip()
+    return length_index.get((s, dt, field_key))
+
+
+def is_length_outlier(read_profile, rec):
+    """True when the read's digit-run profile differs from the scope's dominant AND its own
+    confirmed count is below the SAME weight-aware accept bar the prefix guard uses — so a
+    genuinely-new convention self-heals (confirm it ~_PREFIX_ACCEPT_MIN times and it stops
+    flagging) while a stray misread that self-poisoned the counts is still caught."""
+    if not read_profile or not rec:
+        return False
+    dom = rec.get('dominant')
+    if not dom or read_profile == dom:
+        return False
+    counts = rec.get('counts') or {}
+    total  = int(rec.get('total') or 0)
+    c = int(counts.get(read_profile, 0) or 0)
+    thr = max(_PREFIX_ACCEPT_MIN, math.ceil(_PREFIX_ACCEPT_RATIO * total))
+    return not (c >= _PREFIX_ACCEPT_ABS or c >= thr)
+
+
+def prefix_confirmed(read_prefix, rec):
+    """True when read_prefix is a CONFIRMED in-scope code prefix with real support — the
+    dominant prefix, or any known prefix whose confirmed count clears the SAME weight-aware
+    accept bar is_prefix_outlier uses to exempt (so 'confirmed' means the same thing on both
+    sides of the guard pair, and a low-count poison stray is NOT confirmed). Membership, not
+    similarity: used by the clipped-suffix reconciliation (suffix_reconcile.py) as its adopt
+    bar — a completed prefix the operator has never confirmed in this scope must NOT be
+    silently written onto a value."""
+    if not read_prefix or not rec:
+        return False
+    if read_prefix == rec.get('dominant'):
+        return True
+    counts = rec.get('counts') or {}
+    total  = int(rec.get('total') or 0)
+    c = int(counts.get(read_prefix, 0) or 0)
+    thr = max(_PREFIX_ACCEPT_MIN, math.ceil(_PREFIX_ACCEPT_RATIO * total))
+    return c >= _PREFIX_ACCEPT_ABS or c >= thr
 
 
 # ── FIX B1: ref-prefix type SUGGESTION (suggest-only; the caller keeps the review hold) ──────────
