@@ -353,6 +353,10 @@ const TEACH_RENDER_SCALE = 4.0;   // 288 DPI display render (was 3.0/216) — cr
 const OCR_TARGET_H = 28;
 // Read the drawn box at NATIVE resolution, exactly as the Review window does. See cropB64.
 const TEACH_NATIVE_CROP = true;
+// Pick the anchor label by SCORE (the shared AnchorLabel.pickLabelCandidate the Review ⊕ tool uses)
+// instead of by arrival order. See the block in autoLabel for the full rationale.
+// Kill switch: TEACH_LABEL_PICK=false restores the left-first early return, byte-identical.
+const TEACH_LABEL_PICK = true;
 // The page fitted to the pane is too small to draw on accurately, so every user zoomed
 // in by hand before their first box. Start where they were going anyway.
 const TZ_DEFAULT = 1.5;
@@ -1052,7 +1056,12 @@ async function autoLabel(box, forceDir){
   if (forceDir==='left')        { if (leftW>0.02) tries.push(left); }
   else if (forceDir==='above')  { if (box.y>0.02) tries.push(above); }
   else                          { if (leftW>0.02) tries.push(left); if (box.y>0.02) tries.push(above); }
-  for (const band of tries){
+  // Read ONE band into a finished candidate ({box, anchor_text, dir, suspicious}) or null. Hoisted
+  // out of the old `for (const band of tries)` loop so the two bands can be read and then COMPARED
+  // (TEACH_LABEL_PICK, below) instead of the first non-empty one winning by arrival order. The body
+  // is unchanged, including the clip-gated pass-2 re-read — a candidate is scored AFTER its own
+  // pass-2, so the picker compares each side's best reading of itself.
+  const _bandResult = async (band) => {
     try{
       const res=await D.ocrRegionBoxes(await cropB64(band));
       // SAME label-quality pipeline as the Review ⊕ tool (shared/anchorLabel.js): for a LEFT band
@@ -1122,6 +1131,56 @@ async function autoLabel(box, forceDir){
         return {box:abox, anchor_text:label, dir:band.dir, suspicious};
       }
     }catch{}
+    return null;
+  };
+
+  // ── TEACH_LABEL_PICK — teach adopts the Review ⊕ tool's SCORED label pick (D1) ────────────────
+  // THE GAP THIS CLOSES: this wizard picked the label by ARRIVAL ORDER — it read the LEFT band and
+  // returned the moment that band produced any non-empty label, so a garbled left strip beat a clean
+  // caption above. The Review ⊕ tool fixed exactly this on 2026-07-11 (renderer.js:3802-3940, the
+  // 'esha, i' vs 'Customer' incident) by reading BOTH bands and scoring them through
+  // AnchorLabel.pickLabelCandidate. That picker is shared, Oracle-signed and pinned in
+  // shared/test_anchor_label.js — and its own comment records that teach did NOT share it
+  // ("pre-existing gap, C5", anchorLabel.js:333-334). This is that gap, closed; no new judgement
+  // is introduced, the same function decides on both surfaces.
+  //
+  // SCORING (unchanged, from the shared module): 2 = matches one of THIS field's own captions ·
+  // 1 = clean · 0 = suspicious/empty. Higher wins; a score-1 tie consults the form-label word ratio;
+  // any remaining tie stays LEFT (the status-quo direction); BOTH 0 -> position-only, which falls
+  // through to the synthetic anchor below exactly as "no label found" always has.
+  //
+  // The caption bank is FIELD-SCOPED (this field's own display label), never a global bank — Oracle's
+  // condition on the Review side, and it matters more here: a global bank would let a neighbouring
+  // row's "Date" outscore the true unknown caption beside the value.
+  //
+  // COST: with the flag ON and no forceDir both bands are always read, where the old code often read
+  // only the left. They are read CONCURRENTLY (the same Slice-2b reasoning as review/renderer.js:3808
+  // — the two strips are independent), so the wall-clock cost is one OCR round-trip, not two.
+  // A mis-steer is not silent and not sticky: the readout SHOWS the chosen label and direction before
+  // anything is stored, and the existing [← Left]/[↑ Above] toggle re-runs the read pinned to one side.
+  //
+  // OFF is byte-identical BY CONSTRUCTION: the else-branch is the original sequential loop with the
+  // original early return, so no extra OCR is issued and arrival order decides, exactly as before.
+  if (!TEACH_LABEL_PICK || forceDir){
+    for (const band of tries){
+      const c = await _bandResult(band).catch(() => null);
+      if (c) return c;
+    }
+  } else {
+    const cands = await Promise.all(tries.map(b => _bandResult(b).catch(() => null)));
+    const at = (d) => { const i = tries.findIndex(b => b.dir === d); return i >= 0 ? (cands[i] || null) : null; };
+    const leftC = at('left'), aboveC = at('above');
+    if (leftC && aboveC){
+      const caps = [];
+      try { const cf = curField(); if (cf && cf.label) caps.push(cf.label); } catch {}
+      const pick = A.pickLabelCandidate(leftC.anchor_text || '', aboveC.anchor_text || '', caps);
+      if (pick.direction === 'above') return aboveC;
+      if (pick.direction === 'left')  return leftC;
+      // direction null = both scored 0 (suspicious/empty on both sides). Deliberately fall through
+      // to the position-only synthetic anchor rather than staging a garble as a real label.
+    } else {
+      for (const c of cands) if (c) return c;   // only one band was readable — nothing to compare
+    }
   }
   // No label found: synthetic anchor in the requested (or left) direction, no text.
   if (forceDir==='above' && box.y>0.02){
