@@ -21,7 +21,55 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-08-08 DAY, owner present) — NIGHT3 slices BRIDGED + ORACLE-GATED · teach MULTI-PAGE shipped · SEC-17/18 · 4 self-corrections
+## Current session state (2026-08-08 EVENING, owner present) — ORACLE ×2 · SEC-17 FAIL-OPEN fixed · teach label-pick · 2 live pattern defects · 2 owner decisions shipped · Pelican `customer_name` diagnosed
+**READ `HANDOVER_2026-08-08_EVENING.md` FIRST** (NOT `HANDOVER_2026-08-08.md`, a MISDATED older
+file; `_DAY` is the earlier half of the same day). **11 commits, ALL PUSHED. NOTHING NEW FLIPPED** —
+the owner said they will flip when the arc finishes.
+**(1) SEC-17 Oracle pass found a LIVE FAIL-OPEN IN THE SHIPPED FIX** (`917a009`) — SIGN OFF W/COND,
+3 BLOCKING, ruling **LEAVE IT ON**, severity down to **LOW**. `_realCanonical` returned the RAW path
+on ENOENT while the ROOT was canonicalised (two frames, one comparison), so a MISSING leaf under a
+junction still passed; the shipped comment's "openPath would fail anyway" holds for `open-file` but
+NOT `show-in-explorer`, which reveals the CONTAINING directory. Fixed by an ancestor walk. B2: the
+pin's FAIL-CLOSED line asserted the OPPOSITE of its label and the `return null` branch was ENTIRELY
+unpinned. 20 pins, zero skips. **B3 STILL OPEN + BLOCKING for release** (the refusal is SILENT —
+both channels are `ipcMain.on`; discharge by a visible distinct refusal OR a MEASUREMENT on a
+dehydrated-OneDrive-offline file). **C5 SEAM: containment is NOT total** — door 2 of
+`_isOpenablePath` matches `stored_path` TEXTUALLY, so a doc filed through a junction opens fine.
+**(2) TEACH LABEL PICK** (`1eb96fb`+`b41cad6`) — `autoLabel` picked by ARRIVAL ORDER; now calls the
+shared Oracle-signed `pickLabelCandidate` the Review ⊕ tool has used since 07-11 (that module's own
+comment recorded teach's gap as "C5"). Oracle GRANTED default ON after refuting the regression he
+looked for, then found a real smaller one — **T1**: the scored-out path replaced a LOCATED box with
+the synthetic strip. 27 pins.
+**(3) TWO LIVE VALIDATION DEFECTS** (`c15f679`) — `iban` rejected every conventionally-printed IBAN
+(while `trust.js` ACCEPTED it, so the renderer warned on correct values); the `ip_address` IPv6 leg
+accepted `09:30:15` as **TYPE-AUTHORITATIVE** (`_PRECISE_VAL_TYPES`) and rejected `fe80::1`, the
+example the UI prints. **The new JS pin caught a gap in my own IPv6 fix** that `re.search` had waved
+through — the Python pin now asserts WHOLE-VALUE coverage.
+**(4) OWNER DECISIONS SHIPPED** — `delivery_number`→`reference_code` (`3dc162c`, **migration 59
+CONFIRMED APPLIED** on restart; of 126 distinct values exactly ONE lacks a digit: `'Delivery'`, the
+bug itself; **extraction deliberately does NOT move** and that is PINNED). `ocr_type` **RETIRED**
+from the UI (`2a85838`; column stays defaulted; the dev CLI was REPOINTED to the field's real type).
+**(5) DATA-TYPE WIDENING = ORACLE SEND BACK** — do NOT build as specified. B1–B6 + G2/G6 in
+`pendingfeatures.md`. **B2 struck a claim I had written: `STRICT_TYPES` is NOT the rail** (it checks
+FORM; a wrong-PARTY value is well-formed and passes, and a strict type `continue`s past the
+cold-scope check). `guessType` AUTO-SELECTS the broken types, so it is NOT as latent as filed.
+**(6) OWNER-REPORTED, DIAGNOSED: Pelican `customer_name` wrong 66/72** (`d0ef6a2`) — ONE mis-sized
+taught box on tpl 33: `tw=0.1627` ends FLUSH with the last glyph (drift shears the `d` →
+`'Bramblewood Joinery Lt'`), and `th=0.0151` ≈2.2 line-heights admits the address row
+(`'Unit 4, Sawpit Lane'`). **Word-snap AND abs-edge-guard are both ON but EXCLUDE NAMES by design**
+(`template_mapper.py:308`), and the healer that owns names, `NAME_UNCLIP_RECONCILE`, is OFF. Clipped
+commits at 95 and beats a CORRECT `keyword_override` at 83. **The obvious fix is WRONG — measured:
+`TEMPLATE_FREETEXT_GUARD_PARITY` heals 1 of 66** (values score 0.67-0.75 vs the guard's 0.5 floor).
+New read-only harness `stress_test/name_unclip_ab.js`.
+**MY OWN CORRECTIONS THIS SESSION — do not re-derive them wrongly:** the free-text template-rung
+population is **93 of 99** on docs 738+, NOT the "~1 read in 24" I recorded (the near-inert verdict
+survives only on YIELD, never quote the reachability figure); the "Discount typed Percentage"
+example is WRONG (`discount` is a shipped key — use `unit_price`/`account`); my currency-sign line
+cites were STALE (`keyword.py:1509` + `_clean_value` `:1768-1772`); and `STRICT_TYPES`-as-rail (above).
+**GOTCHA: `pytest tests/` ABORTS** — the suite mixes pytest and script-style files and one
+`sys.exit`s at import. Four pre-existing failures verified identical with this session stashed.
+
+### Prior wrap — Current session state (2026-08-08 DAY, owner present) — NIGHT3 slices BRIDGED + ORACLE-GATED · teach MULTI-PAGE shipped · SEC-17/18 · 4 self-corrections
 **READ `HANDOVER_2026-08-08_DAY.md` FIRST** (NOT `HANDOVER_2026-08-08.md` — that filename is one of
 the MISDATED older files). **HEAD `078569e`, 11 commits, ALL PUSHED.** Owner order was: Oracle the
 shadow slice → bridge the two flags → the stale-shadow drop → then "finish teach wizard + template
