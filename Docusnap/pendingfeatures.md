@@ -6,6 +6,82 @@
 
 ---
 
+## 2026-08-08 — teach/template anchor+value coverage audit: SIX defects VERIFIED AT SOURCE, none built yet
+
+Owner goal for the day: "finish the teach wizard and template manager anchor and value detection;
+verify all data types work, not a small subset; custom fields must detect the same as built-in;
+keywords working 100%." A six-area code survey plus read-only live-DB censuses produced the below.
+Each line was re-verified by reading the source — none is taken from a summary. **LIVE** = it is
+biting the owner's current data; **LATENT** = the mechanism is real but nothing on this install
+triggers it yet (still worth fixing, since the owner's ask is forward-looking).
+
+**1. LIVE — landmark starvation, 15 of 33 templates.** Census: landmark-count → templates =
+`{0:6, 1:7, 2:2, 3:2, 4:1, 5:15}`. Six templates have ZERO (Copperfield ×2, Ironbridge, Vellum &
+Crane, Thornbury, Stonegate) and therefore no registration fallback at all
+(`registration_enabled=bool(template_landmarks)`). Root: `templates/handler.js:58-67`
+`_excludeBoxesFor` pushes BOTH `target_*` AND `anchor_*` boxes into `exclude_boxes`, and
+`ocr/landmarks.py:65-91` rejects any word overlapping one. The anchor box is the taught LABEL
+CAPTION — printed chrome that recurs at a stable position, i.e. the ideal landmark. The docstring
+conflates the two. `select_cross_sample` (`landmarks.py:123-137`) ALREADY excludes per-document
+values independently (recurs in ≥60% of docs AND centroid stable within `pos_tol=0.015`), so the
+geometric anchor exclusion looks redundant against values while being fatal to captions.
+**NAMED SEAM, still unanswered:** fitting the transform on the same label the anchor path relocates
+off CORRELATES the two rungs — registration stops being independent evidence. Candidate mitigation
+(not yet judged): an "independence floor" requiring ≥1 landmark that is no mapping's taught anchor.
+
+**2. LIVE — the bare-label guard is DEAD at Stage 0.5.** `anchor._crop_is_credible` takes a `label`
+parameter that arms `_is_bare_label` at ~16 Stage-2 sites; both Stage-0.5 call sites
+(`template_mapper.py:802`, `:806`) pass THREE arguments, so `label` is never supplied. Combined with
+the absolute rung running `shape_mode='ignore'` and `validation_patterns.alphanumeric` scoring
+coverage 1.0 on a plain word, a taught box landing on a CAPTION commits it at confidence 90 with
+nothing able to object. This is the deeper root of the delivery-note class the 2026-08-07 arc chased
+(`TEMPLATE_INLINE_ROW_OVERLAP` fixed WHICH ROW is read; this is why a caption is ACCEPTED at all).
+
+**3. LIVE — 11 of 38 mappings carry a PHANTOM anchor** (`anchor_text` NULL, census). The teach
+wizard, when `autoLabel` finds no label, still stores the mapping with a synthetic 0.12-page-wide
+strip left of the value (`teach/renderer.js:998-1003`); downstream `_locate_anchor(needle=None)`
+accepts the nearest line and base confidence drops 90 → 78. Root of the miss: teach's `autoLabel`
+(`teach/renderer.js:902-997`) tries a LEFT band then an ABOVE band and RETURNS ON FIRST NON-EMPTY —
+no scored contest — while the Review ⊕ tool uses the scored `pickLabelCandidate`
+(`shared/anchorLabel.js:321-341`). Two different pickers; teach has the weaker one.
+
+**4. LATENT — the teach wizard HARDCODES `page_number: 0`** (`teach/renderer.js:~1092`), so teaching
+a value on page 2 stores a page-0 mapping that reads the WRONG PAGE at extraction time. Paired with
+**5**, below. Census: all 38 live mappings are page 0, so nothing is mis-reading today.
+
+**5. LATENT — "Show where it reads" is silently dead on page 2+.** `template_mapper.py:530` does
+`page_idx = mapping.page_number or 0; if page_idx >= len(page_images): continue`, while
+`resolve_geometry` (`:592-630`) passes a ONE-element page list. Both callers already send exactly
+the mapping's own page image (`settings/renderer.js` filters to `tplCurrentPage`;
+`review/renderer.js` sets `page_number: currentPage`), so any page-2+ mapping is skipped and the
+operator is told "Anchor not located / nothing read on this page" about a good mapping.
+
+**6. LATENT — most data types have no Stage-1 reader, and picking the RIGHT type makes it worse.**
+`keyword.extract_fields` (`:942-945`) skips a field with no `field_patterns` entry;
+`seed_field_labels` (`:~338-364`) seeds only role `date`/`alphanumeric`, or role None AND DB type
+EXACTLY `'text'`. The currency role is refused outright ("currency deferred"). So a custom field
+typed Currency/Number/Email/Percentage/Postcode/IBAN gets no Stage-1 attempt, while the same field
+left as Text would be read. Census: live field types are text 13, date 6, reference 1, currency 1
+across 6 types (3 user-made); the single affected field is `total_amount`, a SHIPPED key, so the
+hole is latent — **do not sell this as an active incident.** Related: four divergent "is this a
+reference field" predicates (`engine.py:1237-1243`, `keyword.py:58-66`, `validator.py:~299`,
+`review/renderer.js:46-49`) and the fact that the type's DECLARED `ref_field_key`/`date_field_key`
+role never reaches Stage 0.5 at all — only the key SPELLING does.
+
+**Also confirmed:** `template_field_mappings.ocr_type` is written by three UI surfaces with three
+different vocabularies and read by ZERO production code (`grep ocr_type python_backend/` finds only
+tests and the dev CLI `test_mapping.py:75-80`) — production `val_type` comes from
+`engine._seed_field_patterns(base, field_defs)` keyed on the TYPE's field definitions. Owner
+decision needed: wire it or delete it. And Stage 0.5's terminal cleaner
+(`template_mapper._clean_value` → `anchor.clean_crop_segment:2670`) returns the FIRST LINE ONLY, so
+a `multiline_text` taught mapping structurally cannot return an address (latent: no live address
+mapping exists).
+
+Specialist review was commissioned on items 1+2 (geometry/OCR) and 6+5 (Python design + test
+strategy) before any build; nothing above has been implemented.
+
+---
+
 ## 2026-08-07 — New doc type should seed its own keyword bucket + teach must mirror the Settings type editor (owner-raised, NOT BUILT)
 
 Two related gaps the owner hit while creating types. Both are about the SAME thing: a type created outside
@@ -690,7 +766,9 @@ in oscar → Oracle.
 
 ## UX / product
 
-### Light⇄dark quick-flip forgets the selected theme — OWNER 2026-08-02 (next session)
+### ✓ SHIPPED — Light⇄dark quick-flip forgets the selected theme — OWNER 2026-08-02 (next session)
+> Resolved by `418cf80` (theme.js records a per-family choice) — see the SHIPPED list at line ~590 of
+> this file. Ticked 2026-08-08; the entry is kept for its repro.
 **Repro (owner, live):** with a non-default theme selected, the quick Light⇄Dark toggle (account
 menu + rail-foot) goes dark, then flipping back lands on the DEFAULT theme (Warm Paper) — the
 user's chosen theme is lost. **Expected: the toggle alternates between the CURRENTLY SELECTED
@@ -1109,7 +1187,11 @@ gate); on #291 wrong inline@85 beat CORRECT keyword@85 sitting in the ledger at 
   worse + 285@400 lost PLACEMENT entirely — DPI non-monotone). Substrate fix out of app reach; a
   low-scan-quality import advisory = future barry idea.
 
-### Label-tail crop CLAMP — BUILT DARK 2026-08-02 (kill `ANCHOR_LABEL_LEFT_CLAMP` default OFF)
+### ✓ SHIPPED AND LIVE — Label-tail crop CLAMP (kill `ANCHOR_LABEL_LEFT_CLAMP`) — 2026-08-02
+> Doubly stale, corrected 2026-08-08. It is no longer dark and no longer default OFF: shipped as
+> `336585a` (Oracle had already GO'd the flip) and the live DB currently holds
+> `anchor_label_left_clamp = true`, verified by a read-only settings query. Heading kept for its
+> design notes; the "BUILT DARK / default OFF" claim below is obsolete — read it as history.
 **Status: implemented per the signed design (all of C1-C7); 26 pins green
 (`python_backend/tests/test_label_left_clamp.py`); gates run via
 `stress_test/clamp_gate_diff.js` over two RR_CONSENSUS realdoc runs — see the 2026-08-02
@@ -1162,7 +1244,9 @@ as the no-locate spare.
   strengthens the digit-count PREFER arm's revival case (correct value passed the length profile the
   winner failed, in-band, twice).
 
-### Home "Open Mailbox" deep-link — OWNER 2026-08-02
+### ✓ SHIPPED — Home "Open Mailbox" deep-link — OWNER 2026-08-02
+> Resolved by `b67688a` (new open-search-window-at channel) — see the SHIPPED list at line ~595.
+> Ticked 2026-08-08.
 **Owner:** "the open mailbox button in home just opens the search window, not the mailbox."
 The WAITING-ON-YOU card's button (main/index.html:~842) opens the Search window cold; the
 user then has to find and click the Mailbox toggle themselves — the button promises a place
@@ -1173,7 +1257,9 @@ once on load via a `get-search-target` read, or receives a `search-goto` event w
 window is already open) → toggles the Mailbox view (`SearchMailbox` toggle path) on arrival.
 Same mechanism generalises later ("open at recycle bin", "open at doc N").
 
-### Search preview error-state hardening (eternal spinner) — OWNER 2026-08-02 (live repro)
+### ✓ SHIPPED — Search preview error-state hardening (eternal spinner) — OWNER 2026-08-02 (live repro)
+> Resolved by `bf9fe90` (selectDoc guarded, honest error state, pin `test_preview_error_state.js`) —
+> see the SHIPPED list at line ~592. Ticked 2026-08-08.
 **Owner:** "when i click a doc in search i see a spinning icon but the doc doesnt load."
 **Immediate cause (that session):** stale-main — the running app predated `b747676`'s new
 `get-document-detail` IPC while the reopened search renderer already called it; the invoke
@@ -1421,6 +1507,15 @@ engine.py `_invalid_taught_date_yields`. The complementary cure = extend the pla
 date rung so the taught date box survives the tilt rather than leaning on the keyword fallback. Own round.
 
 ## Taught date/code crop read-path frame election (DIAGNOSED, design captured, build fresh — 2026-08-06)
+> **⚠ PREMISE SUPERSEDED 2026-08-07 — DO NOT BUILD THE RAW-FRAME ELECTION.** Annotated 2026-08-08.
+> A fresh 4-doc probe (filed Larkspur invoices, −0.5°…2.3°) REFUTED the premise below: the deskew frame
+> is NOT the lever — the TIGHT TAUGHT BOX clips the leading glyph on BOTH frames at every angle, and raw
+> is sometimes WORSE. The fix that actually shipped is `TEMPLATE_PAD_WINDOW_READ` (`837b7d6`, dates only,
+> default OFF): a padded row-bounded re-read that FLAGS a confident disagreement and never swaps. See the
+> banner at the top of `docs/designs/DATE_CROP_DESKEW_READ_2026-08-06.md` and the memory
+> `project_pad_window_date_read`. The text below is retained as REJECTED PRIOR ART only — it is left in
+> place because it records the empirical probe and the RED-gate pitfall, not because it is a work item.
+
 ROOT of the taught-date-crop misread class (invoice_08 03→33, invoice_14 2026→2096, and the same-year
 03→08 slice the merge-layer yields can't catch). PROVEN empirically (`<scratchpad>/datecrop_probe.py`):
 on a 1.8° scan the taught date box read on the DESKEWED frame misreads the leading digit, while the RAW
