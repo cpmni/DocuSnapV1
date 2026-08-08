@@ -21,7 +21,37 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-08-07 NIGHT2) — VAT-reg guard SHIPPED+FLIPPED · delivery defect DIAGNOSED · 2 designs ready
+## Current session state (2026-08-07 NIGHT3, autonomous) — delivery defect FIXED · 3 slices DARK, all gates GREEN
+**READ `HANDOVER_2026-08-07_NIGHT3.md` FIRST. HEAD `359f2c7` + handover; ALL PUSHED. Executed the
+NIGHT2 plan under the owner's standing "run on auto and safely, no regressions".** Three slices built,
+**ALL DEFAULT OFF, no flips, no confirms, no live-DB writes** (the Pelican docs are as the owner left
+them). **(1) `TEMPLATE_INLINE_ROW_OVERLAP` (`d3cca7c`)** — `_target_inline_with_anchor` reused
+`_DRIFT_FLOOR=0.02` (a DRIFT constant, ~1.5-3 line pitches) as a SAME-ROW tolerance, admitting the
+label-ABOVE layouts its own docstring excludes, so `_pick_fuller_code`'s inline-disagreement branch
+committed the caption `'Delivery'` (a dictionary word outscores a code on LSTM conf). Fix =
+`tol=(anchor_h+target_h)/2`, the geometric definition. ONE predicate gates BOTH reconcile call sites;
+`_inline()` is a third unswitched door, guarded ONLY where a stored offset exists (legacy dx=dy=0 keeps
+`_inline()` PRIMARY — **pinned trade-off**). **Pelican arm D: 5 healed / 0 regressed** with both
+reconciles still ARMED (= NIGHT2's arm C without the sledgehammer); collateral date+customer 0 moved;
+realdoc 714 byte-identical (**not vacuous — `#728`/`#732` are on that template and correctly untouched**);
+census 3/38 mappings change, all template 33. **(2) `REF_ROLE_DIGIT_GATE` (`7a02422`)** — the digit
+predicate was right, its ARMING was a hardcoded pair; widened to the REF ROLE via
+`_infer_validation=='alphanumeric'` (newly armed: credit_note/delivery/invoice/reference_number).
+**Corpus 0 T→F / 7 F→T, ref 45.4%→47.9%**, all other lanes identical; 0/713 confirmed values rejected.
+The heals FALL THROUGH TO THE CORRECT VALUE (`'Meadowvale'`→the real code), better than designed.
+**(3) `TRUST_SHADOW_ROW_SKIP` (`5948f9c`)** — `docTrustGate` judged filability on INVISIBLE
+`shadow_reconcile` rows → `unverifiable-value:<field>` deadlock, sealed twice. **realdoc auto-file
+536→538, wrong-value auto-files UNCHANGED at 17.** The harness-overlay trap was fixed FIRST and the
+threading verified in isolation. **CROSS-CUTTING PROOF: post-edit baseline (all 3 OFF) ==
+pre-edit baseline, byte-identical, 714 docs.** **NOTHING IS FLIPPABLE YET** — no Settings bridge was
+added (outside the plan); the two extraction flags need the `_reconcileEnv`+toggle pattern
+(precedent `60606d9`), and `TRUST_SHADOW_ROW_SKIP` needs an owner decision because it is a JS-side
+`process.env` read that a `_reconcileEnv` bridge does NOT reach. NEXT: `REPROCESS_SHADOW_STALE_DROP`
+(designed; **realdoc cannot gate it** — the reprocess merge isn't exercised there). GOTCHAS: the
+corpus scorer's `TAG` defaults to `base` so untagged runs overwrite ONE jsonl; it records `<lane>_got`
+only when WRONG, so a heal reads as `'X' -> None` in a naive diff (read `verdicts`).
+
+### Prior wrap — Current session state (2026-08-07 NIGHT2) — VAT-reg guard SHIPPED+FLIPPED · delivery defect DIAGNOSED · 2 designs ready
 **READ `HANDOVER_2026-08-07_NIGHT2.md` FIRST. HEAD `5ee4718` + handover; ALL PUSHED. Owner approved an
 autonomous night run: "run on auto and safely, no regressions".** (A) **SHIPPED + OWNER-FLIPPED LIVE:**
 `vat_reg_not_amount` + `net_misread_total_flag` (`d575668`/`60606d9`/`2a1ae7d`) — a letterhead VAT
