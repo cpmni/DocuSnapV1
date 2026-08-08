@@ -115,8 +115,8 @@ whose type is in dispute that makes those lanes read as empty. It does not affec
 
 ## NEXT, ranked
 
-1. **Verify the no-regression arm finished clean** (it was running at hand-over; result appended
-   below if it landed). Then decide the three switches — they are measured, pinned and reversible.
+1. **Decide the three switches** — measured, pinned and reversible. The no-regression gate is GREEN:
+   see below.
 2. **Run Chris** on a fresh sandbox to replicate the teach flow. My instruments measure the
    PIPELINE; only Chris measures the EXPERIENCE, and your run already proved the experience is where
    the damage starts (you missed the skip control, and two teaches silently did nothing).
@@ -136,3 +136,32 @@ whose type is in dispute that makes those lanes read as empty. It does not affec
 - Ground truth calls the rendition `'scan'`, not `'scanned'`; and its `issuer` column names the
   COUNTERPARTY, so for buyer-issued purchase orders it is inverted against the app's Document Issuer
   role. The scorer handles this (`BUYER_ISSUED`) — verified at the pixels, not assumed.
+
+---
+
+## NO-REGRESSION GATE — GREEN
+
+`stress_test/realdoc_regression.js`, 812 confirmed real documents, **all switches OFF**, diffed
+against the pre-change baseline taken before any of tonight's edits:
+
+```
+| type | supplier | ref | date | total | subtotal |   IDENTICAL
+Regressions 198 (49 SILENT)                          IDENTICAL
+Auto-file 546/812; 24 would auto-file a WRONG value  IDENTICAL
+Wrong-TYPE auto-file 0                               IDENTICAL
+```
+
+So the default-OFF claim is corpus-verified, not merely asserted — today's behaviour is untouched
+until somebody flips something.
+
+Test batteries at hand-over, all green:
+```
+python_backend/tests/test_teach_side_gates.py            17/17
+python_backend/tests/test_anchor_inline_taught_offset.py  9/9
+database/modules/test_freeze_issuer_only.js              13/13
+database/modules/test_build_template_fields.js           ALL PASS  (unchanged by the freeze switch)
+src/windows/settings/test_settings_wiring.js             ALL PASS
+```
+
+Working tree carries one uncommitted file — `python_backend/tests/test_template_target_word_snap.py`
+— which is YOUR long-standing edit, untouched all night.
