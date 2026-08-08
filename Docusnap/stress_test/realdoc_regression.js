@@ -76,7 +76,12 @@ function snap(db) {
     '--config-file', CFG, '--registration', '--born-digital', '--multiline'] };
 }
 
-function runP(folder, snapArgs, files, manifest) {
+// `onDoc` (optional) is called with each file_done AS IT ARRIVES, not at shard close — this is what
+// makes the 10% progress checkpoints possible (owner request 2026-08-08: "if we are capturing fails
+// early on then we can deal with them rather than running through the whole batch"). Shards run in
+// PARALLEL, so arrival order is interleaved and a checkpoint is a count of documents COMPLETED, never
+// a position in the file list. `ctl` (optional) receives a kill() used only by RR_ABORT_ON.
+function runP(folder, snapArgs, files, manifest, onDoc, ctl) {
   const N = 8; const shards = Array.from({ length: N }, () => []); files.forEach((f, i) => shards[i % N].push(f));
   const sf = shards.filter(x => x.length).map(names => w('shard', names));
   // FAITHFUL REPROCESS (2026-08-03): pass the per-doc known template/type like the app's
@@ -84,9 +89,27 @@ function runP(folder, snapArgs, files, manifest) {
   // no longer self-matches — WITHOUT this the harness silently skips Stage 0.5 and is blind to the
   // whole template_mapping-garble class (the Northgate PO-17039 gap). All shards share the manifest.
   const manifestArgs = (manifest && Object.keys(manifest).length) ? ['--reprocess-manifest', w('manifest', manifest)] : [];
+  const procs = [];
+  if (ctl) ctl.kill = () => { for (const p of procs) { try { p.kill(); } catch {} } };
   const one = shardFile => new Promise(res => {
     const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', folder, '--files-file', shardFile, '--mode', 'fast', '--tesseract', TESS, ...manifestArgs, ...snapArgs], { windowsHide: true });
-    let out = ''; p.stdout.on('data', d => out += d); p.stderr.on('data', () => {}); p.on('close', () => res(out)); p.on('error', () => res(''));
+    procs.push(p);
+    let out = '', tail = '';
+    p.stdout.on('data', d => {
+      out += d;
+      if (!onDoc) return;
+      // Line-buffered live parse. The final partial line stays in `tail` until its newline arrives,
+      // so a message split across two chunks is never parsed half-formed. `out` is still the source
+      // of truth for the scoring pass below — this only OBSERVES.
+      tail += d;
+      const lines = tail.split('\n'); tail = lines.pop();
+      for (const ln of lines) {
+        const t = ln.trim(); if (t[0] !== '{') continue;
+        let m; try { m = JSON.parse(t); } catch { continue; }
+        if (m.type === 'file_done') { try { onDoc(m); } catch {} }
+      }
+    });
+    p.stderr.on('data', () => {}); p.on('close', () => res(out)); p.on('error', () => res(''));
   });
   return Promise.all(sf.map(one)).then(outs => {
     const docs = {}; for (const o of outs) for (const ln of o.split('\n')) { const t = ln.trim(); if (t[0] !== '{') continue; let m; try { m = JSON.parse(t); } catch { continue; } if (m.type === 'file_done') docs[m.original_filename] = m; }
@@ -160,7 +183,55 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   }
   const gtOverrideN = Object.values(gt).filter(g => g._overridden).length;
   const snapObj = snap(db);
-  const res = await runP(RR, snapObj.args, files, manifest);
+
+  // ── PROGRESS CHECKPOINTS every 10% of documents completed (owner request 2026-08-08) ──────────
+  // WHAT THIS IS: an EARLY WARNING, not the gate. It compares type/supplier/ref/date against the
+  // confirmed values as each document lands, so a change that breaks a whole supplier shows up in
+  // the first minutes instead of after the full batch. The GATE numbers (SILENT wrong values and
+  // wrong auto-files) still come only from the full scoring pass below — a document disagreeing
+  // here may well be flagged for review, which is a correct outcome, not a failure.
+  // RR_ABORT_ON=<n> stops the run once n documents disagree. The report is then STAMPED ABORTED and
+  // the gate exits non-zero regardless, so a truncated run can never be mistaken for a pass.
+  const ckDisagreed = [];        // {id, text} — sorted into the report, which must diff cleanly
+  const CK_STEP = Math.max(1, Math.ceil(files.length / 10));
+  const ABORT_ON = Number(process.env.RR_ABORT_ON || 0);
+  const ctl = {};
+  let ckDone = 0, ckNext = CK_STEP, ckWrong = 0, aborted = false;
+  let ckFresh = [];
+  const liveScore = (m) => {
+    const g = gt[m.original_filename]; if (!g) return null;
+    const rk = (roles[g.type_slug] || {}).ref, dk = (roles[g.type_slug] || {}).date;
+    const detSlug = m._document_slug || nameToSlug[m.document_type] || null;
+    const bad = [];
+    if (detSlug !== g.type_slug) bad.push(`type ${g.type_slug}->${detSlug}`);
+    if (normSupplier(m.supplier_name) !== normSupplier(g.supplier)) bad.push(`supplier '${g.supplier}'->'${m.supplier_name}'`);
+    if (rk && g.ref != null && normRef(ef(m, rk)) !== normRef(g.ref)) bad.push(`ref '${g.ref}'->'${ef(m, rk)}'`);
+    if (dk && g.date != null && normDate(ef(m, dk)) !== normDate(g.date)) bad.push(`date '${g.date}'->'${ef(m, dk)}'`);
+    return bad;
+  };
+  const onDoc = (m) => {
+    ckDone++;
+    const bad = liveScore(m);
+    if (bad && bad.length) {
+      ckWrong++;
+      const id = (gt[m.original_filename] || {}).id;
+      ckDisagreed.push({ id: Number(id) || 0, text: `${m.original_filename} — ${bad.join(' · ')}` });
+      ckFresh.push(`    #${id} ${m.original_filename} — ${bad.join(' · ')}`);
+    }
+    if (ckDone < ckNext && ckDone !== files.length) return;
+    const line = `[${String(Math.round(100 * ckDone / files.length)).padStart(3)}%] ${ckDone}/${files.length} done · ${ckWrong} disagreeing with their confirmed values`;
+    console.log(line);
+    for (const s of ckFresh) console.log(s);
+    ckFresh = [];
+    while (ckNext <= ckDone) ckNext += CK_STEP;
+    if (ABORT_ON && ckWrong >= ABORT_ON && !aborted) {
+      aborted = true;
+      console.log(`\n!! RR_ABORT_ON=${ABORT_ON} reached (${ckWrong} disagreements) — stopping the run.`);
+      if (ctl.kill) ctl.kill();
+    }
+  };
+
+  const res = await runP(RR, snapObj.args, files, manifest, onDoc, ctl);
 
   const F = ['type', 'supplier', 'ref', 'date', 'total', 'subtotal'];
   const acc = {}; for (const f of F) acc[f] = { ok: 0, n: 0 };
@@ -302,7 +373,32 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   out.push(`(${noFile} confirmed docs had no resolvable file and were skipped.)`);
   if (gtOverrideN) out.push(`(${gtOverrideN} docs used a GT override — poisoned test-session confirmations corrected to the filename true value; see stress_test/gt_overrides.json.)`);
   for (const s of gtOverrideSkipped) out.push(`⚠ ${s}`);
+  if (aborted) {
+    out.push('');
+    out.push(`> # ⛔ ABORTED EARLY — THIS IS NOT A GATE RESULT`);
+    out.push(`> RR_ABORT_ON=${ABORT_ON} stopped the run after ${ckDone} of ${files.length} documents.`);
+    out.push(`> Every number below is computed over that PARTIAL set. It cannot show a pass: the`);
+    out.push(`> documents never processed are absent, not correct. Re-run without RR_ABORT_ON to gate.`);
+  }
   out.push('');
+  // Progress checkpoints: the early-warning lane (see the comment where they are collected). These
+  // are DISAGREEMENTS with the confirmed values, which is a superset of the gate's SILENT-wrong
+  // count — a disagreement that got flagged for review is a correct outcome and is NOT a failure.
+  // The live 10%-checkpoint lines are DELIBERATELY not reproduced here. Shards finish in a
+  // different order every run, so both the per-checkpoint counts and the order of the documents
+  // under them vary between two arms of the SAME code — which made an arm-to-arm diff of this
+  // report unreadable the first time it was used. The live view belongs on the console; the report
+  // gets the same information in a form that diffs: one total, and the documents SORTED by id.
+  if (ckDisagreed.length) {
+    out.push(`## Early-warning disagreements: ${ckDisagreed.length}`);
+    out.push(`type/supplier/ref/date compared against the confirmed values as each document landed.`);
+    out.push(`A SUPERSET of the gate: a disagreement that was correctly flagged for review is not a`);
+    out.push(`failure. The gate numbers are the SILENT wrong values and wrong auto-files below.`);
+    out.push('```');
+    for (const l of ckDisagreed.slice().sort((a, b) => (a.id - b.id))) out.push(`  #${l.id} ${l.text}`);
+    out.push('```');
+    out.push('');
+  }
   out.push('| Field | correct | scored | accuracy |');
   out.push('|---|---|---|---|');
   for (const f of F) out.push(`| ${f} | ${acc[f].ok} | ${acc[f].n} | ${pct(acc[f].ok, acc[f].n)} |`);
@@ -341,5 +437,7 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   fs.writeFileSync(path.join(OUT, 'realdoc_regression.md'), txt);
   console.log(txt);
 
-  if (process.env.GATE === '1' && (silentWrong > 0 || silentAutoFile > 0 || wrongTypeAutoFile > 0)) process.exit(1);   // any SILENT regression, wrong-value OR wrong-TYPE auto-file fails the gate
+  // An ABORTED run fails the gate unconditionally: it is a partial corpus, so "0 wrong" means
+  // "not reached yet", never "clean". Only a complete run can pass.
+  if (process.env.GATE === '1' && (aborted || silentWrong > 0 || silentAutoFile > 0 || wrongTypeAutoFile > 0)) process.exit(1);   // any SILENT regression, wrong-value OR wrong-TYPE auto-file fails the gate
 })();
