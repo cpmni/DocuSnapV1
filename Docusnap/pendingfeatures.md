@@ -15,7 +15,22 @@ Each line was re-verified by reading the source — none is taken from a summary
 biting the owner's current data; **LATENT** = the mechanism is real but nothing on this install
 triggers it yet (still worth fixing, since the owner's ask is forward-looking).
 
-**1. LIVE — landmark starvation, 15 of 33 templates.** Census: landmark-count → templates =
+**1. MOSTLY INERT — landmark starvation, 15 of 33 templates.** (Downgraded 2026-08-08 after 007
+refuted the stated root cause: **13 of the 15 starved templates carry ZERO field mappings**, so
+`_excludeBoxesFor` returned an empty list and the exclusion mechanism never ran on them. The real
+causes are `sample_document_id IS NULL` plus fewer than 3 cross-sample docs for the zero-landmark
+six, and the recurrence/stability/uniqueness stack collapsing for the one-landmark seven — which
+have 6-13 documents of words already banked. SEPARATELY: `registration.MIN_VERIFIABLE_INLIERS = 3`
+means a template with 1-2 landmarks has PERMANENTLY DEAD registration, not degraded — 9 templates /
+202 docs dead, 6 templates / 121 docs never fitted. BUT landmarks feed ONLY Stage-0.5 mapping
+relocation (verified: every consumer), so a template with no mappings pays nothing. Exactly ONE
+template is actually paying today: **tpl 30, Larkspur Interiors PO — 3 mappings, 2 landmarks, 12
+confirmed docs.** The backfill at `templates/handler.js:242-253` is existence-aware
+(`NOT EXISTS ... template_landmarks`), so the seven 1-landmark templates are never revisited; making
+it COUNT-aware would re-derive them from data already in the DB. **DO NOT ship that casually** —
+turning a dead transform live can MOVE taught boxes, which is the documented Castellan mechanism
+that overwrote a correct supplier read on 15 of 22 docs. Flag-gated and measured, or not at all.)
+Census: landmark-count → templates =
 `{0:6, 1:7, 2:2, 3:2, 4:1, 5:15}`. Six templates have ZERO (Copperfield ×2, Ironbridge, Vellum &
 Crane, Thornbury, Stonegate) and therefore no registration fallback at all
 (`registration_enabled=bool(template_landmarks)`). Root: `templates/handler.js:58-67`
@@ -45,16 +60,40 @@ accepts the nearest line and base confidence drops 90 → 78. Root of the miss: 
 no scored contest — while the Review ⊕ tool uses the scored `pickLabelCandidate`
 (`shared/anchorLabel.js:321-341`). Two different pickers; teach has the weaker one.
 
-**4. LATENT — the teach wizard HARDCODES `page_number: 0`** (`teach/renderer.js:~1092`), so teaching
-a value on page 2 stores a page-0 mapping that reads the WRONG PAGE at extraction time. Paired with
-**5**, below. Census: all 38 live mappings are page 0, so nothing is mis-reading today.
+**4. NOT A BUG — a CAPABILITY GAP. The teach wizard is page-1-only.** (Corrected 2026-08-08 after
+gary refuted the first draft of this entry, which claimed the hardcode caused a wrong-page read.)
+`teach/renderer.js:409` resolves `getDocumentPages(...).then(pages => pages[0])` — there is no page
+navigation, so the `page_number: 0` hardcode at `:1092` is TRUTHFUL, not corruption. You cannot teach
+a page-2 value at all. The work item is therefore a FEATURE: render all pages, add navigation, and
+replace the hardcode IN THE SAME COMMIT as the navigation — replacing it alone is a no-op at best.
+It must land AFTER item 5, or an operator who teaches on page 2 cannot verify the mapping in either
+admin surface and will "repair" a correct mapping by redrawing it.
 
-**5. LATENT — "Show where it reads" is silently dead on page 2+.** `template_mapper.py:530` does
+**5. LIVE for two admin surfaces — "Show where it reads" is silently dead on page 2+.** (Upgraded
+from LATENT: the Review wizard `review/renderer.js:7122` and the Settings Template Manager
+`settings/renderer.js:3301/3506/3577` ALREADY SAVE `page_number: currentPage`/`tplCurrentPage`, so
+both can create page-2+ mappings that extract CORRECTLY in production and cannot be previewed at
+all. The teach wizard cannot — see item 4.) `template_mapper.py:530` does
 `page_idx = mapping.page_number or 0; if page_idx >= len(page_images): continue`, while
 `resolve_geometry` (`:592-630`) passes a ONE-element page list. Both callers already send exactly
 the mapping's own page image (`settings/renderer.js` filters to `tplCurrentPage`;
 `review/renderer.js` sets `page_number: currentPage`), so any page-2+ mapping is skipped and the
 operator is told "Anchor not located / nothing read on this page" about a good mapping.
+
+**6b. LIVE — the free-text guards are armed on the WRONG predicate, and one is fully dead.**
+(Added 2026-08-08 from gary's review; my first mechanism was refuted — the truthy `val_type` does
+NOT come from `_TYPE2VAL`, which deliberately omits text/multiline_text. It comes from the SHIPPED
+config: `keyword_patterns.json` carries `"validation":"text"` on `supplier_name`:205,
+`customer_name`:246, `payment_terms`:405, `buyer_name`:549 and `"multiline_text"` on
+`supplier_address`:631, `customer_address`:646. Those SIX shipped keys are the whole affected set.)
+`template_mapper.py:814/:820/:834` arm the OCR-debris guard, the name-quality guard and a conf floor
+with `if not val_type`, while the sibling cap at `:878` correctly uses
+`val_type in (None,'text','multiline_text')`. So those six BUILT-IN keys skip all three, while every
+CUSTOM text field (`val_type` None) gets all three — the inversion, and it is the opposite way round
+from what I first reported. **`val_type='text'` is the least-guarded state in the system** — weaker
+than None, since `validation_patterns` has no `text` key either. Headline: `is_name_like_field` fires
+on exactly `supplier_name`/`customer_name`/`buyer_name`/`*_address`, so **the name-quality guard is
+dead for its entire intended population at Stage 0.5** while Stage 2 applies it to the same keys.
 
 **6. LATENT — most data types have no Stage-1 reader, and picking the RIGHT type makes it worse.**
 `keyword.extract_fields` (`:942-945`) skips a field with no `field_patterns` entry;
