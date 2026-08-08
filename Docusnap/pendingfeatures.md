@@ -307,8 +307,19 @@ role never reaches Stage 0.5 at all — only the key SPELLING does.
 > `address`, `number`, `no`, `account`, `vat` — so a field labelled "Email" with `party` would
 > REFUSE to read `Email Address: info@acme.co.uk`, its single most common printed caption. Same for
 > Website and for Account typed `reference_code`. Absent `role_caption` is the design; the
-> fail-toward-review rail is `trust.js` `STRICT_TYPES` (`:86-89`), which already re-validates
-> email/postcode/percentage/number/reference_code/iban/vat_gb on the sub-100 auto-file path.
+> ~~fail-toward-review rail is `trust.js` `STRICT_TYPES` (`:86-89`), which already re-validates
+> email/postcode/percentage/number/reference_code/iban/vat_gb on the sub-100 auto-file path.~~
+>
+> > **← THAT RAIL CLAIM IS FALSE. Struck 2026-08-08 on Oracle's BLOCKING condition B2, and it was
+> > the ship-blocker for the whole slice.** `STRICT_TYPES` re-validation checks **FORM**
+> > (`trust.js:541-566`). The Population-A failure is a perfectly well-FORMED value from the WRONG
+> > PARTY — the issuer's email IS a valid email, the letterhead postcode IS a valid postcode — so it
+> > passes `_matchesTypePattern` and auto-files. Worse: a strict-typed field hits `continue` at
+> > `trust.js:567` and therefore **never reaches** the cold-scope `unverifiable-value` block at
+> > `:586`. The code I cited as the rail is the exact path that guarantees a wrong-party value files
+> > SILENTLY. **reggie's Rule C1 is the rail, and there is no second one** — which is why C1 is
+> > BLOCKING rather than a refinement. (reggie half-saw this — "the shape gate cannot help" — but
+> > the two advisors' positions were never reconciled; Oracle found the seam between them.)
 >
 > **THE SEAM, and it must be an owner-visible decision rather than a silent side effect:** a
 > newly-seeded read at 80 becomes an INCUMBENT. A fresh passive anchor scores 78 at usage_count 1
@@ -391,7 +402,66 @@ role never reaches Stage 0.5 at all — only the key SPELLING does.
 > `TEMPLATE_FORMAT_FAIL_YIELD` before either flips: it is inert on typed custom fields today only
 > because they have no keyword challenger, and this fix gives them one.
 
-**Also confirmed:** `template_field_mappings.ocr_type` is written by three UI surfaces with three
+> ## ORACLE VERDICT 2026-08-08 on the above consensus: **SEND BACK** — do NOT build it as specified
+>
+> Three reasons, each verified against the code rather than taken from the advisors: the consensus
+> contains a **direct contradiction** between gary's point 1 and reggie's live defect 3; its named
+> fail-safe rail is **false for its most dangerous population** (struck above, B2); and the seam
+> gate gary makes mandatory is **structurally vacuous on both corpora** — the same trap he correctly
+> caught on the recall lane.
+>
+> **The earlier "DO NOTHING" is DISCHARGED for the recall lane** — "zero live bite" is still true as
+> fact but no longer decides, because `guessType` makes the hole forward-facing. Proceed, but not as
+> designed.
+>
+> **BLOCKING conditions before this can be built:**
+> - **B1** — reggie's Rule C1 (qualified caption for the five contact types) and C2
+>   (`directions:["right"]` only) ship as PART OF THE DESIGN, not as options.
+> - **B2** — delete the false rail claim. **Done above.**
+> - **B3** — `role_caption` is PER-FAMILY, not blanket-absent. Absent for
+>   email/website/postcode_uk/vat_gb/iban/percentage/number/currency; **`'ref'` for `reference` and
+>   `reference_code`**. The blanket-absent design throws away a live guard: `'ref'` routes to
+>   `_ref_caption_party_conflict` (`keyword.py:1477`), which inspects the word BEFORE the caption —
+>   harmless to "Account No: 12345", fatal to "Customer Account 12345". Without it a custom
+>   `reference` field gets WEAKER guards than the built-in `account_no`, which is the owner's
+>   complaint inverted yet again.
+> - **B4** — close the incumbent seam BY CONSTRUCTION, do not merely measure it. Mark the new seeds
+>   (`seeded_label`) and add one rule inside the flag at `engine.py:5793`: a seeded-label keyword
+>   incumbent never displaces an anchor-family candidate carrying a `validation_note` — keep the
+>   anchor AND the note. Oracle traced this narrower and worse than gary stated: `is_taught_override`
+>   does not require `authoritative`, so taught reads are safe, but the classes that DO lose are
+>   exactly the capped-and-noted ones (`anchor_crop_slipfix` ≤70, `_recovered`, `_crosscheck`), and
+>   at `:5793` the loser is discarded WHOLE — value, note and all. The valve is PRE-EXISTING, so file
+>   the same exposure on the shipped 2026-07-10 seeds as a separate un-flipped item; do not widen it
+>   silently here.
+> - **B5** — resolve the contradiction explicitly. **Ruling: narrow reggie's defect 3 to the
+>   VALIDATION KEY only** — the DB type may override `validation` when strictly tighter, while
+>   captions, directions and `role_caption` stay as the role branch produces them. Under reggie's
+>   blanket flip, `vat_no` loses the ref bank and `role_caption='ref'` and is then REFUSED a seed
+>   entirely by C1 ("VAT No" is two generic tokens), and `account_no` loses
+>   `_ref_caption_party_conflict` — both currently-shipping lanes.
+> - **B6** — enumerate the seeded type set in code as a frozenset the pins assert against. If
+>   `mac_address`/`ip_address` are in it, fix the unanchored-bleed anomaly FIRST: their patterns are
+>   `\b`-bounded not `^…$`, so `_validate` passes on a substring and nothing extracts it, committing
+>   `"192.168.1.200  Server rack 4"` verbatim.
+>
+> **GATE (additions to gary's):** **G2 is the one the plan was missing** — the generator must plant,
+> on ≥1 of the eight new fields, a learned anchor whose read lands in the capped-and-noted class,
+> or the `anchor*→keyword` note-drop counter is 0 on both arms whatever the code does (realdoc seeds
+> nothing new; the synthetic corpus has no anchors at all). **G6** — report the auto-file count SPLIT
+> by STRICT vs non-STRICT type, or the two opposite effects cancel and the metric lies: `reference`
+> (the type `guessType` picks most often) is NOT strict so it takes the cold-scope drag, while
+> email/postcode/vat/iban/percentage ARE strict so they take the silent-wrong risk instead.
+>
+> **Owner-facing framing Oracle asked for:** where a seed cannot be made safe (a bare "Email" or
+> "VAT Number"), **staying empty and teach-only is the correct customer outcome, not a regression.**
+> A field that reads nothing is understandable; the supplier's own email silently filling the
+> customer-email field on every document is the one outcome the user cannot detect or undo.
+
+**~~Also confirmed:~~ SHIPPED 2026-08-08 (`2a85838`) — `ocr_type` is RETIRED from the UI (owner
+decision: wire it or delete it → deleted; the DB column stays, defaulted, and the dev CLI
+`test_mapping.py` was repointed to the field's real declared type rather than orphaned; pinned in
+`src/windows/test_ocr_type_retired.js`).** It was written by three UI surfaces with three
 different vocabularies and read by ZERO production code (`grep ocr_type python_backend/` finds only
 tests and the dev CLI `test_mapping.py:75-80`) — production `val_type` comes from
 `engine._seed_field_patterns(base, field_defs)` keyed on the TYPE's field definitions. Owner

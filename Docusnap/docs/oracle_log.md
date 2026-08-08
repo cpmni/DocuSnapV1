@@ -1245,3 +1245,73 @@ refusal there blocks Confirm and rolls the document back to `needs_review`), C5,
 recorded in `SECURITY_BACKLOG.md` and pointed to from `pendingfeatures.md`. His manual gate — plant
 a junction, request a NON-EXISTENT leaf through it, see whether Explorer opens the target — remains
 the honest end-to-end check and has not been run on a real desktop session.
+
+---
+
+## 2026-08-08 — Stage-1 data-type coverage (`SEED_TYPED_FIELD_LABELS`), vetting gary + reggie
+
+**In:** the owner's requirement "all data types, not a subset · custom must detect the same as
+built-in · keywords 100%". gary (Python design + tests) and reggie (regex/validation precision)
+agreed on: extend only the fall-through branch; single-source the type→validation map in a new
+`extraction/field_types.py` re-exported by `engine._TYPE2VAL` by object identity; `role_caption`
+ABSENT on the new typed seeds (both reached this independently, via `_PARTY_FOLLOW_STOP`); gate
+Stage 1 for the structured types; flag default OFF; split currency out; build the corpus fixture
+first. Also asked him to revisit his OWN earlier "DO NOTHING" on this flag, and to rule on a default
+I had already shipped.
+
+**Verdict: SEND BACK** for the widening · **default ON GRANTED** for `TEACH_LABEL_PICK` with two
+conditions · **SIGN OFF** on both live pattern defects, to ship separately and first.
+
+**Added value? YES — and this is the strongest case in the log for running him on a CONSENSUS
+rather than a single proposal, because every one of his three ship-blockers lives BETWEEN the two
+advisors rather than inside either.**
+
+- **He found a DIRECT CONTRADICTION the brief listed as "agreed".** gary: leave the date/ref role
+  branches untouched, which keeps `vat_no`/`account_no` byte-identical. reggie: DB type wins for the
+  11 structured types. Under reggie's flip `vat_no` loses the ref caption bank AND `role_caption`,
+  and is then refused a seed outright by reggie's own Rule C1 ("VAT No" = two generic tokens);
+  `account_no` loses `_ref_caption_party_conflict`. Both are shipping lanes. Ruling: narrow the flip
+  to the VALIDATION KEY only.
+- **He falsified the consensus's named fail-safe rail — my write-up's, in `pendingfeatures.md`.**
+  "STRICT_TYPES is the rail" is FORM checking; the Population-A failure is a well-FORMED value from
+  the WRONG PARTY, so it passes `_matchesTypePattern` and files. And a strict-typed field hits
+  `continue` at `trust.js:567`, so it never reaches the cold-scope `unverifiable-value` block at
+  `:586`. The cited rail is the exact path that guarantees the wrong value files SILENTLY. Struck
+  from the backlog on his condition B2.
+- **He caught that gary's mandatory seam gate is VACUOUS** — the same trap gary had correctly caught
+  on the recall lane, one level up. realdoc seeds nothing new (the audit's own census says so) and
+  the synthetic corpus has no learned anchors, so the `anchor*→keyword` note-drop counter reads 0 on
+  both arms whatever the code does. Hence G2: plant a capped-and-noted anchor in the generator, or
+  the gate is a green test that cannot reproduce its bug.
+- **He inverted my proposed partition.** I asked whether the auto-file drag plus C1 meant dropping
+  the flag-only half. No: the dangerous population and the drag population are DISJOINT —
+  `reference` (the type `guessType` picks most often) is not strict so it takes the cold-scope drag;
+  email/postcode/vat/iban/percentage are strict so they take the silent-wrong risk. A single blended
+  auto-file metric shows them cancelling and reads as "no change". Hence G6, split reporting.
+- **He rejected the blanket `role_caption: None` both advisors agreed on**, for `reference` /
+  `reference_code`: `'ref'` routes to a DIFFERENT guard (`_ref_caption_party_conflict`, which
+  inspects the word BEFORE the caption) that `_PARTY_FOLLOW_STOP` reasoning does not apply to.
+  Without it a custom `reference` field gets WEAKER guards than the built-in `account_no` — the
+  owner's own complaint, inverted again.
+- **On the incumbent seam he was narrower AND more alarming than gary:** taught reads are safe
+  (`is_taught_override` does not require `authoritative`), but the classes that lose are exactly the
+  capped-and-noted ones, and the loser is discarded WHOLE at `engine.py:5793` — value, note and all.
+  Remedy: close it by construction inside the flag, and file the pre-existing exposure separately
+  rather than widening it silently.
+- **He discharged his own earlier DO NOTHING**, explicitly and with a reason: "zero live bite"
+  remains true but no longer decides, because `guessType` auto-selects the broken types from the
+  label, so a user is given one without choosing.
+
+**On the TEACH_LABEL_PICK default he did the thing that makes him worth running:** he went looking
+for the regression that would have made my reasoning wrong — that a both-suspicious pick returning
+`direction:null` downgrades a garbled-but-present label into a phantom anchor, i.e. WORSENS the very
+audit item the commit fixes — and REFUTED it at source (`showValueConfirm` already nulls a
+suspicious `anchor_text` before commit). He then found a real, smaller one I had missed: the
+`direction:null` path substituted a synthetic 0.12-page strip for a box the code had actually
+located, which is worse geometry for the stored offset and relocation. Fixed as T1 (`b41cad6`),
+along with T2, the now-false "teach does NOT share this picker" comment in the shared module.
+
+**Outcome:** widening NOT built; B1–B6 and G2/G6 recorded in `pendingfeatures.md`. Both pattern
+defects shipped (`c15f679`) — and the JS pin written for them caught a gap in my own IPv6 fix that
+the Python `re.search` assertion had waved through. T1/T2 shipped (`b41cad6`). `ocr_type` retired
+(`2a85838`) and `delivery_number` retyped (`3dc162c`) as owner decisions.
