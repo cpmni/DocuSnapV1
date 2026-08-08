@@ -1216,17 +1216,12 @@
                       <label>Anchor text</label>
                       <input type="text" id="tpl-map-anchor-text" placeholder="auto-detected" style="width:220px;" title="Label text to find on the document — auto-filled from drawn box">
                     </div>
-                    <div class="form-group">
-                      <label>OCR type</label>
-                      <select id="tpl-map-ocr-type" class="field-select" title="Expected value format — affects post-processing">
-                        <option value="text">Text</option>
-                        <option value="number">Number</option>
-                        <option value="date">Date</option>
-                        <option value="currency">Currency</option>
-                        <option value="alphanumeric">Reference</option>
-                        <option value="reference_code">Reference code</option>
-                      </select>
-                    </div>
+                    <!-- The "OCR type" select was removed 2026-08-08 (owner decision). Its title
+                         claimed it affected post-processing; it did not. It wrote
+                         template_field_mappings.ocr_type, which NO production code reads — the
+                         value format comes from engine._seed_field_patterns, keyed on the document
+                         TYPE's field definitions. Three surfaces offered three different
+                         vocabularies for it and none changed a read. -->
                     <div class="form-group">
                       <label>Expansion</label>
                       <div class="conf-row">
@@ -1282,7 +1277,7 @@
               <p class="section-desc">Click a row to edit. The “Last test” column shows the raw mapped read; the filed value (Review/Search) is normalised later (spacing, date format).</p>
               <table class="fields-table" id="tpl-mappings-table">
                 <thead>
-                  <tr><th>Field</th><th>Anchor label</th><th>OCR type</th><th>Search expansion</th><th>Last test</th><th>Enabled</th></tr>
+                  <tr><th>Field</th><th>Anchor label</th><th>Search expansion</th><th>Last test</th><th>Enabled</th></tr>
                 </thead>
                 <tbody id="tpl-mappings-tbody"></tbody>
               </table>

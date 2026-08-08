@@ -6606,7 +6606,6 @@ function captureWizardDraft(key) {
     fixedMode:   !!wizard.fixedMode,
     fixedValue:  document.getElementById('wiz-fixed-value')?.value || '',
     anchorText:  document.getElementById('wiz-anchor-text')?.value || '',
-    ocrType:     document.getElementById('wiz-ocr-type')?.value || 'text',
     draftAnchor: wizard.draftAnchor ? { ...wizard.draftAnchor } : null,
     draftTarget: wizard.draftTarget ? { ...wizard.draftTarget } : null,
   };
@@ -6654,7 +6653,6 @@ function loadWizardField(i) {
   const f = wizard.fields[wizard.index];
   const fixedInput  = document.getElementById('wiz-fixed-value');
   const anchorInput = document.getElementById('wiz-anchor-text');
-  const ocrInput    = document.getElementById('wiz-ocr-type');
 
   // Restore priority: in-session DRAFT (unsaved edits) > saved FIXED value >
   // saved BOXES (this page) > empty. So you always see what's there + don't lose
@@ -6666,12 +6664,11 @@ function loadWizardField(i) {
     wizard.fixedMode    = draft.fixedMode;
     fixedInput.value    = draft.fixedValue;
     anchorInput.value   = draft.anchorText;
-    ocrInput.value      = draft.ocrType;
     wizard.draftAnchor  = draft.draftAnchor ? { ...draft.draftAnchor } : null;
     wizard.draftTarget  = draft.draftTarget ? { ...draft.draftTarget } : null;
   } else if (savedFixed != null && savedFixed !== '') {
     wizard.fixedMode = true; fixedInput.value = savedFixed;
-    anchorInput.value = ''; ocrInput.value = 'text';
+    anchorInput.value = '';
   } else if (saved && saved.anchor_x_norm != null && saved.target_x_norm != null
              && (saved.page_number || 0) === currentPage) {   // box belongs to this page
     wizard.fixedMode = false; fixedInput.value = '';
@@ -6679,10 +6676,10 @@ function loadWizardField(i) {
                            w_norm: saved.anchor_w_norm, h_norm: saved.anchor_h_norm };
     wizard.draftTarget = { x_norm: saved.target_x_norm, y_norm: saved.target_y_norm,
                            w_norm: saved.target_w_norm, h_norm: saved.target_h_norm };
-    anchorInput.value = saved.anchor_text || ''; ocrInput.value = saved.ocr_type || 'text';
+    anchorInput.value = saved.anchor_text || '';
   } else {
     wizard.fixedMode = false; fixedInput.value = '';
-    anchorInput.value = ''; ocrInput.value = 'text';
+    anchorInput.value = '';
   }
 
   wizard._loadedKey = f.key;
@@ -6901,7 +6898,6 @@ document.getElementById('wiz-show-resolved')?.addEventListener('click', async ()
     target_w_norm: wizard.draftTarget.w_norm, target_h_norm: wizard.draftTarget.h_norm,
     offset_dx_norm: wizard.draftTarget.x_norm - wizard.draftAnchor.x_norm,
     offset_dy_norm: wizard.draftTarget.y_norm - wizard.draftAnchor.y_norm,
-    ocr_type:       document.getElementById('wiz-ocr-type').value,
     search_expansion: 0.04, enabled: true,
   };
   let out = {};
@@ -7125,7 +7121,6 @@ async function wizardSave() {
         anchor_w_norm: wizard.draftAnchor.w_norm, anchor_h_norm: wizard.draftAnchor.h_norm,
         target_x_norm: wizard.draftTarget.x_norm, target_y_norm: wizard.draftTarget.y_norm,
         target_w_norm: wizard.draftTarget.w_norm, target_h_norm: wizard.draftTarget.h_norm,
-        ocr_type:         document.getElementById('wiz-ocr-type').value,
         search_expansion: 0.04,
         enabled:          true,
       };

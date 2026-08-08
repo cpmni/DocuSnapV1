@@ -3374,6 +3374,22 @@ async function autoDetectAnchorText(rect) {
 
 // ── Mapping editor (Phase 2) ─────────────────────────────────────────────────
 
+// The field's REAL declared data type, for the "Test" preview. This replaced the mapping's
+// `ocr_type` when that column was deleted (2026-08-08, owner decision) — and it is strictly more
+// correct than what it replaced: test_mapping.py feeds this into the SAME
+// engine._seed_field_patterns the pipeline uses, so the preview now gates on the type the document
+// type actually declares rather than on a per-mapping value three UI surfaces wrote with three
+// different vocabularies and no production code ever read. Defensive: any lookup miss falls back
+// to 'text', which is what an absent ocr_type resolved to anyway.
+function tplFieldTypeFor(key) {
+  try {
+    const slug = (selectedTemplate && (selectedTemplate.document_type_slug || selectedTemplate.slug)) || null;
+    const dt   = slug ? (allTypesWithFields || []).find(t => t.slug === slug) : null;
+    const f    = dt && (dt.fields || []).find(x => x.key === key);
+    return (f && f.type) ? f.type : 'text';
+  } catch { return 'text'; }
+}
+
 async function populateMapFieldSelect(detail) {
   if (!allTypesWithFields.length) {
     try { await loadDocTypes(); } catch (e) { console.warn('loadDocTypes (for mapping fields) failed:', e.message); }
@@ -3441,7 +3457,6 @@ function loadMappingIntoEditor(fieldKey) {
       page_number: existing.page_number || 0,
     };
     document.getElementById('tpl-map-anchor-text').value = existing.anchor_text || '';
-    document.getElementById('tpl-map-ocr-type').value    = existing.ocr_type || 'text';
     const pct = Math.round((existing.search_expansion ?? 0.04) * 100);
     document.getElementById('tpl-map-expansion').value     = pct;
     document.getElementById('tpl-map-expansion-val').textContent = pct + '%';
@@ -3456,7 +3471,6 @@ function loadMappingIntoEditor(fieldKey) {
     tplDraftAnchor = null;
     tplDraftTarget = null;
     document.getElementById('tpl-map-anchor-text').value = '';
-    document.getElementById('tpl-map-ocr-type').value    = 'text';
     document.getElementById('tpl-map-expansion').value     = 4;
     document.getElementById('tpl-map-expansion-val').textContent = '4%';
     document.getElementById('tpl-map-enabled').checked   = true;
@@ -3509,7 +3523,6 @@ document.getElementById('tpl-btn-save-mapping').addEventListener('click', async 
     anchor_w_norm: tplDraftAnchor.w_norm, anchor_h_norm: tplDraftAnchor.h_norm,
     target_x_norm: tplDraftTarget.x_norm, target_y_norm: tplDraftTarget.y_norm,
     target_w_norm: tplDraftTarget.w_norm, target_h_norm: tplDraftTarget.h_norm,
-    ocr_type:         document.getElementById('tpl-map-ocr-type').value,
     search_expansion: parseInt(document.getElementById('tpl-map-expansion').value, 10) / 100,
     enabled:          document.getElementById('tpl-map-enabled').checked,
   };
@@ -3582,9 +3595,10 @@ document.getElementById('tpl-btn-test-mapping').addEventListener('click', async 
       target_w_norm: tplDraftTarget.w_norm, target_h_norm: tplDraftTarget.h_norm,
       offset_dx_norm:   tplDraftTarget.x_norm - tplDraftAnchor.x_norm,
       offset_dy_norm:   tplDraftTarget.y_norm - tplDraftAnchor.y_norm,
-      ocr_type:         document.getElementById('tpl-map-ocr-type').value,
       search_expansion: parseInt(document.getElementById('tpl-map-expansion').value, 10) / 100,
       enabled:          true,
+      // Preview-only, never persisted: test_mapping.py seeds the credibility pattern from this.
+      field_type:       tplFieldTypeFor(tplEditingFieldKey),
     };
 
     // The extractor relocates the anchor and derives the target itself, so send
@@ -3648,7 +3662,6 @@ function renderMappingsTable(detail) {
     tr.innerHTML = `
       <td><span class="field-key">${escHtml(m.field_key)}</span></td>
       <td>${escHtml(m.anchor_text || '—')}</td>
-      <td>${escHtml(m.ocr_type)}</td>
       <td>${Math.round((m.search_expansion || 0) * 100)}%</td>
       <td>${lastTest}</td>
       <td>${m.enabled ? 'Yes' : 'No'}</td>

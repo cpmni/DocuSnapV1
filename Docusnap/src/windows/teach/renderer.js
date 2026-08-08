@@ -278,25 +278,14 @@ async function commitTypeChoice(){
   return true;
 }
 
-// Role-aware ocr_type seeding (Oracle NIGHT 2026-08-03, item c — the :999 'text'-default bug).
-// Role beats type (structural ref/date roles are frequently typed 'text' in the DB — the
-// engine._seed_field_patterns docstring case); vocabulary mirrors _TYPE2VAL so the stored value
-// is directly consumable. Flag-only supplementary types deliberately stay 'text' (they are
-// review-not-reject by design — do not invent gates for them). NOTE: ocr_type is currently
-// production-INERT for extraction (val_type comes from field_patterns) — this buys harness/
-// display truth and a correct value for any future consumer.
-const OCR_TYPE_BY_FIELD_TYPE = {
-  date:'date', currency:'currency', amount:'currency', number:'currency',
-  alphanumeric:'alphanumeric', reference:'alphanumeric',
-  reference_code:'reference_code', job_reference:'job_reference',
-  currency_code:'currency_code',
-};
-function ocrTypeFor(f){
-  if (f.key === state.dateFieldKey) return 'date';
-  if (f.key === state.refFieldKey)
-    return (String(f.type||'').toLowerCase()==='reference_code') ? 'reference_code' : 'alphanumeric';
-  return OCR_TYPE_BY_FIELD_TYPE[String(f.type||'').toLowerCase()] || 'text';
-}
+// `ocrTypeFor` / OCR_TYPE_BY_FIELD_TYPE lived here until 2026-08-08 (owner decision: wire ocr_type
+// or delete it — deleted). It computed a role-aware value for `template_field_mappings.ocr_type`,
+// which NO production code reads: extraction's `val_type` comes from
+// `engine._seed_field_patterns(base, field_defs)`, keyed on the document TYPE's field definitions,
+// and the only consumers of the column were the dev CLI and a harness. Its own comment already
+// said as much ("production-INERT for extraction"). The seeding was Oracle-signed in 2026-08-03 as
+// a correctness improvement to a stored value, so removing it undoes nothing that ever affected a
+// read — it removes the last reason to believe the column meant something.
 
 // ── Step 3: region selection ─────────────────────────────────────────────────
 // Two box kinds per field, drawn in the SAME normalised (0-1 of the page) coords
@@ -1286,7 +1275,6 @@ async function doCommit(){
         field_key:f.key, page_number:Number.isInteger(r.page)?r.page:0, anchor_text:r.anchor_text||null,
         anchor_x_norm:a.x, anchor_y_norm:a.y, anchor_w_norm:a.w, anchor_h_norm:a.h,
         target_x_norm:r.target.x, target_y_norm:r.target.y, target_w_norm:r.target.w, target_h_norm:r.target.h,
-        ocr_type: ocrTypeFor(f),
         search_expansion:0.04, enabled:1,
       });
     }

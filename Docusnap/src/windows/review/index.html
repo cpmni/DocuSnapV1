@@ -1000,14 +1000,11 @@
         <div class="wiz-row" id="wiz-anchor-block">
           <span class="wiz-label">Anchor label</span>
           <input type="text" id="wiz-anchor-text" placeholder="e.g. Invoice Number">
-          <select id="wiz-ocr-type" style="margin-top:2px;">
-            <option value="text">Text</option>
-            <option value="number">Number</option>
-            <option value="date">Date</option>
-            <option value="currency">Currency</option>
-            <option value="alphanumeric">Reference</option>
-            <option value="reference_code">Reference code</option>
-          </select>
+          <!-- The "OCR type" select was removed 2026-08-08 (owner decision). It wrote
+               template_field_mappings.ocr_type, which NO production code reads: the value format
+               used by extraction comes from engine._seed_field_patterns, keyed on the document
+               TYPE's field definitions. Three surfaces offered three different vocabularies for
+               this and none of them changed a single read. See templates.js / migration note. -->
           <div class="wiz-draw-row">
             <button class="btn" id="wiz-draw-anchor" data-help-key="draw-anchor">Draw anchor</button>
             <button class="btn" id="wiz-draw-target" data-help-key="draw-target">Draw target</button>
