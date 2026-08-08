@@ -6,6 +6,81 @@
 
 ---
 
+## 2026-08-08 OVERNIGHT — teach-side run: designed-but-NOT-built slices (advisors eric / gary / reggie)
+
+Context: `HANDOVER_2026-08-08_OVERNIGHT.md`, branch `feat/teach-side-overnight`, commit `4e5c21c`.
+Three fixes shipped dark and measured; these are the slices the same designs produced that were NOT
+built. Each already carries its design, so none needs re-deriving.
+
+- **`serials` is a CAPABILITY GAP, not a bug — a multi-value field type.** Ground truth for serials
+  is a LIST (`['CT-3766614','CT-7446380']`); one drawn box cannot capture a variable-length list and
+  the whole `template_fields`/`fixed_value` model is single-valued. Scored 0% and will stay 0% until
+  there is a repeat-region read + a multi-value field type + a scoring convention. Do NOT fold this
+  into a freeze or geometry slice — it rides alone. (eric.)
+
+- **Teach-time TYPE DIVERGENCE caution (gary slice 2).** The taught document already carries the
+  pipeline's own answer in `documents.document_type_id`, and the wizard never compares its type
+  choice to it (`src/windows/teach/renderer.js:202-233`, `doCommit :1244-1288`). Pre-select the
+  detected type's card; if the operator picks another, warn once — *"This document was recognised as
+  a Sales Order. If you teach it as an Order Confirmation, documents like it will keep being
+  recognised as Sales Orders and this layout may not be used again."* **Warn, never block.** Extract
+  the predicate into a loadable module so it is unit-testable rather than living in the renderer.
+
+- **"Taught but never used" DETECTOR (gary slice 3).** The night's worst finding was silent: two
+  teaches completed and were never applied, with no signal anywhere. Tier A = the divergence check
+  above, re-evaluated at commit into the existing `#done-warn` slot. Tier B = a pure DB predicate —
+  a template with >=1 `template_field_mappings` row whose `confirmed_count` has not grown while >=3
+  documents since its creation carry a logo inside its hash band yet `template_id IS NULL`. Surface
+  as a per-template badge in Settings -> Templates, plus one line on the import-results view. NOT a
+  modal and NOT a per-document customer notice (`feedback_minimal_interaction_autofile`).
+  **Check first:** `engine.py:7221-7233` already writes *"Couldn't match this document to the
+  supplier's saved <Type> layout"*. If that note is on all 35 orphaned docs, the deliverable is
+  AGGREGATION and PLACEMENT, not new copy.
+
+- **`templates.retargetType(db, templateId, newSlug)` (gary slice 4).** A template's type binding is
+  immutable (`templates.js:1069` takes no slug), so a mis-bound teach strands its mappings,
+  landmarks and logo set permanently — re-teaching is the only recovery. Admin, audited, reversible,
+  link-only. **Precondition that must be enforced:** every mapped `field_key` must exist on the
+  target type or the mappings become silently unread orphans — refuse and name the offending keys.
+  Manual and consented ONLY; an automatic retarget is the type gate's inverse and lets a wrong-type
+  sibling capture a template.
+
+- **Issuer confirmation on the teach summary step.** `'Neltrix Automotive Parts'` — the issuer was
+  learned from an OCR misread at teach time and is now both the stored identity and the
+  learning-scope key (`field_anchors.supplier_name`, `supplier_hints.supplier_name`, the filing
+  folder), and `reuseByEstablishedName` matches EXACTLY, so a later correct confirm mints a SECOND
+  template rather than reusing. At teach time the system is structurally defenceless — the
+  dominant-value snap needs a >=5-count confirmed literal and there is exactly one confirm — so the
+  only correct layer is the operator. The issuer row must be explicitly confirmed/editable, not one
+  12px grey row among ten (`teach/renderer.js:1228-1243`). One keystroke buys back an unrecoverable
+  scope. **Ship this WITH any fix that makes a taught template reach more documents** — otherwise a
+  bad teach applies its wrong scope to more siblings, not fewer.
+
+- **`SEED_TYPE_TIGHTENS_VALIDATION` (reggie D1-B, Oracle B5 already ruled the shape).** `vat_no` and
+  `account_no` have no shipped pattern, so both are seeded `alphanumeric` via `_infer_validation`
+  BEFORE the DB type is consulted — which is why `VXS79871` commits into a VAT field at 85 while the
+  Review window's on-blur check (which DOES use the DB type) warns on the same value. The DB type
+  may override the seeded `validation` **when strictly tighter**, with captions, directions and
+  `role_caption` untouched. Needed for the cases where the theft is a DIFFERENT wrong value rather
+  than a duplicate — the exclusivity pass shipped tonight cannot see those.
+
+- **`REF_CAPTION_ROLE_STOP` (reggie D1-C).** `_ref_caption_party_conflict` blocks PARTY words
+  (`customer/your/supplier/...`) before a bare `Ref`, but not document-ROLE qualifiers, so
+  `Order Ref` still feeds a generic-caption steal at the occurrence. Add
+  `{order, invoice, delivery, despatch, job, quote, credit, contract, docket, consignment}`.
+  Only if the shipped exclusivity pass leaves residual steals.
+
+- **`TEMPLATE_FREEZE_ISSUER_ONLY` — shipped OFF, flip REFUTED, revisit only with a measurement.**
+  See the handover: unfreezing moved `po_ref` 35->50% but `vat_no` 51->16%. If it is ever revisited,
+  the honest variant is eric's evidence-gated one — freeze only what >=N distinct confirmed
+  documents agree is constant — which needs `_fieldsWithMultipleConfirmedValues`
+  (`review/handler.js:1314`) re-scoped from doc-TYPE to (supplier, type) first, plus a self-vote
+  exclusion (`extraction_method='template_fixed'`) or it can never disarm. Both capped/noted-stamp
+  variants were considered and are DOMINATED — a note makes the doc ineligible for auto-file
+  anyway (`trust.js:678`), and a sub-88 cap does not block auto-file for non-role keys, so it
+  creates a NEW silent-wrong path.
+
+---
 ## 2026-08-08 — OWNER-REPORTED (mid teach-run): a taught document has no field for something the TYPE defines — "Not needed on this doc"
 
 **Symptom, in the owner's words.** Teaching a *tax invoice* as an Invoice: the type carries a
