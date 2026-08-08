@@ -608,7 +608,11 @@ const PRESET_CATALOG = [
         labels: ['Delivered By', 'Despatched By', 'Dispatched By'] },
       { key: 'customer_name',   label: 'Customer',          type: 'text', required: 0,
         labels: ['Deliver To', 'Delivery To', 'Ship To', 'Consignee'] },
-      { key: 'delivery_number', label: 'Delivery Number', type: 'text', required: 1,
+      // reference_code, not text: it is a CODE and must carry at least one digit. `text` has no
+      // validation_patterns entry and is not in trust.js STRICT_TYPES, so a text-typed delivery
+      // number had no format gate at all — which is how the caption 'Delivery' was stored as one
+      // and auto-filed. Migration 59 retypes existing installs; see the note there.
+      { key: 'delivery_number', label: 'Delivery Number', type: 'reference_code', required: 1,
         labels: ['Delivery No', 'Delivery Number', 'Delivery Note No', 'DN No', 'Despatch No', 'Dispatch No', 'Docket No', 'Note No'] },
       { key: 'delivery_date',   label: 'Delivery Date',   type: 'date', required: 1 },
     ],

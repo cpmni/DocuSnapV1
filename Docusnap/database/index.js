@@ -1203,6 +1203,44 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 58 applied: templates.sample_deskew_angle (teach-frame tilt for level-frame composition; NULL-inert)');
   }
 
+  // Migration 59: delivery_number is a CODE, not free text — owner decision 2026-08-08.
+  // The field shipped as type 'text', and `text` is the least-gated state in the system: there is
+  // no `validation_patterns.text` at all, and `text` is not in trust.js STRICT_TYPES, so the field
+  // had NO type-keyed format gate anywhere. That is how the caption 'Delivery' came to be stored as
+  // a delivery number and auto-filed. Measured on the live install before changing anything: of 126
+  // distinct delivery_number values, exactly ONE has no digit — 'Delivery', 5 occurrences, i.e. the
+  // bug itself. Every other value (DN-98447, PD267010, …) carries digits, so `reference_code`
+  // (which requires at least one digit) withholds precisely the defect class and nothing else.
+  //
+  // SCOPE — this deliberately does NOT change extraction, and that was verified rather than
+  // assumed. Stage 1 keeps reading via the SHIPPED `field_patterns.delivery_number` entry, whose
+  // `validation` stays `alphanumeric`; `engine._seed_field_patterns` skips any key already present
+  // in the shipped config, so Stage 0.5/2 `val_type` is unchanged too. What moves is the
+  // TYPE-keyed gate at the filing boundary: `reference_code` IS in trust.js STRICT_TYPES (pinned in
+  // test_scope_trust.js), so a digit-free read now returns `invalid-type:delivery_number` and is
+  // routed to review instead of auto-filed, and the Review on-blur validator warns on it.
+  // `process_docs.py` coerces the ref-role field's type only when it is 'text'/empty, so this
+  // stronger type survives that coercion rather than being overwritten by it.
+  //
+  // Applied as a MIGRATION rather than through updateField because delivery_number is the Delivery
+  // Note's structural ref role, and structural fields are retype-blocked server-side by design.
+  // The consequence is deliberate and worth knowing: the Settings UI will not let this be changed
+  // back — reverting means another migration.
+  if (!applied.has(59)) {
+    if (tableExists(db, 'fields') && tableExists(db, 'document_types')) {
+      try {
+        const r = db.prepare(`
+          UPDATE fields SET type = 'reference_code'
+           WHERE key = 'delivery_number' AND LOWER(COALESCE(type,'text')) IN ('text','')
+             AND document_type_id IN (SELECT id FROM document_types WHERE ref_field_key = 'delivery_number')
+        `).run();
+        if (r.changes) console.log(`  migration 59: retyped ${r.changes} delivery_number field(s) text -> reference_code`);
+      } catch (e) { console.warn(`  migration 59 delivery_number retype: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (59)').run();
+    console.log('JS migration 59 applied: delivery_number typed reference_code (a digit-free caption can no longer auto-file)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the
