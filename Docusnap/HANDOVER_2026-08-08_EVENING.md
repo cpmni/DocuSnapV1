@@ -321,6 +321,10 @@ should start — not at widening C2's floor.
   'trace'`; its IP/MAC assertions pass), `test_label_overrides` (2), `test_anchor_crop_crosscheck`
   (3). Do not attribute these to the session's changes.
 - `git commit -F <file>`; **never** a PowerShell here-string, and `<<'EOF'` is a PS parse error.
+  **Write that file with the Write tool, NOT `Out-File -Encoding utf8`** — PS 5.1 writes UTF-8 WITH
+  a BOM, which lands as a stray character at the START of the commit subject. Commit `2de46d7` in
+  this very session has one; harmless, but it is the documented PS-5.1-mojibake trap wearing a
+  different hat, and it is avoided entirely by using Write.
 - PS 5.1 mojibakes UTF-8 on write — use a Python script for text surgery on `.md` files.
 - A **new harness** `stress_test/name_unclip_ab.js` was added this session (read-only, temp copies,
   mirrors the live switch state via `liveEnv`). Piping it through `Out-String` BUFFERS all output
