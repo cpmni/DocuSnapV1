@@ -101,6 +101,12 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   const nameToSlug = {}; for (const r of db.prepare('SELECT name, slug FROM document_types').all()) nameToSlug[r.name] = r.slug;
   const roles = {}; for (const r of db.prepare('SELECT slug, ref_field_key, date_field_key FROM document_types').all()) roles[r.slug] = { ref: r.ref_field_key, date: r.date_field_key };
   const slugToId = {}; for (const r of db.prepare('SELECT id, slug FROM document_types').all()) slugToId[r.slug] = r.id;
+  // Every field key each TYPE defines — the denominator for the per-field fill rate below.
+  const typeFieldKeys = {};
+  for (const r of db.prepare(`SELECT dt.slug, f.key FROM fields f
+                                JOIN document_types dt ON dt.id = f.document_type_id`).all()) {
+    (typeFieldKeys[r.slug] || (typeFieldKeys[r.slug] = [])).push(r.key);
+  }
   const conf = db.prepare(`SELECT d.id, d.supplier_name, d.reference_number, d.doc_date, d.original_filename, d.stored_path, d.working_path, d.template_id, dt.slug type_slug
     FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id WHERE d.status = 'confirmed'`).all();
   const exByDoc = {};
@@ -165,6 +171,14 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   let ownCapN = 0;                          // c2 taught-field ownership caps (review-volume delta, HOLD-only)
   let wrongTypeAutoFile = 0;                // M_type (Oracle C3): would auto-file under the WRONG document TYPE
   let bannerRereadN = 0; const bannerRereadDocs = [];  // BANNER_HEADING_REREAD firings (proves the fix fired)
+  // PER-FIELD FILL RATE (Oracle 2026-08-08, "the number that must not move — it does not exist yet").
+  // Every other number in this report is BLIND to a field going EMPTY. A change that turns a wrong
+  // value into an omitted field REDUCES the wrong-value count (M) and leaves the auto-file count
+  // happy — the type+un-flagged gate passes fine with a field simply absent — so a guard that
+  // deletes values scores as an improvement. This tracks, per (type_slug, field_key), how many
+  // documents of that type produced a NON-EMPTY value, which is the only lane that can see it.
+  // Keyed by type so a field the type does not define never drags its own denominator.
+  const fill = {};   // `${slug}|${key}` -> {n, filled}
   for (const fname of files) {
     const m = res[fname]; const g = gt[fname]; if (!m) continue;
     if (m.banner_heading_reread) { bannerRereadN++; bannerRereadDocs.push(`#${g.id} ${g.type_slug} -> ${m.document_type}`); }
@@ -179,6 +193,14 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
       subtotal: g.subtotal != null ? normMoney(ef(m, 'subtotal')) === normMoney(g.subtotal) : null,
     };
     for (const f of F) { if (s[f] == null) continue; acc[f].n++; if (s[f]) acc[f].ok++; }
+    // Fill rate: count EVERY field this document's type defines, not just the ones scored above,
+    // so a guard that empties a non-scored field (an address, a payment term) is still visible.
+    for (const key of (typeFieldKeys[g.type_slug] || [])) {
+      const k = `${g.type_slug}|${key}`;
+      (fill[k] || (fill[k] = { n: 0, filled: 0 })).n++;
+      const v = ef(m, key);
+      if (v != null && String(v).trim() !== '') fill[k].filled++;
+    }
     // Gate-failure re-read adoptions (GATE_REREAD): a re-read is review-bound (note + corrected_to),
     // so it can never auto-file — count it so a corpus A/B shows the feature actually FIRED.
     for (const [k, e] of Object.entries(m.extractions || {})) {
@@ -286,6 +308,27 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
   for (const f of F) out.push(`| ${f} | ${acc[f].ok} | ${acc[f].n} | ${pct(acc[f].ok, acc[f].n)} |`);
   out.push(`\n**Regressions (a confirmed value the pipeline no longer reproduces): ${regress.length}** — of which ${silentWrong} SILENT (wrong + no review flag).`);
   for (const r of regress.slice(0, 60)) out.push(`- ${r}`);
+  // PER-FIELD FILL RATE — see the comment at the accumulator. This is the ONLY lane in this report
+  // that can see a field going EMPTY: a guard that withholds instead of committing a wrong value
+  // LOWERS the wrong-value count and leaves the auto-file count untouched, so without this a
+  // value-deleting change reads as an improvement. Gate any withholding change on M=0 AND zero
+  // fill-rate drop here, with supplier_name read separately — it is the learning scope key and the
+  // filing folder, so emptying it costs an auto-file on every document of that supplier.
+  out.push(`\n## Per-field fill rate (non-empty), by document type`);
+  out.push(`A withholding change must not drop any of these. supplier_name is called out separately:`);
+  out.push(`it is the learning-scope key AND the filing folder, so a drop there is the worst kind.`);
+  const fillKeys = Object.keys(fill).sort();
+  const supplierLines = [];
+  for (const k of fillKeys) {
+    const [slug, key] = k.split('|');
+    const r = fill[k];
+    const line = `- ${slug} · ${key}: ${r.filled}/${r.n} (${pct(r.filled, r.n)})`;
+    if (key === 'supplier_name') supplierLines.push(line); else out.push(line);
+  }
+  if (supplierLines.length) {
+    out.push(`\n**ISSUER FILL RATE (supplier_name) — watch this one first:**`);
+    for (const l of supplierLines) out.push(l);
+  }
   out.push(`\n**Auto-file soundness (#6): ${autoFiledN}/${files.length} reprocessed docs would auto-file; ${silentAutoFile} would auto-file a WRONG value (must be 0).**`);
   for (const r of autoFileMisses.slice(0, 40)) out.push(`- ${r}`);
   out.push(`\n**Wrong-TYPE auto-file (M_type, Oracle C3): ${wrongTypeAutoFile} (must be 0 — would auto-file under the WRONG document type; a subset of M above, tracked + gated separately).**`);

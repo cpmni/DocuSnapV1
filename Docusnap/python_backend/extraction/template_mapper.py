@@ -500,6 +500,52 @@ if os.environ.get('TEMPLATE_PAD_WINDOW_CODE_LABELLED', '0') != '0' and not _PAD_
 # Pins: tests/test_template_inline_row_overlap.py.
 _INLINE_ROW_OVERLAP_ON = os.environ.get('TEMPLATE_INLINE_ROW_OVERLAP', '0') != '0'
 
+# ── TEMPLATE_FREETEXT_GUARD_PARITY (gary design + Oracle SIGN-OFF-W/COND, 2026-08-08) ────────────
+# THE FREE-TEXT GUARDS ARE ARMED ON THE WRONG PREDICATE, AND ONE OF THEM IS ENTIRELY DEAD.
+# `_gate_value`'s OCR-debris guard and name-quality guard both test `if not val_type`, while the
+# sibling confidence CAP in `_mapping_result` tests `val_type in (None, 'text', 'multiline_text')`.
+# The two disagree because SIX SHIPPED KEYS carry a truthy free-text validation in
+# config/keyword_patterns.json — supplier_name, customer_name, payment_terms, buyer_name ('text')
+# and supplier_address, customer_address ('multiline_text'). (NOT via engine._TYPE2VAL, which
+# deliberately omits both types — that was a wrong first diagnosis, corrected by gary.)
+# So those six BUILT-IN keys skip both guards while every CUSTOM free-text field (val_type None)
+# gets them — the protection runs backwards from what anyone would expect, and it is the direct
+# opposite of the owner's "custom fields must detect the same way as built-in ones".
+# WORSE, and this is the headline: `value_quality.is_name_like_field` fires on exactly
+# supplier_name / customer_name / buyer_name / *_address, so THE NAME-QUALITY GUARD IS DEAD FOR ITS
+# ENTIRE INTENDED POPULATION at Stage 0.5 — while anchor.py applies the same rule to the same keys
+# at Stage 2. `val_type='text'` is in fact the least-guarded state in the system: weaker than None,
+# because validation_patterns has no 'text' entry either, so there is no regex behind it.
+# SCOPE: guards A (debris) + B (name-quality) only. The third guard, the free-text CONFIDENCE FLOOR
+# at the `ocr_conf` check, is deliberately NOT included — Oracle SENT IT BACK (see the cap below).
+# Default OFF; OFF reduces EXACTLY to the legacy `not val_type` and is byte-identical.
+_FT_GUARD_PARITY_ON = os.environ.get('TEMPLATE_FREETEXT_GUARD_PARITY', '0') != '0'
+
+# ── TEMPLATE_FREETEXT_FALLTHROUGH_CAP (Oracle's BLOCKING precondition for the flag above) ────────
+# Rejecting a value at the absolute rung is not free: it hands the field to the DERIVED rungs, and
+# two of them build their result WITHOUT an ocr_conf, so the free-text cap in `_mapping_result`
+# never fires there. `_inline()` cannot even supply one — `_locate_anchor` returns inline_value with
+# no confidence attached — and `_read_registration` assembles its own dict. A garbled free-text read
+# that today commits at ~50 (capped by ocr_conf, BELOW the 70 review threshold, so a human sees it)
+# can therefore re-commit from the merged OCR line at 90, unflagged. On a cold scope `_format_rejects`
+# has no history, so the shape warning does not fire either. That is a guard whose net effect is to
+# convert a REVIEWED wrong value into a SILENT wrong value — strictly worse than the bug it fixes.
+# The cap closes that door: a free-text value committing from those two rungs is held to
+# _FT_FALLTHROUGH_CAP (78, below the 88 critical-field floor) and carries a review note.
+#
+# DELIBERATE DEVIATION FROM THE ORACLE CONDITION, STATED SO IT IS NOT MISTAKEN FOR AN OVERSIGHT:
+# Oracle specified ONE flag covering both the guards and this cap. It is split into two here for a
+# measurement reason — 11 of the 38 live mappings are `supplier_name` with dx=dy=0, and a mapping
+# with no stored offset keeps `_inline()` as its PRIMARY read, so a blanket cap would flag the
+# issuer on those templates whether or not any guard ever rejected anything. Two flags let the gate
+# price the guards and the cap separately instead of reporting their sum. The safety property Oracle
+# required is preserved by the RULE, not by the flag count: GUARD PARITY MUST NOT BE FLIPPED WITHOUT
+# THIS CAP. Both default OFF and both OFF is byte-identical.
+_FT_FALLTHROUGH_CAP_ON = os.environ.get('TEMPLATE_FREETEXT_FALLTHROUGH_CAP', '0') != '0'
+_FT_FALLTHROUGH_CAP = 78
+_FT_FALLTHROUGH_NOTE = ("this value was read from the surrounding line rather than the taught box — "
+                        "please check it")
+
 
 def extract_with_mappings(page_images, mappings, field_patterns=None,
                           ocr_lines_fn=None, ocr_text_fn=None, slice_capture=None,
@@ -781,6 +827,47 @@ def _date_clip_suspect(text):
     return False
 
 
+def _ft_regime(val_type):
+    """Is this value in the FREE-TEXT regime for the drawn-box QUALITY guards (debris,
+    name-quality)? See the _FT_GUARD_PARITY_ON flag block for why this exists.
+
+    OFF it returns exactly `not val_type`, the legacy predicate, so every call site is
+    byte-identical. ON it also admits the two free-text validation strings that six shipped keys
+    carry ('text', 'multiline_text'), which is the same set `_mapping_result`'s confidence cap has
+    always used — the two were simply never brought into line, and the disagreement is what left
+    supplier_name / customer_name / buyer_name / the address fields unguarded at Stage 0.5.
+
+    NOTE the deliberate asymmetry with `_gate_value`'s learned-SHAPE check: this is step-2
+    TYPE/QUALITY qualification ("is this string even a plausible read"), which `_gate_value`'s own
+    docstring calls ALWAYS enforced and which a manual anchor must pass to win. It is NOT the
+    statistical shape check a taught box is exempt from. Widening it therefore spends none of the
+    manual-authority invariant."""
+    if not val_type:
+        return True
+    return _FT_GUARD_PARITY_ON and val_type in ('text', 'multiline_text')
+
+
+def _ft_fallthrough_cap(result, val_type):
+    """Hold a FREE-TEXT value that committed from a derived rung with no ocr_conf below the
+    critical-field floor, and say so on the document. See _FT_FALLTHROUGH_CAP_ON.
+
+    Applied by `_inline()` and `_read_registration` only — the two rungs that build a result
+    without threading the read's mean confidence, so `_mapping_result`'s free-text cap cannot fire
+    there. Without this, rejecting a garbled read at the absolute rung upgrades it from a capped ~50
+    (visible in review) to a synthetic 90 (auto-filed) by re-reading the merged OCR line.
+    No-op when the switch is off, when the value is typed, or when the value is already capped
+    lower — it never RAISES a confidence and never replaces an existing note."""
+    if not _FT_FALLTHROUGH_CAP_ON or not result:
+        return result
+    if val_type not in (None, 'text', 'multiline_text'):
+        return result
+    if result.get("confidence") is not None:
+        result["confidence"] = min(result["confidence"], _FT_FALLTHROUGH_CAP)
+    if not str(result.get("validation_note") or "").strip():
+        result["validation_note"] = _FT_FALLTHROUGH_NOTE
+    return result
+
+
 def _gate_value(text, val_type, field_key, validation_patterns, format_lookup,
                 shape_mode='drop', ocr_conf=None):
     """Shared accept/reject (+ date salvage) for a crop read, used by the
@@ -833,13 +920,13 @@ def _gate_value(text, val_type, field_key, validation_patterns, format_lookup,
     # so the caller falls through to registration/relocation (or omits the field)
     # rather than persisting garbage. Typed fields have their own strict pattern,
     # so this only applies to free-text (val_type falsy).
-    if not val_type and _is_ocr_debris(text):
+    if _ft_regime(val_type) and _is_ocr_debris(text):
         return None, False, False
     # Name-quality gate (Part 3 mirror): a NAME/company/address mapping that read a
     # garbled MULTI-WORD value is OCR junk, not a real name — reject so a credible
     # keyword/hint can fill it instead of persisting garbage. Single-token brands
     # ("3M") aren't judged. Same rule as anchor.py. See extraction/value_quality.py.
-    if not val_type and field_key and len(str(text).split()) >= 2:
+    if _ft_regime(val_type) and field_key and len(str(text).split()) >= 2:
         from extraction.value_quality import is_name_like_field, name_quality
         if is_name_like_field(field_key) and name_quality(text) < 0.5:
             return None, False, False
@@ -1359,11 +1446,13 @@ def _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
                               _icrop, "target")
             except Exception:
                 pass                # dev-only; never disrupt extraction
-        return _mapping_result(
+        # _ft_fallthrough_cap: this rung has NO ocr_conf to give _mapping_result, so a free-text
+        # value would otherwise commit at the synthetic 90 (see _FT_FALLTHROUGH_CAP_ON).
+        return _ft_fallthrough_cap(_mapping_result(
             hv, located.get("matched_text") is not None and bool(mapping.get("anchor_text")),
             False, iv_salvaged, mapping.get("anchor_text") or field_key,
             shape_warn=iv_shapewarn, val_type=val_type,
-            geom=_box_list(ib) if (slice_capture and ib) else None)
+            geom=_box_list(ib) if (slice_capture and ib) else None), val_type)
 
     # RIGID OFFSET PRIMARY (the operator's model): when the mapping stored a label→value
     # offset, the value box follows the located label by that EXACT offset + drawn
@@ -1427,7 +1516,9 @@ def _read_registration(page, mapping, target_box, val_type, ocr_text_fn, expansi
         result["confidence"] = min(result["confidence"], 70)
         result["method"] += "_shapewarn"
         result["validation_note"] = _SHAPE_WARN_NOTE
-    return result
+    # This rung assembles its own dict rather than going through _mapping_result, so the free-text
+    # ocr_conf cap never applied here either — same hole as _inline(). See _FT_FALLTHROUGH_CAP_ON.
+    return _ft_fallthrough_cap(result, val_type)
 
 
 def _edge_cut_relocate(page, mapping, anchor_box, target_box, located, val_type, field_key,
