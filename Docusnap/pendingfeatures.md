@@ -6,6 +6,78 @@
 
 ---
 
+## 2026-08-08 — OWNER-REPORTED, DIAGNOSED: Pelican `customer_name` is wrong on 66 of 72 — the clip-repair family EXCLUDES names and the name healer is OFF
+
+Owner ran the SFDEV debug table over the live queue and marked the bad cells
+(`Debug/debug_table/debug_values.json`, 2026-08-08T17:08Z, 72 docs). Their read was "possibly a
+wider detection issue with freetext fields". **That instinct is right about the layer and wrong
+about the instrument — and the difference matters, because the obvious fix would have healed 1 of
+66.** Everything below is measured, not inferred.
+
+**WHAT WAS MARKED:** 69 cells, all Pelican Office Interiors delivery notes — `customer_name` 66,
+`delivery_number` 3. Every `customer_name` cell came from `template_mapping`.
+
+**TWO CLASSES, ONE MIS-SIZED BOX.** Template 33, taught 2026-08-07 21:10, `confirmed_count=1`, and
+there are **NO `corrections` rows for this scope**, so nothing has ever taught it otherwise:
+- **TRUNCATION (~49+9+ variants):** `'Bramblewood Joinery Lt'` ×49, `'…Joinery L'` ×9,
+  `'…Joinery Ltc'` ×2, `'Dramblewood Joinery L'` ×2. Correct is `Bramblewood Joinery Ltd`. The
+  taught target is `tw=0.1627` and ends flush with the final glyph — **zero right-hand margin**, so
+  any per-scan drift shears the `d`. The SAME box reads correctly on 24 docs at conf 95, which is
+  the proof it is marginal rather than simply wrong.
+- **WRONG ROW (~12):** `'Unit 4, Sawpit Lane'` ×10 + 2 variants — the address line BELOW the name.
+  The target is `th=0.0151` against an anchor of `ah=0.0068`, i.e. **~2.2 line-heights tall**, so it
+  spans the name row and the address row; `clean_crop_segment` returns the FIRST line, and when
+  registration shifts the box down a row the first line becomes the address.
+
+**WHY NOTHING CAUGHT IT — the reusable finding.** The live settings have
+`template_target_word_snap=true` AND `template_abs_edge_guard=true`, and the template was taught
+AFTER both shipped. They did not help because **both deliberately EXCLUDE names**:
+`template_mapper.py:308-309` — *"Scope = codes + dates (`_SNAP_VAL_TYPES`); NAMES excluded v1
+(NAME_UNCLIP_RECONCILE owns that class — two dark healers racing one class breeds M=1s)"*. So every
+shipped mechanism that repairs a clipped taught box is scoped away from names, and the one that owns
+names, `NAME_UNCLIP_RECONCILE`, is **DEFAULT OFF and has never been flipped.** The clipped value
+therefore commits at **95** — above the 88 critical floor — and beats the CORRECT `keyword_override`
+read of `Bramblewood Joinery Ltd` sitting right there at **83**.
+
+**THE OBVIOUS FIX IS THE WRONG ONE — MEASURED BEFORE PROPOSING IT.** `customer_name` is free-text
+with a truthy `val_type='text'`, so `TEMPLATE_FREETEXT_GUARD_PARITY` (dark) is the slice that makes
+the name-quality guard reachable here. But the guard rejects only `name_quality < 0.5`, and these
+values score: `'Bramblewood Joinery Lt'` **0.67**, `'…Joinery L'` **0.67**, `'…Joinery Ltc'`
+**0.67**, `'Unit 4, Sawpit Lane'` **0.75** — all PASS. Only `'Srambdlewood Joinery L'` (0.33) is
+rejected. **Guard parity would heal 1 of the 66.** The values are name-SHAPED; they are merely
+clipped, and a quality guard cannot see that. Do not flip it expecting this class to move.
+
+**THE MATCHING MECHANISM, and the match is close to verbatim.** `NAME_UNCLIP_RECONCILE`
+(`engine.py:301-312`, reggie design → **Oracle SIGN-OFF-WITH-CONDITIONS 2026-08-04**, five
+conditions C0–C5, built, pinned, default OFF) is described as: *"a Stage-0.5 mapping whose drawn box
+CUTS a name mid-token ('Kingfisher Print Stuc' — the sliced 'd' misreads as 'c') commits @90 and
+silently beats two agreeing independent fuller reads."* This corpus contains
+**`'Bramblewood Joinery Ltc'` — the sliced `d` misread as `c`**, the exact stated fingerprint.
+Condition check on what is knowable without a run: **C3** (winner remnant page-ABSENT) holds — the
+page prints `Ltd`, never `Lt`; **C5** (name-quality no worse) holds — 1.0 vs 0.67. **C1 (two
+token-identical fuller witnesses, keyword AND crop) is the one that needs a traced run to confirm**;
+`keyword_override` demonstrably produces the full value, the crop witness is unverified.
+
+**NEXT STEP (not taken — the owner is using the app and a dark healer must not be flipped blind):**
+run a `NAME_UNCLIP_RECONCILE` arm over this Pelican batch, count how many of the 66 it heals and
+whether any of the 24 currently-correct reads move, then flip only if that is 0. It will NOT touch
+the ~12 wrong-ROW cells — those are a box-height problem, not a clip.
+
+**IMMEDIATE OPERATOR REMEDY, independent of any code:** re-teach `customer_name` on template 33 with
+a slightly WIDER and SHORTER box. That is an operator action and is system-wide by design.
+
+> **CORRECTION TO MY OWN 2026-08-08 MEASUREMENT, and it is load-bearing.** I recorded the free-text
+> template-rung population as *"~1 read in 24 docs"* and called the guard-parity slice NEAR-INERT on
+> reachability grounds. **The reachability half is now badly wrong:** this batch is
+> `customer_name|template_mapping` **93 of 99** on documents 738+, and 67 of the 72 in the debug
+> table. The 24-doc probe drew from the OLD confirmed corpus, which did not contain this template's
+> population. The *conclusion* "near-inert" survives, but for a COMPLETELY DIFFERENT REASON —
+> not because the guards are unreachable (they are very reachable now) but because the values are
+> name-shaped and score above the guard's threshold. Anyone re-reading the earlier entry should take
+> the yield figure, not the reachability figure.
+
+---
+
 ## 2026-08-08 — ANSWERED (2026-08-08 later): template LANDMARKS are page-0-only while MAPPINGS can now be page 2+
 
 Surfaced by the teach multi-page smoke run (feature verified working — `5ad0220`, page_number 1
