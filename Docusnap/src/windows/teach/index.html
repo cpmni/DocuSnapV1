@@ -201,6 +201,8 @@
   .srow .v.empty{color:var(--muted);font-weight:400;font-style:italic}
 
   /* Learning explainer */
+  .again-row{display:flex;gap:12px;align-items:center;margin-top:20px;flex-wrap:wrap}
+  .again-hint{color:var(--muted);font-size:13px}
   .flow3{display:flex;gap:8px;align-items:stretch;margin:18px 0}
   .flow3 .b{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center}
   .flow3 .b .t{font-weight:650;color:var(--accent2)} .flow3 .b .d{font-size:13px;color:var(--muted);margin-top:4px}
@@ -320,7 +322,19 @@
           <div id="rg-fieldlist" data-help-key="rg-fieldlist"></div>
           <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">
             <button class="btn ghost" id="rg-redraw" data-help-key="rg-redraw">Redraw</button>
-            <button class="btn link" id="rg-skip" data-help-key="rg-skip">Skip for now</button>
+            <!-- DISCOVERABILITY (owner, 2026-08-08, found while teaching): this was a `btn link`
+                 labelled "Skip for now" — the quietest element on the panel, and the label read as
+                 "do it later" rather than "this document doesn't have one". The owner missed it and
+                 was about to point the serials box at a PO number just to advance, which would have
+                 taught a wrong value onto every document of that supplier. A control nobody finds is
+                 a control that doesn't exist, and this one's absence pushes people toward the single
+                 most damaging thing they can do in this wizard. Same weight as Redraw now, and
+                 labelled for the situation rather than the mechanism. -->
+            <button class="btn ghost" id="rg-skip" data-help-key="rg-skip">This isn't on this document</button>
+          </div>
+          <div class="muted" style="font-size:12px;margin-top:8px;line-height:1.5">
+            Use that rather than pointing at something else — a box round the wrong value teaches
+            the wrong value to every document from this sender.
           </div>
           <div class="muted" style="font-size:12px;margin-top:12px;line-height:1.6">
             <span style="color:#3ecf8e;font-weight:700">▮</span> value (what I read)<br>
@@ -355,6 +369,17 @@
         <div class="b"><div class="t">Soon</div><div class="d">mostly hands-off</div></div>
       </div>
       <div id="done-warn" class="warn"></div>
+      <!-- TEACH ANOTHER (owner 2026-08-08). Someone setting up a new supplier set teaches several
+           documents in a row; closing the wizard and reopening it from the menu between each one is
+           pure friction. This RELOADS the window rather than hand-resetting state: every drawn box,
+           page cache, deskew render and per-field result is dropped by construction, so nothing from
+           the finished teach can leak into the next one. -->
+      <div class="again-row">
+        <button class="btn primary" id="btn-teach-another" data-help-key="teach-another">
+          ＋ Teach another document
+        </button>
+        <span class="again-hint">Starts again at the document list. This one is already filed.</span>
+      </div>
     </section>
   </div>
 

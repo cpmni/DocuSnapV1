@@ -57,9 +57,10 @@ window.initHelpMode?.('help-mode-toggle', {
   'teach-canvas':'Draw a box around a field’s value on the page. Scan Finder reads it back so you can check it’s right.',
   'teach-zoom':'Zoom the document in or out; Reset fits it to the pane. The page stays sharp.',
   'rg-redraw': 'Draw the box again if the read-back wasn’t quite right.',
-  'rg-skip':   'Skip this field for now and carry on with the rest.',
+  'rg-skip':   'This document does not print this field — leave it untaught and carry on. Nothing is guessed, and no box is saved for it. If this sender NEVER shows the field, you can also hide it for this template in Settings → Templates.',
   'rg-fieldlist':'The fields for this document type, and which ones you’ve pointed out so far.',
   'help-mode': 'Help mode: click any control to see what it does. Press Esc to leave.',
+  'teach-another':'Start again at the document list and teach the next one. This document is already filed.',
 });
 $('btn-cancel').onclick = () => confirmCancel();
 function confirmCancel(){
@@ -1300,6 +1301,18 @@ async function doCommit(){
 // (footer Next = "Done" → close)
 function finishDone(){ D.windowClose(); }
 
+// TEACH ANOTHER — reload rather than reset. state carries ~20 keys (drawn boxes, per-field results,
+// pendingAnchors, page cache, deskew renders, the chosen type); hand-clearing them would leave one
+// behind eventually and a stale box silently taught onto the NEXT document is the worst possible
+// failure for this wizard. A reload cannot leak. get-teach-target is consumed on first read
+// (main.js), so the reloaded window has no target doc and boots at the document list — the flag
+// below just skips the welcome card, which nobody needs twice.
+const _againBtn = $('btn-teach-another');
+if (_againBtn) _againBtn.onclick = () => {
+  try { sessionStorage.setItem('teachAgain', '1'); } catch {}
+  location.reload();
+};
+
 // ── Boot ─────────────────────────────────────────────────────────────────────
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 $('btn-next').addEventListener('click',()=>{ if(state.step===5) finishDone(); });
@@ -1318,5 +1331,9 @@ $('btn-next').addEventListener('click',()=>{ if(state.step===5) finishDone(); })
   // go straight to choosing the document type (we already know which doc this is). Floor
   // Back at the type step so it can't return to the skipped selection.
   if (state.targetDocId && state.doc) state.minStep = 2;
-  setStep(state.minStep);
+  // "Teach another" reload: go straight to the document list rather than the welcome card. Read
+  // ONCE and cleared, so a later manual reopen still gets the normal welcome.
+  let again = false;
+  try { again = sessionStorage.getItem('teachAgain') === '1'; sessionStorage.removeItem('teachAgain'); } catch {}
+  setStep(again && !state.targetDocId ? 1 : state.minStep);
 })();
