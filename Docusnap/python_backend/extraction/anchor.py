@@ -694,6 +694,16 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                     _dm = {}
                     # 1) inline harvest off the located label's line (value shares the row)
                     _div = (_dloc.get("inline_value") or "").strip()
+                    # Door 1 of 2: the harvested value must sit at the TAUGHT offset from the located
+                    # label, else it is another column's text sharing the OCR row (see
+                    # _inline_at_taught_offset). Dropping it falls through to the crop read below,
+                    # which is seated at that same taught offset.
+                    if _div and not _inline_at_taught_offset(
+                            _dloc, direction, (x_norm, y_norm, _dw, _dh),
+                            (anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm"))):
+                        if on_reject:
+                            on_reject(field_key, "anchor_inline", _div, "inline_off_taught_position")
+                        _div = ""
                     if _div:
                         _dc = _clean_text_fallback(_div, val_type, validation_patterns) or clean_crop_segment(_div, val_type)
                         if _dc and val_type in (None, "text", "multiline_text"):
@@ -861,6 +871,11 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                 _xloc = _locate_for_relocation(page0, anchor["anchor_label"], direction,
                                                (x_norm, y_norm, _xw, _xh), page_text_lines,
                                                line_cache=line_cache)
+                # SEAM, deliberate: this THIRD inline consumer is NOT covered by the taught-offset
+                # veto. It never commits the harvest — it only compares it to the crop read and
+                # FLAGS a disagreement — so a wrong-column harvest here costs a needless review, not
+                # a wrong value. Guarding it would move ref/date flag counts and needs its own corpus
+                # arm; the two COMMITTING doors are guarded.
                 _xiv = ((_xloc or {}).get("inline_value") or "").strip()
                 if _xiv:
                     _xc = _clean_text_fallback(_xiv, val_type, validation_patterns) \
@@ -1014,6 +1029,15 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                 # the SAME credibility + learned-format gates as a crop read, so it
                 # can never commit something a crop read would have rejected.
                 iv = located.get("inline_value")
+                # Door 2 of 2 for the taught-offset veto (see _inline_at_taught_offset): the label
+                # located here can be exactly right while the harvest comes from the NEXT BLOCK on the
+                # same OCR row. Drops the harvest only; the crop read seated at the taught offset (2)
+                # below then runs.
+                if iv and not _inline_at_taught_offset(located, direction, vbox,
+                                                       (_reloc_odx, _reloc_ody)):
+                    if on_reject:
+                        on_reject(field_key, "anchor_inline", iv, "inline_off_taught_position")
+                    iv = None
                 # 007-A (ANCHOR_INLINE_FULLRES_REREAD, default ON — owner+007 2026-07-27): inline_value is
                 # harvested from the label-LOCATE pass, which _prep_for_lines downscales to ~120 DPI for
                 # locate SPEED (_MAX=1100). At that resolution a printed digit can flip (measured 9->0 on a
@@ -3654,6 +3678,65 @@ def _located_at_taught_position(located, vx, vy, offset_dx, offset_dy,
     exp_lx = float(vx) - float(offset_dx)              # expected label TOP-LEFT
     exp_ly = float(vy) - float(offset_dy)
     return abs(float(lx) - exp_lx) <= tol_x and abs(float(ly) - exp_ly) <= tol_y
+
+
+def _inline_at_taught_offset(located, direction, vbox, offset,
+                             tol_x=_RELOC_TOL_X, tol_y=_RELOC_TOL_Y) -> bool:
+    """ANCHOR_INLINE_TAUGHT_OFFSET_VETO (kill switch, DEFAULT OFF) — is the INLINE-HARVESTED value
+    where the teach said this field's value would be? The sibling above verifies the re-located
+    LABEL; nothing verified the harvested VALUE.
+
+    THE HOLE (measured live 2026-08-08 on the Pelican delivery notes). _locate_for_relocation
+    searches a FULL-PAGE-WIDTH strip at the label's row deliberately — a key/value value can sit in
+    a far column — and cluster_value_words only splits the post-label words into gap-runs and returns
+    the run nearest expect_x; with a SINGLE run it returns it UNCHANGED (template_mapper.py:2229).
+    So on a two-block layout ("CUSTOMER …" left, "SHIP TO …" right, printed on the SAME OCR row) the
+    neighbouring block's HEADING is the only thing after the label and is harvested as the value: a
+    taught CUSTOMER anchor harvested the word 'SHIP' (committed 'sui'/'sup'/'sup to' at conf 70-82,
+    9 live documents) from 0.45 of a page away while its own taught offset says 0.10. No absolute
+    label→value distance test existed anywhere on this path — the gap-clustering is RELATIVE, so it
+    cannot reject a far column that is the only thing there.
+
+    TWO LEGS, and they catch different things:
+      1. DIRECTION — an inline harvest is always same-ROW as the label, so an anchor taught 'below'
+         or 'above' can never legitimately produce one. No tolerance expresses this: one line of
+         vertical separation (~0.015) is far inside tol_y. This leg is what covers a two-block
+         layout whose neighbouring caption sits CLOSER than tol_x.
+      2. DISTANCE — for 'right' anchors, which CAN harvest inline, the harvest must sit where the
+         teach put it.
+
+    The anchor already carries the answer: expected value CENTRE = located label top-left + taught
+    offset, which is EXACTLY what _place_from_located computes for the crop rung — so this reuses
+    that placement rather than inventing geometry, and reuses the tolerances the label veto already
+    ships with. Returns True (ACCEPT) on every unverifiable path — OFF, no usable offset (legacy
+    pre-migration-21 anchors), or no inline_box geometry (a text-layer line with no per-word boxes)
+    — so those stay byte-identical. It can only ever DROP a harvest, after which the crop read seated
+    AT the taught offset runs: fail-toward-the-taught-position, never toward a new value."""
+    if os.environ.get("ANCHOR_INLINE_TAUGHT_OFFSET_VETO", "0") == "0":
+        return True
+    ib = (located or {}).get("inline_box") or {}
+    try:
+        ax = float(ib["x_norm"]) + float(ib["w_norm"]) / 2.0     # inline_box is TOP-LEFT convention
+        ay = float(ib["y_norm"]) + float(ib["h_norm"]) / 2.0
+    except (KeyError, TypeError, ValueError):
+        return True                       # no value geometry → cannot verify → accept (unchanged)
+    odx, ody = (offset or (None, None))
+    if odx is None or ody is None or (not odx and not ody):
+        return True                       # same C1 precondition as the label veto: no offset, no veto
+    # LEG 1 — DIRECTION. An inline harvest is BY CONSTRUCTION the words following the label on the
+    # label's OWN OCR line (_locate_for_relocation centres its band on that row). So for an anchor
+    # taught 'below' or 'above' — "the value is a LINE away from its caption" — a same-row harvest
+    # contradicts the teach outright, and no tolerance can express that: the y-gap between the
+    # caption row and the value row is ONE line (~0.015 here) against tol_y 0.14. This is the leg
+    # that catches a two-block layout whose neighbouring caption sits CLOSER than tol_x, which the
+    # distance leg below cannot. Only 'right' anchors can legitimately harvest inline.
+    if str(direction or "").lower() in ("below", "above"):
+        return False
+    # LEG 2 — DISTANCE, for the 'right' anchors that CAN harvest inline.
+    placed = _place_from_located(located, direction, vbox, offset=(odx, ody))
+    if not placed:
+        return True
+    return abs(ax - float(placed[0])) <= tol_x and abs(ay - float(placed[1])) <= tol_y
 
 
 _LEFT_CLAMP_TYPES = _CAPTION_STRIP_TYPES   # structured, non-currency (C3) — one source with the strip

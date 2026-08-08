@@ -81,6 +81,7 @@ const BRIDGES = [
   ['vat-reg-toggle',            'vat_reg_not_amount',          'VAT_REG_NOT_AMOUNT'],
   ['credit-sign-toggle',        'credit_sign_coherence',       'CREDIT_SIGN_COHERENCE'],
   ['pad-window-read-toggle',    'template_pad_window_read',    'TEMPLATE_PAD_WINDOW_READ'],
+  ['inline-offset-veto-toggle', 'anchor_inline_taught_offset_veto', 'ANCHOR_INLINE_TAUGHT_OFFSET_VETO'],
 ];
 const handler = (() => {
   try { return fs.readFileSync(path.join(root, 'src/modules/processing/handler.js'), 'utf8'); }

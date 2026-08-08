@@ -295,6 +295,28 @@ function _reconcileEnv(db) {
     // EXPECT A THROUGHPUT CHANGE, NOT AN ACCURACY ONE: a document that used to commit a caption may
     // now arrive EMPTY and route to review. Default OFF. App RESTART to load the bridge.
     if (learning.getSetting(db, 'ref_role_digit_gate', 'false') === 'true') env.REF_ROLE_DIGIT_GATE = '1';
+    // A ⊕ TAUGHT ANCHOR HARVESTED THE NEXT BLOCK'S HEADING (2026-08-08, live defect). The label
+    // locate searches a FULL-PAGE-WIDTH strip at the label's row on purpose — a key/value value can
+    // sit in a far column — and cluster_value_words only splits the post-label words into gap-runs
+    // and keeps the run nearest the label; a SINGLE run is returned unchanged. So on a two-block
+    // address layout ("CUSTOMER …" left, "SHIP TO …" right, printed on ONE OCR row) the neighbour's
+    // HEADING is the only thing after the label and became the value: 9 live Pelican documents
+    // committed 'sui'/'sup'/'sup to' at conf 70-82 from 0.45 of a page away, while each one's ledger
+    // also held the correct 'Bramblewood Joinery Ltd' at conf 90. NO absolute label→value distance
+    // test existed on this path — the gap clustering is RELATIVE, so it cannot reject a far column
+    // that is the only thing there.
+    // The anchor already carries the answer: expected value CENTRE = located label + TAUGHT OFFSET
+    // (migration 21), which is what the crop rung already computes. The veto compares the harvest to
+    // it with the label veto's OWN tolerances, and can only ever DROP the harvest — the crop read
+    // seated at that same taught offset then runs, which on this class lands on the name, so the
+    // expected outcome is a HEAL rather than a fall to review.
+    // Unverifiable => ACCEPT: no usable offset (legacy pre-migration-21 anchors) or no per-word
+    // geometry stays byte-identical, as does OFF.
+    // NAMED SEAM (what this does NOT cover): the third inline consumer, the ref/date crosscheck, is
+    // deliberately unguarded — it never commits the harvest, only flags a disagreement, so a
+    // wrong-column harvest there costs a needless review rather than a wrong value.
+    // Default OFF, byte-identical off. App RESTART to load the bridge.
+    if (learning.getSetting(db, 'anchor_inline_taught_offset_veto', 'false') === 'true') env.ANCHOR_INLINE_TAUGHT_OFFSET_VETO = '1';
     return env;
   } catch { return {}; }
 }
