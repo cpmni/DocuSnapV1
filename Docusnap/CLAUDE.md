@@ -23,8 +23,16 @@ touches that area — read the pointed-to doc BEFORE working in it:
 
 ## Current session state (2026-08-08 EVENING, owner present) — ORACLE ×2 · SEC-17 FAIL-OPEN fixed · teach label-pick · 2 live pattern defects · 2 owner decisions shipped · Pelican `customer_name` diagnosed
 **READ `HANDOVER_2026-08-08_EVENING.md` FIRST** (NOT `HANDOVER_2026-08-08.md`, a MISDATED older
-file; `_DAY` is the earlier half of the same day). **11 commits, ALL PUSHED. NOTHING NEW FLIPPED** —
-the owner said they will flip when the arc finishes.
+file; `_DAY` is the earlier half of the same day). **HEAD `87c3057`, 13 commits, ALL PUSHED.
+NOTHING NEW FLIPPED** — the owner said they will flip when the arc finishes.
+**(0) THE NAME_UNCLIP ARM RAN AND IS A TRUE NEGATIVE — do NOT flip `NAME_UNCLIP_RECONCILE` for the
+Pelican class.** 110 docs × 2 arms: HEALED 0 · REGRESSED 0 · collateral 0. Structurally inert, three
+declines: C2's floor `len(wl)<4` vs a 2-char remnant `'lt'`; C3's `_uv_text_page_present` SKIPS
+tokens with alnum core <4 (its docstring's example is literally `'Ltd'`) so it never tests the cut
+token; and C1 needs a CROP witness but a teach leaves NO `field_anchors` row. **The better finding:
+`supplier_hints` holds the correct value at `usage_count=10` and `keyword_override` reads it too,
+yet the clipped taught read beats both at 95 — `hint*` is its own witness family, excluded from
+C1's `{keyword, crop}`. The system knows the answer twice over and cannot apply it.**
 **(1) SEC-17 Oracle pass found a LIVE FAIL-OPEN IN THE SHIPPED FIX** (`917a009`) — SIGN OFF W/COND,
 3 BLOCKING, ruling **LEAVE IT ON**, severity down to **LOW**. `_realCanonical` returned the RAW path
 on ENOENT while the ROOT was canonicalised (two frames, one comparison), so a MISSING leaf under a

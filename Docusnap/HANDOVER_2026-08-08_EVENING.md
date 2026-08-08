@@ -1,6 +1,6 @@
 # HANDOVER — 2026-08-08 (evening, owner present) — Oracle ×2 · SEC-17 fail-open FIXED · teach label pick · two live pattern defects · two owner decisions shipped · Pelican `customer_name` diagnosed
 
-**Branch** `feat/reprocess-throughput-autostraighten` · **11 commits, ALL PUSHED** · working tree
+**Branch** `feat/reprocess-throughput-autostraighten` · **HEAD `87c3057`, 13 commits, ALL PUSHED** · working tree
 clean apart from the owner's own long-standing uncommitted edit to
 `python_backend/tests/test_template_target_word_snap.py` (untouched all session).
 
@@ -29,6 +29,8 @@ source, no probe needed), and three of the four owner decisions.
 | `2a85838` | **`ocr_type` retired from the UI** (owner decision) |
 | `117d78b` | docs: Oracle SEND BACK on the data-type widening; struck a false claim I had written |
 | `d0ef6a2` | docs: **Pelican `customer_name` wrong on 66 of 72 — diagnosed** |
+| `13a94d2` | this handover + CLAUDE.md state + the new `stress_test/name_unclip_ab.js` harness |
+| `87c3057` | **the NAME_UNCLIP arm ran: 0/0/0, a TRUE NEGATIVE** — three structural declines (§6) |
 
 **Nothing new was flipped.** Two things ship LIVE-ON and both are corrections to already-live
 behaviour (`SF_REALPATH_CONTAINMENT`, and the two config patterns). The owner said they will do the
@@ -202,7 +204,7 @@ Lane` **0.75** — all PASS. Only `'Srambdlewood Joinery L'` (0.33) is rejected.
 > conclusion survives for a COMPLETELY DIFFERENT REASON — the values score above the guard's
 > threshold. Quote the yield figure, never the reachability figure.
 
-### The NAME_UNCLIP arm — built and RUNNING at handover time
+### The NAME_UNCLIP arm — built, RUN, and the result is below
 
 `stress_test/name_unclip_ab.js` (new, read-only: temp copies of the working files, no DB writes,
 live DB opened readonly, and `liveEnv` mirrors the install's REAL switch state so arm A is the
@@ -282,6 +284,24 @@ should start — not at widening C2's floor.
 > means "still running", not "no output").
 
 ---
+
+## FIRST ACTIONS for the fresh session
+
+1. **Ask the owner before flipping anything.** Five-plus switches are gated and OFF and the owner
+   said explicitly they will do the flipping when this arc finishes. **`NAME_UNCLIP_RECONCILE` is
+   NOT a candidate** — the arm proved it inert on the live class (§6).
+2. **The Pelican batch is still wrong on 86 of 110 and the owner is looking at it.** The
+   no-code remedy is a re-teach of `customer_name` on template 33 (wider + shorter box). If they
+   want a code fix instead, the design starts at the **hint-family exclusion** (§6, the "reusable
+   gap") — the correct value is already in `supplier_hints` at `usage_count=10` — NOT at widening
+   `NAME_UNCLIP_RECONCILE`'s C2 floor, which still dies on C1.
+3. **SEC-17 B3 is BLOCKING for release** and needs either a visible distinct refusal or a
+   MEASUREMENT on a dehydrated-OneDrive-offline file. Oracle's manual junction gate (§1) has also
+   never been run on a real desktop session.
+4. **Do NOT build the data-type widening as specified** (§5) — Oracle SEND BACK, B1–B6 in
+   `pendingfeatures.md`. The corpus fixture (G1/G2) must exist FIRST or every arm is vacuous.
+5. Owner decisions still open: **SEC-21** (restricted Python account) and **SEC-22** (code signing,
+   a purchase decision).
 
 ## Key facts / paths / gotchas
 
