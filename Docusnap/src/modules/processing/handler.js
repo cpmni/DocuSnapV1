@@ -260,6 +260,41 @@ function _reconcileEnv(db) {
       env.CREDIT_SIGN_COHERENCE = '1';
     }
     if (learning.getSetting(db, 'net_misread_total_flag', 'false') === 'true') env.NET_MISREAD_TOTAL_FLAG = '1';
+    // TAUGHT LABEL-ABOVE MAPPING read the caption instead of the value (007 rounds 1+2, `d3cca7c`).
+    // `_target_inline_with_anchor` answers "did the operator teach this value on the label's OWN
+    // ROW?" and answered it with max(anchor_h, target_h, _DRIFT_FLOOR). _DRIFT_FLOOR (0.02) is a
+    // DRIFT constant — "has the page moved a row?" — not a same-row tolerance: on an A4 render it is
+    // ~70px, i.e. 1.5-3 line pitches, so boxes one to three lines apart were called "inline" and the
+    // rung admitted exactly the label-ABOVE layouts its own docstring excludes. The caption then
+    // outscored the code on LSTM confidence and committed ('Delivery' as a delivery_number).
+    // Fix is the DEFINITION, not a constant: tol = (anchor_h + target_h) / 2. DPI-invariant.
+    // ONE PREDICATE GATES BOTH `_inline_code_reconcile` call sites (the drift rung and the absolute
+    // rung), which is why isolating one of them healed 1 of 5 and looked like a refutation.
+    // NAMED SEAM (what this DISABLES): a label-above mapping whose geometric read fails no longer
+    // gets a same-row second chance — it falls to the registration fallback and then omits the field,
+    // i.e. to REVIEW. A recall trade in the safe direction, not a free win.
+    // Gate: Pelican A/B 5 healed / 0 regressed with both reconciles still ARMED; the two other
+    // label-above mappings on that template (delivery_date, customer_name) 0 moved / 0 emptied;
+    // realdoc 714 docs report AND per-doc jsonl byte-identical; cross-template census 38 taught
+    // mappings, 35 already inline, 3 change and all 3 on one template. Default OFF. App RESTART.
+    if (learning.getSetting(db, 'template_inline_row_overlap', 'false') === 'true') env.TEMPLATE_INLINE_ROW_OVERLAP = '1';
+    // A CAPTION IS NOT A REFERENCE (reggie slice 1, `7a02422`). PO_REF_DIGIT_GATE encodes a
+    // corpus-proven fact — an order-family reference is a CODE, a spaceless run bearing >=2 digits,
+    // never a caption or footer prose. The PREDICATE was right; its ARMING was the literal pair
+    // ('po_number','sales_order_number'), so every OTHER reference field on every type had no
+    // value-side gate at all. Widened to the REF ROLE via _infer_validation(key) == 'alphanumeric',
+    // the same role inference Stage 1 already trusts to seed a custom field's format gate — so a
+    // CUSTOM type's reference field is covered on the same footing as a built-in one.
+    // Newly armed on this install: credit_note_number, delivery_number, invoice_number,
+    // reference_number. STRICT SUBSET: PO_REF_DIGIT_GATE=0 still disables both tiers.
+    // Recall measured BEFORE building: across all 713 CONFIRMED values of those fields, ZERO fail
+    // the digit predicate ('PD/26/6680', 'PO 22954', 'DN-98447' all still read).
+    // Gate: customer corpus 0 true->false, 7 false->true (ref 45.4% -> 47.9%), every other lane
+    // byte-identical; realdoc 714 byte-identical. The heals FALL THROUGH to the correct value —
+    // the gate's `continue` moves to the next label, which finds the real code.
+    // EXPECT A THROUGHPUT CHANGE, NOT AN ACCURACY ONE: a document that used to commit a caption may
+    // now arrive EMPTY and route to review. Default OFF. App RESTART to load the bridge.
+    if (learning.getSetting(db, 'ref_role_digit_gate', 'false') === 'true') env.REF_ROLE_DIGIT_GATE = '1';
     return env;
   } catch { return {}; }
 }

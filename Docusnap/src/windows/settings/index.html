@@ -762,6 +762,20 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Read a taught value that sits under its heading, not the heading itself</div>
+                <div class="threshold-sub">When you teach ScanFinder where a value is, it also notes the wording beside it so it can find that value again on the next document. If you drew the value <em>underneath</em> its heading — common on delivery notes, where “Delivery Note No.” is on one line and the number on the next — ScanFinder could treat anything within a few lines as being “on the same line”, and file the heading word itself (“Delivery”) as the reference number. This measures the two boxes properly, so a value you taught below its heading is read from where you actually drew it. Where it then can't read the value confidently the document comes to you instead of guessing. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="inline-row-overlap-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Never accept a heading word as a reference number</div>
+                <div class="threshold-sub">A reference number — an invoice number, credit note number, delivery number — is always a code with digits in it, never a plain word. ScanFinder already refused word-only readings for order numbers; this applies the same rule to every reference field, including the ones on document types you create yourself, so a heading like “Despatch” or the sender's own name can't be filed as the document's reference. When a word is refused ScanFinder usually reads on and finds the real code beside it. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="ref-role-digit-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Read small reference/date print more clearly</div>
                 <div class="threshold-sub">Enlarges a tightly-cropped reference or date before reading it and drops an over-sharpen step, so small print (e.g. “PO-17039” misread as “»0-17039”) reads correctly. Only helps where it can, never changes a read it can't improve. Off by default.</div>
               </div>
