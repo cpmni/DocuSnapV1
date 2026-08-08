@@ -58,10 +58,28 @@ page prints `Ltd`, never `Lt`; **C5** (name-quality no worse) holds — 1.0 vs 0
 token-identical fuller witnesses, keyword AND crop) is the one that needs a traced run to confirm**;
 `keyword_override` demonstrably produces the full value, the crop witness is unverified.
 
-**NEXT STEP (not taken — the owner is using the app and a dark healer must not be flipped blind):**
-run a `NAME_UNCLIP_RECONCILE` arm over this Pelican batch, count how many of the 66 it heals and
-whether any of the 24 currently-correct reads move, then flip only if that is 0. It will NOT touch
-the ~12 wrong-ROW cells — those are a box-height problem, not a clip.
+**ARM RUN 2026-08-08 (`stress_test/name_unclip_ab.js`, 110 docs × 2 arms): COMPLETELY FLAT —
+HEALED 0 · REGRESSED 0 · collateral 0. A TRUE NEGATIVE, and `NAME_UNCLIP_RECONCILE` MUST NOT BE
+FLIPPED FOR THIS CLASS.** Chased to source; three independent declines in
+`_reconcile_name_truncation` (`engine.py:3850-3939`), so it is structurally inert here rather than
+misconfigured:
+1. **C2 floor** (`:3908`, `len(wl) < 4`) — the winner's final token is `'lt'`/`'l'`, **2 chars
+   against a floor of 4**. The design's example remnant `'Stuc'` is exactly 4; `Ltd`→`Lt` is under it.
+2. **C3 is blind to the cut token.** `_uv_text_page_present` (`:1573-1588`) SKIPS tokens with an
+   alnum core <4 — its docstring's example of a skipped token is literally **`'Ltd'`**. So even with
+   C2 widened it would test only `Bramblewood`/`Joinery`, find them on the page, and decline the
+   remnant as a "genuine shorter name". The load-bearing guard false-positives on this exact shape.
+3. **C1 is unsatisfiable for this scope.** It needs witnesses from BOTH the `keyword` AND `crop`
+   families (mapping excluded). **`field_anchors` for Pelican = NO ROWS** — the teach made a
+   Stage-0.5 mapping, never a Stage-2 anchor — so a crop witness cannot exist.
+
+**THE REUSABLE GAP THIS EXPOSED, which is worth more than the arm.** `supplier_hints` already holds
+`customer_name = 'Bramblewood Joinery Ltd'` for this scope at **`usage_count=10`**, and
+`keyword_override` reads it independently 6 times — yet the clipped taught read beats both at 95.
+`_crosscheck_witness_bucket` (`:1341`) buckets `hint*` as its OWN family, which C1's
+`{keyword, crop}` requirement excludes. **The system knows the right answer in two independent
+places and has no mechanism by which either can correct a clipped Stage-0.5 NAME read.** Any next
+design should start there, NOT at widening C2's floor — widening C2 alone still dies on C1.
 
 **IMMEDIATE OPERATOR REMEDY, independent of any code:** re-teach `customer_name` on template 33 with
 a slightly WIDER and SHORTER box. That is an operator action and is system-wide by design.

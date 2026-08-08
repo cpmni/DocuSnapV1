@@ -226,17 +226,60 @@ HEIGHT defect, not a clip, so a partial heal is the designed outcome and must no
 inspection** and is the reason this arm exists. C3 (winner remnant page-ABSENT — the page prints
 `Ltd`, never `Lt`) and C5 (name-quality no worse — 1.0 vs 0.67) both hold on inspection.
 
-> **STATUS AT HANDOVER: the arm was still running.** ~100 documents × 2 arms of full OCR takes
-> tens of minutes. **Re-run it rather than trusting any partial reading** — and note the harness is
-> piped through `Out-String` in the launch command, which BUFFERS all output until the process
-> exits, so an empty log means "still running", not "no output".
+### ARM RESULT — COMPLETELY FLAT, and it is a TRUE NEGATIVE. **Do NOT flip `NAME_UNCLIP_RECONCILE` for this class.**
+
+110 Pelican docs, 2 arms (1080s + 1060s), baseline confirmed `NAME_UNCLIP_RECONCILE: off`:
+
+```
+HEALED 0 · REGRESSED 0 · moved-but-still-wrong 0 · unchanged-correct 24 · unchanged-wrong 86
+baseline correct: 24/110   armed correct: 24/110
+  correct              24 docs,  0 healed
+  TRUNCATED/misread    74 docs,  0 healed
+  WRONG-ROW (address)  12 docs,  0 healed
+collateral: delivery_number 0 moved · delivery_date 0 moved · supplier_name 0 moved
+```
+
+A flat lane is not a pass, so it was chased to source. **THREE INDEPENDENT DECLINES, all verified by
+reading `_reconcile_name_truncation` (`engine.py:3850-3939`) — this healer is STRUCTURALLY INERT on
+this class, not misconfigured and not mis-threaded:**
+
+1. **C2's remnant floor rejects it outright.** `if wl == fl or len(wl) < 4: continue`
+   (`engine.py:3908`). The winner's final token is `'lt'` (or `'l'`) — **2 characters against a floor
+   of 4**. The design's worked example is `'Kingfisher Print Stuc'`, whose remnant `'Stuc'` is
+   exactly 4, so the floor was calibrated for that shape. `Ltd`→`Lt` falls under it.
+2. **C3 is BLIND TO THE CUT TOKEN — the one token it needs to test.** `_uv_text_page_present`
+   (`engine.py:1573-1588`) skips any token whose alnum core is <4 chars, and its docstring names the
+   skipped example as **`'Ltd'`**. So even with C2 widened, C3 would test only `Bramblewood` and
+   `Joinery`, find both obviously on the page, conclude the remnant is page-PRESENT, and decline as
+   a "genuine shorter name". The load-bearing guard fires FALSE-POSITIVE on exactly this shape.
+3. **C1 is UNSATISFIABLE for this scope regardless.** It requires ≥2 token-identical witnesses
+   covering BOTH the `keyword` AND `crop` families, with the mapping family excluded outright
+   (`:3881-3898`). **`field_anchors` for the Pelican scope returns NO ROWS** — the teach created a
+   Stage-0.5 mapping, never a Stage-2 anchor — so no crop witness can exist. Fixing C2 and C3 would
+   still heal nothing here.
+
+**THE NEW FINDING, and it is the more valuable one.** `supplier_hints` holds
+`customer_name = 'Bramblewood Joinery Ltd'` for this exact scope with **`usage_count=10`** — the
+correct value, learned and high-usage — and `keyword_override` reads it independently 6 times. Yet
+the clipped taught read wins at 95 against both. `_crosscheck_witness_bucket` (`engine.py:1341`)
+buckets `hint*` as its OWN family, which C1's `{keyword, crop}` requirement excludes. **So the system
+already KNOWS the right answer from two independent places and has no mechanism that lets either
+correct a clipped Stage-0.5 NAME read.** That is the reusable gap, and it is where the next design
+should start — not at widening C2's floor.
+
+> **RECOMMENDATION:** do NOT flip `NAME_UNCLIP_RECONCILE` on this evidence — it is 0/0/0, literally
+> inert here, so a flip buys nothing and still carries the risk of the first post-merge rewrite of a
+> Stage-0.5 winner on scopes NOT measured by this arm. The arm was worth running: it converted "the
+> matching mechanism exists" into a precise, three-part reason why it does not match.
 >
-> ```
-> ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe stress_test/name_unclip_ab.js
-> ```
+> **The immediate operator remedy stands and needs no code:** re-teach `customer_name` on template
+> 33 with a slightly WIDER and SHORTER box. That clears all 86 wrong docs at once, is an operator
+> action, and is system-wide by design.
 >
-> **The owner has said they will do the flipping once this arc is finished — so report the numbers,
-> do not flip.**
+> Re-run with:
+> `ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe stress_test/name_unclip_ab.js`
+> (~36 min for both arms; piping through `Out-String` BUFFERS all output until exit, so an empty log
+> means "still running", not "no output").
 
 ---
 
