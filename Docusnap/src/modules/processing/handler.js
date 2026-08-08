@@ -984,21 +984,55 @@ function _allowedOpenRoots(db) {
 // users' own files. Canonicalising both keeps every ordinary path behaving exactly as before — the
 // behaviour differs only where a reparse point actually redirects out of the root.
 //
-// FAIL CLOSED, but only for a path that EXISTS and cannot be canonicalised: a non-existent path
-// returns its resolved form and is refused later anyway (openPath would fail), so a missing file is
-// not silently promoted into a match.
-// `SF_REALPATH_CONTAINMENT=0` restores the old textual comparison. Default ON, deliberately: the OFF
-// state here is the vulnerable state, so a dark default would ship no protection at all.
+// FAIL CLOSED for a path that EXISTS and cannot be canonicalised.
+//
+// A MISSING path is the subtle case, and the first version of this function got it wrong (Oracle
+// B1, 2026-08-08). It returned the RAW resolved path on ENOENT while `_withinAnyRoot` canonicalises
+// the ROOT — two different frames in one comparison, which left the very hole SEC-17 exists to
+// close: with `Output\peek` a junction to somewhere else, `Output\peek\nope.pdf` does not exist, so
+// realpath threw, the raw string was returned, and `startsWith(Output\)` passed. The original
+// comment reasoned that a missing file "is refused later anyway (openPath would fail)" — true of
+// `open-file`, but NOT of `show-in-explorer`, whose shell call falls back to revealing the
+// CONTAINING directory, i.e. the junction's target. Containment must not depend on what the shell
+// happens to do with the string afterwards.
+//
+// So on ENOENT, walk up to the nearest ancestor that DOES exist, canonicalise that, and re-append
+// the unresolved tail. Both sides of the comparison then live in the same frame: a missing leaf
+// under a junction resolves through the junction and is refused, while a missing leaf genuinely
+// under the root still resolves inside it and is still allowed (a not-yet-created path must not be
+// refused wholesale — the caller's own existence check is what rejects it). Bounded by the path's
+// own depth; `path.dirname` is a fixed point at a drive/UNC root, which terminates the walk.
+// An ancestor that exists but cannot be canonicalised refuses, exactly like a target that can't.
+//
+// `SF_REALPATH_CONTAINMENT=0` reverts to returning the input unresolved. NOTE, and it is a real
+// limitation rather than a nicety: that switch does NOT restore the pre-SEC-17 comparison, because
+// the case-insensitive compare in `_withinAnyRoot` sits outside it. OFF is "no reparse-point
+// resolution", not "the old code". Pinned in test_path_containment.js so nobody re-reads the switch
+// as a full revert. Default ON, deliberately: the OFF state here is the vulnerable state, so a dark
+// default would ship no protection at all.
 function _realCanonical(p) {
   if (process.env.SF_REALPATH_CONTAINMENT === '0') return p;
   try {
     return fs.realpathSync.native(p);
   } catch (e) {
-    // ENOENT: nothing to follow — the textual form is as canonical as it gets, and the caller's
-    // existence check refuses it. Anything else (EPERM/EBUSY/ELOOP) is a path we cannot vouch for.
-    if (e && e.code === 'ENOENT') return p;
-    return null;
+    // Anything other than "it isn't there" (EPERM/EBUSY/ELOOP/…) is a path we cannot vouch for.
+    if (!e || e.code !== 'ENOENT') return null;
   }
+  const tail = [path.basename(p)];
+  let dir = path.dirname(p);
+  while (dir && dir !== path.dirname(dir)) {
+    try {
+      return path.join(fs.realpathSync.native(dir), ...tail.slice().reverse());
+    } catch (e2) {
+      if (!e2 || e2.code !== 'ENOENT') return null;   // ancestor exists but is unverifiable → refuse
+      tail.push(path.basename(dir));
+      dir = path.dirname(dir);
+    }
+  }
+  // No existing ancestor at all (a missing drive, an unmounted share): there is nothing to follow,
+  // so the textual form is as canonical as it gets. It cannot match a canonicalised root by
+  // accident — a root that does not exist is itself refused above.
+  return p;
 }
 
 function _withinAnyRoot(resolved, roots) {

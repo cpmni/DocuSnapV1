@@ -82,13 +82,69 @@ if (process.platform === 'win32') {
         _withinAnyRoot(inside, [root.toUpperCase()]) === true);
 } else { skip('case-insensitive root'); }
 
-console.log('\nFAIL-CLOSED and the kill switch');
-check('a non-existent path is not promoted into a match', _withinAnyRoot(path.join(root, 'gone.pdf'), [root]) === true);
-check('_realCanonical returns the input for a non-existent path (ENOENT)',
-      _realCanonical(path.join(root, 'gone.pdf')) === path.join(root, 'gone.pdf'));
+console.log('\nMISSING PATHS — the frame-mismatch hole (Oracle B1, 2026-08-08)');
+// The label on the first of these used to read "a non-existent path is not promoted into a match"
+// while asserting `=== true`, i.e. the exact opposite of what it checked, under a FAIL-CLOSED
+// heading. The ASSERTION was right and the LABEL was wrong: a file that simply does not exist YET,
+// directly under the root, IS within the root and must stay allowed. What must NOT be allowed is a
+// missing leaf reached through a junction — and until the ancestor walk landed, that was allowed,
+// because ENOENT returned the RAW path for comparison against a CANONICALISED root.
+check('a not-yet-existing file directly under the root IS within it (must not be refused wholesale)',
+      _withinAnyRoot(path.join(root, 'gone.pdf'), [root]) === true);
+check('_realCanonical resolves a non-existent leaf against its nearest EXISTING ancestor',
+      _realCanonical(path.join(root, 'gone.pdf')) === path.join(fs.realpathSync.native(root), 'gone.pdf'));
+check('...and several missing levels collapse to the same ancestor-resolved form',
+      _realCanonical(path.join(root, 'no', 'such', 'dir', 'gone.pdf'))
+        === path.join(fs.realpathSync.native(root), 'no', 'such', 'dir', 'gone.pdf'));
+
+if (process.platform === 'win32') {
+  const escape2 = path.join(root, 'peek');
+  const outside2 = path.join(tmp, 'OutsideB1');
+  fs.mkdirSync(outside2, { recursive: true });
+  let made = false;
+  try { fs.symlinkSync(outside2, escape2, 'junction'); made = true; } catch { /* skipped below */ }
+  if (made) {
+    // THE B1 BYPASS. This case is RED against the pre-ancestor-walk code: realpath threw ENOENT on
+    // the missing leaf, the raw string came back, and startsWith(root) accepted it.
+    const ghost = path.join(escape2, 'nope.pdf');
+    check('a MISSING leaf reached through a junction inside the root is REFUSED (the B1 bypass)',
+          _withinAnyRoot(ghost, [root]) === false);
+    // Non-vacuity, same discipline as the junction block above: the pre-fix behaviour accepted it.
+    const preFix = ghost.toLowerCase().startsWith(root.toLowerCase() + path.sep);
+    check('...and the pre-fix raw-on-ENOENT comparison DID accept it (so this pin is not vacuous)',
+          preFix === true);
+    check('a missing leaf several levels below a junction is also REFUSED',
+          _withinAnyRoot(path.join(escape2, 'a', 'b', 'nope.pdf'), [root]) === false);
+  } else { skip('B1 junction ghost-leaf'); skip('B1 non-vacuity'); skip('B1 deep ghost-leaf'); }
+} else { skip('B1 junction ghost-leaf'); skip('B1 non-vacuity'); skip('B1 deep ghost-leaf'); }
+
+console.log('\nFAIL-CLOSED — the unverifiable branch must stay refusing');
+// This branch was ENTIRELY unpinned: a future dev could change `return null` to `return p` and the
+// whole suite stayed green (the "dead guard greens every test" trap this codebase has been burned
+// by before). Force a non-ENOENT error by monkeypatching realpath, the suite's usual convention.
+{
+  const realFn = fs.realpathSync.native;
+  try {
+    fs.realpathSync.native = () => { const e = new Error('denied'); e.code = 'EPERM'; throw e; };
+    check('a path that EXISTS but cannot be canonicalised returns null (fail closed)',
+          _realCanonical(inside) === null);
+    check('...and _withinAnyRoot therefore REFUSES it', _withinAnyRoot(inside, [root]) === false);
+  } finally {
+    fs.realpathSync.native = realFn;
+  }
+}
+
+console.log('\nTHE KILL SWITCH — and the part of the change it does NOT revert');
 process.env.SF_REALPATH_CONTAINMENT = '0';
-check('SF_REALPATH_CONTAINMENT=0 restores the old textual behaviour',
+check('SF_REALPATH_CONTAINMENT=0 returns the input unresolved',
       _realCanonical(inside) === inside);
+if (process.platform === 'win32') {
+  // PINNED ACCEPTED TRADE-OFF: the case-insensitive compare lives in _withinAnyRoot, OUTSIDE the
+  // switch, so OFF means "no reparse-point resolution" — NOT "the pre-SEC-17 code", which compared
+  // case-sensitively. Recorded here so the limitation is read from the test, not rediscovered.
+  check('case-insensitivity SURVIVES the kill switch (OFF is not a full revert)',
+        _withinAnyRoot(inside, [root.toUpperCase()]) === true);
+} else { skip('kill-switch case-insensitivity'); }
 delete process.env.SF_REALPATH_CONTAINMENT;
 
 try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* best effort */ }
