@@ -330,8 +330,10 @@
     // out-scores the left by >= the margin — so a lone dictionary word can't override a real single-
     // token abbreviation left (EORI/SKU); only a decisively-cleaner multi-word caption ("Site /
     // Customer" over "Rote,") flips. STEER only — the label is never rejected; the operator's Left/
-    // Above toggle overrides a mis-steer. NOTE: the Teach wizard's autoLabel (teach/renderer.js) does
-    // NOT share this picker, so it is unaffected (pre-existing gap, C5).
+    // Above toggle overrides a mis-steer. NOTE (was "C5, the Teach wizard does NOT share this
+    // picker" — NO LONGER TRUE as of 2026-08-08): teach/renderer.js `autoLabel` now calls this
+    // function too, so BOTH surfaces steer identically and a change here moves both. Teach pins it
+    // in src/windows/teach/test_teach_label_pick.js.
     if (_ratioTiebreak && sL === 1 && sA === 1
         && labelVocabHits(A) >= _LABEL_MIN_ABOVE_HITS
         && (labelWordRatio(A) - labelWordRatio(L)) >= _LABEL_RATIO_MARGIN) {

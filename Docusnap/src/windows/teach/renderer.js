@@ -1176,8 +1176,13 @@ async function autoLabel(box, forceDir){
       const pick = A.pickLabelCandidate(leftC.anchor_text || '', aboveC.anchor_text || '', caps);
       if (pick.direction === 'above') return aboveC;
       if (pick.direction === 'left')  return leftC;
-      // direction null = both scored 0 (suspicious/empty on both sides). Deliberately fall through
-      // to the position-only synthetic anchor rather than staging a garble as a real label.
+      // direction null = both sides scored 0 (suspicious/empty). The label is discarded either way —
+      // but KEEP THE LOCATED BOX (Oracle T1, 2026-08-08). Falling through to the synthetic strip
+      // below would substitute a made-up 0.12-page-wide rectangle for a box we actually located,
+      // which is worse geometry for the stored offset_dx/dy and for relocation — a real downgrade
+      // against the pre-pick code, which stored the tight caption box with a null text. Tie default
+      // is LEFT, so prefer the left band's box for the same reason the picker does.
+      return { box: (leftC.box || aboveC.box), anchor_text: null, dir: (leftC.box ? leftC.dir : aboveC.dir) };
     } else {
       for (const c of cands) if (c) return c;   // only one band was readable — nothing to compare
     }

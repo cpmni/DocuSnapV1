@@ -81,11 +81,29 @@ check('the clip-gated pass-2 re-read stayed INSIDE the per-band function '
       + '(each side is scored on its own best reading)',
       /_bandResult = async \(band\) =>[\s\S]{0,6000}_rereadLabelTight\(/.test(js));
 
-console.log('\nBOTH-SUSPICIOUS FALLS THROUGH TO POSITION-ONLY, never a staged garble');
-check('a null direction is not treated as a pick',
-      !/pick\.direction\s*===\s*null\s*\)\s*return/.test(js));
+console.log('\nBOTH-SUSPICIOUS GOES POSITION-ONLY, never a staged garble — but KEEPS THE LOCATED BOX');
 check('the synthetic position-only anchor is still the final fall-through',
       /anchor_text:null, dir:'left'\}/.test(js));
+// Oracle T1: when both sides score 0 the LABEL is discarded, but the located caption box must be
+// kept. Falling through to the synthetic 0.12-page strip would replace a box we actually found with
+// an invented one — worse geometry for the stored offset and for relocation, and a real downgrade
+// against the pre-pick code. This pin is the whole point of T1.
+check('a scored-out pick returns the LOCATED box, not the synthetic strip',
+      /return \{ box: \(leftC\.box \|\| aboveC\.box\), anchor_text: null/.test(js));
+check('...and it carries that box\'s own direction',
+      /dir: \(leftC\.box \? leftC\.dir : aboveC\.dir\) \}/.test(js));
+check('the discarded label is not staged as text',
+      /anchor_text: null, dir: \(leftC\.box/.test(js));
+
+console.log('\nTHE SHARED MODULE\'S OWN COMMENT MUST NOT KEEP CLAIMING TEACH IS UNAFFECTED');
+{
+  const shared = fs.readFileSync(path.join(__dirname, '..', 'shared', 'anchorLabel.js'), 'utf8');
+  check('the stale "teach does NOT share this picker (C5)" claim is gone',
+        !/Teach wizard's autoLabel[\s\S]{0,80}does\s*\n?\s*\/\/\s*NOT share this picker/.test(shared)
+        && !/does NOT share this picker, so it is unaffected/.test(shared));
+  check('...and the comment now points at the teach pin',
+        shared.includes('test_teach_label_pick.js'));
+}
 
 // ── behavioural: the shared picker decisions teach now inherits ───────────────────────────────
 console.log('\nTHE SHARED PICKER ITSELF (the decisions teach now depends on)');
