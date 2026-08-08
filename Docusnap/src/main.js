@@ -426,7 +426,11 @@ function createSplash() {
     skipTaskbar: true, alwaysOnTop: true, show: false, center: true,
     backgroundColor: '#0c0e14',
     icon: path.join(__dirname, '..', 'assets', 'icon.ico'),
-    webPreferences: { contextIsolation: true },
+    // SEC-18: stated, not inherited. These are already the Electron 31 defaults, so this is a
+    // zero-behaviour-change assertion of intent — the point is that the safety of every renderer
+    // no longer rests on a default a future webPreferences edit could flip silently.
+    // The splash has no preload at all, so `sandbox` costs it nothing.
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   const query = {
     version:   app.getVersion(),
@@ -590,6 +594,11 @@ function createWindow(name, options, htmlFile) {
     webPreferences: {
       preload:          path.join(__dirname, 'preload.js'),
       contextIsolation: true,
+      // SEC-18: stated, not inherited (see the splash window above). Verified safe before setting
+      // `sandbox`: preload.js requires ONLY `electron` (contextBridge + ipcRenderer), both of which
+      // are available to a sandboxed preload — it touches no fs/path/os module.
+      nodeIntegration:  false,
+      sandbox:          true,
     },
     icon: path.join(__dirname, '..', 'assets', 'icon.ico'),   // src/../assets (was '..','..' — off-by-one that silently dropped the window icon)
   });

@@ -6,6 +6,43 @@
 
 ---
 
+## 2026-08-08 — desktop security review (owner-supplied checklist) → SEC-17..SEC-22
+
+Owner asked for an audit of a general Electron/Python hardening checklist against this app. The
+detail lives in `SECURITY_BACKLOG.md` as **SEC-17 … SEC-22** (that file owns security items; this is
+the pointer so the backlog reader finds them). Two were fixed in the same session, four are open.
+**Note: `SECURITY_BACKLOG.md` is GITIGNORED and stays on the owner's machine only** — findings are
+deliberately not published to the repo history, so this pointer is the only tracked record that
+SEC-17..SEC-22 exist. Keep the two in step by hand.
+
+**FIXED — SEC-17 (MEDIUM):** path containment was defeated by a Windows junction/symlink inside an
+approved root. `path.resolve` collapses `..` but does not follow a reparse point, and `realpath`
+appeared NOWHERE in `src/`. Now canonicalises both sides. **Only the OPEN path is fixed** — the
+filing WRITE containment (`filing/handler.js:172`) and `navGuard.js:20` still compare textually and
+each needs its own change with its own gate.
+
+**FIXED — SEC-18 (LOW):** `nodeIntegration`/`sandbox` are now stated rather than inherited from
+Electron defaults. Zero behaviour change; the point is that a future `webPreferences` edit cannot
+silently flip them.
+
+**OPEN — SEC-19 (LOW):** no IPC sender validation on any of 313 channels. Wants ONE shared
+`assertSender` helper applied to the destructive handlers first, and an Oracle pass — a wrong
+predicate would break every legitimate child window. Severity held down by the existing navigation
+lockdown. **OPEN — SEC-20 (LOW):** no dependency CVE scanning (the licence gate is not a vuln gate).
+**OPEN — SEC-21 (LOW, owner decision):** Python worker runs with the full user account.
+**OPEN — SEC-22 (MEDIUM, owner decision — cost):** installer and binaries unsigned.
+
+**Assessed and found ALREADY COVERED**, recorded so nobody re-opens them: `spawn` with a fixed
+executable and an argument array everywhere (no `exec` of user input, `shell` false), scheme-
+allowlisted `openExternal`, no `pickle`/`eval`/`yaml.load` and no HTTP server on the Python side at
+all, comprehensive OCR DoS caps (300 pages / 500 MB / 10 000 px per axis / 300 s per-file watchdog
+wired to a Settings control), no auto-updater to hijack, no archive extraction, no shipped
+`openDevTools`. **Correction on the record:** the first pass of this review reported the OCR
+resource limits as a probable gap. That was wrong — they exist and are thorough. Verified at source
+before the write-up, which is the only reason it was caught.
+
+---
+
 ## 2026-08-08 — teach/template anchor+value coverage audit: SIX defects VERIFIED AT SOURCE, none built yet
 
 Owner goal for the day: "finish the teach wizard and template manager anchor and value detection;

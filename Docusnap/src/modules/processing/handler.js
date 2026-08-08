@@ -973,8 +973,52 @@ function _allowedOpenRoots(db) {
   return roots;
 }
 
+// SEC-17 — REPARSE POINTS DEFEAT A TEXTUAL CONTAINMENT CHECK.
+// `path.resolve` collapses `..` but does NOT follow a Windows junction or symlink, so a reparse
+// point created INSIDE an approved root (output folder, inbox, filing-slips) produced a string that
+// passed `startsWith` while addressing anywhere on disk. `realpath` appeared nowhere in src/ before
+// this. Resolve BOTH sides so the comparison is between real locations.
+//
+// BOTH sides matters: a root that is ITSELF a junction is the common, legitimate case (a redirected
+// or OneDrive-backed Documents folder), and realpathing only the target would start refusing those
+// users' own files. Canonicalising both keeps every ordinary path behaving exactly as before — the
+// behaviour differs only where a reparse point actually redirects out of the root.
+//
+// FAIL CLOSED, but only for a path that EXISTS and cannot be canonicalised: a non-existent path
+// returns its resolved form and is refused later anyway (openPath would fail), so a missing file is
+// not silently promoted into a match.
+// `SF_REALPATH_CONTAINMENT=0` restores the old textual comparison. Default ON, deliberately: the OFF
+// state here is the vulnerable state, so a dark default would ship no protection at all.
+function _realCanonical(p) {
+  if (process.env.SF_REALPATH_CONTAINMENT === '0') return p;
+  try {
+    return fs.realpathSync.native(p);
+  } catch (e) {
+    // ENOENT: nothing to follow — the textual form is as canonical as it gets, and the caller's
+    // existence check refuses it. Anything else (EPERM/EBUSY/ELOOP) is a path we cannot vouch for.
+    if (e && e.code === 'ENOENT') return p;
+    return null;
+  }
+}
+
 function _withinAnyRoot(resolved, roots) {
-  return roots.some(r => resolved === r || resolved.startsWith(r + path.sep));
+  const target = _realCanonical(resolved);
+  if (target === null) return false;                       // exists but unverifiable → refuse
+  // Case-insensitive on Windows is PART of this fix, not a separate loosening: realpathSync.native
+  // returns the filesystem's own casing, which routinely differs from the casing the user typed into
+  // the output-folder setting. Comparing case-sensitively would turn that difference into a false
+  // REFUSAL of the user's own files. It admits nothing new — on Windows those are the same directory.
+  const cmp = (a, b) => (process.platform === 'win32'
+    ? a.toLowerCase() === b.toLowerCase()
+    : a === b);
+  const under = (a, b) => (process.platform === 'win32'
+    ? a.toLowerCase().startsWith(b.toLowerCase() + path.sep)
+    : a.startsWith(b + path.sep));
+  return roots.some(r => {
+    const root = _realCanonical(r);
+    if (root === null) return false;
+    return cmp(target, root) || under(target, root);
+  });
 }
 
 // True only when `rawPath` is safe to hand to shell.openPath / showItemInFolder.
@@ -3855,6 +3899,8 @@ module.exports = {
   cleanupTempFiles: cleanupFiles,
   handleFileMessage: _handleFileMessage,
   flushPendingDrains: _flushPendingDrains,
+  _withinAnyRoot,            // SEC-17 reparse-point containment pins (test_path_containment.js)
+  _realCanonical,            // ditto — exported so the pin asserts the shipped predicate, not a copy
   _genericFallbackId,        // Generic Document fallback pins (test_generic_fallback_mapping.js)
   _resolveDetectedType,      // mig-51 detected-type-nudge pins (test_detected_type_nudge.js)
   _reprocessGenericAdopt,
