@@ -21,7 +21,50 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## Current session state (2026-08-07 NIGHT3, autonomous) — delivery defect FIXED · 3 slices DARK, all gates GREEN
+## Current session state (2026-08-08 DAY, owner present) — NIGHT3 slices BRIDGED + ORACLE-GATED · teach MULTI-PAGE shipped · SEC-17/18 · 4 self-corrections
+**READ `HANDOVER_2026-08-08_DAY.md` FIRST** (NOT `HANDOVER_2026-08-08.md` — that filename is one of
+the MISDATED older files). **HEAD `078569e`, 11 commits, ALL PUSHED.** Owner order was: Oracle the
+shadow slice → bridge the two flags → the stale-shadow drop → then "finish teach wizard + template
+manager anchor/value detection; all data types, not a subset; custom == built-in; keywords 100%".
+**(1) `TRUST_SHADOW_ROW_SKIP` Oracle SIGN-OFF-W/COND, both BLOCKING conditions answered** (`e18859c`):
+C1 raw-string sign check — `#718`/`#726` both carry the minus, and `credit_sign_coherence` is already
+live; C2 new read-only harness `stress_test/shadow_row_skip_ab.js` — **its first run was VACUOUS**
+(0 shadow rows/60 docs; "type lacks the money role" selects almost everything and mostly picks pages
+with no totals), retargeted it moves exactly `#718`+`#726`. C3 `roleKeys` now from `COMPANY_KEYS`
+(drift with `foreignFields.ownFieldPredicate` pinned impossible); C4 one read per doc/batch via
+`opts.shadowRowSkip`; **C5 the flip is a SETTING read INSIDE `trust.js`** (env wins both ways for
+harness arms) — `_reconcileEnv` does NOT reach it; C6 two FALSE comment citations corrected
+(`review/renderer.js:2313` CONSUMES shadow rows for the verified badge; the "at100 precedent" never
+existed). **C7: NOT sequenced behind `REPROCESS_SHADOW_STALE_DROP`.** Gate: post-edit ARMED realdoc
+**byte-identical** to pre-edit armed; dark vs armed differ by ONE line (536/538); wrong-value 17
+identical list. STILL OFF. **(2) Bridges** (`7ab9bcc`) + pin `test_settings_wiring.js` (`0c64dc3`) —
+every addressed id must exist, divs must balance, each bridge must keep all three legs.
+**(3) TEACH MULTI-PAGE SHIPPED** (`5ad0220`+`078569e`) — nav + real `page_number` in ONE commit;
+sandbox smoke PASSED 4/4 (wrote `page_number:1` even when committing from page 1) and found a stale
+unconfirmed read-back on page change, fixed. **(4) `resolve_geometry` page pad** (`6c85157`) —
+shipped **ON** (`TEMPLATE_PREVIEW_PAGE_PAD=0` kills), Oracle GRANTED the default-ON deviation.
+**(5) Free-text guard parity + fall-through cap** (`1f8ff9c`) — DARK, and **MEASURED NEAR-INERT**:
+3 realdoc arms byte-identical; `supplier_name` is NEVER read by a template rung (logo/hint outrank
+it), 1 template-rung free-text read in 24 docs. Correct in principle; **do not present as a heal**.
+**(6) SECURITY `915c412`** — SEC-17 reparse-point containment (junction inside an approved root beat
+the textual check; `realpath` was nowhere in `src/`) shipped **ON**, OPEN path only; SEC-18 explicit
+`nodeIntegration`/`sandbox`. SEC-19..22 OPEN in **`SECURITY_BACKLOG.md`, which is GITIGNORED** —
+`pendingfeatures.md` holds the only tracked pointer.
+**FOUR OF MY OWN CLAIMS WERE REFUTED AND CORRECTED — do not re-derive them wrongly:** landmark
+starvation is NOT caused by `_excludeBoxesFor` (13 of 15 starved templates have ZERO mappings, so the
+exclude list was empty; and landmarks feed ONLY Stage-0.5 relocation, so just tpl 30 pays anything);
+the teach `page_number:0` hardcode was TRUTHFUL (the wizard was page-1-only) — a missing FEATURE, not
+a bug; the free-text truthy `val_type` comes from six SHIPPED CONFIG keys, NOT `_TYPE2VAL`, so
+BUILT-INS skipped the guards and CUSTOM fields got them (inverted from my first report); and the OCR
+DoS limits DO exist and are thorough (300 pages/500 MB/10 000 px + a 300 s watchdog).
+**Also corrected: `REPROCESS_SHADOW_STALE_DROP` IS gateable** — `mergeReprocessRows` is a pure
+function whose sibling switch states in-code that the unit battery is the gate.
+NEXT: Oracle on SEC-17 · the landmarks-are-page-0-while-mappings-can-be-page-2 question · four owner
+decisions (`ocr_type` wire-or-delete, `delivery_number` retype, signing, restricted Python account).
+GOTCHA: a SANDBOX APP IS STILL RUNNING on port 9223 (PID 47032). `007` is NOT a registered subagent —
+spawn general-purpose + persona.
+
+### Prior wrap — Current session state (2026-08-07 NIGHT3, autonomous) — delivery defect FIXED · 3 slices DARK, all gates GREEN
 **READ `HANDOVER_2026-08-07_NIGHT3.md` FIRST. HEAD `359f2c7` + handover; ALL PUSHED. Executed the
 NIGHT2 plan under the owner's standing "run on auto and safely, no regressions".** Three slices built,
 **ALL DEFAULT OFF, no flips, no confirms, no live-DB writes** (the Pelican docs are as the owner left
@@ -49,8 +92,17 @@ added (outside the plan); the two extraction flags need the `_reconcileEnv`+togg
 `process.env` read that a `_reconcileEnv` bridge does NOT reach. **PLAN DEVIATION — the NIGHT2 plan's
 "Oracle → thread → build" for the shadow-row slice ran WITHOUT the Oracle pass (advisors may not be
 spawned unsolicited this session). Gates green ≠ signed off — run Oracle before that one flips.**
+**✓ RESOLVED 2026-08-08 — the shadow-row Oracle pass WAS run: SIGN OFF WITH CONDITIONS, both BLOCKING
+conditions answered and C3-C8 implemented (`e18859c`). The other two slices (`TEMPLATE_INLINE_ROW_OVERLAP`,
+`REF_ROLE_DIGIT_GATE`) are now BRIDGED to Settings but STILL have no Oracle pass — bridging made them
+reachable, not approved.**
 NEXT: `REPROCESS_SHADOW_STALE_DROP`
-(designed; **realdoc cannot gate it** — the reprocess merge isn't exercised there). GOTCHAS: the
+(designed; ~~**realdoc cannot gate it** — the reprocess merge isn't exercised there~~ **← CORRECTED
+2026-08-08: it IS gateable. `mergeReprocessRows` is a PURE function with an existing unit battery,
+and its sibling switch `REPROCESS_ANNOTATED_EMPTY_WINS` states in-code that realdoc is structurally
+blind to that merge and THE UNIT BATTERY IS THE GATE. It does not need a new harness. Oracle also
+ruled it is NOT a prerequisite for `TRUST_SHADOW_ROW_SKIP` — it fixes a stale "✓ mathematically
+verified" BADGE, which is not a gate input.**). GOTCHAS: the
 corpus scorer's `TAG` defaults to `base` so untagged runs overwrite ONE jsonl; it records `<lane>_got`
 only when WRONG, so a heal reads as `'X' -> None` in a naive diff (read `verdicts`).
 
