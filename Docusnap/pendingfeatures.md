@@ -228,6 +228,25 @@ for the issuer, so the taught mapping almost never supplies the value. Exactly O
 free-text read occurred in 24 documents. The guards are therefore REACHABLE but the population they
 police is ~1 read in 24 docs, which is why every arm is flat.
 
+> **CORRECTION 2026-08-08 (my own claim, from a DB-WIDE census — the 24-doc probe above was too
+> small a sample to carry the bolded absolute).** "`supplier_name` was NOT ONCE read by a template
+> rung" is true of those 24 documents and FALSE across the install. Full `extractions` census:
+> `supplier_name` = hint_text_match 447, logo 128, template_fixed 113, **template_mapping 15**,
+> template_identity_corroborated 9, template_identity 5, manual 4, +7 minor; `customer_name` =
+> anchor_crop 98, anchor_crop_relocated 93, **template_mapping 22**, keyword 14, keyword_override 4,
+> manual 1. So the free-text guard population is **37 template-rung reads DB-wide**, not ~1 in 24 —
+> still small against the 688 non-template supplier reads, and the byte-identical realdoc arms still
+> stand, but the ordering of magnitude is "small", not "zero". **Do not quote the absolute.** The
+> conclusion is unchanged: correct in principle, low yield here, do not present as a heal.
+
+> **NEW CENSUS FACT, and it re-scopes audit item 3.** The 11 PHANTOM-anchor mappings are **100%
+> `supplier_name`** — every one of the other 27 mappings across 12 field keys carries a real
+> `anchor_text`. So the "teach stores a synthetic strip when `autoLabel` finds nothing" defect has,
+> on this corpus, bitten exactly the one field that template rungs almost never win (15 of ~731
+> supplier reads). Item 3 is therefore a FORWARD correctness fix — teach's `autoLabel` really is the
+> weaker of the two label pickers and should be unified with the scored `pickLabelCandidate` — but
+> it is NOT the live drag the "LIVE" tag implies, and it must not be sold as one.
+
 TWO CONSEQUENCES, both corrections to what was believed when the slice was designed:
 - The fall-through cap's blast radius is FAR smaller than feared. The worry (mine, and Oracle's C-condition)
   was that capping `_inline()` would flag the issuer on the 11 dx=dy=0 supplier_name templates. It
