@@ -618,11 +618,33 @@ def resolve_geometry(page, mapping, field_patterns=None, template_landmarks=None
     def _cap(_fk, _stage, _pi, bbox, _img, kind):
         captured[kind] = [round(float(v), 5) for v in bbox] if bbox else None
 
+    # INDEX-ALIGN THE PAGE LIST (TEMPLATE_PREVIEW_PAGE_PAD, Oracle SIGN OFF 2026-08-08).
+    # `extract_with_mappings` addresses pages by the mapping's own page_number
+    # (`page_idx = mapping.get("page_number") or 0`) and SKIPS any mapping whose index falls
+    # outside the list. This function is single-page BY CONTRACT — it receives the one page the
+    # caller is showing — so passing `[page]` meant every mapping on page 2 or beyond was skipped
+    # outright and the operator was told "Anchor not located / nothing read on this page" about a
+    # perfectly good mapping. Both admin surfaces can already CREATE such mappings: the Settings
+    # Template Manager saves `tplCurrentPage` and the Review wizard saves `currentPage`, and both
+    # send the mapping's OWN page image, so the page they hand us is always the right one.
+    # Padding with None (rather than rewriting page_number to 0) keeps the mapping verbatim, so
+    # page_idx stays truthful in slice_capture/trace output and the landmark per-page buckets
+    # still line up. extract_with_mappings already tolerates None entries.
+    # DEFAULT ON, deliberately — this is the one deviation from the house default-OFF rule, and it
+    # was granted rather than assumed: the OFF state here is a KNOWN-BROKEN state that returns {},
+    # no live mapping is on page 2+ (all 38 are page 0), so a dark switch would never be exercised
+    # and would rot. `TEMPLATE_PREVIEW_PAGE_PAD=0` restores the old one-element list.
+    # Preview-only: resolve_geometry has exactly one caller, the admin CLI test_mapping.py.
+    if os.environ.get('TEMPLATE_PREVIEW_PAGE_PAD', '1') != '0':
+        _page_idx = int(mapping.get("page_number") or 0)
+        _pages = [None] * _page_idx + [page]
+    else:
+        _pages = [page]
     # Pass the template's landmarks (when provided) so the resolved geometry tracks the
     # page through the SAME registration transform reprocess uses — the admin "preview
     # registration across docs" overlay then shows where each box ACTUALLY lands on a
     # shifted scan. None/empty -> no registration (the per-field anchor path), as before.
-    res = extract_with_mappings([page], [mapping], field_patterns=field_patterns,
+    res = extract_with_mappings(_pages, [mapping], field_patterns=field_patterns,
                                 slice_capture=_cap, template_landmarks=template_landmarks,
                                 registration_enabled=bool(template_landmarks))
     val = res.get(mapping.get("field_key")) or {}
