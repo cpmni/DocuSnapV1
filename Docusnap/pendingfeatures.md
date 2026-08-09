@@ -6,6 +6,63 @@
 
 ---
 
+## 2026-08-10 — ONE ORDINARY CONFIRM STAMPS THE WRONG COMPANY ON 18 OTHER DOCUMENTS (highest priority)
+
+**Found twice the same night, independently: by Chris at the screen, and by the harness in the
+database.** Not built, not designed — it needs an advisor round and an Oracle pass before anyone
+touches it, because it sits across three subsystems that are each individually defensible.
+
+**WHAT HAPPENS.** A customer imports 200 scans and confirms ONE Quillstone purchase order — an
+ordinary confirm, no teaching. That confirm creates template 12 with `supplier_name` FROZEN
+(`is_variable = 0`, `fixed_value = 'Quillstone Print & Packaging'`) from that single document. The
+template then matches **Oakhaven Electrical delivery notes** — a different company AND a different
+document type — and stamps `Quillstone Print & Packaging` as the issuer at **confidence 95 via
+`template_fixed`**, on pages whose own letterhead reads "Oakhaven Electrical Wholesale" in 24-point
+type and whose VAT number the app reads correctly off that same letterhead.
+
+**IT REACHES THE DISK.** Chris confirmed one exactly as any user would (the account number was
+right, nothing on screen suggested the company was wrong) and it filed to
+`Output/Quillstone-Print-&-Packaging/2025/January/Delivery-Note.13-01-2025.OED26662.pdf`, with
+`<SupplierName>Quillstone Print & Packaging</SupplierName>` beside `<VatNo>GB 660 1173 45</VatNo>` —
+Oakhaven's VAT number — in the XML sidecar. **The issuer decides the output folder AND the whole
+learning scope.** The only thing holding the other 17 back was an unrelated punctuation flag on a
+reference number; clear that and they follow.
+
+**MEASURED COST:** issuer 141 ok / 19 wrong / 40 empty on 200 documents, where the same corpus
+scored 140 / 0 / 60 before the three confirms. Twenty correct-but-empty became nineteen confidently
+wrong.
+
+**THE CHAIN, verified at source in the sandbox database:**
+1. an ordinary confirm auto-creates a template (graduation) from ONE document;
+2. `_buildTemplateFields` freezes `supplier_name` from that one document — legitimately, since the
+   issuer is a genuine per-supplier constant and five shipped guards need that seed to exist;
+3. the template matches an unrelated supplier's pages (the 64-bit logo phash hashes LAYOUT, not the
+   mark — the long-standing finding in `project_logo_hash_unreliable`), and the type gate does not
+   stop a `purchase_order` template matching a `delivery_note`;
+4. the frozen value commits at 95, above the 88 critical floor and above the 95 auto-file
+   pre-filter, with `template_fixed` — the one method every credibility rail deliberately exempts.
+**Every link is defensible on its own. The composition files a customer's document in another
+company's folder.**
+
+**WHY THE EXISTING GUARDS DID NOT CATCH IT.** `TEMPLATE_FIXED_NAME_PRESENCE_VETO` — which exists for
+exactly this class and WOULD have blanked it — requires >= 3 confirmed documents for that supplier
+(`TEMPLATE_NAME_PRESENCE_MIN_SAMPLE`). There was one. So the guard is inert precisely during the
+window when a new install is most exposed: the first few confirms.
+
+**DIRECTIONS, none of them chosen yet** (an advisor round should rank these, not me at 4am):
+- the cheapest-looking: a template may not stamp an issuer onto a document whose own page carries a
+  DIFFERENT company name — the page-vs-template disagreement is already computable
+  (`_flag_branding_conflict` has the machinery, and `chrome_band.issuer_chrome` has the band);
+- the sample floor: `TEMPLATE_NAME_PRESENCE_MIN_SAMPLE` is the thing that made the guard inert. A
+  first-confirm template is exactly the case that needs it MOST. Consider a distinct rule for a
+  template with `confirmed_count <= 1` rather than lowering the floor globally (the 2026-08-08
+  measurement is a warning about widening this class of guard);
+- the type gate: should a `purchase_order` template ever match a `delivery_note` at all?
+- the seed: should an auto-graduated template from ONE confirm freeze the issuer at 95, or hold it
+  at a review-bound confidence until a second document agrees?
+**Do not just raise a threshold.** Each of these is a different layer, and CLAUDE.md's standing rule
+applies: fix the reusable layer, and name what the fix relies on and what it disables.
+
 ## 2026-08-09 NIGHT — two residuals left by the issuer fix (`587f5ac` + `045b176`)
 
 Both surfaced BY the gate, neither is a blocker for the pair, and both are recorded rather than
