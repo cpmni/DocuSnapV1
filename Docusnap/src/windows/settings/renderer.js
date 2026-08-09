@@ -664,6 +664,9 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // Its standing guard: keep a confirmed issuer when that name is
                          // actually printed in the taught region on THIS page. Confirm-only.
                          ['issuer-region-presence-toggle', 'template_issuer_region_presence'],
+                         // Agreement is corroboration: an exact re-read of the confirmed issuer
+                         // keeps the seed's 95 instead of demoting it to the mapping tier's 78.
+                         ['fixed-seed-agreement-toggle', 'template_fixed_seed_agreement_keep'],
                          ['deskew-import-toggle', 'deskew_on_import'],
                          // NOT an extraction switch and NOT bridged through _reconcileEnv: the
                          // auto-file gate is JS-side, so database/modules/trust.js reads this key

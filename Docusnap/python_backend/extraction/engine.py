@@ -132,6 +132,27 @@ _FIXED_ISSUER_REPAIR_ON = os.environ.get('TEMPLATE_FIXED_ISSUER_REPAIR', '0') !=
 # remains the cure, exactly as for the other seed branches.
 # Default OFF; OFF is byte-identical. Pins: tests/test_issuer_region_presence.py.
 _ISSUER_REGION_PRESENCE_ON = os.environ.get('TEMPLATE_ISSUER_REGION_PRESENCE', '0') != '0'
+# AGREEMENT KEEPS THE SEED (2026-08-09 NIGHT, the first residual the issuer gate surfaced).
+# When the Stage-0.5 mapping read is EXACTLY the curated `fixed_value`, today's merge still lets the
+# read displace the seed — same string, lower confidence, different method. Measured on the issuer
+# arm: four documents keep a CORRECT company name but move `template_fixed`@95 ->
+# `template_mapping`@78, and all four fall out of the >=88 band as a result. Reading the same name a
+# second time is CORROBORATION; treating it as a refinement is what costs the confidence.
+# Oracle's rule for the region-presence guard says the same thing from the other side —
+# *confirmation grants no new authority* — so agreement should license KEEPING what is already
+# there, never demoting it.
+# NAME THE SEAM — this is the whole risk, and it is why this is its own switch rather than part of
+# either issuer fix. Keeping the seed keeps `method == 'template_fixed'`, and three guards key on
+# that string EXACTLY: TEMPLATE_FIXED_NAME_PRESENCE_VETO (which can BLANK the supplier),
+# BRANDING_NAMED_BLANK, and the branding note/cap. So this ARMS a destructive guard on every taught
+# document whose issuer reads correctly — the exact blast radius the raw-equality short-circuit was
+# written to avoid. The argument that it is safe: agreement means the name was READ off this page,
+# so the veto's absence test should pass by construction. That argument is not proof (a crop read
+# and the full-page PSM-3 text can disagree), which is why the gate below counts BLANKED suppliers
+# explicitly rather than only scoring the lane.
+# Default OFF; OFF is byte-identical (the agreement branch returns None and the read is applied
+# exactly as today). Pins: tests/test_fixed_seed_agreement.py.
+_FIXED_SEED_AGREEMENT_KEEP_ON = os.environ.get('TEMPLATE_FIXED_SEED_AGREEMENT_KEEP', '0') != '0'
 try:
     _ISSUER_REGION_PAD = float(os.environ.get('TEMPLATE_ISSUER_REGION_PAD', '1.5'))
 except ValueError:
@@ -185,12 +206,15 @@ def _region_confirms_curated_seed(key, existing, data, tmpl_mappings, page_image
 def _fixed_seed_declines_mapping(key, existing, data):
     """Should the Stage-0.5 mapping read be DECLINED in favour of the curated template_fixed seed?
 
-    Returns 'near_match' | 'fragment' | None. Pure — the caller does the logging and the `continue`.
+    Returns 'near_match' | 'fragment' | 'garbled' | 'not_issuer' | 'agreement' | None. Pure — the
+    caller does the logging and the `continue`.
 
-    Fires ONLY on a genuine DISAGREEMENT with a curated seed. The raw-equality short-circuit is
-    load-bearing for blast radius: on the overwhelmingly common case (the mapping reads the name
-    correctly) this must be a no-op, or every taught supplier would flip method to `template_fixed`
-    corpus-wide for zero benefit and arm the presence veto on thousands of documents.
+    Every branch but 'agreement' fires on a genuine DISAGREEMENT with a curated seed. The
+    raw-equality short-circuit was written as load-bearing for blast radius — on the common case
+    (the mapping reads the name correctly) declining would flip method to `template_fixed`
+    corpus-wide and arm the presence veto on thousands of documents. TEMPLATE_FIXED_SEED_AGREEMENT_KEEP
+    (see its flag block) revisits exactly that trade, because "for zero benefit" turned out to be
+    wrong: letting the agreeing read through costs the field 95 -> 78.
 
     NOT an authority flip: a genuinely DIFFERENT company (~20 edits — e.g. the recipient block
     'Bramblewood Joinery Ltd') still displaces the seed exactly as today. Making `fixed_value`
@@ -202,8 +226,14 @@ def _fixed_seed_declines_mapping(key, existing, data):
         return None
     read_val = str((data or {}).get("value") or "")
     fixed_val = str(existing.get("value") or "")
-    if not read_val or not fixed_val or read_val == fixed_val:
-        return None                       # agreement (or nothing to compare) -> byte-identical
+    if not read_val or not fixed_val:
+        return None                       # nothing to compare -> byte-identical
+    if read_val == fixed_val:
+        # AGREEMENT. The taught box read the SAME string the operator confirmed. Armed, the seed is
+        # kept (95, `template_fixed`); unarmed, the read is let through exactly as before and the
+        # field lands at the mapping tier's confidence instead. EXACT equality only — a near-match
+        # belongs to the branches below, which exist precisely to judge inexact agreement.
+        return 'agreement' if _FIXED_SEED_AGREEMENT_KEEP_ON else None
     # Per-FUNCTION import, matching this module's existing name_match usage (:1535/:1577/:1737).
     # A module-level import here would be the odd one out; a bare module reference would be a
     # call-time NameError that no module-load smoke can catch (the 2026-08-06 registration lesson).

@@ -178,6 +178,12 @@ ARM_ENV.arbiter = { ...ARM_ENV.money, TEMPLATE_REG_ARBITER_ANCHOR_EVIDENCE: '1' 
 // value is the genuinely-drifted-page case, which this corpus does not contain. Say so honestly
 // rather than reporting the pair's heal twice.
 ARM_ENV.arbiter_presence = { ...ARM_ENV.arbiter, TEMPLATE_ISSUER_REGION_PRESENCE: '1' };
+// The first residual the issuer gate surfaced: an agreeing mapping read still displaces the curated
+// seed, so a CORRECT issuer costs 95 -> 78 and four documents fall out of the >=88 band. This arm
+// measures keeping the seed on exact agreement — and what to watch is NOT the lane score (the value
+// is identical either way) but the METHOD/CONFIDENCE diff, and whether any supplier is BLANKED:
+// keeping `template_fixed` re-arms TEMPLATE_FIXED_NAME_PRESENCE_VETO, which can blank a sender.
+ARM_ENV.arbiter_agree = { ...ARM_ENV.arbiter_presence, TEMPLATE_FIXED_SEED_AGREEMENT_KEEP: '1' };
 // `noreg` must differ from the arm that MEASURED the 22 failures by exactly ONE thing: the
 // `--registration` CLI arg. Give it that arm's env verbatim, or the diagnostic moves two variables
 // and answers nothing.

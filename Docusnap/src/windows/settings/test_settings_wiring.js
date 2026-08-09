@@ -86,6 +86,8 @@ const BRIDGES = [
    'TEMPLATE_REG_ARBITER_ANCHOR_EVIDENCE'],
   ['issuer-region-presence-toggle', 'template_issuer_region_presence',
    'TEMPLATE_ISSUER_REGION_PRESENCE'],
+  ['fixed-seed-agreement-toggle', 'template_fixed_seed_agreement_keep',
+   'TEMPLATE_FIXED_SEED_AGREEMENT_KEEP'],
   ['vat-reg-toggle',            'vat_reg_not_amount',          'VAT_REG_NOT_AMOUNT'],
   ['credit-sign-toggle',        'credit_sign_coherence',       'CREDIT_SIGN_COHERENCE'],
   ['pad-window-read-toggle',    'template_pad_window_read',    'TEMPLATE_PAD_WINDOW_READ'],

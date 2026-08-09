@@ -407,6 +407,16 @@ function _reconcileEnv(db) {
     //    It can only ever KEEP what was already there — it never raises a confidence and never
     //    overrides a genuinely different company. Off by default. App RESTART to load the bridge.
     if (learning.getSetting(db, 'template_issuer_region_presence', 'false') === 'true') env.TEMPLATE_ISSUER_REGION_PRESENCE = '1';
+    //  • TEMPLATE_FIXED_SEED_AGREEMENT_KEEP — when the taught box reads EXACTLY the company name
+    //    the operator confirmed, that reading is CORROBORATION, not a correction. Today the reading
+    //    replaces the confirmed name with itself at a lower certainty (95 -> 78), which pushes four
+    //    measured documents below the band where Scan Finder will file without asking. With this on
+    //    the confirmed name simply stands. A document from a genuinely different company still comes
+    //    through, and re-teaching still replaces a name that has gone out of date.
+    //    SEAM, and the reason this is its own switch: keeping the confirmed name also keeps it under
+    //    the letterhead cross-checks, one of which can BLANK a sender it cannot find on the page.
+    //    Off by default. App RESTART to load the bridge.
+    if (learning.getSetting(db, 'template_fixed_seed_agreement_keep', 'false') === 'true') env.TEMPLATE_FIXED_SEED_AGREEMENT_KEEP = '1';
     return env;
   } catch { return {}; }
 }
