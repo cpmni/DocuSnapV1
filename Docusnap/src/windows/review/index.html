@@ -1135,9 +1135,10 @@
 <div id="rdt" hidden>
   <div id="rdt-head">
     <span id="rdt-title">▦ Debug table</span>
-    <span id="rdt-sub">click a cell to mark it wrong · click a filename to view that doc · drag/resize this panel</span>
+    <span id="rdt-sub">click a cell to mark it wrong · click a header to sort · drag a header edge to resize · click a filename to view that doc</span>
     <span id="rdt-stats"></span>
     <button id="rdt-submit" class="rdt-btn primary" title="Write debug_values.json + copy any winning-crop slices">Submit</button>
+    <button id="rdt-max" class="rdt-btn" title="Maximise / restore (F11)" aria-pressed="false">⛶</button>
     <button id="rdt-close" class="rdt-btn" title="Close (Esc)">&times;</button>
   </div>
   <div id="rdt-body">
@@ -1175,6 +1176,33 @@
               padding: 5px 8px; text-align: left; vertical-align: top; white-space: nowrap; }
   #rdt-table thead th { position: sticky; top: 0; z-index: 3; background: var(--surface3);
               color: var(--text); font-weight: 600; }
+  /* ── Maximise / restore. The panel is drag-positioned and CSS-resized, so both land as INLINE
+     styles on #rdt — which would beat any class. The JS stashes and clears them on maximise and
+     puts them back on restore; these !important rules are the belt to that braces, so a stale
+     inline width can never leave a "maximised" panel the wrong size. ── */
+  #rdt.maxed { top: 8px !important; left: 8px !important;
+               width: calc(100vw - 16px) !important; height: calc(100vh - 16px) !important;
+               resize: none; }
+  #rdt-max.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+
+  /* ── Sortable headers ── */
+  #rdt-table thead th { cursor: pointer; user-select: none; }
+  #rdt-table thead th .rdt-sortmark { color: var(--accent); font-size: 9px; margin-left: 4px;
+              opacity: 0; }
+  #rdt-table thead th.sorted .rdt-sortmark { opacity: 1; }
+  #rdt-table thead th:hover { color: var(--accent); }
+
+  /* ── Column resize grips. Absolutely positioned in the header's right edge; the header is
+     position:sticky (an offset parent), so `right:0` lands correctly without extra wrapping. ── */
+  #rdt-table thead th { position: sticky; }          /* explicit: the grip anchors to this */
+  .rdt-colgrip { position: absolute; top: 0; right: 0; width: 7px; height: 100%;
+                 cursor: col-resize; z-index: 5; }
+  .rdt-colgrip:hover, .rdt-colgrip.dragging { background: var(--accent); opacity: .55; }
+  /* Once a drag starts the table switches to fixed layout (see the renderer): only then can a
+     column be made NARROWER than its content, and only then do these clips matter. */
+  #rdt-table.sized { table-layout: fixed; }
+  #rdt-table.sized th, #rdt-table.sized td { overflow: hidden; text-overflow: ellipsis; }
+  body.rdt-resizing { cursor: col-resize !important; user-select: none; }
   #rdt-table .doc-col { position: sticky; left: 0; z-index: 2; background: var(--surface2);
               max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
   #rdt-table thead .doc-col { z-index: 4; }
