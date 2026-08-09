@@ -1,4 +1,4 @@
-# HANDOVER — 2026-08-09 EVENING — the money slice: totals 89 → 120 of 120, Oracle SIGN-OFF-W/COND
+# HANDOVER — 2026-08-09 EVENING — the money slice: totals 89 → 119 of 120, zero wrong, Oracle SIGN-OFF-W/COND
 
 **Branch `feat/teach-side-overnight`. Commit `7951156` + UNCOMMITTED hardening in the working tree.**
 Both flags DEFAULT OFF. Nothing has been flipped. Reverting is `git checkout 6d7f887 -- Docusnap/python_backend/extraction/template_mapper.py`, or simply leaving the switches off.
