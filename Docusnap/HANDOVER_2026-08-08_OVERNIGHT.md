@@ -165,3 +165,45 @@ src/windows/settings/test_settings_wiring.js             ALL PASS
 
 Working tree carries one uncommitted file — `python_backend/tests/test_template_target_word_snap.py`
 — which is YOUR long-standing edit, untouched all night.
+
+---
+
+## CHRIS ROUND 3 — RUN, and it answered the question (`docs/CHRIS_FULL_APP_REVIEW_2026-08-09.md`)
+
+Fresh sandbox, true first-run, the three overnight switches ARMED via the launch env. He was given
+the two suppliers whose teaches behaved oppositely in the owner's run — Castellan (worked) and
+Veltrix (silently did nothing) — and forbidden from reading code or DB to find out which.
+
+**HIS ANSWER TO THE HEADLINE QUESTION: NO.** *"After teaching two suppliers, I could not tell which
+one had worked."* The information exists in three places and each fails differently — Home knows
+("1 supplier now files automatically") but will not name it; the Review sender groups show the
+5-of-18 vs 15-of-17 split that IS the answer but render the sender as a single character (`'`, `V`);
+and the per-document badge reads "Taught positions · 5 taught fields" identically on a document
+whose Customer field had captured the word "signature:". His words: *"a badge that says teaching was
+APPLIED reads, to me, as teaching WORKED."*
+
+**Verdict on the two controls changed last night:**
+- **"Teach another document" — PASSES CLEANLY.** Nothing to change.
+- **"This isn't on this document" — FINDABLE NOW (the fix worked), WORDING STILL WRONG.** It states
+  what the user is asserting, not the consequence; he only learned the consequence two screens later
+  ("you'll fill this in when reviewing"). And pressing it is immediately contradicted by
+  **"All fields captured — 6 OF 6 DONE"**, which is FALSE.
+
+**TRIAGE — owner's vet queue, ranked. NOTHING IMPLEMENTED.**
+
+| # | finding | severity | note |
+|---|---|---|---|
+| 1 | Visibly wrong values reach the FILENAME and FOLDER unflagged | HIGH | **Owner-verified on disk:** 4 of 18 filed documents — `VyYoa1niRe` (page says `VXS10186`), `05-02-2020` (page says 2026), `2020/April` (page says 2026), `C.JB-7957`. All read "High · 90%", none flagged. |
+| 2 | Import table shows green **"Filed"** for documents not in the output folder | HIGH | Same screen's bottom bar says "17 ready", which is the true word. One-word copy fix. |
+| 3 | "Grouped by sender" renders the sender as ONE character | HIGH | Blocks the one screen that actually answers "did my teach work". |
+| 5 | A WRONG read offers no "type it instead" box; only a FAILED read does | HIGH | He hit `~ Neltrix Automotive Parts` — the exact misread in the owner's own run — and the only escape was accepting it. This is how a supplier scope gets poisoned in one click. |
+| 4 | "This isn't on this document" then says "All fields captured · 6 OF 6 DONE" | MED | Directly contradicts last night's fix. |
+| 6 | "File All Ready" never says HOW MANY (the delete beside it does) | MED | |
+| 7 | Home names no supplier in "1 supplier now files automatically" | MED | |
+| 8 | Fixed-value hint says "(e.g. the company name)" on a REFERENCE field | MED | Invites pinning an invoice number as a constant — the same freeze class measured last night. |
+
+**Cross-reference worth noting:** findings 1, 5 and 8 are the SAME defect family the overnight
+measurement found from the other side. Finding 8 in particular is the UI inviting the freeze whose
+data consequence was measured (`po_ref 'PO-78567'` stamped on every sibling).
+
+**Sandbox left running for the owner: CDP 9223, PID 30840.** The next /christest rebuilds it.
