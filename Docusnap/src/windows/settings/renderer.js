@@ -644,6 +644,12 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          ['inline-row-overlap-toggle', 'template_inline_row_overlap'],
                          ['ref-role-digit-toggle', 'ref_role_digit_gate'],
                          ['inline-offset-veto-toggle', 'anchor_inline_taught_offset_veto'],
+                         // The money slice (Oracle C1-C7 closed, `c027d86`). Independent switches:
+                         // the row-pitch fix is standalone, but currency-edge-grow is INERT unless
+                         // 'template_target_word_snap' or 'template_abs_edge_guard' is also on —
+                         // both already true on this install, and both have their own rows above.
+                         ['drift-row-pitch-toggle', 'template_drift_row_pitch'],
+                         ['currency-edge-grow-toggle', 'template_currency_edge_grow'],
                          ['deskew-import-toggle', 'deskew_on_import'],
                          // NOT an extraction switch and NOT bridged through _reconcileEnv: the
                          // auto-file gate is JS-side, so database/modules/trust.js reads this key

@@ -783,6 +783,20 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Read the total from the row you pointed at, not the one above it</div>
+                <div class="threshold-sub">A totals block moves up and down the page depending on how many lines the document has, so the box you drew around the total on one invoice can land a row too high on the next — usually on the VAT line. The amount it finds there looks perfectly valid, so nothing further down catches it, and the wrong figure is filed. On the test set this was 19 of 23 wrong totals, each one exactly the true total divided by six — the signature of reading a 20% VAT row. This measures a one-row shift properly and re-reads from where you actually pointed. It only acts when the heading it found is the exact wording you taught, so a similar heading nearby can't redirect it. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="drift-row-pitch-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Read a whole amount when it's longer than the one you taught</div>
+                <div class="threshold-sub">Amounts are printed right-aligned, so a bigger figure grows to the <em>left</em> — past the edge of the box you drew. If you taught the total on a £99 invoice, a £10,603.44 total on the next one can be read as “0,603.44”. This lets the box stretch left to take in the whole amount. It will only do so when it can show nothing was lost: if stretching would drop the leading digits instead of recovering them, it keeps the original reading and the document comes to you. Works alongside the two reading-accuracy switches above it and does nothing on its own. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="currency-edge-grow-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Straighten crooked scans before reading them</div>
                 <div class="threshold-sub">A page that went through the scanner slightly askew is read at an angle, and the boxes Scan Finder was taught drift off the values they were pointed at. This straightens each crooked page before reading it — the same thing the ∞ Straighten button does in Review, applied automatically as documents come in. Your filed file is never altered; only the reading is straightened. It also changes what gets filed without you looking at it, so treat it as a trade rather than a free improvement. Pages that are already straight, and documents that carry their own text, are skipped. Off by default, and not yet recommended — straightening can make a marginal scan read worse as easily as better, and that has not been proven either way on real paper.</div>
               </div>

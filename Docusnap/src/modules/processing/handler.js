@@ -317,6 +317,36 @@ function _reconcileEnv(db) {
     // wrong-column harvest there costs a needless review rather than a wrong value.
     // Default OFF, byte-identical off. App RESTART to load the bridge.
     if (learning.getSetting(db, 'anchor_inline_taught_offset_veto', 'false') === 'true') env.ANCHOR_INLINE_TAUGHT_OFFSET_VETO = '1';
+    // ── THE MONEY SLICE (2026-08-09; Oracle SIGN-OFF-WITH-CONDITIONS, C1-C7 closed `c027d86`) ──
+    // Measured on the owner's LIVE taught state over 145 corpus siblings, at the app's own render
+    // DPI: totals 87 ok / 32 wrong / 1 empty -> 119 / 1 / 0. +32 healed, 0 regressed, and all eight
+    // other lanes byte-identical between the two arms. Two independent mechanisms:
+    //
+    //  • TEMPLATE_DRIFT_ROW_PITCH — `_label_drifted` floors its VERTICAL tolerance at
+    //    _DRIFT_FLOOR = 0.02 page-height while body text runs ~0.013 per row, so a genuine ONE-ROW
+    //    label move measures as "not drifted", the stationary taught box stands, and it reads the
+    //    VAT row. On money that value is type-valid and nothing downstream can see it: 19 of 23
+    //    wrong totals were EXACTLY the truth / 6 — the arithmetic fingerprint of a 20% VAT row.
+    //    ARMED ONLY FOR AN EXACTLY-MATCHED LABEL, and that narrowing is measured, not cautious: a
+    //    blanket floor drop regressed 14 non-money fields in a second taught state, because the
+    //    floor was ALSO shielding fuzzy label mis-matches ('Credit Ref' answered by 'Credit Date').
+    //
+    //  • TEMPLATE_CURRENCY_EDGE_GROW — money is RIGHT-ALIGNED, so a value longer than the taught
+    //    sample overflows LEFT ('£10,603.44' read as '0,603.44') and currency was absent from the
+    //    frozenset scoping the repair. DEPENDENCY, record it or a flip looks like a bug: this flag
+    //    is INERT unless `template_target_word_snap` (snap leg) or `template_abs_edge_guard` (guard
+    //    leg) is also on. Both are already true on this install.
+    //    Its adopt is gated by `_money_snap_proof` (Oracle C3): a snapped money read is refused when
+    //    the un-snapped box read is a well-formed amount and the snapped read is that amount with
+    //    LEADING digits dropped — money's only failure direction.
+    //
+    // EXPECT A CONFIDENCE CHANGE, NOT ONLY A VALUE ONE: five documents move from template_mapping
+    // (90, auto-file eligible) to template_mapping_edgecut (70 + a review note) with the value
+    // unchanged. That is the safe direction — 0 fields GAINED auto-file eligibility, 5 lost it.
+    // Default OFF, byte-identical off (proven: OFF arm md5-identical to the pre-edit baseline,
+    // n=145). App RESTART to load the bridge.
+    if (learning.getSetting(db, 'template_drift_row_pitch', 'false') === 'true') env.TEMPLATE_DRIFT_ROW_PITCH = '1';
+    if (learning.getSetting(db, 'template_currency_edge_grow', 'false') === 'true') env.TEMPLATE_CURRENCY_EDGE_GROW = '1';
     return env;
   } catch { return {}; }
 }
