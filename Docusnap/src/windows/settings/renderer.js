@@ -667,6 +667,12 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // Agreement is corroboration: an exact re-read of the confirmed issuer
                          // keeps the seed's 95 instead of demoting it to the mapping tier's 78.
                          ['fixed-seed-agreement-toggle', 'template_fixed_seed_agreement_keep'],
+                         // The 2026-08-08 teach-side trio + the filing sanity flags: built
+                         // and measured, then left env-only, so no install could reach them.
+                         ['stage05-ref-code-toggle', 'stage05_ref_code_gate'],
+                         ['generic-caption-exclusive-toggle', 'keyword_generic_caption_exclusive'],
+                         ['type-title-owner-toggle', 'type_title_owner_precedence'],
+                         ['filing-sanity-flags-toggle', 'filing_value_sanity_flags'],
                          ['deskew-import-toggle', 'deskew_on_import'],
                          // NOT an extraction switch and NOT bridged through _reconcileEnv: the
                          // auto-file gate is JS-side, so database/modules/trust.js reads this key

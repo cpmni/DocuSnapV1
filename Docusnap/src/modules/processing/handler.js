@@ -417,6 +417,31 @@ function _reconcileEnv(db) {
     //    the letterhead cross-checks, one of which can BLANK a sender it cannot find on the page.
     //    Off by default. App RESTART to load the bridge.
     if (learning.getSetting(db, 'template_fixed_seed_agreement_keep', 'false') === 'true') env.TEMPLATE_FIXED_SEED_AGREEMENT_KEEP = '1';
+    // -- THE 2026-08-08 TEACH-SIDE TRIO + THE FILING SANITY FLAGS (bridged 2026-08-09 NIGHT) --
+    // All four were built, MEASURED and then left env-only, which in this app means unreachable:
+    // `npm start` is a plain `electron .` and injects no environment. They have been dark in the
+    // product ever since, and the corpus numbers quoted for them describe a configuration no
+    // install could actually run. Bridging is not approval - each still ships OFF.
+    //
+    //  - STAGE05_REF_CODE_GATE: a taught box that reads its own printed caption ('Ref', 'Account',
+    //    'Delivery') commits that caption as the reference. A reference-role value is a CODE, so a
+    //    value carrying no digit at all is refused and the field falls through to review.
+    //  - KEYWORD_GENERIC_CAPTION_EXCLUSIVE: every reference-role field is seeded the same generic
+    //    caption bank, so ONE printed code could be captured into THREE different fields. When a
+    //    field owns the caption by its own label, the generic captures of the same value lose.
+    //  - TYPE_TITLE_OWNER_PRECEDENCE: document-type election is a bucket SUM, so a type the install
+    //    created that owns one phrase loses to a built-in type owning a whole vocabulary. A template
+    //    taught against the losing type then binds to a slug its own siblings can never be detected
+    //    as: 35 documents matched no template at all and the operator got no signal. Re-ranks only
+    //    when exactly ONE installed type prints its own name as a standalone heading in the top band.
+    //  - FILING_VALUE_SANITY_FLAGS: FLAG ONLY, never edits or replaces a value. A reference whose
+    //    shape is OCR noise (mixed case inside a token AND no run of 3+ digits), or a date whose
+    //    year appears nowhere on the page, gets a note - and a noted field cannot auto-file.
+    // Default OFF, byte-identical off. App RESTART to load the bridge.
+    if (learning.getSetting(db, 'stage05_ref_code_gate', 'false') === 'true') env.STAGE05_REF_CODE_GATE = '1';
+    if (learning.getSetting(db, 'keyword_generic_caption_exclusive', 'false') === 'true') env.KEYWORD_GENERIC_CAPTION_EXCLUSIVE = '1';
+    if (learning.getSetting(db, 'type_title_owner_precedence', 'false') === 'true') env.TYPE_TITLE_OWNER_PRECEDENCE = '1';
+    if (learning.getSetting(db, 'filing_value_sanity_flags', 'false') === 'true') env.FILING_VALUE_SANITY_FLAGS = '1';
     return env;
   } catch { return {}; }
 }

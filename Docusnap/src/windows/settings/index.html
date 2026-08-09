@@ -832,6 +832,34 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Don&rsquo;t let a field&rsquo;s own printed wording be saved as its value</div>
+                <div class="threshold-sub">When you point out where a reference or account number sits, a shifted scan can make that box land on the printed wording beside it instead &mdash; so Scan Finder saves the word &ldquo;Ref&rdquo;, &ldquo;Account&rdquo; or &ldquo;Delivery&rdquo; as the reference number. A reference is a code, and a code always carries at least one number, so a value with no numbers in it at all is refused and the document comes to you instead. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="stage05-ref-code-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Stop one printed code filling three different fields</div>
+                <div class="threshold-sub">Fields that hold a reference of some kind all start out looking for the same general wording (&ldquo;Ref&rdquo;, &ldquo;No.&rdquo;, &ldquo;Number&rdquo;), so a single code printed on the page can be picked up as the invoice number AND the order number AND the account number at once. With this on, when one field matches that code by its own specific wording, the fields that matched only general wording give it up. It can only ever remove a duplicate &mdash; it never moves a value to a different field. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="generic-caption-exclusive-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Trust the document&rsquo;s own printed heading when deciding what it is</div>
+                <div class="threshold-sub">Scan Finder works out what a document is by adding up evidence, so a built-in type that recognises a lot of wording can outvote a type you created yourself that recognises only its own name. When that happens, a template you taught is filed under a type its own future documents can never be recognised as &mdash; on one test run 35 documents matched no template at all, and nothing on screen said why. With this on, if exactly one of your document types has its own name printed as the heading at the top of the page, that type wins. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="type-title-owner-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Query a reference or date that doesn&rsquo;t look real before filing it</div>
+                <div class="threshold-sub">Two checks that only ever ADD a note &mdash; they never change a value or choose a different one, and a document carrying a note is never filed without you seeing it. First: a reference whose shape is scanning noise rather than a code (jumbled capitals with no run of digits). Second: a date whose year is printed nowhere on the page, which is exactly what a misread digit produces. Genuine codes like &ldquo;HTS-SO-12013&rdquo; or &ldquo;PD/25/1197&rdquo; are left alone. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="filing-sanity-flags-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Straighten crooked scans before reading them</div>
                 <div class="threshold-sub">A page that went through the scanner slightly askew is read at an angle, and the boxes Scan Finder was taught drift off the values they were pointed at. This straightens each crooked page before reading it — the same thing the ∞ Straighten button does in Review, applied automatically as documents come in. Your filed file is never altered; only the reading is straightened. It also changes what gets filed without you looking at it, so treat it as a trade rather than a free improvement. Pages that are already straight, and documents that carry their own text, are skipped. Off by default, and not yet recommended — straightening can make a marginal scan read worse as easily as better, and that has not been proven either way on real paper.</div>
               </div>
