@@ -6,6 +6,50 @@
 
 ---
 
+## 2026-08-09 — SFDEV: show the WINNING KEYWORD (the caption the app actually matched)
+
+**Owner request, verbatim:** *"in SFDEV i would like to see the winning keyword so i know what the
+app used to derive the value."*
+
+**Why it matters.** The dev inspector's ladder already names the winning RUNG (`keyword`,
+`template_mapping`, `anchor_crop`, …) but not WHICH CAPTION that rung matched. When a value is
+wrong, "Stage 1 · keyword" tells you the stage and nothing about the cause — whereas "matched
+`Your PO`" versus "matched `Account No`" is usually the whole diagnosis. This session's C7 census
+made the same point quantitatively: declines are dominated by a label being answered by the wrong
+printed line (`'Your PO'` -> `'Invoice Number Date Your PO Account No'`), which is invisible today.
+
+**THE DATA ALREADY EXISTS — this is plumbing + display, not a new capture.**
+- `python_backend/extraction/keyword.py:121` states it outright: *"Every keyword read records the
+  exact caption it matched (`results[key]['label']`)"*, and `:1191` and `:1207` already RANK on
+  `results[k]['label']`, so it is populated and load-bearing, not incidental.
+- Stage 0.5 has the equivalent: `_mapping_result(...)` is passed `mapping.get("anchor_text") or
+  field_key` and the result dict carries it as `anchor` (`template_mapper.py`, `_relocate_and_read`
+  / `_read_registration`).
+- Stage 2 anchor reads carry their own label likewise.
+
+**Leads for the build.**
+- Display seam: `src/windows/dev-inspector/renderer.js:164` renders the ladder row and already
+  prints `st.method` in a `<span class="conf">`. The winning caption belongs beside it — and the
+  LOST-rung line just below (`:166-167`, "the taught anchor read X but lost to Y") is where it pays
+  off most, because a lost rung's caption is exactly what you need to know.
+- Transport seam: the ladder is built from `process-trace` events (`renderer.js:303-306` shows the
+  event kinds, incl. `anchor_reject`). Check whether `label`/`anchor` already survives into the
+  trace payload; if it does this is display-only. If not, thread it at the emit site rather than
+  re-deriving it in the renderer.
+- Same value belongs in the SFDEV bulk debug-table (`debug_values.json`) so a queue-wide grid can be
+  sorted by winning caption — that is how a systemic mis-caption gets spotted rather than a
+  per-document one.
+- Stage 2 `anchor_reject` rows should name the caption too, for symmetry.
+
+**Scope note.** Dev-only surface (`Ctrl+Shift+D`, `M`, pw `SFDEV`), so no customer-facing copy and
+no `feedback_minimal_interaction_autofile` tension. Read-only display of data already computed;
+`--trace` is only added while the inspector/console is open, so normal processing stays
+byte-identical.
+
+**NOT BUILT — logged on the owner's "add to list" convention.**
+
+---
+
 ## 2026-08-08 OVERNIGHT — teach-side run: designed-but-NOT-built slices (advisors eric / gary / reggie)
 
 Context: `HANDOVER_2026-08-08_OVERNIGHT.md`, branch `feat/teach-side-overnight`, commit `4e5c21c`.
