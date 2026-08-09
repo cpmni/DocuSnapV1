@@ -230,9 +230,24 @@ function runShards(folder, args, files, manifest, extraEnv, onDoc) {
   };
   // live switch state, so arm `base` is the owner's real behaviour
   const env = {};
-  for (const r of db.prepare('SELECT key, value FROM settings').all()) {
+  const rawSettings = db.prepare('SELECT key, value FROM settings').all();
+  for (const r of rawSettings) {
     if (r.value !== 'true') continue;
     env[r.key.toUpperCase()] = '1';
+  }
+  // NON-BOOLEAN settings are invisible to the loop above (`value !== 'true'` skips them), and
+  // `ocr_dpi` is one — so until 2026-08-09 every number this harness produced was rendered at
+  // Python's 300 default while the app rendered at the owner's setting. Render DPI moves word
+  // geometry, tokenisation and OCR confidence, which is exactly what the clip / snap / drift work
+  // turns on, so the absolute lane scores did not describe the app. (A/B deltas between two arms
+  // were never affected — both arms shared the error.)
+  // Mirror `_ocrDpiEnv` in src/modules/processing/handler.js:91-96 EXACTLY: it emits
+  // OCR_RENDER_DPI only when the setting differs from 300, so an unset/300 install stays
+  // byte-identical. Do not "simplify" this to always setting the var.
+  const _dpi = parseInt((rawSettings.find(r => r.key === 'ocr_dpi') || {}).value || '300', 10);
+  if (Number.isFinite(_dpi) && _dpi > 0 && _dpi !== 300) {
+    env.OCR_RENDER_DPI = String(_dpi);
+    console.log(`    [dpi] OCR_RENDER_DPI=${_dpi} (matching the app; harness default was 300)`);
   }
   console.log(`teach-run A/B — ${files.length} sibling docs (${missing} missing), arms: ${arms.join(', ')}`);
 

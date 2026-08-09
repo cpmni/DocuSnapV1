@@ -26,6 +26,7 @@ pipeline (keyword/anchor/LLM) for that field.
 """
 
 import difflib
+import json
 import math
 import os
 import re
@@ -158,7 +159,15 @@ _STAGE05_REF_CODE_GATE = os.environ.get('STAGE05_REF_CODE_GATE', '0') != '0'
 # frozenset membership test away from being used.
 # So this flag now admits currency to BOTH scopes — the derived/registration word snap (the rung
 # that produces the live defect) and the absolute-rung edge guard (the same clip on a page that has
-# NOT drifted). Measured: '0,603.44' -> '£10,603.44' at conf 92 via the snap alone.
+# NOT drifted). Measured: '0,603.44' -> '£10,603.44' via the snap alone, committing at confidence
+# 90 (ORACLE C4: this comment said "conf 92" and it was wrong; 90 is a FLAT constant for the derived
+# rung — the ocr_conf cap is free-text only — and 90 CLEARS the 88 auto-file floor, so this rung
+# auto-files on a graduated scope. Do not restate the old figure).
+# ORACLE C4, the second scope correction: the two scopes below are NOT additive on the documents
+# that matter. The drift branch in `_extract_one` does `return relocated`, which SKIPS
+# `_abs_edge_guard` entirely — so on exactly the population TEMPLATE_DRIFT_ROW_PITCH fires for, the
+# absolute-rung admission is unreachable and money rides the derived rung alone. They are MUTUALLY
+# EXCLUSIVE on the drift population, not belt-and-braces.
 # MONEY-ONLY SNAP LEGS (see `_snap_box_to_words`), because a snap adopts its read with no
 # comparison against the un-snapped one — unlike the edge guard, which must PROVE a digit-suffix
 # relation before it rewrites. FOUR legs: the union must contain a digit (never snap money onto a
@@ -168,13 +177,29 @@ _STAGE05_REF_CODE_GATE = os.environ.get('STAGE05_REF_CODE_GATE', '0') != '0'
 # blind to what a re-fit SHRINKS past, and left is money's only failure direction); and the union
 # may span ONE ROW only (every figure in a totals column shares a right edge, so the right-edge rule
 # has no vertical discriminating power, and an over-tall taught box otherwise admits the row above).
-# THE ACTUAL FAIL-SAFE, worth naming because the geometry is not one: for `total` with a captured
-# subtotal, Stage 4's `subtotal + tax = total` cross-check fires on exactly the two ways this can be
-# wrong (a left truncation, and the wrong row of the same column). There is NO such backstop on
-# subtotal / vat_amount / balance_due, so those ride on the legs alone.
+# THERE IS NO FAIL-SAFE BEHIND THE GEOMETRY — ORACLE C4 struck the claim that used to sit here.
+# This comment previously named Stage 4's `subtotal + tax = total` cross-check as "the actual
+# fail-safe ... fires on exactly the two ways this can be wrong". That is false three times over:
+# it is a conditional review FLAG rather than a rejection, it is TOTAL-ROLE ONLY, and it returns
+# None outright when no shadow subtotal was captured (validator.py `_reconcile_components` /
+# `parse_amount`). It cannot be relied on, and subtotal / vat_amount / balance_due were never in
+# its scope at all. Measured, not argued: `_gate_value(shape_mode='ignore')` on currency ACCEPTS
+# '707.84', '3.765.72' and '3.801.824' alike (currency is in `_SELF_VALIDATING_TYPES`, and the
+# shipped `validation_patterns.currency` entries are matched with `re.search`, so any well-formed
+# SUBSTRING passes the whole string). The geometry legs plus `_money_snap_proof` below are the
+# entire safety on this rung.
 # The left grow is already bounded by the located label's right edge (the C1 frame rule), so it
 # cannot swallow 'Balance Due'.
 _CURRENCY_EDGE_GROW_ON = os.environ.get('TEMPLATE_CURRENCY_EDGE_GROW', '0') != '0'
+
+# TEMPLATE_MONEY_SNAP_PROOF (ORACLE C3, BLOCKING — default ON whenever the parent flag is armed).
+# The value-level half of the money snap's licence. `_abs_edge_guard` may not rewrite a currency
+# value until it has PROVED a digit relation between the rigid and grown reads; the derived rung
+# had no such proof and simply adopted whatever the re-crop returned. `_money_snap_proof` supplies
+# it: re-read the UN-SNAPPED box and adopt the snap only if the two reads are provably related.
+# SHIPS ON, and this switch exists to MEASURE its cost, not to ship it off — turning it off
+# restores the unproven adopt that Oracle blocked. It is inert when the parent flag is off.
+_MONEY_SNAP_PROOF_ON = os.environ.get('TEMPLATE_MONEY_SNAP_PROOF', '1') != '0'
 
 # TEMPLATE_DRIFT_ROW_PITCH (kill switch, DEFAULT OFF — measured 2026-08-09, the same money hunt).
 # `_label_drifted` DECLARES A ONE-ROW LABEL MOVE TO BE "NOT DRIFTED", so the stationary taught box
@@ -220,6 +245,16 @@ _CURRENCY_EDGE_GROW_ON = os.environ.get('TEMPLATE_CURRENCY_EDGE_GROW', '0') != '
 # not fire, and a currently-correct total (doc 240) is untouched.
 # Default OFF; OFF reduces to the legacy expression verbatim and is byte-identical.
 _DRIFT_ROW_PITCH_ON = os.environ.get('TEMPLATE_DRIFT_ROW_PITCH', '0') != '0'
+
+# TEMPLATE_EXACTNESS_CENSUS (ORACLE C7 — a DIAGNOSTIC, not a behaviour switch; empty = OFF = inert).
+# TEMPLATE_DRIFT_ROW_PITCH can only fire when `_label_is_the_taught_one` passes, which needs the OCR
+# line to contain ONLY the taught label. `_ocr_lines` runs --psm 6 with no column segmentation, and
+# the corpus draws ONE totals geometry across all ten issuers — so the measured 31/31 is evidence
+# about one geometry, not about the class, and it is NOT the flag's recall ceiling. Set this to a
+# path and every mapping that reaches the drift check appends one JSON line (anchor_text vs the
+# matched OCR line, plus the verdict); `stress_test/exactness_census.py` aggregates the per-PID
+# files the shards write. Never report "money is fixed" from the corpus score without this number.
+_EXACTNESS_CENSUS_PATH = os.environ.get('TEMPLATE_EXACTNESS_CENSUS', '')
 
 # Stage 0.5 inline-code reconcile — default ON (kill with TEMPLATE_INLINE_CODE_RECONCILE=0).
 # A fixed narrow drawn target box clips a code value's prefix under per-scan offset/scale
@@ -1147,6 +1182,26 @@ def _located_too_wide(anchor_box, located):
     return w > max(0.30, (anchor_box.get("w_norm") or 0.0) * 2.5)
 
 
+def _exactness_census(field_key, val_type, anchor_text, located):
+    """ORACLE C7 diagnostic. One JSON line per mapping that reaches the drift check, recording the
+    taught label against the OCR line that answered it and whether the exactness predicate accepts.
+    That acceptance rate is TEMPLATE_DRIFT_ROW_PITCH's recall ceiling — the corpus score cannot show
+    it, because the corpus draws one totals geometry for every issuer.
+    Inert unless TEMPLATE_EXACTNESS_CENSUS names a path. Writes one file PER PID: the harness runs
+    8 shards and interleaved appends from 8 processes would corrupt the lines."""
+    if not _EXACTNESS_CENSUS_PATH:
+        return
+    try:
+        matched = (located or {}).get("matched_text")
+        rec = {"field": field_key, "type": val_type, "anchor": anchor_text,
+               "matched": matched, "exact": bool(_label_is_the_taught_one(anchor_text, matched))}
+        with open('%s.%d.jsonl' % (_EXACTNESS_CENSUS_PATH, os.getpid()), 'a',
+                  encoding='utf-8') as fh:
+            fh.write(json.dumps(rec) + '\n')
+    except Exception:
+        pass                      # a diagnostic must never change or break an extraction
+
+
 def _label_drifted(anchor_box, located, anchor_text=None):
     """True when the located anchor LABEL has moved off its taught position beyond
     a per-axis tolerance — the signal that the page has DRIFTED (e.g. a cropped vs
@@ -1538,6 +1593,7 @@ def _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
         # Slice B: snap the seated box to the word geometry underneath (B-C1: the cut frame is
         # the LOCATED label_box — same frame as the seat; None on a label-less locate → no cut,
         # majority-inside still applies). OFF/out-of-scope → returns the box unchanged.
+        _pre_snap = dict(derived_target)
         derived_target = _snap_box_to_words(page, derived_target, val_type, ocr_lines_fn,
                                             line_cache, label_box=located.get("label_box"))
         _cap = ((lambda c: slice_capture(field_key, "template_mapping", page_idx,
@@ -1545,6 +1601,16 @@ def _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
                     derived_target["w_norm"], derived_target["h_norm"]), c, "target")) if slice_capture else None)
         _d_meta = {}
         text = _crop_and_ocr(page, derived_target, val_type, ocr_text_fn, capture=_cap, meta=_d_meta)
+        # ORACLE C3: a money snap must PROVE its read against the un-snapped box before the value is
+        # adopted, because nothing downstream can (flat conf 90 clears the 88 floor, currency is
+        # self-validating, Stage 4 is a total-role flag). A refusal reverts to the pre-snap box and
+        # its read — i.e. exactly the flag-off behaviour, never a third state.
+        _c3 = _money_snap_proof(page, _pre_snap, derived_target, text, val_type, field_key,
+                                ocr_text_fn)
+        if _c3 is not None:
+            derived_target = _pre_snap
+            text = _c3.get("raw")
+            _d_meta['conf'] = _c3.get("conf")
         expanded = False
         if not text and expansion > 0:
             text = _crop_and_ocr(page, _expand_box(derived_target, expansion), val_type, ocr_text_fn, meta=_d_meta)
@@ -1657,12 +1723,21 @@ def _read_registration(page, mapping, target_box, val_type, ocr_text_fn, expansi
     # NEVER the taught anchor box against a transformed target.
     _reg_anchor = _norm_box(mapping, "anchor")
     _reg_label = page_transform.apply_box(_reg_anchor) if _reg_anchor else None
+    _reg_pre_snap = dict(reg_box)
     reg_box = _snap_box_to_words(page, reg_box, val_type, ocr_lines_fn,
                                  line_cache, label_box=_reg_label)
     _rcap = ((lambda c: slice_capture(field_key, "template_registration", page_idx,
                (reg_box["x_norm"], reg_box["y_norm"], reg_box["w_norm"], reg_box["h_norm"]),
                c, "target")) if slice_capture else None)
     rtext = _crop_and_ocr(page, reg_box, val_type, ocr_text_fn, capture=_rcap)
+    # ORACLE C3, same proof on the registration rung — this one is MORE exposed, not less: it
+    # assembles its own result dict rather than going through `_mapping_result`, and its confidence
+    # comes from the transform fit (capped at 96), so a snapped money read here can commit even
+    # higher than the derived rung's flat 90.
+    _rc3 = _money_snap_proof(page, _reg_pre_snap, reg_box, rtext, val_type, field_key, ocr_text_fn)
+    if _rc3 is not None:
+        reg_box = _reg_pre_snap
+        rtext = _rc3.get("raw")
     r_expanded = False
     if not rtext and expansion > 0:
         rtext = _crop_and_ocr(page, _expand_box(reg_box, expansion), val_type, ocr_text_fn)
@@ -2129,6 +2204,7 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
         # OCR LINE and could replace a clean box read with a garbled line read, e.g.
         # "Beaumont Care Homes Ltd - Comber" → "pantionahe MUGS Liu COTVCE". Genuine drift
         # that the per-label test misses is caught by the REGISTRATION ARBITER just below.)
+        _exactness_census(field_key, val_type, anchor_text, drift_located)   # ORACLE C7, inert by default
         if (drift_located and drift_located.get("matched_text") is not None
                 and _label_drifted(anchor_box, drift_located, anchor_text)):
             relocated = _relocate_and_read(page, mapping, anchor_box, target_box,
@@ -2584,6 +2660,105 @@ def _snap_box_to_words(page, seated_box, val_type, ocr_lines_fn, line_cache, lab
     if snapped["w_norm"] * snapped["h_norm"] > 4.0 * max(sw * sh, 1e-9):
         return seated_box
     return snapped
+
+
+# Whole-string amount test. It exists because nothing in this repo can answer "is this a well-formed
+# money literal?" — `validation_patterns.currency` and `validator.parse_amount` both use `re.search`,
+# so '3.765.72' passes them via the substring '765.72' (measured). Anglo convention, matching
+# `number_format`'s default: comma thousands, dot decimal, at most two decimal places.
+_MONEY_WELLFORMED_RE = re.compile(r'(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?')
+
+
+def _money_wellformed(text):
+    """True when the WHOLE string (bare of sign/currency/parens/space) is a valid amount."""
+    if not text:
+        return False
+    s = str(text).strip()
+    s = re.sub(r'^[\s(\[]*[-–—+]?\s*[£$€]?\s*', '', s)
+    s = re.sub(r'\s*(?:GBP|USD|EUR|JPY)?[\s)\]]*$', '', s, flags=re.I)
+    return bool(s) and _MONEY_WELLFORMED_RE.fullmatch(s) is not None
+
+
+def _money_snap_proof(page, unsnapped_box, snapped_box, snapped_text, val_type, field_key,
+                      ocr_text_fn):
+    """ORACLE C3 (BLOCKING, 2026-08-09) — the derived money rung's missing proof.
+
+    Returns None to ADOPT the snap (proof passed, or not applicable), or
+    {'raw': <un-snapped read>, 'conf': <int|None>} to REFUSE it, in which case the caller reverts
+    to `unsnapped_box` and uses the returned read. Refusing is the baseline behaviour, so a refusal
+    can only ever move a value back to what the flag-off arm would have produced.
+
+    WHY A SECOND READ IS WORTH ITS COST. A derived money read has no other guard: confidence is a
+    flat 90 which clears the 88 auto-file floor, `currency` is in `_SELF_VALIDATING_TYPES` so the
+    learned-shape check is a no-op, and Stage 4's arithmetic is a flag, total-role only, and needs a
+    shadow subtotal. The extra crop is paid ONLY when the parent flag is armed, the type is currency,
+    and the snap actually MOVED the box — a few reads per document, never on the OFF path.
+
+    THE PREDICATE IS NOT ORACLE'S LITERAL WORDING, AND THE MEASUREMENT IS WHY. He signed "adopt
+    only if digits(snapped).endswith(digits(unsnapped)) and the snapped integer part is longer" —
+    an ADOPT-ON-PROOF rule that refuses whenever no relation can be shown. Built exactly as signed
+    and measured on the live 145-document arm, it scored total 111 ok / 6 wrong / 3 empty against
+    the unproven arm's 119 / 0 / 1: it cost EIGHT heals and MINTED SIX WRONG VALUES, including
+    reverting a credit note to the VAT row (Meadowvale 0023 '-609.62' -> '-101.60'), losing a minus
+    sign (0027 '-491.80' -> '491.20'), and turning a correct total into a wrong one (Silverbeck 0024
+    '999.72' -> '999.79'). His escape hatch (census every snap-moved read as a left-extension) fails
+    for the same reason.
+
+    THE PREMISE IS WHAT BROKE. On the ABSOLUTE rung the reference read is `abs_text`, the value that
+    would otherwise commit, so proving a rewrite against it is sound. On the DERIVED rung the
+    un-snapped box read is wrong 28 times in 120 — that IS the defect this flag exists to repair —
+    so an adopt-on-proof rule validates a good read against a known-bad reference. Worse, it cannot
+    distinguish the two things that both present as "unrelated digits": a snap that CORRECTED a
+    mis-seated box (right, and common) from a snap that TRUNCATED a correct read (wrong, and rare).
+    Refusing the whole class to catch the rare one is what cost the eight heals.
+
+    SO THE RULE IS INVERTED — refuse on EVIDENCE OF LOSS, not on absence of proof. Adopt the snap
+    unless the un-snapped read is a well-formed amount AND the snapped read is a proper digit-SUFFIX
+    of it with fewer integer digits, i.e. the snap demonstrably dropped LEADING digits. That is
+    money's only failure direction (it is right-aligned, so a longer value overflows left), it is
+    exactly the C1 exhibit ('£15,707.84' tokenised '£15,' + '707.84' -> '707.84' committing at 90),
+    and it fires on nothing else measured. The well-formed clause on the REFERENCE is load-bearing:
+    without it, garbage like '3.801.824' would be treated as a credible thing to have been truncated
+    from, and Pelican 0013's heal dies again.
+
+    DO NOT restore the adopt-on-proof form from reasoning. It is more conservative-looking and it is
+    measurably worse, on this repo's own corpus, in the direction that matters (wrong values that
+    auto-file). If it is ever revisited, the arm to beat is total 119 / 0 wrong / 1 empty."""
+    if val_type != 'currency' or not _CURRENCY_EDGE_GROW_ON or not _MONEY_SNAP_PROOF_ON:
+        return None
+    if not isinstance(unsnapped_box, dict) or not isinstance(snapped_box, dict):
+        return None
+    # An unmoved box is not a snap (`_snap_box_to_words` returns the seated box on every failure
+    # path) and must not pay for a second read.
+    try:
+        moved = any(abs(float(snapped_box[k]) - float(unsnapped_box[k])) > 1e-9
+                    for k in ("x_norm", "y_norm", "w_norm", "h_norm"))
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not moved:
+        return None
+    meta = {}
+    try:
+        raw = _crop_and_ocr(page, unsnapped_box, val_type, ocr_text_fn, meta=meta)
+    except Exception:                      # a failed comparison read is NO PROOF, not a licence
+        return {"raw": None, "conf": None}
+    do = re.sub(r'[^0-9]', '', str(raw or ''))
+    dn = re.sub(r'[^0-9]', '', str(snapped_text or ''))
+    if not do or not dn:
+        # No comparison is possible, so there is no EVIDENCE OF LOSS. Adopt. Refusing here was
+        # measured and cost two documents outright (empty 1 -> 3): an un-snapped box that reads
+        # nothing is the mis-seat the snap exists to repair, not a value it truncated.
+        return None
+    int_o = len(re.sub(r'[^0-9]', '', str(raw).split('.')[0]))
+    int_n = len(re.sub(r'[^0-9]', '', str(snapped_text).split('.')[0]))
+    # The refusal condition, and the only one: the reference is a credible amount, and the snapped
+    # read is that amount with LEADING digits removed. `do.endswith(dn)` is the direction test —
+    # reversing it tests for a left-EXTENSION, which is the heal, so a careless flip here turns the
+    # guard into its own opposite and every measured heal dies.
+    if (dn != do and do.endswith(dn) and int_o > int_n and _money_wellformed(raw)):
+        _EDGE_GUARD_FIRES.append((field_key, 'snap', 'money_truncation_refused'))
+        return {"raw": raw, "conf": meta.get('conf')}
+    return None
 
 
 def _page_words_cached(page, ocr_lines_fn, line_cache):
