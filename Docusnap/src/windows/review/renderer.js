@@ -3350,7 +3350,9 @@ function drawTraceBbox(bbox, kind, stage, keep, label, persist) {
   const color = kind === 'anchor' ? '#4f8ef7' : '#d4820a';
   traceCtx.save();
   traceCtx.setLineDash([3, 3]);
-  traceCtx.lineWidth = 2;
+  // 1px hairline (owner 2026-08-09): at 2px the stroke straddles the glyphs it is meant to bound,
+  // so you cannot see whether an edge cuts through a character — which is the whole diagnostic.
+  traceCtx.lineWidth = 1;
   traceCtx.strokeStyle = color;
   traceCtx.strokeRect(x + 0.5, y + 0.5, bw, bh);
   traceCtx.setLineDash([]);
@@ -3372,9 +3374,9 @@ function drawTraceBbox(bbox, kind, stage, keep, label, persist) {
 function _drawBoxLabel(x, y, bw, bh, text, color) {
   const c = traceCtx;
   c.save();
-  c.font = '600 11px "IBM Plex Sans", system-ui, sans-serif';
-  const padX = 4, padY = 2, tw = Math.ceil(c.measureText(text).width);
-  const lh = 15;
+  c.font = '400 9px "IBM Plex Sans", system-ui, sans-serif';   // finer — the label must not out-shout the page
+  const padX = 3, tw = Math.ceil(c.measureText(text).width);
+  const lh = 12;
   const above = y - lh - 1 >= 0;
   const lx = Math.max(0, Math.min(x, traceCanvas.width - tw - padX * 2));
   const ly = above ? y - lh - 1 : y + 1;
@@ -7769,6 +7771,7 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
   const overlay  = document.getElementById('rdt');
   if (!overlay) return;
   const elTable   = document.getElementById('rdt-table');
+  const elScroll  = document.getElementById('rdt-scroll');
   const elEmpty   = document.getElementById('rdt-empty');
   const elStats   = document.getElementById('rdt-stats');
   const elToast   = document.getElementById('rdt-toast');
@@ -7805,21 +7808,140 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
     return `<td class="${cls}" data-id="${row.id}" data-f="${esc(f)}">${inner}</td>`;
   }
 
+  // ── SORTING (owner request, 2026-08-09) — click a header to sort ALPHABETICALLY, click again to
+  // reverse. `sortCol` is the field key, or '__doc' for the document column, or null for the
+  // queue's own order. EMPTY CELLS ALWAYS SINK, in both directions: a debug grid is read to find
+  // the rows that HAVE a suspicious value, and a descending sort that floats 60 blank cells to the
+  // top buries exactly what you opened the table for.
+  // Alphabetical by explicit instruction, so '10' sorts before '9'. Do not "improve" this into a
+  // numeric-aware compare without asking — on this grid the columns are reference codes and
+  // methods far more often than they are quantities.
+  let sortCol = null, sortDir = 1;
+  const sortVal = (row, f) => (f === '__doc'
+    ? String(row.filename || '')
+    : String(((row.fields || {})[f] || {}).value ?? '')).trim();
+
+  function applySort() {
+    if (!data) return;
+    if (!data._orig) data._orig = data.rows.slice();       // the queue's own order, for the reset
+    if (!sortCol) { data.rows = data._orig.slice(); return; }
+    const coll = new Intl.Collator(undefined, { sensitivity: 'base' });
+    data.rows = data._orig.slice().sort((a, b) => {
+      const va = sortVal(a, sortCol), vb = sortVal(b, sortCol);
+      if (!va && !vb) return 0;
+      if (!va) return 1;                                   // blanks last regardless of direction
+      if (!vb) return -1;
+      return coll.compare(va, vb) * sortDir;
+    });
+  }
+
   function renderTable() {
     if (!data || !data.rows.length) {
       elEmpty.hidden = false; elEmpty.textContent = 'Review queue is empty.'; elTable.innerHTML = ''; updateStats(); return;
     }
     elEmpty.hidden = true;
-    const head = `<thead><tr><th class="doc-col">Document</th>`
-      + data.columns.map(f => `<th title="${esc(f)}">${esc(data.labels[f] || f)}</th>`).join('') + `</tr></thead>`;
+    const mark = (col) => (sortCol === col
+      ? `<span class="rdt-sortmark">${sortDir > 0 ? '▲' : '▼'}</span>`
+      : '<span class="rdt-sortmark">▲</span>');
+    const grip = '<span class="rdt-colgrip" title="Drag to resize this column"></span>';
+    const th = (col, label, cls) =>
+      `<th class="${cls}${sortCol === col ? ' sorted' : ''}" data-col="${esc(col)}" `
+      + `title="${esc(col === '__doc' ? 'Document' : col)} — click to sort">${esc(label)}${mark(col)}${grip}</th>`;
+    const head = `<thead><tr>${th('__doc', 'Document', 'doc-col')}`
+      + data.columns.map(f => th(f, data.labels[f] || f, '')).join('') + `</tr></thead>`;
     const body = data.rows.map(row => {
       const docCell = `<td class="doc-col" data-id="${row.id}"><div class="rdt-fname" title="${esc(row.filename)}">${esc(row.filename || '(' + row.id + ')')}</div>`
         + `<div class="rdt-dmeta"><span class="type">${esc(row.typeName || 'untyped')}</span>${row.supplier ? ' · ' + esc(row.supplier) : ''}</div></td>`;
       return `<tr data-id="${row.id}">${docCell}${data.columns.map(f => cellHtml(row, f)).join('')}</tr>`;
     }).join('');
     elTable.innerHTML = head + `<tbody>${body}</tbody>`;
+    // innerHTML replaces the <th> nodes, so any widths the owner dragged are gone with them —
+    // re-apply after every render or a single sort click silently undoes all their sizing.
+    applyColWidths();
     updateStats();
   }
+
+  // ── Header click → sort. Bound on the TABLE (it is re-rendered wholesale, so per-th listeners
+  // would be lost every render). A click that began on a resize grip is not a sort: the drag
+  // handler stops propagation, and this guard is the second line of defence.
+  elTable.addEventListener('click', (e) => {
+    if (e.target.closest('.rdt-colgrip')) return;
+    const h = e.target.closest('thead th'); if (!h) return;
+    const col = h.dataset.col;
+    if (sortCol === col) {
+      // asc → desc → back to the queue's own order. The third state matters: once sorted there is
+      // otherwise no way back to the order the queue itself uses without reopening the panel.
+      if (sortDir > 0) sortDir = -1; else { sortCol = null; sortDir = 1; }
+    } else { sortCol = col; sortDir = 1; }
+    const keepLeft = elScroll ? elScroll.scrollLeft : 0;
+    applySort(); renderTable();
+    if (elScroll) { elScroll.scrollTop = 0; elScroll.scrollLeft = keepLeft; }
+  });
+
+  // ── Column resize. The table is auto-layout so a column cannot be made NARROWER than its
+  // content; on the first drag we freeze every column at its measured width and switch to
+  // table-layout:fixed, which is what makes shrinking possible at all. Widths are inline on the
+  // <th>, so a re-render (sorting, reload) would drop them — they are re-applied afterwards.
+  const colW = new Map();                       // col key -> px, once the owner has sized it
+  function applyColWidths() {
+    if (!colW.size) return;
+    elTable.classList.add('sized');
+    elTable.querySelectorAll('thead th').forEach(h => {
+      const w = colW.get(h.dataset.col);
+      if (w) h.style.width = w + 'px';
+    });
+  }
+  function freezeCurrentWidths() {
+    if (colW.size) return;                      // already frozen by an earlier drag
+    elTable.querySelectorAll('thead th').forEach(h => colW.set(h.dataset.col, h.offsetWidth));
+    elTable.classList.add('sized');
+    applyColWidths();
+  }
+  elTable.addEventListener('mousedown', (e) => {
+    const g = e.target.closest('.rdt-colgrip'); if (!g) return;
+    e.preventDefault(); e.stopPropagation();    // never start a sort or a panel drag from the grip
+    const h = g.closest('th'); if (!h) return;
+    freezeCurrentWidths();
+    const col = h.dataset.col, x0 = e.clientX, w0 = h.offsetWidth;
+    g.classList.add('dragging'); document.body.classList.add('rdt-resizing');
+    const move = (ev) => {
+      const w = Math.max(48, w0 + (ev.clientX - x0));   // 48px floor: never drag a column to nothing
+      colW.set(col, w); h.style.width = w + 'px';
+    };
+    const up = () => {
+      g.classList.remove('dragging'); document.body.classList.remove('rdt-resizing');
+      window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+  });
+
+  // ── Maximise / restore. Drag and CSS-resize both write INLINE styles on #rdt, which would beat
+  // the .maxed class, so the inline set is stashed and cleared on maximise and restored verbatim
+  // on the way back — otherwise "restore" leaves the panel wherever the maximise happened to put
+  // it, which reads as the button being broken.
+  const btnMax = document.getElementById('rdt-max');
+  let stashed = null;
+  function setMaxed(on) {
+    if (on === !!stashed) return;
+    if (on) {
+      stashed = { top: overlay.style.top, left: overlay.style.left,
+                  width: overlay.style.width, height: overlay.style.height };
+      overlay.style.top = overlay.style.left = overlay.style.width = overlay.style.height = '';
+      overlay.classList.add('maxed');
+    } else {
+      overlay.classList.remove('maxed');
+      Object.assign(overlay.style, stashed);
+      stashed = null;
+    }
+    btnMax.classList.toggle('on', !!stashed);
+    btnMax.setAttribute('aria-pressed', stashed ? 'true' : 'false');
+    btnMax.title = stashed ? 'Restore' : 'Maximise / restore (F11)';
+  }
+  btnMax?.addEventListener('click', () => setMaxed(!stashed));
+  document.addEventListener('keydown', (e) => {
+    if (!open) return;
+    if (e.key === 'F11') { e.preventDefault(); setMaxed(!stashed); }
+  });
 
   // Click a VALUE cell → toggle its wrong flag. That is ALL the owner does — the main
   // session reads the flagged doc to work out the correct value (owner rule: don't make
