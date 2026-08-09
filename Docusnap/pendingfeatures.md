@@ -6,6 +6,36 @@
 
 ---
 
+## 2026-08-09 NIGHT — two residuals left by the issuer fix (`8f9dd5a` + `045b176`)
+
+Both surfaced BY the gate, neither is a blocker for the pair, and both are recorded rather than
+tuned because each is a decision, not a bug fix.
+
+**(1) A CONFIRMATION COSTS CONFIDENCE — 6 documents, correct value, 95 -> 78.**
+With the arbiter silenced, six documents whose taught box reads the company name CORRECTLY move
+`template_fixed`@95 -> `template_mapping`@78 (and two more `anchor_crop`@50 -> `template_mapping`@78).
+The value is right in both arms; what changes is provenance. Four of them fall below the 88 band as
+a result. Mechanism: `is_curated_refinement` (`engine.py`, the Stage-0.5 merge) lets ANY non-weak
+mapping read displace the curated seed, including one that AGREES with it — so reading the same
+name a second time is treated as a refinement rather than as corroboration.
+**Fix direction (not built):** when the mapping read and the curated `fixed_value` are the same
+value, keep the SEED (its 95, its `template_fixed` method), not the read. That is the same shape as
+`_fixed_seed_declines_mapping`'s raw-equality short-circuit, which today returns None on agreement
+and lets the read through. Oracle's rule for Fix 2 — *confirmation grants no new authority* — points
+the same way: agreement should license keeping what is there, never demote it.
+**Watch:** this would flip method to `template_fixed` on agreement corpus-wide, which ARMS
+`TEMPLATE_FIXED_NAME_PRESENCE_VETO` on thousands of documents. That is exactly the blast radius the
+near-match branch's short-circuit was written to avoid — measure before believing it is free.
+
+**(2) ORACLE G3 IS NOT MET BY THE PAIR (it is met by the arbiter fix alone).**
+`arbiter` + `issuer_region_presence` moves TWO documents (Castellan worksheets 0012 and 0030) above
+the >= 88 field-confidence band, because their issuer is now correct at 95 — and both still carry a
+PRE-EXISTING wrong `account_no` (`'JB-6875'`/`'JB-5027'`: the JOB REF read as the account code).
+Neither fix creates or alters a wrong value, and the population at >= 88 carrying a wrong value falls
+21 -> 13, but the bar was ZERO GAINED. Auto-file cannot fire on this install at all (threshold 100,
+max `overall_confidence` 95), so the exposure is latent. **Owner/Oracle decision, not mine.**
+The underlying `account_no` defect is worth 40 wrong cells corpus-wide and is its own slice.
+
 ## 2026-08-09 — SFDEV: show the WINNING KEYWORD (the caption the app actually matched)
 
 **Owner request, verbatim:** *"in SFDEV i would like to see the winning keyword so i know what the
