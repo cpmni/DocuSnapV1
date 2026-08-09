@@ -1203,6 +1203,9 @@
   #rdt-table.sized { table-layout: fixed; }
   #rdt-table.sized th, #rdt-table.sized td { overflow: hidden; text-overflow: ellipsis; }
   body.rdt-resizing { cursor: col-resize !important; user-select: none; }
+  /* Drag-select a rectangle of cells. The cells must not take a text selection while the pointer
+     is dragging across them, or the browser paints a blue text highlight over the flags. */
+  #rdt-table tbody .rdt-cell { user-select: none; cursor: pointer; }
   #rdt-table .doc-col { position: sticky; left: 0; z-index: 2; background: var(--surface2);
               max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
   #rdt-table thead .doc-col { z-index: 4; }

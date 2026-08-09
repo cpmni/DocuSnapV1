@@ -7958,11 +7958,67 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
       return;
     }
     const td = e.target.closest('.rdt-cell'); if (!td) return;
+    if (suppressClick) { suppressClick = false; return; }   // the mouseup that ended a drag
     const k = skey(Number(td.dataset.id), td.dataset.f);
     if (flagged.has(k)) { flagged.delete(k); td.classList.remove('wrong'); }
     else { flagged.add(k); td.classList.add('wrong'); }
     updateStats();
   });
+
+  // ── CLICK-AND-DRAG RECTANGLE SELECT (owner request, 2026-08-09) — flagging a 3x10 block one
+  // cell at a time is 30 clicks. Drag across a rectangle and every cell in it takes the SAME
+  // action, decided by the cell you started on: if that cell was unflagged the whole rectangle is
+  // flagged, if it was flagged the whole rectangle is cleared. One rule, so a drag is predictable
+  // and is its own undo — drag the same block again to reverse it.
+  //
+  // ADDITIVE, not a replacement: a plain click still toggles one cell (the drag only takes over
+  // once the pointer actually enters a second cell, so a click that jitters by a pixel is still a
+  // click). The existing click handler is suppressed for exactly the mouseup that ends a drag.
+  let dragAnchor = null, dragAdd = true, suppressClick = false;
+  const cellPos = (td) => {
+    const tr = td.parentElement;
+    return { r: tr.sectionRowIndex, c: td.cellIndex };
+  };
+  function paintRect(toTd) {
+    if (!dragAnchor) return;
+    const a = dragAnchor.pos, b = cellPos(toTd);
+    const r0 = Math.min(a.r, b.r), r1 = Math.max(a.r, b.r);
+    const c0 = Math.min(a.c, b.c), c1 = Math.max(a.c, b.c);
+    const body = elTable.tBodies[0]; if (!body) return;
+    for (let r = r0; r <= r1; r++) {
+      const tr = body.rows[r]; if (!tr) continue;
+      for (let c = c0; c <= c1; c++) {
+        const td = tr.cells[c];
+        if (!td || !td.classList.contains('rdt-cell')) continue;   // never the sticky doc column
+        const k = skey(Number(td.dataset.id), td.dataset.f);
+        if (dragAdd) { flagged.add(k); td.classList.add('wrong'); }
+        else { flagged.delete(k); td.classList.remove('wrong'); }
+      }
+    }
+    updateStats();
+  }
+  elTable.addEventListener('mousedown', (e) => {
+    // Cleared on EVERY interaction, not on the click that consumes it: a drag released outside a
+    // cell fires no cell click, so a flag left standing would silently swallow the next real one.
+    suppressClick = false;
+    if (e.button !== 0 || e.target.closest('.rdt-colgrip')) return;
+    const td = e.target.closest('.rdt-cell'); if (!td) return;
+    e.preventDefault();                                   // no text selection while dragging
+    dragAnchor = { td, pos: cellPos(td) };
+    dragAdd = !flagged.has(skey(Number(td.dataset.id), td.dataset.f));
+  });
+  elTable.addEventListener('mouseover', (e) => {
+    if (!dragAnchor) return;
+    const td = e.target.closest('.rdt-cell'); if (!td || td === dragAnchor.td) return;
+    if (!suppressClick) {
+      // First cell entered: this is a drag, not a click. Apply the anchor cell too — the click
+      // handler will never run for it now.
+      suppressClick = true;
+      paintRect(dragAnchor.td);
+    }
+    paintRect(td);
+  });
+  window.addEventListener('mouseup', () => { dragAnchor = null; });
 
   async function openTable() {
     if (open) return;
