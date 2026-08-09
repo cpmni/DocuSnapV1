@@ -644,6 +644,7 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          ['inline-row-overlap-toggle', 'template_inline_row_overlap'],
                          ['ref-role-digit-toggle', 'ref_role_digit_gate'],
                          ['inline-offset-veto-toggle', 'anchor_inline_taught_offset_veto'],
+                         ['deskew-import-toggle', 'deskew_on_import'],
                          // NOT an extraction switch and NOT bridged through _reconcileEnv: the
                          // auto-file gate is JS-side, so database/modules/trust.js reads this key
                          // itself, once per document. That also means it takes effect on the next

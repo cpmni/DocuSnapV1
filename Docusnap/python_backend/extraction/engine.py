@@ -408,6 +408,39 @@ except (TypeError, ValueError):
 # Default OFF (=1 arms); OFF = byte-identical. Pins: tests/test_teach_angle_compose.py.
 TEACH_ANGLE_COMPOSE = os.environ.get('TEACH_ANGLE_COMPOSE', '0') != '0'
 
+# TEACH_ANGLE_COMPOSE_SCAN — PLACEMENT-ONLY skew correction (Oracle 2026-08-09, "fix placement,
+# not pixels"). The sibling of TEACH_ANGLE_COMPOSE above, for the path where the page is NOT
+# deskewed — i.e. ordinary import.
+#
+# THE PROBLEM IT SOLVES. A taught box carries the teach sample's tilt θ_t. The document being read
+# has its own tilt θ_s. At 1.6° a 0.16-wide box drifts ~0.003 page-height — about HALF A TEXT LINE,
+# which is exactly enough to shear a 2-row-tall free-text box onto the caption or the address row.
+# That is a PLACEMENT error of half a line.
+#
+# WHY NOT JUST STRAIGHTEN THE PAGE. Measured and ruled on: rotating the pixels fixed 213 of 1127
+# cells on a synthetic corpus, but that corpus tilts every page by at most 1.6° (gen_customer_test
+# .py:675) — entirely inside the band Tesseract self-tolerates and inside DESKEW_RAW_CROP_MAX_ANGLE
+# (2.0), and the band where this project's own doc-561 probe measured deskew making a REAL scan
+# WORSE ('DN-98447' -> 'Dobrery\Not\Ne:/DN/er!' after its own +1.9° deskew). Re-run at a 2.0° floor
+# the entire heal vanished — 0 of 1127 cells moved — proving the gain came only from the harmful
+# band. Rotating nine megapixels of paper to move one box half a line is the wrong instrument.
+#
+# THE TRANSFORM, derived from the two documented mappings rather than guessed:
+#     teach surfaces persist   raw   = C + R(+θ)·(level − C)      (anchorLabel.deskewedNormToRaw)
+#     _compose_box_to_level    out   = C + R(−θ)·(p − C)
+#   level        = C + R(−θ_t)·(teach_raw − C)
+#   current_raw  = C + R(+θ_s)·(level − C)
+#   ⇒ current_raw = C + R(θ_s − θ_t)·(teach_raw − C)  ⇒  pass θ = (θ_t − θ_s).
+# θ_s is measured NON-DESTRUCTIVELY (detect_skew_angle is documented "measures only"); not one
+# pixel is rotated, so the page, ocr_text, page-0 geometry, the logo phash and every learning write
+# all stay in ONE frame. The process_docs raw/deskewed identity split-brain cannot arise, and
+# raw_crop_recheck keeps its real cross-frame witness.
+# Stored rows are NEVER mutated — copies only, exactly as the deskew sibling does.
+# Default OFF (=1 arms); OFF = byte-identical. Pins: tests/test_teach_angle_compose_scan.py.
+TEACH_ANGLE_COMPOSE_SCAN = os.environ.get('TEACH_ANGLE_COMPOSE_SCAN', '0') != '0'
+_COMPOSE_SCAN_MIN_NET = 0.2    # below the detector's own noise floor a compose is not evidence
+_COMPOSE_SCAN_MAX_NET = 5.0    # beyond this the page is not "slightly askew" — leave it to review
+
 
 def _compose_box_to_level(x, y, w, h, theta_deg, W, H):
     """Rotate one raw-frame box (page-norm) into the LEVEL frame: transform the box's
@@ -5026,6 +5059,31 @@ class ExtractionEngine:
                             _landmarks = _compose_landmarks_to_level(_landmarks, _theta, _W, _H)
                             self.log(f"  Stage 0.5: composed {len(tmpl_mappings)} mapping(s) "
                                      f"teach-frame -> level (sample tilt {_theta:.2f} deg)")
+                    # PLACEMENT-ONLY sibling (see the TEACH_ANGLE_COMPOSE_SCAN flag block): the page
+                    # was NOT deskewed, so compose the taught boxes into THIS page's own raw frame
+                    # by (θ_t − θ_s). Mutually exclusive with the branch above by construction —
+                    # that one requires raw_pages (deskewed), this one requires their absence.
+                    elif (TEACH_ANGLE_COMPOSE_SCAN and not raw_pages
+                          and tmpl_mappings and crop_pages):
+                        try:
+                            _src_t = (mapping_src or matched_tmpl) or {}
+                            _tt = _src_t.get("sample_deskew_angle")
+                            _tt = float(_tt) if _tt is not None else 0.0
+                            from ocr.tesseract import detect_skew_angle as _dsa
+                            _ts = float(_dsa(crop_pages[0], _COMPOSE_SCAN_MIN_NET) or 0.0)
+                            _net = _tt - _ts
+                            if _COMPOSE_SCAN_MIN_NET <= abs(_net) <= _COMPOSE_SCAN_MAX_NET:
+                                _W, _H = crop_pages[0].size
+                                tmpl_mappings = _compose_mappings_to_level(tmpl_mappings, _net, _W, _H)
+                                _landmarks = _compose_landmarks_to_level(_landmarks, _net, _W, _H)
+                                self.log(f"  Stage 0.5: composed {len(tmpl_mappings)} mapping(s) "
+                                         f"teach-frame -> this page (teach {_tt:.2f} deg, "
+                                         f"scan {_ts:.2f} deg, net {_net:.2f} deg) — no pixels rotated")
+                                self._t('compose_scan', theta_teach=round(_tt, 2),
+                                        theta_scan=round(_ts, 2), net=round(_net, 2),
+                                        mappings=len(tmpl_mappings))
+                        except Exception:
+                            pass   # measurement/compose failure -> stored geometry, unchanged
                     mapping_results = template_mapper.extract_with_mappings(
                         crop_pages, tmpl_mappings,
                         field_patterns=field_patterns,

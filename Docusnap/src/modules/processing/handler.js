@@ -1617,6 +1617,27 @@ function register(ctx) {
         ...trainingArgs,
       ];
       if (filesFile) scriptArgs.push('--files-file', filesFile);
+      // STRAIGHTEN ON IMPORT (setting `deskew_on_import`, DEFAULT OFF — owner-observed 2026-08-09).
+      // The operator noticed that values wrong on import come back CORRECT after "Straighten +
+      // Reprocess", and the measurement backed it: 140 scanned documents, identical flags, the only
+      // difference being this argument —
+      //     customer 88 ok/52 wrong -> 140/0     date 116/21 -> 140/0      po_ref 17/3 -> 20/0
+      //     issuer   88/49 -> 112/28             ref  107/29 -> 120/20     total 81/33 -> 96/24
+      // ZERO lanes regressed. That matters because detection-time deskew was PARKED on the grounds
+      // that it is not monotone; on this corpus it was strictly monotone.
+      // ⚠ IT IS STILL DEFAULT OFF AND UNRULED. Deskew changes the coordinate frame every taught box
+      // and anchor is read in, and at IMPORT (unlike reprocess) a read can AUTO-FILE — so a
+      // non-monotone case here files a wrong value silently rather than routing to review. The
+      // measured corpus is deliberately jittered and may overstate the gain. Do not flip this
+      // without the Oracle pass and a realdoc arm.
+      // Python skips born-digital and confident-upright pages, so it is inert where it cannot help.
+      try {
+        if (learning.getSetting(db, 'deskew_on_import', 'false') === 'true') {
+          const floor = parseFloat(learning.getSetting(db, 'deskew_on_import_min_angle', '0.2'));
+          scriptArgs.push('--deskew-pages', '--deskew-min-angle',
+                          String(Number.isFinite(floor) ? Math.min(5, Math.max(0.2, floor)) : 0.2));
+        }
+      } catch { /* setting unreadable -> off, import unchanged */ }
       // Emit the dev trace stream + capture OCR slices while the hidden inspector
       // is open OR diagnostic logging is on (so the diagnostic file gets the full
       // per-stage trace + crop bboxes even with no window). Slice dir is created

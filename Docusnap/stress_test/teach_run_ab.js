@@ -24,7 +24,7 @@ try { labelOverrides = require(path.join(REPO, 'database', 'modules', 'label_ove
 
 const HOME = process.env.USERPROFILE || process.env.HOME;
 const SANDBOX = process.env.TEACH_SANDBOX || path.join(HOME, 'Desktop', 'TESTING', '_sandbox');
-const DB_PATH = path.join(SANDBOX, 'userData', 'docusnap.db');
+const DB_PATH = process.env.TEACH_DB || path.join(SANDBOX, 'userData', 'docusnap.db');
 const OUTDIR = path.join(HOME, 'Desktop', 'TESTING', 'arms');
 const PROCESS_DOCS = path.join(REPO, 'python_backend', 'process_docs.py');
 const CFG = path.join(REPO, 'config', 'keyword_patterns.json');
@@ -80,17 +80,40 @@ MUTATORS['unfreeze+retarget'] = (S, db) => { MUTATORS.unfreeze(S); MUTATORS.reta
 
 // Arms that change CODE behaviour rather than learning state: the extractor reads these from env.
 // Listed here so an arm name means one reproducible thing, rather than an env var someone typed.
+// Arms that add process_docs CLI FLAGS. --deskew-pages is how "Straighten + Reprocess" works;
+// it is passed only on reprocess today, never on import, because deskewing changes the coordinate
+// frame and is NOT monotone. This arm measures whether that parking still holds on real scans.
+const ARM_ARGS = {
+  deskew:       ['--deskew-pages', '--deskew-min-angle', '0.2'],
+  fixes_deskew: ['--deskew-pages', '--deskew-min-angle', '0.2'],
+  // Oracle C2, the discriminating experiment: the corpus generator tilts pages by at most 1.6
+  // degrees (gen_customer_test.py:675), so a 2.0 floor must leave every page untouched. If the
+  // measured heal VANISHES here, the entire gain came from the 0.2-1.6 band — the band Tesseract
+  // self-tolerates and which the doc-561 probe measured as HARMFUL on real paper.
+  deskew20:     ['--deskew-pages', '--deskew-min-angle', '2.0'],
+};
+
 const ARM_ENV = {
   refgate:  { STAGE05_REF_CODE_GATE: '1' },
   exclusive:{ KEYWORD_GENERIC_CAPTION_EXCLUSIVE: '1' },
   typeowner:{ TYPE_TITLE_OWNER_PRECEDENCE: '1' },
   fixes:    { STAGE05_REF_CODE_GATE: '1', KEYWORD_GENERIC_CAPTION_EXCLUSIVE: '1',
               TYPE_TITLE_OWNER_PRECEDENCE: '1' },
+  fixes_deskew: { STAGE05_REF_CODE_GATE: '1', KEYWORD_GENERIC_CAPTION_EXCLUSIVE: '1',
+              TYPE_TITLE_OWNER_PRECEDENCE: '1', FILING_VALUE_SANITY_FLAGS: '1' },
   sanity:   { FILING_VALUE_SANITY_FLAGS: '1' },
+  // Oracle's ruling: fix PLACEMENT, not pixels. Composes the taught box by (theta_teach -
+  // theta_scan) using a non-destructive skew measurement. No page is rotated.
+  compose:  { STAGE05_REF_CODE_GATE: '1', KEYWORD_GENERIC_CAPTION_EXCLUSIVE: '1',
+              TYPE_TITLE_OWNER_PRECEDENCE: '1', FILING_VALUE_SANITY_FLAGS: '1',
+              TEACH_ANGLE_COMPOSE_SCAN: '1' },
+  deskew20: { STAGE05_REF_CODE_GATE: '1', KEYWORD_GENERIC_CAPTION_EXCLUSIVE: '1',
+              TYPE_TITLE_OWNER_PRECEDENCE: '1', FILING_VALUE_SANITY_FLAGS: '1' },
   all4:     { STAGE05_REF_CODE_GATE: '1', KEYWORD_GENERIC_CAPTION_EXCLUSIVE: '1',
               TYPE_TITLE_OWNER_PRECEDENCE: '1', FILING_VALUE_SANITY_FLAGS: '1' },
 };
 for (const k of Object.keys(ARM_ENV)) if (!MUTATORS[k]) MUTATORS[k] = () => {};
+for (const k of Object.keys(ARM_ARGS)) if (!MUTATORS[k]) MUTATORS[k] = () => {};
 
 function buildArgs(S) {
   return ['--fields-file', w('f', S.fields),
@@ -193,7 +216,9 @@ function runShards(folder, args, files, manifest, extraEnv, onDoc) {
     const step = Math.max(1, Math.ceil(files.length / 10));
     const armEnv = { ...env, ...(ARM_ENV[arm] || {}) };
     if (ARM_ENV[arm]) console.log(`    [env] ${Object.keys(ARM_ENV[arm]).join(', ')}`);
-    const res = await runShards(RR, buildArgs(S), files, manifest, armEnv, () => {
+    const armArgs = ARM_ARGS[arm] ? [...buildArgs(S), ...ARM_ARGS[arm]] : buildArgs(S);
+    if (ARM_ARGS[arm]) console.log(`    [args] ${ARM_ARGS[arm].join(' ')}`);
+    const res = await runShards(RR, armArgs, files, manifest, armEnv, () => {
       if (++done % step === 0 || done === files.length) {
         process.stdout.write(`    ${Math.round(100 * done / files.length)}% (${done}/${files.length})\n`);
       }
