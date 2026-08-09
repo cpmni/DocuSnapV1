@@ -6,7 +6,7 @@
 
 ---
 
-## 2026-08-09 NIGHT — two residuals left by the issuer fix (`8f9dd5a` + `045b176`)
+## 2026-08-09 NIGHT — two residuals left by the issuer fix (`587f5ac` + `045b176`)
 
 Both surfaced BY the gate, neither is a blocker for the pair, and both are recorded rather than
 tuned because each is a decision, not a bug fix.
