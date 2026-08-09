@@ -161,10 +161,17 @@ _STAGE05_REF_CODE_GATE = os.environ.get('STAGE05_REF_CODE_GATE', '0') != '0'
 # NOT drifted). Measured: '0,603.44' -> '£10,603.44' at conf 92 via the snap alone.
 # MONEY-ONLY SNAP LEGS (see `_snap_box_to_words`), because a snap adopts its read with no
 # comparison against the un-snapped one — unlike the edge guard, which must PROVE a digit-suffix
-# relation before it rewrites. Money is right-aligned, so the taught box's RIGHT edge sits on the
-# value's right edge: the snapped union's right edge must coincide with it within one glyph (which
-# refuses a union from the column to the right AND one that clustered onto the column to the left),
-# and the union must contain a digit (never snap money onto a pure-text word).
+# relation before it rewrites. FOUR legs: the union must contain a digit (never snap money onto a
+# pure-text word); its RIGHT edge must sit within one glyph of the taught box's (refusing the column
+# to the right, and a cluster that landed on the column to the left); no digit-bearing word the box
+# touches on that row may be dropped immediately to the LEFT of the union (the right-edge rule is
+# blind to what a re-fit SHRINKS past, and left is money's only failure direction); and the union
+# may span ONE ROW only (every figure in a totals column shares a right edge, so the right-edge rule
+# has no vertical discriminating power, and an over-tall taught box otherwise admits the row above).
+# THE ACTUAL FAIL-SAFE, worth naming because the geometry is not one: for `total` with a captured
+# subtotal, Stage 4's `subtotal + tax = total` cross-check fires on exactly the two ways this can be
+# wrong (a left truncation, and the wrong row of the same column). There is NO such backstop on
+# subtotal / vat_amount / balance_due, so those ride on the legs alone.
 # The left grow is already bounded by the located label's right edge (the C1 frame rule), so it
 # cannot swallow 'Balance Due'.
 _CURRENCY_EDGE_GROW_ON = os.environ.get('TEMPLATE_CURRENCY_EDGE_GROW', '0') != '0'
@@ -198,7 +205,16 @@ _CURRENCY_EDGE_GROW_ON = os.environ.get('TEMPLATE_CURRENCY_EDGE_GROW', '0') != '
 # WHAT THIS DISABLES DOWNSTREAM (name the seam): a label found ~one row off now triggers
 # `_relocate_and_read` where the stationary read used to stand — so it RELIES on that locate being
 # the right label, which is precisely why the exactness test is part of the fix and not a polish
-# item. A failed relocate falls through to the absolute read exactly as today.
+# item. It also relies on the located occurrence being the RIGHT ONE: an exact-score tie between a
+# repeated caption one row apart is arbitrated by proximity alone, and no string test can separate
+# those.
+# CORRECTION (007, 2026-08-09) — an earlier draft of this block claimed "a failed relocate falls
+# through to the absolute read exactly as today". IT DOES NOT. `_extract_one` is
+# `if _label_drifted(...): ... elif drift_located: anchor_stable = True`, so flipping drift to True
+# and then having `_relocate_and_read` return None leaves `anchor_stable` FALSE — which UNBLOCKS the
+# registration arbiter below it, a path that document could not previously reach. Expected latent
+# (a reflowing totals block yields a small `box_divergence`), but it is a second behaviour of this
+# flag and it is now written down rather than asserted away.
 # Measured: docs 296 '£226.32' -> '£1,357.92' and 263 '£-97.70' -> '£-586.22' (both = ground truth,
 # minus sign preserved); a non-drifted label (customer_name on the same page, dy = 0.00007) does
 # not fire, and a currently-correct total (doc 240) is untouched.
@@ -1177,9 +1193,15 @@ def _label_drifted(anchor_box, located, anchor_text=None):
     # caption ('Credit Ref' answered by 'Credit Date' one row below, measured), and believing one
     # of those seats the value on the wrong row just as surely. Everything the floor already
     # called drifted still is: this branch only ever ADDS.
-    if _DRIFT_ROW_PITCH_ON and dy > max((anchor_box.get("h_norm") or 0.0),
-                                        (located.get("h_norm") or 0.0)):
-        return _label_is_the_taught_one(anchor_text, located.get("matched_text"))
+    if _DRIFT_ROW_PITCH_ON and _label_is_the_taught_one(anchor_text, located.get("matched_text")):
+        # FRAME (007, 2026-08-09): measure against the TIGHT label box — the same geometry
+        # `_relocate_and_read._geometric` seats from. The top-level `located` box is the matched
+        # LINE, and at this sensitivity (~0.64 of a row) a merged line's centre offset, and a
+        # `located_h` inflated by emphasised money on the row, are no longer negligible — the
+        # latter RAISES the threshold exactly where money is bold. Test the box you will use.
+        _lb = located.get("label_box") or located
+        return abs(_cy(_lb) - _cy(anchor_box)) > max((anchor_box.get("h_norm") or 0.0),
+                                                     (_lb.get("h_norm") or 0.0))
     return False
 
 
@@ -1188,10 +1210,26 @@ def _label_is_the_taught_one(anchor_text, matched_text):
     scored well? Used only to license the sub-floor one-row drift above, where a mis-locate and a
     real move are one row apart and indistinguishable by geometry alone.
 
-    Exact after normalisation, OR the label followed by its own VALUE on one OCR line (an inline
-    key/value row matches as 'Invoice Number PI255450'). The tail must carry a DIGIT for that
-    second form: 'Total' + ' to Pay' is a different caption, 'Invoice Number' + ' PI255450' is the
-    field. Anything else — including a needle whose match is a fuzzy neighbour — is not believed."""
+    TWO FORMS, and the second one is narrow for a reason that was measured twice.
+      1. EXACT after alnum-normalisation — so teach/scan disagreement about case, ':' or '.' is free.
+      2. The label followed IMMEDIATELY by its own VALUE on one OCR line ('Invoice Number PI255450',
+         'Total (inc VAT) £3,564.72'). `_locate_anchor` returns the whole matched LINE as
+         `matched_text` (not the matched run), so an inline key/value row can never satisfy form 1.
+    THE TRAP IN FORM 2, and how it is closed: a plain "the tail contains a digit somewhere" test
+    accepts any caption that EXTENDS the taught label on a line carrying a figure — 'VAT' would
+    accept 'VAT Reg No 651 0027 84' (the class the shipped `vat_reg_not_amount` guard exists to
+    block), and 'Total' would accept 'Total VAT 226.32' and 'Total Due 1,234.56'. In a totals block
+    captions are systematically prefix-extended AND one row apart, which is exactly the family this
+    predicate exists to refuse. So the FIRST token after the label must itself carry the digit: the
+    thing immediately right of the caption is either its value or another caption's word.
+    MEASUREMENT ARBITRATED THIS, twice, and it is why neither reviewer's first instinct shipped:
+    dropping form 2 outright (both advisors' recommendation, on the reasoning that no measured heal
+    used it) COST 4 REAL HEALS on the live corpus — the Nordwind and Veltrix templates are taught
+    against 'Total (inc VAT)' / 'Total inc. VAT', whose rows print label and value together, so they
+    reverted to reading the VAT row. First-token keeps those 4 and still refuses every case above.
+    NOTE the residual neither form can discriminate: a caption appearing TWICE, verbatim, one row
+    apart. The page-wide locate arbitrates exact-score ties by proximity, so a repeated label is
+    believed on position alone."""
     _n = lambda s: re.sub(r'[^a-z0-9]+', ' ', str(s or '').lower()).strip()
     a, m = _n(anchor_text), _n(matched_text)
     if not a or not m:
@@ -1199,7 +1237,8 @@ def _label_is_the_taught_one(anchor_text, matched_text):
     if a == m:
         return True
     if m.startswith(a + ' '):
-        return bool(re.search(r'[0-9]', m[len(a):]))
+        _tail = m[len(a):].split()
+        return bool(_tail and re.search(r'[0-9]', _tail[0]))
     return False
 
 
@@ -2421,6 +2460,7 @@ def _snap_box_to_words(page, seated_box, val_type, ocr_lines_fn, line_cache, lab
     sx2, sy2 = sx1 + sw, sy1 + sh
     scy = sy1 + sh / 2.0
     admitted = []
+    row_band = []            # every word on this box's ROW, admitted or not (money anti-truncation)
     for ln in lines:
         for wd in (ln.get("words") or ()):
             try:
@@ -2434,9 +2474,10 @@ def _snap_box_to_words(page, seated_box, val_type, ocr_lines_fn, line_cache, lab
             # is more than ~0.6 heights off the box centre is another row's word.
             if abs((wy1 + wh / 2.0) - scy) > max(wh, sh) * 0.6:
                 continue
-            ix = max(0.0, min(sx2, wx1 + ww) - max(sx1, wx1))
-            iy = max(0.0, min(sy2, wy1 + wh) - max(sy1, wy1))
-            if ix <= 0 or iy <= 0:
+            row_band.append(wd)                      # ORACLE C1: recorded BEFORE the intersection
+            ix = max(0.0, min(sx2, wx1 + ww) - max(sx1, wx1))  # AND the majority tests, so the
+            iy = max(0.0, min(sy2, wy1 + wh) - max(sy1, wy1))  # money leg below can see a leading
+            if ix <= 0 or iy <= 0:                   # token that is FULLY OUTSIDE the taught box
                 continue                             # CORE INVARIANT: untouched → never admitted
             if (ix * iy) / (ww * wh) < 0.5:
                 continue                             # majority-inside (>=50% of the WORD's area)
@@ -2469,13 +2510,14 @@ def _snap_box_to_words(page, seated_box, val_type, ocr_lines_fn, line_cache, lab
         # with no comparison against the un-snapped read — the edge guard, by contrast, must PROVE a
         # digit-suffix relation before it rewrites. The licence to snap money is therefore carried by
         # the geometry, and money has an invariant a code does not: it is RIGHT-ALIGNED in its
-        # column, so the taught box's right edge sits ON the value's right edge and a longer value
-        # can only overflow LEFT. Pinning the two right edges together within one glyph is what makes
-        # this safe in BOTH directions — a union reaching into the column to the RIGHT, and a union
-        # that clustered onto the column to the LEFT (`cluster_value_words` picks the run nearest
-        # `expect_x`, which on a multi-column row need not be the run the box is sitting on), are
-        # each refused. Measured on the three live exhibits: |x2 - sx2| = 0.0023-0.0032 against a
-        # glyph of ~0.0074.
+        # column, so the taught box's right edge sits within ~a glyph of the value's right edge and
+        # a longer value can only overflow LEFT. (Within a glyph, NOT exactly on it — the tolerance
+        # is what lets a one-glyph right-side restore through, e.g. the measured '4,889.0' ->
+        # '4,889.00'; do not read the rule as an exact-coincidence invariant.) Pinning the two right
+        # edges is what refuses a union reaching into the column to the RIGHT, and one that
+        # clustered onto the column to the LEFT (`cluster_value_words` picks the run nearest
+        # `expect_x`, which on a multi-column row need not be the run the box is sitting on).
+        # Measured on the three live exhibits: |x2 - sx2| = 0.0023-0.0032 against a glyph of ~0.0074.
         # NOT ALSO A WIDTH CAP: majority-inside already bounds every admitted word at 2x the seated
         # width, so with the right edges pinned a runaway union would have to be a SINGLE token twice
         # the taught width — which is the legitimate restore direction. The existing 4x AREA cap
@@ -2488,6 +2530,54 @@ def _snap_box_to_words(page, seated_box, val_type, ocr_lines_fn, line_cache, lab
         _g = _gws[len(_gws) // 2] if _gws else 0.0
         if abs(x2 - sx2) > max(_g, 0.004):
             return seated_box            # right edges must coincide — else it is another column
+        # LEFT-TRUNCATION LEG (007, 2026-08-09). The right-edge rule proves SAME COLUMN and says
+        # nothing about what the re-fit DROPPED on the left — and left is money's ONLY failure
+        # direction, by the same argument that licenses this snap. A snap can shrink past a leading
+        # token three ways, and all three keep the right edge pinned so the rule above is blind:
+        # majority-inside (a partly-covered leading token), the untouched-core invariant (a fully
+        # outside one), and the label cut discarding a word that is 100% INSIDE the taught box.
+        # Oracle has ruled this seam before — `_snap_box_to_words` is a re-fit that can SHRINK, and
+        # the truncated value then commits at full confidence (docs/oracle_log.md, 2026-08-06).
+        # ORACLE C1 (BLOCKING, 2026-08-09): the first version of this leg scanned only words
+        # INTERSECTING the seated box, so it could not see mode 2 — the very case the 08-06 ruling
+        # named, while the comment above claimed to cover it. It now scans the whole ROW BAND. The
+        # exhibit: taught '£99.00', sibling prints '£15,707.84', Tesseract splits it '£15,' +
+        # '707.84' (this repo already documents that split — anchor.py's '$15 707.84' rejoin, which
+        # can only repair what is INSIDE the crop), leading token fully outside the box -> '707.84'
+        # commits as the total at 90 and auto-files.
+        # ORACLE C2 (BLOCKING): the token test is NOT digits-only. A separately tokenised leading
+        # '-' or '(' carries no digit, so a digits-only test dropped it and a CREDIT NOTE committed
+        # POSITIVE, unflagged — and the measured exhibit for the row-pitch fix is itself a credit
+        # note. Refuse when a VALUE-ISH word (digit-bearing, or wholly sign/currency punctuation)
+        # sits immediately left of the union within a normal inter-word space. That is a value's
+        # leading token; a neighbouring COLUMN is separated by a column gap and does not trip it.
+        _gap = max(_g * 1.5, 0.004)
+        for _w in row_band:
+            if any(_w is _a for _a in admitted):
+                continue
+            try:
+                _wx2 = float(_w["x_norm"]) + float(_w["w_norm"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            _wt = str(_w.get('text') or '').strip()
+            # Oracle's C2 set verbatim: digit-bearing, or a token that is WHOLLY sign/currency
+            # punctuation. I briefly narrowed this to sign-only, reasoning that dropping a detached
+            # '£' cannot change the number while dropping a '-' can, and blaming it for a lost heal.
+            # THE MEASUREMENT REFUTED THAT: both variants score identically on the live corpus
+            # (119/0/1), so the lost heal comes from the C1 row-band widening, not from the symbol.
+            # With the justification for deviating gone, the condition stays as signed off.
+            _value_ish = bool(re.search(r'[0-9]', _wt)) or bool(re.fullmatch(r'[-–—(£$€]+', _wt))
+            if _wx2 <= x1 and (x1 - _wx2) <= _gap and _value_ish:
+                return seated_box        # a leading token was dropped — never adopt a truncation
+        # SINGLE-ROW LEG. Every money figure in a totals block shares one right edge, so the rule
+        # above has NO vertical discriminating power — and the row band scales with the OPERATOR's
+        # taught height, which this project has on record at 2.2 line-heights (tpl 33). An over-tall
+        # money box therefore admits the row above, both rows pass the right-edge test, and
+        # `clean_crop_segment` takes the FIRST non-empty line — the wrong one. A money union may
+        # span one row only.
+        _cys = [float(w["y_norm"]) + float(w["h_norm"]) / 2.0 for w in admitted]
+        if _cys and (max(_cys) - min(_cys)) > max(float(w["h_norm"]) for w in admitted):
+            return seated_box            # two rows in the union — the box cannot choose between them
     pad = 0.004
     snapped = _clamp_box({"x_norm": x1 - pad, "y_norm": y1 - pad,
                           "w_norm": (x2 - x1) + 2 * pad, "h_norm": (y2 - y1) + 2 * pad})
