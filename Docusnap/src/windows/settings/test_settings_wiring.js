@@ -82,6 +82,8 @@ const BRIDGES = [
   ['currency-edge-grow-toggle', 'template_currency_edge_grow', 'TEMPLATE_CURRENCY_EDGE_GROW'],
   ['angle-compose-scan-toggle', 'teach_angle_compose_scan',    'TEACH_ANGLE_COMPOSE_SCAN'],
   ['fixed-issuer-repair-toggle','template_fixed_issuer_repair','TEMPLATE_FIXED_ISSUER_REPAIR'],
+  ['reg-arbiter-anchor-evidence-toggle', 'template_reg_arbiter_anchor_evidence',
+   'TEMPLATE_REG_ARBITER_ANCHOR_EVIDENCE'],
   ['vat-reg-toggle',            'vat_reg_not_amount',          'VAT_REG_NOT_AMOUNT'],
   ['credit-sign-toggle',        'credit_sign_coherence',       'CREDIT_SIGN_COHERENCE'],
   ['pad-window-read-toggle',    'template_pad_window_read',    'TEMPLATE_PAD_WINDOW_READ'],

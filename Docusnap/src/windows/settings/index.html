@@ -811,6 +811,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Trust a taught box when the field has no printed label to check it against</div>
+                <div class="threshold-sub">When you point out where a field sits, Scan Finder also notes the printed wording beside it (“Invoice No”, “Balance Due”) and uses it to check the page hasn't shifted before it reads. The company name at the top of a letterhead has no such wording — there is nothing to look for. Until now Scan Finder treated “no wording to check” the same as “checked and failed”, and fell back on a whole-page estimate of how the scan had moved; on a scan that estimate can pull the reading onto the wrong line, so what got saved as the sender was a page heading, a street address or a VAT line instead. With this on, it only falls back that way when there really was wording to find and it could not be found. On the test set the sender's name was wrong on 22 documents out of 140 for exactly this reason, and all 22 read correctly with this on. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="reg-arbiter-anchor-evidence-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Straighten crooked scans before reading them</div>
                 <div class="threshold-sub">A page that went through the scanner slightly askew is read at an angle, and the boxes Scan Finder was taught drift off the values they were pointed at. This straightens each crooked page before reading it — the same thing the ∞ Straighten button does in Review, applied automatically as documents come in. Your filed file is never altered; only the reading is straightened. It also changes what gets filed without you looking at it, so treat it as a trade rather than a free improvement. Pages that are already straight, and documents that carry their own text, are skipped. Off by default, and not yet recommended — straightening can make a marginal scan read worse as easily as better, and that has not been proven either way on real paper.</div>
               </div>

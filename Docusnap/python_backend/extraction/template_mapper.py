@@ -246,6 +246,40 @@ _MONEY_SNAP_PROOF_ON = os.environ.get('TEMPLATE_MONEY_SNAP_PROOF', '1') != '0'
 # Default OFF; OFF reduces to the legacy expression verbatim and is byte-identical.
 _DRIFT_ROW_PITCH_ON = os.environ.get('TEMPLATE_DRIFT_ROW_PITCH', '0') != '0'
 
+# TEMPLATE_REG_ARBITER_ANCHOR_EVIDENCE (kill switch, DEFAULT OFF — Oracle FINAL RULING 2026-08-09
+# NIGHT; "the layer MOVED", superseding gary's curated-seed decline branch).
+# THE BUG IN ITS NARROWEST CORRECT STATEMENT: **absent evidence is read as refuted evidence.**
+# `anchor_stable` is written to mean "this field's own label WAS looked for and could not prove the
+# page is stable". For a mapping with NO anchor it means "no label was ever looked for" — the drift
+# guard at `_extract_one` is `if abs_text and anchor_text and located is not _UNSET`, so an
+# anchor-less mapping skips it entirely and `anchor_stable` can NEVER become True. The registration
+# arbiter's `not anchor_stable` conjunct is then permanently satisfied, and it overrides a credible
+# absolute read on a GLOBAL transform divergence with ZERO local evidence that THIS box moved.
+# WHY ONLY `supplier_name` SUFFERS (censused at source, live DB): `template_field_mappings.anchor_text`
+# is NULL with dx = dy = 0.0 for `supplier_name` on ALL SEVEN templates — including the two scopes
+# scoring 20/20. Every other field carries a real printed caption ('BILL TO', 'JOB SHEET NO',
+# 'Balance Due', 'VAT Reg No') and can therefore prove page stability from its own found label and
+# shut this door. A letterhead COMPANY NAME has no printed caption — there is nothing to search for —
+# so the issuer structurally cannot defend itself.
+# MEASURED (`noreg` diagnostic arm, `71bce9b`): with registration OFF the issuer lane goes
+# 118 ok / 22 wrong -> 140 / 0 / 0. All 22 wrong values were won by `template_registration` at conf
+# 78-84; registration produced ZERO correct issuers in those scopes. The committed values were 14
+# document TITLES ('SERVICE WORKSHEET', 'RDER CONFIRMATION'), 6 ADDRESS lines and 2 VAT lines — none
+# of which a `shape_mode='flag'` free-text gate can reject. Registration is NOT net-harmful overall
+# (it earns its place on `vat_no`: 100/40 ON vs 92/48 OFF) and must NOT be switched off as a fix.
+# ARMED: the arbiter additionally requires that anchor evidence was AVAILABLE AND FAILED, not merely
+# absent — `anchor_evidence_available`, set in the drift-guard block above, is True exactly when this
+# mapping carries an anchor needle AND a locate was actually attempted for it.
+# WHAT THIS DISABLES DOWNSTREAM (name the seam): with the arbiter silenced, an anchor-less letterhead
+# box on a GENUINELY drifted page has no drift compensation left at all, and its garbled absolute read
+# can still displace the curated seed via `is_curated_refinement` (engine.py). That hole is Fix 2's
+# job (the region-scoped presence confirm), NOT this one — do not widen this conjunct to cover it.
+# PINNED TRADE-OFF (Oracle G5): a mapping WITH an anchor that simply FAILED TO LOCATE still takes the
+# registration branch. "Looked for and not found" is real evidence about the page; "never looked for"
+# is not. Do not "tidy" the two into one test.
+# Default OFF (=1 arms); OFF reduces to the legacy conjunction verbatim and is byte-identical.
+_REG_ARBITER_ANCHOR_EVIDENCE_ON = os.environ.get('TEMPLATE_REG_ARBITER_ANCHOR_EVIDENCE', '0') != '0'
+
 # TEMPLATE_EXACTNESS_CENSUS (ORACLE C7 — a DIAGNOSTIC, not a behaviour switch; empty = OFF = inert).
 # TEMPLATE_DRIFT_ROW_PITCH can only fire when `_label_is_the_taught_one` passes, which needs the OCR
 # line to contain ONLY the taught label. `_ocr_lines` runs --psm 6 with no column segmentation, and
@@ -2191,6 +2225,12 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
     #   • label found + at its spot → the absolute read already IS that anchored read,
     #                                 so mark it stable and let it stand.
     anchor_stable = False
+    # Was this field's own label EVER LOOKED FOR? (TEMPLATE_REG_ARBITER_ANCHOR_EVIDENCE — see the
+    # flag block.) `anchor_stable == False` conflates "looked for, could not prove stability" with
+    # "no label exists to look for"; the registration arbiter below must only override on the
+    # former. Set from the SAME predicate that admits the drift guard, so the two can never drift
+    # apart. Cheap and unconditional — the flag gates the USE, not the computation.
+    anchor_evidence_available = bool(anchor_text) and located is not _UNSET
     if abs_text and anchor_text and located is not _UNSET:
         drift_located = located or _locate_anchor(
             page, anchor_box, anchor_text, 1.0, ocr_lines_fn,
@@ -2228,15 +2268,21 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
     # correctly-anchored value (anchor_stable) is NEVER overridden by the transform.
     # Clean pages → divergence ≈ 0 → arbiter never fires → the absolute fast path
     # below is byte-identical. A failed reg read falls through.
+    # ANCHOR-EVIDENCE CONJUNCT (TEMPLATE_REG_ARBITER_ANCHOR_EVIDENCE, default OFF — see the flag
+    # block): an anchor-less mapping never had a local test to fail, so `not anchor_stable` is not
+    # evidence of drift for it. Counted (not silently skipped) so the root cause stays censusable.
     if (abs_text and page_transform is not None and not anchor_stable
             and registration.box_divergence(page_transform, target_box)
                 > max(target_box["h_norm"] * 0.5, _DRIFT_FLOOR)):
-        reg = _read_registration(page, mapping, target_box, val_type, ocr_text_fn,
-                                 expansion, page_transform, validation_patterns,
-                                 format_lookup, slice_capture, page_idx, field_key,
-                                 ocr_lines_fn=ocr_lines_fn, line_cache=line_cache)
-        if reg:
-            return reg
+        if _REG_ARBITER_ANCHOR_EVIDENCE_ON and not anchor_evidence_available:
+            _EDGE_GUARD_FIRES.append((field_key, 'reg_arbiter', 'declined_no_anchor_evidence'))
+        else:
+            reg = _read_registration(page, mapping, target_box, val_type, ocr_text_fn,
+                                     expansion, page_transform, validation_patterns,
+                                     format_lookup, slice_capture, page_idx, field_key,
+                                     ocr_lines_fn=ocr_lines_fn, line_cache=line_cache)
+            if reg:
+                return reg
     # ── ABS-RUNG WORD-EDGE GUARD (Slice C, jitter-crater arc) — see the flag block ──
     # GATE-OUTCOME-INDEPENDENT (Oracle C-C1: runs whether or not abs_text survived the
     # gate — a Slice-B date-clip rejection must not starve this geometric heal). Placed

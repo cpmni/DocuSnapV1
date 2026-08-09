@@ -378,6 +378,26 @@ function _reconcileEnv(db) {
     // Default OFF, byte-identical off. App RESTART to load the bridge.
     if (learning.getSetting(db, 'teach_angle_compose_scan', 'false') === 'true') env.TEACH_ANGLE_COMPOSE_SCAN = '1';
     if (learning.getSetting(db, 'template_fixed_issuer_repair', 'false') === 'true') env.TEMPLATE_FIXED_ISSUER_REPAIR = '1';
+    // ── THE ISSUER CURE (2026-08-09 NIGHT; Oracle FINAL RULING "the layer MOVED") ──
+    //  • TEMPLATE_REG_ARBITER_ANCHOR_EVIDENCE — the Stage-0.5 registration arbiter treats ABSENT
+    //    anchor evidence as REFUTED anchor evidence. `anchor_stable == False` is meant to say "this
+    //    field's own caption was looked for and could not prove the page is stable"; for a mapping
+    //    with no caption it only says "nothing was ever looked for". The arbiter then overrides a
+    //    perfectly good taught-box read on a GLOBAL page-transform divergence, with no local
+    //    evidence that this particular box moved.
+    //    ONLY THE ISSUER SUFFERS, and structurally: `template_field_mappings.anchor_text` is NULL
+    //    for `supplier_name` on all seven templates on this install (a letterhead company name has
+    //    no printed caption to search for), while every other field carries one ('BILL TO',
+    //    'Balance Due', 'VAT Reg No') and can therefore shut this door itself.
+    //    MEASURED: the issuer lane is 118 ok / 22 wrong; all 22 were won by `template_registration`
+    //    at conf 78-84, committing document titles, address lines and VAT lines. A diagnostic arm
+    //    with registration switched off entirely scores 140 / 0 / 0 on the same documents — the
+    //    taught boxes were right on all 22 and the arbiter was discarding their answers.
+    //    NOT "turn registration off": it earns its place elsewhere (vat_no 100/40 on vs 92/48 off).
+    //    PINNED TRADE-OFF: a mapping WITH a caption that simply failed to locate still takes the
+    //    registration branch — "looked for and not found" is evidence about the page.
+    //    Default OFF, byte-identical off. App RESTART to load the bridge.
+    if (learning.getSetting(db, 'template_reg_arbiter_anchor_evidence', 'false') === 'true') env.TEMPLATE_REG_ARBITER_ANCHOR_EVIDENCE = '1';
     return env;
   } catch { return {}; }
 }

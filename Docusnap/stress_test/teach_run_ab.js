@@ -165,6 +165,13 @@ const ARM_ENV = {
               TYPE_TITLE_OWNER_PRECEDENCE: '1', FILING_VALUE_SANITY_FLAGS: '1',
               TEMPLATE_FIXED_NEAR_MATCH_RECONCILE: '1', TEMPLATE_FIXED_FRAGMENT_DECLINE: '1' },
 };
+// THE ISSUER CURE (2026-08-09 NIGHT). `noreg` proved the arbiter was destroying good taught reads
+// by switching registration off wholesale — a diagnostic, not a candidate. This arm is the real
+// fix: the arbiter keeps its jurisdiction, but may only override where the field's own caption was
+// looked for AND failed. Same env as `money` plus one flag, so `arbiter` minus `money` is exactly
+// TEMPLATE_REG_ARBITER_ANCHOR_EVIDENCE and nothing else — and `money` re-run is the OFF twin that
+// proves the code edit is byte-identical with the flag off.
+ARM_ENV.arbiter = { ...ARM_ENV.money, TEMPLATE_REG_ARBITER_ANCHOR_EVIDENCE: '1' };
 // `noreg` must differ from the arm that MEASURED the 22 failures by exactly ONE thing: the
 // `--registration` CLI arg. Give it that arm's env verbatim, or the diagnostic moves two variables
 // and answers nothing.

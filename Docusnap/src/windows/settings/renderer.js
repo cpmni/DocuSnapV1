@@ -656,6 +656,11 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // path (no deskew) this is the one that actually fires.
                          ['angle-compose-scan-toggle', 'teach_angle_compose_scan'],
                          ['fixed-issuer-repair-toggle', 'template_fixed_issuer_repair'],
+                         // The issuer cure: the registration arbiter may only override a taught
+                         // read when the field's own caption was looked for AND failed. A mapping
+                         // with no caption (every `supplier_name` mapping on this install) never
+                         // had a test to fail, so it was being overridden on no local evidence.
+                         ['reg-arbiter-anchor-evidence-toggle', 'template_reg_arbiter_anchor_evidence'],
                          ['deskew-import-toggle', 'deskew_on_import'],
                          // NOT an extraction switch and NOT bridged through _reconcileEnv: the
                          // auto-file gate is JS-side, so database/modules/trust.js reads this key
