@@ -138,6 +138,16 @@ def main():
             # scoring them against each other marks a CORRECT read wrong twice over (once on issuer,
             # once on customer). Swap the two columns so like is compared with like.
             colmap['issuer'], colmap['customer'] = COLMAP['customer'], COLMAP['issuer']
+            # ...and DROP vat_no on the same grounds, verified at the pixels on
+            # Quillstone-Print_purchase_order_0015: the page carries exactly ONE VAT number,
+            # 'VAT Reg No GB 512 8846 27' in Bramblewood's own letterhead. The counterparty's VAT
+            # (ground truth's `vat_no` column) is NOT PRINTED ANYWHERE on a buyer-issued order.
+            # So the app reads the only VAT number on the page — correctly, by the field's role —
+            # and scoring it against a number that does not appear marks a correct read wrong on
+            # every purchase order. There is no ground truth here to score against, so this column
+            # is skipped rather than swapped: unlike issuer/customer, there is no second column
+            # holding the right answer.
+            colmap.pop('vat_no', None)
         checks = [(c, k) for c, k in colmap.items()] + [('ref', rk), ('date', dk)]
         for col, key in checks:
             if not key or g.get(col) in (None, ''):

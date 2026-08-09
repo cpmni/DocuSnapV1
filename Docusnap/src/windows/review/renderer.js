@@ -47,6 +47,16 @@ function isRefFieldKey(key) {
   const k = (key || '').toLowerCase();
   return k.endsWith('_number') || k.endsWith('_no') || k.includes('reference');
 }
+// A VAT REGISTRATION NUMBER, by key or by display label — a REGISTRATION field, never the VAT
+// AMOUNT. The amount is typed currency, so `TYPE_TO_VALIDATION` has already mapped it before this
+// is consulted; the guard on 'tax'/'amount'/'total' is a second belt for a custom field keyed
+// 'vat_amount' that somebody typed as text.
+function isVatFieldKey(key, label) {
+  const s = ((key || '') + ' ' + (label || '')).toLowerCase();
+  if (!/\bvat\b|\bv\.a\.t/.test(s)) return false;
+  if (/amount|total|tax\b|\bdue\b/.test(s)) return false;
+  return /\bno\b|number|reg|registration|\bid\b/.test(s) || /^vat_no$/.test((key || '').toLowerCase());
+}
 // Field → validation key, mirroring engine.py's _TYPE2VAL + the ref-field
 // coercion: a reference field typed Number/Currency is validated as a CODE
 // (alphanumeric), not as money. Without this a valid ref "2602-0926-1" failed
@@ -58,6 +68,13 @@ function validationKeyFor(def) {
   if ((mapped === 'currency' || mapped === 'currency_code') && isRefFieldKey(def.key)) {
     mapped = 'alphanumeric';
   }
+  // A VAT REGISTRATION NUMBER is its own format, and this line must sit ABOVE the ref-role
+  // fallback below or the `_no` suffix claims it first. `vat_no` is typed plain "text" on every
+  // shipped and preset type, so without this the on-blur validator would keep accepting 'VAT' or
+  // '3PL' by the loose alphanumeric rule while the backend (which now ships
+  // field_patterns.vat_no -> vat_gb) refuses them — the UI telling the operator a value is fine
+  // that the reader will not keep. Mirrors the backend exactly.
+  if (!mapped && isVatFieldKey(def.key, def.label)) mapped = 'vat_gb';
   // The doc-type REFERENCE role is created as plain "text", so it would be left
   // free-text (no constraint). It holds a CODE — gate it as alphanumeric, mirroring
   // engine.py's _seed_field_patterns ref-role coercion, so the on-blur validator and

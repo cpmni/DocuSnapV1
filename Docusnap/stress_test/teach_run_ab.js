@@ -78,6 +78,41 @@ const MUTATORS = {
 };
 MUTATORS['unfreeze+retarget'] = (S, db) => { MUTATORS.unfreeze(S); MUTATORS.retarget(S, db); };
 
+// Simulates TEMPLATE_FREEZE_QUALIFY: release only those frozen values that the freeze guard would
+// have refused to write in the first place (a printed CAPTION, a value failing the field's own
+// format, or a code-role field holding no digit). The issuer and admin-locked rows are never
+// touched. This is the NARROW cousin of `unfreeze` above — and the difference is the whole point:
+// the blanket version measured vat_no 51% -> 16% because a VAT number IS a genuine per-supplier
+// constant. It uses the SAME predicate module the product does, so the arm cannot drift from the
+// shipped behaviour.
+// IT PRINTS EVERY ROW IT RELEASES. An arm that releases nothing is VACUOUS and its green score
+// proves nothing; an arm that releases as many rows as `unfreeze` means the predicate is too wide.
+MUTATORS.freezequal = (S, db) => {
+  const { freezeDeclineReason } = require(path.join(REPO, 'database', 'modules', 'freeze_guard.js'));
+  const typeOf = {};
+  try {
+    for (const r of db.prepare(
+      `SELECT dt.slug slug, f.key key, f.type type, f.label label
+         FROM fields f JOIN document_types dt ON dt.id = f.document_type_id`).all()) {
+      typeOf[`${(r.slug || '').toLowerCase()}|${r.key}`] = r;
+    }
+  } catch (e) { console.log('    [freezequal] field metadata unavailable:', e.message); }
+  let released = 0, kept = 0;
+  for (const t of S.templates) {
+    for (const f of (t.fields || [])) {
+      if (f.is_variable === 1 || f.is_variable === true) continue;
+      if (!f.fixed_value) continue;
+      if (f.fixed_locked === 1 || f.fixed_locked === true) { kept++; continue; }
+      const meta = typeOf[`${(t.document_type_slug || '').toLowerCase()}|${f.field_key}`] || null;
+      const reason = freezeDeclineReason(f.field_key, f.fixed_value, meta);
+      if (!reason) { kept++; continue; }
+      console.log(`    [freezequal] release tpl ${t.id} ${f.field_key} = ${JSON.stringify(f.fixed_value)} (${reason})`);
+      f.is_variable = 1; f.fixed_value = null; released++;
+    }
+  }
+  console.log(`    [freezequal] released ${released}, kept ${kept} frozen field(s)`);
+};
+
 // Arms that change CODE behaviour rather than learning state: the extractor reads these from env.
 // Listed here so an arm name means one reproducible thing, rather than an env var someone typed.
 // Arms that add process_docs CLI FLAGS. --deskew-pages is how "Straighten + Reprocess" works;
@@ -184,6 +219,12 @@ ARM_ENV.arbiter_presence = { ...ARM_ENV.arbiter, TEMPLATE_ISSUER_REGION_PRESENCE
 // is identical either way) but the METHOD/CONFIDENCE diff, and whether any supplier is BLANKED:
 // keeping `template_fixed` re-arms TEMPLATE_FIXED_NAME_PRESENCE_VETO, which can blank a sender.
 ARM_ENV.arbiter_agree = { ...ARM_ENV.arbiter_presence, TEMPLATE_FIXED_SEED_AGREEMENT_KEEP: '1' };
+// A MUTATOR arm gets NO env of its own unless it is named here, and the settings mirror only arms
+// a flag whose uppercased settings key equals the env var. `freezequal` first ran without the
+// `applive` set and the two arms differed by TWO variables, not one: 40 account_no cells moved on
+// scopes the mutator never touched (untaught issuers, which change when TYPE_TITLE_OWNER_PRECEDENCE
+// is absent). Give a mutator arm the env of the arm it is compared against, or it answers nothing.
+ARM_ENV.freezequal = { ...ARM_ENV.applive };
 // `noreg` must differ from the arm that MEASURED the 22 failures by exactly ONE thing: the
 // `--registration` CLI arg. Give it that arm's env verbatim, or the diagnostic moves two variables
 // and answers nothing.

@@ -1,0 +1,80 @@
+'use strict';
+/*
+ * test_freeze_guard.js — pins for TEMPLATE_FREEZE_QUALIFY's predicate.
+ *
+ *   ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe database/modules/test_freeze_guard.js
+ *
+ * THE DEFECT. `_buildTemplateFields` decided whether to freeze a value from four inputs, none of
+ * which looked at the value. The teach wizard's draw-box OCR read became the template's permanent
+ * value at confidence 95, method `template_fixed` — the one method every credibility rail in
+ * engine.py deliberately exempts, because it is meant to mean "a human set this literal". On the
+ * live install it froze the string 'VAT' as a supplier's VAT number, stamped on 21 of 145 documents.
+ *
+ * THE BOUNDARY THIS FILE DEFENDS is not "refuse more". On 2026-08-08 a blanket unfreeze of every
+ * non-issuer field moved `vat_no` from 51% to 16%: a VAT number IS a genuine per-supplier constant
+ * and the stamp was carrying it. So a predicate that is too wide is not cautious, it is
+ * destructive. Two rows below are marked TRADE-OFF PIN and carry that measurement as their reason;
+ * anyone who widens this to "just don't freeze non-issuer fields" turns them red.
+ */
+const { freezeDeclineReason } = require('./freeze_guard');
+
+let fails = 0;
+const check = (label, cond) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`); if (!cond) fails++; };
+const decl = (k, v, m, ctx) => freezeDeclineReason(k, v, m, ctx);
+
+console.log('1. THE DEFECT — a caption must never become a permanent value');
+check("vat_no 'VAT' declined (it is a printed caption, and vat_tax ships it as a label)",
+      decl('vat_no', 'VAT', { type: 'text', label: 'VAT Number' }) === 'caption');
+check("delivery_number 'Delivery' declined (the 2026-08-07 caption-hijack class)",
+      decl('delivery_number', 'Delivery', { type: 'text' }) === 'caption');
+check("a caption from THIS TYPE's own field labels is declined too",
+      decl('account_no', 'Account Number', { type: 'text' },
+           { extraCaptions: ['Account Number'] }) === 'caption');
+
+console.log('\n2. FORMAT — judged by the format the READER uses, not only the DB type');
+// vat_no is typed plain 'text' on every shipped and preset type, so a DB-type-only check would be
+// inert for the exact field that produced this defect. The shipped field_patterns entry is what the
+// reader gates on, so that is what the freeze asks about.
+check("vat_no '3PL' declined on format (13 documents on the live install)",
+      decl('vat_no', '3PL', { type: 'text' }) === 'format');
+check("vat_no '1RE' declined on format (6 documents)",
+      decl('vat_no', '1RE', { type: 'text' }) === 'format');
+check("vat_no 'ee05351042' declined on format (an OCR garble that looks foreign)",
+      decl('vat_no', 'ee05351042', { type: 'text' }) === 'format');
+
+console.log('\n3. CODE-ROLE — a code always carries a digit');
+// A key with NO shipped pattern, so arm B is silent and arm C is the only thing that can speak.
+// (Using a SHIPPED code key here would pass for the wrong reason — 'job_no' carries its own
+// job_reference pattern, so arm B answers first and the pin would never exercise arm C.)
+check("a *_no field with no shipped pattern, holding a digit-free word, is declined",
+      decl('ticket_no', 'Worksheet', { type: 'text' }) === 'codeless_code_role');
+check("...and one carrying a digit is fine",
+      decl('ticket_no', 'TK-8887', { type: 'text' }) === null);
+check("a *_reference key is code-role too",
+      decl('customer_reference', 'Reference', { type: 'text' }) === 'codeless_code_role');
+
+console.log('\n4. TRADE-OFF PINS — measured, not assumed (2026-08-08: vat_no 51% -> 16%)');
+check("TRADE-OFF PIN: a REAL VAT number still freezes (text-typed, arm B via the shipped pattern)",
+      decl('vat_no', 'GB 903 3318 42', { type: 'text' }) === null);
+check("TRADE-OFF PIN: a real VAT number freezes when the field IS typed vat_gb",
+      decl('vat_no', 'GB 903 3318 42', { type: 'vat_gb' }) === null);
+check("TRADE-OFF PIN: the ISSUER is never governed, in either direction",
+      decl('supplier_name', 'VAT', { type: 'text', label: 'Document Issuer' }) === null);
+check("a genuinely constant NON-name field still freezes ('Net 30' terms)",
+      decl('payment_terms', 'Net 30', { type: 'text' }) === null);
+check("...including an all-alpha one, because it is not a code-role key",
+      decl('payment_terms', 'On receipt', { type: 'text' }) === null);
+check("a currency CODE constant still freezes",
+      decl('currency', 'GBP', { type: 'currency_code' }) === null);
+
+console.log('\n5. FAILS SAFE — anything it cannot judge, it allows');
+check('unknown custom type + opaque key → freeze (no arm can speak)',
+      decl('field_7', 'ANYTHING', { type: 'widget' }) === null);
+check('no meta at all → freeze', decl('some_key', 'some value', null) === null);
+check('empty value → nothing to judge', decl('vat_no', '   ', { type: 'text' }) === null);
+check('empty key → nothing to judge', decl('', 'VAT', { type: 'text' }) === null);
+check('a caption-shaped value on the issuer with a custom companyKeys list is still allowed',
+      decl('issuer_name', 'VAT', { type: 'text' }, { companyKeys: ['issuer_name'] }) === null);
+
+console.log(fails ? `\n${fails} FAILED` : '\nAll freeze-guard pins passed');
+process.exit(fails ? 1 : 0);

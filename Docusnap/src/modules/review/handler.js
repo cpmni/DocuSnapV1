@@ -1334,6 +1334,19 @@ function _freezeIssuerOnlyEnabled(db) {
   } catch { return false; }
 }
 
+// TEMPLATE_FREEZE_QUALIFY — env wins in BOTH directions so an A/B arm is unambiguous, then the
+// setting. try/catch → OFF, because test_build_template_fields.js builds a fixture DB with no
+// settings table (the same shape as _freezeIssuerOnlyEnabled above, deliberately).
+function _freezeQualifyEnabled(db) {
+  const env = process.env.TEMPLATE_FREEZE_QUALIFY;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try {
+    return require('../../../database/modules/learning')
+      .getSetting(db, 'template_freeze_qualify', 'false') === 'true';
+  } catch { return false; }
+}
+
 function _buildTemplateFields(db, allValues, dtInfo) {
   // A field is "variable" (differs per document — reference, date, and ALSO any
   // field the confirmed history shows taking multiple values) or "constant" for a
@@ -1354,6 +1367,7 @@ function _buildTemplateFields(db, allValues, dtInfo) {
   // user-taught ⊕ field-anchor tool (Stage 2) / drawn mappings (Stage 0.5),
   // which are coordinate-based and immune to text-substring collisions.
   const { isNameLikeField } = require('../../../database/modules/learning');
+  const { freezeDeclineReason } = require('../../../database/modules/freeze_guard');
   const { COMPANY_KEYS }    = require('../../../database/modules/document_types');
   const companyKeys = COMPANY_KEYS || ['supplier_name'];
   const fieldMeta   = new Map((dtInfo?.fields || []).map(f => [f.key, f]));
@@ -1401,7 +1415,22 @@ function _buildTemplateFields(db, allValues, dtInfo) {
       // fail-toward-review, never a silent stamped value; do NOT restore the freeze "for recall".
       const recipientName = isNameLikeField(key, meta && meta.label) && !companyKeys.includes(key);
       const nonIssuerBlocked = freezeIssuerOnly && !companyKeys.includes(key);
-      const isVariable = schemaVariable || multiValued.has(key) || recipientName || nonIssuerBlocked;
+      // (D) QUALIFY THE VALUE ITSELF (kill switch, default OFF). Rules A-C ask what KIND of field
+      // this is; none of them looks at what is about to be written. So the wizard's draw-box OCR
+      // read becomes a permanent value at conf 95 whatever it says — and on the live install that
+      // froze the literal string 'VAT' as a template's VAT number, stamped on 21 of 145 documents.
+      // Nothing downstream can catch it: `template_fixed` is on the exempt list of essentially
+      // every credibility rail in engine.py, deliberately, because it is meant to be a human-set
+      // literal. This is the last point of control. See database/modules/freeze_guard.js for the
+      // three arms and the two exclusions (the issuer is never governed; fixed_locked is never
+      // touched). A decline leaves the field VARIABLE — re-extracted per document, exactly as an
+      // unfrozen field always was — never a capped or noted stamp, which was ruled dominated.
+      const declineReason = _freezeQualifyEnabled(db)
+        ? freezeDeclineReason(key, value, meta, { companyKeys,
+            extraCaptions: (dtInfo?.fields || []).map(f => f && f.label) })
+        : null;
+      const isVariable = schemaVariable || multiValued.has(key) || recipientName
+                         || nonIssuerBlocked || !!declineReason;
       return {
         field_key:    key,
         anchor_label: null,
