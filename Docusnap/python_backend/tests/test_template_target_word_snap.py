@@ -111,19 +111,28 @@ asrc = inspect.getsource(tm)
 # "absolute rung untouched" assertion passed vacuously forever (the CLAUDE.md
 # dead-guard trap). Now pin against _extract_one's OWN source, and assert the
 # slice is non-empty so a future refactor can't silently re-kill the pin.
-# AMENDED CONTRACT (teach-time word-snap changed the WYSIWYG premise): the
-# absolute rung never routes through _snap_box_to_words; the Slice-C edge guard
-# may GROW-and-RE-READ this read's crop when a word is cut, but must never snap
-# the box to word unions nor mutate the stored mapping (see
-# test_template_abs_edge_guard.py for the behavioural no-fire/no-mutation pins).
+# CONTRACT (the WYSIWYG premise): the ABSOLUTE rung never routes through
+# _snap_box_to_words; the Slice-C edge guard may GROW-and-RE-READ this read's crop
+# when a word is cut, but must never snap the box to word unions nor mutate the
+# stored mapping (see test_template_abs_edge_guard.py for the behavioural no-fire/
+# no-mutation pins). A TEMPLATE_COMPOSE_WORD_SNAP variant that snapped the composed
+# abs box here was built + Oracle-SENT-BACK + gate-confirmed net-negative and
+# REVERTED 2026-08-06 (docs/oracle_log.md) — so this string-grep contract stands.
 fastpath = inspect.getsource(tm._extract_one)
 check("fast-path source slice NON-EMPTY (dead-guard rebuild)", len(fastpath) > 200)
 check("absolute rung never calls _snap_box_to_words",
       '_snap_box_to_words' not in fastpath)
 check("switch default OFF",
       "os.environ.get('TEMPLATE_TARGET_WORD_SNAP', '0')" in asrc)
-check("scope = CODE types + date", "_SNAP_VAL_TYPES" in asrc and "'date'" in
-      asrc[asrc.find('_SNAP_VAL_TYPES'):asrc.find('_SNAP_VAL_TYPES') + 220])
+# Locate the ASSIGNMENT, not the first mention: flag-block comments above the definition now
+# reference `_SNAP_VAL_TYPES` by name (2026-08-09, the money slice), and a window measured from the
+# first mention silently drifted off the definition it exists to pin. Behaviourally the scope itself
+# is asserted directly below, so this string check can never again pass or fail vacuously.
+check("scope = CODE types + date", "_SNAP_VAL_TYPES = frozenset(_CODE_CROSSCHECK_TYPES" in asrc
+      and "'date'" in asrc[asrc.find('_SNAP_VAL_TYPES = frozenset'):
+                           asrc.find('_SNAP_VAL_TYPES = frozenset') + 220])
+check("scope VALUE is exactly the code types + date (currency admitted only under its own flag)",
+      tm._SNAP_VAL_TYPES == frozenset({'alphanumeric', 'reference_code', 'date'}))
 
 print(f"\n{'ALL PASS' if fails == 0 else str(fails) + ' FAILURES'}")
 sys.exit(1 if fails else 0)

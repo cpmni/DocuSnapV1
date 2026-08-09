@@ -143,12 +143,67 @@ _STAGE05_REF_CODE_GATE = os.environ.get('STAGE05_REF_CODE_GATE', '0') != '0'
 # past the box's left edge. Observed live: a box taught on '£8,389.44' read '0,603.44' where the
 # page prints '£10,603.44' — the leading '£1' fell outside. Net 8,836.20 + VAT 1,767.24 = 10,603.44
 # exactly, so the document's own arithmetic knew, and the total-vs-subtotal guard did flag it; but
-# nothing REPAIRED it, because currency is absent from `_SNAP_VAL_TYPES` and therefore never reaches
-# the absolute-rung edge guard at all. This adds currency to the GUARD's scope only — not to the
-# word-snap, whose over-grab class is a different argument.
+# nothing REPAIRED it, because currency is in NEITHER of the two scopes that repair a cut read.
+#
+# THE FIRST VERSION OF THIS SLICE WAS AIMED AT THE WRONG RUNG, and the correction is the finding.
+# It admitted currency to the ABSOLUTE-rung edge guard only, and measured as inert. Traced on the
+# live exhibit (doc 325, Pelican-Office_invoice_0030, instrumented through the real extractor): the
+# absolute read of that taught box is not '0,603.44' at all — the box lands on a LINE-ITEM row and
+# reads OCR debris, which fails the gate. '0,603.44' is produced by the DERIVED rung, after the
+# relocate re-seats the box off the located 'Balance Due' label. The derived rung's repair primitive
+# is not the edge guard: it is the Slice-B WORD SNAP (`_snap_box_to_words`), which is scoped by the
+# same `_SNAP_VAL_TYPES` — so money was excluded there too. On that page the locate tier ALREADY
+# reads the word '£10,603.44' at 76% inside the seated box, comfortably over the snap's 50%
+# majority-inside floor and right of the label cut: the geometry to fix this was present and one
+# frozenset membership test away from being used.
+# So this flag now admits currency to BOTH scopes — the derived/registration word snap (the rung
+# that produces the live defect) and the absolute-rung edge guard (the same clip on a page that has
+# NOT drifted). Measured: '0,603.44' -> '£10,603.44' at conf 92 via the snap alone.
+# MONEY-ONLY SNAP LEGS (see `_snap_box_to_words`), because a snap adopts its read with no
+# comparison against the un-snapped one — unlike the edge guard, which must PROVE a digit-suffix
+# relation before it rewrites. Money is right-aligned, so the taught box's RIGHT edge sits on the
+# value's right edge: the snapped union's right edge must coincide with it within one glyph (which
+# refuses a union from the column to the right AND one that clustered onto the column to the left),
+# and the union must contain a digit (never snap money onto a pure-text word).
 # The left grow is already bounded by the located label's right edge (the C1 frame rule), so it
 # cannot swallow 'Balance Due'.
 _CURRENCY_EDGE_GROW_ON = os.environ.get('TEMPLATE_CURRENCY_EDGE_GROW', '0') != '0'
+
+# TEMPLATE_DRIFT_ROW_PITCH (kill switch, DEFAULT OFF — measured 2026-08-09, the same money hunt).
+# `_label_drifted` DECLARES A ONE-ROW LABEL MOVE TO BE "NOT DRIFTED", so the stationary taught box
+# keeps a neighbouring row's value — and when the field is money that value is TYPE-VALID, so no
+# downstream gate can catch it. Its vertical tolerance is floored by `_DRIFT_FLOOR = 0.02`, a DRIFT
+# constant worth ~1.5 text rows on an A4 page (row pitch here ≈ 0.013 page-heights). Its own
+# docstring claims "a true one-line shift (>= a line height) still trips it" — that claim is FALSE
+# for any line under 0.04 of the page, which is every line of ordinary body text.
+# THE SIGNATURE THAT FOUND IT: on the 140-document teach run, 19 of the 23 wrong totals were
+# EXACTLY the truth divided by 6. At 20% VAT, total = subtotal * 1.2 = (VAT * 5) * 1.2 = VAT * 6 —
+# so a ratio of exactly 6 is the arithmetic fingerprint of reading the VAT row instead of the total
+# row. Verified at the pixels on two of them (docs 296 and 263, two different issuers, two
+# different anchor labels): the label is located 0.0186-0.0188 lower than taught (~1.4 rows),
+# tol_y = 0.02, drift = False, and the box reads 'VAT @ 20%'s figure. The totals block moves down
+# with the line-item count, which is why this is a per-document shift no re-teach can fix.
+# ARMED: the legacy test runs FIRST and unchanged, then a sub-floor branch ADDS the one-row case —
+# tolerance = the taller of the two boxes (never smaller, or box-height slop would false-flag). The
+# X axis is untouched: 0.02 of page width is genuinely small horizontally.
+# ...AND ONLY FOR A LABEL THAT ACTUALLY MATCHED. THE FIRST VERSION DROPPED THE FLOOR OUTRIGHT AND
+# THE CORPUS REFUSED IT: 14 non-money fields regressed in a second taught state — dates committing
+# codes, codes committing dates. Traced to the page: the local locate answered needle 'Credit Ref'
+# with 'Credit Date', the caption one row BELOW (they share 'Credit'), and the relocate then seated
+# the credit-note number on the date row and committed '07-08-2025'. The 0.02 floor had been doing
+# a second job nobody wrote down — shielding fuzzy label mis-matches onto adjacent captions, which
+# in a dense header block are exactly one row away. So sub-floor drift now requires
+# `_label_is_the_taught_one`: every measured heal matched its label EXACTLY ('Balance Due',
+# 'Total to Pay'), every measured regression was a fuzzy neighbour.
+# WHAT THIS DISABLES DOWNSTREAM (name the seam): a label found ~one row off now triggers
+# `_relocate_and_read` where the stationary read used to stand — so it RELIES on that locate being
+# the right label, which is precisely why the exactness test is part of the fix and not a polish
+# item. A failed relocate falls through to the absolute read exactly as today.
+# Measured: docs 296 '£226.32' -> '£1,357.92' and 263 '£-97.70' -> '£-586.22' (both = ground truth,
+# minus sign preserved); a non-drifted label (customer_name on the same page, dy = 0.00007) does
+# not fire, and a currently-correct total (doc 240) is untouched.
+# Default OFF; OFF reduces to the legacy expression verbatim and is byte-identical.
+_DRIFT_ROW_PITCH_ON = os.environ.get('TEMPLATE_DRIFT_ROW_PITCH', '0') != '0'
 
 # Stage 0.5 inline-code reconcile — default ON (kill with TEMPLATE_INLINE_CODE_RECONCILE=0).
 # A fixed narrow drawn target box clips a code value's prefix under per-scan offset/scale
@@ -1076,7 +1131,7 @@ def _located_too_wide(anchor_box, located):
     return w > max(0.30, (anchor_box.get("w_norm") or 0.0) * 2.5)
 
 
-def _label_drifted(anchor_box, located):
+def _label_drifted(anchor_box, located, anchor_text=None):
     """True when the located anchor LABEL has moved off its taught position beyond
     a per-axis tolerance — the signal that the page has DRIFTED (e.g. a cropped vs
     uncropped scan shifts every row down), so the STATIONARY drawn target box now
@@ -1090,8 +1145,17 @@ def _label_drifted(anchor_box, located):
     fixed floor alone a tall-font / low-res scan's within-line jitter could exceed it
     and false-flag a row move (then a needless relocation). Tying tol_y to the line
     actually read here means "drifted" stays "moved roughly a row" regardless of
-    font size, while a true one-line shift (≥ a line height) still trips it. (Inline
-    key/value rows don't depend on this — the harvest fires on inline_value directly.)
+    font size. (Inline key/value rows don't depend on this — the harvest fires on
+    inline_value directly.)
+
+    THIS DOCSTRING USED TO CLAIM "a true one-line shift (>= a line height) still trips it".
+    THAT WAS FALSE, and it is why the defect below went unseen: _DRIFT_FLOOR is 0.02 of page
+    height, but ordinary body text runs ~0.013 per row, so the floor outranks tol_y on every
+    real page and a genuine ONE-ROW move measures as "not drifted". Measured cost: 19 of 23
+    wrong totals on the 140-document teach run were the VAT row read as the total, because a
+    wrong-row MONEY value is type-valid and no later gate can see it. TEMPLATE_DRIFT_ROW_PITCH
+    adds that case back (see the branch below and its flag block); OFF, the false claim's
+    behaviour is preserved verbatim, which is why the sentence is corrected rather than deleted.
     Conservative: requires a GENUINE label match — a proximity-only locate
     (matched_text None) never counts as drift, so a blank / unfound label keeps
     today's absolute-first behaviour."""
@@ -1102,8 +1166,41 @@ def _label_drifted(anchor_box, located):
     tol_x = max((anchor_box.get("w_norm") or 0.0) / 2.0, _DRIFT_FLOOR)
     tol_y = max((anchor_box.get("h_norm") or 0.0) / 2.0,
                 (located.get("h_norm") or 0.0) / 2.0, _DRIFT_FLOOR)
-    return abs(_cx(located) - _cx(anchor_box)) > tol_x \
-        or abs(_cy(located) - _cy(anchor_box)) > tol_y
+    dx = abs(_cx(located) - _cx(anchor_box))
+    dy = abs(_cy(located) - _cy(anchor_box))
+    if dx > tol_x or dy > tol_y:
+        return True
+    # ARMED (TEMPLATE_DRIFT_ROW_PITCH — see the flag block): the legacy floor is worth ~1.5 text
+    # rows, so a genuine ONE-ROW move lands underneath it and the stationary box keeps a
+    # neighbouring row's value. Add that case — but ONLY for a label that actually matched. The
+    # floor was also, accidentally, the defence against a FUZZY MIS-LOCATE onto an adjacent
+    # caption ('Credit Ref' answered by 'Credit Date' one row below, measured), and believing one
+    # of those seats the value on the wrong row just as surely. Everything the floor already
+    # called drifted still is: this branch only ever ADDS.
+    if _DRIFT_ROW_PITCH_ON and dy > max((anchor_box.get("h_norm") or 0.0),
+                                        (located.get("h_norm") or 0.0)):
+        return _label_is_the_taught_one(anchor_text, located.get("matched_text"))
+    return False
+
+
+def _label_is_the_taught_one(anchor_text, matched_text):
+    """Is `matched_text` the taught label itself, rather than a different caption that merely
+    scored well? Used only to license the sub-floor one-row drift above, where a mis-locate and a
+    real move are one row apart and indistinguishable by geometry alone.
+
+    Exact after normalisation, OR the label followed by its own VALUE on one OCR line (an inline
+    key/value row matches as 'Invoice Number PI255450'). The tail must carry a DIGIT for that
+    second form: 'Total' + ' to Pay' is a different caption, 'Invoice Number' + ' PI255450' is the
+    field. Anything else — including a needle whose match is a fuzzy neighbour — is not believed."""
+    _n = lambda s: re.sub(r'[^a-z0-9]+', ' ', str(s or '').lower()).strip()
+    a, m = _n(anchor_text), _n(matched_text)
+    if not a or not m:
+        return False
+    if a == m:
+        return True
+    if m.startswith(a + ' '):
+        return bool(re.search(r'[0-9]', m[len(a):]))
+    return False
 
 
 def _code_norm(s):
@@ -1994,7 +2091,7 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
         # "Beaumont Care Homes Ltd - Comber" → "pantionahe MUGS Liu COTVCE". Genuine drift
         # that the per-label test misses is caught by the REGISTRATION ARBITER just below.)
         if (drift_located and drift_located.get("matched_text") is not None
-                and _label_drifted(anchor_box, drift_located)):
+                and _label_drifted(anchor_box, drift_located, anchor_text)):
             relocated = _relocate_and_read(page, mapping, anchor_box, target_box,
                                            drift_located, val_type, ocr_text_fn,
                                            expansion, validation_patterns,
@@ -2291,7 +2388,12 @@ def _snap_box_to_words(page, seated_box, val_type, ocr_lines_fn, line_cache, lab
     label_box; registration rung: the TRANSFORMED anchor box — Oracle B-C1, the clamp arc's
     frame trap): words at/left of its right edge are cut so the label tail is never re-absorbed
     (majority-inside already excludes most of it; the cut is the backstop)."""
-    if not _TARGET_WORD_SNAP_ON or val_type not in _SNAP_VAL_TYPES:
+    if not _TARGET_WORD_SNAP_ON:
+        return seated_box
+    # Scope: the code/date types as shipped, plus CURRENCY when TEMPLATE_CURRENCY_EDGE_GROW arms it
+    # (see that flag block — the derived rung is where the live money clip is actually produced,
+    # and the money-only legs below are what make adopting a snapped money read provable).
+    if val_type not in _SNAP_VAL_TYPES and not (_CURRENCY_EDGE_GROW_ON and val_type == 'currency'):
         return seated_box
     if page is None or not isinstance(seated_box, dict):
         return seated_box
@@ -2362,6 +2464,30 @@ def _snap_box_to_words(page, seated_box, val_type, ocr_lines_fn, line_cache, lab
         y2 = max(float(w["y_norm"]) + float(w["h_norm"]) for w in admitted)
     except (KeyError, TypeError, ValueError):
         return seated_box
+    if val_type == 'currency':
+        # MONEY-ONLY LEGS (TEMPLATE_CURRENCY_EDGE_GROW). A snap adopts whatever the re-crop reads,
+        # with no comparison against the un-snapped read — the edge guard, by contrast, must PROVE a
+        # digit-suffix relation before it rewrites. The licence to snap money is therefore carried by
+        # the geometry, and money has an invariant a code does not: it is RIGHT-ALIGNED in its
+        # column, so the taught box's right edge sits ON the value's right edge and a longer value
+        # can only overflow LEFT. Pinning the two right edges together within one glyph is what makes
+        # this safe in BOTH directions — a union reaching into the column to the RIGHT, and a union
+        # that clustered onto the column to the LEFT (`cluster_value_words` picks the run nearest
+        # `expect_x`, which on a multi-column row need not be the run the box is sitting on), are
+        # each refused. Measured on the three live exhibits: |x2 - sx2| = 0.0023-0.0032 against a
+        # glyph of ~0.0074.
+        # NOT ALSO A WIDTH CAP: majority-inside already bounds every admitted word at 2x the seated
+        # width, so with the right edges pinned a runaway union would have to be a SINGLE token twice
+        # the taught width — which is the legitimate restore direction. The existing 4x AREA cap
+        # below remains the backstop. A cap that cannot fire is a dead guard that greens its own test.
+        _wtxt = ''.join(str(w.get('text') or '') for w in admitted)
+        if not re.search(r'[0-9]', _wtxt):
+            return seated_box            # never snap money onto a pure-text word
+        _gws = sorted(float(w["w_norm"]) / max(1, len(str(w.get('text') or '')))
+                      for w in admitted)
+        _g = _gws[len(_gws) // 2] if _gws else 0.0
+        if abs(x2 - sx2) > max(_g, 0.004):
+            return seated_box            # right edges must coincide — else it is another column
     pad = 0.004
     snapped = _clamp_box({"x_norm": x1 - pad, "y_norm": y1 - pad,
                           "w_norm": (x2 - x1) + 2 * pad, "h_norm": (y2 - y1) + 2 * pad})

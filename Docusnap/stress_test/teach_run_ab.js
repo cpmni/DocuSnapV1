@@ -111,6 +111,26 @@ const ARM_ENV = {
               TYPE_TITLE_OWNER_PRECEDENCE: '1', FILING_VALUE_SANITY_FLAGS: '1',
               TEACH_ANGLE_COMPOSE_SCAN: '1', TEMPLATE_FIXED_NEAR_MATCH_RECONCILE: '1',
               TEMPLATE_FIXED_FRAGMENT_DECLINE: '1', TEMPLATE_FIXED_ISSUER_REPAIR: '1' },
+  // ── the 2026-08-09 MONEY arms. `issuer` is their OFF baseline (it is the launch set with neither
+  // money flag), so an `issuer` re-run also proves the code edit is byte-identical with both off.
+  // TEMPLATE_ABS_EDGE_GUARD / TEMPLATE_TARGET_WORD_SNAP are not listed: both are `true` settings in
+  // the sandbox DB, so every arm already inherits them — which is what makes `money_snap` a real
+  // measurement of the snap admission rather than of the snap itself.
+  money_snap: { STAGE05_REF_CODE_GATE: '1', KEYWORD_GENERIC_CAPTION_EXCLUSIVE: '1',
+              TYPE_TITLE_OWNER_PRECEDENCE: '1', FILING_VALUE_SANITY_FLAGS: '1',
+              TEACH_ANGLE_COMPOSE_SCAN: '1', TEMPLATE_FIXED_NEAR_MATCH_RECONCILE: '1',
+              TEMPLATE_FIXED_FRAGMENT_DECLINE: '1', TEMPLATE_FIXED_ISSUER_REPAIR: '1',
+              TEMPLATE_CURRENCY_EDGE_GROW: '1' },
+  money_row: { STAGE05_REF_CODE_GATE: '1', KEYWORD_GENERIC_CAPTION_EXCLUSIVE: '1',
+              TYPE_TITLE_OWNER_PRECEDENCE: '1', FILING_VALUE_SANITY_FLAGS: '1',
+              TEACH_ANGLE_COMPOSE_SCAN: '1', TEMPLATE_FIXED_NEAR_MATCH_RECONCILE: '1',
+              TEMPLATE_FIXED_FRAGMENT_DECLINE: '1', TEMPLATE_FIXED_ISSUER_REPAIR: '1',
+              TEMPLATE_DRIFT_ROW_PITCH: '1' },
+  money:    { STAGE05_REF_CODE_GATE: '1', KEYWORD_GENERIC_CAPTION_EXCLUSIVE: '1',
+              TYPE_TITLE_OWNER_PRECEDENCE: '1', FILING_VALUE_SANITY_FLAGS: '1',
+              TEACH_ANGLE_COMPOSE_SCAN: '1', TEMPLATE_FIXED_NEAR_MATCH_RECONCILE: '1',
+              TEMPLATE_FIXED_FRAGMENT_DECLINE: '1', TEMPLATE_FIXED_ISSUER_REPAIR: '1',
+              TEMPLATE_CURRENCY_EDGE_GROW: '1', TEMPLATE_DRIFT_ROW_PITCH: '1' },
   // Oracle's ruling: fix PLACEMENT, not pixels. Composes the taught box by (theta_teach -
   // theta_scan) using a non-destructive skew measurement. No page is rotated.
   compose:  { STAGE05_REF_CODE_GATE: '1', KEYWORD_GENERIC_CAPTION_EXCLUSIVE: '1',
