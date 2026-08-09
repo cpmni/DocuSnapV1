@@ -661,6 +661,9 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // with no caption (every `supplier_name` mapping on this install) never
                          // had a test to fail, so it was being overridden on no local evidence.
                          ['reg-arbiter-anchor-evidence-toggle', 'template_reg_arbiter_anchor_evidence'],
+                         // Its standing guard: keep a confirmed issuer when that name is
+                         // actually printed in the taught region on THIS page. Confirm-only.
+                         ['issuer-region-presence-toggle', 'template_issuer_region_presence'],
                          ['deskew-import-toggle', 'deskew_on_import'],
                          // NOT an extraction switch and NOT bridged through _reconcileEnv: the
                          // auto-file gate is JS-side, so database/modules/trust.js reads this key

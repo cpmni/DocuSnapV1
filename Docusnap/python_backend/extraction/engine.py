@@ -102,6 +102,84 @@ _FIXED_FRAGMENT_DECLINE_ON = os.environ.get('TEMPLATE_FIXED_FRAGMENT_DECLINE', '
 # and a stale fixed_value can always be corrected by re-teaching — the invariant this must not break.
 # Default OFF; OFF is byte-identical. Pins: tests/test_issuer_repair.py.
 _FIXED_ISSUER_REPAIR_ON = os.environ.get('TEMPLATE_FIXED_ISSUER_REPAIR', '0') != '0'
+# REGION-SCOPED PRESENCE CONFIRM (2026-08-09 NIGHT; the owner's design, Oracle's Fix 2 — the
+# STANDING GUARD that sits behind the arbiter cure, TEMPLATE_REG_ARBITER_ANCHOR_EVIDENCE).
+# NOT redundant with the arbiter fix, and the distinction is the whole point: with the arbiter
+# silenced, an ANCHOR-LESS letterhead box on a genuinely drifted page has NO drift compensation
+# left at all, and whatever garble it reads still displaces the curated seed here via
+# `is_curated_refinement`. This fills that hole from the opposite direction — it asks a question
+# about THIS DOCUMENT ("is the curated name actually printed where the operator taught it?")
+# instead of about the layout.
+# THE ASYMMETRY IS DELIBERATE. It can only ever KEEP the seed, and only on POSITIVE evidence:
+#   * name found in the padded taught region -> keep the seed (its value, its 95, its
+#     `template_fixed` method — which is what BRANDING_NAMED_BLANK and
+#     TEMPLATE_FIXED_NAME_PRESENCE_VETO key on, so keeping it RE-ARMS those guards rather than
+#     disarming them; today, with a mapping/registration read winning, all of them are inert);
+#   * name NOT found -> fall through, today's behaviour verbatim;
+#   * region unreadable or empty -> ALSO fall through (Oracle C2': *not found* and *could not
+#     read* are different facts and neither is confirmation — fail-closed on the CONFIRM
+#     direction only).
+# SHARES THE PRIMITIVE WITH TEMPLATE_FIXED_NAME_PRESENCE_VETO, NEVER ITS DECISION: the fuzzy
+# distinctive-token test `_template_identity_corroborated` is reused, but NOT that veto's
+# >=3-sample/>=0.80 `supplier_prints_name` gate. That gate exists to protect a DESTRUCTIVE action
+# (blanking a stamped supplier) and would silently disarm a CONFIRMING one for exactly the new
+# suppliers this helps.
+# CONFIRMATION GRANTS NO NEW AUTHORITY: this branch never raises a confidence and never mints a
+# method. It licenses keeping what Stage 0 already seeded, nothing more.
+# NAMED FALSE POSITIVE (pinned, not hand-waved): a 150% pad can reach the recipient block on a
+# compact layout. Harmless when testing one known string — UNLESS the template was mis-taught and
+# its `fixed_value` IS the recipient, in which case this confirms the mis-teach. Re-teaching
+# remains the cure, exactly as for the other seed branches.
+# Default OFF; OFF is byte-identical. Pins: tests/test_issuer_region_presence.py.
+_ISSUER_REGION_PRESENCE_ON = os.environ.get('TEMPLATE_ISSUER_REGION_PRESENCE', '0') != '0'
+try:
+    _ISSUER_REGION_PAD = float(os.environ.get('TEMPLATE_ISSUER_REGION_PAD', '1.5'))
+except ValueError:
+    _ISSUER_REGION_PAD = 1.5
+
+
+def _region_confirms_curated_seed(key, existing, data, tmpl_mappings, page_images):
+    """Is the curated `fixed_value` PRINTED in the taught issuer region on THIS page?
+
+    Returns True (confirmed — keep the seed), False (read the region, the name is not there) or
+    None (UNJUDGEABLE: not our field, nothing to compare, no taught box, no page, or the region
+    could not be read). Only True is actionable; the caller treats False and None identically
+    today, and they are kept distinct so a census can tell "absent" from "unreadable".
+
+    Preconditions mirror `_fixed_seed_declines_mapping` exactly — same key set, same seed methods,
+    same raw-equality short-circuit — so the two can never disagree about WHEN a curated seed is
+    under threat, only about WHY it should be kept."""
+    if key not in _FIXED_SEED_KEYS or not isinstance(existing, dict):
+        return None
+    if (existing.get("method") or "") not in _FIXED_SEED_METHODS:
+        return None
+    read_val = str((data or {}).get("value") or "")
+    fixed_val = str(existing.get("value") or "")
+    if not read_val or not fixed_val or read_val == fixed_val:
+        return None                       # agreement (or nothing to compare) -> inert
+    box = None
+    page_idx = 0
+    for m in (tmpl_mappings or []):
+        if (m or {}).get("field_key") != key:
+            continue
+        box = template_mapper._norm_box(m, "target")
+        try:
+            page_idx = int(m.get("page_number") or 0)
+        except (TypeError, ValueError):
+            page_idx = 0
+        break
+    if not box or not page_images or not (0 <= page_idx < len(page_images)):
+        return None                       # no taught geometry / no page -> unjudgeable
+    page = page_images[page_idx]
+    if page is None:
+        return None
+    text = template_mapper.region_text(page, box, _ISSUER_REGION_PAD)
+    # C2': unread (None) or blank region is NOT absence. `.strip()` matters — a whitespace-only
+    # read is truthy, and treating it as "the region says this name is not here" would turn a
+    # failed crop into evidence.
+    if not (text or '').strip():
+        return None
+    return bool(_template_identity_corroborated(fixed_val, text))
 
 
 def _fixed_seed_declines_mapping(key, existing, data):
@@ -5164,6 +5242,19 @@ class ExtractionEngine:
                         # against it, must not displace the seed on authority. Declines only on
                         # DISAGREEMENT; a genuinely different company still wins. Inert unless armed.
                         _fixed_decline = _fixed_seed_declines_mapping(key, existing, data)
+                        # REGION-SCOPED PRESENCE CONFIRM (see the flag block). Asked ONLY when the
+                        # string-shaped branches above have already declined to act, so it can add
+                        # a decline but never remove one. Positive evidence only: the curated name
+                        # is printed in the taught region on THIS page, so the read that disagrees
+                        # with it is looking at the wrong place — keep the seed.
+                        if not _fixed_decline and _ISSUER_REGION_PRESENCE_ON:
+                            _rp = _region_confirms_curated_seed(key, existing, data,
+                                                                tmpl_mappings, crop_pages)
+                            self._t('region_presence', field=key, verdict=_rp,
+                                    kept=existing.get('value') if isinstance(existing, dict) else None,
+                                    read=(data or {}).get('value'))
+                            if _rp:
+                                _fixed_decline = 'region_presence'
                         if _fixed_decline:
                             self.log(f"  Stage 0.5: kept curated supplier "
                                      f"'{existing.get('value')}' — declined mapping read "

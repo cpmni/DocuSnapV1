@@ -818,6 +818,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Check the sender's name is really printed where you drew the box</div>
+                <div class="threshold-sub">Works alongside the setting above. Once you have confirmed who a document is from, Scan Finder keeps that name against the layout. When a scan arrives shifted or crooked, the box you drew around the company name can land on the wrong part of the page and read something else — and that reading replaces the name you confirmed. This looks in the area around where you drew the box (half as much again in each direction) and checks whether the confirmed name is actually printed there. If it is, the name you confirmed is kept. If it isn't there, or that part of the page could not be read at all, nothing changes. It can only keep a name you already confirmed — it never invents one, never raises how sure Scan Finder is, and a document genuinely from a different company still comes through. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="issuer-region-presence-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Straighten crooked scans before reading them</div>
                 <div class="threshold-sub">A page that went through the scanner slightly askew is read at an angle, and the boxes Scan Finder was taught drift off the values they were pointed at. This straightens each crooked page before reading it — the same thing the ∞ Straighten button does in Review, applied automatically as documents come in. Your filed file is never altered; only the reading is straightened. It also changes what gets filed without you looking at it, so treat it as a trade rather than a free improvement. Pages that are already straight, and documents that carry their own text, are skipped. Off by default, and not yet recommended — straightening can make a marginal scan read worse as easily as better, and that has not been proven either way on real paper.</div>
               </div>

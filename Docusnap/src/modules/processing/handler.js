@@ -398,6 +398,15 @@ function _reconcileEnv(db) {
     //    registration branch — "looked for and not found" is evidence about the page.
     //    Default OFF, byte-identical off. App RESTART to load the bridge.
     if (learning.getSetting(db, 'template_reg_arbiter_anchor_evidence', 'false') === 'true') env.TEMPLATE_REG_ARBITER_ANCHOR_EVIDENCE = '1';
+    //  • TEMPLATE_ISSUER_REGION_PRESENCE — the standing guard behind that cure. With the arbiter
+    //    silenced for a caption-less mapping, an issuer box on a genuinely drifted page has no
+    //    drift compensation left, and whatever garble it reads can still displace the confirmed
+    //    company name. This checks the page instead of the layout: is the confirmed name actually
+    //    printed where the operator drew the box (region padded to 150%)? Found -> keep the
+    //    confirmed name. Not found, or the region could not be read -> today's behaviour exactly.
+    //    It can only ever KEEP what was already there — it never raises a confidence and never
+    //    overrides a genuinely different company. Off by default. App RESTART to load the bridge.
+    if (learning.getSetting(db, 'template_issuer_region_presence', 'false') === 'true') env.TEMPLATE_ISSUER_REGION_PRESENCE = '1';
     return env;
   } catch { return {}; }
 }

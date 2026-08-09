@@ -3545,6 +3545,62 @@ def _ocr_lines(image):
     return lines
 
 
+def pad_box_about_centre(box, ratio):
+    """Grow `box` to `ratio` of its own SIZE about its own centre, clamped to the page.
+
+    Distinct from `_expand_box`, which grows by a fraction of the PAGE in every direction: a
+    letterhead name box is small, and a page-fraction pad would swallow half the header. A
+    self-relative pad keeps the region proportional to what was actually taught."""
+    try:
+        r = float(ratio)
+    except (TypeError, ValueError):
+        return dict(box)
+    if r <= 1.0:
+        return _clamp_box(dict(box))
+    w, h = float(box["w_norm"]), float(box["h_norm"])
+    cx = float(box["x_norm"]) + w / 2.0
+    cy = float(box["y_norm"]) + h / 2.0
+    nw, nh = w * r, h * r
+    return _clamp_box({"x_norm": cx - nw / 2.0, "y_norm": cy - nh / 2.0,
+                       "w_norm": nw, "h_norm": nh})
+
+
+def region_text(page, box, pad_ratio=1.5):
+    """The plain text printed inside `box` grown to `pad_ratio` of its own size about its centre.
+
+    THE PRESENCE PRIMITIVE (2026-08-09 NIGHT, Oracle's Fix 2). Returns:
+      * a string  — the region was read (possibly '', meaning "read fine, nothing printed there");
+      * None      — the region could not be read AT ALL (no crop, OCR unavailable, an exception).
+    The caller must treat BOTH the empty string and None as UNJUDGEABLE and fall through: *not
+    found* and *could not read* are different facts, and neither is confirmation (Oracle C2').
+
+    Deliberately NOT `_crop_and_ocr`: that path runs `_clean_value`, which trims free text by
+    shape (trailing city comma, postcode/year trim) — sensible when EXTRACTING a value, wrong when
+    ASKING WHETHER A STRING IS PRINTED HERE. NO `tessedit_char_whitelist` anywhere on this path: a
+    whitelist force-fits glyphs toward the string you are hoping to find, which is exactly the bias
+    a presence test must not have.
+
+    RECIPE, and the alternative was MEASURED not assumed: `_ocr_lines` (image_to_data, PSM 6, the
+    word-geometry pass the locate already uses) reads the WHOLE padded region, line by line. The
+    value ladder `_ocr_crop_laddered` does NOT — it is built to return ONE value from a tight crop,
+    so on a padded three-line letterhead it returned '=' where PSM 6 read
+    'Castellan Security Systems / Keep House, 14 Bastion Way / VAT Reg GB 651 0027 84'. A presence
+    test that cannot see the whole region reports "not present" about text that is plainly there,
+    which is the worst possible failure for a guard whose entire job is to separate ABSENT from
+    UNREADABLE. Measured on live pages at the app's 200 DPI (docs 224/225/234, template 7): the
+    curated name is found at pad 1.5 on all three."""
+    try:
+        crop = _crop(page, pad_box_about_centre(box, pad_ratio))
+        if crop is None:
+            return None
+        lines = _ocr_lines(crop)
+    except Exception:
+        return None
+    if lines is None:
+        return None
+    return " ".join((ln.get("text") or "") for ln in lines).strip()
+
+
 def _crop_and_ocr(page, box, val_type, ocr_text_fn, capture=None, meta=None):
     crop = _crop(page, _clamp_box(box))
     if crop is None:

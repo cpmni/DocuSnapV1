@@ -172,6 +172,12 @@ const ARM_ENV = {
 // TEMPLATE_REG_ARBITER_ANCHOR_EVIDENCE and nothing else — and `money` re-run is the OFF twin that
 // proves the code edit is byte-identical with the flag off.
 ARM_ENV.arbiter = { ...ARM_ENV.money, TEMPLATE_REG_ARBITER_ANCHOR_EVIDENCE: '1' };
+// Fix 2 measured ON TOP of Fix 1, never instead of it (Oracle G2). The region-scoped presence
+// confirm keeps a curated issuer seed when that name is actually printed in the padded taught box.
+// Expect it near-inert HERE — the arbiter fix already heals the documents this corpus exhibits; its
+// value is the genuinely-drifted-page case, which this corpus does not contain. Say so honestly
+// rather than reporting the pair's heal twice.
+ARM_ENV.arbiter_presence = { ...ARM_ENV.arbiter, TEMPLATE_ISSUER_REGION_PRESENCE: '1' };
 // `noreg` must differ from the arm that MEASURED the 22 failures by exactly ONE thing: the
 // `--registration` CLI arg. Give it that arm's env verbatim, or the diagnostic moves two variables
 // and answers nothing.
