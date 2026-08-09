@@ -429,6 +429,58 @@ _NEAR_MATCH_MIN_FIXED_LEN = 8   # below this a name carries too little signal �
 _NEAR_MATCH_MAX_EDITS     = 1   # the codebase's existing minimum snap budget (ocr_corrector)
 _FRAGMENT_MAX_READ_LEN    = 3   # a <3-char fold against a real company name is debris, not a value
 
+# ── ISSUER REPAIR (2026-08-09, owner-reported) ──────────────────────────────────────────────────
+# Measured on 135 template-matched documents: 93 read the curated name exactly, 42 did not — 15 an
+# OCR garble of it ('lronciad Tool Hire', 'Iranclad Tool H', 'siiverbeck Cleaning Supplie') and 27
+# not a company name at all ('DATE 14-03-2026 Job Ref JB-8887', 'Reg No GB 821', 'SERVICE
+# WORKSHEET'). The existing guards miss both: near-match tolerates only ONE edit, and the fragment
+# rule only debris under 3 characters. Meanwhile the app already prints the answer — "Letterhead may
+# read 'Castellan Security Systems' — detected 'DATE 14-03-2026 Job Ref JB-8887'" — and asks the
+# operator to confirm what it has itself worked out.
+# A SIMILARITY floor rather than an edit budget: 'lronciad Tool Hire' vs 'Ironclad Tool Hire' is 2
+# edits over an 16-char fold = 0.88 similar, while a genuinely different company ('Bramblewood
+# Joinery Ltd' vs 'Castellan Security Systems') is ~0.2. The gap is enormous, so 0.75 sits in open
+# space — it is not a tuned constant.
+# THE INVARIANT THIS MUST NOT BREAK (stated in _fixed_seed_decline's own docstring): a genuinely
+# DIFFERENT company must still displace the curated seed, so that a stale fixed_value can always be
+# corrected by re-teaching. 0.75 preserves that by a wide margin.
+_NEAR_MATCH_MIN_SIMILARITY = 0.75
+_DATE_IN_READ   = __import__('re').compile(r'\d{1,4}[-/.]\d{1,2}[-/.]\d{2,4}')
+_LONG_DIGIT_RUN = __import__('re').compile(r'\d{4,}')
+
+
+def similar_identity(read, fixed):
+    """Similarity of two company names on the alnum fold, 0..1 (1 - editdist/longer)."""
+    fr, ff = fold_identity(read), fold_identity(fixed)
+    if not fr or not ff:
+        return 0.0
+    return 1.0 - (_levenshtein(fr, ff) / float(max(len(fr), len(ff))))
+
+
+def garbled_identity(read, fixed):
+    """True when the read is the SAME company name, misread beyond the one-edit budget.
+
+    Strictly wider than near_match_identity and deliberately bounded by a similarity floor, so it
+    can narrow a garble back to the curated literal but can never turn one company into another."""
+    ff = fold_identity(fixed)
+    if len(ff) < _NEAR_MATCH_MIN_FIXED_LEN or not fold_identity(read):
+        return False
+    return similar_identity(read, fixed) >= _NEAR_MATCH_MIN_SIMILARITY
+
+
+def is_not_an_issuer_read(read, fixed):
+    """True when the read is METADATA rather than a company name — a date line, a registration or
+    account code, a reference.
+
+    Mechanical and lexicon-free on purpose: a company name does not contain a printed DATE, and does
+    not carry a run of four or more digits. 'BP', '3M' and 'Bramblewood Joinery Ltd' are all safe by
+    construction, so a genuinely different company still displaces the seed. Requires the template's
+    OWN curated name to be substantial, so it can never fire for a template that knows nothing."""
+    r = str(read or '').strip()
+    if not r or len(fold_identity(fixed)) < _NEAR_MATCH_MIN_FIXED_LEN:
+        return False
+    return bool(_DATE_IN_READ.search(r) or _LONG_DIGIT_RUN.search(fold_identity(r)))
+
 
 def fold_identity(value):
     """Alnum-only lowercase fold — separator/space/punctuation jitter must not decide identity."""

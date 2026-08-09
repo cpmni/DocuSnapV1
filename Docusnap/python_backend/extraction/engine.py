@@ -89,6 +89,19 @@ _FIXED_SEED_KEYS = frozenset({"supplier_name"})
 _FIXED_SEED_METHODS = ("template_fixed", "template_fixed_locked")
 _FIXED_NEAR_MATCH_ON = os.environ.get('TEMPLATE_FIXED_NEAR_MATCH_RECONCILE', '0') != '0'
 _FIXED_FRAGMENT_DECLINE_ON = os.environ.get('TEMPLATE_FIXED_FRAGMENT_DECLINE', '0') != '0'
+# ISSUER REPAIR (2026-08-09, owner-reported and measured). The two guards above are calibrated for a
+# gentler failure than reality produces: near-match tolerates ONE edit, the fragment rule only debris
+# under 3 characters. Measured on 135 template-matched documents, 42 read something other than the
+# curated name — 15 an OCR garble of it (2-5 edits), 27 not a company name at all (a date line, a
+# registration code, a page heading). The app already knows: it prints "Letterhead may read
+# 'Castellan Security Systems' — detected 'DATE 14-03-2026 Job Ref JB-8887'" and then asks the
+# operator to confirm what it has itself worked out. This lets it act on that.
+# STILL NOT AN AUTHORITY FLIP: both new branches only DECLINE a read, keeping the curated seed and
+# its `template_fixed` method (which is what the branding and presence vetoes key on). A genuinely
+# different company is neither similar enough nor metadata-shaped, so it still displaces the seed
+# and a stale fixed_value can always be corrected by re-teaching — the invariant this must not break.
+# Default OFF; OFF is byte-identical. Pins: tests/test_issuer_repair.py.
+_FIXED_ISSUER_REPAIR_ON = os.environ.get('TEMPLATE_FIXED_ISSUER_REPAIR', '0') != '0'
 
 
 def _fixed_seed_declines_mapping(key, existing, data):
@@ -121,6 +134,16 @@ def _fixed_seed_declines_mapping(key, existing, data):
         return 'near_match'
     if _FIXED_FRAGMENT_DECLINE_ON and _nm.is_fragment_read(read_val, fixed_val):
         return 'fragment'
+    if _FIXED_ISSUER_REPAIR_ON:
+        # Same name, misread past the one-edit budget ('lronciad Tool Hire' -> 'Ironclad Tool Hire',
+        # 0.88 similar). Bounded by a similarity floor, so it can narrow a garble back to the
+        # curated literal but can never turn one company into another.
+        if _nm.garbled_identity(read_val, fixed_val):
+            return 'garbled'
+        # Not a company name at all — a date line, a registration/account code. Mechanical and
+        # lexicon-free: a company name carries no printed date and no 4+ digit run.
+        if _nm.is_not_an_issuer_read(read_val, fixed_val):
+            return 'not_issuer'
     return None
 
 # IDENTITY RESCUE kill-switch (Oracle-signed slice 1, 2026-07-10; ocr_corrector's

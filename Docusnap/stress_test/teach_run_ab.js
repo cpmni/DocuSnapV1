@@ -102,6 +102,10 @@ const ARM_ENV = {
   fixes_deskew: { STAGE05_REF_CODE_GATE: '1', KEYWORD_GENERIC_CAPTION_EXCLUSIVE: '1',
               TYPE_TITLE_OWNER_PRECEDENCE: '1', FILING_VALUE_SANITY_FLAGS: '1' },
   sanity:   { FILING_VALUE_SANITY_FLAGS: '1' },
+  issuer:   { STAGE05_REF_CODE_GATE: '1', KEYWORD_GENERIC_CAPTION_EXCLUSIVE: '1',
+              TYPE_TITLE_OWNER_PRECEDENCE: '1', FILING_VALUE_SANITY_FLAGS: '1',
+              TEACH_ANGLE_COMPOSE_SCAN: '1', TEMPLATE_FIXED_NEAR_MATCH_RECONCILE: '1',
+              TEMPLATE_FIXED_FRAGMENT_DECLINE: '1', TEMPLATE_FIXED_ISSUER_REPAIR: '1' },
   // Oracle's ruling: fix PLACEMENT, not pixels. Composes the taught box by (theta_teach -
   // theta_scan) using a non-destructive skew measurement. No page is rotated.
   compose:  { STAGE05_REF_CODE_GATE: '1', KEYWORD_GENERIC_CAPTION_EXCLUSIVE: '1',
