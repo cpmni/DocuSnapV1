@@ -899,6 +899,16 @@ function showValueConfirm(f, r){
     `<span class="muted" style="font-size:12px;align-self:center;margin-left:6px">Label is:</span>`+
     `<button class="btn ${dir==='left'?'primary':'ghost'}" id="rb-dir-left">← Left</button>`+
     `<button class="btn ${dir==='above'?'primary':'ghost'}" id="rb-dir-above">↑ Above</button>`;
+  // TYPE IT INSTEAD — always offered, never pre-filled (Chris round 3, 2026-08-09, finding 5).
+  // The escape hatch used to exist ONLY on the harmless failure ("Couldn't read that clearly →
+  // type the value") and was withheld from the DANGEROUS one: a confident but WRONG read. Chris
+  // hit "~ Neltrix Automotive Parts" on a coloured letterhead — the exact misread that poisoned a
+  // real supplier scope in the owner's own run — and his only choices were to accept it under a
+  // button reading "Looks right →" or redraw and hope. He reached the typing box by ACCIDENT, by
+  // drawing SMALLER, which the on-screen advice tells you not to do.
+  // Left EMPTY on purpose: pre-filling with the read would invite a rubber-stamp of the very value
+  // being questioned. The box keeps the geometry already stored in `r` — only the VALUE changes,
+  // so the taught position still teaches.
   setConfirm(
     `<div>Value: <span class="val mono">${esc(r.value)}</span>${labelBit}</div>`+
     `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">`+
@@ -906,7 +916,26 @@ function showValueConfirm(f, r){
       `<button class="btn ghost" id="rb-redraw">Redraw value</button>`+
       (issuer ? '' : `<button class="btn ghost" id="rb-redraw-label">Redraw label</button>`)+
       dirBtns+
+    `</div>`+
+    `<div style="margin-top:10px;display:flex;gap:8px;align-items:center">`+
+      `<span class="muted" style="font-size:12px;flex-shrink:0">Not right? Type it:</span>`+
+      `<input type="text" id="rb-manual-input" style="flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:8px;padding:6px 9px;font-size:13px;font-family:inherit" placeholder="${esc(f.label)} as printed…">`+
+      `<button class="btn ghost" id="rb-type">Use this</button>`+
     `</div>`);
+  // A typed value REPLACES the read but keeps the box/label already stored, so the position is
+  // still taught. Marked done immediately — the operator has just told us what it says.
+  const doTyped = ()=>{
+    const v = confirmValue('rb-manual-input');
+    if (!v) { markConfirmInvalid('rb-manual-input'); return; }
+    r.value = v;
+    if (issuer) return finishIssuerField(f);
+    if (suspicious) r.anchor_text = null;
+    r.status='done'; drawMode='value'; advanceField();
+  };
+  onConfirm('rb-type', doTyped);
+  eachConfirm('rb-manual-input', el => el.addEventListener('keydown', e=>{
+    if (e.key === 'Enter') { e.preventDefault(); doTyped(); }
+  }));
   onConfirm('rb-yes', ()=>{
     if (issuer) return finishIssuerField(f);
     if (suspicious) r.anchor_text = null;   // junk never persists — position-only

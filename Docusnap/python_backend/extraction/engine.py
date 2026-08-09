@@ -3847,6 +3847,101 @@ class ExtractionEngine:
         except Exception:
             pass   # advisory guard — must never break extraction
 
+    def _flag_filing_value_sanity(self, results, ref_field_key, date_field_keys, ocr_text):
+        """FILING_VALUE_SANITY_FLAGS (kill switch, DEFAULT OFF — Chris round 3, 2026-08-09).
+
+        THE DEFECT, verified on disk: of 18 auto-filed documents, four carried a value that is
+        visibly wrong on the page and NONE was flagged — the reference `VyYoa1niRe` where the page
+        prints `VXS10186`, `VXS986` where the page prints `VXS98624`, and two documents filed into a
+        `2020/` folder whose pages print 2026. All read "High · 90%". The reference and the date are
+        exactly the two values that become the FILENAME and the FOLDER, so a wrong one does not just
+        sit in a field — it decides where the paper lives. Chris kept his auto-file bar at 100 purely
+        because of this, which is most of the product's value withheld.
+
+        FLAG ONLY. Neither gate edits a value or picks a different one — they attach a note, and a
+        noted field is ineligible for auto-file (trust.js), so the document routes to review with the
+        reason on screen. That is the fail-toward-review direction, and it means a false positive
+        costs one glance rather than a wrong file.
+
+        Gate A — a reference that is not a reference SHAPE. Precision-first: it fires only on the
+        conjunction of "mixed case INSIDE a token" AND "no run of 3+ digits", which is the shape of
+        OCR noise ('VyYoa1niRe') and not the shape of a real code. 'VXS986', 'HTS-SO-12013',
+        'CJB-9791', 'PD/25/1197' all pass untouched; so does a genuinely mixed-case code that
+        carries digits ('InvNo123').
+
+        Gate B — a date whose YEAR is not printed on the page. If a 4-digit year was read but that
+        year appears nowhere in the page text, the reader invented it (a 6->0 misread does exactly
+        this). Requires the read itself to carry a 4-digit year, so a page that prints 2-digit years
+        is never judged.
+        """
+        if os.environ.get('FILING_VALUE_SANITY_FLAGS', '0') == '0':
+            return
+        try:
+            page = str(ocr_text or '')
+            date_keys = set(date_field_keys or [])
+
+            def _note(key, text):
+                d = results.get(key)
+                if not isinstance(d, dict) or str(d.get('validation_note') or '').strip():
+                    return False        # one voice per field — never argue with an existing note
+                d['validation_note'] = text
+                return True
+
+            # ── Gate A ────────────────────────────────────────────────────────────────────
+            if ref_field_key and isinstance(results.get(ref_field_key), dict):
+                val = str(results[ref_field_key].get('value') or '').strip()
+                if val:
+                    mixed = any(re.search(r'[a-z][A-Z]', t) for t in re.split(r'[^A-Za-z0-9]+', val) if t)
+                    if mixed and not re.search(r'\d{3}', val):
+                        if _note(ref_field_key,
+                                 f"'{val}' doesn't look like a reference number — please check it "
+                                 f"against the document before filing."):
+                            self._t('filing_sanity_ref', field=ref_field_key, value=val)
+                            self.log(f"  Filing sanity: {ref_field_key} '{val}' is not a reference "
+                                     f"shape — flagged for review")
+
+            # ── Gate C — the reference must be PRINTED ON THE PAGE, as a whole token ──────
+            # Gates A/B cannot catch a wrong value that still LOOKS like a code: 'VXS986' where the
+            # page prints 'VXS98624' (a clip), or 'C.JB-7957' where it prints 'CJB-7957' (a stray
+            # dot). Both filed silently. A whole-TOKEN test catches both, where a substring test
+            # would not — 'VXS986' IS a substring of 'VXS98624', which is exactly how the clip hides.
+            # Whole-token only, and only when the page text is substantial enough to be trusted as a
+            # witness; a crop read and the full-page pass can legitimately disagree on a noisy scan,
+            # so this is measured for false-flag rate before it is recommended, and it stays
+            # FLAG-ONLY either way.
+            if (ref_field_key and isinstance(results.get(ref_field_key), dict)
+                    and len(page) > 200 and not results[ref_field_key].get('validation_note')):
+                rv = str(results[ref_field_key].get('value') or '').strip()
+                if rv and len(rv) >= 4:
+                    toks = {t.strip('.,;:()[]{}"\'').casefold() for t in re.split(r'\s+', page)}
+                    if rv.casefold() not in toks:
+                        if _note(ref_field_key,
+                                 f"'{rv}' doesn't appear on this page as written — please check the "
+                                 f"reference before filing."):
+                            self._t('filing_sanity_ref_absent', field=ref_field_key, value=rv)
+                            self.log(f"  Filing sanity: {ref_field_key} '{rv}' not printed on the "
+                                     f"page as a whole token — flagged for review")
+
+            # ── Gate B ────────────────────────────────────────────────────────────────────
+            for key in date_keys:
+                d = results.get(key)
+                if not isinstance(d, dict):
+                    continue
+                val = str(d.get('value') or '').strip()
+                m = re.search(r'(19|20)\d{2}', val)
+                if not m:
+                    continue                      # no 4-digit year read -> nothing to check
+                year = m.group(0)
+                if year in page:
+                    continue                      # the page prints it -> believe it
+                if _note(key, f"the year {year} isn't printed anywhere on this page — please check "
+                              f"the date before filing."):
+                    self._t('filing_sanity_date', field=key, value=val, year=year)
+                    self.log(f"  Filing sanity: {key} '{val}' — year {year} absent from the page, "
+                             f"flagged for review")
+        except Exception:
+            pass   # advisory guard — must never break extraction
+
     def _reconcile_name_truncation(self, results, field_defs, ocr_text):
         """NAME-UNCLIP reconcile (see the NAME_UNCLIP_RECONCILE const block for the full design +
         Oracle conditions). Post-merge, ledger-based, the free-text complement of
@@ -6876,6 +6971,12 @@ class ExtractionEngine:
         # sibling and before the S-C..D1 chain + the universal verify (which then judges the
         # HEALED value — order load-bearing, pinned in test_name_unclip_reconcile.py).
         self._reconcile_name_truncation(results, field_defs, ocr_text)
+        # FILING-VALUE SANITY (Chris round 3, 2026-08-09 — default OFF). LAST of the value-changing
+        # passes on purpose: it judges the value that will actually become the filename and the
+        # folder, so it must see whatever the reconciles above finally settled on. Flag-only — it
+        # never edits or replaces a value, it just refuses to let a non-reference-shaped reference
+        # or a year that is not printed on the page file itself silently.
+        self._flag_filing_value_sanity(results, ref_field_key, date_field_keys, ocr_text)
         # ORDER PINNED (Oracle 2026-08-01, tests/test_validation_pass_order.py): suffix-reconcile
         # -> S-C blind-geometry -> S-A date-in-ref -> prefix-outlier -> S-B length guard.
         # S-C before S-A is load-bearing: on the #141 class S-C adopts the witnesses' 'DN-24408'

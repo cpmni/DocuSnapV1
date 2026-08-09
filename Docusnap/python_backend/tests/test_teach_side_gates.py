@@ -259,6 +259,116 @@ def test_typeowner_on_declines_a_deep_page_heading():
     assert r and r['type'] == 'Sales Order', f'deep heading must not promote, got {r and r["type"]!r}'
 
 
+# ── FILING_VALUE_SANITY_FLAGS (Chris round 3) ────────────────────────────────
+# The reference and the date become the FILENAME and the FOLDER, so a wrong one decides where the
+# paper lives. Chris found four of eighteen auto-filed documents carrying a visibly wrong reference
+# or year, all at "High · 90%", none flagged. These gates are FLAG-ONLY: they never edit or replace
+# a value, they attach a note, and a noted field is ineligible for auto-file — fail toward review.
+PAGE = 'Order Ref VXS10186\nDATE 26-04-2026\nTotal 500.00'
+
+
+def _engine():
+    from extraction.engine import ExtractionEngine
+    e = ExtractionEngine.__new__(ExtractionEngine)
+    e._t = lambda *a, **k: None
+    e.log = lambda *a, **k: None
+    return e
+
+
+def _flagged(value, *, ref=True, page=PAGE):
+    key = 'ref' if ref else 'd'
+    res = {key: {'value': value}}
+    _engine()._flag_filing_value_sanity(res, 'ref' if ref else None,
+                                        set() if ref else {'d'}, page)
+    return bool(res[key].get('validation_note'))
+
+
+@case
+def test_sanity_off_is_a_no_op():
+    _flag('FILING_VALUE_SANITY_FLAGS', False)
+    assert _flagged('VyYoa1niRe') is False, 'OFF must never flag'
+
+
+@case
+def test_sanity_flags_a_non_reference_shape():
+    """The measured value: page prints 'VXS10186', the filename got 'VyYoa1niRe'."""
+    _flag('FILING_VALUE_SANITY_FLAGS', True)
+    assert _flagged('VyYoa1niRe') is True
+
+
+@case
+def test_sanity_leaves_real_references_alone():
+    """PRECISION — the gate is the CONJUNCTION of mixed-case-inside-a-token AND no 3-digit run.
+    Any of these firing would flag real paperwork and bury the operator in false checks."""
+    _flag('FILING_VALUE_SANITY_FLAGS', True)
+    for good in ('VXS986', 'HTS-SO-12013', 'CJB-9791', 'PD/25/1197', 'InvNo123', 'ABCDEF', 'PO-7'):
+        assert _flagged(good) is False, f'{good!r} must not be flagged'
+
+
+@case
+def test_sanity_flags_a_year_not_printed_on_the_page():
+    """A 6->0 misread files a 2026 document into 2020/. If the year appears nowhere on the page,
+    the reader invented it."""
+    _flag('FILING_VALUE_SANITY_FLAGS', True)
+    assert _flagged('26-04-2020', ref=False) is True
+    assert _flagged('26-04-2026', ref=False) is False
+
+
+@case
+def test_sanity_never_judges_a_two_digit_year():
+    """Requires a 4-digit year in the READ, so a page printing 2-digit years is never judged."""
+    _flag('FILING_VALUE_SANITY_FLAGS', True)
+    assert _flagged('26-04-26', ref=False) is False
+
+
+@case
+def test_sanity_never_argues_with_an_existing_note():
+    """One voice per field — an earlier guard's note always wins."""
+    _flag('FILING_VALUE_SANITY_FLAGS', True)
+    res = {'ref': {'value': 'VyYoa1niRe', 'validation_note': 'earlier guard'}}
+    _engine()._flag_filing_value_sanity(res, 'ref', set(), PAGE)
+    assert res['ref']['validation_note'] == 'earlier guard'
+
+
+@case
+def test_sanity_flags_a_reference_not_printed_on_the_page():
+    """Gate C — the WHOLE-TOKEN page witness. Catches the two shapes A cannot: a CLIP ('VXS986'
+    where the page prints 'VXS98624') and stray punctuation ('C.JB-7957' vs 'CJB-7957'). Whole
+    token, not substring — 'VXS986' IS a substring of 'VXS98624', which is exactly how a clip hides.
+    MEASURED on 200 real documents: 26 true positives, 2 false positives. The true positives
+    included an unseen defect class — 13 delivery numbers filed as 'OED46699' where the document
+    prints 'OED/46699'."""
+    _flag('FILING_VALUE_SANITY_FLAGS', True)
+    pad = 'x' * 220
+    page_v = 'Order Ref VXS98624\nDate 05-02-2026\n' + pad
+    page_c = 'JOB SHEET NO CJB-7957\n' + pad
+    assert _flagged('VXS986', page=page_v) is True
+    assert _flagged('C.JB-7957', page=page_c) is True
+    # the CORRECT values, on the same pages, must stay clean
+    assert _flagged('VXS98624', page=page_v) is False
+    assert _flagged('CJB-7957', page=page_c) is False
+
+
+@case
+def test_sanity_page_witness_needs_a_substantial_page():
+    """A crop read and the full-page pass can legitimately disagree on a noisy scan, so the page is
+    only trusted as a witness when there is enough of it. A short/empty page text never flags."""
+    _flag('FILING_VALUE_SANITY_FLAGS', True)
+    assert _flagged('VXS986', page='Order Ref VXS98624') is False, 'short page must not judge'
+    assert _flagged('VXS986', page='') is False
+
+
+@case
+def test_sanity_never_changes_a_value():
+    """PIN THE CONTRACT: flag-only. If a future dev makes these gates 'helpfully' correct a value,
+    this fails — a wrong auto-correction on the filing key is worse than the flag it replaces."""
+    _flag('FILING_VALUE_SANITY_FLAGS', True)
+    res = {'ref': {'value': 'VyYoa1niRe'}, 'd': {'value': '26-04-2020'}}
+    _engine()._flag_filing_value_sanity(res, 'ref', {'d'}, PAGE)
+    assert res['ref']['value'] == 'VyYoa1niRe' and res['d']['value'] == '26-04-2020'
+    assert res['ref'].get('corrected_to') is None and res['d'].get('corrected_to') is None
+
+
 if __name__ == '__main__':
     failed = 0
     for fn in CASES:
@@ -273,7 +383,7 @@ if __name__ == '__main__':
             print(f'  ERROR {fn.__name__}: {type(e).__name__}: {e}')
         finally:
             for f in ('STAGE05_REF_CODE_GATE', 'KEYWORD_GENERIC_CAPTION_EXCLUSIVE',
-                      'TYPE_TITLE_OWNER_PRECEDENCE'):
+                      'TYPE_TITLE_OWNER_PRECEDENCE', 'FILING_VALUE_SANITY_FLAGS'):
                 os.environ.pop(f, None)
     _reload_mapper()
     print(f'\n{len(CASES) - failed}/{len(CASES)} passed')

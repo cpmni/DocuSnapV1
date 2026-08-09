@@ -1072,11 +1072,17 @@ function addTableRow(msg) {
       ? `<button type="button" class="badge warn row-review-link" title="Not filed yet — click to open Review, check the details and Confirm & File it">Confirm to file →</button>`
       : `<span class="badge warn" title="This document needs review before it can be filed">Needs review</span>`;
   } else {
-    // Filed docs are clickable too — a green "Filed" can still hide a wrong value, so let
-    // the operator jump straight to it in Review to check/correct (Admin/Edit only).
+    // "READY TO FILE", not "Filed" (Chris round 3, 2026-08-09 — his finding 2, and he was right).
+    // Reaching here only means the document needs no review; FILING is a separate, gated step. He
+    // read 17 green "Filed" pills, went to his output folder and found two documents — while the
+    // bottom bar on the SAME screen said "17 ready", which is the accurate word. "Where is my
+    // paper?" is the one question this product cannot afford to answer wrongly.
+    // A document that genuinely auto-files flips to "Filed (auto)" via markRowFiled() on the
+    // onDocAutoFiled event, which is the ONLY place allowed to claim a document is filed.
+    // Still clickable — a green pill can hide a wrong value, so let the operator jump to Review.
     statusCell = _userCanReview
-      ? `<button type="button" class="badge ok row-filed-link" title="Open this filed document in Review to check or correct it">Filed</button>`
-      : `<span class="badge ok">Filed</span>`;
+      ? `<button type="button" class="badge ok row-filed-link" title="No review needed — this will file when you confirm it, or automatically if it clears your auto-file setting. Click to open it in Review.">Ready to file</button>`
+      : `<span class="badge ok" title="No review needed — not yet filed">Ready to file</span>`;
   }
 
   tr.innerHTML = `
