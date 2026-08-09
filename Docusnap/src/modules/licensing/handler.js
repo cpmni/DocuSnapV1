@@ -108,7 +108,11 @@ const timeAnchor = require('../../lib/license/timeAnchor');
 // bare integer (byte-identical); a missing config resolves to null and does the same.
 let _anchorKey;   // undefined = unresolved; null = disabled/unavailable; string = active fp hash
 function anchorDeps() {
-  if (process.env.ANCHOR_HMAC === '0') return {};
+  // DEV-ONLY (2026-08-09 NIGHT, pre-release audit): same rule as the pinned keys above — a
+  // protection must not be switchable off by an environment variable on a customer's machine.
+  // Withholding the key downgrades the time anchor to its legacy unstamped form, which is
+  // exactly what an attacker replaying a snapshot wants.
+  if (!_isPackaged() && process.env.ANCHOR_HMAC === '0') return {};
   if (_anchorKey === undefined) {
     try {
       const cfg = _ctx ? loadConfig(_ctx) : null;

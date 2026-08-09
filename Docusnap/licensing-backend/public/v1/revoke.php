@@ -26,7 +26,7 @@ try {
     $ip = client_ip();
     $gen = rate_hit($pdo, "activate_ip:$ip", 30, 3600);
     if (!$gen['allowed']) { too_many_requests($gen['retry_after']); return; }
-    if (rate_count($pdo, "activate_fail_ip:$ip") > 12) { too_many_requests(900); return; }
+    if (rate_count($pdo, "activate_fail_ip:$ip", 3600) > 12) { too_many_requests(900); return; }
     $accountHash = hash('sha256', $accountKey); // never store/log the plaintext key
 
     $acc = $pdo->prepare('SELECT id, status FROM accounts WHERE account_key_hash = ?');

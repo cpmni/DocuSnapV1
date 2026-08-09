@@ -32,7 +32,7 @@ try {
     // Generous — a real commerce system sends few events.
     $gen = rate_hit($pdo, "webhook_ip:$ip", 120, 3600);
     if (!$gen['allowed']) { too_many_requests($gen['retry_after']); return; }
-    if (rate_count($pdo, "webhook_fail_ip:$ip") > 30) { too_many_requests(900); return; }
+    if (rate_count($pdo, "webhook_fail_ip:$ip", 3600) > 30) { too_many_requests(900); return; }
 
     // Verify the signature over the EXACT raw bytes BEFORE trusting anything in the body.
     $raw = file_get_contents('php://input');

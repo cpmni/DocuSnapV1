@@ -83,14 +83,36 @@ function rate_hit(PDO $pdo, string $bucket, int $limit, int $windowSeconds): arr
 }
 
 
-/** Read-only current count for a bucket's window (0 if absent or on error). */
-function rate_count(PDO $pdo, string $bucket): int
+/**
+ * Read-only current count for a bucket's CURRENT window (0 if absent, expired, or on error).
+ *
+ * THE WINDOW ARGUMENT IS NOT OPTIONAL IN SPIRIT (fixed 2026-08-09 NIGHT, pre-release audit).
+ * This function used to return the stored count whatever its age, while the only code that rolls a
+ * window over lives in `rate_hit_strict` — which the callers run AFTER their early return. So once
+ * an IP tripped the failed-key brake, the counter froze above the limit FOR EVER: that address
+ * could never activate or revoke again, while the error message promised "try again in 15 minutes".
+ *
+ * Who that hurt was not pirates. It was a customer who mistyped their key a few times, or an
+ * office, hotel or mobile network where everyone shares one public address — a permanent
+ * activation lockout for a PAYING customer, from a brake meant to slow down key guessing.
+ *
+ * Passing $windowSeconds makes the read agree with the write: a count whose window has elapsed is
+ * reported as 0, exactly as the next increment would reset it. Omitting it preserves the old
+ * age-blind behaviour for any caller that genuinely wants the raw stored value.
+ */
+function rate_count(PDO $pdo, string $bucket, int $windowSeconds = 0): int
 {
     try {
         $sel = $pdo->prepare('SELECT count, window_start FROM rate_limits WHERE bucket = ?');
         $sel->execute([$bucket]);
         $row = $sel->fetch();
-        return $row ? (int) $row['count'] : 0;
+        if (!$row) {
+            return 0;
+        }
+        if ($windowSeconds > 0 && ((int) $row['window_start'] + $windowSeconds) <= time()) {
+            return 0;   // the window has elapsed - the next hit would start a fresh one
+        }
+        return (int) $row['count'];
     } catch (Throwable $e) {
         return 0;
     }
