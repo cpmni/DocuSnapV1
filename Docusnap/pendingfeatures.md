@@ -11,21 +11,14 @@
 Both surfaced BY the gate, neither is a blocker for the pair, and both are recorded rather than
 tuned because each is a decision, not a bug fix.
 
-**(1) A CONFIRMATION COSTS CONFIDENCE — 6 documents, correct value, 95 -> 78.**
-With the arbiter silenced, six documents whose taught box reads the company name CORRECTLY move
-`template_fixed`@95 -> `template_mapping`@78 (and two more `anchor_crop`@50 -> `template_mapping`@78).
-The value is right in both arms; what changes is provenance. Four of them fall below the 88 band as
-a result. Mechanism: `is_curated_refinement` (`engine.py`, the Stage-0.5 merge) lets ANY non-weak
-mapping read displace the curated seed, including one that AGREES with it — so reading the same
-name a second time is treated as a refinement rather than as corroboration.
-**Fix direction (not built):** when the mapping read and the curated `fixed_value` are the same
-value, keep the SEED (its 95, its `template_fixed` method), not the read. That is the same shape as
-`_fixed_seed_declines_mapping`'s raw-equality short-circuit, which today returns None on agreement
-and lets the read through. Oracle's rule for Fix 2 — *confirmation grants no new authority* — points
-the same way: agreement should license keeping what is there, never demote it.
-**Watch:** this would flip method to `template_fixed` on agreement corpus-wide, which ARMS
-`TEMPLATE_FIXED_NAME_PRESENCE_VETO` on thousands of documents. That is exactly the blast radius the
-near-match branch's short-circuit was written to avoid — measure before believing it is free.
+**(1) SHIPPED — a confirmation no longer costs confidence** (`TEMPLATE_FIXED_SEED_AGREEMENT_KEEP`,
+default OFF). An exact re-read of the curated `fixed_value` now KEEPS the seed (95, `template_fixed`)
+instead of being applied as a refinement at 78. **Read the commit before flipping it: the blast
+radius is total** — all 145 corpus documents then commit their issuer as `template_fixed`@95, and
+document-level >= 88 goes 28 -> 124 with the wrong-value-carrying subset 13 -> 60. Zero values change,
+zero suppliers blanked. It removes a confidence penalty that was accidentally acting as a safety net
+for the `account_no` defect; fix that first, and do not flip this alongside a lowered
+`auto_file_threshold`.
 
 **(2) ORACLE G3 IS NOT MET BY THE PAIR (it is met by the arbiter fix alone).**
 `arbiter` + `issuer_region_presence` moves TWO documents (Castellan worksheets 0012 and 0030) above
