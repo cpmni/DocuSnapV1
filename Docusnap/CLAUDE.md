@@ -21,7 +21,30 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-08 OVERNIGHT (autonomous): **READ `HANDOVER_2026-08-08_OVERNIGHT.md` FIRST**
+## ⏭ LATEST — 2026-08-09: **READ `HANDOVER_2026-08-09.md` FIRST**
+Branch **`feat/teach-side-overnight`** (revert point `8b8b458`). Teach-side arc, all flags DEFAULT OFF.
+**MEASURED on 140 unseen siblings of 10 taught documents: date 140/0 (100%), customer 138/2 (99%),
+issuer 121/19 (86%), ref 120/20 (86%)** — from 116/21, 88/52, 88/49, 107/29 that morning. No correct
+value lost by any fix. **The corpus was REGENERATED today** (the old one re-rolled labels per
+document — an artefact the generator fixed on 08-06 in `c74071d`), so every teach-side figure from
+before today understates the product; deltas between arms still stand.
+**Shipped:** `TEACH_ANGLE_COMPOSE_SCAN` (place the taught box on the page's own tilt, no pixel
+rotated — the biggest win), `TEMPLATE_FIXED_ISSUER_REPAIR` (42 of 135 documents read something other
+than the curated issuer), three teach-side gates (`4e5c21c`), Chris's findings 1/2/3/5 (`119f28a`),
+and the SFDEV "All boxes" overlay that found most of this.
+**OVERTURNED — do NOT flip `deskew_on_import`:** straightening at import measured +213 cells with
+zero regressions, and Oracle ruled WRONG LAYER. The corpus tilts every page ≤1.6°, inside Tesseract's
+self-tolerance and inside the band doc-561 proved HARMFUL, and adds noise AFTER rotating so it cannot
+contain the harm case. Re-run at a 2.0° floor the entire heal vanished (0 of 1127 cells). Fix
+placement, not pixels — which is what `TEACH_ANGLE_COMPOSE_SCAN` does.
+**INCOMPLETE, pick up first:** `TEMPLATE_CURRENCY_EDGE_GROW` — money is right-aligned so a longer
+value overflows LEFT (`'£10,603.44'` read as `'0,603.44'`); currency is absent from the edge guard's
+gate. Wired and unit-correct but DOES NOT FIRE — find where the guard bails.
+**GOTCHA:** `py_compile` is not verification — it never resolves a name. A constant defined before
+its dependency passed compile, raised NameError at import, and returned 140 empty documents in every
+lane. Import the module. And a DB probe must use `mode=ro`, never `?immutable=1` (it ignores `-wal`).
+
+## Prior — 2026-08-08 OVERNIGHT (autonomous): `HANDOVER_2026-08-08_OVERNIGHT.md`
 Branch **`feat/teach-side-overnight`** (revert point `8b8b458` on `feat/reprocess-throughput-autostraighten`).
 The owner ran a controlled TEACH-SIDE test — teach 1 document per issuer x 10 issuers, import 20
 scanned siblings each — and it was scored against corpus ground truth for the first time. **The 98%
