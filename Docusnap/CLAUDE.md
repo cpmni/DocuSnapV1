@@ -21,7 +21,45 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-09 EVENING: **READ `HANDOVER_2026-08-09_EVENING.md` FIRST**
+## ⏭ LATEST — 2026-08-09 NIGHT: **READ `HANDOVER_2026-08-09_NIGHT.md` FIRST**
+Branch **`feat/teach-side-overnight`**, HEAD **`71bce9b`**, PUSHED.
+**(1) THE HARNESS WAS MEASURING THE WRONG PIPELINE.** `teach_run_ab.js` mirrored only settings whose
+value is literally `'true'`, so numeric `ocr_dpi` was dropped and Python fell back to 300 while the app
+renders at **200** (`_ocrDpiEnv`, handler.js:91-96, applied at every extraction spawn). **Every absolute
+figure in every prior handover was taken at the wrong DPI**; A/B deltas are unaffected. FIXED.
+`trace_one_doc.js:65-66` has the same gap, NOT fixed.
+**(2) Oracle C3/C4/C6/C7 CLOSED** (`c027d86`). C3 was built exactly as signed, MEASURED, and REFUTED —
+adopt-on-proof scored 111/6/3 vs the unproven arm's 119/1/0, costing 8 heals and MINTING 6 wrong values
+(a credit note reverted to its VAT row, a minus sign lost). Premise fails because on the DERIVED rung
+the reference read is itself wrong 28 times in 120. Shipped INVERTED: refuse on EVIDENCE OF LOSS, not
+absence of proof. Residual: the shipped guard is INERT on this corpus (0 docs change).
+**(3) FOUR FLAGS NOW BRIDGED** (`11d3f46`, `a3b4938`) — they were env-only and `npm start` injects no
+env, so the two headline wins of the 08-09 arc were unreachable in the product. **FLIP ALL FOUR
+TOGETHER OR NONE**: the teach-side pair alone costs 25 totals.
+**(4) ISSUER ROOT-CAUSED.** `noreg` diagnostic arm: registration OFF ⇒ issuer **118/22 → 140/0/0**. The
+taught boxes were right on all 22; the arbiter discarded them. WHY only this field:
+`template_field_mappings.anchor_text` is **NULL with dx=dy=0 for `supplier_name` on all seven
+templates** (a letterhead name has no caption), so `_extract_one`'s drift guard is skipped,
+`anchor_stable` can never be True, and the global transform is the only drift compensation.
+**ORACLE FINAL: the layer MOVED — fix the ARBITER** (`template_mapper.py:2231` must require anchor
+evidence AVAILABLE-and-failed, not merely absent). **gary's decline-branch is SUPERSEDED, do not build
+it.** Secondary: the owner's region-scoped presence confirm. **Logo ruled (b) keep-seed-but-flag, never
+accept silently** — the phash has no separating power on scans and re-consuming it is circular.
+**(5) `deskew_on_import` was ON and is now OFF again** (owner-instructed, 20:18). While on it populated
+`raw_pages`, which makes `TEACH_ANGLE_COMPOSE_SCAN` unreachable (`engine.py:5089` is an
+`elif ... not raw_pages`) — so the +18 issuer/+36 customer win was OFF and an unmeasured path ran.
+**Remember the interaction: turning import-deskew on silently disables COMPOSE_SCAN.**
+**CORRECTION to the anti-deskew record:** the "2.0° floor → heal vanished (0/1127)" argument is
+**VACUOUS** — the corpus never tilts past 1.6°, so a 2.0° floor deskews nothing. The real argument is
+wrong-layer (rotate the box, not the page) plus one real-paper exhibit.
+**(6) An 11-agent read-only audit ran** — 32 findings. Auto-file has **NEVER fired on this install**
+(0 of 360, max overall_confidence 95, threshold 100), so the money/issuer risk is LATENT. At conf==100
+`docTrustGate` is SKIPPED entirely. `credit_sign_note`'s raw-marker arm is a DEAD GUARD (`raw_value`
+never assigned). `total_amount` has ZERO rows here — the real key is a custom field named `total`.
+**CORRECTION: the 08-09 EVENING handover's headline is wrong** — that arm scores **119 ok / 1 wrong /
+0 empty**, not "119/0 wrong/1 empty". Nordwind quote 0015 commits `'2.205.60'` (conf 50 + note).
+
+### Prior — 2026-08-09 EVENING: `HANDOVER_2026-08-09_EVENING.md`
 Branch **`feat/teach-side-overnight`**, HEAD **`81c8c4c`** (over `7951156`). The money slice:
 **totals 89 ok / 28 wrong / 3 empty → 119 / 0 wrong / 1 empty, 30 healed, 0 regressed, all eight
 other lanes byte-identical**, replaying the owner's LIVE taught state over 200 documents. Two
