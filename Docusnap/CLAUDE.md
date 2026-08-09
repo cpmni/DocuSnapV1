@@ -21,7 +21,45 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-09 NIGHT: **READ `HANDOVER_2026-08-09_NIGHT.md` FIRST**
+## ⏭ LATEST — 2026-08-10 OVERNIGHT: **READ `HANDOVER_2026-08-10_NIGHT.md` FIRST**
+Branch **`feat/teach-side-overnight`**, HEAD **`bc157d9`**, PUSHED. Autonomous run, agents + Oracle.
+**(1) THE HEADLINE IS A DEFECT, NOT A FIX: ONE ORDINARY CONFIRM STAMPS THE WRONG COMPANY ON 18 OTHER
+COMPANIES' DOCUMENTS AT 95% AND FILES ONE OF THEM IN THE WRONG FOLDER.** Confirming a single
+Quillstone purchase order created a template with `supplier_name` frozen; it then matched **Oakhaven
+delivery notes** (different company, different type) and stamped Quillstone at 95 via
+`template_fixed`. Found TWICE independently — Chris at the screen, the harness in the DB. Chain
+verified at source; `TEMPLATE_FIXED_NAME_PRESENCE_VETO` was inert because it needs >=3 confirms and
+there was 1. **NOT FIXED — advisor round + Oracle first; four candidate directions in
+`pendingfeatures.md` (top entry). DO THIS FIRST.**
+**(2) VAT FIXED** (`92c7013`): `vat_no` had NO format — it fell back to the generic ref rule, which
+is a length check that accepts 'VAT'/'3PL'/'1RE'. Now a shipped field with UK patterns + labels +
+the Review on-blur twin. **100 ok/26 wrong/54 empty → 171/0/9 on 200 docs, every other lane
+byte-identical.** 21 of the 26 were a template's frozen `fixed_value` = the caption 'VAT' →
+`TEMPLATE_FREEZE_QUALIFY` (OFF) + `database/modules/freeze_guard.js`.
+**(3) SIX SECURITY HOLES CLOSED** (`4ef1d1c`/`c45ff27`/`bdb0325`/`ab246f5`): `LICENSE_PINNED_KEYS=0`
+was a complete offline licence bypass; `%SystemRoot%` made a 5-minute repeatable free trial; a
+packaged build now refuses `--remote-debugging-port`; the failed-key brake **permanently locked out
+paying customers**; one person could take signups offline worldwide; `processing.log` was recording
+customer names/VAT/totals/paths with no toggle (now redacted unless Diagnostic Logging is on).
+**(4) ORACLE SENT ONE BACK AND FOUND A DEAD GUARD:** arming the fuses in `npm run build` is REVERTED
+(signing trap: afterPack runs after signing). **`config/keyword_patterns.json` is NOT in `app.asar`**
+— `trust.js` loaded it repo-relatively, so its strict-type re-check has NEVER fired in a packaged
+build. Fixed in `trust.js` + `freeze_guard.js` via `process.resourcesPath`.
+**(5) NEW INSTRUMENT — `stress_test/readable_census.py`**: scores only values ACTUALLY PRINTED. The
+account number is printed on 60 of 200 docs; the lane is **100% on those** and INVENTS a value on 40
+pages that carry none. On printed values: customer 99 · total 97 · vat 96 · account 100 · po_ref 92 ·
+issuer 78 (40 misses = untaught suppliers) · serials 68.
+**(6) FIVE MEASURED FLAGS WERE UNREACHABLE** (env-only, `npm start` injects none) and are now bridged,
+still OFF: `STAGE05_REF_CODE_GATE`, `KEYWORD_GENERIC_CAPTION_EXCLUSIVE`, `TYPE_TITLE_OWNER_PRECEDENCE`,
+`FILING_VALUE_SANITY_FLAGS`, `LETTERHEAD_ISSUER` (the cold-start sender reader — sender was blank on
+all 60 docs from unseen suppliers).
+**GOTCHAS:** never measure against a DB another agent is using (snapshot to `TESTING/_measure/`); a
+mutator arm inherits NO env unless named in `ARM_ENV`; a probe without `pytesseract.tesseract_cmd`
+reports absence about everything. `CAPTION_VALUE_REFUSE` shipped INERT (0 docs change).
+**OWNER: `deskew_on_import` is TRUE again in the live DB** — standing ruling against it, and it
+silently disables `TEACH_ANGLE_COMPOSE_SCAN`.
+
+### Prior — 2026-08-09 NIGHT: **`HANDOVER_2026-08-09_NIGHT.md`**
 Branch **`feat/teach-side-overnight`**, HEAD **`71bce9b`**, PUSHED.
 **(1) THE HARNESS WAS MEASURING THE WRONG PIPELINE.** `teach_run_ab.js` mirrored only settings whose
 value is literally `'true'`, so numeric `ocr_dpi` was dropped and Python fell back to 300 while the app
