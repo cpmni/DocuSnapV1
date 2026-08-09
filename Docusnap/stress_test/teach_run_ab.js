@@ -93,6 +93,20 @@ const ARM_ARGS = {
   deskew20:     ['--deskew-pages', '--deskew-min-angle', '2.0'],
 };
 
+// Arms that REMOVE a CLI arg the run normally passes. `buildArgs` hardcodes `--registration`, and
+// process_docs.py is its only consumer, so dropping it turns the transform fit off globally.
+// DIAGNOSTIC ONLY, never a candidate configuration: it also kills the legitimate registration
+// FALLBACK rung and the Stage-2 anchor_registration path, so it will cost accuracy elsewhere.
+// What it answers (Oracle/gary, 2026-08-09): the registration ARBITER at template_mapper.py:2231
+// has `abs_text` as its FIRST conjunct, so it can only fire when the taught box ALREADY produced a
+// read — which it then discards on a geometry-only verdict. With registration off, that door is
+// shut and the absolute/inline mapping read is what commits. If the 22 wrong issuers come back
+// CORRECT, the arbiter was destroying good reads and any decline-branch fix is containment, not a
+// cure. If they come back wrong or empty, registration was filling a real hole badly.
+const ARM_DROP_ARGS = {
+  noreg: ['--registration'],
+};
+
 const ARM_ENV = {
   refgate:  { STAGE05_REF_CODE_GATE: '1' },
   exclusive:{ KEYWORD_GENERIC_CAPTION_EXCLUSIVE: '1' },
@@ -151,6 +165,11 @@ const ARM_ENV = {
               TYPE_TITLE_OWNER_PRECEDENCE: '1', FILING_VALUE_SANITY_FLAGS: '1',
               TEMPLATE_FIXED_NEAR_MATCH_RECONCILE: '1', TEMPLATE_FIXED_FRAGMENT_DECLINE: '1' },
 };
+// `noreg` must differ from the arm that MEASURED the 22 failures by exactly ONE thing: the
+// `--registration` CLI arg. Give it that arm's env verbatim, or the diagnostic moves two variables
+// and answers nothing.
+ARM_ENV.noreg = { ...ARM_ENV.money };
+
 for (const k of Object.keys(ARM_ENV)) if (!MUTATORS[k]) MUTATORS[k] = () => {};
 for (const k of Object.keys(ARM_ARGS)) if (!MUTATORS[k]) MUTATORS[k] = () => {};
 
@@ -270,8 +289,12 @@ function runShards(folder, args, files, manifest, extraEnv, onDoc) {
     const step = Math.max(1, Math.ceil(files.length / 10));
     const armEnv = { ...env, ...(ARM_ENV[arm] || {}) };
     if (ARM_ENV[arm]) console.log(`    [env] ${Object.keys(ARM_ENV[arm]).join(', ')}`);
-    const armArgs = ARM_ARGS[arm] ? [...buildArgs(S), ...ARM_ARGS[arm]] : buildArgs(S);
+    let armArgs = ARM_ARGS[arm] ? [...buildArgs(S), ...ARM_ARGS[arm]] : buildArgs(S);
     if (ARM_ARGS[arm]) console.log(`    [args] ${ARM_ARGS[arm].join(' ')}`);
+    if (ARM_DROP_ARGS[arm]) {
+      armArgs = armArgs.filter(a => !ARM_DROP_ARGS[arm].includes(a));
+      console.log(`    [args] DROPPED ${ARM_DROP_ARGS[arm].join(' ')} — diagnostic arm, not a candidate config`);
+    }
     const res = await runShards(RR, armArgs, files, manifest, armEnv, () => {
       if (++done % step === 0 || done === files.length) {
         process.stdout.write(`    ${Math.round(100 * done / files.length)}% (${done}/${files.length})\n`);
