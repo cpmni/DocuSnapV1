@@ -137,6 +137,19 @@ _CODE_CROSSCHECK_TYPES = frozenset({'alphanumeric', 'reference_code'})
 # through to the next one and ultimately to Stages 1/2; it never asserts a value of its own.
 _STAGE05_REF_CODE_GATE = os.environ.get('STAGE05_REF_CODE_GATE', '0') != '0'
 
+# TEMPLATE_CURRENCY_EDGE_GROW (kill switch, DEFAULT OFF — owner-reported 2026-08-09).
+# Money is the ONE field type whose taught box is sized to a SAMPLE VALUE rather than to a
+# fixed-width code, and it is RIGHT-ALIGNED in a totals column — so a longer value grows LEFTWARD,
+# past the box's left edge. Observed live: a box taught on '£8,389.44' read '0,603.44' where the
+# page prints '£10,603.44' — the leading '£1' fell outside. Net 8,836.20 + VAT 1,767.24 = 10,603.44
+# exactly, so the document's own arithmetic knew, and the total-vs-subtotal guard did flag it; but
+# nothing REPAIRED it, because currency is absent from `_SNAP_VAL_TYPES` and therefore never reaches
+# the absolute-rung edge guard at all. This adds currency to the GUARD's scope only — not to the
+# word-snap, whose over-grab class is a different argument.
+# The left grow is already bounded by the located label's right edge (the C1 frame rule), so it
+# cannot swallow 'Balance Due'.
+_CURRENCY_EDGE_GROW_ON = os.environ.get('TEMPLATE_CURRENCY_EDGE_GROW', '0') != '0'
+
 # Stage 0.5 inline-code reconcile — default ON (kill with TEMPLATE_INLINE_CODE_RECONCILE=0).
 # A fixed narrow drawn target box clips a code value's prefix under per-scan offset/scale
 # (DN-93159 → N-93159) and the alphanumeric gate can't see it; the label-anchored inline
@@ -288,6 +301,10 @@ def _shape_consents(value, field_key, format_lookup, provisional_lookup):
 # =1 arms. OFF → helper returns its input, byte-identical.
 _TARGET_WORD_SNAP_ON = os.environ.get('TEMPLATE_TARGET_WORD_SNAP', '0') != '0'
 _SNAP_VAL_TYPES = frozenset(_CODE_CROSSCHECK_TYPES | {'date'})
+# The EDGE GUARD's own scope: the snap's types plus currency (see the _CURRENCY_EDGE_GROW_ON flag
+# block). Derived here, BELOW _SNAP_VAL_TYPES — defining it up in the flag zone was a NameError at
+# import that py_compile cannot see, because it checks syntax and never resolves a name.
+_EDGE_GUARD_VAL_TYPES = frozenset(_SNAP_VAL_TYPES | {'currency'})
 # NOTE (2026-08-06): a COMPOSED-BOX WORD-SNAP on the ABSOLUTE rung (TEMPLATE_COMPOSE_WORD_SNAP) was
 # built + Oracle-reviewed here and SENT BACK / reverted — the nicked composed-code/date class is
 # ALREADY healed by the Slice-C _abs_edge_guard (which runs on the composed target_box WITH
@@ -2016,7 +2033,8 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
     # the reconcile's independent inline witness then arbitrates the corrected read).
     _edge_healed = False
     _edge_suspect = False
-    if _ABS_EDGE_GUARD_ON and val_type in _SNAP_VAL_TYPES:
+    if _ABS_EDGE_GUARD_ON and (val_type in _SNAP_VAL_TYPES
+                              or (_CURRENCY_EDGE_GROW_ON and val_type in _EDGE_GUARD_VAL_TYPES)):
         _eg = _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text,
                               val_type, field_key, ocr_lines_fn, ocr_text_fn,
                               validation_patterns, format_lookup, provisional_lookup,
@@ -2600,7 +2618,19 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
         return False
 
     if abs_text:
-        if val_type == 'date':
+        if val_type == 'currency':
+            # Money is right-aligned, so a cut takes LEADING digits: the rigid read must be a strict
+            # DIGIT-SUFFIX of the grown value and the grown value must carry MORE integer digits.
+            # Digits-only so a stray currency symbol, comma or space cannot decide it. This is the
+            # mirror of the code leg's prefix rule, and it is what makes '0,603.44' -> '10,603.44'
+            # provable rather than plausible: '1060344'.endswith('060344').
+            _do = re.sub(r'[^0-9]', '', str(abs_text))
+            _dn = re.sub(r'[^0-9]', '', str(gv))
+            _int_o = re.sub(r'[^0-9]', '', str(abs_text).split('.')[0])
+            _int_n = re.sub(r'[^0-9]', '', str(gv).split('.')[0])
+            if not (_do and _dn and _dn != _do and _dn.endswith(_do) and len(_int_n) > len(_int_o)):
+                return _floor()
+        elif val_type == 'date':
             do = re.sub(r'[^0-9]', '', _strip_code_edges(str(abs_text)))
             dn = re.sub(r'[^0-9]', '', str(gv))
             if not (do and len(dn) > len(do) - 1 and _frag_matches(do, dn)):
@@ -2642,7 +2672,14 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
             return _floor()
     # Consent: dates self-consent on a complete, un-suspect parse (self-validating type —
     # learned-shape stats never veto a real calendar date); codes take the shared ladder.
-    if val_type == 'date':
+    if val_type == 'currency':
+        # Self-validating like a date: the comparator above already proved the grown value is the
+        # SAME number with its leading digits restored, so a well-formed money value consents. The
+        # learned-shape ladder is the wrong judge here — money magnitudes legitimately vary per
+        # document, so a 5-digit total against a history of 4-digit ones is not an anomaly.
+        _g = str(gv).strip()
+        consent = 'confirmed' if re.fullmatch(r'[^0-9]{0,3}[0-9][0-9,\s]*(?:\.[0-9]{1,2})?', _g) else 'none'
+    elif val_type == 'date':
         try:
             from extraction.validator import parse_date
             consent = 'confirmed' if (not _date_clip_suspect(gv) and parse_date(gv)) else 'none'
