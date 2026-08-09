@@ -140,6 +140,16 @@ const ARM_ENV = {
               TYPE_TITLE_OWNER_PRECEDENCE: '1', FILING_VALUE_SANITY_FLAGS: '1' },
   all4:     { STAGE05_REF_CODE_GATE: '1', KEYWORD_GENERIC_CAPTION_EXCLUSIVE: '1',
               TYPE_TITLE_OWNER_PRECEDENCE: '1', FILING_VALUE_SANITY_FLAGS: '1' },
+  // THE APP'S ACTUAL CURRENT STATE (2026-08-09). `all4` is NOT the live baseline: the settings
+  // mirror above only arms a flag when the settings KEY uppercased happens to equal the env var,
+  // and it does not here — `template_fixed_near_match` bridges to TEMPLATE_FIXED_NEAR_MATCH_RECONCILE
+  // and `template_fixed_fragment` to TEMPLATE_FIXED_FRAGMENT_DECLINE (handler.js), both `true` in
+  // the live DB. So `all4` silently understates the app by two flags. Use THIS arm as the baseline
+  // when asking what bridging TEACH_ANGLE_COMPOSE_SCAN + TEMPLATE_FIXED_ISSUER_REPAIR actually buys
+  // — `issuer` minus `applive` is exactly those two, and nothing else.
+  applive:  { STAGE05_REF_CODE_GATE: '1', KEYWORD_GENERIC_CAPTION_EXCLUSIVE: '1',
+              TYPE_TITLE_OWNER_PRECEDENCE: '1', FILING_VALUE_SANITY_FLAGS: '1',
+              TEMPLATE_FIXED_NEAR_MATCH_RECONCILE: '1', TEMPLATE_FIXED_FRAGMENT_DECLINE: '1' },
 };
 for (const k of Object.keys(ARM_ENV)) if (!MUTATORS[k]) MUTATORS[k] = () => {};
 for (const k of Object.keys(ARM_ARGS)) if (!MUTATORS[k]) MUTATORS[k] = () => {};

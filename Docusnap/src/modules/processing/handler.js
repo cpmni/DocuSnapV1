@@ -347,6 +347,37 @@ function _reconcileEnv(db) {
     // n=145). App RESTART to load the bridge.
     if (learning.getSetting(db, 'template_drift_row_pitch', 'false') === 'true') env.TEMPLATE_DRIFT_ROW_PITCH = '1';
     if (learning.getSetting(db, 'template_currency_edge_grow', 'false') === 'true') env.TEMPLATE_CURRENCY_EDGE_GROW = '1';
+    // ── THE TEACH-SIDE PAIR (2026-08-09 morning arc; bridged 2026-08-09 evening) ──
+    // Both were measured on 140 unseen siblings of 10 taught documents and then left env-only, so
+    // neither could be reached from the app at all: `npm start` is a plain `electron .` with no env
+    // injection, which is how the two headline wins of that arc ended up unreachable in the product.
+    //
+    //  • TEACH_ANGLE_COMPOSE_SCAN — a taught box is stored in the TEACH page's frame, and a sibling
+    //    scan sits at its own slight tilt, so the box lands rotated relative to the value: about
+    //    half a line of shear, which is exactly enough to drop a 2-row free-text box onto the
+    //    caption or the address row. This composes the taught box onto THIS page's measured tilt.
+    //    NOT A DESKEW — `detect_skew_angle` only measures; no pixel is rotated, so the page,
+    //    ocr_text, page-0 geometry, the logo phash and every learning write stay in one frame.
+    //    Oracle ruled AGAINST straightening the pixels for this: the +213-cell gain came entirely
+    //    from a tilt band Tesseract already self-tolerates and which this project measured making a
+    //    REAL scan worse; re-run at a 2.0 degree floor the whole heal vanished.
+    //    RELATION TO THE EXISTING `teach_angle_compose` TOGGLE: siblings, mutually exclusive BY
+    //    CONSTRUCTION (engine.py — that branch requires `raw_pages`, this one requires their
+    //    absence). `raw_pages` exists only when the document was deskewed at import, and
+    //    `deskew_on_import` is off, so on the ordinary import path the older toggle never reaches
+    //    its own gate and THIS is the one that does the work. Turning both on is safe.
+    //
+    //  • TEMPLATE_FIXED_ISSUER_REPAIR — 42 of 135 documents read something other than the curated
+    //    issuer: 15 an OCR garble of it, 27 not a company name at all (a date line, a registration
+    //    code, a page heading). The app already prints "Letterhead may read 'X' — detected 'DATE
+    //    14-03-2026 Job Ref JB-8887'" and then asks the operator to confirm what it has itself
+    //    worked out; this lets it act on that. NOT an authority flip: both branches only DECLINE a
+    //    read and keep the curated seed, so a genuinely different company still displaces it and a
+    //    stale seed is still fixed by re-teaching.
+    //
+    // Default OFF, byte-identical off. App RESTART to load the bridge.
+    if (learning.getSetting(db, 'teach_angle_compose_scan', 'false') === 'true') env.TEACH_ANGLE_COMPOSE_SCAN = '1';
+    if (learning.getSetting(db, 'template_fixed_issuer_repair', 'false') === 'true') env.TEMPLATE_FIXED_ISSUER_REPAIR = '1';
     return env;
   } catch { return {}; }
 }

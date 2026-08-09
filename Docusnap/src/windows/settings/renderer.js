@@ -650,6 +650,12 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // both already true on this install, and both have their own rows above.
                          ['drift-row-pitch-toggle', 'template_drift_row_pitch'],
                          ['currency-edge-grow-toggle', 'template_currency_edge_grow'],
+                         // Teach-side pair. 'angle-compose-scan' is the SIBLING of the
+                         // 'angle-compose-toggle' row above and they are mutually exclusive in the
+                         // extractor by construction, so both may be on; on the ordinary import
+                         // path (no deskew) this is the one that actually fires.
+                         ['angle-compose-scan-toggle', 'teach_angle_compose_scan'],
+                         ['fixed-issuer-repair-toggle', 'template_fixed_issuer_repair'],
                          ['deskew-import-toggle', 'deskew_on_import'],
                          // NOT an extraction switch and NOT bridged through _reconcileEnv: the
                          // auto-file gate is JS-side, so database/modules/trust.js reads this key

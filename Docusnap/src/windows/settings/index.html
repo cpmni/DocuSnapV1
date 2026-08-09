@@ -797,6 +797,20 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Allow for a slightly crooked scan when reading a taught field</div>
+                <div class="threshold-sub">When you point out where a field sits, Scan Finder records that position against the page you taught it on. The next scan of the same document usually goes through the scanner at a very slightly different angle, so the remembered box arrives tilted against the printing — often by around half a line, which is enough to read the heading above a value, or the address line below a company name, instead of the value itself. This tilts the remembered box to match each page as it arrives. It does not straighten or alter your document in any way; it only measures the angle and reads in the right place. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="angle-compose-scan-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Keep the sender's name you confirmed when the letterhead reads as nonsense</div>
+                <div class="threshold-sub">Once you've confirmed who a document is from, Scan Finder keeps that company name against the layout. On a poor scan the letterhead can come back garbled, or the reading can pick up something that isn't a company name at all — a date line, a VAT number, a page heading. On the test set that happened on 42 documents out of 135. Scan Finder already spots this and tells you (“Letterhead may read ‘Castellan Security Systems’ — detected ‘DATE 14-03-2026 Job Ref JB-8887’”); this lets it act on what it has already worked out, and keep the name you confirmed. A genuinely different company still comes through, and re-teaching still replaces a name that has gone out of date. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="fixed-issuer-repair-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Straighten crooked scans before reading them</div>
                 <div class="threshold-sub">A page that went through the scanner slightly askew is read at an angle, and the boxes Scan Finder was taught drift off the values they were pointed at. This straightens each crooked page before reading it — the same thing the ∞ Straighten button does in Review, applied automatically as documents come in. Your filed file is never altered; only the reading is straightened. It also changes what gets filed without you looking at it, so treat it as a trade rather than a free improvement. Pages that are already straight, and documents that carry their own text, are skipped. Off by default, and not yet recommended — straightening can make a marginal scan read worse as easily as better, and that has not been proven either way on real paper.</div>
               </div>
