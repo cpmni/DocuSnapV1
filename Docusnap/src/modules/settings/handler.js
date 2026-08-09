@@ -532,6 +532,12 @@ function register(ctx) {
     // Mirror the output/documents folder into the registry the moment it changes so the
     // uninstaller's data-wipe guard always has the current path (see lib/outputPathRegistry).
     if (key === 'output_folder') { try { require('../../lib/outputPathRegistry').recordOutputPath(val); } catch {} }
+    // The support log redacts customer data unless Diagnostic Logging is on (see logger.js). Apply
+    // it the moment the admin flips the switch, so turning diagnostics on to reproduce a problem
+    // does not also require a restart to see the detail.
+    if (key === 'diagnostic_logging') {
+      try { require('../logger').setDetailed(String(val) === 'true'); } catch {}
+    }
     if (key === 'theme') notifyAllWindows('theme-changed', val);
     if (key === 'dashboard_hidden_cards') notifyAllWindows('dashboard-cards-changed');
     if (key === 'telemetry_enabled') { try { ctx.telemetry?.refreshConsent(); } catch {} }

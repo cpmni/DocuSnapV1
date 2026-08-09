@@ -162,7 +162,13 @@ function generateServerCerts({ certsDir, sans, customer = 'ScanFinder', days = 8
 
   const srv = makeServerCert(addr[0], buildAltNames(addr), ca, days, forge);
   fs.writeFileSync(f.serverCrt, pki.certificateToPem(srv.cert));
-  fs.writeFileSync(f.serverKey, pki.privateKeyToPem(srv.key), { mode: 0o600 });
+  // ENCRYPT-AT-REST, matching ca.key on the line above (2026-08-09 NIGHT, pre-release audit).
+  // The CA key was wrapped and the SERVER key was left as plaintext PEM beside it — and the server
+  // key is what lets somebody impersonate this LAN service to clients that have already pinned the
+  // CA. `secret.encrypt` is Windows DPAPI via Electron safeStorage, so the file is useless on any
+  // other machine or user account. The `ENC1:` prefix makes the read side self-describing, so an
+  // install that already holds a plaintext key keeps working and is re-wrapped on the next issue.
+  fs.writeFileSync(f.serverKey, secret.encrypt(pki.privateKeyToPem(srv.key)), { mode: 0o600 });
 
   return {
     caCrtPath: f.caCrt, caKeyPath: f.caKey, serverCrtPath: f.serverCrt, serverKeyPath: f.serverKey,

@@ -1025,6 +1025,14 @@ app.whenReady().then(() => {
     try {
       const learning = require('../database/modules/learning');
       const db = getDb();
+      // THE SUPPORT LOG REDACTS BY DEFAULT (2026-08-09 NIGHT, pre-release data audit) — it was
+      // writing supplier and customer names, VAT numbers, totals and absolute user paths into a
+      // file that runs on every install with no toggle and no mention in the UI. Full detail now
+      // follows Diagnostic Logging, which is admin-gated, off by default and already tells the
+      // operator what it holds. One switch, one consent, one place to explain it.
+      try {
+        logger.setDetailed(learning.getSetting(db, 'diagnostic_logging', 'false') === 'true');
+      } catch { /* unreadable setting -> stay redacted, the safe direction */ }
       const snap = ['processing_mode', 'ocr_dpi', 'auto_file_threshold', 'critical_field_conf_floor',
                     'scope_sweep_enabled', 'auto_rotate_enabled', 'registration_enabled',
                     'born_digital_enabled', 'diagnostic_logging', 'auto_file_enabled']

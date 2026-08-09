@@ -932,7 +932,14 @@ function startApiServer(ctx) {
   let server;
   if (cfg.certPath && cfg.keyPath) {
     const fs = ctx.fs || require('fs');
-    server = https.createServer({ cert: fs.readFileSync(cfg.certPath), key: fs.readFileSync(cfg.keyPath) }, listener);
+    // The private key is stored DPAPI-wrapped (certService writes it with the `ENC1:` prefix), so
+    // it is unwrapped here, in memory, at listen time — never written back in the clear. The
+    // helper passes a plain PEM straight through, so an install whose key predates the change, or
+    // one where the operator pointed the setting at their own certificate, keeps working unchanged.
+    server = https.createServer({
+      cert: fs.readFileSync(cfg.certPath),
+      key: require('../../lib/secretStore').decryptAtRest(fs.readFileSync(cfg.keyPath, 'utf8')),
+    }, listener);
   } else {
     if (cfg.host !== '127.0.0.1' && cfg.host !== 'localhost') {
       ctx.logger?.warn?.('[api] refusing to bind a non-loopback host without TLS — set a TLS cert/key first');
