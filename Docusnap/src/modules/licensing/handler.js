@@ -40,6 +40,17 @@ function enforcementActive(_db) {
 let _ctx = null;
 let _config = null;
 
+// Packaged? Guarded, because under ELECTRON_RUN_AS_NODE (how every gate test in this repo runs)
+// `require('electron')` returns the BINARY PATH as a string, not the module — so a bare
+// `require('electron').app.isPackaged` is a TypeError that would take the licence gate with it.
+// Unknown => NOT packaged => the dev switch still works and the pins can still prove it.
+function _isPackaged() {
+  try {
+    const e = require('electron');
+    return !!(e && e.app && e.app.isPackaged);
+  } catch { return false; }
+}
+
 function loadConfig(ctx) {
   if (_config) return _config;
   const cfgPath = ctx.resourcePath('config', 'license.json');
@@ -61,7 +72,7 @@ function loadConfig(ctx) {
   // bypass with a text editor: exactly the attack the baked keys exist to stop. In a packaged
   // build the pinned keys ALWAYS win; unpackaged, the switch still works so the red-vs-green
   // pin can prove the loose file is genuinely being ignored rather than vacuously agreeing.
-  if (require('electron').app.isPackaged || process.env.LICENSE_PINNED_KEYS !== '0') {
+  if (_isPackaged() || process.env.LICENSE_PINNED_KEYS !== '0') {
     try {
       const pinned = require('../../lib/license/pinnedKeys');
       if (pinned && pinned.PINNED_PUBLIC_KEYS) {
