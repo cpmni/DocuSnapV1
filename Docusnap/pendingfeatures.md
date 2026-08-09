@@ -63,6 +63,16 @@ window when a new install is most exposed: the first few confirms.
 **Do not just raise a threshold.** Each of these is a different layer, and CLAUDE.md's standing rule
 applies: fix the reusable layer, and name what the fix relies on and what it disables.
 
+**MEASURED OVERNIGHT (2026-08-10, Oracle C2's arm, 67 surviving documents).** Forcing
+`TEMPLATE_NAME_PRESENCE_MIN_SAMPLE=1` — i.e. letting the presence veto judge a supplier with a single
+confirm — **DOES catch this defect**: the one wrongly-stamped document still present in that run
+(`Castellan Security Systems` on an Oakhaven delivery note) is BLANKED and routed to review. The
+other 19 blanks are documents that were already empty, so nothing correct was lost on this corpus.
+That is real evidence for the "distinct rule for a one-confirm template" direction — the guard for
+this class already exists and is simply asleep during the window that matters. It is NOT yet a
+recommendation: 67 documents, one exhibit, and the corpus cannot show what a low floor costs on an
+install with many suppliers and thin scans. Re-measure on a full corpus before believing it.
+
 ## 2026-08-10 — NON-UK VAT NUMBERS ARE NOW REFUSED (Oracle C7, recorded not fixed)
 
 `vat_no` gained a real format on 2026-08-09 NIGHT (`92c7013`) and the shipped patterns are **UK

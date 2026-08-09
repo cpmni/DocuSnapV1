@@ -135,12 +135,20 @@ to answer `true`.
 it silenced that lane for ever. The generator now carries the value that IS printed and the scorer
 swaps to it, exactly as it already swaps issuer/customer.
 
-**Still outstanding from his conditions (both need a run, not a decision):**
-- **C2:** re-run the `TEMPLATE_FIXED_SEED_AGREEMENT_KEEP` arm with the presence veto forced armed
-  (`TEMPLATE_NAME_PRESENCE_MIN_SAMPLE=1`) and count blanked suppliers. My "no supplier blanked"
-  evidence was **vacuous** — the veto needs 3 confirms and the corpus had 1, so it could not fire.
-- **C7:** record the non-GB VAT residual in `pendingfeatures.md` (an EU supplier's VAT number is now
-  refused → empty → review).
+**Both of his remaining conditions are now discharged:**
+- **C2 — DONE, and it answers cleanly.** He was right that my "no supplier was blanked" evidence was
+  vacuous: the veto needs 3 confirmed documents for a supplier and the corpus had 1, so it abstained
+  on every document and measured nothing. Re-run with the floor forced to 1, against a control arm
+  that isolates the flag: **both arms blank exactly the same 20 documents.** So
+  `TEMPLATE_FIXED_SEED_AGREEMENT_KEEP` introduces **zero** additional blanking — the blanking belongs
+  to the veto itself.
+  **And it produced a bonus finding worth more than the condition:** of those 20, nineteen were
+  already empty and ONE was a wrongly-stamped supplier — the misfile defect above — which the veto
+  BLANKED and routed to review. The guard for the headline defect already exists; it is simply asleep
+  during the window that matters. Recorded as evidence in `pendingfeatures.md`, not as a
+  recommendation: 67 documents and one exhibit is not a mandate to lower a global floor.
+- **C7 — DONE:** the non-UK VAT residual is written up in `pendingfeatures.md` with reggie's held
+  Tier-2 design and the instruction to ship it the day a real EU supplier arrives.
 
 ---
 
