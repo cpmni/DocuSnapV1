@@ -66,6 +66,15 @@ check("...including an all-alpha one, because it is not a code-role key",
       decl('payment_terms', 'On receipt', { type: 'text' }) === null);
 check("a currency CODE constant still freezes",
       decl('currency', 'GBP', { type: 'currency_code' }) === null);
+// ORACLE C8 — pin what we INTEND on the two fields where arm B genuinely speaks, so the trade-off
+// is recorded here rather than discovered by a customer whose template stopped freezing.
+// A percentage is not currency, so a frozen discount of '5%' IS declined: intended, because the
+// field's own shipped validation says currency and '5%' is not one. If that ever needs to change,
+// change the FIELD's validation, not this guard.
+check("TRADE-OFF PIN: a frozen discount of '5%' is declined (its shipped format says currency)",
+      decl('discount', '5%', { type: 'text' }) === 'format');
+check("TRADE-OFF PIN: a bare currency SYMBOL is declined; the three-letter code is what freezes",
+      decl('currency', '£', { type: 'currency_code' }) === 'format');
 
 console.log('\n5. FAILS SAFE — anything it cannot judge, it allows');
 check('unknown custom type + opaque key → freeze (no arm can speak)',

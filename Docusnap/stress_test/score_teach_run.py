@@ -138,16 +138,21 @@ def main():
             # scoring them against each other marks a CORRECT read wrong twice over (once on issuer,
             # once on customer). Swap the two columns so like is compared with like.
             colmap['issuer'], colmap['customer'] = COLMAP['customer'], COLMAP['issuer']
-            # ...and DROP vat_no on the same grounds, verified at the pixels on
-            # Quillstone-Print_purchase_order_0015: the page carries exactly ONE VAT number,
-            # 'VAT Reg No GB 512 8846 27' in Bramblewood's own letterhead. The counterparty's VAT
-            # (ground truth's `vat_no` column) is NOT PRINTED ANYWHERE on a buyer-issued order.
-            # So the app reads the only VAT number on the page — correctly, by the field's role —
-            # and scoring it against a number that does not appear marks a correct read wrong on
-            # every purchase order. There is no ground truth here to score against, so this column
-            # is skipped rather than swapped: unlike issuer/customer, there is no second column
-            # holding the right answer.
-            colmap.pop('vat_no', None)
+            # ...and SWAP vat_no to the number that is ACTUALLY PRINTED. Verified at the generator
+            # (gen_customer_test.py builds a purchase order's letterhead from the OWNER's name,
+            # address and VAT), not only at the pixels: the page carries exactly ONE VAT number —
+            # ours — and the counterparty's, which ground truth's `vat_no` column names, appears
+            # nowhere on it. Scoring against that marked a CORRECT read wrong on every PO.
+            # SWAPPED, NOT DROPPED. The first version of this fix dropped the column, which silenced
+            # the lane for ever: a future regression that made the app read the wrong VAT on a
+            # buyer-issued order would have been invisible to this harness. A corpus generated
+            # before `printed_vat_no` existed has no such column — there the lane still drops, and
+            # the count below says so rather than hiding it.
+            if g.get('printed_vat_no'):
+                g = dict(g, vat_no=g['printed_vat_no'])
+            else:
+                colmap.pop('vat_no', None)
+                skipped['po_vat_no_unscorable'] = skipped.get('po_vat_no_unscorable', 0) + 1
         checks = [(c, k) for c, k in colmap.items()] + [('ref', rk), ('date', dk)]
         for col, key in checks:
             if not key or g.get(col) in (None, ''):

@@ -230,6 +230,12 @@ ARM_ENV.freezequal = { ...ARM_ENV.applive };
 // a supplier the app has never seen - and it is measured on the SUGGESTION, not on the value: the
 // reader deliberately leaves the field empty and offers the name.
 ARM_ENV.coldstart = { ...ARM_ENV.applive, LETTERHEAD_ISSUER: '1' };
+// The page's own wording is not a value. Measured against what is actually PRINTED: account_no is
+// committed on 40 pages that carry no account number, and serials commits the literal 'Serial No:'
+// on 19. Both are a confident value with NO SOURCE on the page - the worst kind, because the human
+// checking it has nothing to compare against.
+ARM_ENV.captionrefuse = { ...ARM_ENV.freezequal, CAPTION_VALUE_REFUSE: '1' };
+MUTATORS.captionrefuse = MUTATORS.freezequal;
 // `noreg` must differ from the arm that MEASURED the 22 failures by exactly ONE thing: the
 // `--registration` CLI arg. Give it that arm's env verbatim, or the diagnostic moves two variables
 // and answers nothing.

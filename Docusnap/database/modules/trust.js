@@ -1,5 +1,7 @@
 'use strict';
 
+const path = require('path');
+
 /**
  * database/modules/trust.js
  * -------------------------
@@ -96,11 +98,29 @@ const _norm = v => String(v == null ? '' : v).trim().toLowerCase().replace(/\s+/
 // harness without the config file (or an older layout) simply gets no re-check. `_matchesTypePattern`
 // returns TRUE (don't block) when the type has no shipped pattern, so it can never over-refuse a
 // type it can't judge. Compiled RegExps are cached per pattern string.
+// WHERE THE SHIPPED CONFIG ACTUALLY LIVES (2026-08-10, Oracle C1 — this was a DEAD GUARD).
+// `config/` is NOT in `build.files`; it ships as extraResources, i.e. at
+// `resources/config/keyword_patterns.json` NEXT TO the asar. A repo-relative require() resolves to
+// `resources/app.asar/config/keyword_patterns.json`, which does not exist — so in every packaged
+// build the require threw, the cache went null, and the type re-check below answered "can't judge"
+// for every value. It passed in-repo, where the relative path works, which is exactly why nobody
+// caught it: the tests cannot fail on the shipped behaviour.
+// Resolve the same way main.js's `resourcePath()` does, and keep ONE path for both, so a support
+// edit to the shipped file changes what Python, the renderer AND this module see. (Adding
+// `config/**` to `build.files` would "fix" it while creating a split brain: two copies, one edited.)
+function _configDir() {
+  try {
+    const { app } = require('electron');
+    if (app && app.isPackaged) return path.join(process.resourcesPath, 'config');
+  } catch { /* not in an Electron main process (harness, or a plain-node consumer) */ }
+  return path.join(__dirname, '..', '..', 'config');
+}
 let _sharedPatternsCache;   // undefined = not loaded yet; null = unavailable
 function _sharedValidationPatterns() {
   if (_sharedPatternsCache !== undefined) return _sharedPatternsCache;
-  try { _sharedPatternsCache = require('../../config/keyword_patterns.json').validation_patterns || null; }
-  catch { _sharedPatternsCache = null; }
+  try {
+    _sharedPatternsCache = require(path.join(_configDir(), 'keyword_patterns.json')).validation_patterns || null;
+  } catch { _sharedPatternsCache = null; }
   return _sharedPatternsCache;
 }
 const _reCache = new Map();

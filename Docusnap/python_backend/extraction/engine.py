@@ -3275,6 +3275,42 @@ class ExtractionEngine:
             results["_supplier_name"] = None
         results["_needs_review"] = True
 
+    def _refuse_caption_values(self, results, caption_vocab, field_defs):
+        """Withhold a committed value that IS one of the page's printed CAPTIONS.
+
+        Default OFF (CAPTION_VALUE_REFUSE=1 arms); OFF returns immediately and is byte-identical.
+
+        SCOPE, and every exclusion is load-bearing:
+          * the IDENTITY fields are excluded — a company name is judged by the branding guards, which
+            know about banks and letterheads; this rule knows only about captions, and 'Statement Ltd'
+            is a real company;
+          * a value the OPERATOR corrected is excluded — they typed it, it is not our guess;
+          * everything else is in scope regardless of HOW it was read. A taught box reading its own
+            caption arrives with the highest authority in the system and is exactly the defect.
+        """
+        if os.environ.get('CAPTION_VALUE_REFUSE', '0') == '0' or not caption_vocab:
+            return
+        for key, d in list(results.items()):
+            if key.startswith('_') or not isinstance(d, dict):
+                continue
+            if key in _IDENTITY_FIELD_KEYS:
+                continue
+            val = d.get('value')
+            if not val or d.get('was_corrected'):
+                continue
+            if not keyword.value_is_caption(val, caption_vocab):
+                continue
+            self.log(f"  Caption refused: {key} read the page's own wording '{val}'")
+            self._t('caption_value_refused', field=key, value=val,
+                    method=d.get('method'), confidence=d.get('confidence'))
+            d['value'] = None
+            d['confidence'] = 0
+            _note = ("This looks like the wording printed on the page rather than a value. "
+                     "Please check the document and fill it in if it is there.")
+            _existing = str(d.get('validation_note') or '').strip()
+            d['validation_note'] = (_existing + ' ' + _note).strip() if _existing else _note
+            results['_needs_review'] = True
+
     @staticmethod
     def _flag_cross_field_duplication(results):
         """CROSS-FIELD DUPLICATION guard — Slice 1 (2026-07-10 night; gary-designed, built on
@@ -7179,6 +7215,22 @@ class ExtractionEngine:
         # never edits or replaces a value, it just refuses to let a non-reference-shaped reference
         # or a year that is not printed on the page file itself silently.
         self._flag_filing_value_sanity(results, ref_field_key, date_field_keys, ocr_text)
+        # THE PAGE'S OWN WORDING IS NOT A VALUE (CAPTION_VALUE_REFUSE, default OFF — 2026-08-09 NIGHT).
+        # Measured against what is actually PRINTED on 200 documents: `account_no` is committed on 40
+        # pages that carry no account number at all (the job reference next to it wins), and `serials`
+        # commits the literal string 'Serial No:' on 19. Those are the worst kind of wrong value —
+        # not a misread of the right thing, but a confident value with NO SOURCE on the page, so a
+        # human checking it has nothing to compare against. The same shape put the caption 'VAT' into
+        # a VAT number and 'Delivery' into a delivery number.
+        # The vocabulary is the run's own: every field's printed label bank plus each field's display
+        # label, the same `value_is_caption` this file already uses to deny a poisoned hint. Equality
+        # only — never containment — so a company genuinely called 'Total Office Supplies' survives.
+        # WITHHELD, NOT REWRITTEN: the field goes empty WITH a note, which is the pattern the rest of
+        # the pipeline uses to route to review (a bare empty would let a stale value return on the
+        # next reprocess; the note is the discriminator).
+        # AUTHORITY IS DELIBERATELY NOT AN EXEMPTION: a taught box that reads its own caption is
+        # precisely the defect, and it arrives with the highest authority in the system.
+        self._refuse_caption_values(results, _caption_vocab, field_defs)
         # ORDER PINNED (Oracle 2026-08-01, tests/test_validation_pass_order.py): suffix-reconcile
         # -> S-C blind-geometry -> S-A date-in-ref -> prefix-outlier -> S-B length guard.
         # S-C before S-A is load-bearing: on the #141 class S-C adopts the witnesses' 'DN-24408'

@@ -57,9 +57,22 @@ function _resolveRegExe() {
     path.join(drive + '\\', 'Windows', 'System32', 'reg.exe'),
     'C:\\Windows\\System32\\reg.exe',
     path.join(drive + '\\', 'WINNT', 'System32', 'reg.exe'),
+    // LAST RESORT — the environment value, and only when no real Windows directory was found
+    // (Oracle C6). Returning null here is NOT a soft failure: `readStableMachineRaw` falls back to
+    // the HOSTNAME, so the fingerprint would CHANGE on upgrade and silently invalidate an already
+    // activated paid seat. On any genuine Windows machine `C:\Windows\System32\reg.exe` exists and
+    // wins at candidate 2, so the spoof this list exists to defeat still fails — an attacker cannot
+    // remove that file without admin. This candidate is only ever reached on a machine that has no
+    // real System32 at all, i.e. exactly the machine whose fingerprint would otherwise churn.
+    path.join(String(process.env.SystemRoot || ''), 'System32', 'reg.exe'),
   ];
   for (const c of candidates) {
-    try { if (fs.existsSync(c)) return c; } catch { /* keep looking */ }
+    try { if (c && fs.existsSync(c)) return c; } catch { /* keep looking */ }
+  }
+  // Diagnosable rather than silent: a support case where activation "just stopped working" after an
+  // upgrade is otherwise invisible, and this is its one tell.
+  if (process.platform === 'win32') {
+    try { console.warn('fingerprint: no reg.exe found — falling back to a hostname-derived id'); } catch {}
   }
   return null;
 }

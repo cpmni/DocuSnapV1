@@ -563,7 +563,16 @@ def build_doc(issuer, dtype, idx, logos, rng):
               # owner too). GT-carried so the customer_name lane is scorable (2026-08-05:
               # without it NAME_UNCLIP's non-supplier name class was structurally
               # unexercisable in every arm).
-              customer=OWNER["name"])
+              customer=OWNER["name"],
+              # THE VAT NUMBER THAT IS ACTUALLY PRINTED (2026-08-10, Oracle C5). On a buyer-issued
+              # purchase order the letterhead is the OWNER's, so the page carries the owner's VAT
+              # number and the counterparty's `vat_no` above appears NOWHERE on it. Scoring the app
+              # against the counterparty's number marked a correct read wrong on every PO, and
+              # simply dropping the column left that lane unscored FOR EVER - a future regression
+              # that made the app read the wrong VAT on a PO would have been invisible. This column
+              # carries the printed value, and the scorer swaps to it for buyer-issued types exactly
+              # as it already swaps issuer/customer.
+              printed_vat_no=(OWNER["vat"] if dtype == "purchase_order" else issuer["vat"]))
 
     if dtype == "purchase_order":
         # The OWNER issues every purchase order, so every PO shares ONE Bramblewood layout

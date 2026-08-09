@@ -56,6 +56,24 @@
 const path = require('path');
 const { normaliseForTokens, tokenise } = require('./text_normalise');
 
+// WHERE THE SHIPPED CONFIG ACTUALLY LIVES (2026-08-10, Oracle C1 — this was a DEAD GUARD).
+// `config/` is NOT in `build.files`; it ships as extraResources, i.e. at
+// `resources/config/keyword_patterns.json` NEXT TO the asar. A repo-relative require() resolves to
+// `resources/app.asar/config/keyword_patterns.json`, which does not exist — so in every packaged
+// build the require threw, the cache went null, and the type re-check below answered "can't judge"
+// for every value. It passed in-repo, where the relative path works, which is exactly why nobody
+// caught it: the tests cannot fail on the shipped behaviour.
+// Resolve the same way main.js's `resourcePath()` does, and keep ONE path for both, so a support
+// edit to the shipped file changes what Python, the renderer AND this module see. (Adding
+// `config/**` to `build.files` would "fix" it while creating a split brain: two copies, one edited.)
+function _configDir() {
+  try {
+    const { app } = require('electron');
+    if (app && app.isPackaged) return path.join(process.resourcesPath, 'config');
+  } catch { /* not in an Electron main process (harness, or a plain-node consumer) */ }
+  return path.join(__dirname, '..', '..', 'config');
+}
+
 // ── caption vocabulary ────────────────────────────────────────────────────────────────────────
 // The shipped label banks, read the same way trust.js reads this file. Cached: the freeze runs
 // inside a confirm, and re-reading + re-parsing the config per field would be silly.
@@ -64,7 +82,7 @@ function _shippedCaptionSet() {
   if (_shippedCaptions) return _shippedCaptions;
   const set = new Set();
   try {
-    const cfg = require(path.join(__dirname, '..', '..', 'config', 'keyword_patterns.json'));
+    const cfg = require(path.join(_configDir(), 'keyword_patterns.json'));
     for (const entry of Object.values(cfg.field_patterns || {})) {
       for (const label of (entry && entry.labels) || []) set.add(_captionKey(label));
     }
@@ -80,7 +98,7 @@ function _shippedValidationFor(key) {
   if (!_shippedValidation) {
     _shippedValidation = new Map();
     try {
-      const cfg = require(path.join(__dirname, '..', '..', 'config', 'keyword_patterns.json'));
+      const cfg = require(path.join(_configDir(), 'keyword_patterns.json'));
       for (const [k, entry] of Object.entries(cfg.field_patterns || {})) {
         if (entry && entry.validation) _shippedValidation.set(k, String(entry.validation));
       }
