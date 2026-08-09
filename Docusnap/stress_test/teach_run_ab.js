@@ -86,6 +86,9 @@ const ARM_ENV = {
   typeowner:{ TYPE_TITLE_OWNER_PRECEDENCE: '1' },
   fixes:    { STAGE05_REF_CODE_GATE: '1', KEYWORD_GENERIC_CAPTION_EXCLUSIVE: '1',
               TYPE_TITLE_OWNER_PRECEDENCE: '1' },
+  sanity:   { FILING_VALUE_SANITY_FLAGS: '1' },
+  all4:     { STAGE05_REF_CODE_GATE: '1', KEYWORD_GENERIC_CAPTION_EXCLUSIVE: '1',
+              TYPE_TITLE_OWNER_PRECEDENCE: '1', FILING_VALUE_SANITY_FLAGS: '1' },
 };
 for (const k of Object.keys(ARM_ENV)) if (!MUTATORS[k]) MUTATORS[k] = () => {};
 

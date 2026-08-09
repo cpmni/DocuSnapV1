@@ -23,8 +23,10 @@ const dbmod = require(path.join(REPO, 'database', 'index.js'));
 const doctypes = require(path.join(REPO, 'database', 'modules', 'document_types.js'));
 
 const HOME = process.env.USERPROFILE || process.env.HOME;
-const ROOT = process.argv[2] || path.join(HOME, 'Desktop', 'TESTING', '_sandbox');
-const DB = path.join(ROOT, 'userData', 'docusnap.db');
+// Accepts EITHER a sandbox root (…/userData/docusnap.db beneath it) or a direct path to a .db —
+// the live install keeps its DB at %APPDATA%\ScanFinder\docusnap.db, which is not a sandbox shape.
+const ARG = process.argv[2] || path.join(HOME, 'Desktop', 'TESTING', '_sandbox');
+const DB = ARG.toLowerCase().endsWith('.db') ? ARG : path.join(ARG, 'userData', 'docusnap.db');
 const CORPUS = path.join(HOME, 'Desktop', 'Customer Doc Test');
 const MANIFEST = path.join(HOME, 'Desktop', 'TESTING', 'run_manifest.json');
 

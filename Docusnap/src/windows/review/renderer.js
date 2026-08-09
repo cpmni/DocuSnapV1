@@ -962,9 +962,13 @@ function renderQueueList() {
       head.className = 'queue-group-head' + (open ? ' open' : '');
       const attn = g.need ? ` · <span class="qgh-attn">${g.need} need${g.need > 1 ? '' : 's'} a look</span>` : '';
       const title = groupTitle(g.supplier, groups.length);   // '—' pile → readable copy; the expand/nav KEY stays g.supplier
+      // Name ABOVE the counts (Chris finding 3): side by side, the counts never shrank and the
+      // sender name collapsed to one character. See the .qgh-text block in index.html.
       head.innerHTML = `<span class="qgh-caret" aria-hidden="true"></span>`
-                     + `<span class="qgh-name" title="${escHtml(title)}">${escHtml(title)}</span>`
-                     + `<span class="qgh-meta">${g.docs.length} document${g.docs.length > 1 ? 's' : ''}${attn}</span>`;
+                     + `<span class="qgh-text">`
+                     +   `<span class="qgh-name" title="${escHtml(title)}">${escHtml(title)}</span>`
+                     +   `<span class="qgh-meta">${g.docs.length} document${g.docs.length > 1 ? 's' : ''}${attn}</span>`
+                     + `</span>`;
       head.setAttribute('role', 'button');
       head.setAttribute('aria-expanded', open ? 'true' : 'false');
       head.addEventListener('click', () => {
@@ -1392,6 +1396,9 @@ function renderPage() {
     clearCanvas();
     clearTraceHighlight();
     redrawWizard();
+    // All-boxes is a MODE: re-draw it for the page just rendered (the canvas was resized and
+    // cleared above), so paging through a document keeps showing each page's own crop regions.
+    if (typeof _allBoxesOn !== 'undefined' && _allBoxesOn) { try { drawAllTraceBoxes(); } catch (_) {} }
     if (currentPage === 0) attemptLogoMatch();
   };
   // DESKEW takes precedence over the raw/preview source when it's ON, this page is skewed and its
@@ -3330,7 +3337,7 @@ function clearTraceHighlight() {
 const _CENTRE_BASED_SLICE_STAGES = new Set(['anchor_crop', 'anchor_relocate', 'anchor_registration']);
 // `keep` = draw ON TOP of the current highlight without clearing it first — used to
 // overlay the anchor (label) box together with the value box from one click.
-function drawTraceBbox(bbox, kind, stage, keep) {
+function drawTraceBbox(bbox, kind, stage, keep, label, persist) {
   if (!bbox || bbox.length < 4 || !traceCanvas.width) return;
   if (!keep) clearTraceHighlight();
   const w = traceCanvas.width, h = traceCanvas.height;
@@ -3338,6 +3345,7 @@ function drawTraceBbox(bbox, kind, stage, keep) {
   const isCenterBased = _CENTRE_BASED_SLICE_STAGES.has(stage);
   const x = isCenterBased ? Math.round(bbox[0] * w - bw / 2) : Math.round(bbox[0] * w);
   const y = isCenterBased ? Math.round(bbox[1] * h - bh / 2) : Math.round(bbox[1] * h);
+  if (label) _drawBoxLabel(x, y, bw, bh, label, kind === 'anchor' ? '#4f8ef7' : '#d4820a');
   // target = amber (value region), anchor = blue (label region)
   const color = kind === 'anchor' ? '#4f8ef7' : '#d4820a';
   traceCtx.save();
@@ -3352,7 +3360,70 @@ function drawTraceBbox(bbox, kind, stage, keep) {
   if (_traceHighlightTimer) clearTimeout(_traceHighlightTimer);   // single shared dwell for both boxes
   // Long idle dwell so you can actually study the box; it still clears immediately on
   // the next row click, page change, or doc change (clearTraceHighlight callers).
-  _traceHighlightTimer = setTimeout(clearTraceHighlight, 30000);
+  // `persist` (All-boxes mode) opts out of the dwell entirely — that overlay is a MODE the
+  // operator turns off, not a flash.
+  if (!persist) _traceHighlightTimer = setTimeout(clearTraceHighlight, 30000);
+}
+
+// ── Box label + detection note ────────────────────────────────────────────────
+// A chip pinned to the box's top-left carrying the field and how the value got there. Placed
+// ABOVE the box when there is room and INSIDE it when there isn't, so a box at the very top of
+// the page never loses its label off-canvas. Drawn on the same traceCanvas, so it clears with it.
+function _drawBoxLabel(x, y, bw, bh, text, color) {
+  const c = traceCtx;
+  c.save();
+  c.font = '600 11px "IBM Plex Sans", system-ui, sans-serif';
+  const padX = 4, padY = 2, tw = Math.ceil(c.measureText(text).width);
+  const lh = 15;
+  const above = y - lh - 1 >= 0;
+  const lx = Math.max(0, Math.min(x, traceCanvas.width - tw - padX * 2));
+  const ly = above ? y - lh - 1 : y + 1;
+  c.fillStyle = color;
+  c.fillRect(lx, ly, tw + padX * 2, lh);
+  c.fillStyle = '#ffffff';
+  c.textBaseline = 'middle';
+  c.fillText(text, lx + padX, ly + lh / 2 + 0.5);
+  c.restore();
+}
+
+// ── "All boxes": every WINNING field's crop region, at once, labelled ─────────
+// Owner request 2026-08-09. The per-row click answers "where did THIS value come from"; while
+// judging a teach you need "where did EVERYTHING come from" in one look — which box drifted, which
+// two overlap, which one is sitting on a caption.
+// ACCURACY IS THE WHOLE POINT: it draws the SAME bbox the row click draws, through the SAME
+// drawTraceBbox (so the centre-vs-top-left convention per stage is applied once, in one place),
+// sourced from the trace's winning-rung crop. It never derives or re-computes a box of its own.
+// Winners only — drawing every rejected candidate would be unreadable and would show regions no
+// value came from. Current page only, for the same reason.
+let _allBoxesOn = false;
+function drawAllTraceBoxes() {
+  clearTraceHighlight();
+  if (!_allBoxesOn) return;
+  const host = document.getElementById('rdc-fields');
+  if (!host || !traceCanvas.width) return;
+  let drawn = 0;
+  host.querySelectorAll('.rdc-cand[data-bbox],.rdc-cand[data-anchor-bbox]').forEach((row) => {
+    if (row.dataset.tag !== 'won') return;                       // winners only
+    const page = parseInt(row.dataset.page || row.dataset.anchorPage, 10) || 0;
+    if (page !== currentPage) return;                            // this page only
+    const fld  = row.dataset.field || '?';
+    const meth = row.dataset.method || row.dataset.stage || '';
+    const conf = row.dataset.conf;
+    try {
+      if (row.dataset.bbox) {
+        const note = `${fld}${meth ? ' · ' + meth : ''}${conf ? ' · ' + conf + '%' : ''}`;
+        drawTraceBbox(JSON.parse(row.dataset.bbox), row.dataset.kind || 'target',
+                      row.dataset.stage || '_', true, note, true);
+        drawn++;
+      }
+      if (row.dataset.anchorBbox) {
+        drawTraceBbox(JSON.parse(row.dataset.anchorBbox), 'anchor',
+                      row.dataset.anchorStage || 'anchor_label', true, `${fld} — label`, true);
+        drawn++;
+      }
+    } catch (_) {}
+  });
+  return drawn;
 }
 
 selCanvas.addEventListener('mousedown', (e) => {
@@ -7332,13 +7403,13 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
             ? `lost — lower confidence (${c.confidence}% < ${wc}%)`
             : (c.vs && c.vs.value != null ? `lost — superseded by "${shown(c.vs.value)}"` : 'lost — superseded');
         }
-        rows.push(cand(STAGE_LABEL[c.stage] || c.stage, c.value, c.confidence, c.method, won ? 'won' : 'lost', won ? '' : reason, pickSlice(field, c.method, c.geom), rxBadge(field, c.value), anchorSlice(field)));
+        rows.push(cand(STAGE_LABEL[c.stage] || c.stage, c.value, c.confidence, c.method, won ? 'won' : 'lost', won ? '' : reason, pickSlice(field, c.method, c.geom), rxBadge(field, c.value), anchorSlice(field), field));
       }
       for (const r of m.rejects) {
         // A rejected rung IS keyed by its method (e.g. "anchor_crop") — show the
         // exact crop it read so the operator sees WHERE the garbage came from. The
         // rx score explains a format-based rejection at a glance (e.g. rx 0%).
-        rows.push(cand(r.method || 'anchor', r.value, null, null, 'rej', `rejected — ${r.reason || 'failed gate'}`, pickSlice(field, r.method), rxBadge(field, r.value), anchorSlice(field)));
+        rows.push(cand(r.method || 'anchor', r.value, null, null, 'rej', `rejected — ${r.reason || 'failed gate'}`, pickSlice(field, r.method), rxBadge(field, r.value), anchorSlice(field), field));
       }
       // Stage 2.5 transforms (denoise / OCR-correct): value rewritten in place.
       for (const t of m.transforms) {
@@ -7438,12 +7509,17 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
     });
   }
 
-  function cand(stage, value, conf, method, tag, reason, slice, rx, aslice) {
+  function cand(stage, value, conf, method, tag, reason, slice, rx, aslice, fieldKey) {
     const tagTxt = tag === 'rej' ? 'rejected' : tag;
+    // The overlay ("All boxes") reads its label + detection note from these attributes rather than
+    // scraping the rendered text, so what it draws is the SAME data the row was built from.
+    const dAttr = ` data-field="${escHtml(fieldKey || '')}" data-method="${escHtml(method || '')}"`
+                + ` data-conf="${conf != null ? conf : ''}" data-tag="${escHtml(tag)}"`
+                + ` data-value="${escHtml(shown(value))}"`;
     const tAttr = (slice && slice.bbox) ? ` data-bbox="${escHtml(JSON.stringify(slice.bbox))}" data-kind="${escHtml(slice.kind || 'target')}" data-page="${slice.page ?? 0}" data-stage="${escHtml(slice.stage || '_')}"` : '';
     const aAttr = (aslice && aslice.bbox) ? ` data-anchor-bbox="${escHtml(JSON.stringify(aslice.bbox))}" data-anchor-page="${aslice.page ?? 0}" data-anchor-stage="${escHtml(aslice.stage || 'anchor_label')}"` : '';
     const clickAttr = (slice || aslice) ? ` style="cursor:pointer" title="Click to highlight the value box (amber)${aslice ? ' + anchor box (blue)' : ''} on the page"` : '';
-    const bboxAttr = tAttr + aAttr + clickAttr;
+    const bboxAttr = tAttr + aAttr + dAttr + clickAttr;
     return `<div class="rdc-cand"${bboxAttr}>`
       + `<span class="rdc-stage">${escHtml(stage)}</span>`
       + `<span class="rdc-val">${escHtml(shown(value))}${method ? ` <span class="rdc-conf">${escHtml(method)}</span>` : ''}${rx || ''}</span>`
@@ -7581,6 +7657,29 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
   });
 
   document.getElementById('rdc-close')?.addEventListener('click', close);
+  // ALL BOXES toggle (owner 2026-08-09). Pressed state mirrors the shared .open style the rail
+  // buttons use, so it reads as a mode rather than an action.
+  document.getElementById('rdc-allboxes')?.addEventListener('click', (e) => {
+    _allBoxesOn = !_allBoxesOn;
+    e.currentTarget.classList.toggle('open', _allBoxesOn);
+    const note = document.getElementById('rdc-allboxes-note');
+    const n = drawAllTraceBoxes();
+    // SAY WHAT HAPPENED. The first cut only flipped a class and set a title, so with no captured
+    // crops the button was indistinguishable from a dead control — which is exactly the failure
+    // class this console exists to expose. Now it always reports, in words, on screen.
+    if (!note) return;
+    if (!_allBoxesOn) { note.textContent = ''; return; }
+    if (!traceCanvas || !traceCanvas.width) {
+      note.textContent = 'no page rendered yet';
+    } else if (n) {
+      note.textContent = `${n} region${n > 1 ? 's' : ''} on this page`;
+    } else {
+      const anyRows = document.querySelectorAll('#rdc-fields .rdc-cand[data-bbox]').length;
+      note.textContent = anyRows
+        ? 'no captured crop on this page — try another page'
+        : 'no crops captured — run ↻ Reprocess (trace) first';
+    }
+  });
   document.getElementById('rdc-reprocess')?.addEventListener('click', () => {
     traceBuf = [];                       // fresh run — drop the previous trace
     clearTraceHighlight();

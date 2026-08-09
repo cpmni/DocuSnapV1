@@ -99,10 +99,20 @@
       border-left: 5px solid var(--muted); border-top: 4px solid transparent;
       border-bottom: 4px solid transparent; transition: transform .15s; }
     .queue-group-head.open .qgh-caret { transform: rotate(90deg); }
+    /* SENDER NAME ON ITS OWN LINE (Chris round 3, 2026-08-09 — his finding 3, and his fix).
+       These used to sit side by side, and the name was the ONLY shrinkable item: .qgh-meta is
+       flex-shrink:0 + nowrap, so "18 documents · 5 need a look" always won and the sender
+       collapsed to a single character — Chris saw groups titled `'` and `V`. Widening the panel
+       did not help him, so a stacked layout is the fix rather than a bigger flex-basis: the name
+       now gets the panel's full width and only ellipsises when it genuinely cannot fit.
+       This matters more than it looks — the per-sender "N need a look" split is the ONE screen
+       that answers "did my teaching work", and it was unattributable. */
+    .queue-group-head .qgh-text { display: flex; flex-direction: column; gap: 2px;
+      min-width: 0; flex: 1 1 auto; }
     .queue-group-head .qgh-name { font-size: 12px; font-weight: 700; color: var(--text);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
     .queue-group-head .qgh-meta { font-size: 10px; color: var(--muted);
-      margin-left: auto; white-space: nowrap; flex-shrink: 0; }
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .queue-group-head .qgh-attn { color: var(--warn); font-weight: 600; }
     #queue-scroll-rail {
       flex-shrink: 0; width: 42px; display: flex; flex-direction: column;
@@ -1105,6 +1115,12 @@
     <span id="rdc-doc"></span>
     <button id="rdc-reprocess" class="rdc-btn" title="Reprocess this document with tracing on">↻ Reprocess (trace)</button>
     <button id="rdc-table" class="rdc-btn" title="Open the queue-wide debug table">▦ Table</button>
+    <!-- SHOW ALL BOXES (owner request, 2026-08-09). The per-row click already highlights ONE
+         field's value + anchor; this draws EVERY winning field at once so the whole taught
+         geometry can be seen against the page in a single look — which is what you actually need
+         while judging a teach. Dev-only (this console is SFDEV-gated), read-only, draw-only. -->
+    <button id="rdc-allboxes" class="rdc-btn" title="Draw every winning field's value box (amber) and anchor box (blue) on this page">▣ All boxes</button>
+    <span id="rdc-allboxes-note"></span>
     <button id="rdc-close" class="rdc-btn" title="Close (Esc)">&times;</button>
   </div>
   <div id="rdc-body">
@@ -1208,6 +1224,12 @@
     border-radius: 5px; padding: 3px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0;
   }
   .rdc-btn:hover { border-color: var(--accent); color: var(--accent); }
+  /* Pressed state for the All-boxes MODE toggle. Without this the class flipped and nothing on
+     screen changed, so the button read as dead (owner, 2026-08-09). */
+  .rdc-btn.open { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  /* Inline result note beside the toggle: says how many regions were drawn, or why none were —
+     a mode that silently does nothing is indistinguishable from a broken button. */
+  #rdc-allboxes-note { font-size: 10px; color: var(--muted); margin-left: 6px; }
   #rdc-body { flex: 1; overflow: auto; padding: 8px 10px; }
   #rdc-empty { color: var(--muted); font-size: 11px; line-height: 1.5; padding: 8px 2px; }
   .rdc-field { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; overflow: hidden; }
