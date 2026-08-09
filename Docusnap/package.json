@@ -6,7 +6,7 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "build": "node scripts/check-vendor-python.js && node scripts/check-licenses.js && node scripts/compile-python-bytecode.js && node -e \"const c=require('child_process');process.env.BUILD_REV=require('./scripts/build-rev').buildRev();c.execSync('electron-builder --win --x64 --config.extraMetadata.buildRev=' + process.env.BUILD_REV,{stdio:'inherit',env:process.env})\"",
+    "build": "node scripts/check-vendor-python.js && node scripts/check-licenses.js && node scripts/compile-python-bytecode.js && node -e \"const c=require('child_process');process.env.BUILD_REV=require('./scripts/build-rev').buildRev();process.env.HARDEN_FUSES='1';c.execSync('electron-builder --win --x64 --config.extraMetadata.buildRev=' + process.env.BUILD_REV,{stdio:'inherit',env:process.env})\"",
     "check:licenses": "node scripts/check-licenses.js",
     "check:vendor": "node scripts/check-vendor-python.js",
     "check:help": "node scripts/check-help-coverage.js",

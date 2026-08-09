@@ -53,7 +53,15 @@ function loadConfig(ctx) {
   // file diverges, and there the baked keys win. base_url / product_id still come from the file
   // (deployment-specific, and un-forgeable-into-access on their own). Kill switch
   // LICENSE_PINNED_KEYS=0 restores the legacy loose-file keys (reversibility / the red-vs-green pin).
-  if (process.env.LICENSE_PINNED_KEYS !== '0') {
+  // ...AND THAT KILL SWITCH IS DEV-ONLY (2026-08-09 NIGHT, pre-release audit). A security
+  // boundary must not have an environment kill switch a customer can set — the same rule
+  // that removed NAV_GUARD_DISABLED from the navigation guard, and the same shape as the
+  // DOCUSNAP_USERDATA sandbox override, which is likewise ignored once packaged. Setting one
+  // environment variable and editing one plain JSON file was a complete offline licence
+  // bypass with a text editor: exactly the attack the baked keys exist to stop. In a packaged
+  // build the pinned keys ALWAYS win; unpackaged, the switch still works so the red-vs-green
+  // pin can prove the loose file is genuinely being ignored rather than vacuously agreeing.
+  if (require('electron').app.isPackaged || process.env.LICENSE_PINNED_KEYS !== '0') {
     try {
       const pinned = require('../../lib/license/pinnedKeys');
       if (pinned && pinned.PINNED_PUBLIC_KEYS) {

@@ -225,6 +225,11 @@ ARM_ENV.arbiter_agree = { ...ARM_ENV.arbiter_presence, TEMPLATE_FIXED_SEED_AGREE
 // scopes the mutator never touched (untaught issuers, which change when TYPE_TITLE_OWNER_PRECEDENCE
 // is absent). Give a mutator arm the env of the arm it is compared against, or it answers nothing.
 ARM_ENV.freezequal = { ...ARM_ENV.applive };
+// COLD START: the same configuration plus the letterhead issuer reader, which fires only where
+// nothing else could name the sender. Measures the ONE case a fresh customer meets on day one -
+// a supplier the app has never seen - and it is measured on the SUGGESTION, not on the value: the
+// reader deliberately leaves the field empty and offers the name.
+ARM_ENV.coldstart = { ...ARM_ENV.applive, LETTERHEAD_ISSUER: '1' };
 // `noreg` must differ from the arm that MEASURED the 22 failures by exactly ONE thing: the
 // `--registration` CLI arg. Give it that arm's env verbatim, or the diagnostic moves two variables
 // and answers nothing.

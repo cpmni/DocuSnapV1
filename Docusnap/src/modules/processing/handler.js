@@ -442,6 +442,21 @@ function _reconcileEnv(db) {
     if (learning.getSetting(db, 'keyword_generic_caption_exclusive', 'false') === 'true') env.KEYWORD_GENERIC_CAPTION_EXCLUSIVE = '1';
     if (learning.getSetting(db, 'type_title_owner_precedence', 'false') === 'true') env.TYPE_TITLE_OWNER_PRECEDENCE = '1';
     if (learning.getSetting(db, 'filing_value_sanity_flags', 'false') === 'true') env.FILING_VALUE_SANITY_FLAGS = '1';
+    // -- THE COLD-START ISSUER READER (bridged 2026-08-09 NIGHT) --
+    // LETTERHEAD_ISSUER: on a document from a supplier the app has NEVER SEEN, there is no logo,
+    // no hint, no anchor and no template, so every identity path abstains and the sender comes out
+    // EMPTY - on a page whose first printed line is the company's own name. Measured on a fresh
+    // install with 200 documents: 60 of them, three suppliers, sender blank on every one, while the
+    // letterhead reads 'Harrowgate Timber Supplies' at the top of the page.
+    // The reader for this is BUILT, pinned (src/windows/review/test_letterhead_note_contract.js)
+    // and has been unreachable since the day it shipped, because it is read from the environment
+    // and `npm start` injects none.
+    // IT SUGGESTS, IT NEVER ASSERTS: the value stays empty and the operator gets the name plus a
+    // one-click "Use 'X'" button, because a wrong assert here would plant a poisoned learning
+    // SCOPE that future documents are then attracted to. After one confirm the supplier has a
+    // hint, a logo and a template, and every later document resolves without this.
+    // Default OFF, byte-identical off. App RESTART to load the bridge.
+    if (learning.getSetting(db, 'letterhead_issuer', 'false') === 'true') env.LETTERHEAD_ISSUER = '1';
     return env;
   } catch { return {}; }
 }
@@ -1157,8 +1172,15 @@ function _allowedOpenRoots(db) {
 // resolution", not "the old code". Pinned in test_path_containment.js so nobody re-reads the switch
 // as a full revert. Default ON, deliberately: the OFF state here is the vulnerable state, so a dark
 // default would ship no protection at all.
+const _app = (() => { try { return require('electron').app || { isPackaged: false }; }
+                      catch { return { isPackaged: false }; } })();
+
 function _realCanonical(p) {
-  if (process.env.SF_REALPATH_CONTAINMENT === '0') return p;
+  // DEV-ONLY (2026-08-09 NIGHT, pre-release audit): same rule as the licence key pinning —
+  // a containment boundary must not be switchable off by an environment variable on a
+  // customer's machine. Unpackaged, the switch still works, which is what lets the pin below
+  // prove the guard can actually fail.
+  if (!_app.isPackaged && process.env.SF_REALPATH_CONTAINMENT === '0') return p;
   try {
     return fs.realpathSync.native(p);
   } catch (e) {

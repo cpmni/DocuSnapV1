@@ -93,6 +93,7 @@ const BRIDGES = [
    'KEYWORD_GENERIC_CAPTION_EXCLUSIVE'],
   ['type-title-owner-toggle',   'type_title_owner_precedence', 'TYPE_TITLE_OWNER_PRECEDENCE'],
   ['filing-sanity-flags-toggle','filing_value_sanity_flags',   'FILING_VALUE_SANITY_FLAGS'],
+  ['letterhead-issuer-toggle',  'letterhead_issuer',           'LETTERHEAD_ISSUER'],
   ['vat-reg-toggle',            'vat_reg_not_amount',          'VAT_REG_NOT_AMOUNT'],
   ['credit-sign-toggle',        'credit_sign_coherence',       'CREDIT_SIGN_COHERENCE'],
   ['pad-window-read-toggle',    'template_pad_window_read',    'TEMPLATE_PAD_WINDOW_READ'],

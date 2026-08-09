@@ -33,7 +33,21 @@ try {
 } catch (e) {
   if (fs.existsSync(_legacyDataDir)) _resolvedUserData = _legacyDataDir;
 }
+const { isForbiddenArgv } = require('./lib/forbiddenArgv');
+
 app.setPath('userData', _resolvedUserData);
+// REMOTE-DEBUGGING LOCKOUT (2026-08-09 NIGHT, pre-release audit). Anyone could start the shipped
+// ScanFinder.exe with `--remote-debugging-port=9222` and attach a full DevTools session to the
+// running app: read every window's code, set breakpoints, and call the ~200 privileged bridge
+// functions from a console. It is not a privilege escalation — every channel is re-authorised in
+// MAIN against the signed-in session — but it is a reverse-engineering harness handed to the
+// attacker, and there is no legitimate customer use for it. The sanctioned on-site diagnostic is
+// the SFDEV trace console inside Review, which deliberately survives packaging.
+// Dev builds are untouched, so the Playwright/CDP driver and the sandbox instances still work.
+if (app.isPackaged && isForbiddenArgv(process.argv)) {
+  console.error('Scan Finder does not run with remote debugging enabled.');
+  app.exit(1);
+}
 // DEV-ONLY SANDBOX OVERRIDE (owner 2026-08-02): DOCUSNAP_USERDATA points the WHOLE data
 // world (DB, inbox copies, debug logs, window-state) at an isolated folder, so a second,
 // fully-sandboxed instance can run beside the real app without touching its data. Ignored

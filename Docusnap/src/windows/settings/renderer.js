@@ -673,6 +673,9 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          ['generic-caption-exclusive-toggle', 'keyword_generic_caption_exclusive'],
                          ['type-title-owner-toggle', 'type_title_owner_precedence'],
                          ['filing-sanity-flags-toggle', 'filing_value_sanity_flags'],
+                         // Cold start: read the sender off the letterhead on document #1 and
+                         // OFFER it (never fill it in - a wrong assert plants a bad scope).
+                         ['letterhead-issuer-toggle', 'letterhead_issuer'],
                          ['deskew-import-toggle', 'deskew_on_import'],
                          // NOT an extraction switch and NOT bridged through _reconcileEnv: the
                          // auto-file gate is JS-side, so database/modules/trust.js reads this key
