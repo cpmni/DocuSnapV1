@@ -21,7 +21,32 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-09: **READ `HANDOVER_2026-08-09.md` FIRST**
+## ⏭ LATEST — 2026-08-09 EVENING: **READ `HANDOVER_2026-08-09_EVENING.md` FIRST**
+Branch **`feat/teach-side-overnight`**, HEAD **`81c8c4c`** (over `7951156`). The money slice:
+**totals 89 ok / 28 wrong / 3 empty → 119 / 0 wrong / 1 empty, 30 healed, 0 regressed, all eight
+other lanes byte-identical**, replaying the owner's LIVE taught state over 200 documents. Two
+mechanisms: `_label_drifted`'s vertical tolerance is floored at `_DRIFT_FLOOR = 0.02` while body text
+runs ~0.013/row, so a one-row label move reads as "not drifted" and the box keeps the **VAT row**
+(19 of 23 wrong totals were exactly truth ÷ 6 — the arithmetic fingerprint); and money is
+right-aligned so a longer value overflows LEFT, with the repair primitive (`_snap_box_to_words`)
+scoped to exclude currency. Flags `TEMPLATE_DRIFT_ROW_PITCH` + `TEMPLATE_CURRENCY_EDGE_GROW`, both
+DEFAULT OFF, env-only (**no Settings bridge**), and `TEMPLATE_CURRENCY_EDGE_GROW` is inert unless
+`template_target_word_snap` / `template_abs_edge_guard` are ON.
+**Oracle: SIGN OFF WITH CONDITIONS — C1 + C2 CLOSED, C3 STILL BLOCKING** (give the derived rung the
+digit-suffix proof the absolute rung already requires, or census it); C4/C6/C7 outstanding. Ruled
+NOT wrong layer; `realdoc_regression.js` is NOT a precondition (one call site, and the live DB's 7
+confirmed documents make it vacuous). **A derived money read has NO guard but geometry** — flat
+confidence 90 clears the 88 auto-file floor, `currency ∈ _SELF_VALIDATING_TYPES` kills the shape
+check, and Stage 4's arithmetic is flag-only/total-role-only.
+**GOTCHAS:** `TESTING\_sandbox\userData\docusnap.db` is a STALE taught state (its totals lane scores
+1% for unrelated reasons) — the real one is the live `%APPDATA%\ScanFinder\docusnap.db`; use the
+sandbox only as a SECOND state for collateral. A green pin proves nothing until you show it can fail
+(two of mine were rejected upstream of the leg they claimed to test — use a *code* as the control).
+`_DRIFT_FLOOR` is a page-scale constant used as a row-scale predicate in THREE places; the
+registration arbiter is still unfixed, and a False drift verdict also vetoes it via `anchor_stable`.
+**NEXT SESSION: a workflow-mode audit — the corrected prompt is in the handover, ready to paste.**
+
+### Prior — 2026-08-09 morning: `HANDOVER_2026-08-09.md`
 Branch **`feat/teach-side-overnight`** (revert point `8b8b458`). Teach-side arc, all flags DEFAULT OFF.
 **MEASURED on 140 unseen siblings of 10 taught documents: date 140/0 (100%), customer 138/2 (99%),
 issuer 121/19 (86%), ref 120/20 (86%)** — from 116/21, 88/52, 88/49, 107/29 that morning. No correct
