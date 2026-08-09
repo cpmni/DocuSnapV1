@@ -63,6 +63,34 @@ window when a new install is most exposed: the first few confirms.
 **Do not just raise a threshold.** Each of these is a different layer, and CLAUDE.md's standing rule
 applies: fix the reusable layer, and name what the fix relies on and what it disables.
 
+## 2026-08-10 — NON-UK VAT NUMBERS ARE NOW REFUSED (Oracle C7, recorded not fixed)
+
+`vat_no` gained a real format on 2026-08-09 NIGHT (`92c7013`) and the shipped patterns are **UK
+ONLY**: `GB` + the 3-4-2 grouping, the 12-digit branch-trader form, the GD/HA government form, and a
+bare 9- or 12-digit run. That was deliberate - the corpus and the customer base are UK, an
+international arm buys zero measured recall here, and a generic "two letters plus 8-12 characters"
+arm would let six of the measured OCR garbles straight back in (`comsssie42`, `ee05351042` and
+friends: 'CO' and 'EE' are real country codes).
+
+**THE COST, stated so a customer does not discover it first.** A UK business receiving an invoice
+from an Irish, German or French supplier now gets `vat_no` **empty, and a review**, and an operator
+who types `IE1234567FA` by hand gets an on-blur warning telling them their correct value is wrong.
+It fails toward review, so it is not a blocker - but **this is the same class that was fixed for
+`iban` on 2026-08-08**, where the backend accepted a conventionally-printed IBAN while the renderer
+warned on it. Do not let it sit.
+
+**THE FIX IS DESIGNED AND HELD.** reggie's Tier 2 is a CLOSED per-country table with per-country
+lengths (DK/FI/HU/LU/MT/SI 8 digits, DE/EE/EL/GR/PT 9, BE/PL/SK 10, HR/IT/LV 11, SE 12, plus the
+shaped forms for AT/CY/ES/FR/IE/NL and the ranges for BG/CZ/LT/RO). Verified against the measured
+garbles: with the closed table ZERO of them are readmitted - it is the GENERIC arm that readmits
+six. The RO branch is the loosest and would be the one to watch.
+
+**Ship it the day a real EU supplier arrives, with that supplier's own number as the test case** -
+not before, because a pattern nobody can test against real paper is a pattern that will be wrong in
+a way nobody notices. The full per-value verdict table is in the 2026-08-09 NIGHT advisor round.
+
+---
+
 ## 2026-08-09 NIGHT — two residuals left by the issuer fix (`587f5ac` + `045b176`)
 
 Both surfaced BY the gate, neither is a blocker for the pair, and both are recorded rather than

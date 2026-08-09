@@ -235,6 +235,20 @@ ARM_ENV.coldstart = { ...ARM_ENV.applive, LETTERHEAD_ISSUER: '1' };
 // on 19. Both are a confident value with NO SOURCE on the page - the worst kind, because the human
 // checking it has nothing to compare against.
 ARM_ENV.captionrefuse = { ...ARM_ENV.freezequal, CAPTION_VALUE_REFUSE: '1' };
+// ORACLE C2. The claim "no supplier was blanked" was VACUOUS on this corpus:
+// TEMPLATE_FIXED_NAME_PRESENCE_VETO — the guard that can BLANK a stamped supplier — needs
+// TEMPLATE_NAME_PRESENCE_MIN_SAMPLE (default 3) confirmed documents for that supplier, and the
+// taught state has ONE. So it abstained on all 200 documents and measured nothing at all about the
+// destructive path TEMPLATE_FIXED_SEED_AGREEMENT_KEEP re-arms. Forcing the floor to 1 is the only
+// way to see what that flag would do on an install that has been running long enough to matter.
+ARM_ENV.agree_veto = { ...ARM_ENV.freezequal, TEMPLATE_FIXED_SEED_AGREEMENT_KEEP: '1',
+                       TEMPLATE_NAME_PRESENCE_MIN_SAMPLE: '1' };
+MUTATORS.agree_veto = MUTATORS.freezequal;
+// The control that makes it non-vacuous: the same forced floor WITHOUT the agreement flag. If both
+// arms blank the same suppliers, the blanking is the veto's own behaviour on this corpus and not
+// something the agreement flag introduced.
+ARM_ENV.veto_only = { ...ARM_ENV.freezequal, TEMPLATE_NAME_PRESENCE_MIN_SAMPLE: '1' };
+MUTATORS.veto_only = MUTATORS.freezequal;
 MUTATORS.captionrefuse = MUTATORS.freezequal;
 // `noreg` must differ from the arm that MEASURED the 22 failures by exactly ONE thing: the
 // `--registration` CLI arg. Give it that arm's env verbatim, or the diagnostic moves two variables
