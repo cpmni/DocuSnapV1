@@ -693,38 +693,89 @@ confirms is still nulled (`engine.py:7181-7229`); only new confirms or Learning 
 
 ---
 
-## 2026-08-10 — THE `I`→`1` MISREAD ON PELICAN REFERENCES (isolated by the separator guard)
+## 2026-08-10 — ROOT-CAUSED: THE `I`→`1` MISREAD IS THE OCR LADDER PICKING THE MOST CONFIDENT
+## WRONG READ. The correct read is already being produced and then discarded.
 
-**Now visible, and now the ONLY defect left on this class.** Every Pelican reference commits with
-its letter `I` read as the digit `1`: the page prints `PI/26/6000`, the crop reads `P1/26/6000`.
-Until the separator guard it was hidden behind a second defect (the deleted separators); armed, the
-value is `P1/26/6000` and the remaining error stands alone.
+**The defect.** Every Pelican reference commits with its letter `I` read as the digit `1`: the page
+prints `PI/26/6000`, the field commits `P1/26/6000`. Isolated once the separator guard removed the
+second defect stacked on top of it.
 
-**MEASURED (2026-08-10 EVENING3, six live documents, base vs armed):** 5 of 5 `template_mapping`
-reads carry it. The sixth (0030, a `template_mapping_edgecut` read) gets the prefix RIGHT — same
-supplier, same layout, same page — which is the useful contrast: **this is not a property of the
-font or the scan, it is a property of the crop/recipe the winning rung uses.** Start there.
+**THE CROP IS PERFECT.** Rendered and read by eye first (007's rule): `slice_12_target.png` on doc
+0023 is a clean, tight, high-contrast `PI/26/6000`. This is not placement, not drift, not the taught
+box. It is a READING failure on legible pixels.
 
-**WHY IT MATTERS MORE THAN IT DID:** on three of five documents the full-page OCR shares the same
-misread, so Gate C's page-presence check now MATCHES and the warning clears — leaving a wrong
-reference at confidence 94 with nothing flagging it (see the separator-guard entry above). Before
-the guard, the separator mismatch was accidentally keeping those documents flagged.
+**MECHANISM, measured on the exact crops the pipeline used** (five live Pelican documents, PSM 7,
+mean word confidence as `_read_lines_full` computes it):
 
-**LEADS.**
-- `P` followed by `I` in a narrow crop is the classic 1/I/l confusion. The crop that wins here is
-  the Stage 0.5 absolute/relocate read; the edge-cut rung on 0030 uses a different window and gets
-  it right, so compare the two recipes before touching any classifier-level idea.
-- `ocr_corrector`'s learned misread table is the existing mechanism for exactly this shape, but the
-  install's confirmed history is itself poisoned with `P1` values, so it would currently learn the
-  WRONG direction. Check what `getFieldFormats` holds for `invoice_number` on this supplier before
-  relying on it.
-- A `tessedit_char_whitelist` without digits is NOT the answer — the value is mostly digits.
-- Whatever the fix, the gate is the corpus ref lane, which currently sits at 27 ok / 1 wrong armed;
-  the residual IS this defect.
+| prep | 0023 | 0025 | 0019 | 0022 | 0029 | verdict |
+|---|---|---|---|---|---|---|
+| **raw greyscale** | `PI` 56 | `PI` 76 | `PI` 66 | `PI` 45 | `PI` 53 | **CORRECT 5/5** |
+| light (upscale+autocontrast) | `PI` 26 | `P1I` 33 | `PI` 10 | `P1` 73 | `P1` 33 | 2/5 |
+| heavy (`_prep`, +SHARPEN) | `P1` 36 | `PI` 58 | `P1` 50 | `P1` 70 | `P1` 50 | 1/5 |
+| struct (`_struct_prep`) | `P1` 55 | `P1` 73 | `P1` 53 | `P1` 54 | `P1` 55 | 0/5 |
+
+**THE READ THE PIPELINE NEEDS IS ALREADY BEING PRODUCED AND IS THEN THROWN AWAY.** Stage 0.5 calls
+`_ocr_crop_laddered` with `verify_fn=None`, so the gate is `conf >= 60` (`anchor.py` `_gate`). Every
+rung on this crop scores below 60, so no rung passes, and the ladder falls back to
+`anchor.py:3304-3305` — `if rseg and rconf > best_conf: best_seg = rseg` — returning the
+HIGHEST-CONFIDENCE rung at `:3341`. On 0023 that is heavy at 36 over light at 26: **the wrong read
+wins precisely because it is more confidently wrong.**
+
+**THE REAL LESSON, and it generalises far past this supplier: Tesseract's mean word confidence is
+NOT COMPARABLE ACROSS PREPROCESSING RECIPES.** Sharpening and upscaling make the engine more certain
+while destroying the evidence that separates a serif `I` (full-width top and bottom serifs) from a
+digit `1` (angled flag, narrower foot) at ~20px cap height. The ladder treats those numbers as
+commensurable and they are not. Any field whose crop scores under 60 on every rung is exposed to
+the same inversion — this is not a Pelican bug.
+
+**OWNER ASKED: would pre-binarising the page (2-bit / 1-bit B&W) help? MEASURED — NO, it makes it
+worse**, and for the same reason:
+
+| variant | 0023 | 0022 | 0029 |
+|---|---|---|---|
+| raw greyscale | `PI` **correct** 56 | `PI` **correct** 45 | `PI` **correct** 53 |
+| 1-bit Otsu | `P1` 53 | `P/26/3711` 0 | `PH26/1792` 6 |
+| 1-bit Otsu, x2 upscale | `PI` 64 | `P1` **84** | `P1` **79** |
+| PIL `convert('1')` (dithered) | `PYoereo08` | `''` | `PUTT o?` |
+
+Binarising is **the same mistake in a new coat**: it raises confidence to 79–85 while being WRONG,
+against raw at 45–56 being RIGHT. Tesseract/Leptonica ALREADY binarise internally (adaptive Otsu),
+so a global pre-threshold only discards the antialiasing grey that carries the `I`/`1` distinction —
+and a global threshold is strictly worse than the adaptive one on uneven scan lighting. Dithering is
+catastrophic. **Do not add a binarisation prep. The evidence points the other way: LESS processing.**
+
+**CAVEAT THAT KILLS THE ONE-LINE FIX.** "Just use the raw crop" is wrong. On doc 0030 — same
+supplier, same page layout, but an EDGE-CUT taught box — raw reads `'| PL/IS/S45)'` and the struct
+prep is the only one that gets `PI/25/5445`. So the preps earn their place on degraded/clipped
+geometry. The defect is not "the wrong prep is used", it is **"the rungs are ranked by a number that
+does not mean the same thing on each of them"**.
+
+**DIRECTIONS, none built — this is the extraction ladder, it serves every field, and it needs the
+advisor + Oracle gate before a line is written:**
+1. **Add raw/greyscale as a rung.** Cheapest, and it would win here — but only if (2) or (3) also
+   lands, because raw would still lose the confidence race on 0022 (raw 45 vs light 73).
+2. **Break the cross-prep comparison.** Rank sub-floor rungs by something prep-invariant — agreement
+   between rungs, or conformance to the field's own validation shape — rather than by raw
+   confidence. On this class the shape is identical for `PI` and `P1`, so AGREEMENT is the stronger
+   signal: raw+light agree on `PI` on 3 of 5.
+3. **Consult the field's learned history**, which `ocr_corrector` already exists to do — EXCEPT that
+   this install's confirmed history is itself full of `P1` values, so it would currently learn the
+   wrong direction. Check `getFieldFormats` for this supplier before relying on it.
+4. **NOT a whitelist.** The value is mostly digits; excluding digits is not available.
+
+**GATE when it is built:** the corpus ref lane, currently 27 ok / 1 wrong with the separator guard
+armed — the residual IS this defect, so a correct fix takes it to 28/0 while the other eight lanes
+stay byte-identical.
+
+**WHY IT MATTERS MORE THAN A SINGLE WRONG FIELD:** on three of five live documents the full-page OCR
+carries the SAME misread, so Gate C's page-presence check matches and the warning CLEARS — leaving a
+wrong reference at confidence 94 with nothing flagging it. Fixing this removes the only real
+objection to flipping `CODE_SEPARATOR_STRUCTURE_GUARD`.
+
+**Probes kept:** `stress_test/probe_crop_recipes.py` (per-prep read + confidence on any saved slice,
+including the binarisation variants).
 
 **NOT BUILT.**
-
----
 
 ## 2026-08-10 — `extractions.anchor_label` IS A DEAD COLUMN, AND SWITCHING IT ON IS CUSTOMER-FACING
 
