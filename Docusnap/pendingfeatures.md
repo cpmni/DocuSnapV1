@@ -7,7 +7,8 @@
 ---
 
 ## 2026-08-10 — ONE ORDINARY CONFIRM STAMPS THE WRONG COMPANY ON 18 OTHER DOCUMENTS
-### STATUS: FIXED behind `TEMPLATE_IDENTITY_ON_PAGE` (`ebd2096`), DEFAULT OFF, with Oracle
+### STATUS: FIXED behind `TEMPLATE_IDENTITY_ON_PAGE` (`ebd2096` + `fba4374`), DEFAULT OFF.
+### ORACLE: SIGN OFF WITH CONDITIONS — all six applied and re-gated. Ready for the owner to flip.
 
 **THE OWNER'S LIVE INSTALL IS CLEAN — verified: 0 of 147 documents carry a supplier that disagrees
 with their own filename.** The defect is LATENT there, not active: it needs a template built from a
@@ -19,6 +20,24 @@ somewhere on the page. Measured on 200 documents: 160 right matches kept, 40 wro
 **zero right matches lost**. Gate on a fresh import: wrong senders 18 -> 1, wrong account numbers
 36 -> 19, and 17 references / 17 dates / 17 order numbers RECOVERED (they had been read off the
 wrong layout's geometry). Full reasoning in `git show ebd2096`.
+
+**ORACLE'S SIX CONDITIONS, all applied in `fba4374`** — two of them were real defects in my first
+version, not polish:
+  * **C1** I read the cosmetic `templates.name` as the identity. This codebase has ruled twice that
+    it is not one. An admin RENAME would have stopped a template matching its own documents for
+    ever, silently, and an auto-generated "Purchase Order Template" name would have PASSED the guard
+    on every purchase order ever printed. Now uses the confirmed issuer, then the frozen fixed value,
+    then abstains.
+  * **C2** I vetoed the winning candidate instead of filtering the pool. With two templates built
+    from the buyer's own purchase orders — same poisoned fingerprint, both scoring 1.00 — vetoing the
+    winner means the CORRECT template is never reached: "teaching a second supplier broke the first
+    one". Now an admission filter before ranking.
+  * **C3** refuse only where the supplier's own confirmed history says it normally prints its name
+    (ratio >= 0.80). A pure-wordmark letterhead is carved out by measurement rather than by hope.
+    Explicitly NO 3-confirm floor — that floor is what slept through this defect.
+  * **C4** the refusal is logged. **C5** the logo-arm carve-out is not a guarantee and no longer
+    reads like one. **C6** there IS a 0.75 keyword floor; what is missing is a margin, and a margin
+    would have been vacuous here.
 
 **WHAT THE FIX DOES NOT DO, and this is the part still open:** it stops a wrong binding being MADE.
 It does not undo one already made — see the sticky-binding entry below. And it does not repair the
