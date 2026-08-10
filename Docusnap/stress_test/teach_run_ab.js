@@ -270,6 +270,15 @@ MUTATORS.captionrefuse = MUTATORS.freezequal;
 // and answers nothing.
 ARM_ENV.noreg = { ...ARM_ENV.money };
 
+// THE PRINTED-SEPARATOR GUARD (2026-08-10). `_repair_single_token` re-reads a spaceless code that
+// contains '/' with a whitelist that CANNOT emit '/', and accepts the result when the alphanumerics
+// match — which is true of every code whose separators are PRINTED, so 'PI/26/6000' was committed as
+// 'PI266000'. Deliberately NOTHING but the one flag: it is merged on top of the live settings mirror
+// (`armEnv = {...env, ...ARM_ENV[arm]}`), so `sepguard` minus `base` is exactly
+// CODE_SEPARATOR_STRUCTURE_GUARD and nothing else, and `base` is the owner's real behaviour rather
+// than a hand-listed approximation of it that can drift (which is what `all4` did).
+ARM_ENV.sepguard = { CODE_SEPARATOR_STRUCTURE_GUARD: '1' };
+
 for (const k of Object.keys(ARM_ENV)) if (!MUTATORS[k]) MUTATORS[k] = () => {};
 for (const k of Object.keys(ARM_ARGS)) if (!MUTATORS[k]) MUTATORS[k] = () => {};
 

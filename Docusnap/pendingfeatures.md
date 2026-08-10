@@ -143,8 +143,21 @@ search could find. Re-run it on a second taught state before treating 89.5% as t
 > general reduction of Gate C's false-flag rate, and item 3 (populating the dead `extractions.raw_value`
 > column, which would revive `credit_sign_note`'s dead guard) stands on its own. Re-cost both once
 > the guard is flipped and the false-flag rate is re-measured.
-> **OUTSTANDING BEFORE FLIPPING: no corpus/realdoc ARMED arm has been run** — only the unit battery
-> and the census. Off is byte-identical and pinned; on is unmeasured beyond the 36/36 count.
+> **CORPUS ARM RUN 2026-08-10 EVENING — GATE GREEN.** `teach_run_ab.js base sepguard` over a
+> SNAPSHOT of the live taught state (`TESTING/_measure/live_20260810.db`, never the DB the app is
+> using), 195 documents, 200 DPI, live settings mirrored so `base` is the owner's real behaviour and
+> `sepguard` minus `base` is exactly `CODE_SEPARATOR_STRUCTURE_GUARD`.
+> **ref 25 ok / 3 wrong → 27 ok / 1 wrong (89% → 96%). Every one of the eight other lanes is
+> BYTE-IDENTICAL — same ok/wrong/empty and the same winning-rung distribution. Two heals, zero
+> regressions. Failing cells 14 → 12.**
+> The three baseline ref failures were `PI251029`, `PI255450` (separators stripped) and `P1269923`
+> (separators stripped AND the `I`→`1` misread). Armed, only the last survives, as **`P1/26/9923`** —
+> **the arm SHOWS, rather than asserts, that the `I`→`1` is a separate upstream OCR defect this
+> change does not touch.** The owner-reported false "doesn't appear on this page as written" note is
+> gone on the two documents whose value is now right, and correctly persists on the one still wrong.
+> Residual worth knowing: on that document the committed confidence moved 95 → 90, still above the
+> 88 auto-file floor, so the remaining wrong value is no better protected than before.
+> **Still outstanding: an Oracle pass.**
 
 **Owner, verbatim:** *"we need a way to retain the data obtained before special characters are
 removed from a value so it can be cross checked in the background in review — we see a note here to
