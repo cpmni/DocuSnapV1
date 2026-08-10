@@ -78,9 +78,16 @@ bidirectional per-pair census before enabling any pair beyond `I`/`1`. C4 is the
 **Why I did not build it.** With C1–C4 applied this is a two-tier flag, a bidirectional census, a
 Gate C amendment and a pin set that must drive the real ladder. Half-building that unattended, in
 the extraction path, is exactly what "safely, no regressions" rules out. **It is fully specified in
-`pendingfeatures.md` and ready to build cold.** Also worth knowing: the corpus is synthetic and
-rasters at 150 DPI while the app renders at 200, so "raw" is already resample #1 — generalisation to
-a real scanner is hypothesis, not measurement.
+`pendingfeatures.md` and ready to build cold.**
+
+**Oracle's C6, done (read-only): there is no free resolution to reclaim.** He asked whether the
+embedded scan might be higher-resolution than we render, in which case fixing the render scale would
+beat any code. Measured with pypdfium2 over the Pelican pages: the embedded image is
+**1241×1754px on an 8.27in page = ~150 DPI native, and the app renders at 200** — so pdfium is
+*upsampling* 150→200 before the prep upsamples again. That kills the cheaper lever, and it confirms
+his caveat: on this corpus "raw greyscale" is already resample #1, so the whole `I`→`1` measurement
+sits on a synthetic 150-DPI chain. **Generalisation to a real 200–300 DPI scanner is hypothesis, not
+measurement** — worth one real scanned page before the flip.
 
 ---
 
