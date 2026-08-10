@@ -384,6 +384,22 @@
     /* Straighten is a STATE, not a one-shot action — it stays visibly latched while the
        straightened render is on screen, so the operator always knows which frame they are
        looking at before they draw a box. */
+    /* Approval-stamp placement picker. The 3x3 grid and the A4-proportioned preview are the same
+       normalised, top-left-origin coordinates the stamp itself uses, so what is shown is what is
+       printed — no second coordinate system to keep in step. */
+    #stamp-grid { display:grid; grid-template-columns:repeat(3, 34px); grid-template-rows:repeat(3, 46px);
+      gap:4px; padding:6px; background:var(--surface2); border:1px solid var(--border2); border-radius:var(--r-sm); }
+    .stamp-cell { border:1px dashed var(--border2); background:var(--surface); border-radius:5px; cursor:pointer;
+      transition:background .12s, border-color .12s; }
+    .stamp-cell:hover { border-color:var(--accent); }
+    .stamp-cell.sel { background:var(--accent-bg); border:1px solid var(--accent); }
+    .stamp-cell:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+    #stamp-preview { position:relative; width:150px; height:212px; background:var(--surface);
+      border:1px solid var(--border2); border-radius:4px; overflow:hidden; }
+    #stamp-preview-box { position:absolute; box-sizing:border-box; display:flex; align-items:center;
+      justify-content:center; padding:2px; border:1.5px solid var(--ok); color:var(--ok);
+      background:rgba(255,255,255,.85); border-radius:2px; font-size:7px; font-weight:700;
+      letter-spacing:.04em; white-space:nowrap; overflow:hidden; }
     #tpl-btn-straighten.active {
       background: var(--accent-bg); border-color: var(--accent); color: var(--accent2); font-weight: 600;
     }
@@ -1334,12 +1350,18 @@
                          value format comes from engine._seed_field_patterns, keyed on the document
                          TYPE's field definitions. Three surfaces offered three different
                          vocabularies for it and none changed a read. -->
+                    <!-- The ONE per-mapping tightness control that exists today (owner's
+                         "what settings tighten a frequently-misfiring box?"). It was a bare
+                         slider labelled "Expansion" with a tooltip — the number was adjustable
+                         without being understandable, so nobody could tell which way to move it.
+                         The two failure modes pull in opposite directions, so both are named. -->
                     <div class="form-group">
-                      <label>Expansion</label>
+                      <label>Search expansion (box tightness)</label>
                       <div class="conf-row">
-                        <input type="range" class="conf-slider" id="tpl-map-expansion" min="0" max="20" value="4" title="Extra margin added around the target zone when searching">
+                        <input type="range" class="conf-slider" id="tpl-map-expansion" min="0" max="20" value="4" title="Extra margin searched around the target zone">
                         <span class="conf-val" id="tpl-map-expansion-val">4%</span>
                       </div>
+                      <span class="section-desc" id="tpl-map-expansion-hint" style="display:block; margin-top:4px;"></span>
                     </div>
                     <div class="form-group">
                       <label>Enabled</label>
@@ -1905,6 +1927,46 @@
             <input type="checkbox" id="wf-addon-toggle" disabled title="Set by your licence — read-only">
             <span class="toggle-slider"></span>
           </label>
+        </div>
+      </div>
+
+      <!-- Approval stamp placement (owner 2026-08-02: "choose where it goes and resize it to fit a
+           blank area"). Shares #wf-section's visibility — the stamp only exists for approvals. -->
+      <div class="section" id="stamp-section" style="display:none;">
+        <div class="section-title">Approval stamp</div>
+        <p class="section-desc">Where the APPROVED / REJECTED stamp is printed on the decision copy. The original document is never changed — the stamp is only ever added to a separate copy. The approver's note is printed on the stamp.</p>
+        <div class="row-flex" style="gap:20px; align-items:flex-start; flex-wrap:wrap;">
+          <div>
+            <div class="threshold-label" style="margin-bottom:6px;">Position</div>
+            <div id="stamp-grid" role="group" aria-label="Stamp position">
+              <button type="button" class="stamp-cell" data-x="0.05" data-y="0.04" title="Top left"></button>
+              <button type="button" class="stamp-cell" data-x="0.35" data-y="0.04" title="Top centre"></button>
+              <button type="button" class="stamp-cell" data-x="0.62" data-y="0.04" title="Top right"></button>
+              <button type="button" class="stamp-cell" data-x="0.05" data-y="0.42" title="Middle left"></button>
+              <button type="button" class="stamp-cell" data-x="0.35" data-y="0.42" title="Centre"></button>
+              <button type="button" class="stamp-cell" data-x="0.62" data-y="0.42" title="Middle right"></button>
+              <button type="button" class="stamp-cell" data-x="0.05" data-y="0.80" title="Bottom left"></button>
+              <button type="button" class="stamp-cell" data-x="0.35" data-y="0.80" title="Bottom centre"></button>
+              <button type="button" class="stamp-cell" data-x="0.62" data-y="0.80" title="Bottom right"></button>
+            </div>
+          </div>
+          <div style="flex:1 1 240px; min-width:220px;">
+            <div class="threshold-label">Size</div>
+            <div class="conf-row">
+              <input type="range" class="conf-slider" id="stamp-size" min="12" max="60" value="30">
+              <span class="conf-val" id="stamp-size-val">30%</span>
+            </div>
+            <span class="section-desc" style="display:block; margin-top:4px;">Percentage of the page width. Larger also enlarges the text, so a bigger stamp stays readable.</span>
+            <div class="row-flex" style="gap:8px; margin-top:10px; align-items:center;">
+              <button class="btn primary" id="stamp-save">Save placement</button>
+              <button class="btn" id="stamp-reset">Use the default corner</button>
+              <span class="section-desc" id="stamp-msg"></span>
+            </div>
+          </div>
+          <div>
+            <div class="threshold-label" style="margin-bottom:6px;">Preview</div>
+            <div id="stamp-preview" aria-hidden="true"><div id="stamp-preview-box">APPROVED</div></div>
+          </div>
         </div>
       </div>
 

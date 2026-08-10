@@ -72,6 +72,13 @@ async function stampPdf(inputPath, outputPath, options = {}) {
   const {
     label = 'APPROVED', color = '#2E7D32', userName = '', date,
     notes = '', page = 0, position = 'top-right', opacity = 0.85, rotate = 0,
+    // PLACEMENT + SIZE (owner 2026-08-02: "choose where it goes and resize it to fit a blank
+    // area"). `box` is NORMALISED {x, y, w} with the origin at the page's TOP-LEFT, matching every
+    // other geometry in this app (field mappings, anchors, landmarks) — pdf-lib's own origin is
+    // bottom-left, and that flip is done ONCE, here, rather than leaked to callers. `w` drives the
+    // stamp's width and therefore its scale; the height follows the content. Omit `box` and the
+    // legacy corner `position` applies exactly as before.
+    box = null, scale = 1,
   } = options;
   if (String(notes).length > MAX_NOTES) throw new Error(`Notes too long (${String(notes).length} > ${MAX_NOTES}).`);
   const col = hexToRgb(color);
@@ -88,8 +95,16 @@ async function stampPdf(inputPath, outputPath, options = {}) {
   const { width, height } = pg.getSize();
 
   const M = 28;                                       // margin from the page edge
-  const boxW = Math.min(230, Math.max(120, width - 2 * M));
-  const labelSize = 22, lineSize = 9, gap = 3;
+  // A placed stamp takes its width from `box.w`; otherwise the legacy fixed width applies. Every
+  // type size scales with it, so "resize to fit a blank area" changes the whole stamp, not just
+  // its bounding box — a stamp whose panel grew but whose text stayed 9pt would look broken.
+  const sc = Math.max(0.5, Math.min(3, Number(scale) || 1));
+  const legacyW = Math.min(230, Math.max(120, width - 2 * M));
+  const boxW = box && Number(box.w) > 0
+    ? Math.max(90, Math.min(width - 2 * M, Number(box.w) * width))
+    : legacyW * sc;
+  const k = boxW / legacyW;                            // type scale follows the panel width
+  const labelSize = 22 * k, lineSize = Math.max(6, 9 * k), gap = 3 * k;
 
   const meta = [];
   if (userName) meta.push(`By: ${userName}`);
@@ -98,9 +113,19 @@ async function stampPdf(inputPath, outputPath, options = {}) {
   const subLines = meta.length + noteLines.length;
   const blockH = labelSize + 8 + subLines * (lineSize + gap) + 8;
 
-  // Corner placement (top-right default); x is the left edge, y the headline baseline.
-  const x = position.includes('left') ? M : Math.max(M, width - boxW - M);
-  const y = position.includes('bottom') ? M + blockH : height - M - labelSize;
+  // Placement. `box` wins when given: its x/y are the stamp's TOP-LEFT in normalised, top-origin
+  // coordinates, converted here to pdf-lib's bottom-left origin and clamped so a stamp can never
+  // be positioned off the page (a saved placement outlives the page size it was chosen on).
+  let x, y;
+  if (box && Number.isFinite(Number(box.x)) && Number.isFinite(Number(box.y))) {
+    x = Math.max(0, Math.min(width  - boxW, Number(box.x) * width));
+    const topY = Math.max(0, Math.min(height - blockH, Number(box.y) * height));
+    y = height - topY - labelSize;                     // headline baseline, measured from the top
+  } else {
+    // Corner placement (top-right default); x is the left edge, y the headline baseline.
+    x = position.includes('left') ? M : Math.max(M, width - boxW - M);
+    y = position.includes('bottom') ? M + blockH : height - M - labelSize;
+  }
 
   // Background panel — keeps the stamp legible even where it lands on page content,
   // instead of clashing with text/logos underneath.
@@ -129,11 +154,37 @@ async function stampPdf(inputPath, outputPath, options = {}) {
 }
 
 // Build the stamped-copy path next to the source: "<name>.APPROVED-stamped.pdf".
-function stampedPathFor(srcPath, label) {
+// `routeId` (optional) makes it per-decision: "<name>.APPROVED-stamped-r12.pdf". Without it, two
+// approvals on the SAME document write the same filename and the second silently overwrites the
+// first — so the earlier decision's stamped copy is destroyed while its route row still points at
+// the path, now showing someone else's stamp (eric, 2026-08-02). Legacy copies on disk keep
+// working: nothing ever RECOMPUTES this path to find a file, every reader uses the stored
+// route.stamped_path.
+function stampedPathFor(srcPath, label, routeId) {
   const ext = path.extname(srcPath);
   const dir = path.dirname(srcPath);
   const base = path.basename(srcPath, ext);
-  return path.join(dir, `${base}.${String(label).toUpperCase()}-stamped${ext}`);
+  const suffix = routeId != null && routeId !== '' ? `-r${String(routeId).replace(/[^0-9A-Za-z]/g, '')}` : '';
+  return path.join(dir, `${base}.${String(label).toUpperCase()}-stamped${suffix}${ext}`);
+}
+
+// Per-install stamp placement, stored as JSON in settings under `stamp_placement`:
+//   { x, y, w }  — normalised, top-left origin (see stampPdf's `box`)
+// Anything malformed falls back to the legacy top-right corner rather than throwing: a bad
+// setting must never be able to stop a decision being stamped.
+const STAMP_PLACEMENT_KEY = 'stamp_placement';
+function parseStampPlacement(raw) {
+  if (!raw) return null;
+  let v = raw;
+  if (typeof v === 'string') { try { v = JSON.parse(v); } catch { return null; } }
+  if (!v || typeof v !== 'object') return null;
+  const num = (n, lo, hi, dflt) => {
+    const f = Number(n);
+    return Number.isFinite(f) ? Math.max(lo, Math.min(hi, f)) : dflt;
+  };
+  const w = num(v.w, 0.06, 0.9, null);
+  if (w == null) return null;
+  return { x: num(v.x, 0, 1, 0.6), y: num(v.y, 0, 1, 0.04), w };
 }
 
 /*
@@ -156,7 +207,14 @@ async function stampWorkflowDecision({ db, route, decision, userName, comment, r
     const src = documents.resolveFilePath(doc);
     if (!src || !fs.existsSync(src)) { log(`source file missing for doc ${doc.id}`); return null; }
     if (path.extname(src).toLowerCase() !== '.pdf') return null;  // only PDFs get a stamp
-    const out = stampedPathFor(src, style.label);
+    const out = stampedPathFor(src, style.label, route.id);
+    // Per-install placement, if one has been chosen (Settings). Read defensively: a missing or
+    // malformed setting simply leaves `box` null and the legacy corner placement applies.
+    let box = null;
+    try {
+      const learning = deps.learning || require('../../database/modules/learning');
+      box = parseStampPlacement(learning.getSetting(db, STAMP_PLACEMENT_KEY));
+    } catch { /* no setting / no module → legacy corner */ }
     // An over-long note ELIDES; it must never cost the stamp. stampPdf throws above MAX_NOTES
     // (a deliberate contract for direct callers), and this function swallows every throw — so a
     // 601-character rejection reason used to produce NO STAMPED COPY AT ALL, silently, which is
@@ -164,7 +222,7 @@ async function stampWorkflowDecision({ db, route, decision, userName, comment, r
     // full note always remains on the route + in History; the stamp is only ever a derivative.
     await stampPdf(src, out, {
       label: style.label, color: style.color, userName, date: resolvedAt,
-      notes: elideNotes(comment || ''),
+      notes: elideNotes(comment || ''), box,
     });
     return out;
   } catch (e) {
@@ -173,4 +231,7 @@ async function stampWorkflowDecision({ db, route, decision, userName, comment, r
   }
 }
 
-module.exports = { stampPdf, stampWorkflowDecision, stampedPathFor, hexToRgb, fmtDate, wrapText, elideNotes, MAX_NOTES, DECISION_STYLE };
+module.exports = {
+  stampPdf, stampWorkflowDecision, stampedPathFor, hexToRgb, fmtDate, wrapText,
+  elideNotes, parseStampPlacement, MAX_NOTES, STAMP_PLACEMENT_KEY, DECISION_STYLE,
+};

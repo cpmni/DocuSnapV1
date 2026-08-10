@@ -1815,7 +1815,27 @@ theme exactly. Respect the existing `data-theme`+`data-mode` split (memory
   sample can be levelled before drawing/checking anchor→target boxes. `src/windows/settings/` (Template
   Viewer `#tpl-dock`) + reuse `get-page-deskew` + the AnchorLabel transform (as teach does).
 
-### Template Manager — visualize + tighten anchor boxes  (added 2026-07-30, owner — EXPLORE)
+### ◐ MOSTLY SHIPPED — Template Manager — visualize + tighten anchor boxes  (added 2026-07-30, owner — EXPLORE)
+> **(1) The overlay already existed** and was never ticked: "Preview registration on this doc"
+> (`#tpl-preview-registration`) resolves every mapping on the loaded sample and overlays the DRAWN
+> box (grey) against where it ACTUALLY lands, labelled with the value and the rung that placed it
+> (`REG`/`map`/`anc`). **2026-08-10: made frame-aware** — it drew in raw coordinates only, so with
+> Straighten on, the page rotated and every box stayed put (owner-reported). Both the stored and
+> the resolved boxes now map into the displayed frame, and the resolver is pinned to the RAW page
+> so the preview keeps answering the production question.
+> **(3) The per-box test readout already existed too** (`last_test_*` in the Saved Mappings table)
+> and now shows WHEN it was tested — a green read from before the box was last moved is not
+> evidence that the box works now, and there was no way to tell.
+> **(2) Tightness controls — PARTLY DONE, and the rest needs schema.** `search_expansion` is the
+> one per-mapping knob that exists; it was a bare slider labelled "Expansion" whose number was
+> adjustable without being understandable, and it now names both failure modes (too tight clips the
+> value; too loose swallows the neighbouring row or column) with live guidance per band.
+> **STILL OPEN, and bigger than it looks:** registration on/off, label-lock strictness, and
+> absolute-vs-relocate are **NOT per-mapping columns** — `template_field_mappings` carries only
+> `anchor_text`, the two box rects, `offset_*`, `ocr_type` (retired), `search_expansion`,
+> `region_hint`, `enabled`, `last_test_*`. Surfacing them per field means a migration AND making
+> the extraction rungs honour a per-mapping override, which is an extraction-layer change and needs
+> its own Oracle pass + corpus gate. Do not treat it as UI work.
 - **Owner questions (answered inline in chat 2026-07-30):** do TM-drawn boxes validate on import? what is
   the TM for? should the drawn zones be VISIBLE on a doc (like Review's "show where it reads") so the user
   sees where the system snaps? what settings tighten a frequently-misfiring box?
@@ -2292,6 +2312,23 @@ size hardcoded) on the decision copy.
 **Shape of the work:**
 1. ~~**Note on the stamp**~~ — **ALREADY SHIPPED, see the correction above.** (The elide-don't-throw
    nit is the only thing left in this step.)
+> **STEP 2 SHIPPED 2026-08-10 (per-install default), STEP 3 STILL OPEN.** `stampPdf` now takes a
+> normalised `box {x, y, w}` with a TOP-LEFT origin (matching every other geometry in the app; the
+> flip to pdf-lib's bottom-left origin happens once, inside stampPdf) and scales the whole stamp —
+> headline, meta lines and panel — from the chosen width, so a bigger stamp stays readable instead
+> of growing an empty box. Settings → Licensing gains an "Approval stamp" card: a 3×3 position
+> picker, a size slider, and an A4-proportioned live preview in the same coordinates the PDF uses.
+> Stored as one `stamp_placement` settings row; **UNSET is meaningful** (it means the built-in
+> top-right corner), which is why Reset clears the value rather than writing a corner-shaped one.
+> Anything malformed parses back to unset — a bad setting must never stop a decision being stamped.
+> Placements are clamped at render, so one saved on A4 cannot push the stamp off a different size.
+> **The two-approvals-share-one-path wart is FIXED in the same change**: stamped copies are now
+> per-route (`…APPROVED-stamped-r12.pdf`), and the route id is sanitised so it cannot traverse.
+> Legacy copies keep resolving — nothing recomputes the path to FIND a file, every reader uses the
+> stored `route.stamped_path`. Pinned in `src/services/test_pdfstamp.js` (13 checks).
+> **STILL OPEN:** the per-DECISION override (drag/resize the rectangle on page 1 at decision time)
+> and step 3's whitespace auto-suggest. The per-install default covers the common case — a business
+> stamps the same spot every time — so the interactive picker is now a refinement, not the feature.
 2. **Placement + resize** — an interactive step at decision time (or a per-install default in
    Settings → a "stamp position" picker): show page 1 in the stamped-viewer-style pane, drag
    the stamp rectangle to a blank area, resize by corner; persist per-install default
@@ -2389,7 +2426,16 @@ getByIds ship `SELECT d.*` into the (admin/edit-only) Review window. Also the tr
 for the raw shell channels: a main-side `open-filing-slips-pack` IPC, then DELETE
 open-file/show-in-explorer (the slips round-trip is their last legitimate caller).
 
-### Workflow due dates + pending nudges — BANKED 2026-08-02 (Chris r4 card 7, bob-vetted)
+### ◐ APPETISER SHIPPED — Workflow due dates + pending nudges — BANKED 2026-08-02 (Chris r4 card 7, bob-vetted)
+> **The ageing chip shipped 2026-08-10** — the night-sized half named at the bottom of this entry.
+> Open routes (`pending`/`claimed`) in the mailbox rows now carry "waiting 5 days" past a 3-day
+> threshold, warming to the warn tint at a week and switching to weeks past a fortnight. No schema,
+> no scheduler, no new notification event types (the toast event list stays PINNED and untouched).
+> Silent under the threshold on purpose — a chip on everything is a chip on nothing, and the
+> standing rule is minimal interaction. `created_at` is SQLite `datetime('now')` with no zone
+> marker, so it is parsed as UTC EXPLICITLY; reading it as local time would shift every age by the
+> local offset. **Still open:** the full `due_at` schema + scheduler + overdue surfaces, and the
+> same chip in the DETACHED CLIENT's mailbox (core-only today — the client has its own renderer).
 Chris's "what paper never managed": a due date on a route ("needs an answer by Friday") + a
 gentle nudge for items sitting pending. Full build = `due_at` schema + a scheduler + overdue
 surfaces + NEW workflowNotify event types (the toast event list is PINNED — extending it needs

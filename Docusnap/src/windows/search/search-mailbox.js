@@ -66,6 +66,36 @@ function _wfDate(raw) {
   return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
 }
 
+// AGEING CHIP (the night-sized half of "workflow due dates + nudges"). No schema, no scheduler,
+// no notification: just say out loud how long an OPEN item has been sitting, which is the part of
+// a due date that actually changes behaviour. Deliberately silent under the threshold — a chip on
+// everything is a chip on nothing, and the app's standing rule is minimal interaction.
+//
+// created_at is SQLite `datetime('now')`, i.e. UTC "YYYY-MM-DD HH:MM:SS" with no zone marker, so
+// it is parsed as UTC EXPLICITLY. Letting the browser read it as local time would shift the age by
+// the local offset and could show "waiting 4 days" on something sent three days ago.
+const WF_AGE_DAYS = 3;
+const WF_OPEN_STATES = ['pending', 'claimed'];
+function _wfAgeDays(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return null;
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})/);
+  const ms = m
+    ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6])
+    : Date.parse(s);                       // already ISO with a zone (resolved_at's format)
+  if (!Number.isFinite(ms)) return null;
+  const days = Math.floor((Date.now() - ms) / 86400000);
+  return days >= 0 ? days : null;          // a clock skew into the future is not an age
+}
+function _wfAgeChip(r) {
+  if (!WF_OPEN_STATES.includes(r.state)) return '';   // only things still awaiting someone
+  const d = _wfAgeDays(r.created_at);
+  if (d == null || d < WF_AGE_DAYS) return '';
+  const label = d >= 14 ? `waiting ${Math.floor(d / 7)} weeks` : `waiting ${d} days`;
+  const tone  = d >= 7 ? ' overdue' : '';
+  return `<span class="wf-age${tone}" title="Sent ${_wfDate(r.created_at)} — still waiting">${escHtml(label)}</span>`;
+}
+
 function _routeItem(r) {
   const el = document.createElement('div'); el.className = 'result-item'; el.dataset.id = r.document_id;
   // Chris r4 card 4: name the DOCUMENT (supplier — reference), show the sender's note, and
@@ -89,7 +119,7 @@ function _routeItem(r) {
   el.innerHTML = `
     <div class="result-header">
       <span class="result-supplier" title="${escHtml(title)}">${escHtml(title)}</span>
-      <span class="wf-state ${escHtml(r.state)}">${escHtml(stateLabel)}</span>
+      <span class="wf-state ${escHtml(r.state)}">${escHtml(stateLabel)}</span>${_wfAgeChip(r)}
     </div>
     <div class="result-filename">${escHtml(kind)} · ${escHtml(who)}</div>${
       r.comment ? `

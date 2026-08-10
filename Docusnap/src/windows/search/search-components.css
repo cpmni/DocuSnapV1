@@ -36,6 +36,23 @@
   white-space: nowrap;
 }
 
+/* AGEING chip — how long an OPEN route has been waiting. Sits beside the state chip and borrows
+   its pill geometry, but stays QUIETER than the state at first (a neutral outline for the 3-6 day
+   band) and only warms to the warn family once it has been a week. It is a nudge, not an alarm:
+   nothing is late in a system with no due dates, so it reports elapsed time and lets the reader
+   judge. Only rendered past the threshold — see _wfAgeChip in search-mailbox.js. */
+.wf-age {
+  display: inline-flex; align-items: center;
+  font-size: 11px; font-weight: 500; line-height: 1.5;
+  padding: 2px 9px; margin-left: 6px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border2); background: var(--surface2); color: var(--muted);
+  white-space: nowrap;
+}
+.wf-age.overdue {
+  color: var(--warn); background: rgba(247,184,79,.12); border-color: rgba(247,184,79,.40);
+}
+
 /* Type badge = the accent "role" chip (client .rolechip). */
 .result-type-badge {
   color: var(--accent2);

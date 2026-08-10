@@ -281,10 +281,15 @@ async function initClientApiSection() {
       // when the WORKFLOW_FEATURE_ENABLED flag is flipped back on. #wf-section defaults hidden in the
       // HTML (so it never FLASHES visible before this async check resolves) — REVEAL it whenever the
       // feature is not master-disabled.
+      // The stamp only exists for approvals, so its placement card follows the workflow section's
+      // visibility exactly — one entitlement, one answer, no second gate to drift.
+      const stampSec = document.getElementById('stamp-section');
       if (ent && ent.workflow && ent.workflow.disabled) {
         if (sec) sec.style.display = 'none';
+        if (stampSec) stampSec.style.display = 'none';
       } else {
         if (sec) sec.style.display = '';
+        if (stampSec) { stampSec.style.display = ''; initStampPlacement(); }
         const on = !!(ent && ent.workflow && ent.workflow.entitled);
         const seats = (ent && ent.workflow && ent.workflow.seats) || 0;
         wfTgl.checked = on;
@@ -295,6 +300,8 @@ async function initClientApiSection() {
       }
     } catch {
       if (sec) sec.style.display = '';
+      const stampSec = document.getElementById('stamp-section');
+      if (stampSec) { stampSec.style.display = ''; initStampPlacement(); }
       wfSub.textContent = 'Unknown'; setChip('wf-chip', 'Unknown', '');
     }
   }
@@ -1949,6 +1956,7 @@ const TPL_DESKEW_FLOOR = 0.35;      // below this a page is already level — do
 let tplDeskewOn     = false;        // is the straightened render currently displayed?
 let tplDeskewAngle  = 0;            // CCW-positive angle of the DISPLAYED frame (0 when raw)
 let tplDeskewBusy   = false;
+let tplSuppressPreviewRerun = false;   // set across a straighten image swap (see tplImg.onload)
 const tplDeskewCache = {};          // page index → { image (dataURL), angle, W, H } | { angle: 0 }
 
 // The frame a box was drawn on. `angle: 0` means the raw page, which needs no transform.
@@ -1993,6 +2001,7 @@ async function toggleTplStraighten(forceOff) {
   try {
     if (!goOn) {
       tplDeskewOn = false; tplDeskewAngle = 0;
+      tplSuppressPreviewRerun = true;
       tplImg.src = tplPageImages[tplCurrentPage];
     } else {
       let entry = tplDeskewCache[tplCurrentPage];
@@ -2010,6 +2019,7 @@ async function toggleTplStraighten(forceOff) {
       }
       if (entry.angle && entry.image) {
         tplDeskewOn = true; tplDeskewAngle = entry.angle;
+        tplSuppressPreviewRerun = true;
         tplImg.src = entry.image;
       } else {
         setTplStraightenMsg('This page is already straight.');
@@ -2048,6 +2058,91 @@ function updateTplStraightenUI() {
 }
 
 document.getElementById('tpl-btn-straighten')?.addEventListener('click', () => toggleTplStraighten());
+
+// ── Approval-stamp placement ─────────────────────────────────────────────────
+// Stored as ONE settings row, `stamp_placement` = {x, y, w} normalised with a TOP-LEFT origin —
+// the same convention as every other geometry in this app. pdfStamp owns the flip to pdf-lib's
+// bottom-left origin and re-validates whatever it reads, so a hand-edited or stale setting can
+// never place a stamp off the page (or stop a decision being stamped).
+// An UNSET placement is meaningful: it means "the built-in top-right corner", which is why Reset
+// deletes the value rather than writing a corner-shaped one.
+const STAMP_DEFAULT = { x: 0.62, y: 0.04, w: 0.30 };
+let _stampWired = false;
+let _stampPlacement = { ...STAMP_DEFAULT };
+let _stampIsSet = false;
+
+function stampPreviewPaint() {
+  const box = document.getElementById('stamp-preview-box');
+  const pv  = document.getElementById('stamp-preview');
+  if (!box || !pv) return;
+  const { x, y, w } = _stampPlacement;
+  // Height is the stamp's own aspect (a headline plus a few small lines), not a stored value —
+  // the real stamp sizes its block from its content, and inventing a height here would show a
+  // shape the PDF never produces.
+  box.style.left   = (x * 100) + '%';
+  box.style.top    = (y * 100) + '%';
+  box.style.width  = (w * 100) + '%';
+  box.style.height = Math.min(30, w * 62) + '%';
+  box.style.opacity = _stampIsSet ? '1' : '.45';
+  for (const c of document.querySelectorAll('#stamp-grid .stamp-cell')) {
+    c.classList.toggle('sel', Math.abs(+c.dataset.x - x) < 0.02 && Math.abs(+c.dataset.y - y) < 0.02);
+  }
+}
+function stampSetMsg(text, tone) {
+  const el = document.getElementById('stamp-msg');
+  if (!el) return;
+  el.textContent = text || '';
+  el.style.color = tone === 'err' ? 'var(--err)' : tone === 'ok' ? 'var(--ok)' : 'var(--muted)';
+}
+async function initStampPlacement() {
+  const sizeEl = document.getElementById('stamp-size');
+  if (!sizeEl) return;
+  try {
+    const raw = await api.getSetting('stamp_placement');
+    const v = raw ? JSON.parse(raw) : null;
+    if (v && Number(v.w) > 0) { _stampPlacement = { x: +v.x, y: +v.y, w: +v.w }; _stampIsSet = true; }
+    else { _stampPlacement = { ...STAMP_DEFAULT }; _stampIsSet = false; }
+  } catch { _stampPlacement = { ...STAMP_DEFAULT }; _stampIsSet = false; }
+  sizeEl.value = Math.round(_stampPlacement.w * 100);
+  document.getElementById('stamp-size-val').textContent = sizeEl.value + '%';
+  stampSetMsg(_stampIsSet ? '' : 'Not set — using the top-right corner.');
+  stampPreviewPaint();
+
+  if (_stampWired) return;
+  _stampWired = true;
+  for (const c of document.querySelectorAll('#stamp-grid .stamp-cell')) {
+    c.addEventListener('click', () => {
+      _stampPlacement.x = +c.dataset.x; _stampPlacement.y = +c.dataset.y;
+      _stampIsSet = true; stampSetMsg('Not saved yet.'); stampPreviewPaint();
+    });
+  }
+  sizeEl.addEventListener('input', (e) => {
+    const pct = Math.max(12, Math.min(60, parseInt(e.target.value, 10) || 30));
+    document.getElementById('stamp-size-val').textContent = pct + '%';
+    _stampPlacement.w = pct / 100;
+    _stampIsSet = true; stampSetMsg('Not saved yet.'); stampPreviewPaint();
+  });
+  document.getElementById('stamp-save')?.addEventListener('click', async () => {
+    try {
+      await api.setSetting('stamp_placement', JSON.stringify({
+        x: +_stampPlacement.x.toFixed(4), y: +_stampPlacement.y.toFixed(4), w: +_stampPlacement.w.toFixed(4),
+      }));
+      _stampIsSet = true;
+      stampSetMsg('Saved — new decisions use this placement.', 'ok');
+      stampPreviewPaint();
+    } catch (e) { stampSetMsg(`Couldn't save: ${e.message}`, 'err'); }
+  });
+  document.getElementById('stamp-reset')?.addEventListener('click', async () => {
+    try {
+      await api.setSetting('stamp_placement', '');     // empty ⇒ pdfStamp falls back to the corner
+      _stampPlacement = { ...STAMP_DEFAULT }; _stampIsSet = false;
+      sizeEl.value = Math.round(STAMP_DEFAULT.w * 100);
+      document.getElementById('stamp-size-val').textContent = sizeEl.value + '%';
+      stampSetMsg('Back to the built-in top-right corner.', 'ok');
+      stampPreviewPaint();
+    } catch (e) { stampSetMsg(`Couldn't reset: ${e.message}`, 'err'); }
+  });
+}
 
 async function loadTemplates() {
   try {
@@ -2954,6 +3049,10 @@ function renderTplPage() {
     tplCanvas.width  = tplImg.offsetWidth;
     tplCanvas.height = tplImg.offsetHeight;
     redrawTplCanvas();
+    // A straighten toggle swaps the picture but changes NOTHING about where the mappings resolve
+    // (that is computed against the raw page either way), so it must not re-run the resolver —
+    // that is one Python call per mapping and would stall the toggle for no new information.
+    if (tplSuppressPreviewRerun) { tplSuppressPreviewRerun = false; return; }
     if (tplPreviewMode) runRegistrationPreview();
   };
   tplImg.src = tplPageImages[tplCurrentPage];
@@ -3051,8 +3150,17 @@ let tplPreviewMode = false;
 let tplPreviewBoxes = {};            // field_key -> {anchor_box,target_box,value,method}
 let tplPreviewRunToken = 0;          // discards a run whose doc/page changed mid-resolve
 
+// ALWAYS the RAW page, never the straightened render on screen. The whole point of the preview is
+// "where will this mapping actually land when a document is processed", and processing reads the
+// raw scan — resolving against a straightened picture would answer a question nobody asked and
+// would quietly disagree with production. The resolved boxes come back in raw coordinates and are
+// mapped into the displayed frame at DRAW time (tplArrToDisplay), not here.
 function currentTplPageB64() {
+  const raw = tplPageImages[tplCurrentPage];
+  if (typeof raw === 'string' && raw.startsWith('data:')) return raw.split(',')[1];
   if (!tplImg || !tplImg.naturalWidth) return null;
+  // Fallback for a non-data-URL source: only safe while the raw page is the one displayed.
+  if (tplDeskewOn) return null;
   const c = document.createElement('canvas');
   c.width = tplImg.naturalWidth; c.height = tplImg.naturalHeight;
   c.getContext('2d').drawImage(tplImg, 0, 0);
@@ -3114,25 +3222,47 @@ function drawRegistrationPreview() {
   const w = tplCanvas.width, h = tplCanvas.height;
   for (const m of (selectedTemplate.field_mappings || [])) {
     if (!m.enabled || (m.page_number || 0) !== tplCurrentPage) continue;
-    // DRAWN (stored) position — faint grey + label, so it can be compared to the value.
-    drawNormBox(m.anchor_x_norm, m.anchor_y_norm, m.anchor_w_norm, m.anchor_h_norm, w, h, '#9aa3b2', null, false);
-    drawNormBox(m.target_x_norm, m.target_y_norm, m.target_w_norm, m.target_h_norm, w, h, '#9aa3b2', null, false);
-    drawPreviewLabel(`${m.field_key} (drawn)`,
-      [m.target_x_norm, m.target_y_norm, m.target_w_norm, m.target_h_norm], w, h, '#6b7280');
+    // EVERY box in this overlay is in RAW page coordinates — the stored mapping, and the resolved
+    // positions Python computed against the raw page. When the preview is straightened the picture
+    // rotates under them, so each one is mapped into the displayed frame before it is drawn or
+    // labelled. Display only: nothing here is persisted, and `resolve_geometry` still runs against
+    // the raw page exactly as before.
+    const dm = tplMapDisplay(m);
+    drawNormBox(dm.anchor_x_norm, dm.anchor_y_norm, dm.anchor_w_norm, dm.anchor_h_norm, w, h, '#9aa3b2', null, false);
+    drawNormBox(dm.target_x_norm, dm.target_y_norm, dm.target_w_norm, dm.target_h_norm, w, h, '#9aa3b2', null, false);
+    const dTargetArr = [dm.target_x_norm, dm.target_y_norm, dm.target_w_norm, dm.target_h_norm];
+    drawPreviewLabel(`${m.field_key} (drawn)`, dTargetArr, w, h, '#6b7280');
     const r = tplPreviewBoxes[m.field_key];
     if (!r) continue;
-    if (r.anchor_box) drawArrBox(r.anchor_box, w, h, '#4f8ef7');
-    if (r.target_box) {
-      drawArrBox(r.target_box, w, h, '#3ecf8e');
+    const dAnchorBox = tplArrToDisplay(r.anchor_box);
+    const dTargetBox = tplArrToDisplay(r.target_box);
+    if (dAnchorBox) drawArrBox(dAnchorBox, w, h, '#4f8ef7');
+    if (dTargetBox) {
+      drawArrBox(dTargetBox, w, h, '#3ecf8e');
       // [rung] = which mechanism placed this box: REG=global transform, map=anchor+offset.
       drawPreviewLabel(`${m.field_key}${r.value ? ' = ' + r.value : ''} [${shortMethod(r.method)}]`,
-        r.target_box, w, h, '#2f9e63');
+        dTargetBox, w, h, '#2f9e63');
     } else {
-      drawNormBox(m.target_x_norm, m.target_y_norm, m.target_w_norm, m.target_h_norm, w, h, '#e0a23c', null, true);
-      drawPreviewLabel(`${m.field_key}: not located`,
-        [m.target_x_norm, m.target_y_norm, m.target_w_norm, m.target_h_norm], w, h, '#b07816');
+      drawNormBox(dm.target_x_norm, dm.target_y_norm, dm.target_w_norm, dm.target_h_norm, w, h, '#e0a23c', null, true);
+      drawPreviewLabel(`${m.field_key}: not located`, dTargetArr, w, h, '#b07816');
     }
   }
+}
+
+// Raw-frame mapping row → the frame on screen. Returns a shallow copy; the row is never mutated.
+function tplMapDisplay(m) {
+  const a = tplToDisplayBox({ x_norm: m.anchor_x_norm, y_norm: m.anchor_y_norm, w_norm: m.anchor_w_norm, h_norm: m.anchor_h_norm }, 0);
+  const t = tplToDisplayBox({ x_norm: m.target_x_norm, y_norm: m.target_y_norm, w_norm: m.target_w_norm, h_norm: m.target_h_norm }, 0);
+  return {
+    anchor_x_norm: a.x_norm, anchor_y_norm: a.y_norm, anchor_w_norm: a.w_norm, anchor_h_norm: a.h_norm,
+    target_x_norm: t.x_norm, target_y_norm: t.y_norm, target_w_norm: t.w_norm, target_h_norm: t.h_norm,
+  };
+}
+// Same, for the [x, y, w, h] array form the resolver returns.
+function tplArrToDisplay(arr) {
+  if (!Array.isArray(arr) || arr.length < 4 || arr[0] == null) return arr;
+  const d = tplToDisplayBox({ x_norm: arr[0], y_norm: arr[1], w_norm: arr[2], h_norm: arr[3] }, 0);
+  return [d.x_norm, d.y_norm, d.w_norm, d.h_norm];
 }
 
 // Short rung code for the diagnostic overlay/status: which mechanism placed the box.
@@ -3587,7 +3717,7 @@ function loadMappingIntoEditor(fieldKey) {
     document.getElementById('tpl-map-anchor-text').value = existing.anchor_text || '';
     const pct = Math.round((existing.search_expansion ?? 0.04) * 100);
     document.getElementById('tpl-map-expansion').value     = pct;
-    document.getElementById('tpl-map-expansion-val').textContent = pct + '%';
+    setTplExpansionUI(pct);
     document.getElementById('tpl-map-enabled').checked   = existing.enabled !== 0;
     document.getElementById('tpl-btn-delete-mapping').style.display = '';
 
@@ -3600,7 +3730,7 @@ function loadMappingIntoEditor(fieldKey) {
     tplDraftTarget = null;
     document.getElementById('tpl-map-anchor-text').value = '';
     document.getElementById('tpl-map-expansion').value     = 4;
-    document.getElementById('tpl-map-expansion-val').textContent = '4%';
+    setTplExpansionUI(4);
     document.getElementById('tpl-map-enabled').checked   = true;
     document.getElementById('tpl-btn-delete-mapping').style.display = 'none';
   }
@@ -3626,8 +3756,24 @@ function updateMappingEditorState() {
   document.getElementById('tpl-btn-test-mapping').disabled = !ready;
 }
 
+// Name what each end of the slider actually DOES to a misfiring box. Too tight clips the value;
+// too loose swallows the neighbouring row or column — and those are the two things an operator
+// is looking at when they come here, so the hint reads as a diagnosis, not a definition.
+function tplExpansionHint(pct) {
+  const p = Number(pct) || 0;
+  if (p === 0)  return 'No margin — the box is read exactly as drawn. Use when a neighbouring value keeps being picked up; risky if scans shift at all.';
+  if (p <= 4)   return 'Tight. Best when the value sits close to other text. If reads come back clipped, raise this.';
+  if (p <= 10)  return 'Roomy — tolerates a shifted or rescaled scan. If reads pick up the row above/below or the next column, lower this.';
+  return 'Very loose. Only for a value that moves a lot on the page; at this width a neighbouring value can easily be read instead.';
+}
+function setTplExpansionUI(pct) {
+  const v = document.getElementById('tpl-map-expansion-val');
+  const h = document.getElementById('tpl-map-expansion-hint');
+  if (v) v.textContent = pct + '%';
+  if (h) h.textContent = tplExpansionHint(pct);
+}
 document.getElementById('tpl-map-expansion').addEventListener('input', (e) => {
-  document.getElementById('tpl-map-expansion-val').textContent = e.target.value + '%';
+  setTplExpansionUI(e.target.value);
 });
 
 document.getElementById('tpl-map-mode')?.addEventListener('change', (e) => {
@@ -3785,6 +3931,22 @@ async function refreshSelectedTemplate() {
   renderMappingsTable(refreshed);
 }
 
+// "tested 3 days ago" from the stored SQLite datetime('now') stamp (UTC, no zone marker — parsed
+// as UTC explicitly so the age can't be shifted by the local offset).
+function tplTestAge(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})/);
+  const ms = m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : Date.parse(s);
+  if (!Number.isFinite(ms)) return '';
+  const days = Math.floor((Date.now() - ms) / 86400000);
+  if (days < 0)  return '';
+  if (days === 0) return 'tested today';
+  if (days === 1) return 'tested yesterday';
+  if (days < 30)  return `tested ${days} days ago`;
+  return `tested ${m ? `${m[3]}-${m[2]}-${m[1]}` : 'a while ago'}`;
+}
+
 function renderMappingsTable(detail) {
   const tbody = document.getElementById('tpl-mappings-tbody');
   const empty = document.getElementById('tpl-mappings-empty');
@@ -3793,11 +3955,15 @@ function renderMappingsTable(detail) {
   empty.style.display = mappings.length ? 'none' : '';
 
   for (const m of mappings) {
-    let lastTest = '—';
+    let lastTest = '<span class="section-desc">never tested</span>';
     if (m.last_test_status) {
       const cls = m.last_test_status === 'ok' ? 'ok' : m.last_test_status === 'low_confidence' ? 'warn' : 'err';
       const conf = m.last_test_confidence != null ? ` · ${Math.round(m.last_test_confidence)}%` : '';
-      lastTest = `<span class="mapping-status ${cls}">${escHtml(m.last_test_value || m.last_test_status)}${conf}</span>`;
+      // WHEN it was tested matters as much as the result: a green read from before the box was
+      // last moved is not evidence that the box works now, and the table gave no way to tell.
+      const when = tplTestAge(m.last_test_at);
+      lastTest = `<span class="mapping-status ${cls}">${escHtml(m.last_test_value || m.last_test_status)}${conf}</span>`
+               + (when ? `<span class="section-desc" style="display:block; margin-top:2px;">${escHtml(when)}</span>` : '');
     }
     const tr = document.createElement('tr');
     tr.innerHTML = `
