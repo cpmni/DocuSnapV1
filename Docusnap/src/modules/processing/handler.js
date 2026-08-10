@@ -488,6 +488,13 @@ function _reconcileEnv(db) {
     // is re-read with a whitelist that cannot emit '/' and committed as 'PI266000'. Measured on the
     // live install: 36 committed invoice_numbers had lost a separator their own page still prints.
     if (learning.getSetting(db, 'code_separator_structure_guard', 'false') === 'true') env.CODE_SEPARATOR_STRUCTURE_GUARD = '1';
+    // VAT_EU_FORMATS: `vat_no`'s shipped format is UK ONLY, so a supplier in Ireland, Germany or
+    // France reads empty and an operator who types the correct number is warned it is wrong. Adds
+    // per-country structures with exact element counts (never a generic two-letters rule, which
+    // would readmit the measured OCR garbles). The renderer's twin lives in review/handler.js
+    // `get-validation-patterns` — the two MUST be flipped by the same setting or UI and pipeline
+    // disagree about the same value.
+    if (learning.getSetting(db, 'vat_eu_formats', 'false') === 'true') env.VAT_EU_FORMATS = '1';
     return env;
   } catch { return {}; }
 }

@@ -101,6 +101,7 @@ const BRIDGES = [
   ['format-fail-yield-toggle',  'template_format_fail_yield',  'TEMPLATE_FORMAT_FAIL_YIELD'],
   ['customer-po-labels-toggle', 'customer_po_labels',          'CUSTOMER_PO_LABELS'],
   ['code-separator-guard-toggle', 'code_separator_structure_guard', 'CODE_SEPARATOR_STRUCTURE_GUARD'],
+  ['vat-eu-formats-toggle',     'vat_eu_formats',                'VAT_EU_FORMATS'],
   ['vat-reg-toggle',            'vat_reg_not_amount',          'VAT_REG_NOT_AMOUNT'],
   ['credit-sign-toggle',        'credit_sign_coherence',       'CREDIT_SIGN_COHERENCE'],
   ['pad-window-read-toggle',    'template_pad_window_read',    'TEMPLATE_PAD_WINDOW_READ'],

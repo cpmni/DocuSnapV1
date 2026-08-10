@@ -917,6 +917,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Recognise VAT numbers from outside the UK</div>
+                <div class="threshold-sub">Scan Finder currently only recognises UK VAT numbers, so an invoice from an Irish, German or French supplier leaves the VAT field empty &mdash; and if you type the number in yourself, you are warned that your correct value looks wrong. This adds the VAT formats used across the EU, Switzerland and Norway. Each country&rsquo;s format is matched exactly rather than by a loose &ldquo;two letters and some digits&rdquo; rule, so scanning mistakes are still rejected. Turn this on if you buy from outside the UK. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="vat-eu-formats-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Straighten crooked scans before reading them</div>
                 <div class="threshold-sub">A page that went through the scanner slightly askew is read at an angle, and the boxes Scan Finder was taught drift off the values they were pointed at. This straightens each crooked page before reading it — the same thing the ∞ Straighten button does in Review, applied automatically as documents come in. Your filed file is never altered; only the reading is straightened. It also changes what gets filed without you looking at it, so treat it as a trade rather than a free improvement. Pages that are already straight, and documents that carry their own text, are skipped. Off by default, and not yet recommended — straightening can make a marginal scan read worse as easily as better, and that has not been proven either way on real paper.</div>
               </div>

@@ -394,7 +394,23 @@ the fields that appear on every page.
 
 ---
 
-## 2026-08-10 — NON-UK VAT NUMBERS ARE NOW REFUSED (Oracle C7, recorded not fixed)
+## 2026-08-10 — NON-UK VAT NUMBERS ARE NOW REFUSED (Oracle C7)
+### STATUS: FIXED behind `VAT_EU_FORMATS` (DEFAULT OFF, bridged + toggled + pinned).
+### Per-country structures with exact element counts — never a generic "two letters plus 8-12
+### characters" rule, which is what would readmit the garbles. **MEASURED on the live install:
+### 56 distinct `vat_no` values ever committed, 10 accepted before and after, 46 refused before
+### and after, ZERO flipped refused→accepted.** All 20 real non-UK forms pass, spaced and
+### unspaced; `comsssie42` / `ee05351042` / `VAT` / `3PL` / `1RE` still refused; UK identical.
+### **The renderer widens from the SAME setting** (`get-validation-patterns` in review/handler.js),
+### which is the `iban` lesson — a backend-only widening would still warn an operator that their
+### correctly typed Irish number is wrong.
+### **THE LIMIT, which format cannot fix:** a garble that matches a real country structure exactly
+### IS accepted — `'ee053510429'` (nine digits, a valid Estonian shape) passes, while the measured
+### `'ee05351042'` (eight) does not. Same lesson as the serials entry.
+### **DEVIATION, pinned:** Romania is officially 2-10 digits; it ships floored at SIX, because a
+### 2-digit body in a filing field is junk. A shorter real RO number falls to review.
+### **Still outstanding: no corpus arm and no Oracle pass** — off is byte-identical and pinned, on
+### is measured only against this install's value set.
 
 `vat_no` gained a real format on 2026-08-09 NIGHT (`92c7013`) and the shipped patterns are **UK
 ONLY**: `GB` + the 3-4-2 grouping, the 12-digit branch-trader form, the GD/HA government form, and a

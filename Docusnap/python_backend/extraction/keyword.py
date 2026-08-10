@@ -18,6 +18,47 @@ from ocr.text_layout import COLUMN_BREAK_MIN   # 4 = the reconstruct_page_text /
 from extraction import text_normalise   # shared token normaliser (caption vocab)
 
 
+def _apply_vat_eu(cfg: dict) -> dict:
+    """Merge the EU/EEA VAT structures into `vat_gb` when VAT_EU_FORMATS is armed.
+
+    `vat_no` gained a real format on 2026-08-09 (`92c7013`) and the shipped patterns are UK ONLY,
+    which was deliberate: the corpus and customer base are UK, and a generic "two letters plus 8-12
+    characters" arm would readmit six of the measured OCR garbles, because 'CO' and 'EE' are
+    themselves real country codes. The COST of that decision is a UK business receiving an Irish,
+    German or French invoice: `vat_no` reads empty, the document goes to review, and an operator who
+    types the correct 'IE1234567FA' by hand gets an on-blur warning saying their right value is
+    wrong. That is the same class as the `iban` defect fixed on 2026-08-08, where the backend
+    accepted a conventionally-printed value the renderer rejected.
+
+    The answer is not a looser rule but a MORE SPECIFIC one: per-country structures with exact
+    element counts, so 'EE' followed by eight digits is still refused (Estonia is nine) while a real
+    Estonian number passes. ONE merge point per side — here for every Python consumer (they all read
+    through `self.patterns`), and `get-validation-patterns` for the renderer — so the UI and the
+    pipeline widen together and cannot drift, which is the property the config comment promises.
+
+    DEVIATION FROM THE OFFICIAL SPEC, recorded because it is a judgement not a fact: Romania's VAT
+    body is officially 2-10 digits, which would accept a 2-digit garble. It ships floored at SIX.
+    A shorter real Romanian number is refused and falls to review — the failure this whole entry is
+    about — but it fails toward review rather than admitting junk into a filing field.
+
+    DEFAULT OFF; off returns the config untouched.
+    """
+    try:
+        if os.environ.get("VAT_EU_FORMATS", "0") == "0":
+            return cfg
+        vp = cfg.get("validation_patterns") or {}
+        eu = vp.get("vat_eu") or []
+        if eu and vp.get("vat_gb"):
+            # Copy, never mutate in place: the same dict object is threaded into every stage.
+            vp = dict(vp)
+            vp["vat_gb"] = list(vp["vat_gb"]) + list(eu)
+            cfg = dict(cfg)
+            cfg["validation_patterns"] = vp
+    except Exception:
+        return cfg
+    return cfg
+
+
 def load_patterns(config_path: str | None = None) -> dict:
     """Load keyword patterns from config file."""
     if config_path is None:
@@ -34,7 +75,7 @@ def load_patterns(config_path: str | None = None) -> dict:
     if config_path and Path(config_path).exists():
         try:
             with open(config_path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                return _apply_vat_eu(json.load(f))
         except (json.JSONDecodeError, OSError):
             # Never let a malformed/unreadable config crash extraction — degrade
             # to "no patterns" (Stage 1 simply finds nothing) rather than throw.

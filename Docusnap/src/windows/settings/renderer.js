@@ -694,6 +694,9 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // A printed separator inside a reference code is not an OCR artefact -
                          // 'PI/26/6000' was being committed as 'PI266000' (2026-08-10).
                          ['code-separator-guard-toggle', 'code_separator_structure_guard'],
+                         // vat_no's shipped format is UK-only, so a non-UK supplier reads empty and
+                         // a correctly typed number is warned against (2026-08-10).
+                         ['vat-eu-formats-toggle', 'vat_eu_formats'],
                          ['deskew-import-toggle', 'deskew_on_import'],
                          // NOT an extraction switch and NOT bridged through _reconcileEnv: the
                          // auto-file gate is JS-side, so database/modules/trust.js reads this key

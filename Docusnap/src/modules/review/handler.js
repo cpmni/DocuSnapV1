@@ -142,6 +142,22 @@ function register(ctx) {
         const cfgFile = ctx.resourcePath('config', 'keyword_patterns.json');
         const cfg = JSON.parse(fs.readFileSync(cfgFile, 'utf8'));
         _validationPatternsCache = cfg.validation_patterns || {};
+        // The renderer's twin of keyword._apply_vat_eu. The shipped `vat_gb` patterns are UK ONLY,
+        // so an operator typing a correct Irish or German VAT number by hand is told their value is
+        // wrong. The widening MUST happen on both sides or the UI and the pipeline disagree about
+        // the same value — which is exactly the `iban` defect of 2026-08-08. Merged here, at the one
+        // place the renderer's patterns are built, rather than in the renderer, so the two consumers
+        // share one decision. Default OFF; setting change needs an app restart (this is cached).
+        try {
+          if (learning.getSetting(getDb(), 'vat_eu_formats', 'false') === 'true') {
+            const eu = _validationPatternsCache.vat_eu || [];
+            if (eu.length && _validationPatternsCache.vat_gb) {
+              _validationPatternsCache = Object.assign({}, _validationPatternsCache, {
+                vat_gb: _validationPatternsCache.vat_gb.concat(eu),
+              });
+            }
+          }
+        } catch { /* a settings read must never break field validation */ }
       } catch (e) {
         logger?.warn?.(`get-validation-patterns: ${e.message}`);
         _validationPatternsCache = {};
