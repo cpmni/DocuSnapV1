@@ -60,6 +60,19 @@ other knobs (registration on/off, label-lock strictness, absolute-vs-relocate) a
 **GATES:** pdfStamp 9→13 checks, workflow ×4, workflow-IPC, entitlement, settings-wiring — all green.
 **NOTHING WAS SMOKE-TESTED IN THE UI.** Owner must eyeball Straighten+registration-preview on a
 tilted sample and a box drawn-while-straightened round-tripping.
+**(8) TWO FLAGS HANDED OVER AS "AWAITING THE OWNER'S FLIP" COULD NOT BE FLIPPED** (`cb79586`).
+`TEMPLATE_FORMAT_FAIL_YIELD` + `CUSTOMER_PO_LABELS` were read straight from `os.environ`
+(`engine.py:2158`, `keyword.py:1031`) with **no Settings bridge**, and `npm start` injects no env —
+so they had shipped OFF for ever. **Same class as the five bridged on 08-09 NIGHT, one day later.**
+Now bridged (DEFAULT OFF) + PINNED in `test_settings_wiring.js`. **A flag is not "awaiting a flip"
+until a toggle exists that flips it — check that pin before writing the phrase.**
+**(9) TYPED TEACH VALUES: MEASURED, direction decided** (`stress_test/fixed_value_locatable.js`,
+read-only). **17/19 measurable fixed values (89.5%) ARE printed on their own sample page**
+(`supplier_name` 7/7, `vat_no` 6/6, `account_no` 3/3) ⇒ they were typed because the READ was wrong,
+so the fix is to find the typed string in the page's word geometry and store the box. **CONDITION:
+presence ≠ correctness** — two of the 17 are known-wrong (`vat_no='VAT'`, `'Pelican Office
+Interiors -'`), so capturing geometry must NOT raise a value's confidence. A box is evidence about
+WHERE, never WHETHER.
 **GOTCHA: `ELECTRON_RUN_AS_NODE=1` is REQUIRED** for most JS suites — without it the Electron binary
 launches a GUI and hangs until the tool times out.
 

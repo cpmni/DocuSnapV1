@@ -211,9 +211,29 @@ box works now, and there was no way to tell.
    the page; then draw a box while straightened, save, reopen, confirm it sits on the right words.
 2. **Rebuild the installer** if a test pass is wanted — the current one predates everything from
    `ebd2096` onward, including this whole session.
-3. **The flip queue is unchanged and still waiting** (nothing was flipped this session):
-   `TEMPLATE_IDENTITY_ON_PAGE` (Oracle SIGN-OFF-W/COND, all six conditions applied, ready),
+3. **The flip queue — and the reason two of it could not be flipped.** `cb79586` found that
+   `TEMPLATE_FORMAT_FAIL_YIELD` and `CUSTOMER_PO_LABELS`, both handed over on 08-09 as "awaiting
+   OWNER FLIP", **had no Settings bridge at all** — read straight from `os.environ`
+   (`engine.py:2158`, `keyword.py:1031`) while `npm start` injects no env, so there was nothing to
+   flip and they had shipped OFF for ever. Same class as the five bridged on 08-09 NIGHT, one day
+   later. Both are now bridged (DEFAULT OFF, byte-identical off) and PINNED in
+   `test_settings_wiring.js`, whose check asserts all three legs so a half-wired bridge fails.
+   **A flag is not "awaiting a flip" until a toggle exists that flips it — verify against that pin
+   before writing the phrase into a handover.**
+   Queue, all still OFF, all in Settings → Processing, **app restart first**:
+   `TEMPLATE_IDENTITY_ON_PAGE` (Oracle SIGN-OFF-W/COND, six conditions applied, ready),
    `TEMPLATE_FIXED_SEED_AGREEMENT_KEEP`, `TEMPLATE_FORMAT_FAIL_YIELD`, `CUSTOMER_PO_LABELS`.
+   The two new toggles have never been exercised through the UI.
+4. **Typed teach values — the deciding measurement is DONE** (`cb79586`,
+   `stress_test/fixed_value_locatable.js`, read-only): **17 of 19 measurable fixed values (89.5%)
+   are printed on their own sample page**; `supplier_name` 7/7, `vat_no` 6/6, `account_no` 3/3. They
+   were typed because the READ was wrong, not because the value is absent ⇒ **direction 1 (find the
+   typed string in the page's word geometry and store the box) is the fix.**
+   **CARRY THIS CONDITION INTO THE DESIGN:** presence is not correctness. At least two of the 17 are
+   known-WRONG values — tpl 9 `vat_no='VAT'` (caption freeze) and `supplier_name='Pelican Office
+   Interiors -'` (trailing-dash clip) — so a naive search would pin a box around a caption and give
+   a wrong value a position, i.e. more standing than it has now. Capturing geometry must NOT by
+   itself raise confidence: a found box is evidence about WHERE, never about WHETHER.
 
 ---
 
@@ -268,9 +288,11 @@ box works now, and there was no way to tell.
 - **Live DB:** `%APPDATA%\ScanFinder\docusnap.db`. No migration was added this session (latest
   remains 60). New setting key: `stamp_placement` (plain settings row, admin-gated write, not in
   the protected-key list).
-- **A DEV APP IS RUNNING** — `npm start`, several `electron.exe` processes. It carries every change
-  in this session. **Renderer edits need the window REOPENED; main-process edits need a full app
-  restart** (`src/main.js` and `src/preload.js` were both edited).
+- **NO dev app is running** — the `npm start` used during the session exited cleanly (code 0, empty
+  log) and no `electron.exe` remains. Nothing to kill before a build. **A fresh `npm start` is
+  REQUIRED before any of this session's work can be seen**: `src/main.js` and `src/preload.js` were
+  edited (child dock), and the two flag bridges below are assembled when the extraction process is
+  spawned, so they only exist after a restart.
 - **Run the tests** (Electron-as-Node — plain `node` fails on native ABI, and **without
   `ELECTRON_RUN_AS_NODE=1` the Electron binary launches a GUI and hangs until timeout**):
   ```
