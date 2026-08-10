@@ -66,8 +66,12 @@ class swallowed a trailing full stop, and a UK VRN is exactly NINE digits — No
 `No. 651 0027 84` (a UK number carrying its label tail) validated as Norwegian at coverage 1.00 and
 would have committed SILENTLY. The MVA/MWST suffix is now MANDATORY; pin run RED first; census
 unchanged (56/10/46/0). Also fixed: the renderer cached the MERGED patterns, so a flip needed a
-restart and left the pipeline wide while the warning stayed narrow (C4). **STILL BLOCKING: the
-rejected-candidate census (C2).**
+restart and left the pipeline wide while the warning stayed narrow (C4). **C2 DISCHARGED:**
+rejected-candidate census (`VAL_CENSUS_DIR`, arm `valcensus`) - **2036 gate decisions, 230 `vat_gb`
+refusals, 61 distinct, ZERO newly accepted by the widening.** The refused population contains three
+literal caption tails (`'No GB 903331842'`, `'NoGB 903331842'`), so the mechanism C1 fixes is REAL
+on this data; it does not fire only because these suppliers print `GB` after the caption. **This
+corpus holds the MECHANISM, not the TRIGGER - the pre-C1 list would also have accepted 0 of the 61.**
 **Separator guard: layer and root cause CONFIRMED** (Oracle ruled AGAINST making the re-read
 unreachable from the template rung). Applied C3 (my commit shipped a FALSE CITATION —
 `template_mapper.py:3638` is DEAD in production; the live reach is `anchor.py:3228`), C5 (currency

@@ -2560,6 +2560,23 @@ def _pattern_coverage(v: str, pats) -> float:
     return best / len(s)
 
 
+def _val_census(site, val_type, value, accepted):
+    """MEASUREMENT ONLY (Oracle C2 on VAT_EU_FORMATS, 2026-08-10) — twin of keyword.val_census,
+    duplicated rather than imported: anchor.py does not import keyword and a measurement must not
+    be the thing that introduces a module cycle. Records the candidates this credibility gate
+    REFUSES — the population every committed-value census is structurally blind to."""
+    d = os.environ.get("VAL_CENSUS_DIR")
+    if not d:
+        return
+    try:
+        import json as _json
+        with open(os.path.join(d, f"val_{os.getpid()}.jsonl"), "a", encoding="utf-8") as fh:
+            fh.write(_json.dumps({"site": site, "val_type": val_type,
+                                  "value": value, "accepted": bool(accepted)}) + chr(10))
+    except Exception:
+        pass
+
+
 def _crop_is_credible(value: str, val_type: str | None,
                       validation_patterns: dict | None,
                       label: str | None = None) -> bool:
@@ -2603,7 +2620,9 @@ def _crop_is_credible(value: str, val_type: str | None,
         # Other typed fields (alphanumeric / reference / code): the pattern must
         # COVER most of the value, so a colon-laden MAC matching only a sub-run is
         # rejected and the field relocates/falls to review instead of committing junk.
-        return _pattern_coverage(v, pats) >= _CREDIBLE_COVERAGE_MIN
+        _ok = _pattern_coverage(v, pats) >= _CREDIBLE_COVERAGE_MIN
+        _val_census("crop", val_type, v, _ok)
+        return _ok
 
     # Free-text: must start with an alphanumeric char and be mostly alphanumeric.
     # Also require a minimum of 3 non-space characters — a single letter or two-char

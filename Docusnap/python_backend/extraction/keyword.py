@@ -1161,6 +1161,7 @@ def extract_fields(ocr_text: str, field_keys: list[str],
             # Validate value format if validator defined
             val_type = fp.get("validation")
             if val_type and val_type in validation:
+                val_census("keyword", val_type, value, _validate(value, validation[val_type]))
                 if not _validate(value, validation[val_type]):
                     continue  # doesn't match expected format — try next label
 
@@ -1896,6 +1897,32 @@ def normalize_supplier_name(name: str | None) -> str | None:
     s = str(name).strip()
     cleaned = s.strip(_SUPPLIER_EDGE_NOISE).strip()
     return cleaned or s
+
+
+def val_census(site, val_type, value, accepted):
+    """MEASUREMENT ONLY (Oracle C2 on VAT_EU_FORMATS, 2026-08-10) — record the candidates a
+    validation gate REFUSES, which is the population every committed-value census is blind to.
+
+    The 56-value census that justified the widening enumerated values this install had COMMITTED.
+    A value the current gate rejects is never written anywhere, so that census sampled a population
+    from which the at-risk class had already been removed — which is precisely why it could not see
+    that the Norwegian pattern accepted a UK number carrying its own "No" caption tail. Widening a
+    format can only newly ACCEPT things; the only honest question is therefore "what does the gate
+    refuse today, and would the wider set take any of it?", and that needs the refusals.
+
+    Writes one JSON line per observation to `$VAL_CENSUS_DIR/val_<pid>.jsonl`. Per-PID because the
+    harness fans out across shard workers. Inert unless the env var is set.
+    """
+    d = os.environ.get("VAL_CENSUS_DIR")
+    if not d:
+        return
+    try:
+        import json as _json
+        with open(os.path.join(d, f"val_{os.getpid()}.jsonl"), "a", encoding="utf-8") as fh:
+            fh.write(_json.dumps({"site": site, "val_type": val_type,
+                                  "value": value, "accepted": bool(accepted)}) + "\n")
+    except Exception:
+        pass          # a measurement must never break an extraction
 
 
 def _validate(value: str, patterns: list[str]) -> bool:

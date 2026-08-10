@@ -448,14 +448,22 @@ the fields that appear on every page.
 ### widening exists to remove. Now caches the RAW config and merges per call. New behavioural pin
 ### `src/modules/review/test_validation_patterns_merge.js`, shown RED (4 checks) against the old
 ### cached-merge before going green.
-### **STILL OUTSTANDING - C2, BLOCKING, THE ONE NON-VACUOUS ARM.** Oracle RULED THE MISSING CORPUS
-### ARM ACCEPTABLE (a UK-only corpus genuinely cannot distinguish inert-because-UK from
-### never-armed) but named an arm that needs no non-UK document: a **REJECTED-CANDIDATE census**.
-### The existing census enumerates COMMITTED values, i.e. a population the current gate has already
-### removed the at-risk class from - which is precisely why it could not see C1. Instrument the two
-### rejection sites (`keyword._validate` on the vat_gb branch, `anchor._crop_is_credible`), collect
-### every candidate that FAILED over the 200-doc UK corpus, and re-test those against the widened
-### set. **Pass = zero newly accepted, or every accept individually adjudicated.**
+### **C2 IS DISCHARGED (2026-08-10 EVENING3).** New rejected-candidate census: both `vat_no`
+### rejection sites (`keyword._validate`, `anchor._crop_is_credible`) gained an env-gated logger
+### (`VAL_CENSUS_DIR`, inert unless set), run over the 200-doc corpus as arm `valcensus`.
+### **2036 gate decisions, 519 refusals, 230 of them `vat_gb`, 61 distinct refused strings.
+### RE-TESTED AGAINST THE WIDENED SET: ZERO newly accepted.** C2's pass criterion is met on the
+### population the committed-value census could not see.
+### **AND THE REFUSED POPULATION VINDICATES C1 WITHOUT TRIGGERING IT.** Three of the 61 are literal
+### caption tails - `'No GB 903331842'`, `'NoGB 903 331842'`, `'NoGB 903331842'` - so the "No"
+### caption really does get captured into `vat_no` crops on real documents. It survives here only
+### because these suppliers print the `GB` country code after the caption, which breaks the Norway
+### pattern at the `G`. **Stated honestly: this corpus contains the MECHANISM but not the TRIGGER.**
+### Re-tested explicitly, the PRE-C1 optional-suffix list would also have accepted 0 of the 61 - so
+### C1 is not justified by this corpus, it is justified by the one printed layout away from it
+### ("VAT No 651 0027 84" with no country code, which is ordinary UK practice).
+### **Control:** the `valcensus` arm scores ref 25 ok / 3 wrong, identical to `base`, so the
+### instrument does not perturb what it measures.
 ### Advisory and also outstanding: an operator-affirmation hatch for a value the table cannot know
 ### (model on `accepted_name_values`); `guessType` maps /vat/ to `currency` (`doctype-editor.js:78`),
 ### its own defect; and the "VAT number (GB)" type label lies once armed.

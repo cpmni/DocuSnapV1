@@ -287,6 +287,15 @@ ARM_ENV.sepguard = { CODE_SEPARATOR_STRUCTURE_GUARD: '1' };
 // SEPGUARD_CENSUS_DIR must be listed HERE and not merely exported: a mutator arm inherits no env
 // unless ARM_ENV names it, which is the trap that made an earlier arm measure a pipeline nobody
 // runs. Set the directory with SEPGUARD_CENSUS_DIR when invoking the harness.
+// The VAT REJECTED-CANDIDATE census (Oracle C2 on VAT_EU_FORMATS). The 56-value census that
+// justified that widening enumerated COMMITTED values — a population the current gate has already
+// removed the at-risk class from, which is why it could not see that the Norwegian pattern accepted
+// a UK number carrying its own "No" caption tail. Widening a format can only newly ACCEPT things,
+// so the honest question needs the REFUSALS: what does the gate turn away today, and would the
+// wider set take any of it? Run with the flag OFF — the point is to collect what today rejects.
+if (process.env.VAL_CENSUS_DIR) {
+  ARM_ENV.valcensus = { VAL_CENSUS_DIR: process.env.VAL_CENSUS_DIR };
+}
 if (process.env.SEPGUARD_CENSUS_DIR) {
   ARM_ENV.basecensus = { SEPGUARD_CENSUS_DIR: process.env.SEPGUARD_CENSUS_DIR };
   ARM_ENV.sepcensus  = { CODE_SEPARATOR_STRUCTURE_GUARD: '1',
