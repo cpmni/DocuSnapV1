@@ -50,6 +50,16 @@ function wrapText(text, font, size, maxWidth) {
   return lines;
 }
 
+// Cut a note down to what stampPdf will accept, on a word boundary where one is close enough,
+// with a visible ellipsis so the reader can see it was shortened rather than assume it is whole.
+function elideNotes(notes, max = MAX_NOTES) {
+  const s = String(notes || '');
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max - 1);
+  const sp = cut.lastIndexOf(' ');
+  return `${(sp > max * 0.6 ? cut.slice(0, sp) : cut).trimEnd()}…`;
+}
+
 /**
  * Stamp a single PDF and write a copy. Throws a clear Error on bad input rather than
  * producing corrupt output.
@@ -147,8 +157,14 @@ async function stampWorkflowDecision({ db, route, decision, userName, comment, r
     if (!src || !fs.existsSync(src)) { log(`source file missing for doc ${doc.id}`); return null; }
     if (path.extname(src).toLowerCase() !== '.pdf') return null;  // only PDFs get a stamp
     const out = stampedPathFor(src, style.label);
+    // An over-long note ELIDES; it must never cost the stamp. stampPdf throws above MAX_NOTES
+    // (a deliberate contract for direct callers), and this function swallows every throw — so a
+    // 601-character rejection reason used to produce NO STAMPED COPY AT ALL, silently, which is
+    // the worst outcome available: the decision looks unstamped rather than abbreviated. The
+    // full note always remains on the route + in History; the stamp is only ever a derivative.
     await stampPdf(src, out, {
-      label: style.label, color: style.color, userName, date: resolvedAt, notes: comment || '',
+      label: style.label, color: style.color, userName, date: resolvedAt,
+      notes: elideNotes(comment || ''),
     });
     return out;
   } catch (e) {
@@ -157,4 +173,4 @@ async function stampWorkflowDecision({ db, route, decision, userName, comment, r
   }
 }
 
-module.exports = { stampPdf, stampWorkflowDecision, stampedPathFor, hexToRgb, fmtDate, wrapText, DECISION_STYLE };
+module.exports = { stampPdf, stampWorkflowDecision, stampedPathFor, hexToRgb, fmtDate, wrapText, elideNotes, MAX_NOTES, DECISION_STYLE };

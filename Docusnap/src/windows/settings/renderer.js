@@ -1928,6 +1928,127 @@ const tplViewer  = document.getElementById('tpl-doc-viewer');
 const tplCanvas  = document.getElementById('tpl-overlay-canvas');
 const tplCtx     = tplCanvas.getContext('2d');
 
+// ── Straighten (Template Viewer) ─────────────────────────────────────────────
+// A tilted sample makes anchor/target boxes almost impossible to place: the operator either
+// draws a box big enough to swallow the tilt (which then admits the neighbouring row) or clips
+// the value. Review and the teach wizard both let the page be levelled first; the Template
+// Manager did not (owner, 2026-07-30).
+//
+// THE LOAD-BEARING PART IS NOT THE PICTURE, IT IS THE FRAME. Extraction reads the RAW scan, so a
+// box drawn on the straightened image is in the WRONG COORDINATE FRAME and must be rotated back
+// before it is persisted — the same problem the ⊕ teach solved in 2026-07-12 with
+// `AnchorLabel.deskewedNormToRaw`, whose rotation SIGN was established empirically against real
+// PIL.rotate and is pinned in shared/test_anchor_label.js. This reuses that primitive rather than
+// re-deriving it (a wrong sign here silently mis-seats every box drawn while straightened).
+//
+// Each draft box drawn while straightened is stamped with the frame it was drawn on, and the save
+// REFUSES if the displayed frame has changed since (page navigated, straighten toggled, a new
+// sample loaded) — the Oracle C1 fail-safe from the teach path: never persist coords whose frame
+// you can no longer vouch for.
+const TPL_DESKEW_FLOOR = 0.35;      // below this a page is already level — don't re-render it
+let tplDeskewOn     = false;        // is the straightened render currently displayed?
+let tplDeskewAngle  = 0;            // CCW-positive angle of the DISPLAYED frame (0 when raw)
+let tplDeskewBusy   = false;
+const tplDeskewCache = {};          // page index → { image (dataURL), angle, W, H } | { angle: 0 }
+
+// The frame a box was drawn on. `angle: 0` means the raw page, which needs no transform.
+function tplCurrentFrame() {
+  const c = tplDeskewCache[tplCurrentPage];
+  return {
+    sampleId: selectedTemplate?.sample_document?.id ?? null,
+    page:  tplCurrentPage,
+    angle: tplDeskewOn ? tplDeskewAngle : 0,
+    W: (c && c.W) || tplImg.naturalWidth || 0,
+    H: (c && c.H) || tplImg.naturalHeight || 0,
+  };
+}
+function tplStampFrame(norm) {
+  if (norm) norm._frame = tplCurrentFrame();
+  return norm;
+}
+// Rotate a box drawn on the straightened frame back onto the raw page. Mirrors the teach
+// wizard's _teachBackBox: transform the CENTRE and keep the drawn size (the box is axis-aligned
+// in both frames; at the angles a scanner produces, re-fitting the size buys nothing and would
+// only grow the box).
+function tplBoxToRaw(norm, live) {
+  if (!norm || !norm._frame || !norm._frame.angle) return norm;      // drawn raw → already raw
+  const f = norm._frame;
+  const frameOk = live && live.sampleId === f.sampleId && live.page === f.page
+                  && live.angle === f.angle && live.W === f.W && live.H === f.H
+                  && !!f.W && !!f.H;
+  if (!frameOk) return null;                                          // caller refuses the save
+  const A = window.AnchorLabel;
+  if (!A || typeof A.deskewedNormToRaw !== 'function') return null;   // no primitive → never guess
+  const cx = norm.x_norm + norm.w_norm / 2, cy = norm.y_norm + norm.h_norm / 2;
+  const r = A.deskewedNormToRaw(cx, cy, f.angle, f.W, f.H);
+  return { ...norm, x_norm: r.x - norm.w_norm / 2, y_norm: r.y - norm.h_norm / 2 };
+}
+
+async function toggleTplStraighten(forceOff) {
+  if (tplDeskewBusy || !tplPageImages.length) return;
+  const btn = document.getElementById('tpl-btn-straighten');
+  const goOn = forceOff === true ? false : !tplDeskewOn;
+  tplDeskewBusy = true;
+  if (btn) btn.disabled = true;
+  try {
+    if (!goOn) {
+      tplDeskewOn = false; tplDeskewAngle = 0;
+      tplImg.src = tplPageImages[tplCurrentPage];
+    } else {
+      let entry = tplDeskewCache[tplCurrentPage];
+      if (!entry) {
+        // Render once per page and bank it — re-fetching on every toggle is a visible stall.
+        const src = tplPageImages[tplCurrentPage] || '';
+        const b64 = src.includes(',') ? src.split(',')[1] : src;
+        let res = null;
+        try { res = await api.getPageDeskew?.(b64, TPL_DESKEW_FLOOR); } catch { /* treated as level */ }
+        entry = (res && res.image && res.angle)
+          ? { image: 'data:image/png;base64,' + res.image, angle: res.angle,
+              W: tplImg.naturalWidth, H: tplImg.naturalHeight }
+          : { angle: 0 };
+        tplDeskewCache[tplCurrentPage] = entry;
+      }
+      if (entry.angle && entry.image) {
+        tplDeskewOn = true; tplDeskewAngle = entry.angle;
+        tplImg.src = entry.image;
+      } else {
+        setTplStraightenMsg('This page is already straight.');
+      }
+    }
+  } finally {
+    tplDeskewBusy = false;
+    if (btn) { btn.disabled = false; btn.classList.toggle('active', tplDeskewOn); }
+    updateTplStraightenUI();
+    redrawTplCanvas();
+  }
+}
+
+function setTplStraightenMsg(text) {
+  const el = document.getElementById('tpl-mapping-msg');
+  if (el) { el.textContent = text; el.style.color = 'var(--muted)'; }
+}
+
+// Landmark drawing is NOT frame-aware (it has its own save path, untouched here), so it is
+// unavailable while straightened rather than silently storing display-frame coords.
+function updateTplStraightenUI() {
+  const btn = document.getElementById('tpl-btn-straighten');
+  if (btn) {
+    btn.classList.toggle('active', tplDeskewOn);
+    btn.textContent = tplDeskewOn ? '∞ Straightened' : '∞ Straighten';
+  }
+  const lm = document.getElementById('tpl-btn-enhance');
+  if (lm) {
+    if (!lm.dataset.titleDefault) lm.dataset.titleDefault = lm.title || '';
+    lm.disabled = tplDeskewOn;
+    lm.title = tplDeskewOn
+      ? 'Turn Straighten off to draw landmarks — landmarks are stored against the real page angle.'
+      : lm.dataset.titleDefault;
+  }
+  if (tplDeskewOn && tplLandmarkMode) exitDrawMode();
+}
+
+document.getElementById('tpl-btn-straighten')?.addEventListener('click', () => toggleTplStraighten());
+
 async function loadTemplates() {
   try {
     [allTemplates, allGroups] = await Promise.all([
@@ -2770,6 +2891,10 @@ function tplFileArgs(doc) {
 async function loadSamplePages(detail) {
   tplPageImages  = [];
   tplCurrentPage = 0;
+  // Straightened renders belong to the sample that produced them — a new sample invalidates
+  // every cached angle (and the frame stamped on any half-drawn box).
+  for (const k of Object.keys(tplDeskewCache)) delete tplDeskewCache[k];
+  tplDeskewOn = false; tplDeskewAngle = 0;
 
   const sample = detail.sample_document;
   if (sample) {
@@ -2820,6 +2945,11 @@ function renderTplPage() {
   placeholder.style.display = 'none';
   wrap.style.display        = 'inline-block';
   resetTplView();
+  // A page change always lands on the RAW frame. Straighten is per page (the tilt differs sheet to
+  // sheet), and leaving the toggle "on" across a navigation would claim a frame this page has not
+  // been measured for — which is exactly what the save-time frame guard exists to catch.
+  tplDeskewOn = false; tplDeskewAngle = 0;
+  updateTplStraightenUI();
   tplImg.onload = () => {
     tplCanvas.width  = tplImg.offsetWidth;
     tplCanvas.height = tplImg.offsetHeight;
@@ -3040,6 +3170,25 @@ document.getElementById('tpl-preview-registration').addEventListener('change', (
 // currently has in flight (draft anchor/target boxes, live drag rectangle) on
 // top — so drawing a new box never has to fight the persisted overlay for
 // visibility.
+// Map a box into the frame currently ON SCREEN so the overlay keeps sitting on its words when the
+// page is straightened. STORED mappings and mappings loaded into the editor are raw-frame
+// (srcAngle 0); a box just drawn while straightened is already in the display frame. Purely
+// cosmetic — nothing here is ever persisted; the save path uses tplBoxToRaw.
+function tplToDisplayBox(n, srcAngle) {
+  const dispAngle = tplDeskewOn ? tplDeskewAngle : 0;
+  const src = srcAngle || 0;
+  if (src === dispAngle) return n;                                   // same frame — nothing to do
+  const A = window.AnchorLabel;
+  const c = tplDeskewCache[tplCurrentPage];
+  const W = (c && c.W) || tplImg.naturalWidth || 0;
+  const H = (c && c.H) || tplImg.naturalHeight || 0;
+  if (!A || typeof A.deskewedNormToRaw !== 'function' || !W || !H) return n;
+  const cx = n.x_norm + n.w_norm / 2, cy = n.y_norm + n.h_norm / 2;
+  // raw → straightened is the INVERSE rotation (negative angle); straightened → raw is positive.
+  const r = A.deskewedNormToRaw(cx, cy, src ? src : -dispAngle, W, H);
+  return { ...n, x_norm: r.x - n.w_norm / 2, y_norm: r.y - n.h_norm / 2 };
+}
+
 function redrawTplCanvas() {
   tplCtx.clearRect(0, 0, tplCanvas.width, tplCanvas.height);
   if (tplPreviewMode) { drawRegistrationPreview(); return; }
@@ -3048,11 +3197,13 @@ function redrawTplCanvas() {
   const w = tplCanvas.width, h = tplCanvas.height;
   if (tplDraftAnchor && (tplDraftAnchor.page_number || 0) === tplCurrentPage) {
     const sel = tplSelectedBox?.boxType === 'anchor';
-    drawNormBox(tplDraftAnchor.x_norm, tplDraftAnchor.y_norm, tplDraftAnchor.w_norm, tplDraftAnchor.h_norm, w, h, '#4f8ef7', 'anchor (draft)', sel);
+    const d = tplToDisplayBox(tplDraftAnchor, tplDraftAnchor._frame?.angle);
+    drawNormBox(d.x_norm, d.y_norm, d.w_norm, d.h_norm, w, h, '#4f8ef7', 'anchor (draft)', sel);
   }
   if (tplDraftTarget && (tplDraftTarget.page_number || 0) === tplCurrentPage) {
     const sel = tplSelectedBox?.boxType === 'target';
-    drawNormBox(tplDraftTarget.x_norm, tplDraftTarget.y_norm, tplDraftTarget.w_norm, tplDraftTarget.h_norm, w, h, '#3ecf8e', 'target (draft)', sel);
+    const d = tplToDisplayBox(tplDraftTarget, tplDraftTarget._frame?.angle);
+    drawNormBox(d.x_norm, d.y_norm, d.w_norm, d.h_norm, w, h, '#3ecf8e', 'target (draft)', sel);
   }
   if (tplDragRect) {
     const dragColor = tplMapMode === 'target' ? '#3ecf8e' : '#4f8ef7';
@@ -3084,8 +3235,11 @@ function drawSavedMappings() {
     if ((m.page_number || 0) !== tplCurrentPage) continue;
     const asel = tplSelectedBox?.fieldKey === m.field_key && tplSelectedBox?.boxType === 'anchor';
     const tsel = tplSelectedBox?.fieldKey === m.field_key && tplSelectedBox?.boxType === 'target';
-    drawNormBox(m.anchor_x_norm, m.anchor_y_norm, m.anchor_w_norm, m.anchor_h_norm, w, h, '#4f8ef7', `${m.field_key} anchor`, asel);
-    drawNormBox(m.target_x_norm, m.target_y_norm, m.target_w_norm, m.target_h_norm, w, h, '#3ecf8e', m.field_key, tsel);
+    // Stored mappings are raw-frame; follow the page when it is straightened on screen.
+    const a = tplToDisplayBox({ x_norm: m.anchor_x_norm, y_norm: m.anchor_y_norm, w_norm: m.anchor_w_norm, h_norm: m.anchor_h_norm }, 0);
+    const t = tplToDisplayBox({ x_norm: m.target_x_norm, y_norm: m.target_y_norm, w_norm: m.target_w_norm, h_norm: m.target_h_norm }, 0);
+    drawNormBox(a.x_norm, a.y_norm, a.w_norm, a.h_norm, w, h, '#4f8ef7', `${m.field_key} anchor`, asel);
+    drawNormBox(t.x_norm, t.y_norm, t.w_norm, t.h_norm, w, h, '#3ecf8e', m.field_key, tsel);
   }
 }
 
@@ -3140,6 +3294,9 @@ function getBoxNorm(sel) {
   return sel.boxType === 'anchor' ? { ...tplDraftAnchor } : { ...tplDraftTarget };
 }
 function setBoxNorm(sel, norm) {
+  // A MOVED box is re-staged against whatever frame is on screen right now, not the one it was
+  // first drawn on — otherwise nudging a box while straightened would keep a stale angle.
+  tplStampFrame(norm);
   if (sel.boxType === 'anchor') tplDraftAnchor = norm;
   else                          tplDraftTarget = norm;
 }
@@ -3270,6 +3427,9 @@ tplCanvas.addEventListener('mouseup', () => {
     };
     if (tplLandmarkMode) { addLandmarkFromRect(rect, norm); return; }   // stays armed for the next landmark
     if (!tplMapMode) { redrawTplCanvas(); return; }
+    // Record WHICH FRAME this box was drawn on — raw, or the straightened render and its angle.
+    // Save rotates it back and refuses if the frame has since changed (see tplBoxToRaw).
+    tplStampFrame(norm);
     if (tplMapMode === 'anchor') { tplDraftAnchor = norm; autoDetectAnchorText(rect); }
     else                         { tplDraftTarget = norm; }
     exitDrawMode();
@@ -3483,14 +3643,27 @@ document.getElementById('tpl-btn-save-mapping').addEventListener('click', async 
   if (!selectedTemplate || !tplEditingFieldKey || !tplDraftAnchor || !tplDraftTarget) return;
   const msg = document.getElementById('tpl-mapping-msg');
 
+  // Straighten: rotate anything drawn on the straightened render back onto the RAW page, which is
+  // what extraction reads. FAIL-CLOSED — if either box's frame can no longer be vouched for, the
+  // save is REFUSED with an explanation rather than persisting coords in the wrong frame (a
+  // silently mis-seated mapping is far worse than a re-draw).
+  const liveFrame = tplCurrentFrame();
+  const rawAnchor = tplBoxToRaw(tplDraftAnchor, liveFrame);
+  const rawTarget = tplBoxToRaw(tplDraftTarget, liveFrame);
+  if (!rawAnchor || !rawTarget) {
+    msg.textContent = 'The page changed after those boxes were drawn — please redraw the anchor and target, then save.';
+    msg.style.color = 'var(--err)';
+    return;
+  }
+
   const mapping = {
     field_key:        tplEditingFieldKey,
-    page_number:      tplDraftAnchor.page_number || 0,
+    page_number:      rawAnchor.page_number || 0,
     anchor_text:      document.getElementById('tpl-map-anchor-text').value.trim() || null,
-    anchor_x_norm: tplDraftAnchor.x_norm, anchor_y_norm: tplDraftAnchor.y_norm,
-    anchor_w_norm: tplDraftAnchor.w_norm, anchor_h_norm: tplDraftAnchor.h_norm,
-    target_x_norm: tplDraftTarget.x_norm, target_y_norm: tplDraftTarget.y_norm,
-    target_w_norm: tplDraftTarget.w_norm, target_h_norm: tplDraftTarget.h_norm,
+    anchor_x_norm: rawAnchor.x_norm, anchor_y_norm: rawAnchor.y_norm,
+    anchor_w_norm: rawAnchor.w_norm, anchor_h_norm: rawAnchor.h_norm,
+    target_x_norm: rawTarget.x_norm, target_y_norm: rawTarget.y_norm,
+    target_w_norm: rawTarget.w_norm, target_h_norm: rawTarget.h_norm,
     search_expansion: parseInt(document.getElementById('tpl-map-expansion').value, 10) / 100,
     enabled:          document.getElementById('tpl-map-enabled').checked,
   };

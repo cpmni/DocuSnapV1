@@ -222,6 +222,25 @@
   button.link{background:transparent;color:var(--muted);padding:8px 10px}
   button.link:hover{color:var(--text)}
   .spacer{flex:1}
+
+  /* ── Confirm bar (owner 2026-08-02: "two large filled-orange buttons — which one accepts?") ──
+     The accept button is the ONLY filled control in the bar. Everything else is either a quiet
+     redraw action or a SETTING (the label direction), and a setting must never wear an action's
+     clothes — so the direction toggle is a segmented control, selected by an inset surface, not
+     by the accent fill. */
+  .rb-actions{margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .rb-actions button.btn{padding:11px 20px}
+  .rb-actions button.btn.quiet{padding:8px 13px;font-size:13px;font-weight:500}
+  .rb-sep{width:1px;align-self:stretch;margin:2px 4px;background:var(--border2)}
+  .rb-seg-lab{font-size:12px;color:var(--muted);flex-shrink:0}
+  .segmented{display:inline-flex;background:var(--surface2);border:1px solid var(--border2);
+    border-radius:9px;padding:2px;gap:2px}
+  .segmented .seg-opt{border:0;background:transparent;color:var(--muted);font-family:inherit;
+    font-size:13px;font-weight:500;padding:6px 12px;border-radius:7px;cursor:pointer;
+    transition:background .15s,color .15s}
+  .segmented .seg-opt:hover{color:var(--text)}
+  .segmented .seg-opt.on{background:var(--surface);color:var(--text);font-weight:600;
+    box-shadow:0 1px 2px rgba(0,0,0,.10)}
   .hidden{display:none!important}
   .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--surface2);
     border:1px solid var(--border2);border-radius:8px;padding:10px 16px;font-size:13px;opacity:0;

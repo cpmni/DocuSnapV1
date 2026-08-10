@@ -381,6 +381,12 @@
     /* 2px divider + clearer (promoted) heading above each dock section. The dock
        is id="tpl-dock", so this must be an id selector — the old .tpl-dock class
        selector never matched, which is why the dividers were missing. */
+    /* Straighten is a STATE, not a one-shot action — it stays visibly latched while the
+       straightened render is on screen, so the operator always knows which frame they are
+       looking at before they draw a box. */
+    #tpl-btn-straighten.active {
+      background: var(--accent-bg); border-color: var(--accent); color: var(--accent2); font-weight: 600;
+    }
     #tpl-dock .section { border-top:2px solid var(--border2); padding-top:16px; margin-top:16px; }
     #tpl-dock .section-title.sub { font-size:11px; font-weight:600; letter-spacing:.1em; color:var(--text); }
 
@@ -1253,6 +1259,7 @@
                     <button class="btn-icon" id="tpl-btn-zoom-in" title="Zoom in">+</button>
                     <button class="btn-icon" id="tpl-btn-zoom-reset" title="Reset zoom &amp; pan">&#8634;</button>
                   </span>
+                  <button class="btn" id="tpl-btn-straighten" data-help-key="tpl-straighten" title="Straighten a tilted sample so you can draw and check anchor/target boxes on level text. Boxes drawn while straightened are converted back to the real page's angle when you save.">&#8734; Straighten</button>
                   <span class="tpl-legend">
                     <span class="tpl-swatch tpl-swatch-anchor"></span> Anchor
                     <span class="tpl-swatch tpl-swatch-target"></span> Target zone
@@ -2097,6 +2104,9 @@
 <script src="../shared/thumbs.js"></script>
 <script src="../shared/pattern-editor.js"></script>
 <script src="../shared/modalFocus.js"></script>
+<!-- deskewedNormToRaw: the Straighten toggle in the Template Viewer draws on the STRAIGHTENED
+     frame but must persist RAW-frame coords, exactly as the teach wizard does. -->
+<script src="../shared/anchorLabel.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

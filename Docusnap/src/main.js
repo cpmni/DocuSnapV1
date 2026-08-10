@@ -505,6 +505,47 @@ const NON_MODAL_CHILD = new Set(['dev-inspector', 'review', 'settings', 'search'
 // like the legal gate). The rest hide-to-tray so the core keeps running for watch/clients.
 const PRIMARY_WINDOWS = new Set(['login', 'license', 'onboarding', 'main']);
 
+// ── Child-window DOCK ────────────────────────────────────────────────────────
+// Child windows carry `skipTaskbar`, so a minimised one used to vanish into a tiny
+// unlabelled desktop stub with no taskbar entry to click — easy to lose, hard to find
+// again (owner, 2026-08-02). Minimise now stays enabled and the minimised window is
+// announced to the MAIN window, which shows a pronounced dock chip at its bottom-left;
+// clicking the chip restores and focuses the window.
+//
+// This is only safe because NO child is modal: `NON_MODAL_CHILD` contains every member
+// of `CHILD_WINDOWS`, so `modal` below always evaluates false. The original
+// `minimizable:false` comment worried about "a minimised modal child behind the LOCKED
+// main shell" — with nothing modal there is no locked shell, and a chip in the main
+// window is reachable. **If a child is ever made modal again, this dock must be
+// reconsidered at the same time: the chip would be unclickable while the modal is up.**
+// Kill switch: CHILD_DOCK=0 restores the old minimizable:false behaviour exactly.
+const CHILD_DOCK_TITLES = {
+  'review': 'Review', 'settings': 'Settings', 'search': 'Search',
+  'teach': 'Teach a document', 'dev-inspector': 'Dev inspector',
+  'welcome': 'Welcome', 'tutorial': 'Practice run', 'stamped-viewer': 'Stamped copy',
+};
+const dockedChildren = new Set();
+const childDockEnabled = () => process.env.CHILD_DOCK !== '0';
+
+function dockList() {
+  return [...dockedChildren].map(n => ({ name: n, title: CHILD_DOCK_TITLES[n] || n }));
+}
+function broadcastDock() {
+  const mainWin = windows['main'];
+  if (!mainWin || mainWin.isDestroyed()) return;
+  try { mainWin.webContents.send('child-dock-changed', dockList()); } catch { /* window going away */ }
+}
+// Any event that puts the window back in front un-docks it, so the chip can never
+// outlive the minimised state (a stale chip that restores nothing is worse than no chip).
+function wireChildDock(win, name) {
+  win.on('minimize', () => { dockedChildren.add(name); broadcastDock(); });
+  const undock = () => { if (dockedChildren.delete(name)) broadcastDock(); };
+  win.on('restore', undock);
+  win.on('show',    undock);
+  win.on('focus',   undock);
+  win.on('closed',  undock);
+}
+
 const winStateFile = () => path.join(app.getPath('userData'), 'window-state.json');
 function loadWinStates() { try { return JSON.parse(fs.readFileSync(winStateFile(), 'utf8')); } catch { return {}; } }
 function saveWinStates(s) { try { fs.writeFileSync(winStateFile(), JSON.stringify(s, null, 2)); } catch { /* ignore */ } }
@@ -596,10 +637,11 @@ function createWindow(name, options, htmlFile) {
   const win = new BrowserWindow({
     ...options,
     ...(parentWin ? { parent: parentWin } : {}),
-    // Popout child windows (Review/Settings/Search/Teach/…) get only restore + close —
-    // no minimise (a minimised modal child is an easy way to "lose" the window behind the
-    // locked main shell). Maximise/restore stays. Standalone windows keep their own option.
-    ...(parentWin ? { minimizable: false } : {}),
+    // Popout child windows (Review/Settings/Search/Teach/…) may minimise — they dock as a
+    // pronounced chip at the main window's bottom-left (see the CHILD_DOCK block above).
+    // With CHILD_DOCK=0 they fall back to the previous behaviour: no minimise at all, so
+    // a skipTaskbar child can't be lost in an unlabelled desktop stub.
+    ...(parentWin && !childDockEnabled() ? { minimizable: false } : {}),
     modal,
     skipTaskbar,
     show:           manageShow ? false : options.show,
@@ -633,6 +675,7 @@ function createWindow(name, options, htmlFile) {
 
   win.loadFile(path.join(__dirname, 'windows', name, 'index.html'));
   win.on('closed', () => { delete windows[name]; });
+  if (parentWin && childDockEnabled()) wireChildDock(win, name);
   // Minimise-to-tray: closing ANY primary window (login/license/onboarding/main)
   // hides it so the core keeps running for watch/processing/remote clients. The
   // app fully quits ONLY via tray Exit (which sets isQuitting). The app's own
@@ -1423,6 +1466,27 @@ app.whenReady().then(() => {
   });
   ipcMain.on('window-close', e =>
     BrowserWindow.fromWebContents(e.sender)?.close());
+
+  // Child dock: the main window asks for the current list on load, and restores a chip.
+  // SENDER-GUARDED to the main window — the dock is main-shell chrome, and no child (or
+  // any other renderer) gets a channel that raises an arbitrary window by name.
+  const isMainSender = (e) => {
+    const w = windows['main'];
+    return !!w && !w.isDestroyed() && e.sender === w.webContents;
+  };
+  ipcMain.handle('get-docked-children', (e) => (isMainSender(e) ? dockList() : []));
+  ipcMain.on('restore-child-window', (e, name) => {
+    if (!isMainSender(e)) return;
+    const w = windows[name];
+    // A chip whose window has since gone is self-healing: drop it and re-broadcast
+    // rather than leaving a dead affordance on screen.
+    if (!w || w.isDestroyed()) { if (dockedChildren.delete(name)) broadcastDock(); return; }
+    try {
+      if (w.isMinimized()) w.restore();
+      if (!w.isVisible())  w.show();
+      w.focus();
+    } catch { if (dockedChildren.delete(name)) broadcastDock(); }
+  });
 
   // Window openers
   ipcMain.on('open-review-window', () => {

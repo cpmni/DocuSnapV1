@@ -657,6 +657,39 @@
       font-family: var(--sans); font-size: 12px; border-radius: var(--r-sm); cursor: pointer;
     }
     .about-close:hover { border-color: var(--accent); color: var(--accent2); }
+
+    /* ── Child-window dock ──────────────────────────────────────────────────
+       Owner 2026-08-02: minimised child windows used to go to "a tiny stub at the
+       desktop's bottom-left that vanished into the background". These chips are the
+       replacement — anchored to the MAIN app's bottom-left, raised off the surface
+       with a real shadow and an accent left-edge so they read as live windows waiting,
+       not as decoration. */
+    .child-dock {
+      position: fixed; left: 16px; bottom: 16px; z-index: 4000;
+      display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 8px;
+      pointer-events: none;                 /* the chips take the clicks, not the strip */
+    }
+    .child-dock[hidden] { display: none; }
+    .dock-chip {
+      pointer-events: auto;
+      display: inline-flex; align-items: center; gap: 9px;
+      padding: 9px 15px 9px 12px;
+      background: var(--surface); color: var(--text);
+      border: 1px solid var(--border2); border-left: 3px solid var(--accent);
+      border-radius: var(--r-sm);
+      box-shadow: 0 6px 18px rgba(0,0,0,.20);
+      font-family: var(--sans); font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: transform .12s, box-shadow .12s, border-color .12s;
+      animation: dock-in .18s ease-out;
+    }
+    .dock-chip:hover {
+      transform: translateY(-2px); box-shadow: 0 10px 24px rgba(0,0,0,.26);
+      border-color: var(--accent);
+    }
+    .dock-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .dock-chip .dock-ico { width: 15px; height: 15px; flex-shrink: 0; color: var(--accent2); }
+    .dock-chip .dock-hint { font-weight: 500; font-size: 11px; color: var(--muted); }
+    @keyframes dock-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
   </style>
 </head>
 <body>
@@ -1098,6 +1131,12 @@
       <button class="about-close" id="about-close">Close</button>
     </div>
   </div>
+
+  <!-- Child-window dock: minimised Review/Settings/Search/Teach windows land here as
+       pronounced, labelled chips instead of an unlabelled desktop stub (they carry
+       skipTaskbar, so there is no taskbar entry to click). Empty and display:none
+       until main pushes a list. -->
+  <div id="child-dock" class="child-dock" aria-label="Minimised windows" hidden></div>
 
 <script src="../shared/theme.js"></script>
 <script src="../shared/helpmode.js"></script>

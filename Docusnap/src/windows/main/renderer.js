@@ -437,6 +437,62 @@ async function applyDashboardCardPrefs() {
 }
 window.docusnap.onDashboardCardsChanged?.(() => applyDashboardCardPrefs());
 
+// ── Child-window dock ────────────────────────────────────────────────────────
+// Minimised child windows (Review/Settings/Search/Teach/…) carry skipTaskbar, so
+// without this they minimise to an unlabelled desktop stub with no taskbar entry to
+// click. Main pushes the list; each entry becomes a chip that restores and focuses
+// its window. Chips are BUILT, never innerHTML'd from the payload — the title comes
+// from a main-side lookup table, but building them as elements keeps it that way even
+// if the table ever grows a user-supplied name.
+const DOCK_ICONS = {
+  'review':        'M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11',
+  'settings':      'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+  'search':        'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.35-4.35',
+  'teach':         'M12 3L2 8l10 5 10-5-10-5zM2 8v6M6 10.5V16c0 1.1 2.7 2 6 2s6-.9 6-2v-5.5',
+  'dev-inspector': 'M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3',
+};
+const DOCK_FALLBACK_ICON = 'M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5zM3 9h18';
+
+function renderChildDock(list) {
+  const dock = document.getElementById('child-dock');
+  if (!dock) return;
+  dock.textContent = '';
+  const items = Array.isArray(list) ? list : [];
+  dock.hidden = items.length === 0;
+  for (const it of items) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'dock-chip';
+    chip.title = `Bring “${it.title}” back`;
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'dock-ico');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('d', DOCK_ICONS[it.name] || DOCK_FALLBACK_ICON);
+    svg.appendChild(p);
+
+    const label = document.createElement('span');
+    label.textContent = it.title;
+    const hint = document.createElement('span');
+    hint.className = 'dock-hint';
+    hint.textContent = 'minimised';
+
+    chip.append(svg, label, hint);
+    chip.addEventListener('click', () => window.docusnap.restoreChildWindow?.(it.name));
+    dock.appendChild(chip);
+  }
+}
+window.docusnap.onChildDockChanged?.((list) => renderChildDock(list));
+// Pull once on load: a window minimised before this renderer finished booting (or across
+// a main-window reopen) would otherwise have no chip and no way back.
+window.docusnap.getDockedChildren?.().then(renderChildDock).catch(() => {});
+
 // Quick find — jump to Search (carrying the typed text where supported).
 document.getElementById('dash-qf-form')?.addEventListener('submit', (e) => {
   e.preventDefault();

@@ -422,6 +422,11 @@ contextBridge.exposeInMainWorld('docusnap', {
   onThemeChanged:        (cb) => ipcRenderer.on('theme-changed',          (_e, t) => cb(t)),
   onDocTypesChanged:     (cb) => ipcRenderer.on('doc-types-changed',      ()      => cb()),
   onDashboardCardsChanged: (cb) => ipcRenderer.on('dashboard-cards-changed', ()   => cb()),
+  // Child-window dock (main window only — main-side sender guard enforces it): the list of
+  // minimised child windows, so the shell can show a chip to bring each one back.
+  getDockedChildren:     ()   => ipcRenderer.invoke('get-docked-children'),
+  restoreChildWindow:    (n)  => ipcRenderer.send('restore-child-window', n),
+  onChildDockChanged:    (cb) => ipcRenderer.on('child-dock-changed',     (_e, l) => cb(l)),
   onReviewCountChanged:  (cb) => ipcRenderer.on('review-count-changed',  (_e, n) => cb(n)),
   onDeferredCountChanged:(cb) => ipcRenderer.on('deferred-count-changed', (_e, n) => cb(n)),
   // Workflow invalidation ping (Slice 1) — carries NO data; listeners re-pull counts.

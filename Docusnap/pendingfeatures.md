@@ -6,6 +6,79 @@
 
 ---
 
+## 2026-08-10 — OWNER-REPORTED: KEEP THE PRE-NORMALISATION VALUE SO THE PAGE-PRESENCE CHECK COMPARES LIKE FOR LIKE (NOT BUILT)
+
+**Owner, verbatim:** *"we need a way to retain the data obtained before special characters are
+removed from a value so it can be cross checked in the background in review — we see a note here to
+say the data doesn't exist on the page. This is correct but it is because the slashes were removed
+before populating the field."*
+
+**Exhibit (owner screenshot, live queue).** `Pelican-Office_invoice_0023-1.pdf`, a Pelican Office
+Interiors SALES INVOICE. The page prints **`PI/26/6000`** in the *Invoice Number* box (and again in
+the payment terms line: *"Please quote PI/26/6000 on all remittances"*). The field committed
+**`P1266000`** at High · 95%, and Review shows:
+> `'P1266000' doesn't appear on this page as written — please check the reference before filing.`
+The note is **factually true and behaviourally useless**: the value is the right value, run through a
+normalisation the page-presence test then judges it against the un-normalised page. The operator is
+sent to check a reference that is correct.
+
+**What I verified at source (not inferred):**
+- The note is emitted at `python_backend/extraction/engine.py:4113` — **Gate C** of
+  `_filing_value_sanity`, whose test is a WHOLE-TOKEN membership check: it splits the page on
+  whitespace, strips a fixed edge-punctuation set (`.,;:()[]{}"'`) off each token, casefolds, and
+  asks whether the committed value is in that set (`:4110-4111`). `PI/26/6000` is one whitespace
+  token, and interior `/` is not in the edge-strip set — so the page token stays `pi/26/6000` while
+  the committed value is `p1266000`. **The comparison never had a chance.**
+- The gate is guarded by `FILING_VALUE_SANITY_FLAGS` (`:4071`). CLAUDE.md records that flag as
+  bridged-but-OFF; the owner's screenshot shows the note firing, so **it is ON in the live install** —
+  confirm which before measuring anything, or an arm will look inert when it is merely unarmed.
+- The gate is FLAG-ONLY by design and its own comment already anticipates disagreement between a
+  crop read and the full-page pass. So this is a **false-flag-rate** defect, exactly the axis the
+  comment says gets measured — not a filing-correctness one.
+- `_clean_value` (`keyword.py:1862`) is **NOT** the site that drops the slashes: its only
+  separator-normalising branch is `job_reference` (the 4-4-1 shape, `:1881-1884`) and this field is
+  an `alphanumeric` ref. Every other normaliser I found is EDGE-anchored (`^…|…$`) and cannot touch
+  an interior character — `keyword.py:241`, `suffix_reconcile.py:48`, `template_mapper.py:355`
+  (`_CODE_EDGE_DEBRIS`), `text_normalise.py:38`, `validator.py:285`. The one unanchored stripper,
+  `anchor.py:2666` `re.sub(r"[^0-9A-Za-z]", "", segment)`, builds a COMPARISON target, not a
+  committed value.
+- **Therefore the interior-slash removal site is NOT yet located, and the entry does not claim one.**
+  Note the exhibit also carries an `I`→`1` substitution (`PI` → `P1`), which no normaliser explains —
+  so at least part of this read is an OCR misread and the true mutation may be
+  read-then-normalise, not normalise-alone. **First diagnostic step: SFDEV-trace this document and
+  read the winning rung's RAW crop output**, before designing anything. Do not assume the owner's
+  "slashes were removed" is the whole mechanism — it is the visible half.
+
+**The owner's ask, restated as the fix direction.** Carry the pre-normalisation string alongside the
+committed value, and give every background cross-check the choice of which one to compare. Concretely:
+1. **A raw twin on the field dict.** The extraction result dicts already flow as
+   `{value, confidence, method, …}`. Add the untouched pre-clean string (one key, set at the point
+   each rung commits) and thread it through the merge so it survives to `results`.
+2. **Gate C compares BOTH.** Present-as-written passes if EITHER the committed value or its raw twin
+   matches a page token, and a third arm should compare with all non-alphanumerics removed on BOTH
+   sides (`pi266000` vs `p1266000` still differs here, which is the useful signal — it isolates the
+   `I`→`1` misread from the punctuation loss, and THAT is a note worth showing).
+3. **The DB already has the column and it is dead.** `extractions.raw_value` exists in the schema,
+   and CLAUDE.md's 08-09 audit records `credit_sign_note`'s raw-marker arm as a **DEAD GUARD because
+   `raw_value` is never assigned** (`validator.py:364,387-389` reads it; nothing writes it). Populating
+   it is the same slice as (1) and would revive that guard for free — **check whether reviving it
+   changes credit-note behaviour before shipping, or this lands as a silent second change.**
+4. **Then reconsider the note's copy.** Even when the check is right, "doesn't appear on this page as
+   written" describes the test, not the risk. If the punctuation-blind compare matches, the honest
+   note is about the FORMATTING differing from the page, not about the value being absent.
+
+**Watch-outs / seams.** (a) A raw twin must never become a *candidate* — it is evidence for checks
+only, or a garbled pre-clean string will find its way into a field. (b) The whole-token test is
+deliberately whole-token (its comment explains that a substring test would hide the `VXS986` ⊂
+`VXS98624` clip class) — a punctuation-blind arm must not quietly become a substring test and reopen
+that. (c) Anything that changes what Gate C flags needs the false-flag census the gate's own comment
+demands, on the scanned corpus, before it is recommended. (d) Same class, same page: `VAT NUMBER`
+reads the bare caption `VAT` at High·95% while the letterhead prints `VAT GB 774 2093 55` — that is
+the vat_no lane, already fixed by `92c7013` behind a default-OFF flag; this document may simply
+predate the flip.
+
+---
+
 ## 2026-08-10 — ONE ORDINARY CONFIRM STAMPS THE WRONG COMPANY ON 18 OTHER DOCUMENTS
 ### STATUS: FIXED behind `TEMPLATE_IDENTITY_ON_PAGE` (`ebd2096` + `fba4374`), DEFAULT OFF.
 ### ORACLE: SIGN OFF WITH CONDITIONS — all six applied and re-gated. Ready for the owner to flip.
@@ -2154,12 +2227,21 @@ the log line exists; the SCREEN state is what's missing.
 resize it to fit a blank area on the page. Can we also add the notes from the approval to
 the stamp?"
 **Today:** `src/services/pdfStamp.js` `stampWorkflowDecision` draws a FIXED stamp (position/
-size hardcoded) on the decision copy; the resolution note (`resolution_comment`) is recorded
-on the route + shown in History/Sent but not printed on the stamp.
+size hardcoded) on the decision copy.
+> **CORRECTION 2026-08-10 — step 1 below was ALREADY DONE when this entry was written; the claim
+> that the note "is not printed on the stamp" is FALSE and was never true of the shipped code.**
+> Verified at source: `stampPdf` accepts `notes`, word-wraps it to the panel width via `wrapText`
+> (`pdfStamp.js:87`) and draws it under the By/Date meta lines (`:111-114`), with a `MAX_NOTES = 600`
+> guard (`:16`, `:66`); `stampWorkflowDecision` passes `notes: comment || ''` (`:151`); and
+> `workflowService.resolve` hands that same `comment` to BOTH `resolution_comment` on the route
+> (`:292`) and the stamp call (`:319`), so what is printed is exactly the resolution note. **Only
+> steps 2 and 3 remain open.** Residual nit, since it is the one thing step 1 specified that is
+> genuinely absent: long notes are TRUNCATED BY REJECTION, not elision — over 600 chars `stampPdf`
+> throws, `stampWorkflowDecision` swallows it, and the decision copy is silently NOT STAMPED AT ALL.
+> Eliding at the wrap instead would be strictly better and is a two-line change.
 **Shape of the work:**
-1. **Note on the stamp** — cheap first slice: render `resolution_comment` (wrapped, truncated
-   ~2-3 lines) under the APPROVED/REJECTED / By / Date block in pdfStamp. Escape/measure text;
-   long notes elide with "…" (full note stays on the route + History).
+1. ~~**Note on the stamp**~~ — **ALREADY SHIPPED, see the correction above.** (The elide-don't-throw
+   nit is the only thing left in this step.)
 2. **Placement + resize** — an interactive step at decision time (or a per-install default in
    Settings → a "stamp position" picker): show page 1 in the stamped-viewer-style pane, drag
    the stamp rectangle to a blank area, resize by corner; persist per-install default
@@ -2171,7 +2253,14 @@ impact; the known wart that two approvals on one doc share a stamped path (secon
 wins — eric 2026-08-02) should be fixed alongside (per-route stamped filenames); Print-Slice 2
 (stamped printing) consumes whatever pdfStamp writes, so land this before/with it.
 
-### Core Search re-skin to the detached-client design — OWNER 2026-08-02
+### ✓ SHIPPED — Core Search re-skin to the detached-client design — OWNER 2026-08-02
+> Resolved by `d7ab2e2` (the component port — `src/windows/search/search-components.css`, a RE-SKIN
+> layer that changes no ids, no emitted class names and no logic/IPC) + `23109fb` (the follow-up
+> markup pass: tabular fields, field-data rows, mono detail). Tinted state chips, the segmented
+> mailbox control, the lead search input and pill filter buttons are all live in core. Ticked
+> 2026-08-10 after verifying the file exists and carries `.chip-btn`/`.segmented`/`.rolechip`.
+> Outstanding follow-up named in the original entry: the Chris VISUAL round, and the reverse
+> inheritance (core's cap note / de-pathed rows / secure viewer / teaching empty-states → client).
 **Owner:** "the search dialog in the search client looks a lot more modern and graphical than
 the search feature in the core app — replicate the design of the search client in the core
 app — it looks more robust."
@@ -2192,7 +2281,18 @@ capture-window.ps1) to judge it as a customer.
 better (chips, segmented boxes), core adopts it; where core is ahead (cap note, de-pathed
 rows, secure viewer, teaching empty-states), the client inherits LATER (named follow-up).
 
-### Focus-fix FIELD SWEEP + forward convention — OWNER 2026-08-02 (live repro on the workflow note)
+### ◐ SLICE 1 SHIPPED — Focus-fix FIELD SWEEP + forward convention — OWNER 2026-08-02 (live repro on the workflow note)
+> **Slice 1 shipped `01a2a43`** (eric-vetted): `preload.js` gained an AWAITABLE
+> `ensureWindowFocusAsync` (invoke, so a programmatic focus can be ORDERED after the widget-focus
+> edge — the fire-and-forget send can't be sequenced); new `src/windows/shared/dialogFocus.js`
+> exposes `focusField(el)` + idempotent `confirm()`/`alert()` instrumentation; the live repro
+> (the workflow Reject note) now routes through `focusField`; Search/Main/Teach load the wrapper
+> (they had NONE, so every native dialog in them — including Search's 6 sites — was unarmed).
+> Pinned in `src/lib/test_focus_repair.js`.
+> **STILL OPEN (steps 1 and 3 below):** the full 42-site programmatic `.focus()` audit, and the
+> regrow-proof STATIC PIN (every `confirm(`/`alert(` in a window renderer must have a
+> `markFocusSuspect` within N lines; every programmatic `.focus(` on an input must go through the
+> shared helper). eric called this multi-session. The forward convention stands regardless.
 **Repro (owner, live):** typing "I approve" into the workflow note field (`.wf-note`,
 search-workflow.js `_decisionBar`) on a doc routed to them hit the keyboard-focus desync
 (no caret / keystrokes dead until clicking out of the app and back).
@@ -2218,7 +2318,15 @@ blurWebView→wc.focus edge on the NEXT press — main.js ~:943-976).
 repair as part of its implementation — reviewers treat a bare `.focus()`/`confirm()` as a
 defect.** Memory: `project_focus_repair_mechanism` carries the original design.
 
-### Document-detail DTO (finish the de-pathing) — NAMED 2026-08-02 (Oracle C3)
+### ✓ SHIPPED — Document-detail DTO (finish the de-pathing) — NAMED 2026-08-02 (Oracle C3)
+> Resolved by `b747676` — `get-document-detail` is now `dto.projectDocumentDetail` (the /v1 shape
+> verbatim), CALLER-AWARE exactly as Oracle demanded: the full read stays Review-only, so Review's
+> page preview (`doc.folder_path`) and name-presence check (`doc.ocr_text`) are untouched. Pinned
+> in `src/windows/search/test_search_detail_depathed.js`. Ticked 2026-08-10.
+> **Still open from the same entry (lower priority, same class):** `get-review-queue` /
+> `get-deferred-queue` / `getByIds` still ship `SELECT d.*` into the admin/edit-only Review window,
+> and the raw shell channels (`open-file`/`show-in-explorer`) still exist pending a main-side
+> `open-filing-slips-pack` IPC.
 The search ROW surface is de-pathed (`a58bc10`), but `get-document-with-extractions` →
 `previewService.getDocumentDetail` → `getById` `SELECT *` still ships the SELECTED doc's
 stored/working/folder paths + full ocr_text to the search renderer on every row click (and to

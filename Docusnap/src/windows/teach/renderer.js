@@ -949,10 +949,17 @@ function showValueConfirm(f, r){
     `<span class="muted" style="margin:0 8px">·</span>Label: ` + (hasLabel
       ? `<span class="val mono">${esc(r.anchor_text)}</span> <span class="muted">(${dir==='above'?'above':'left of'} the value)</span>`
       : `<span class="muted">${suspicious ? "⚠ couldn't read it cleanly — its position will be remembered" : 'none found — its position will be remembered'}</span>`);
+  // The label DIRECTION is a setting, not an action — so it renders as a segmented control whose
+  // selected side is an inset surface, never the accent fill. It used to be a `btn primary`, i.e.
+  // byte-identical styling to the accept button beside it, so the bar showed TWO large filled
+  // buttons and nothing said which one moved you on (owner, 2026-08-02, with a screenshot).
   const dirBtns = issuer ? '' :
-    `<span class="muted" style="font-size:12px;align-self:center;margin-left:6px">Label is:</span>`+
-    `<button class="btn ${dir==='left'?'primary':'ghost'}" id="rb-dir-left">← Left</button>`+
-    `<button class="btn ${dir==='above'?'primary':'ghost'}" id="rb-dir-above">↑ Above</button>`;
+    `<span class="spacer"></span>`+
+    `<span class="rb-seg-lab">Label is</span>`+
+    `<div class="segmented" role="group" aria-label="Where the label sits relative to the value">`+
+      `<button class="seg-opt ${dir==='left'?'on':''}" id="rb-dir-left" aria-pressed="${dir==='left'}">← Left</button>`+
+      `<button class="seg-opt ${dir==='above'?'on':''}" id="rb-dir-above" aria-pressed="${dir==='above'}">↑ Above</button>`+
+    `</div>`;
   // TYPE IT INSTEAD — always offered, never pre-filled (Chris round 3, 2026-08-09, finding 5).
   // The escape hatch used to exist ONLY on the harmless failure ("Couldn't read that clearly →
   // type the value") and was withheld from the DANGEROUS one: a confident but WRONG read. Chris
@@ -965,10 +972,11 @@ function showValueConfirm(f, r){
   // so the taught position still teaches.
   setConfirm(
     `<div>Value: <span class="val mono">${esc(r.value)}</span>${labelBit}</div>`+
-    `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">`+
+    `<div class="rb-actions">`+
       `<button class="btn primary" id="rb-yes">Looks right →</button>`+
-      `<button class="btn ghost" id="rb-redraw">Redraw value</button>`+
-      (issuer ? '' : `<button class="btn ghost" id="rb-redraw-label">Redraw label</button>`)+
+      `<span class="rb-sep"></span>`+
+      `<button class="btn ghost quiet" id="rb-redraw">Redraw value</button>`+
+      (issuer ? '' : `<button class="btn ghost quiet" id="rb-redraw-label">Redraw label</button>`)+
       dirBtns+
     `</div>`+
     `<div style="margin-top:10px;display:flex;gap:8px;align-items:center">`+
