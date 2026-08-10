@@ -230,6 +230,12 @@ ARM_ENV.freezequal = { ...ARM_ENV.applive };
 // a supplier the app has never seen - and it is measured on the SUGGESTION, not on the value: the
 // reader deliberately leaves the field empty and offers the name.
 ARM_ENV.coldstart = { ...ARM_ENV.applive, LETTERHEAD_ISSUER: '1' };
+// The configuration as it will actually ship after 2026-08-10: the identity guard (so a wrong
+// template can no longer fill the sender) PLUS the cold-start letterhead reader (so a supplier the
+// app has never seen still gets a name offered). Measuring the reader against `coldstart` alone
+// flatters it, because there the wrong template fills the field and the document never counts as
+// cold at all.
+ARM_ENV.coldstart2 = { ...ARM_ENV.applive, LETTERHEAD_ISSUER: '1', TEMPLATE_IDENTITY_ON_PAGE: '1' };
 // The page's own wording is not a value. Measured against what is actually PRINTED: account_no is
 // committed on 40 pages that carry no account number, and serials commits the literal 'Serial No:'
 // on 19. Both are a confident value with NO SOURCE on the page - the worst kind, because the human

@@ -221,6 +221,32 @@ def _disqualified(line):
                 or _POSTCODE_RE.search(s) or _STREET_RE.search(s))
 
 
+def _contains_type_phrase(seg, excluded):
+    """True when `seg` CONTAINS one of the excluded doc-type phrases as a whole-word run.
+
+    The exclusion set was compared by exact equality, which misses every title that qualifies the
+    type word — 'GOODS DELIVERY NOTE' against a list holding 'delivery note', 'ORIGINAL TAX INVOICE'
+    against 'tax invoice'. A title is normally the largest text on the page, so a missed exclusion
+    does not merely add a candidate: it takes the top rank and either wins or (measured on the
+    Oakhaven delivery notes) sits 7% above the real company name and trips the "decisively larger"
+    guard, so the reader abstains and a brand-new supplier gets no suggestion at all.
+
+    MULTI-WORD PHRASES ONLY, and that is the precision. A single word like 'invoice' appears inside
+    perfectly good company names ('Invoice Solutions Ltd'), and excluding on it would refuse real
+    companies; a two-word run like 'delivery note' or 'credit note' inside a letterhead name is
+    vanishingly rare. NAMED COST, pinned: a company genuinely called 'Credit Note Systems Ltd' is
+    unsuggestable. That is the same trade this module already takes for generic-word names, and it
+    fails the same way — toward no suggestion, never toward a wrong one."""
+    low = ' ' + re.sub(r'[^a-z0-9]+', ' ', str(seg or '').lower()).strip() + ' '
+    for phrase in (excluded or ()):
+        p = re.sub(r'[^a-z0-9]+', ' ', str(phrase or '').lower()).strip()
+        if not p or ' ' not in p:          # single words are legitimate inside company names
+            continue
+        if f' {p} ' in low:
+            return True
+    return False
+
+
 def pick_issuer(ocr_text, detected_title=None, type_phrases=None, geometry=None):
     """The issuer name from a letterhead, or None. `detected_title` is the document's own detected
     title and `type_phrases` the doc-type vocabulary — both EXCLUDED so "INVOICE" can never be
@@ -261,7 +287,12 @@ def pick_issuer(ocr_text, detected_title=None, type_phrases=None, geometry=None)
     candidates = []
     for i, line in enumerate(lines):
         cand = line.strip()
-        if cand.lower() in excluded or _disqualified(cand):
+        # Same widening as the geometry arm below: the exclusion was exact-equality, so a title
+        # with one qualifying word ('GOODS DELIVERY NOTE' vs the listed 'delivery note') slipped
+        # through. Both arms must agree, or the text fallback re-admits what the geometry arm
+        # just refused.
+        if (cand.lower() in excluded or _contains_type_phrase(cand, excluded)
+                or _disqualified(cand)):
             continue
         if not _LETTERHEAD_NAME_RE.match(cand):
             continue
@@ -332,7 +363,7 @@ def pick_issuer_geometry(ocr_text, geometry, detected_title=None, type_phrases=N
 
     def _geom_candidate(seg):
         s = seg.strip()
-        if not s or s.lower() in excluded or _disqualified(s):
+        if not s or s.lower() in excluded or _contains_type_phrase(s, excluded) or _disqualified(s):
             return False
         if not _LETTERHEAD_NAME_RE.match(s):
             return False
