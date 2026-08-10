@@ -21,7 +21,41 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-10 OVERNIGHT: **READ `HANDOVER_2026-08-10_NIGHT.md` FIRST**
+## ⏭ LATEST — 2026-08-10 DAY: **READ `HANDOVER_2026-08-10_DAY.md` FIRST**
+Branch **`feat/teach-side-overnight`**, HEAD **`9903dbb`**, PUSHED. Owner testing an installer.
+**INSTALLER BUILT:** `dist\ScanFinder Setup 2.0.0-r20260810-0915-29425c9.exe` with **43 reading
+improvements ON by default (migration 60)** — written as SETTINGS ROWS so the toggles render as on;
+`deskew_on_import` + `template_fixed_seed_agreement_keep` deliberately excluded. **It predates the
+account-number, cold-start and teach-parity fixes** — rebuild before the next test pass.
+**(1) THE WRONG-COMPANY MISFILE IS FIXED** (`ebd2096`+`fba4374`, OFF, Oracle SIGN-OFF-W/COND, all six
+conditions applied). Cause was NOT the logo: a buyer-issued template's fingerprint is the OWNER's own
+address block, printed on every document the business RECEIVES, scoring 0.80 against every supplier.
+Fix = a layout may only claim a document that NAMES its company. 160 kept / 40 refused / **0 right
+matches lost**; fresh-import gate: wrong senders 18→1, account 36→19, ref 37→54, date 44→61, po_ref
+6→23. **Oracle caught two real defects in my first version: I used the cosmetic template NAME as the
+identity (an admin RENAME would have silently killed matching for ever), and I vetoed the WINNER
+instead of filtering the POOL ("teaching a second supplier broke the first one").**
+**(2) STICKY BINDING FIXED** (`29425c9`) — reprocess honoured a wrong binding for ever; now the
+memory must pass the same test. Reprocess path: wrong senders 18→1, all other lanes unchanged.
+**(3) ACCOUNT NUMBERS** (`efbbd20`) — `account_no` inherited a generic bank containing the bare
+caption `Ref`, so "Job Ref JB-8887" became the account number on 20 pages that have none. 19 wrong→0.
+**(4) COLD-START SENDER** (`c629d32`) — the document TITLE was outranking the company name
+(`GOODS DELIVERY NOTE` 2.21× vs 2.05×, ratio 1.078 < the 1.10 bar ⇒ abstain). The type-heading
+exclusion was EXACT-match, so one extra printed word missed it. Correct suggestions 19→36, none→0.
+**(5) TEACH ↔ SETTINGS PARITY** (`9903dbb`) — the wizard gains **Add from catalog…** + **Edit this
+type…**, both the SAME code as Settings (catalog extracted to `shared/doctype-catalog.js`).
+**(6) SERIALS REVERTED, and the revert is the finding** — the format gate killed the caption commits
+but swapped an obviously-junk value at 35 for a plausible `'CJB-5900'` at 90. The taught box reads the
+WORKSHEET NUMBER; format cannot separate two codes of the same shape.
+**CORPUS ANSWER:** `SINGLE` is born-digital BY DESIGN; `IMPORT`/`IMPORT2` are 400/400 image-only, so
+every figure this week is on the scanned path. New `TESTING\SCANNED` + `SCANNED_HARD` via
+`stress_test/make_scanned_set.py` (teach FROM a scan; the corpus never tilts past 1.6°).
+**GOTCHAS:** `teach_run_ab.js` passes `known_template_id` (models REPROCESS) so it is STRUCTURALLY
+BLIND to identification fixes — use `TEACH_FRESH_IDENTIFY=1`. Two of my probes lied before the code
+did (empty exclusion set; a false `PROFORMA INVOICE` claim). Bind source pins by the code BLOCK, not
+a character count — a fixed window had already shrunk past what it checked.
+
+### Prior — 2026-08-10 OVERNIGHT: **`HANDOVER_2026-08-10_NIGHT.md`**
 Branch **`feat/teach-side-overnight`**, HEAD **`bc157d9`**, PUSHED. Autonomous run, agents + Oracle.
 **(1) THE HEADLINE IS A DEFECT, NOT A FIX: ONE ORDINARY CONFIRM STAMPS THE WRONG COMPANY ON 18 OTHER
 COMPANIES' DOCUMENTS AT 95% AND FILES ONE OF THEM IN THE WRONG FOLDER.** Confirming a single
