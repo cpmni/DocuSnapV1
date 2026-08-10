@@ -279,6 +279,20 @@ ARM_ENV.noreg = { ...ARM_ENV.money };
 // than a hand-listed approximation of it that can drift (which is what `all4` did).
 ARM_ENV.sepguard = { CODE_SEPARATOR_STRUCTURE_GUARD: '1' };
 
+// CENSUS ARMS (Oracle C2, 2026-08-10) — the same two arms with `_repair_single_token`'s outcome
+// counter switched on. They exist because eight byte-identical lanes are consistent with two very
+// different worlds: the repair fires everywhere and the shape rule agrees with it, OR the repair's
+// true-positive path never fires on this corpus at all — in which case the flat lanes say nothing
+// about what the guard COSTS. Only counting `repaired` separates them.
+// SEPGUARD_CENSUS_DIR must be listed HERE and not merely exported: a mutator arm inherits no env
+// unless ARM_ENV names it, which is the trap that made an earlier arm measure a pipeline nobody
+// runs. Set the directory with SEPGUARD_CENSUS_DIR when invoking the harness.
+if (process.env.SEPGUARD_CENSUS_DIR) {
+  ARM_ENV.basecensus = { SEPGUARD_CENSUS_DIR: process.env.SEPGUARD_CENSUS_DIR };
+  ARM_ENV.sepcensus  = { CODE_SEPARATOR_STRUCTURE_GUARD: '1',
+                         SEPGUARD_CENSUS_DIR: process.env.SEPGUARD_CENSUS_DIR };
+}
+
 for (const k of Object.keys(ARM_ENV)) if (!MUTATORS[k]) MUTATORS[k] = () => {};
 for (const k of Object.keys(ARM_ARGS)) if (!MUTATORS[k]) MUTATORS[k] = () => {};
 

@@ -2647,6 +2647,34 @@ def _value_drifted_from_box(label_box, offset_dy, stored_cy, h_norm) -> bool:
 _STRUCTURED_CODE_SEP = re.compile(r"^[0-9A-Za-z]{2,}(?:[/.\-][0-9A-Za-z]{2,})+$")
 
 
+def _sepguard_census(outcome, segment, val_type, alt=None):
+    """MEASUREMENT ONLY (Oracle C2, 2026-08-10) — record what `_repair_single_token` actually does
+    with a separator-bearing token, so the class the structure guard DISABLES can be counted
+    instead of assumed.
+
+    The eight byte-identical corpus lanes are consistent with two very different worlds: the repair
+    fires everywhere and the shape rule agrees with it, OR the repair's true-positive path never
+    fires on this corpus at all — in which case those flat lanes say nothing about the cost. Only
+    counting `repaired` can tell them apart.
+
+    Writes one JSON line per observation to `$SEPGUARD_CENSUS_DIR/sep_<pid>.jsonl`. Per-PID because
+    the harness fans out across shard workers and a shared append would interleave. Completely
+    inert unless that env var is set — no file handle, no formatting, one dict lookup on a path
+    that already does regex work. NOT keyed by field_key: this function is not given one, and
+    threading it through would change a production signature for a measurement.
+    """
+    d = os.environ.get("SEPGUARD_CENSUS_DIR")
+    if not d:
+        return
+    try:
+        import json as _json
+        with open(os.path.join(d, f"sep_{os.getpid()}.jsonl"), "a", encoding="utf-8") as fh:
+            fh.write(_json.dumps({"outcome": outcome, "segment": segment,
+                                  "val_type": val_type, "alt": alt}) + "\n")
+    except Exception:
+        pass          # a measurement must never break an extraction
+
+
 def _repair_single_token(img, segment, val_type):
     """Fix the PSM-7 single-token separator artefact: a value that is ONE token
     (no spaces) — a serial, reference or part number — can come back from PSM 7
@@ -2671,7 +2699,9 @@ def _repair_single_token(img, segment, val_type):
         # serial misread with a spurious slash ("H/7R..", "12/34567") does NOT
         # match this strict layout and is still repaired.
         if re.fullmatch(r"\d{1,4}[./\-]\d{1,2}(?:[./\-]\d{1,4})?", segment):
+            _sepguard_census("date_shape_kept", segment, val_type)
             return segment
+        _sepguard_census("reached", segment, val_type)
         # STRUCTURED CODE: the guard above only protects a token whose shape is a DATE, so a
         # reference that legitimately carries separators ('PI/26/6000') falls straight through and
         # is re-read with a whitelist that CANNOT emit '/', which then matches on alphanumerics and
@@ -2707,6 +2737,7 @@ def _repair_single_token(img, segment, val_type):
                 and val_type != "currency"
                 and not re.search(r"[\\|]", segment)
                 and _STRUCTURED_CODE_SEP.fullmatch(segment)):
+            _sepguard_census("guard_kept", segment, val_type)
             return segment
         import pytesseract
         # Re-read the SAME prepped crop with configs that cannot emit (or don't
@@ -2723,7 +2754,11 @@ def _repair_single_token(img, segment, val_type):
                     "--oem 3 --psm 8"):
             alt = pytesseract.image_to_string(img, config=cfg).strip().split("\n")[0].strip()
             if alt and re.sub(r"[^0-9A-Za-z]", "", alt) == target:
+                _sepguard_census("repaired", segment, val_type, alt)
                 return alt
+        # Reached the re-reads and NONE agreed — the separator survives anyway. Counted because
+        # "the guard kept it" and "the repair could not fix it" look identical in the output.
+        _sepguard_census("repair_failed", segment, val_type)
     except Exception:
         pass
     return segment

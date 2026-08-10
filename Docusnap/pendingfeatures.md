@@ -642,14 +642,40 @@ and false on three of the five live ones. A single corpus residual was generalis
 and the warning is gone. The separators are back; the `I` is still wrong. Say this to them plainly
 BEFORE they flip, or the missing warning reads as the fix having worked completely.
 
-**STILL OUTSTANDING, BLOCKING — one measurement:**
-**C2 — measure the class the guard DISABLES; eight flat lanes do not stand in for it.**
-   Instrument `_repair_single_token` with a counter: (a) reached with a `[\/|]`-bearing segment,
-   (b) returned a real repair, (c) refused by `_STRUCTURED_CODE_SEP` — keyed by field and val_type.
-   Run over the corpus AND the live snapshot. Also run the INVERSE census (committed value contains
-   an interior `/`, page text prints the same alnum core without one — invert
-   `census_separator_loss.py:67`/`:73`). **If (b) is 0 on the corpus, say so: the corpus is then
-   structurally blind to the guard's cost and the eight byte-identical lanes are vacuous for it.**
+**C2 IS ANSWERED, AND THE ANSWER IS STRONGER THAN THE CONDITION ASKED FOR.**
+`_repair_single_token` gained an env-gated outcome counter (`SEPGUARD_CENSUS_DIR`, inert unless
+set; `stress_test/teach_run_ab.js` arms `basecensus` / `sepcensus`). Both arms over the 195-doc
+corpus on the live taught state:
+
+```
+base   (guard OFF):  91 reached with a separator-bearing token  ->  91 REPAIRED
+armed  (guard ON) :  91 reached                                  ->  91 kept, 0 repaired
+```
+
+**Every one of the 91 repairs is a FALSE POSITIVE.** Classified by the guard's own predicate: 91 of
+91 are structured codes (26 distinct values, all `PI/25/...` / `PI/26/...` forms), and **the
+artefact class the repair exists for occurs ZERO times.** So the answer to "does the repair's
+true-positive path fire on this corpus at all" is no: on this data the function has never once done
+the job it was written for, and has silently deleted a printed character 91 times.
+
+**Inverse census on the live install** (`stress_test/census_separator_kept.py`, new, read-only):
+2160 extraction rows, 887 committed values carry a structured separator, and **0** have the
+artefact signature (committed WITH a separator the page prints WITHOUT). The guard would wrongly
+keep 0 of them.
+
+**THE HONEST READING, and it must be stated this way.** The guard's measured cost is zero on both
+the corpus and the live install — but that is because NEITHER CONTAINS A SINGLE INSTANCE of the
+class it disables. The eight byte-identical lanes therefore say nothing about that cost, exactly as
+Oracle suspected; what rules it out here is the census, not the lanes. A mid-token artefact
+(`AB12/34567`) remains possible on paper and is pinned as an accepted cost in
+`test_code_separator_structure.py`. **Do not report this as "the guard has no cost."**
+
+**Control:** the census arm scores ref 27 ok / 1 wrong, identical to the plain `sepguard` arm, so
+the instrument does not perturb what it measures.
+
+**BOTH BLOCKING CONDITIONS ARE NOW DISCHARGED (C1 above, C2 here).** What remains before a flip is
+a judgement, not a measurement: the guard removes a warning from three of five live Pelican
+documents whose value is still wrong for an unrelated reason, and 94 clears the 88 auto-file floor.
 
 **Also worth knowing, not blocking:** on the 36 healed documents the Gate C note clears, so they
 become auto-file ELIGIBLE at 90. Latent on this install (threshold 100, never fired) but live on a

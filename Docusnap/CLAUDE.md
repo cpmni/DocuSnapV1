@@ -77,8 +77,15 @@ live Pelican documents**, because their full-page OCR carries the SAME misread s
 matches. The guard turns "wrong value + warning at 95" into "wrong value + NO warning at 94", which
 clears the 88 auto-file floor. **Tell the owner what they will actually see before they flip, and
 do not flip alongside a lowered `auto_file_threshold`.** The `I`→`1` defect now has its own entry.
-**STILL BLOCKING: C2 — the class the guard DISABLES is unmeasured; eight byte-identical lanes may
-be vacuous for it.** Details + method in `pendingfeatures.md`.
+**C2 ANSWERED TOO — BOTH BLOCKING CONDITIONS DISCHARGED.** New outcome counter
+(`SEPGUARD_CENSUS_DIR`, inert unless set) over both corpus arms: **91 reached, 91 repaired in base,
+91 kept / 0 repaired armed — and 91 of 91 are FALSE POSITIVES.** The artefact class the repair
+exists for occurs **ZERO** times; on this data the function has never once done its job and has
+deleted a printed character 91 times. Inverse census on the live install
+(`stress_test/census_separator_kept.py`): 887 values carry a structured separator, **0** have the
+artefact signature. **State it honestly: cost is zero because NEITHER dataset contains the class it
+disables — the flat lanes prove nothing about that cost; the census does.** What is left before a
+flip is a JUDGEMENT, not a measurement (the cleared warning above). Method in `pendingfeatures.md`.
 **OUTSTANDING: the two measurements above, and the whole UI smoke list.**
 
 ### Prior — 2026-08-10 EVENING: **`HANDOVER_2026-08-10_EVENING.md`**
