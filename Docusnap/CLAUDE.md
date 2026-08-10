@@ -21,7 +21,45 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-10 EVENING: **READ `HANDOVER_2026-08-10_EVENING.md` FIRST**
+## ⏭ LATEST — 2026-08-10 EVENING2: **READ `HANDOVER_2026-08-10_EVENING2.md` FIRST**
+Branch **`feat/teach-side-overnight`**, HEAD **`8ee7456`**, PUSHED, tree clean. Owner present.
+Migration still 60. **Nothing flipped; NOTHING smoke-tested in the UI.**
+**(1) A TYPED TEACH VALUE NOW CAPTURES A POSITION** (`3f21ddb`, default ON, operator-gated): the
+typed string is searched for in the page's own word geometry, the hit is DRAWN and the operator
+approves it, and it then commits through the SAME `store()` as a drawn box — an ordinary Stage 0.5
+MAPPING, so `doCommit` needed no special case. No hit ⇒ the old `fixed_value` path, byte-identical.
+Words come from the **PIPELINE's** `reconstruct_page_text`/`words_out`, not the zone ladder. Matching
+is EXACT-after-normalisation, no fuzzy tier, one visual row. **A hit returns `{box, text, wordCount}`
+and NOTHING else — PINNED with `vat_no='VAT'` as the fixture. A box is evidence about WHERE, never
+WHETHER.** Kill `teach_typed_value_locate`. **Limit seen live: a mangled read can't be located
+(`GB651002784` → `'GB85'`+`'1002784'`), so the census's 89.5% is an UPPER BOUND.**
+**(2) A PRINTED SLASH INSIDE A REFERENCE WAS BEING DELETED** (`1ad36de`). The owner's *"doesn't
+appear on this page"* note was **TRUE**; the value was wrong. `anchor._repair_single_token`
+(`:2632`, reached from `template_mapping` via `template_mapper.py:40`→`:3638`) re-reads a spaceless
+code containing `/` with a whitelist that **cannot emit `/`** and accepts on matching alphanumerics —
+true of every code whose separators are PRINTED. **The backlog's own analysis was WRONG and is
+corrected in place: it named the comparison local and missed that the function RETURNS `alt`.** Fix =
+a SHAPE rule (≥2 groups of ≥2 alnum keeps its separators; a one-char group is the artefact
+signature); `|`/`\` never structural. Kill `CODE_SEPARATOR_STRUCTURE_GUARD`, DEFAULT OFF.
+**(3) CORPUS GATE GREEN** (`8ee7456`): **ref 25 ok/3 wrong → 27/1 (89%→96%), all eight other lanes
+BYTE-IDENTICAL incl. winning-rung distribution, 14→12 failing cells, 0 regressions.** **The residual
+is the proof** — doc 0025 carried TWO defects and now reads `P1/26/9923`, so the arm SHOWS the
+`I`→`1` is a separate upstream OCR defect. Its confidence moved 95→90, still over the 88 floor.
+**(4) NON-UK VAT NUMBERS RECOGNISED** (`d9768c5`, `VAT_EU_FORMATS`, DEFAULT OFF) — per-country
+structures with exact element counts, never a generic two-letter rule (which readmits the garbles).
+**Live census: 56 distinct values, 0 flipped refused→accepted.** **BOTH consumers widen from ONE
+setting** — the renderer compiles its own pattern copy, so a backend-only widening still warns the
+operator (the `iban` lesson). `vat_eu` ships as a separate INERT list; the flag is what merges it.
+**NO corpus arm for it, deliberately: the corpus is UK-only, and a flat lane cannot distinguish
+"inert because UK" from "never armed".**
+**(5) `FILING_VALUE_SANITY_FLAGS` IS `'true'` IN THE LIVE DB** — the note below recording it as
+bridged-but-OFF was STALE. Verify a flag's state in the DB before calling an arm inert.
+**(6) OWNER: `deskew_on_import` is `'true'` AGAIN and it is NOT inert** — `engine.py:5253` is
+`elif (TEACH_ANGLE_COMPOSE_SCAN and not raw_pages ...)` and import-deskew populates `raw_pages`, so
+`teach_angle_compose_scan` (also `'true'`) is **armed and structurally unreachable**.
+**OUTSTANDING: an Oracle pass on both extraction flags, and the whole UI smoke list.**
+
+### Prior — 2026-08-10 EVENING: **`HANDOVER_2026-08-10_EVENING.md`**
 Branch **`feat/teach-side-overnight`**, HEAD **`6acf4e2`**, PUSHED, tree clean. Owner present.
 **UI/UX + COPY ONLY — no extraction-layer change, no flag flipped, no migration.** The whole
 UX/product group in `pendingfeatures.md` is closed or honestly re-scoped.
@@ -138,10 +176,12 @@ build. Fixed in `trust.js` + `freeze_guard.js` via `process.resourcesPath`.
 account number is printed on 60 of 200 docs; the lane is **100% on those** and INVENTS a value on 40
 pages that carry none. On printed values: customer 99 · total 97 · vat 96 · account 100 · po_ref 92 ·
 issuer 78 (40 misses = untaught suppliers) · serials 68.
-**(6) FIVE MEASURED FLAGS WERE UNREACHABLE** (env-only, `npm start` injects none) and are now bridged,
-still OFF: `STAGE05_REF_CODE_GATE`, `KEYWORD_GENERIC_CAPTION_EXCLUSIVE`, `TYPE_TITLE_OWNER_PRECEDENCE`,
+**(6) FIVE MEASURED FLAGS WERE UNREACHABLE** (env-only, `npm start` injects none) and are now bridged:
+`STAGE05_REF_CODE_GATE`, `KEYWORD_GENERIC_CAPTION_EXCLUSIVE`, `TYPE_TITLE_OWNER_PRECEDENCE`,
 `FILING_VALUE_SANITY_FLAGS`, `LETTERHEAD_ISSUER` (the cold-start sender reader — sender was blank on
-all 60 docs from unseen suppliers).
+all 60 docs from unseen suppliers). **"still OFF" was true when written and is now STALE — verified
+2026-08-10 EVENING2, ALL FIVE are `'true'` in the live DB** (54 settings are). Read the DB, not this
+line, before calling an arm inert.
 **GOTCHAS:** never measure against a DB another agent is using (snapshot to `TESTING/_measure/`); a
 mutator arm inherits NO env unless named in `ARM_ENV`; a probe without `pytesseract.tesseract_cmd`
 reports absence about everything. `CAPTION_VALUE_REFUSE` shipped INERT (0 docs change).
