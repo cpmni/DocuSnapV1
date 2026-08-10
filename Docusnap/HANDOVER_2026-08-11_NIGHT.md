@@ -1,6 +1,6 @@
 # HANDOVER — 2026-08-11 OVERNIGHT (autonomous; owner asleep from ~22:00)
 
-**Branch** `feat/teach-side-overnight` · **HEAD `4982610`** · all pushed, tree clean.
+**Branch** `feat/teach-side-overnight` · **HEAD `90d15ab`+** · all pushed, tree clean.
 **Migration 60, unchanged.** **NOTHING FLIPPED. NO live-DB write. No destructive action.**
 Standing rules honoured throughout: default-OFF flags, measure against the snapshot never the live
 DB, no flips while the owner is away.

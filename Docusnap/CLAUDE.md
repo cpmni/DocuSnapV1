@@ -21,7 +21,48 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-10 EVENING2: **READ `HANDOVER_2026-08-10_EVENING2.md` FIRST**
+## ⏭ LATEST — 2026-08-11 OVERNIGHT: **READ `HANDOVER_2026-08-11_NIGHT.md` FIRST**
+Branch **`feat/teach-side-overnight`**, autonomous night run, owner asleep. **NOTHING FLIPPED, no
+live-DB write, no destructive action.** Migration still 60.
+**(1) DO NOT FLIP `CODE_SEPARATOR_STRUCTURE_GUARD` ALONE — this reverses last night's advice.**
+`ocr_corrector.value_to_template` keeps `/` as a literal, so once the guard is armed and confirms
+make 10-char values the majority, the scope's learned template becomes `UD/DD/DDDD` and
+`try_correct` (`LETTER_TO_DIGIT['I']='1'`) rewrites a CORRECT `PI/26/6000` back to `P1/26/6000` at
+`min(95,90+20)=95`, method `+corrected`, **no note** (`engine.py:6688-6701`). Masked today only by a
+length mismatch. **The guard is the fuse; operator confirms arm it.** Flip it WITH the `I`→`1` fix,
+after it. gary found it, Oracle ruled the order.
+**(2) `I`→`1` ROOT-CAUSED + ORACLE-SIGNED (4 BLOCKING) + DELIBERATELY NOT BUILT.** The ladder ranks
+rungs by mean word confidence, which is NOT comparable across preprocessing recipes — sharpening
+raises certainty while destroying the antialiasing grey that separates a serif `I` from `1`. Raw
+greyscale reads it correctly **5/5 and is not a rung**. **Oracle C1: the obvious fix heals ZERO
+documents** — both ladder exits return the string AFTER `_repair_single_token`, so the witness
+compares 10 chars against 8 and discards; the comparison must move inside the rung loop.
+**Corrected my own claim:** "every rung scores below 60" is FALSE on 2 of 5 (verified via the
+ladder's own `_read_lines_full`) — 2 exit via the GATE, so a comparator-only fix heals ≤3/5.
+**Owner asked about 2-bit B&W: measured, it makes it WORSE** (1-bit Otsu x2 scores 79-85 while
+wrong vs raw 45-56 while right). Full spec in `pendingfeatures.md`, ready to build cold.
+**(3) FIRST WHOLE-SUITE RUN EVER: 457 files, 442 pass, 14 genuinely red** (`stress_test/run_all_suites.py`
+— `pytest tests/` aborts, so each file runs in its own process). **ALL reproduce at `455d4a7`, zero
+regressions.** **CLAUDE.md's "4 pre-existing failures" was STALE by ~4x.** One shared cause: three
+fixtures die on `logo_detail_hash` (migration 47 drift). Two worth attention: `test_v1_contract.js`
+CRASHES and `test_apiclient.js` fails a no-leak assertion. None fixed — blind test-repair papers
+over real regressions. Baseline: `~/Desktop/TESTING/_measure/suite_results_20260810.json`.
+**(4) CHRIS RE-RAN HIS VET — SPLIT DECISION** (`docs/CHRIS_FULL_APP_REVIEW_2026-08-11.md`). A clean
+supplier teach is **19/19 with zero bleed** (the thing he'd have quit over). But teaching a
+**purchase order the OWNER issued** still leaked onto 20 Oakhaven delivery notes — **verified on
+disk**, and the VAT number crossed over too. `template_identity_on_page` needs a layout to NAME its
+company; an owner-issued PO carries the owner's name and the supplier's notes carry the owner's
+address as recipient, so the guard is satisfied. **The 08-10 DAY fix closed the supplier case and
+left the buyer-issued case open.** **NOTE: that flag is in `PROVEN_ON_DEFAULTS`, so a FRESH install
+has it ON and the owner's own DB does NOT.** His sharpest line: *"every guard in this product is
+pointed at absence; none at confident nonsense"* — a teach read `@a eens Ee`, showed a success
+toast, flagged nothing, and made two junk output folders. Also: **Approve silently does nothing**
+(Reject works).
+**(5) Oracle C6 done:** embedded scans are **150 DPI native, rendered at 200** — no free resolution,
+and "raw" is already resample #1, so the `I`→`1` result rests on a synthetic chain. Generalisation to
+a real scanner is HYPOTHESIS.
+
+### Prior — 2026-08-10 EVENING2: **`HANDOVER_2026-08-10_EVENING2.md`**
 Branch **`feat/teach-side-overnight`**, HEAD **`8ee7456`**, PUSHED, tree clean. Owner present.
 Migration still 60. **Nothing flipped; NOTHING smoke-tested in the UI.**
 **(1) A TYPED TEACH VALUE NOW CAPTURES A POSITION** (`3f21ddb`, default ON, operator-gated): the
