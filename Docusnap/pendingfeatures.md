@@ -6,6 +6,56 @@
 
 ---
 
+## 2026-08-10 — A TYPED TEACH VALUE CAPTURES NO LOCATION (UI done; the STORAGE question is OPEN)
+
+**Owner, verbatim:** *"we need to lose this and add an option in the top to type manually if not
+selectable on the page - note that the supplier may exist in selectable form in the footer and that
+is OK. My worry is that by typing manually, we haven't captured a location for the data, making
+matching harder in future."*
+
+**SHIPPED (`c877aac`) — the UI half only.** The prominent accent card "📌 Always the same on every
+document? → Set a fixed value" is gone from under the page on every field; manual entry is now a
+quiet link-weight control at the TOP of the step, worded as the exception; the typing panel states
+what the choice costs before you type; and the issuer prompt + intro copy now say the value can be
+drawn anywhere it is printed, **the footer included**.
+
+**NOT SHIPPED — the owner's actual worry, which is a STORAGE question, not a UI one.** A typed value
+still persists exactly as before: `state.results[key] = {value, target:null, anchor:null,
+anchor_text:null, status:'fixed'}` (`teach/renderer.js` `showFixedInput`), which flows to the
+`fixed_value` path. So there is still **no geometry at all** — nothing for a future document of the
+same layout to match against, and the value is reused as-is on every document of the type.
+**Deliberately left alone in that commit: changing what a teach persists is an extraction-layer
+change and needs its own gate.**
+
+**Why this is more than a nicety — the `fixed_value` path has a bad record on this corpus.** Three
+separate defects this week all ran through a frozen fixed value stamped at high confidence:
+the wrong-company misfile (a buyer-issued template's frozen `supplier_name` stamped onto 18 other
+companies' documents at 95 via `template_fixed`); `vat_no`'s frozen `fixed_value` being the literal
+caption `'VAT'` on 21 of 26 wrong reads; and `serials` committing `'Serial No:'`. Every one of those
+is the same shape: a value with no position, frozen from a sample of one, asserted confidently.
+Reducing how often the wizard mints one is therefore a genuine accuracy lever, not just tidier UI.
+
+**Directions to weigh (none built, none costed):**
+1. **Capture a location even when the value is typed.** If the typed string can be found in the
+   page's word geometry, store the box it was found at — the operator typed it because OCR misread
+   it, not because it is absent, and that case is common. This turns most manual entries back into
+   positioned teaches for free. Needs a match policy (exact / normalised / fuzzy) and a rule for
+   multiple hits.
+2. **Separate "typed because OCR failed" from "genuinely not on the page".** Only the second should
+   ever become a position-less constant. Today they are indistinguishable in the stored row.
+3. **Stop a sample-of-one typed value being asserted at 95.** Related to `TEMPLATE_FREEZE_QUALIFY` /
+   `freeze_guard.js` (already built for the VAT class) — a typed value with no corroboration is the
+   weakest evidence in the system and currently carries near the highest confidence.
+4. **Ask the operator where it applies.** "Is this the same on every document of this type, or just
+   this one?" — the old card ASSUMED the first and never asked. The wizard now no longer advertises
+   the assumption, but it still cannot record the answer.
+
+**Measure before building any of it:** count how many `fixed_value` rows in the live DB would have
+been locatable on their own sample page (direction 1's whole premise). If most typed values ARE on
+the page, direction 1 is the fix and the rest are secondary; if most are genuinely absent, it is 2+3.
+
+---
+
 ## 2026-08-10 — OWNER-REPORTED: KEEP THE PRE-NORMALISATION VALUE SO THE PAGE-PRESENCE CHECK COMPARES LIKE FOR LIKE (NOT BUILT)
 
 **Owner, verbatim:** *"we need a way to retain the data obtained before special characters are
