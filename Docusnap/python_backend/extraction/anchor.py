@@ -2629,6 +2629,15 @@ def _value_drifted_from_box(label_box, offset_dy, stored_cy, h_norm) -> bool:
     return abs(expected_cy - float(stored_cy)) > max(float(h_norm or 0.0) * 1.5, _DRIFT_FLOOR)
 
 
+# A reference code may legitimately carry INTERIOR separators, and telling that apart from the
+# PSM-7 artefact is a SHAPE question. An artefact wedges a separator into an otherwise unbroken run
+# ('H7R5326676' -> 'H/7R5326676'), leaving a ragged split with a one-character group. A structured
+# code splits into groups that each stand on their own: 'PI/26/6000', 'INV/2024/001', 'OED/91377'.
+# Only '/', '.' and '-' can be structural — a '|' or '\' inside a code is a table rule or a stroke
+# artefact, never a printed separator, so a token carrying one is still repaired.
+_STRUCTURED_CODE_SEP = re.compile(r"^[0-9A-Za-z]{2,}(?:[/.\-][0-9A-Za-z]{2,})+$")
+
+
 def _repair_single_token(img, segment, val_type):
     """Fix the PSM-7 single-token separator artefact: a value that is ONE token
     (no spaces) — a serial, reference or part number — can come back from PSM 7
@@ -2653,6 +2662,21 @@ def _repair_single_token(img, segment, val_type):
         # serial misread with a spurious slash ("H/7R..", "12/34567") does NOT
         # match this strict layout and is still repaired.
         if re.fullmatch(r"\d{1,4}[./\-]\d{1,2}(?:[./\-]\d{1,4})?", segment):
+            return segment
+        # STRUCTURED CODE: the guard above only protects a token whose shape is a DATE, so a
+        # reference that legitimately carries separators ('PI/26/6000') falls straight through and
+        # is re-read with a whitelist that CANNOT emit '/', which then matches on alphanumerics and
+        # is accepted — silently deleting a printed character from a correct value.
+        # MEASURED on the live install (2026-08-10, read-only census over documents whose page text
+        # is stored): 36 committed invoice_numbers had lost a separator their own page still prints,
+        # every one of them through the template_mapping rung, and this predicate keeps the
+        # separator on 36 of 36 while the docstring's own artefact example ('H/7R5326676', whose
+        # first group is a single character) is still repaired. Short-circuits BEFORE the extra
+        # OCR passes, so an armed run is also cheaper on these tokens.
+        # DEFAULT OFF — off is byte-identical. Arm: CODE_SEPARATOR_STRUCTURE_GUARD=1.
+        if (os.environ.get("CODE_SEPARATOR_STRUCTURE_GUARD", "0") != "0"
+                and not re.search(r"[\\|]", segment)
+                and _STRUCTURED_CODE_SEP.match(segment)):
             return segment
         import pytesseract
         # Re-read the SAME prepped crop with configs that cannot emit (or don't

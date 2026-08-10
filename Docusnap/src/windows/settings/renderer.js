@@ -691,6 +691,9 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // nothing to flip - env-only, and npm start injects no env.
                          ['format-fail-yield-toggle', 'template_format_fail_yield'],
                          ['customer-po-labels-toggle', 'customer_po_labels'],
+                         // A printed separator inside a reference code is not an OCR artefact -
+                         // 'PI/26/6000' was being committed as 'PI266000' (2026-08-10).
+                         ['code-separator-guard-toggle', 'code_separator_structure_guard'],
                          ['deskew-import-toggle', 'deskew_on_import'],
                          // NOT an extraction switch and NOT bridged through _reconcileEnv: the
                          // auto-file gate is JS-side, so database/modules/trust.js reads this key

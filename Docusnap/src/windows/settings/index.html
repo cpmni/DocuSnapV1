@@ -910,6 +910,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Keep the slashes and dashes printed inside a reference</div>
+                <div class="threshold-sub">Reference numbers are often printed with separators &mdash; <span class="mono">PI/26/6000</span>, <span class="mono">OED/91377</span>. Scan Finder removes a stray slash that the scanner invents inside a code, and that clean-up currently cannot tell an invented slash from a printed one, so a reference like the ones above is filed as <span class="mono">PI266000</span>. With this on, a code that splits neatly into parts keeps its separators, while a stray mark wedged into an unbroken code is still cleaned up. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="code-separator-guard-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Straighten crooked scans before reading them</div>
                 <div class="threshold-sub">A page that went through the scanner slightly askew is read at an angle, and the boxes Scan Finder was taught drift off the values they were pointed at. This straightens each crooked page before reading it — the same thing the ∞ Straighten button does in Review, applied automatically as documents come in. Your filed file is never altered; only the reading is straightened. It also changes what gets filed without you looking at it, so treat it as a trade rather than a free improvement. Pages that are already straight, and documents that carry their own text, are skipped. Off by default, and not yet recommended — straightening can make a marginal scan read worse as easily as better, and that has not been proven either way on real paper.</div>
               </div>

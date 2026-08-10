@@ -114,7 +114,37 @@ search could find. Re-run it on a second taught state before treating 89.5% as t
 
 ---
 
-## 2026-08-10 — OWNER-REPORTED: KEEP THE PRE-NORMALISATION VALUE SO THE PAGE-PRESENCE CHECK COMPARES LIKE FOR LIKE (NOT BUILT)
+## 2026-08-10 — OWNER-REPORTED: KEEP THE PRE-NORMALISATION VALUE SO THE PAGE-PRESENCE CHECK COMPARES LIKE FOR LIKE
+
+> **⚠ ROOT-CAUSED 2026-08-10 EVENING, AND IT OVERTURNS THIS ENTRY'S DIRECTION. The slash-removal
+> site IS located, the note was TELLING THE TRUTH, and the value is the thing that is wrong.**
+> `anchor._repair_single_token` (`anchor.py:2632`, reached from the winning `template_mapping` rung
+> via the cross-import at `template_mapper.py:40` → `:3638`) re-reads a spaceless token that
+> contains `/` using `tessedit_char_whitelist=A-Za-z0-9-` — a whitelist that **physically cannot
+> emit `/`** — and accepts the result when its alphanumerics match. That acceptance test is
+> satisfied by every code whose separators are PRINTED, so `PI/26/6000` was re-read as `PI266000`,
+> compared equal, and committed with a character silently deleted. Its only protection is a
+> guard for DATE-shaped tokens (`\d{1,4}[./-]\d{1,2}…`), which a letter-prefixed reference misses.
+> **CORRECTION to this entry's own analysis below: it recorded `anchor.py:2666` as building "a
+> COMPARISON target, not a committed value". The `target` local is indeed a comparison target — but
+> the function RETURNS `alt`, the whitelisted re-read, and that IS the committed value.**
+> **MEASURED (live install, read-only census over documents whose page text is stored): 36 committed
+> `invoice_number`s had lost a separator their own page text still prints — all 36 through
+> `template_mapping`.** The `I`→`1` half is a genuinely separate, upstream OCR misread: the PAGE
+> TEXT itself reads `P1/26/3711`, so `_repair_single_token` did not cause it.
+> **FIXED behind `CODE_SEPARATOR_STRUCTURE_GUARD` (DEFAULT OFF, bridged + toggled + pinned).** A
+> token that splits into ≥2 groups of ≥2 alphanumerics is a structured code and keeps its
+> separators; an artefact wedged into an unbroken run leaves a one-character group
+> (`H/7R5326676`) and is still repaired. Keeps the separator on **36 of 36**; `|` and `\` are never
+> treated as structural. Seam checked: `validation_patterns.alphanumeric` already permits `/`, so
+> the kept separators do not trip the field's own format gate.
+> **WHAT REMAINS OF THIS ENTRY.** The raw-twin design below is NOT the fix for this exhibit — it
+> would have silenced a correct warning about a genuinely wrong value. It still has merit as a
+> general reduction of Gate C's false-flag rate, and item 3 (populating the dead `extractions.raw_value`
+> column, which would revive `credit_sign_note`'s dead guard) stands on its own. Re-cost both once
+> the guard is flipped and the false-flag rate is re-measured.
+> **OUTSTANDING BEFORE FLIPPING: no corpus/realdoc ARMED arm has been run** — only the unit battery
+> and the census. Off is byte-identical and pinned; on is unmeasured beyond the 36/36 count.
 
 **Owner, verbatim:** *"we need a way to retain the data obtained before special characters are
 removed from a value so it can be cross checked in the background in review — we see a note here to

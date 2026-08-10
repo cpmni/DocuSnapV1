@@ -483,6 +483,11 @@ function _reconcileEnv(db) {
     // CUSTOMER_PO_LABELS: on a document a SELLER issues, "Your Order" / "Your PO" names the
     // CUSTOMER's purchase-order number, which is a different field from the seller's own po_number.
     if (learning.getSetting(db, 'customer_po_labels', 'false') === 'true') env.CUSTOMER_PO_LABELS = '1';
+    // CODE_SEPARATOR_STRUCTURE_GUARD: the single-token separator repair assumes any '/' inside a
+    // spaceless code is an OCR artefact, so a reference that PRINTS its separators ('PI/26/6000')
+    // is re-read with a whitelist that cannot emit '/' and committed as 'PI266000'. Measured on the
+    // live install: 36 committed invoice_numbers had lost a separator their own page still prints.
+    if (learning.getSetting(db, 'code_separator_structure_guard', 'false') === 'true') env.CODE_SEPARATOR_STRUCTURE_GUARD = '1';
     return env;
   } catch { return {}; }
 }
