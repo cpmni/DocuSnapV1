@@ -457,6 +457,19 @@ function _reconcileEnv(db) {
     // hint, a logo and a template, and every later document resolves without this.
     // Default OFF, byte-identical off. App RESTART to load the bridge.
     if (learning.getSetting(db, 'letterhead_issuer', 'false') === 'true') env.LETTERHEAD_ISSUER = '1';
+    // -- THE WRONG-COMPANY MISFILE (2026-08-10) --
+    // TEMPLATE_IDENTITY_ON_PAGE: a layout may only claim a document that actually names its company.
+    // Confirming ONE purchase order created a template for that supplier - and on a document the
+    // business ISSUES ITSELF the letterhead is its OWN, so the layout's recognition fingerprint was
+    // the OWNER's address block, which is printed on EVERY document the business RECEIVES as the
+    // delivery address. It matched 8 words out of 10 on every supplier in the test set, and the
+    // keyword matcher has no minimum score - a layout need only BEAT the others, never be good. 18
+    // delivery notes from a different company were claimed and stamped with the wrong sender at 95%,
+    // and one was confirmed by a user and FILED INTO THE WRONG COMPANY'S FOLDER.
+    // Measured on a fresh import: wrong senders 18 -> 1, wrong account numbers 36 -> 19, and 17
+    // references, dates and order numbers RECOVERED (they had been read off the wrong layout's
+    // geometry). Nothing regressed. Default OFF, byte-identical off. App RESTART to load the bridge.
+    if (learning.getSetting(db, 'template_identity_on_page', 'false') === 'true') env.TEMPLATE_IDENTITY_ON_PAGE = '1';
     return env;
   } catch { return {}; }
 }

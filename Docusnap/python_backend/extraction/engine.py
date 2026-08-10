@@ -1323,17 +1323,11 @@ def _template_identity_corroborated(value: str | None, ocr_text: str | None) -> 
     template's learned issuer is poisoned.) Requires >=60% of the value's distinctive name tokens (>=3
     chars, minus generic company suffixes) present as WHOLE WORDS. FAIL-SAFE: a name not on the page
     (logo-only letterhead) → no fill → review."""
-    if not value or not ocr_text:
-        return False
-    import re as _re
-    _GENERIC = {"ltd", "limited", "plc", "llp", "inc", "incorporated", "co", "company", "corp",
-                "group", "holdings", "services", "service", "the", "and"}
-    toks = [t for t in _re.findall(r"[a-z0-9]+", value.lower()) if len(t) >= 3 and t not in _GENERIC]
-    if not toks:
-        return False
-    text = ocr_text.lower()
-    present = sum(1 for t in toks if _re.search(r"\b" + _re.escape(t) + r"\b", text))
-    return present >= 1 and (present / len(toks)) >= 0.6
+    # ONE implementation, shared with the template matcher's identity-on-page guard
+    # (TEMPLATE_IDENTITY_ON_PAGE, 2026-08-10). Both call sites ask the same question — "is this
+    # company named on this document?" — and this codebase has been bitten before by two spellings
+    # of one predicate drifting apart, so the FILL path and the MATCH path use the same function.
+    return template_matcher.identity_present_on_page(value, ocr_text)
 
 
 def _identity_corroborated_strict(value: str | None, band: str | None) -> bool:

@@ -249,6 +249,15 @@ MUTATORS.agree_veto = MUTATORS.freezequal;
 // something the agreement flag introduced.
 ARM_ENV.veto_only = { ...ARM_ENV.freezequal, TEMPLATE_NAME_PRESENCE_MIN_SAMPLE: '1' };
 MUTATORS.veto_only = MUTATORS.freezequal;
+// THE WRONG-COMPANY MISFILE. A template whose keyword fingerprint is the OWNER's own address block
+// (which every incoming document carries, as the recipient) claimed 18 documents from a different
+// company and stamped its frozen issuer at 95. `identity` requires a template's own company name to
+// appear somewhere on the page before a TEXT-arm match is accepted. Compare against `misfile_base`,
+// which is the same configuration with the guard off - one variable.
+ARM_ENV.misfile_base = { ...ARM_ENV.applive };
+MUTATORS.misfile_base = () => {};
+ARM_ENV.identity = { ...ARM_ENV.applive, TEMPLATE_IDENTITY_ON_PAGE: '1' };
+MUTATORS.identity = () => {};
 MUTATORS.captionrefuse = MUTATORS.freezequal;
 // `noreg` must differ from the arm that MEASURED the 22 failures by exactly ONE thing: the
 // `--registration` CLI arg. Give it that arm's env verbatim, or the diagnostic moves two variables
@@ -323,7 +332,17 @@ function runShards(folder, args, files, manifest, extraEnv, onDoc) {
     if (!src || !fs.existsSync(src)) { missing++; continue; }
     // keep the ORIGINAL filename so the scorer can map it back to its scope + ground truth
     fs.copyFileSync(src, path.join(RR, d.original_filename));
-    manifest[d.original_filename] = { known_template_id: d.template_id, known_doc_slug: d.type_slug };
+    // FRESH-IMPORT MODE (TEACH_FRESH_IDENTIFY=1). The manifest normally carries the template this
+    // document is ALREADY bound to, because the harness models REPROCESS — and reprocess deliberately
+    // keeps the known binding rather than re-identifying. That makes the harness structurally blind
+    // to every identification-layer change: a fix to WHICH template is chosen cannot move a single
+    // cell, because the choice is never made. (Discovered 2026-08-10 gating the wrong-company
+    // misfile: two arms came back byte-identical and the guard looked inert, when in fact it was
+    // never reached.) Dropping the known ids makes each document identify itself from scratch, which
+    // is what a fresh IMPORT does — the path the defect actually arrives on.
+    manifest[d.original_filename] = process.env.TEACH_FRESH_IDENTIFY === '1'
+      ? {}
+      : { known_template_id: d.template_id, known_doc_slug: d.type_slug };
     statusOf[d.original_filename] = d.status;
     files.push(d.original_filename);
   }

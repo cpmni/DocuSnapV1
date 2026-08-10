@@ -867,6 +867,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Only use a learned layout on documents that actually name that company</div>
+                <div class="threshold-sub">When Scan Finder learns a layout, it remembers a handful of words from the top of the page to recognise it again. On a document you send out yourself &mdash; a purchase order &mdash; the top of the page is <em>your own</em> name and address, and that same block is printed on nearly every document you receive, as the delivery address. So a layout learned from one of your own orders can recognise itself in everybody else&rsquo;s paperwork, and stamp the wrong company on it with high confidence. With this on, a layout is only used on a document that mentions that company somewhere on the page. Anything else goes to you instead. On the test set this removed 17 documents labelled with the wrong sender, and recovered 17 reference numbers and dates that had been read off the wrong layout. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="identity-on-page-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Straighten crooked scans before reading them</div>
                 <div class="threshold-sub">A page that went through the scanner slightly askew is read at an angle, and the boxes Scan Finder was taught drift off the values they were pointed at. This straightens each crooked page before reading it — the same thing the ∞ Straighten button does in Review, applied automatically as documents come in. Your filed file is never altered; only the reading is straightened. It also changes what gets filed without you looking at it, so treat it as a trade rather than a free improvement. Pages that are already straight, and documents that carry their own text, are skipped. Off by default, and not yet recommended — straightening can make a marginal scan read worse as easily as better, and that has not been proven either way on real paper.</div>
               </div>

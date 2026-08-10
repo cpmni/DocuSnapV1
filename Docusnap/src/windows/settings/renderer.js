@@ -676,6 +676,9 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // Cold start: read the sender off the letterhead on document #1 and
                          // OFFER it (never fill it in - a wrong assert plants a bad scope).
                          ['letterhead-issuer-toggle', 'letterhead_issuer'],
+                         // A learned layout may only claim a document that names its company -
+                         // the wrong-company misfile (2026-08-10).
+                         ['identity-on-page-toggle', 'template_identity_on_page'],
                          ['deskew-import-toggle', 'deskew_on_import'],
                          // NOT an extraction switch and NOT bridged through _reconcileEnv: the
                          // auto-file gate is JS-side, so database/modules/trust.js reads this key

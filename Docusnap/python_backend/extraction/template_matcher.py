@@ -406,6 +406,79 @@ def _type_heading_absent(best_t, ocr_lower):
         return False
 
 
+# ── TEMPLATE_IDENTITY_ON_PAGE (2026-08-10) — a template may not claim a document that does not
+# carry its own company name. Default OFF (=1 arms); OFF is byte-identical.
+#
+# THE DEFECT IT EXISTS FOR, measured end to end. Confirming ONE purchase order created a template
+# for 'Quillstone Print & Packaging'. On a document a business ISSUES ITSELF the letterhead is its
+# OWN — so `extract_keyword_fingerprint`, doing exactly what it was designed to do (harvest the
+# header, stop at the recipient marker), captured
+#   ["Bramblewood","Joinery","Ltd","PURCHASE","Unit","Sawpit","Lane","Draymarket","Tel","VAT"]
+# — the OWNER's own address block. That block is printed on EVERY document the business RECEIVES,
+# as the Bill To / Deliver To block. Scored against one document from each of ten suppliers, that
+# fingerprint hits 0.80 on every single one (0.90 on one, 1.00 on its own). It is not an identity
+# signal; eight of its ten words identify the RECIPIENT.
+# `_match_by_keywords` has no minimum score and no margin — a template need only BEAT the others,
+# never be good — so 18 Oakhaven Electrical delivery notes were claimed by the Quillstone template
+# and stamped `supplier_name = 'Quillstone Print & Packaging'` at 95 via the frozen `template_fixed`
+# seed. One was confirmed by a user (nothing on screen suggested the company was wrong) and FILED
+# INTO THE WRONG COMPANY'S FOLDER, with the true supplier's VAT number in the XML beside it. The
+# issuer decides the output folder and the whole per-supplier learning scope.
+# **This generalises to every customer who files their own purchase orders.**
+#
+# THE GUARD: the template's own name must appear on the page. Measured on 200 documents, keyword
+# path, `detected_slug=None` (the failing path):
+#   RIGHT match, name on page   160  -> kept
+#   WRONG match, name absent     40  -> refused
+#   RIGHT match, name absent      0  <- the cost, and it is zero on this corpus
+# Perfect separation, which is why this is a whole-page presence test and not a threshold: it keys
+# on the actual error (this template's company is not mentioned on this document) rather than on a
+# number that would have to be tuned.
+#
+# SCOPED TO THE TEXT ARMS ON PURPOSE. The logo arm has `decide_logo_text_gate`, which already
+# distinguishes "branding absent" (abstain) from "unjudgeable" (suggest, review-bound) and must keep
+# that nuance — a logo-only letterhead is a real thing. The keyword arm had no such gate at all.
+#
+# NAMED TRADE-OFF, pinned: a supplier whose name is genuinely NOT printed anywhere on the page — a
+# pure-wordmark letterhead — and whose fingerprint is nonetheless a good identity signal, now falls
+# through to review instead of matching. Zero such cases in 200 documents. The failure direction is
+# a document that needs a human, not a document filed under the wrong company.
+# WHY NOT FIX IT AT BUILD TIME (the fingerprint) instead: measured. Requiring a template's own name
+# to appear in its own FINGERPRINT refuses the offender — and also refuses 'Ironclad Tool Hire',
+# whose letterhead sits in the page FOOTER, outside the 20-line harvest window. The page knows what
+# the fingerprint cannot.
+_IDENTITY_ON_PAGE_ON = os.environ.get('TEMPLATE_IDENTITY_ON_PAGE', '0') != '0'
+
+
+def identity_present_on_page(name, ocr_text) -> bool:
+    """Does `name` (a template's company) actually appear on this page as text?
+
+    >=60% of the name's distinctive tokens (>=3 chars, minus generic company suffixes) present as
+    WHOLE WORDS. Shared with engine._template_identity_corroborated, which asks the same question of
+    the FILL path — one notion of "this company is named on this document", not two that drift.
+    FAIL-SAFE: no name or no text -> False (unjudgeable reads as absent HERE, because the caller's
+    fallback is review, which is the safe direction for a claim of identity)."""
+    if not name or not ocr_text:
+        return False
+    _GENERIC = {"ltd", "limited", "plc", "llp", "inc", "incorporated", "co", "company", "corp",
+                "group", "holdings", "services", "service", "the", "and"}
+    toks = [t for t in re.findall(r"[a-z0-9]+", str(name).lower())
+            if len(t) >= 3 and t not in _GENERIC]
+    if not toks:
+        return False
+    text = str(ocr_text).lower()
+    present = sum(1 for t in toks if re.search(r"\b" + re.escape(t) + r"\b", text))
+    return present >= 1 and (present / len(toks)) >= 0.6
+
+
+def _identity_refuses(cand, ocr_text) -> bool:
+    """True -> this text-arm match must NOT be returned (see the flag block)."""
+    if not _IDENTITY_ON_PAGE_ON:
+        return False
+    name = (cand or {}).get('name') or (cand or {}).get('dominant_supplier') or ''
+    return not identity_present_on_page(name, ocr_text)
+
+
 def identify_template(page_image, ocr_text: str, templates: list,
                       detected_slug: str | None = None,
                       title_trusted: bool = False,
@@ -738,7 +811,8 @@ def identify_template(page_image, ocr_text: str, templates: list,
             # Kill switch RESCUE_ENFORCE_LOGO_BAND=1 restores the old band (byte-identical to before).
             _enforce_band = os.environ.get('RESCUE_ENFORCE_LOGO_BAND', '0') != '0'
             if logo_phash is None or not _enforce_band or _min_set_dist(_cand, logo_phash) <= RESCUE_LOGO_BAND:
-                if _fallthrough_supplier_ok(_cand) and _vetoed_fallthrough_ok(_cand):
+                if (_fallthrough_supplier_ok(_cand) and _vetoed_fallthrough_ok(_cand)
+                        and not _identity_refuses(_cand, ocr_text)):
                     # C1: reject a type-refuse fall-through for a DIFFERENT supplier; C3: an
                     # identity-veto fall-through winner must clear the mark/branding bar.
                     # veto_fallthrough tag (G1/G2 guards, Oracle 2026-07-26): additive key, set ONLY
@@ -772,7 +846,9 @@ def identify_template(page_image, ocr_text: str, templates: list,
                 and _type_heading_absent(kw_match['template'], ocr_lower)):
             return _type_refuse(kw_match['template'].get('document_type_slug'),
                                 kw_match['template'].get('document_type_slug'))
-        if _fallthrough_supplier_ok(kw_match['template']) and _vetoed_fallthrough_ok(kw_match['template']):
+        if (_fallthrough_supplier_ok(kw_match['template'])
+                and _vetoed_fallthrough_ok(kw_match['template'])
+                and not _identity_refuses(kw_match['template'], ocr_text)):
             # C1: reject a type-refuse fall-through for a DIFFERENT supplier; C3: an identity-veto
             # fall-through winner must clear the mark/branding bar (else None, as today).
             if logo_phash:
