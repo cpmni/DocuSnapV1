@@ -122,7 +122,19 @@
 
   /* Region step */
   .regionwrap{display:grid;grid-template-columns:1fr 240px;gap:16px}
-  .banner{background:var(--surface);border:1px solid var(--accent);border-radius:10px;padding:12px 16px;margin-bottom:12px}
+  .banner{background:var(--surface);border:1px solid var(--accent);border-radius:10px;padding:12px 16px;margin-bottom:12px;position:relative}
+  /* Top-right escape hatch. Deliberately a `link`-weight control: it must be FINDABLE without
+     ever looking like the recommended route — drawing the value is what teaches a position. */
+  #rg-manual-entry{position:absolute;top:8px;right:10px;font-size:12px;padding:6px 8px;
+    border:1px solid transparent;border-radius:7px}
+  #rg-manual-entry:hover{border-color:var(--border2);color:var(--text)}
+  #rg-manual-entry:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  #rg-manual-entry.hidden{display:none}
+  .banner .big, .banner .sub{padding-right:210px}
+  @media (max-width:900px){
+    #rg-manual-entry{position:static;display:block;margin:0 0 6px auto}
+    .banner .big, .banner .sub{padding-right:0}
+  }
   /* Plain-text fallback (e.g. the "couldn't load that page" error). The normal
      prompt is the two-part .pact/.ptitle pair below. */
   .banner .big{font-size:16px;font-weight:620}
@@ -223,6 +235,35 @@
   button.link:hover{color:var(--text)}
   .spacer{flex:1}
 
+  /* ── Step-2 secondary actions (owner 2026-08-10: "increase visibility and polish… maybe add an
+     explanation of what each button does") ────────────────────────────────────────────────────
+     Deliberately RECESSED — surface2 under the type cards' surface — and at a smaller type scale.
+     Picking a type is the primary action on this step; these two are utilities beneath it and must
+     never compete with it, so they carry no accent fill or accent border at rest (that styling is
+     the SELECTED type card's claimed-state signal and is not borrowed here).
+     They also differ in SCOPE, which the description lines say out loud: the catalog adds types
+     install-wide, and editing a type changes it everywhere it is used — neither is scoped to the
+     document on screen, and the old bare buttons gave no hint of that (Chris, 2026-08-10). */
+  .type-actions{background:var(--surface2);border:1px solid var(--border);border-radius:12px;
+    padding:12px;margin-top:14px;display:flex;gap:10px;flex-wrap:wrap}
+  .type-action{flex:1 1 240px;display:flex;gap:11px;align-items:flex-start;text-align:left;
+    background:var(--surface);border:1px solid var(--border);border-radius:9px;
+    padding:12px 14px;cursor:pointer;font-family:inherit;transition:background .12s,border-color .12s}
+  .type-action:hover{border-color:var(--border2);background:var(--surface3)}
+  .type-action:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .type-action .ic{flex:0 0 auto;width:30px;height:30px;border-radius:8px;background:var(--accent-bg);
+    color:var(--accent2);display:flex;align-items:center;justify-content:center}
+  .type-action .ic svg{width:16px;height:16px}
+  .type-action .tx{min-width:0}
+  .type-action .tx .t{display:block;font-size:13.5px;font-weight:600;color:var(--text)}
+  .type-action .tx .d{display:block;font-size:12px;color:var(--muted);margin-top:3px;line-height:1.45}
+  /* Disabled-with-a-reason, not hidden: a control that does not exist until you click elsewhere
+     can't be discovered, and nothing explains its absence. The description line carries the
+     reason while it is off. Mirrors button.primary:disabled, the wizard's existing convention. */
+  .type-action[disabled]{cursor:not-allowed;opacity:.6}
+  .type-action[disabled]:hover{border-color:var(--border);background:var(--surface)}
+  .type-action[disabled] .ic{background:var(--surface3);color:var(--muted)}
+
   /* ── Confirm bar (owner 2026-08-02: "two large filled-orange buttons — which one accepts?") ──
      The accept button is the ONLY filled control in the bar. Everything else is either a quiet
      redraw action or a SETTING (the label direction), and a setting must never wear an action's
@@ -267,9 +308,10 @@
         For each detail you draw a box around its <b style="color:var(--ok)">value</b>, then mark the
         printed <b style="color:var(--accent)">label</b> next to it. Scan Finder finds that label first, then
         reads the value beside it — so it still finds the value even when the next scan is shifted, scaled or a little crooked.
-        Fields that are always the same (like the company name) can be set as a <b>fixed value</b> instead — no drawing needed.
+        Draw every detail you can find on the page, wherever it is printed — the footer counts. If something genuinely
+        isn't on the page at all, you can type it instead.
         It takes a few minutes the first time, and you can change anything later.</p>
-      <div class="pill-strip"><b>1</b> Pick the document &nbsp;→&nbsp; <b>2</b> Draw values &amp; labels (or set fixed) &nbsp;→&nbsp; <b>3</b> Done</div>
+      <div class="pill-strip"><b>1</b> Pick the document &nbsp;→&nbsp; <b>2</b> Draw values &amp; labels &nbsp;→&nbsp; <b>3</b> Done</div>
       <p class="muted">The boxes you draw are the exact ones Settings → Templates shows later.
         Nothing is saved until the very end — you can go back at any point.</p>
     </section>
@@ -305,9 +347,21 @@
       <!-- Parity with Settings > Document Types (owner, 2026-08-10): the type EDITOR was
            already shared, but the catalog was not, so building a type mid-teach meant adding
            every field by hand at the moment you least want to. -->
-      <div style="margin-top:10px;">
-        <button class="btn" id="btn-teach-catalog" data-help-key="add-catalog">+ Add from catalog…</button>
-        <button class="btn" id="btn-teach-edit-type" class="hidden" style="display:none;">Edit this type…</button>
+      <div class="type-actions">
+        <button type="button" class="type-action" id="btn-teach-catalog" data-help-key="add-catalog">
+          <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/><path d="M12 11v5M9.5 13.5h5"/></svg></span>
+          <span class="tx">
+            <span class="t">+ Add from catalog…</span>
+            <span class="d">Add a ready-made type — invoice, delivery note, credit note — instead of building one field by field. It is added for all your documents, not just this one.</span>
+          </span>
+        </button>
+        <button type="button" class="type-action" id="btn-teach-edit-type" disabled>
+          <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></span>
+          <span class="tx">
+            <span class="t">Edit this type…</span>
+            <span class="d" id="teach-edit-type-desc">Pick a type above first — then you can change its fields and the printed labels Scan Finder looks for.</span>
+          </span>
+        </button>
       </div>
 
       <div id="new-type-panel" class="panel hidden">
@@ -318,6 +372,15 @@
     <!-- Step 3: Point out the details -->
     <section class="step" data-step="3">
       <div class="banner">
+        <!-- MANUAL ENTRY LIVES AT THE TOP (owner, 2026-08-10), replacing the big accent
+             "Always the same on every document? / Set a fixed value" card that used to sit under
+             the page. That card SOLD typing as the easy option for the issuer, and a typed value
+             carries NO POSITION — nothing for a future document of the same layout to match
+             against. Here it is a quiet escape hatch for the one case that needs it: the value
+             genuinely cannot be selected on the page. Drawing stays the default, and it counts
+             wherever the value appears — the footer is a perfectly good place to draw it. -->
+        <button type="button" class="btn link" id="rg-manual-entry" data-help-key="teach-manual-entry"
+                title="Only if the value can't be selected anywhere on the page — including the footer">Can't select it on the page? Type it instead</button>
         <div class="big" id="rg-prompt">Step 1 — draw a box around the value</div>
         <div class="sub" id="rg-sub">Drag a rectangle over the value itself. After I read it, you can also mark its label.</div>
         <!-- The read-back question is MIRRORED here, beside the instruction, so the user

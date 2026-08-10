@@ -218,6 +218,10 @@ async function renderTypeStep(){
   // while the same type built in Settings arrived with its fields AND its likely printed labels
   // already seeded. Re-render after adding so the new types are immediately pickable — the operator
   // is mid-teach with a document in front of them and must not have to restart the wizard.
+  // Rebuilding the grid drops every `.sel`, so "Edit this type…" must go back to its
+  // nothing-is-picked state with it — otherwise it would stay armed against a card that is no
+  // longer selected (the onChange re-select path below re-arms it explicitly).
+  setEditTypeEnabled(false);
   const cat=$('btn-teach-catalog');
   if (cat && window.DocTypeCatalog){
     cat.onclick=async()=>{
@@ -228,6 +232,19 @@ async function renderTypeStep(){
     };
   }
 }
+// "Edit this type…" is always ON SCREEN; only its enabled state changes. The description line is
+// the explanation the owner asked for, and it does double duty — while disabled it says what to do
+// first, and while enabled it names the SCOPE, because editing a type changes it everywhere that
+// type is used, not just for the document being taught.
+const EDIT_TYPE_DESC_OFF = 'Pick a type above first — then you can change its fields and the printed labels Scan Finder looks for.';
+const EDIT_TYPE_DESC_ON  = 'Change its fields, or the printed labels Scan Finder looks for. Applies everywhere this type is used.';
+function setEditTypeEnabled(on){
+  const eb=$('btn-teach-edit-type'); if(!eb) return;
+  eb.disabled = !on;
+  const d=$('teach-edit-type-desc');
+  if (d) d.textContent = on ? EDIT_TYPE_DESC_ON : EDIT_TYPE_DESC_OFF;
+}
+
 let dtEditor = null;   // shared DocTypeEditor (create mode); mounted lazily on "It's something new"
 
 // EDIT AN EXISTING TYPE, MID-TEACH (owner parity request, 2026-08-10). Settings can change a
@@ -268,11 +285,12 @@ function selectType(card,isNew){
   $('new-type-panel').classList.toggle('hidden', !isNew);
   // "Edit this type…" belongs to an EXISTING selection only — there is nothing to edit before the
   // new type exists, and the create editor is already on screen in that case.
+  // Visible-but-DISABLED rather than hidden: a control that only exists after you click something
+  // else can't be discovered, and its absence explains nothing. The description line carries the
+  // reason while it is off, and states the SCOPE once it is on.
+  setEditTypeEnabled(!isNew);
   const eb=$('btn-teach-edit-type');
-  if (eb){
-    eb.style.display = isNew ? 'none' : '';
-    eb.onclick = () => openTypeEditorFor(card.dataset.slug);
-  }
+  if (eb) eb.onclick = () => { if (!eb.disabled) openTypeEditorFor(card.dataset.slug); };
   if (!isNew && dtEditor){ try{ dtEditor.destroy(); }catch{} dtEditor=null; $('nt-editor-host').innerHTML=''; }
   // Mount the shared friendly creator lazily and keep it across toggles, so the
   // user's in-progress draft survives switching between cards. The component owns
@@ -740,7 +758,10 @@ function setValueBanner(f){
   const idx=state.fieldIndex+1, total=state.fields.length;
   setPrompt(`Field ${idx} of ${total} — draw a box around the value for`, f.label);
   $('rg-sub').textContent = isIssuerField(f)
-    ? `Drag a rectangle right over the company name on the page. There's no label to mark — the issuer is recognised by its name and letterhead.`
+    // The footer note is deliberate (owner, 2026-08-10): the issuer is often only selectable down
+    // there, and an operator who thinks the letterhead is the only valid place will type the name
+    // instead — losing the position that makes the next document of this layout match.
+    ? `Drag a rectangle right over the company name — anywhere it's printed, including the footer. There's no label to mark; the issuer is recognised by its name and letterhead.`
     : `Drag a rectangle right over the value on the page (not the label next to it). After reading it you'll mark its label.`;
 }
 function promptField(){
@@ -759,38 +780,55 @@ function renderFieldPrompt(){
   drawMode='value';
   setConfirm('');   // clear any prior read-back overlay
   setValueBanner(f);
-  // Fixed-value alternative — presented as a prominent accent card (not a buried muted
-  // link) so a first-time user can clearly see they DON'T have to draw a box for a field
-  // whose value never changes (e.g. the company name).
-  $('rg-readback').innerHTML=
-    `<div style="margin-top:12px;padding:12px 14px;background:var(--accent-bg);border:1px solid var(--accent);`+
-        `border-radius:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">`+
-      `<div style="flex:1;min-width:170px">`+
-        `<div style="font-weight:600;font-size:13px;color:var(--text)">📌 Always the same on every document?</div>`+
-        `<div class="muted" style="font-size:12px;margin-top:3px">If the ${esc(f.label)} never changes (e.g. the `+
-          `company name), you don't need to draw a box — just type it once.</div>`+
-      `</div>`+
-      `<button class="btn" id="rb-fixed" style="white-space:nowrap">Set a fixed value →</button>`+
-    `</div>`;
-  $('rb-fixed').onclick=()=>showFixedInput(f);
+  // The prominent accent "Always the same on every document? → Set a fixed value" card that used
+  // to live here is GONE (owner, 2026-08-10). It advertised the one route that teaches NO POSITION
+  // as if it were the convenient one, right at the moment the operator is deciding how to teach the
+  // field. The same capability is still one click away, at the TOP of the step, worded as the
+  // exception it is (see #rg-manual-entry).
+  $('rg-readback').innerHTML='';
+  setManualEntryVisible(true);
   drawnBox=null; redrawCanvas();
   renderFieldRail();
+}
+// The top-of-step escape hatch. Hidden whenever the panel is showing something else (a read-back
+// confirmation, the typing box itself), so it never offers a route out of a question in progress.
+function setManualEntryVisible(on){
+  const b=$('rg-manual-entry'); if(!b) return;
+  b.classList.toggle('hidden', !on);
+  b.onclick = () => { const f=curField(); if (f) showFixedInput(f); };
 }
 function showFixedInput(f){
   drawMode='value';
   setConfirm('');
-  setPrompt('Type the fixed value for', f.label);
-  $('rg-sub').textContent=`This value is always the same on every document of this type (e.g. the company name).`;
+  setManualEntryVisible(false);        // you are already here — don't offer the way in again
+  setPrompt('Type the value for', f.label);
+  $('rg-sub').textContent=`Use this only when the ${f.label} can't be selected anywhere on the page.`;
   const existing=state.results[f.key];
   const prev=(existing&&existing.status==='fixed')?existing.value||'':'';
+  // SAY WHAT IS LOST. A typed value records WHAT it says but not WHERE it sits, so nothing is
+  // learned that a future document of this layout can be matched against — and the same typed
+  // value is then applied to every document of this type. That is the owner's own concern
+  // (2026-08-10) and it belongs on screen at the moment of the decision, not in a manual.
   $('rg-readback').innerHTML=
+    `<div style="margin-bottom:10px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border2);`+
+        `border-radius:8px;font-size:12px;line-height:1.5;color:var(--muted)">`+
+      `<b style="color:var(--text)">Drawing a box teaches more than typing.</b> A box records where the `+
+      `${esc(f.label)} sits, so the next document with this layout is read from the page. A typed value `+
+      `records no position — it is reused as-is on every document of this type, even if the printed value `+
+      `changes. If it appears anywhere on the page (the footer counts), draw it instead.`+
+    `</div>`+
     `<input type="text" id="rb-fixed-input" value="${esc(prev)}" placeholder="e.g. Acme Supplies Ltd" `+
     `style="width:100%;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:8px;padding:10px 12px;font-size:14px;font-family:inherit;margin-bottom:10px">`+
     `<div style="display:flex;gap:8px">`+
       `<button class="btn primary" id="rb-fixed-save">Save →</button>`+
-      `<button class="btn ghost" id="rb-fixed-cancel">Cancel</button>`+
+      `<button class="btn ghost" id="rb-fixed-cancel">Draw it instead</button>`+
     `</div>`;
-  const inp=$('rb-fixed-input'); inp.focus(); inp.select();
+  // Programmatic focus goes through the shared repair (forward convention, owner 2026-08-02): a
+  // bare .focus() can't trigger the preload pointerdown chokepoint, which is how a field ends up
+  // with no caret until you click out of the app and back.
+  const inp=$('rb-fixed-input');
+  if (typeof focusField === 'function') focusField(inp).then(()=>{ try{ inp.select(); }catch{} });
+  else { inp.focus(); inp.select(); }
   const save=()=>{
     const v=inp.value.trim();
     if(!v){ inp.style.borderColor='var(--err)'; return; }
@@ -880,7 +918,8 @@ async function snapDrawnBox(box, anchor){
 
 async function readBack(box){
   const f=curField();
-  $('rg-readback').innerHTML='';   // hide the per-field "fixed value?" card while confirming a read
+  $('rg-readback').innerHTML='';
+  setManualEntryVisible(false);    // a read is in flight — don't offer a way out of the question
   setConfirm('<span class="muted">Reading…</span>');
   _teachReadBusy = true;
   // Read via --boxes first with a plain fallback — the SAME order Review's runZoneOcr uses
