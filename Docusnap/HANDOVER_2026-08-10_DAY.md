@@ -1,6 +1,6 @@
 # HANDOVER — 2026-08-10 (day) — the wrong-company misfile FIXED, an installer built, four accuracy fixes
 
-**Branch `feat/teach-side-overnight`. HEAD `9903dbb`. ALL PUSHED.**
+**Branch `feat/teach-side-overnight`. HEAD `65abd6f`. ALL PUSHED.**
 Follows `HANDOVER_2026-08-10_NIGHT.md` (the overnight run: VAT, six security holes, Chris's vet).
 Owner present, testing the installer on a second machine.
 

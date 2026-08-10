@@ -22,7 +22,7 @@ touches that area — read the pointed-to doc BEFORE working in it:
   ➜AN there). Read the matching block before changing one of those files.
 
 ## ⏭ LATEST — 2026-08-10 DAY: **READ `HANDOVER_2026-08-10_DAY.md` FIRST**
-Branch **`feat/teach-side-overnight`**, HEAD **`9903dbb`**, PUSHED. Owner testing an installer.
+Branch **`feat/teach-side-overnight`**, HEAD **`65abd6f`**, PUSHED. Owner testing an installer.
 **INSTALLER BUILT:** `dist\ScanFinder Setup 2.0.0-r20260810-0915-29425c9.exe` with **43 reading
 improvements ON by default (migration 60)** — written as SETTINGS ROWS so the toggles render as on;
 `deskew_on_import` + `template_fixed_seed_agreement_keep` deliberately excluded. **It predates the
