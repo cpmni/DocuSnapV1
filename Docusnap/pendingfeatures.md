@@ -784,11 +784,28 @@ mean word confidence as `_read_lines_full` computes it):
 | struct (`_struct_prep`) | `P1` 55 | `P1` 73 | `P1` 53 | `P1` 54 | `P1` 55 | 0/5 |
 
 **THE READ THE PIPELINE NEEDS IS ALREADY BEING PRODUCED AND IS THEN THROWN AWAY.** Stage 0.5 calls
-`_ocr_crop_laddered` with `verify_fn=None`, so the gate is `conf >= 60` (`anchor.py` `_gate`). Every
-rung on this crop scores below 60, so no rung passes, and the ladder falls back to
-`anchor.py:3304-3305` — `if rseg and rconf > best_conf: best_seg = rseg` — returning the
-HIGHEST-CONFIDENCE rung at `:3341`. On 0023 that is heavy at 36 over light at 26: **the wrong read
-wins precisely because it is more confidently wrong.**
+`_ocr_crop_laddered` with `verify_fn=None`, so the gate is `conf >= 60` (`anchor.py` `_gate`). When
+no rung clears 60 the ladder falls back to `anchor.py:3304-3305` —
+`if rseg and rconf > best_conf: best_seg = rseg` — returning the HIGHEST-CONFIDENCE rung at `:3341`.
+On 0023 that is heavy at 36 over light at 26: **the wrong read wins precisely because it is more
+confidently wrong.**
+
+**CORRECTED 2026-08-11 (Oracle, and I verified it myself before accepting it).** An earlier version
+of this entry said "every rung on this crop scores below 60". That is FALSE on 2 of the 5, and the
+error was load-bearing. Re-measured through the ladder's OWN `_read_lines_full` rather than
+`image_to_string`, which is a second correction — the two disagree on layout assembly:
+
+| doc | exit taken | winning rung |
+|---|---|---|
+| 0023 | sub-floor | struct/psm7 |
+| **0025** | **GATE (>=60)** | struct/psm7 |
+| 0019 | sub-floor | struct/psm7 |
+| **0022** | **GATE (>=60)** | light/psm7 |
+| 0029 | sub-floor | struct/psm7 |
+
+**So a fix confined to the confidence comparator heals at most 3 of 5.** Any fix must sit at BOTH
+exits. (And the struct rungs exist at all only because migration 60 seeds `struct_code_read`; pin
+the both-exits behaviour, never the per-document split, which that toggle changes.)
 
 **THE REAL LESSON, and it generalises far past this supplier: Tesseract's mean word confidence is
 NOT COMPARABLE ACROSS PREPROCESSING RECIPES.** Sharpening and upscaling make the engine more certain
@@ -832,9 +849,85 @@ advisor + Oracle gate before a line is written:**
    wrong direction. Check `getFieldFormats` for this supplier before relying on it.
 4. **NOT a whitelist.** The value is mostly digits; excluding digits is not available.
 
-**GATE when it is built:** the corpus ref lane, currently 27 ok / 1 wrong with the separator guard
-armed — the residual IS this defect, so a correct fix takes it to 28/0 while the other eight lanes
-stay byte-identical.
+### ADVISOR + ORACLE PASS RUN 2026-08-11 — SIGN OFF WITH CONDITIONS (4 BLOCKING). NOT BUILT.
+
+**Design chosen: gary's RAW WITNESS.** Read the crop once with NO preprocessing. That read is a
+WITNESS, never a candidate: it may change the committed string ONLY when it differs from what the
+ladder was already returning by exactly ONE confusable-glyph substitution AT THE SAME LENGTH. Scope
+`verify_fn is None` (the gateless Stage-0.5 caller) + `val_type in {alphanumeric, reference_code}` +
+`crop.width < 300` (at/above that `_light_prep` IS raw, so a witness pass would be a duplicate).
+Confusable pairs reuse `ocr_corrector._is_confusion`, never a new table. It cannot change length,
+structure, or emptiness, and cannot introduce a value the ladder was not already about to commit —
+that bounded blast radius is why it beat the alternatives.
+
+**oscar's `_struct_prep` no-resample floor was REJECTED, and by measurement not preference:** his
+threshold fires at an ink band >= 20px and the measured band is 18–19px, so it never fires on the
+exhibit; and it leaves CONFIDENCE as the arbiter, which is the bug. On 0022 a perfect native struct
+read (~45–55) still loses to light at 73. A fix that keeps `rconf` as the decider cannot heal a
+class whose defining property is that the correct read is the LEAST confident one.
+
+**C1 — BLOCKING, AND IT MAKES THE SLICE INERT AS SPECIFIED.** Both ladder exits return the string
+AFTER `_repair_single_token` (`anchor.py:3303`). Today, with `CODE_SEPARATOR_STRUCTURE_GUARD` OFF,
+that function deletes the printed slashes — pinned at `test_code_separator_structure.py:88`, and the
+owner's exhibit committed **`P1266000`**, not `P1/26/6000`. So the comparison the design performs is
+raw `PI/26/6000` (10 chars) vs ladder `PI266000` (8) → different length → discarded → **zero
+documents healed.** My own write-up above describes the POST-sepguard state, not today's.
+**Fix: move the comparison INSIDE the rung loop, onto the `clean_crop_segment` output, BEFORE
+`_repair_single_token`.** Consequence to pin: with the adopted `PI/26/6000` the repair's own
+agreement test then fails, so the separators survive too — a second lane moving under a flag named
+for the first, which must be counted, and which makes the two flags INDEPENDENT rather than ordered.
+
+**C2 — BLOCKING. Two tiers, `_FLAG` before `_ADOPT`** (precedent `UNIVERSAL_VERIFY_RESTORE`/`_FLAG`).
+FLAG keeps today's value, attaches `corrected_to` + a note naming the ambiguity, and caps below 88.
+ADOPT performs the swap and stays OFF until the census is read. This is the only thing that bounds a
+SYMMETRIC rule — it can equally flip a CORRECT winner to a wrong raw read — that has no independent
+corroborator: the page text carries the same misread, the learned history is poisoned, and a second
+read of the same pixels is the "same-pixel agreement" this repo already measured at 5:1 false:true.
+
+**C3 — BLOCKING. Census both directions and per-pair**, over both corpus arms AND the born-digital
+`SINGLE` arm (a spurious fire on crisp crops is the strongest possible refutation). Required before
+ADOPT: **zero** cases where the ladder was right and raw was wrong, plus per-pair evidence for every
+pair enabled. **Enable only pairs the census evidences** — `_is_confusion` also covers `O/0`, `S/5`,
+`Z/2`, `B/8`, `G/6`, `T/7`, case-only and symbol pairs, none of them measured, and `O/0` is a
+glyph-DESIGN confusion rather than an antialiasing one, so there is no reason to assume raw wins it.
+
+**C4 — BLOCKING, and it changes what the owner should be told: DO NOT FLIP `CODE_SEPARATOR_
+STRUCTURE_GUARD` ALONE.** Verified: `ocr_corrector.value_to_template` keeps `/` as a literal, so once
+confirms make 10-char values the majority the scope's template becomes `UD/DD/DDDD`, and
+`try_correct` (`LETTER_TO_DIGIT['I']='1'`) rewrites a CORRECT `PI/26/6000` back to `P1/26/6000` at
+`min(95,90+20)=95`, method `+corrected`, **no note** (`engine.py:6688-6701`). **Sepguard is the fuse;
+operator confirms arm it.** Ruling: flip the two TOGETHER, sepguard AFTER the witness. Pin the bomb;
+fixing 2.5b is a separate, higher-blast-radius slice.
+
+**C5 — non-blocking. Amend Gate C**, or the heal ships a FALSE "doesn't appear on this page" note on
+the very documents it fixes: on 3 of 5 the full-page OCR carries the same misread, so a corrected
+`PI/26/6000` will fail a page-presence test the wrong value passes. Right value, hostile message.
+
+**C6 — non-blocking. Measure `tessdata_best` and the embedded-image native DPI** (both read-only).
+Installed model is standard `tessdata` (4.1MB integer LSTM). Licence Apache-2.0, so shipping is
+allowed — but **do not ship it as a drop-in**: swapping the model re-bases every confidence constant
+in the product (the 60 ladder floor, the 88 auto-file floor, `_TIER_A_OCR_MIN`,
+`_PREVIEW_ACCEPT_MIN`, `_CLEAN_DATE_CONF=94`), which is a whole-product recalibration.
+
+**A caveat on the whole measurement base, from Oracle:** the corpus is SYNTHETIC — scanify rasters
+at 150 DPI while the app renders at 200, so "raw greyscale" is already resample #1, the prep is #2,
+and Tesseract's internal line normaliser is #3. That double resampling is the likely mechanism, and
+it strengthens the less-processing direction — but **generalisation to a real 300-DPI scanner is
+HYPOTHESIS, not measurement.**
+
+**GATE when it is built:** ref lane **27 ok / 1 wrong → 28 / 0** with witness + sepguard armed
+TOGETHER, plus a separate witness-only arm that must ALSO move the lane (that arm is the proof C1
+landed). Out-of-scope lanes byte-identical; in-scope lanes zero regressions, each movement explained
+— note `keyword._infer_validation` maps `*_no`/`*_ref`/`reference*` to `alphanumeric`, so `po_ref`,
+`account_no`, `vat_no` and serials are IN scope by design and "all eight other lanes byte-identical"
+is NOT an achievable bar. **Count `validation_note`s per lane, not just values** — a heal that trades
+a wrong value for a new note class is not free and the current scorer cannot see it. Measure the
+wall-clock delta. Pins must exercise the REAL ladder including `:3303`, not a stub that bypasses it.
+
+**NOT BUILT TONIGHT, deliberately.** With C1–C4 applied this is a two-tier flag, a bidirectional
+per-pair census, a Gate C amendment and a pin set that has to drive the real ladder — a substantial
+slice. Half-building it unattended, in the extraction path, would breach the owner's "safely, no
+regressions". It is fully specified above and ready to build cold.
 
 **WHY IT MATTERS MORE THAN A SINGLE WRONG FIELD:** on three of five live documents the full-page OCR
 carries the SAME misread, so Gate C's page-presence check matches and the warning CLEARS — leaving a
