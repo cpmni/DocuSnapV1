@@ -6,7 +6,27 @@
 
 ---
 
-## 2026-08-10 — ONE ORDINARY CONFIRM STAMPS THE WRONG COMPANY ON 18 OTHER DOCUMENTS (highest priority)
+## 2026-08-10 — ONE ORDINARY CONFIRM STAMPS THE WRONG COMPANY ON 18 OTHER DOCUMENTS
+### STATUS: FIXED behind `TEMPLATE_IDENTITY_ON_PAGE` (`ebd2096`), DEFAULT OFF, with Oracle
+
+**THE OWNER'S LIVE INSTALL IS CLEAN — verified: 0 of 147 documents carry a supplier that disagrees
+with their own filename.** The defect is LATENT there, not active: it needs a template built from a
+document the business ISSUES ITSELF, and the live database has no `purchase_order` template. It
+fires the first time the owner confirms one of their own purchase orders.
+
+**THE FIX** refuses a TEXT-arm template match unless the template's own company name appears
+somewhere on the page. Measured on 200 documents: 160 right matches kept, 40 wrong matches refused,
+**zero right matches lost**. Gate on a fresh import: wrong senders 18 -> 1, wrong account numbers
+36 -> 19, and 17 references / 17 dates / 17 order numbers RECOVERED (they had been read off the
+wrong layout's geometry). Full reasoning in `git show ebd2096`.
+
+**WHAT THE FIX DOES NOT DO, and this is the part still open:** it stops a wrong binding being MADE.
+It does not undo one already made — see the sticky-binding entry below. And it does not repair the
+poisoned fingerprint itself: that template's recognition words are still the owner's own address
+block, still matching everything; the guard only stops it being acted on. Oracle is ruling on whether
+that is the right layer or a compensation.
+
+
 
 **Found twice the same night, independently: by Chris at the screen, and by the harness in the
 database.** Not built, not designed — it needs an advisor round and an Oracle pass before anyone
@@ -72,6 +92,36 @@ That is real evidence for the "distinct rule for a one-confirm template" directi
 this class already exists and is simply asleep during the window that matters. It is NOT yet a
 recommendation: 67 documents, one exhibit, and the corpus cannot show what a low floor costs on an
 install with many suppliers and thin scans. Re-measure on a full corpus before believing it.
+
+## 2026-08-10 — A WRONG TEMPLATE BINDING IS STICKY: REPROCESS NEVER RE-IDENTIFIES
+
+Found while gating the wrong-company misfile above, and it explains something the customer
+simulation reported independently.
+
+**Reprocessing a document does not re-examine which template it belongs to.** The reprocess path
+passes `known_template_id` and the extractor honours it, so a document bound to the WRONG template
+stays bound to it for ever, however many times it is reprocessed. Chris pressed "Reprocess all in
+queue" specifically to make his teaching take effect; it could never have healed the 18 documents
+already labelled with the wrong company — and, worse, that is exactly the button a user reaches for
+when they notice something is wrong.
+
+**It also made the corpus harness structurally blind to an entire class of fix.**
+`stress_test/teach_run_ab.js` models reprocess, so it passes the known ids too. My first gate on the
+misfile fix returned two BYTE-IDENTICAL arms and the guard looked inert — when in fact identification
+was never re-run, so the guard was never reached. `TEACH_FRESH_IDENTIFY=1` now drops the known ids
+and models a fresh IMPORT. **Any future change to WHICH template is chosen must be gated with it, or
+the gate is vacuous by construction.**
+
+**The open question is not "should reprocess re-identify" — it is what a user can DO about a wrong
+binding.** Reprocess is the obvious lever and it is inert. Candidates, unranked: re-identify when the
+document's own detected type disagrees with the bound template's type; re-identify when the bound
+template's company is not named on the page (the same predicate the misfile fix already uses); an
+explicit "this is the wrong layout" action in Review; or Learning Recovery reassignment, which
+exists but is admin-only and template-scoped rather than document-scoped. Needs a design pass — the
+naive version (always re-identify on reprocess) throws away the deliberate binding a teach created,
+which is the thing reprocess was built to preserve.
+
+---
 
 ## 2026-08-10 — NON-UK VAT NUMBERS ARE NOW REFUSED (Oracle C7, recorded not fixed)
 
