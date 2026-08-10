@@ -147,6 +147,42 @@ which is the thing reprocess was built to preserve.
 
 ---
 
+## 2026-08-10 — SERIALS: A FORMAT GATE MADE IT WORSE, AND THE REVERT IS THE FINDING
+
+Built, measured, REVERTED. Recorded so nobody builds it again.
+
+`serials` was committing the literal caption `'Serial No:'` on 8 documents (template_fixed, conf 35)
+plus a garbled `'al No: NW-79!'`. The obvious fix is the one that worked twice this week for vat_no
+and account_no: ship the field with its own captions and a format. I built it — a `serial_list`
+pattern accepting one code or a comma/semicolon/slash-separated list, verified against the real gate
+in both directions (it refuses `'Serial No:'` and accepts `'NW-6338572, NW-4685760, NW-7945815'`,
+which a plain `alphanumeric` type does NOT — the commas put it under the coverage floor, so the
+obvious typing would have refused every legitimate multi-value read).
+
+**And the lane did not move: 0 ok / 12 wrong before, 0 ok / 12 wrong after.** What changed is WHICH
+wrong value:
+
+    before   'Serial No:'   template_fixed  conf 35    <- obviously junk to a human
+    after    'CJB-5900'     template_mapping conf 90   <- looks exactly like a real serial number
+
+The caption commits died and the field fell through to the taught mapping, which is reading the
+WORKSHEET NUMBER. So the change traded an obviously-wrong value at low confidence for a
+plausibly-wrong one at high confidence. By this project's own standard — a plausible wrong value is
+more dangerous than an obvious one, because the operator's glance is the last check — that is a
+REGRESSION in safety even though the score is identical. Reverted.
+
+**THE ACTUAL DEFECT IS THE TAUGHT BOX**, not the format: on the Castellan worksheets the serials
+mapping reads `CJB-xxxx`, the worksheet number, which is printed near the serial block. A format
+gate cannot separate two codes of the same shape. Whoever picks this up should start at the taught
+geometry (is the box on the wrong row? does it drift on siblings?), not at the captions — and should
+know that the caption class is already gone the moment the box is right.
+
+Note for scale: on the 67-document measurement subset only 3 documents have serials printed at all,
+so this lane is the least statistically meaningful in the corpus. Do not spend a night on it before
+the fields that appear on every page.
+
+---
+
 ## 2026-08-10 — NON-UK VAT NUMBERS ARE NOW REFUSED (Oracle C7, recorded not fixed)
 
 `vat_no` gained a real format on 2026-08-09 NIGHT (`92c7013`) and the shipped patterns are **UK
