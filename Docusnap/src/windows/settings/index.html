@@ -651,35 +651,35 @@
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Remove label fragments from taught reads</div>
-                <div class="threshold-sub">When a taught box catches the tail of its own label (e.g. the “o.” of “No.” read as “o. DN-67428”), and an independent read of the same spot shows the value without it, ScanFinder files the clean value. Off by default.</div>
+                <div class="threshold-sub">When a taught box catches the tail of its own label (e.g. the “o.” of “No.” read as “o. DN-67428”), and an independent read of the same spot shows the value without it, ScanFinder files the clean value. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="frag-clean-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Complete a cut-short taught read</div>
-                <div class="threshold-sub">When a taught box cuts a reference short (e.g. “DN-6742” for “DN-67428”) and two further reads of the same spot agree on the full value in the sender's usual format, ScanFinder files the full value instead of asking you to verify. Off by default.</div>
+                <div class="threshold-sub">When a taught box cuts a reference short (e.g. “DN-6742” for “DN-67428”) and two further reads of the same spot agree on the full value in the sender's usual format, ScanFinder files the full value instead of asking you to verify. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="clip-commit-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Grow a taught box that cuts through the printed value</div>
-                <div class="threshold-sub">When a taught reading spot's edge lands mid-word on a document (a longer reference than the one it was taught on, or a shifted scan), ScanFinder widens just that read to the full word and files it only when an independent check of the same spot agrees — otherwise the shortened reading is sent for review instead of filing silently. Off by default.</div>
+                <div class="threshold-sub">When a taught reading spot's edge lands mid-word on a document (a longer reference than the one it was taught on, or a shifted scan), ScanFinder widens just that read to the full word and files it only when an independent check of the same spot agrees — otherwise the shortened reading is sent for review instead of filing silently. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="edge-guard-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Catch cut-short dates</div>
-                <div class="threshold-sub">A date read with its year cut off (e.g. “07-01-20-” from “07-01-2026”) is no longer accepted as-is — ScanFinder retries the read or sends the document for review, so a shortened date can't be filed as the wrong year. Off by default.</div>
+                <div class="threshold-sub">A date read with its year cut off (e.g. “07-01-20-” from “07-01-2026”) is no longer accepted as-is — ScanFinder retries the read or sends the document for review, so a shortened date can't be filed as the wrong year. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="date-clip-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Stricter matching for number-like reading spots</div>
-                <div class="threshold-sub">A taught reading spot identified by a number (rather than a printed label) must match that number exactly — so a different date or reference nearby can never be mistaken for it. Off by default.</div>
+                <div class="threshold-sub">A taught reading spot identified by a number (rather than a printed label) must match that number exactly — so a different date or reference nearby can never be mistaken for it. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="label-digit-toggle"><span class="toggle-slider"></span></label>
             </div>
@@ -693,49 +693,49 @@
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Re-read a taught spot off its label when the box clips the value</div>
-                <div class="threshold-sub">When a taught reading spot lands a hair off on a new document and cuts through the value, ScanFinder re-reads it from where the printed label actually sits — so the right value is shown (flagged for a quick check) instead of a garbled one. Works best with word-snapping on. Off by default.</div>
+                <div class="threshold-sub">When a taught reading spot lands a hair off on a new document and cuts through the value, ScanFinder re-reads it from where the printed label actually sits — so the right value is shown (flagged for a quick check) instead of a garbled one. Works best with word-snapping on. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="edge-cut-relocate-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Don't flag a taught value when only its last character was misread</div>
-                <div class="threshold-sub">When a taught reading spot clips the last character of a code but the label-anchored re-read (confirmed by a second reading and matching this sender's usual format) recovers the full value, ScanFinder files it without a needless "check this" flag. Only applies when the fuller read is clearly more confident. Off by default.</div>
+                <div class="threshold-sub">When a taught reading spot clips the last character of a code but the label-anchored re-read (confirmed by a second reading and matching this sender's usual format) recovers the full value, ScanFinder files it without a needless "check this" flag. Only applies when the fuller read is clearly more confident. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="clip-slack-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Never file an impossible date over a valid one</div>
-                <div class="threshold-sub">If a taught date reading spot misreads a date into something impossible (e.g. day 33), ScanFinder keeps the clearly-read date from elsewhere on the page instead — flagged for a quick check. Only when the other read is confident and a genuine calendar date. Off by default.</div>
+                <div class="threshold-sub">If a taught date reading spot misreads a date into something impossible (e.g. day 33), ScanFinder keeps the clearly-read date from elsewhere on the page instead — flagged for a quick check. Only when the other read is confident and a genuine calendar date. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="date-invalid-yield-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Never file a wildly-future date over a valid one</div>
-                <div class="threshold-sub">If a taught date reading spot misreads the year into the far future (e.g. 2096 instead of 2026), ScanFinder keeps the clearly-read date from elsewhere on the page instead — flagged for a quick check. Only for dates more than ~3 years out, so a genuine post-dated document is never affected. Off by default.</div>
+                <div class="threshold-sub">If a taught date reading spot misreads the year into the far future (e.g. 2096 instead of 2026), ScanFinder keeps the clearly-read date from elsewhere on the page instead — flagged for a quick check. Only for dates more than ~3 years out, so a genuine post-dated document is never affected. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="date-future-yield-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Double-check a taught date when the box clips a digit</div>
-                <div class="threshold-sub">When a taught date-reading spot is drawn tightly and clips the first digit on a slightly-tilted scan (e.g. “03/04/2026” read as “01/04/2026”), ScanFinder takes a second, wider reading of the same spot; if it clearly disagrees, the date is flagged for a quick check instead of being filed silently. Never changes a value on its own. Off by default.</div>
+                <div class="threshold-sub">When a taught date-reading spot is drawn tightly and clips the first digit on a slightly-tilted scan (e.g. “03/04/2026” read as “01/04/2026”), ScanFinder takes a second, wider reading of the same spot; if it clearly disagrees, the date is flagged for a quick check instead of being filed silently. Never changes a value on its own. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="pad-window-read-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Recognise a document's type from a large title heading</div>
-                <div class="threshold-sub">When a document's big title (e.g. “CREDIT NOTE”) is printed large or widely letter-spaced, the reader can drop it or split it, and the document is mis-typed (a credit note read as an invoice). ScanFinder takes a quick second look at the title and corrects the type — on both new imports and reprocessing. Off by default.</div>
+                <div class="threshold-sub">When a document's big title (e.g. “CREDIT NOTE”) is printed large or widely letter-spaced, the reader can drop it or split it, and the document is mis-typed (a credit note read as an invoice). ScanFinder takes a quick second look at the title and corrects the type — on both new imports and reprocessing. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="heading-absent-reread-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Check a credit note's total for a missing minus sign</div>
-                <div class="threshold-sub">A credit note's total is money going back to you, but the minus sign in front of it can be lost when the page is read — so a £160.32 credit is filed as a £160.32 charge. ScanFinder checks the total's sign against the document's type and flags it for a quick check instead of filing it silently. It never changes the amount itself — you type the minus. Off by default.</div>
+                <div class="threshold-sub">A credit note's total is money going back to you, but the minus sign in front of it can be lost when the page is read — so a £160.32 credit is filed as a £160.32 charge. ScanFinder checks the total's sign against the document's type and flags it for a quick check instead of filing it silently. It never changes the amount itself — you type the minus. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="credit-sign-toggle"><span class="toggle-slider"></span></label>
             </div>
@@ -763,63 +763,63 @@
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Read a taught value that sits under its heading, not the heading itself</div>
-                <div class="threshold-sub">When you teach ScanFinder where a value is, it also notes the wording beside it so it can find that value again on the next document. If you drew the value <em>underneath</em> its heading — common on delivery notes, where “Delivery Note No.” is on one line and the number on the next — ScanFinder could treat anything within a few lines as being “on the same line”, and file the heading word itself (“Delivery”) as the reference number. This measures the two boxes properly, so a value you taught below its heading is read from where you actually drew it. Where it then can't read the value confidently the document comes to you instead of guessing. Off by default.</div>
+                <div class="threshold-sub">When you teach ScanFinder where a value is, it also notes the wording beside it so it can find that value again on the next document. If you drew the value <em>underneath</em> its heading — common on delivery notes, where “Delivery Note No.” is on one line and the number on the next — ScanFinder could treat anything within a few lines as being “on the same line”, and file the heading word itself (“Delivery”) as the reference number. This measures the two boxes properly, so a value you taught below its heading is read from where you actually drew it. Where it then can't read the value confidently the document comes to you instead of guessing. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="inline-row-overlap-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Never accept a heading word as a reference number</div>
-                <div class="threshold-sub">A reference number — an invoice number, credit note number, delivery number — is always a code with digits in it, never a plain word. ScanFinder already refused word-only readings for order numbers; this applies the same rule to every reference field, including the ones on document types you create yourself, so a heading like “Despatch” or the sender's own name can't be filed as the document's reference. When a word is refused ScanFinder usually reads on and finds the real code beside it. Off by default.</div>
+                <div class="threshold-sub">A reference number — an invoice number, credit note number, delivery number — is always a code with digits in it, never a plain word. ScanFinder already refused word-only readings for order numbers; this applies the same rule to every reference field, including the ones on document types you create yourself, so a heading like “Despatch” or the sender's own name can't be filed as the document's reference. When a word is refused ScanFinder usually reads on and finds the real code beside it. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="ref-role-digit-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Keep a taught field reading from the spot you pointed at</div>
-                <div class="threshold-sub">When you point out a field, ScanFinder remembers where its value sits relative to its heading. On a document with two blocks side by side — “Customer” on the left and “Ship To” on the right, printed level with each other — it could pick up the neighbouring block's heading instead of your value and file that as the customer's name. This checks that anything it reads along the heading's line is where you taught the value to be; if it isn't, it goes back and reads the spot you actually pointed at. Off by default.</div>
+                <div class="threshold-sub">When you point out a field, ScanFinder remembers where its value sits relative to its heading. On a document with two blocks side by side — “Customer” on the left and “Ship To” on the right, printed level with each other — it could pick up the neighbouring block's heading instead of your value and file that as the customer's name. This checks that anything it reads along the heading's line is where you taught the value to be; if it isn't, it goes back and reads the spot you actually pointed at. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="inline-offset-veto-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Read the total from the row you pointed at, not the one above it</div>
-                <div class="threshold-sub">A totals block moves up and down the page depending on how many lines the document has, so the box you drew around the total on one invoice can land a row too high on the next — usually on the VAT line. The amount it finds there looks perfectly valid, so nothing further down catches it, and the wrong figure is filed. On the test set this was 19 of 23 wrong totals, each one exactly the true total divided by six — the signature of reading a 20% VAT row. This measures a one-row shift properly and re-reads from where you actually pointed. It only acts when the heading it found is the exact wording you taught, so a similar heading nearby can't redirect it. Off by default.</div>
+                <div class="threshold-sub">A totals block moves up and down the page depending on how many lines the document has, so the box you drew around the total on one invoice can land a row too high on the next — usually on the VAT line. The amount it finds there looks perfectly valid, so nothing further down catches it, and the wrong figure is filed. On the test set this was 19 of 23 wrong totals, each one exactly the true total divided by six — the signature of reading a 20% VAT row. This measures a one-row shift properly and re-reads from where you actually pointed. It only acts when the heading it found is the exact wording you taught, so a similar heading nearby can't redirect it. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="drift-row-pitch-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Read a whole amount when it's longer than the one you taught</div>
-                <div class="threshold-sub">Amounts are printed right-aligned, so a bigger figure grows to the <em>left</em> — past the edge of the box you drew. If you taught the total on a £99 invoice, a £10,603.44 total on the next one can be read as “0,603.44”. This lets the box stretch left to take in the whole amount. It will only do so when it can show nothing was lost: if stretching would drop the leading digits instead of recovering them, it keeps the original reading and the document comes to you. Works alongside the two reading-accuracy switches above it and does nothing on its own. Off by default.</div>
+                <div class="threshold-sub">Amounts are printed right-aligned, so a bigger figure grows to the <em>left</em> — past the edge of the box you drew. If you taught the total on a £99 invoice, a £10,603.44 total on the next one can be read as “0,603.44”. This lets the box stretch left to take in the whole amount. It will only do so when it can show nothing was lost: if stretching would drop the leading digits instead of recovering them, it keeps the original reading and the document comes to you. Works alongside the two reading-accuracy switches above it and does nothing on its own. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="currency-edge-grow-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Allow for a slightly crooked scan when reading a taught field</div>
-                <div class="threshold-sub">When you point out where a field sits, Scan Finder records that position against the page you taught it on. The next scan of the same document usually goes through the scanner at a very slightly different angle, so the remembered box arrives tilted against the printing — often by around half a line, which is enough to read the heading above a value, or the address line below a company name, instead of the value itself. This tilts the remembered box to match each page as it arrives. It does not straighten or alter your document in any way; it only measures the angle and reads in the right place. Off by default.</div>
+                <div class="threshold-sub">When you point out where a field sits, Scan Finder records that position against the page you taught it on. The next scan of the same document usually goes through the scanner at a very slightly different angle, so the remembered box arrives tilted against the printing — often by around half a line, which is enough to read the heading above a value, or the address line below a company name, instead of the value itself. This tilts the remembered box to match each page as it arrives. It does not straighten or alter your document in any way; it only measures the angle and reads in the right place. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="angle-compose-scan-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Keep the sender's name you confirmed when the letterhead reads as nonsense</div>
-                <div class="threshold-sub">Once you've confirmed who a document is from, Scan Finder keeps that company name against the layout. On a poor scan the letterhead can come back garbled, or the reading can pick up something that isn't a company name at all — a date line, a VAT number, a page heading. On the test set that happened on 42 documents out of 135. Scan Finder already spots this and tells you (“Letterhead may read ‘Castellan Security Systems’ — detected ‘DATE 14-03-2026 Job Ref JB-8887’”); this lets it act on what it has already worked out, and keep the name you confirmed. A genuinely different company still comes through, and re-teaching still replaces a name that has gone out of date. Off by default.</div>
+                <div class="threshold-sub">Once you've confirmed who a document is from, Scan Finder keeps that company name against the layout. On a poor scan the letterhead can come back garbled, or the reading can pick up something that isn't a company name at all — a date line, a VAT number, a page heading. On the test set that happened on 42 documents out of 135. Scan Finder already spots this and tells you (“Letterhead may read ‘Castellan Security Systems’ — detected ‘DATE 14-03-2026 Job Ref JB-8887’”); this lets it act on what it has already worked out, and keep the name you confirmed. A genuinely different company still comes through, and re-teaching still replaces a name that has gone out of date. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="fixed-issuer-repair-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Trust a taught box when the field has no printed label to check it against</div>
-                <div class="threshold-sub">When you point out where a field sits, Scan Finder also notes the printed wording beside it (“Invoice No”, “Balance Due”) and uses it to check the page hasn't shifted before it reads. The company name at the top of a letterhead has no such wording — there is nothing to look for. Until now Scan Finder treated “no wording to check” the same as “checked and failed”, and fell back on a whole-page estimate of how the scan had moved; on a scan that estimate can pull the reading onto the wrong line, so what got saved as the sender was a page heading, a street address or a VAT line instead. With this on, it only falls back that way when there really was wording to find and it could not be found. On the test set the sender's name was wrong on 22 documents out of 140 for exactly this reason, and all 22 read correctly with this on. Off by default.</div>
+                <div class="threshold-sub">When you point out where a field sits, Scan Finder also notes the printed wording beside it (“Invoice No”, “Balance Due”) and uses it to check the page hasn't shifted before it reads. The company name at the top of a letterhead has no such wording — there is nothing to look for. Until now Scan Finder treated “no wording to check” the same as “checked and failed”, and fell back on a whole-page estimate of how the scan had moved; on a scan that estimate can pull the reading onto the wrong line, so what got saved as the sender was a page heading, a street address or a VAT line instead. With this on, it only falls back that way when there really was wording to find and it could not be found. On the test set the sender's name was wrong on 22 documents out of 140 for exactly this reason, and all 22 read correctly with this on. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="reg-arbiter-anchor-evidence-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Check the sender's name is really printed where you drew the box</div>
-                <div class="threshold-sub">Works alongside the setting above. Once you have confirmed who a document is from, Scan Finder keeps that name against the layout. When a scan arrives shifted or crooked, the box you drew around the company name can land on the wrong part of the page and read something else — and that reading replaces the name you confirmed. This looks in the area around where you drew the box (half as much again in each direction) and checks whether the confirmed name is actually printed there. If it is, the name you confirmed is kept. If it isn't there, or that part of the page could not be read at all, nothing changes. It can only keep a name you already confirmed — it never invents one, never raises how sure Scan Finder is, and a document genuinely from a different company still comes through. Off by default.</div>
+                <div class="threshold-sub">Works alongside the setting above. Once you have confirmed who a document is from, Scan Finder keeps that name against the layout. When a scan arrives shifted or crooked, the box you drew around the company name can land on the wrong part of the page and read something else — and that reading replaces the name you confirmed. This looks in the area around where you drew the box (half as much again in each direction) and checks whether the confirmed name is actually printed there. If it is, the name you confirmed is kept. If it isn't there, or that part of the page could not be read at all, nothing changes. It can only keep a name you already confirmed — it never invents one, never raises how sure Scan Finder is, and a document genuinely from a different company still comes through. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="issuer-region-presence-toggle"><span class="toggle-slider"></span></label>
             </div>
@@ -833,42 +833,42 @@
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Don&rsquo;t let a field&rsquo;s own printed wording be saved as its value</div>
-                <div class="threshold-sub">When you point out where a reference or account number sits, a shifted scan can make that box land on the printed wording beside it instead &mdash; so Scan Finder saves the word &ldquo;Ref&rdquo;, &ldquo;Account&rdquo; or &ldquo;Delivery&rdquo; as the reference number. A reference is a code, and a code always carries at least one number, so a value with no numbers in it at all is refused and the document comes to you instead. Off by default.</div>
+                <div class="threshold-sub">When you point out where a reference or account number sits, a shifted scan can make that box land on the printed wording beside it instead &mdash; so Scan Finder saves the word &ldquo;Ref&rdquo;, &ldquo;Account&rdquo; or &ldquo;Delivery&rdquo; as the reference number. A reference is a code, and a code always carries at least one number, so a value with no numbers in it at all is refused and the document comes to you instead. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="stage05-ref-code-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Stop one printed code filling three different fields</div>
-                <div class="threshold-sub">Fields that hold a reference of some kind all start out looking for the same general wording (&ldquo;Ref&rdquo;, &ldquo;No.&rdquo;, &ldquo;Number&rdquo;), so a single code printed on the page can be picked up as the invoice number AND the order number AND the account number at once. With this on, when one field matches that code by its own specific wording, the fields that matched only general wording give it up. It can only ever remove a duplicate &mdash; it never moves a value to a different field. Off by default.</div>
+                <div class="threshold-sub">Fields that hold a reference of some kind all start out looking for the same general wording (&ldquo;Ref&rdquo;, &ldquo;No.&rdquo;, &ldquo;Number&rdquo;), so a single code printed on the page can be picked up as the invoice number AND the order number AND the account number at once. With this on, when one field matches that code by its own specific wording, the fields that matched only general wording give it up. It can only ever remove a duplicate &mdash; it never moves a value to a different field. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="generic-caption-exclusive-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Trust the document&rsquo;s own printed heading when deciding what it is</div>
-                <div class="threshold-sub">Scan Finder works out what a document is by adding up evidence, so a built-in type that recognises a lot of wording can outvote a type you created yourself that recognises only its own name. When that happens, a template you taught is filed under a type its own future documents can never be recognised as &mdash; on one test run 35 documents matched no template at all, and nothing on screen said why. With this on, if exactly one of your document types has its own name printed as the heading at the top of the page, that type wins. Off by default.</div>
+                <div class="threshold-sub">Scan Finder works out what a document is by adding up evidence, so a built-in type that recognises a lot of wording can outvote a type you created yourself that recognises only its own name. When that happens, a template you taught is filed under a type its own future documents can never be recognised as &mdash; on one test run 35 documents matched no template at all, and nothing on screen said why. With this on, if exactly one of your document types has its own name printed as the heading at the top of the page, that type wins. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="type-title-owner-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Query a reference or date that doesn&rsquo;t look real before filing it</div>
-                <div class="threshold-sub">Two checks that only ever ADD a note &mdash; they never change a value or choose a different one, and a document carrying a note is never filed without you seeing it. First: a reference whose shape is scanning noise rather than a code (jumbled capitals with no run of digits). Second: a date whose year is printed nowhere on the page, which is exactly what a misread digit produces. Genuine codes like &ldquo;HTS-SO-12013&rdquo; or &ldquo;PD/25/1197&rdquo; are left alone. Off by default.</div>
+                <div class="threshold-sub">Two checks that only ever ADD a note &mdash; they never change a value or choose a different one, and a document carrying a note is never filed without you seeing it. First: a reference whose shape is scanning noise rather than a code (jumbled capitals with no run of digits). Second: a date whose year is printed nowhere on the page, which is exactly what a misread digit produces. Genuine codes like &ldquo;HTS-SO-12013&rdquo; or &ldquo;PD/25/1197&rdquo; are left alone. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="filing-sanity-flags-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Read the sender&rsquo;s name off the letterhead the first time you see a company</div>
-                <div class="threshold-sub">The first document from a new company has nothing for Scan Finder to recognise &mdash; no logo it has seen before, no name you have confirmed, no layout it has been taught &mdash; so the sender is left blank even though the company name is printed across the top of the page. With this on, Scan Finder reads the largest name at the top of the page (ignoring the recipient block and the document heading) and offers it: the name appears with a &ldquo;Use this&rdquo; button and a note asking you to check it is the sender and not the customer. It never fills the name in by itself, on purpose &mdash; getting it wrong once would teach Scan Finder the wrong company and every later document from them would follow it. Once you confirm the name once, the app recognises them from then on. Off by default.</div>
+                <div class="threshold-sub">The first document from a new company has nothing for Scan Finder to recognise &mdash; no logo it has seen before, no name you have confirmed, no layout it has been taught &mdash; so the sender is left blank even though the company name is printed across the top of the page. With this on, Scan Finder reads the largest name at the top of the page (ignoring the recipient block and the document heading) and offers it: the name appears with a &ldquo;Use this&rdquo; button and a note asking you to check it is the sender and not the customer. It never fills the name in by itself, on purpose &mdash; getting it wrong once would teach Scan Finder the wrong company and every later document from them would follow it. Once you confirm the name once, the app recognises them from then on. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="letterhead-issuer-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Only use a learned layout on documents that actually name that company</div>
-                <div class="threshold-sub">When Scan Finder learns a layout, it remembers a handful of words from the top of the page to recognise it again. On a document you send out yourself &mdash; a purchase order &mdash; the top of the page is <em>your own</em> name and address, and that same block is printed on nearly every document you receive, as the delivery address. So a layout learned from one of your own orders can recognise itself in everybody else&rsquo;s paperwork, and stamp the wrong company on it with high confidence. With this on, a layout is only used on a document that mentions that company somewhere on the page. Anything else goes to you instead. On the test set this removed 17 documents labelled with the wrong sender, and recovered 17 reference numbers and dates that had been read off the wrong layout. Off by default.</div>
+                <div class="threshold-sub">When Scan Finder learns a layout, it remembers a handful of words from the top of the page to recognise it again. On a document you send out yourself &mdash; a purchase order &mdash; the top of the page is <em>your own</em> name and address, and that same block is printed on nearly every document you receive, as the delivery address. So a layout learned from one of your own orders can recognise itself in everybody else&rsquo;s paperwork, and stamp the wrong company on it with high confidence. With this on, a layout is only used on a document that mentions that company somewhere on the page. Anything else goes to you instead. On the test set this removed 17 documents labelled with the wrong sender, and recovered 17 reference numbers and dates that had been read off the wrong layout. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="identity-on-page-toggle"><span class="toggle-slider"></span></label>
             </div>
@@ -882,7 +882,7 @@
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Don't let a hidden working figure block a document from filing itself</div>
-                <div class="threshold-sub">To check that a document's totals add up, ScanFinder sometimes reads figures your document type has no field for — a subtotal or a VAT line on a form that only shows a grand total. Those working figures are never shown to you, never learned, and are thrown away the moment you confirm. Until now one of them could quietly stop a perfectly good document from filing itself, and because it isn't on your form there was nothing on screen to look at or clear. This lets those hidden figures out of the filing decision, while still holding back any document where one of them looks wrong. Off by default.</div>
+                <div class="threshold-sub">To check that a document's totals add up, ScanFinder sometimes reads figures your document type has no field for — a subtotal or a VAT line on a form that only shows a grand total. Those working figures are never shown to you, never learned, and are thrown away the moment you confirm. Until now one of them could quietly stop a perfectly good document from filing itself, and because it isn't on your form there was nothing on screen to look at or clear. This lets those hidden figures out of the filing decision, while still holding back any document where one of them looks wrong. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="shadow-row-skip-toggle"><span class="toggle-slider"></span></label>
             </div>

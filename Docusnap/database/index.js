@@ -61,6 +61,63 @@ function runMigrations(db) {
   runJsMigrations(db, applied);
 }
 
+// The switches migration 60 turns on. Kept beside the migration so the two cannot drift, and
+// annotated so a future reader knows what each one BOUGHT rather than only what it is called.
+const PROVEN_ON_DEFAULTS = [
+  'template_reg_arbiter_anchor_evidence',      // issuer 120 ok/20 wrong -> 138/2 on 145 siblings
+  'template_issuer_region_presence',           // closes the last 2 of those; issuer 140/0/0
+  'template_identity_on_page',                 // the wrong-company misfile: wrong senders 18 -> 1
+  'letterhead_issuer',                         // a brand-new supplier is no longer left blank
+  'stage05_ref_code_gate',                     // a taught box can no longer commit its own caption
+  'keyword_generic_caption_exclusive',         // one printed code can no longer fill three fields
+  'type_title_owner_precedence',               // the document's own printed heading wins the type
+  'filing_value_sanity_flags',                 // flag-only: a nonsense reference or year is queried
+  'template_drift_row_pitch',                  // the VAT-row totals class; 30 healed, 0 regressed
+  'template_currency_edge_grow',               // money is right-aligned, so a longer value overflows left
+  'teach_angle_compose_scan',                  // +18 issuer / +36 customer on tilted siblings
+  'template_fixed_issuer_repair',              // 42 of 135 documents read something that is not a company
+  'template_inline_row_overlap',               // the caption-hijack class (5 healed / 0 regressed)
+  'ref_role_digit_gate',                       // a reference with no digit is a caption, not a code
+  'template_pad_window_read',                  // a clipped taught date is flagged, never silently expanded
+  'template_date_clip_gate',                   // a date FRAGMENT can no longer pass as a date
+  'template_date_future_yield',                // a future-dated read yields to a plausible one
+  'template_date_invalid_yield',               // an impossible date yields
+  'template_abs_edge_guard',                   // the jitter-crater arc: a cut taught box is grown to words
+  'template_edge_cut_relocate',                // re-seat a value the horizontal grow cannot reach
+  'template_clip_commit',                      // a clean clipped read commits instead of a false note
+  'template_clip_commit_edge_slack',           // one cut trailing glyph does not false-flag the value
+  'template_code_frag_clean',                  // strip a label-tail fragment ('o. DN-67428')
+  'template_label_digit_exact',                // a digit-heavy needle cannot fuzzy-lock a different value
+  'template_pad_window_code',                  // a padded re-read recovers a clipped code
+  'template_pad_window_code_labelled',         // the labelled tier of the same
+  'anchor_inline_taught_offset_veto',          // an inline read may not override a taught offset
+  'heading_absent_reread',                     // a dropped title is recovered by a band re-read
+  'credit_sign_coherence',                     // a credit note keeps its minus sign
+  'vat_reg_not_amount',                        // a VAT registration number is not a tax amount
+  'template_freeze_qualify',                   // a caption can no longer become a template's permanent value
+  'template_fixed_near_match',                 // a one-glyph misread does not displace the confirmed name
+  'template_fixed_fragment',                   // debris does not displace the confirmed name
+  'template_target_word_snap',                 // derived reads snap to word geometry
+  'template_code_edge_clean',                  // punctuation label-tail heal
+  'trust_shadow_row_skip',                     // an invisible row can no longer deadlock filing
+  'crosscheck_outlier_reconcile',              // restore a corroborated reference over a lone garble
+  'universal_verify_restore',                  // post-merge verify for references and dates
+  'struct_code_read',                          // structured code reading
+  'prefix_garble_adopt',                       // adopt a corroborated prefix over a garble
+  'anchor_label_left_clamp',                   // the label-tail crop clamp
+  'anchor_value_right_grow',                   // grow a right-clipped value
+  'name_unclip_reconcile',                     // a clipped company name is reconciled
+  // NOT LISTED, and each for a reason that must not be re-litigated by adding it back:
+  //   template_snap_union_witness          Oracle SENT IT BACK and it was reverted; default OFF is deliberate
+  //   template_freetext_guard_parity       measured near-inert, and Oracle sent back part of it
+  //   template_freetext_fallthrough_cap    the other half of that same slice
+  //   reprocess_heading_geom               already armed by heading_absent_reread; a second row would imply a toggle that does not exist
+  //   heading_title_gap_collapse           same - armed by heading_absent_reread
+  //   template_money_snap_proof            already defaults ON in the extractor
+  // A settings row for any of those would be a switch the customer can flip that changes
+  // nothing - the exact dead-toggle failure test_settings_wiring.js exists to catch.
+];
+
 function runJsMigrations(db, applied) {
   // ── Workflow 'paid' heal — MUST run BEFORE any stamped block (Workflow Slice 1, Oracle
   // condition 1). The half-wired 'paid' route state was removed for v1: it sat in neither
@@ -1239,6 +1296,43 @@ function runJsMigrations(db, applied) {
     }
     db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (59)').run();
     console.log('JS migration 59 applied: delivery_number typed reference_code (a digit-free caption can no longer auto-file)');
+  }
+
+
+  // ── 60: the proven reading improvements ON by default (2026-08-10, owner-requested) ──────────
+  // Every switch below shipped DEFAULT OFF and was gated green on the 200-document corpus before it
+  // got here. Turning them on is the owner's decision, taken so a test install on another machine
+  // behaves the way the measured configuration does rather than the way a 2025 default does.
+  //
+  // WRITTEN AS SETTINGS ROWS, NOT AS CODE DEFAULTS, on purpose: the Settings toggles read the
+  // setting, so flipping only the code default would leave every switch RENDERING OFF while
+  // BEHAVING as on — exactly the "Off by default beside a switch that is on" contradiction the
+  // customer review called out. Rows make the screen truthful and every one of them stays flippable.
+  //
+  // `INSERT OR IGNORE`: an existing install's own choice is NEVER overwritten. Someone who
+  // deliberately turned one of these off keeps it off; only keys with no row at all are seeded.
+  //
+  // TWO ARE DELIBERATELY EXCLUDED, and both are the owner's call rather than mine:
+  //   * `deskew_on_import` — there is a standing ruling against it (Oracle: wrong layer), and
+  //     turning it on silently DISABLES `teach_angle_compose_scan`, which is worth +18 issuer and
+  //     +36 customer. Two of these switches fight; this is the one that loses.
+  //   * `template_fixed_seed_agreement_keep` — correct in principle, but measured to lift 96
+  //     documents into the auto-file band, 47 of which carry a wrong value in some OTHER field.
+  //     It removes a confidence penalty that is accidentally acting as a safety net for the
+  //     account-number defect. Fix that first.
+  if (!applied.has(60)) {
+    try {
+      const ins = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+      const seeded = [];
+      for (const key of PROVEN_ON_DEFAULTS) {
+        const r = ins.run(key, 'true');
+        if (r.changes) seeded.push(key);
+      }
+      console.log(`  migration 60: turned on ${seeded.length} reading improvement(s)`
+                  + (seeded.length ? ` (${seeded.length} newly seeded, existing choices untouched)` : ''));
+    } catch (e) { console.warn(`  migration 60 defaults: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (60)').run();
+    console.log('JS migration 60 applied: proven reading improvements default ON');
   }
 
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
