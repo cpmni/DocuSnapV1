@@ -72,7 +72,7 @@ the operator is looking at.
 **Owner exhibit:** page prints `PI/26/6000`; field committed `P1266000` at High·95%; Review said
 *"'P1266000' doesn't appear on this page as written"*.
 
-**ROOT CAUSE, verified at source.** `anchor._repair_single_token` (`anchor.py:2632`) fixes a real
+**ROOT CAUSE, verified at source.** `anchor._repair_single_token` (`anchor.py:2650`) fixes a real
 PSM-7 artefact (a spurious `/` `\` `|` wedged into a spaceless serial, `'H7R5326676'` →
 `'H/7R5326676'`) by re-reading the crop with `tessedit_char_whitelist=A-Za-z0-9-` — **a whitelist that
 physically cannot emit `/`** — and accepting when the alphanumerics match. That test is satisfied by
@@ -80,7 +80,7 @@ every code whose separators are PRINTED. Its only protection was a guard for DAT
 (`\d{1,4}[./-]\d{1,2}…`), which a letter-prefixed reference misses.
 
 **Reached from BOTH crop paths** — anchor.py's own rungs AND, via the cross-import at
-`template_mapper.py:40` → `:3638`, the Stage 0.5 `template_mapping` rung, which is where every
+`anchor._ocr_crop_laddered` (`anchor.py:3228`), the Stage 0.5 `template_mapping` rung, which is where every
 measured instance came through.
 
 **⚠ CORRECTION TO THE BACKLOG ENTRY, now fixed in place.** It recorded `anchor.py:2666` as building

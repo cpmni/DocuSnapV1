@@ -35,7 +35,8 @@ WHETHER.** Kill `teach_typed_value_locate`. **Limit seen live: a mangled read ca
 (`GB651002784` → `'GB85'`+`'1002784'`), so the census's 89.5% is an UPPER BOUND.**
 **(2) A PRINTED SLASH INSIDE A REFERENCE WAS BEING DELETED** (`1ad36de`). The owner's *"doesn't
 appear on this page"* note was **TRUE**; the value was wrong. `anchor._repair_single_token`
-(`:2632`, reached from `template_mapping` via `template_mapper.py:40`→`:3638`) re-reads a spaceless
+(fn `:2650`, guard `:2686`; reached from `template_mapping` via `_ocr_crop_laddered` at
+`anchor.py:3228` — NOT `template_mapper.py:3638`, which is the test-stub path) re-reads a spaceless
 code containing `/` with a whitelist that **cannot emit `/`** and accepts on matching alphanumerics —
 true of every code whose separators are PRINTED. **The backlog's own analysis was WRONG and is
 corrected in place: it named the comparison local and missed that the function RETURNS `alt`.** Fix =
@@ -47,17 +48,34 @@ is the proof** — doc 0025 carried TWO defects and now reads `P1/26/9923`, so t
 `I`→`1` is a separate upstream OCR defect. Its confidence moved 95→90, still over the 88 floor.
 **(4) NON-UK VAT NUMBERS RECOGNISED** (`d9768c5`, `VAT_EU_FORMATS`, DEFAULT OFF) — per-country
 structures with exact element counts, never a generic two-letter rule (which readmits the garbles).
-**Live census: 56 distinct values, 0 flipped refused→accepted.** **BOTH consumers widen from ONE
-setting** — the renderer compiles its own pattern copy, so a backend-only widening still warns the
-operator (the `iban` lesson). `vat_eu` ships as a separate INERT list; the flag is what merges it.
-**NO corpus arm for it, deliberately: the corpus is UK-only, and a flat lane cannot distinguish
-"inert because UK" from "never armed".**
+**Live census: 56 distinct values, 0 flipped refused→accepted.** `vat_eu` ships as a separate INERT
+list; the flag is what merges it. **THERE ARE THREE CONSUMERS OF `validation_patterns`, NOT TWO** —
+Python (`keyword.load_patterns`) and the renderer (`get-validation-patterns`) widen; `trust.js`
+`_sharedValidationPatterns` (freeze_guard + the auto-file checksum) deliberately does NOT, and that
+is PINNED. **NO corpus arm, deliberately: the corpus is UK-only and a flat lane cannot distinguish
+"inert because UK" from "never armed" — Oracle upheld this but named the arm that IS valid (a
+REJECTED-candidate census; the committed-value census is blind to what the gate refuses).**
 **(5) `FILING_VALUE_SANITY_FLAGS` IS `'true'` IN THE LIVE DB** — the note below recording it as
 bridged-but-OFF was STALE. Verify a flag's state in the DB before calling an arm inert.
 **(6) OWNER: `deskew_on_import` is `'true'` AGAIN and it is NOT inert** — `engine.py:5253` is
 `elif (TEACH_ANGLE_COMPOSE_SCAN and not raw_pages ...)` and import-deskew populates `raw_pages`, so
 `teach_angle_compose_scan` (also `'true'`) is **armed and structurally unreachable**.
-**OUTSTANDING: an Oracle pass on both extraction flags, and the whole UI smoke list.**
+**(7) 2026-08-10 EVENING3 — BOTH ORACLE PASSES RUN: SIGN OFF WITH CONDITIONS, NEITHER FLIPPABLE YET.**
+**VAT C1 was a SHIP-BLOCKER, now fixed:** `NO` is also the English caption word "No", the separator
+class swallowed a trailing full stop, and a UK VRN is exactly NINE digits — Norway's own count — so
+`No. 651 0027 84` (a UK number carrying its label tail) validated as Norwegian at coverage 1.00 and
+would have committed SILENTLY. The MVA/MWST suffix is now MANDATORY; pin run RED first; census
+unchanged (56/10/46/0). Also fixed: the renderer cached the MERGED patterns, so a flip needed a
+restart and left the pipeline wide while the warning stayed narrow (C4). **STILL BLOCKING: the
+rejected-candidate census (C2).**
+**Separator guard: layer and root cause CONFIRMED** (Oracle ruled AGAINST making the re-read
+unreachable from the template rung). Applied C3 (my commit shipped a FALSE CITATION —
+`template_mapper.py:3638` is DEAD in production; the live reach is `anchor.py:3228`), C5 (currency
+excluded), C4/C6/C7 pins. **STILL BLOCKING: (a) the owner's own exhibit has never been shown to be
+fixed — two mechanisms give OPPOSITE outcomes and opening that invoice is their acceptance test;
+(b) the class the guard DISABLES is unmeasured, and eight byte-identical lanes may be vacuous for
+it.** Details + method in `pendingfeatures.md`.
+**OUTSTANDING: the two measurements above, and the whole UI smoke list.**
 
 ### Prior — 2026-08-10 EVENING: **`HANDOVER_2026-08-10_EVENING.md`**
 Branch **`feat/teach-side-overnight`**, HEAD **`6acf4e2`**, PUSHED, tree clean. Owner present.

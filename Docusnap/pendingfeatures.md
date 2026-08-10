@@ -118,8 +118,9 @@ search could find. Re-run it on a second taught state before treating 89.5% as t
 
 > **⚠ ROOT-CAUSED 2026-08-10 EVENING, AND IT OVERTURNS THIS ENTRY'S DIRECTION. The slash-removal
 > site IS located, the note was TELLING THE TRUTH, and the value is the thing that is wrong.**
-> `anchor._repair_single_token` (`anchor.py:2632`, reached from the winning `template_mapping` rung
-> via the cross-import at `template_mapper.py:40` → `:3638`) re-reads a spaceless token that
+> `anchor._repair_single_token` (`anchor.py:2650`, predicate `:2647`, guard `:2686`; reached from
+> the winning `template_mapping` rung via `anchor._ocr_crop_laddered` at `anchor.py:3228`)
+> re-reads a spaceless token that
 > contains `/` using `tessedit_char_whitelist=A-Za-z0-9-` — a whitelist that **physically cannot
 > emit `/`** — and accepts the result when its alphanumerics match. That acceptance test is
 > satisfied by every code whose separators are PRINTED, so `PI/26/6000` was re-read as `PI266000`,
@@ -416,14 +417,48 @@ the fields that appear on every page.
 ### unspaced; `comsssie42` / `ee05351042` / `VAT` / `3PL` / `1RE` still refused; UK identical.
 ### **The renderer widens from the SAME setting** (`get-validation-patterns` in review/handler.js),
 ### which is the `iban` lesson — a backend-only widening would still warn an operator that their
-### correctly typed Irish number is wrong.
+### correctly typed Irish number is wrong. **CORRECTED BY ORACLE C3 (below): that is TWO of THREE
+### consumers.** `trust.js` reads the same config directly and deliberately does not widen.
 ### **THE LIMIT, which format cannot fix:** a garble that matches a real country structure exactly
 ### IS accepted — `'ee053510429'` (nine digits, a valid Estonian shape) passes, while the measured
 ### `'ee05351042'` (eight) does not. Same lesson as the serials entry.
 ### **DEVIATION, pinned:** Romania is officially 2-10 digits; it ships floored at SIX, because a
 ### 2-digit body in a filing field is junk. A shorter real RO number falls to review.
-### **Still outstanding: no corpus arm and no Oracle pass** — off is byte-identical and pinned, on
-### is measured only against this install's value set.
+### **ORACLE: SIGN OFF WITH CONDITIONS (2026-08-10) - 4 BLOCKING. C1/C3/C4 APPLIED; C2 OUTSTANDING.**
+### **C1 WAS A SHIP-BLOCKER AND IS FIXED.** `NO` is not only Norway's country code, it is the
+### English caption word "No" - and `keyword.py:1409` (`_VAT_ID_LEADIN`) already records that as
+### what sits immediately left of a VAT number's digits. The separator class swallowed a space AND
+### a full stop, both consumers compile IGNORECASE, and a UK VRN is exactly NINE digits - Norway's
+### own element count. So `No 651 0027 84` / `No. 651 0027 84` (a UK number carrying its own label
+### tail, this repo's most-measured defect class) validated as Norwegian at coverage 1.00 and would
+### have COMMITTED SILENTLY where today it falls to review. Fixed by making the MVA suffix
+### MANDATORY (and MWST|TVA|IVA for CHE) - a more specific rule, not a looser one. The pin was run
+### RED against the pre-fix config before it went green. Live census re-run: still 56 values,
+### 10 accepted / 46 refused / **0 flipped**, so the narrowing cost nothing on real data.
+### **C3: THE "BOTH CONSUMERS WIDEN" CLAIM WAS INCOMPLETE - THERE ARE THREE.**
+### `trust.js` `_sharedValidationPatterns` reads the config directly and does NOT widen, feeding
+### freeze_guard arm B (a correct `DE123456789` is declined a freeze with a misleading reason
+### `'format'`) and the auto-file `vat_gb` HMRC mod-97 checksum (a correct Irish number could never
+### auto-file). Both fail toward review, so it is recorded and PINNED
+### (`database/modules/test_freeze_guard.js`, with a UK control) rather than widened - widening it
+### changes what gets FROZEN and what AUTO-FILES, which is a different decision.
+### **C4: FLIPPING THE TOGGLE NEEDED AN APP RESTART, AND THAT WAS THE DEFECT ITSELF.** The renderer
+### cached the MERGED patterns while Python re-reads the setting per spawn, so for one restart the
+### pipeline was wide and the operator warning narrow - the exact UI/pipeline disagreement the
+### widening exists to remove. Now caches the RAW config and merges per call. New behavioural pin
+### `src/modules/review/test_validation_patterns_merge.js`, shown RED (4 checks) against the old
+### cached-merge before going green.
+### **STILL OUTSTANDING - C2, BLOCKING, THE ONE NON-VACUOUS ARM.** Oracle RULED THE MISSING CORPUS
+### ARM ACCEPTABLE (a UK-only corpus genuinely cannot distinguish inert-because-UK from
+### never-armed) but named an arm that needs no non-UK document: a **REJECTED-CANDIDATE census**.
+### The existing census enumerates COMMITTED values, i.e. a population the current gate has already
+### removed the at-risk class from - which is precisely why it could not see C1. Instrument the two
+### rejection sites (`keyword._validate` on the vat_gb branch, `anchor._crop_is_credible`), collect
+### every candidate that FAILED over the 200-doc UK corpus, and re-test those against the widened
+### set. **Pass = zero newly accepted, or every accept individually adjudicated.**
+### Advisory and also outstanding: an operator-affirmation hatch for a value the table cannot know
+### (model on `accepted_name_values`); `guessType` maps /vat/ to `currency` (`doctype-editor.js:78`),
+### its own defect; and the "VAT number (GB)" type label lies once armed.
 
 `vat_no` gained a real format on 2026-08-09 NIGHT (`92c7013`) and the shipped patterns are **UK
 ONLY**: `GB` + the 3-4-2 grouping, the 12-digit branch-trader form, the GD/HA government form, and a
@@ -528,6 +563,66 @@ no `feedback_minimal_interaction_autofile` tension. Read-only display of data al
 byte-identical.
 
 **NOT BUILT — logged on the owner's "add to list" convention.**
+
+---
+
+## 2026-08-10 — ORACLE ON `CODE_SEPARATOR_STRUCTURE_GUARD`: SIGN OFF W/COND, 2 MEASUREMENTS LEFT
+
+**Verdict: SIGN OFF WITH CONDITIONS — 3 BLOCKING.** Root cause, layer and direction all confirmed;
+it ruled explicitly AGAINST making the whitelist re-read unreachable from the template rung (that
+would remove a real repair from the rung that reads most codes — the defect is the ACCEPTANCE TEST,
+which is where the guard sits). `realdoc_regression.js` is NOT required (one call site; the live
+DB's 7 confirmed documents make it vacuous — consistent with the 08-09 EVENING ruling).
+
+**APPLIED:**
+- **C3 — the commit shipped a FALSE CITATION while correcting one.** `anchor.py:2632` is inside
+  `_value_drifted_from_box`; the function is `:2650`, predicate `:2647`, guard `:2686`. And
+  `template_mapper.py:40` → `:3638` is **DEAD IN PRODUCTION**: `_crop_and_ocr` returns at `:3623`
+  through `_ocr_crop_laddered` whenever `ocr_text_fn is _ocr_text`, which is the default and what
+  `engine.py` passes; only a test stub reaches the later call. The live reach is `anchor.py:3228`
+  (and `:3012`). Corrected in the code comment, the test docstring, `CLAUDE.md`, this file and the
+  handover. **The standing rule applies to my own work.**
+- **C5 — currency excluded from the keep**, so the blast radius is exactly the code fields the
+  guard was measured on. **Oracle's own example was wrong and the correction is pinned:**
+  `1234/56` never reaches the repair in either state (the pre-existing date-shape guard claims it).
+  The shape that DOES reach it is `10603/44` — the misread of the 08-09 `£10,603.44` exhibit —
+  because five digits before the separator take it clear of the date shape.
+- **C4 — the accepted cost is pinned:** `AB12/34567` (a genuine artefact landing mid-token, ≥2
+  alnum either side) is NO LONGER repaired. The "one-char group is the artefact signature" premise
+  is a prior from one docstring exhibit, not a measured property. The class is narrower than it
+  looks — the repair only ever fired when the re-read DROPPED the character, never when it
+  substituted a glyph — but nobody has counted it. **Do not tighten the predicate to compensate:
+  that is what re-breaks the 36 measured invoice_numbers.**
+- **C6 — the 95→90 is explained and recorded.** Not the guard touching a confidence path: Stage
+  2.5b withdraws a conformance boost (`ocr_corrector.py:274` `boost_table {0: 8}`, applied at
+  `engine.py:6693`) that the install's own SEPARATOR-FREE learned history — history generated by
+  this very defect — used to grant. 90 clears the 88 floor. **Do not "restore" the 95.**
+- **C7 — `re.fullmatch`** on `_STRUCTURED_CODE_SEP`.
+
+**OUTSTANDING, BOTH BLOCKING, BOTH MEASUREMENTS:**
+1. **C1 — the owner's own exhibit has never been shown to be fixed.** `P1266000` can arise two
+   ways and they give OPPOSITE outcomes: (a) the crop read `P1/26/6000` with the `I`→`1` upstream
+   (as on corpus doc 0025) → armed commits `P1/26/6000` and **the note the owner reported is still
+   there**; or (b) the crop read `PI/26/6000`, the repair stripped it, and Stage 2.5b substituted
+   `I`→`1` toward the poisoned template (`n_fixes=1`, boost 20 → `min(95, 90+20) = 95`, which fits
+   the observed 95 exactly) → armed commits `PI/26/6000` and **the exhibit heals**. The census
+   cannot answer it (`census_separator_loss.py:74` matches on alphanumeric identity, so it excludes
+   every glyph-mismatched document by construction). **Run the armed pipeline on that one document;
+   report the committed value, the method string, and whether the note clears — BEFORE the owner
+   flips, because opening that invoice is their acceptance test.**
+2. **C2 — measure the class the guard DISABLES; eight flat lanes do not stand in for it.**
+   Instrument `_repair_single_token` with a counter: (a) reached with a `[\/|]`-bearing segment,
+   (b) returned a real repair, (c) refused by `_STRUCTURED_CODE_SEP` — keyed by field and val_type.
+   Run over the corpus AND the live snapshot. Also run the INVERSE census (committed value contains
+   an interior `/`, page text prints the same alnum core without one — invert
+   `census_separator_loss.py:67`/`:73`). **If (b) is 0 on the corpus, say so: the corpus is then
+   structurally blind to the guard's cost and the eight byte-identical lanes are vacuous for it.**
+
+**Also worth knowing, not blocking:** on the 36 healed documents the Gate C note clears, so they
+become auto-file ELIGIBLE at 90. Latent on this install (threshold 100, never fired) but live on a
+customer install with the slider at 88–90. And arming the guard does NOT un-poison the install —
+off the template rung, a corrected value read by keyword/anchor on a scope with ≥3 separator-free
+confirms is still nulled (`engine.py:7181-7229`); only new confirms or Learning Repair fix that.
 
 ---
 

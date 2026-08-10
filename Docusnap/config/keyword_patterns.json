@@ -737,7 +737,7 @@
       "^GB[ ]{0,2}(?:GD|HA)\\d{3}$",
       "^\\d{3}[ ]{0,2}\\d{4}[ ]{0,2}\\d{2}(?:[ ]{0,2}\\d{3})?$"
     ],
-    "_comment_vat_eu": "INERT ON ITS OWN. Merged into vat_gb only when VAT_EU_FORMATS is armed (keyword.load_patterns on the Python side, get-validation-patterns on the JS side) so both consumers widen together and can never drift. Each entry is a COUNTRY-SPECIFIC structure with an exact element count, never a generic 'two letters plus 8-12 characters' rule: the generic form would readmit the measured OCR garbles, because 'CO' and 'EE' are themselves real country codes. Separators are tolerated between elements, so a printed 'IE 1234567 FA' and a stripped 'IE1234567FA' both match. Matched with IGNORECASE by both consumers, like every other entry here.",
+    "_comment_vat_eu": "INERT ON ITS OWN. Merged into vat_gb only when VAT_EU_FORMATS is armed (keyword.load_patterns on the Python side, get-validation-patterns on the JS side) so both consumers widen together and can never drift. Each entry is a COUNTRY-SPECIFIC structure with an exact element count, never a generic 'two letters plus 8-12 characters' rule: the generic form would readmit the measured OCR garbles, because 'CO' and 'EE' are themselves real country codes. Separators are tolerated between elements, so a printed 'IE 1234567 FA' and a stripped 'IE1234567FA' both match. Matched with IGNORECASE by both consumers, like every other entry here. NORWAY AND SWITZERLAND REQUIRE THEIR TRADE SUFFIX (MVA / MWST|TVA|IVA) AND THAT IS NOT OPTIONAL POLISH: 'NO' is also the English caption word 'No', the separator class swallows a trailing full stop, and a UK VRN is exactly nine digits — Norway's own element count — so an optional suffix makes 'No. 651 0027 84' (a UK number carrying its own label tail, this repo's most-measured defect class) validate as Norwegian and commit silently. The suffix is what separates the country code from the caption. Pinned in test_vat_eu_formats.py check 9; do not make it optional again.",
     "vat_eu": [
       "^ATU(?:[ .\\-]*\\d){8}$",
       "^BE(?:[ .\\-]*[01])(?:[ .\\-]*\\d){9}$",
@@ -769,8 +769,8 @@
       "^SE(?:[ .\\-]*\\d){12}$",
       "^SI(?:[ .\\-]*\\d){8}$",
       "^SK(?:[ .\\-]*\\d){10}$",
-      "^CHE(?:[ .\\-]*\\d){9}(?:[ .\\-]*(?:MWST|TVA|IVA))?$",
-      "^NO(?:[ .\\-]*\\d){9}(?:[ .\\-]*MVA)?$"
+      "^CHE(?:[ .\\-]*\\d){9}[ .\\-]*(?:MWST|TVA|IVA)$",
+      "^NO(?:[ .\\-]*\\d){9}[ .\\-]*MVA$"
     ],
     "reference_code": [
       "^(?=[A-Za-z0-9][A-Za-z0-9\\-/.]*\\d)[A-Za-z0-9][A-Za-z0-9\\-/.]{2,20}$"

@@ -115,6 +115,20 @@ function _configDir() {
   } catch { /* not in an Electron main process (harness, or a plain-node consumer) */ }
   return path.join(__dirname, '..', '..', 'config');
 }
+// THE THIRD CONSUMER OF validation_patterns, AND THE ONE THAT DELIBERATELY DOES NOT WIDEN.
+// The other two are `keyword.load_patterns` (every Python stage, via self.patterns) and
+// `get-validation-patterns` in review/handler.js (the renderer's on-blur check); both merge the
+// `vat_eu` list when `vat_eu_formats` is armed. This loader does NOT, so with the flag on, a
+// correct German or Irish VAT number still fails `vat_gb` here. Recorded rather than "fixed"
+// because both of this loader's consumers fail TOWARD REVIEW, which is the safe direction:
+//   * freeze_guard arm B declines to FREEZE the value into a template (it stays variable, and the
+//     stated reason 'format' is then misleading — that is the known cost, pinned in the
+//     freeze-guard tests);
+//   * `_validVatGb` below runs the UK HMRC mod-97 checksum, so a widened non-UK value cannot
+//     auto-file.
+// Widening this loader would change what gets FROZEN and what AUTO-FILES, which is a different
+// decision from what gets read and what the operator is warned about. Do not merge it here
+// without measuring those two paths. (Oracle C3, 2026-08-10.)
 let _sharedPatternsCache;   // undefined = not loaded yet; null = unavailable
 function _sharedValidationPatterns() {
   if (_sharedPatternsCache !== undefined) return _sharedPatternsCache;

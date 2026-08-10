@@ -36,6 +36,12 @@ def _apply_vat_eu(cfg: dict) -> dict:
     through `self.patterns`), and `get-validation-patterns` for the renderer — so the UI and the
     pipeline widen together and cannot drift, which is the property the config comment promises.
 
+    THERE IS A THIRD CONSUMER AND IT DOES NOT WIDEN: `database/modules/trust.js`
+    (`_sharedValidationPatterns`) reads the same config file directly, feeding freeze_guard arm B
+    and the auto-file `vat_gb` checksum. That is deliberate — both of its consumers fail toward
+    review — and the reasoning is recorded at that function. "Both consumers widen" is true of the
+    READ path and the OPERATOR-WARNING path; it is not true of the FREEZE and AUTO-FILE paths.
+
     DEVIATION FROM THE OFFICIAL SPEC, recorded because it is a judgement not a fact: Romania's VAT
     body is officially 2-10 digits, which would accept a 2-digit garble. It ships floored at SIX.
     A shorter real Romanian number is refused and falls to review — the failure this whole entry is

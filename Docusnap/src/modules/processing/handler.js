@@ -493,7 +493,9 @@ function _reconcileEnv(db) {
     // per-country structures with exact element counts (never a generic two-letters rule, which
     // would readmit the measured OCR garbles). The renderer's twin lives in review/handler.js
     // `get-validation-patterns` — the two MUST be flipped by the same setting or UI and pipeline
-    // disagree about the same value.
+    // disagree about the same value. A THIRD reader, `database/modules/trust.js`
+    // `_sharedValidationPatterns` (freeze_guard + the auto-file checksum), deliberately does NOT
+    // widen; the reasoning is recorded there.
     if (learning.getSetting(db, 'vat_eu_formats', 'false') === 'true') env.VAT_EU_FORMATS = '1';
     return env;
   } catch { return {}; }

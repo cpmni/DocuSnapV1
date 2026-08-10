@@ -132,38 +132,50 @@ function register(ctx) {
   // EXACT same `validation_patterns` the Python extraction qualification uses
   // (config/keyword_patterns.json), so UI and pipeline can never drift apart — the
   // renderer compiles these literal strings to RegExp rather than re-authoring
-  // them. Read once and cached; returns {} if the file is missing/unparseable so
-  // the UI degrades gracefully (no validation rather than a crash).
-  let _validationPatternsCache;
+  // them. The FILE is read once and cached; every SETTING-dependent widening is applied
+  // per call (see below). Returns {} if the file is missing/unparseable so the UI degrades
+  // gracefully (no validation rather than a crash).
+  //
+  // WHY THE CACHE HOLDS THE RAW CONFIG AND NOT THE MERGED RESULT (Oracle C4, 2026-08-10):
+  // Python re-reads `vat_eu_formats` at EVERY extraction spawn (processing/handler.js
+  // `_reconcileEnv`), so caching the merged patterns here meant that flipping the toggle
+  // widened extraction immediately while Review's on-blur check stayed narrow until the app
+  // was restarted. That transient window is a live reinstatement of the exact UI-vs-pipeline
+  // disagreement this widening exists to prevent (the `iban` defect of 2026-08-08) — and it
+  // is what an owner hits within a minute of flipping. The merge is cheap (one concat on a
+  // handful of strings); the file read is the expensive part, so that is what is cached.
+  let _validationPatternsRaw;
   ipcMain.handle('get-validation-patterns', () => {
     requireLogin();
-    if (_validationPatternsCache === undefined) {
+    if (_validationPatternsRaw === undefined) {
       try {
         const cfgFile = ctx.resourcePath('config', 'keyword_patterns.json');
         const cfg = JSON.parse(fs.readFileSync(cfgFile, 'utf8'));
-        _validationPatternsCache = cfg.validation_patterns || {};
-        // The renderer's twin of keyword._apply_vat_eu. The shipped `vat_gb` patterns are UK ONLY,
-        // so an operator typing a correct Irish or German VAT number by hand is told their value is
-        // wrong. The widening MUST happen on both sides or the UI and the pipeline disagree about
-        // the same value — which is exactly the `iban` defect of 2026-08-08. Merged here, at the one
-        // place the renderer's patterns are built, rather than in the renderer, so the two consumers
-        // share one decision. Default OFF; setting change needs an app restart (this is cached).
-        try {
-          if (learning.getSetting(getDb(), 'vat_eu_formats', 'false') === 'true') {
-            const eu = _validationPatternsCache.vat_eu || [];
-            if (eu.length && _validationPatternsCache.vat_gb) {
-              _validationPatternsCache = Object.assign({}, _validationPatternsCache, {
-                vat_gb: _validationPatternsCache.vat_gb.concat(eu),
-              });
-            }
-          }
-        } catch { /* a settings read must never break field validation */ }
+        _validationPatternsRaw = cfg.validation_patterns || {};
       } catch (e) {
         logger?.warn?.(`get-validation-patterns: ${e.message}`);
-        _validationPatternsCache = {};
+        _validationPatternsRaw = {};
       }
     }
-    return _validationPatternsCache;
+    // The renderer's twin of keyword._apply_vat_eu. The shipped `vat_gb` patterns are UK ONLY,
+    // so an operator typing a correct Irish or German VAT number by hand is told their value is
+    // wrong. The widening MUST happen on both sides or the UI and the pipeline disagree about the
+    // same value. Merged here, at the one place the renderer's patterns are built, rather than in
+    // the renderer, so the two consumers share one decision. Default OFF.
+    //
+    // NOT the only reader of these patterns: `database/modules/trust.js`
+    // (`_sharedValidationPatterns`) loads the same file directly and deliberately does NOT widen —
+    // see the note there. Three consumers, two of which widen from this setting.
+    let out = _validationPatternsRaw;
+    try {
+      if (learning.getSetting(getDb(), 'vat_eu_formats', 'false') === 'true') {
+        const eu = out.vat_eu || [];
+        if (eu.length && out.vat_gb) {
+          out = Object.assign({}, out, { vat_gb: out.vat_gb.concat(eu) });
+        }
+      }
+    } catch { /* a settings read must never break field validation */ }
+    return out;
   });
 
   // ── Built-in field label words (read-only, for the label-overrides UI) ───────

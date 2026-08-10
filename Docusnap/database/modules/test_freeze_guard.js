@@ -76,6 +76,22 @@ check("TRADE-OFF PIN: a frozen discount of '5%' is declined (its shipped format 
 check("TRADE-OFF PIN: a bare currency SYMBOL is declined; the three-letter code is what freezes",
       decl('currency', '£', { type: 'currency_code' }) === 'format');
 
+// ORACLE C3 (2026-08-10) -- the VAT_EU_FORMATS seam, pinned as an ACCEPTED COST.
+// `vat_eu_formats` widens `validation_patterns.vat_gb` for the two consumers that matter to the
+// operator: every Python stage (keyword.load_patterns) and the renderer's on-blur warning
+// (get-validation-patterns). It deliberately does NOT widen `trust._sharedValidationPatterns`,
+// which is what arm B consults -- so with the flag ARMED a CORRECT German VAT number is still
+// declined a freeze, with the reason 'format'. The direction is safe (the field stays variable
+// rather than being frozen from a sample of one) but the reason is misleading.
+// Pinned so that widening trust.js becomes a DELIBERATE act with the freeze and auto-file paths
+// measured, not a tidy-up. The reasoning lives at trust._sharedValidationPatterns.
+check("TRADE-OFF PIN: a correct non-UK VAT number is declined a freeze ('format') because trust.js "
+      + "is the un-widened third consumer of validation_patterns",
+      decl('vat_no', 'DE123456789', { type: 'text' }) === 'format');
+check("CONTROL: a UK VAT number is NOT declined by arm B, so the pin above is about the widening "
+      + "and not about arm B refusing every vat_no",
+      decl('vat_no', 'GB651002784', { type: 'text' }) !== 'format');
+
 console.log('\n5. FAILS SAFE — anything it cannot judge, it allows');
 check('unknown custom type + opaque key → freeze (no arm can speak)',
       decl('field_7', 'ANYTHING', { type: 'widget' }) === null);

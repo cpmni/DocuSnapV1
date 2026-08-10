@@ -10,9 +10,14 @@ token whose only difference is a separator — including a reference code whose 
 PRINTED. So 'PI/26/6000' was re-read as 'PI266000', matched on alphanumerics, and was committed with
 a character silently deleted.
 
-It is reached from BOTH crop paths: anchor.py's own rungs and, via the cross-import at
-template_mapper.py:40, the Stage 0.5 `template_mapping` rung — which is where every measured
-instance came through.
+It is reached from BOTH crop paths: anchor.py's own rungs and the Stage 0.5 `template_mapping`
+rung — which is where every measured instance came through. The Stage 0.5 reach is via
+`anchor._ocr_crop_laddered` (called at anchor.py:3228, and :3012 on the free-text noise-smooth
+retry), NOT via `template_mapper._crop_and_ocr`'s own `_repair_single_token` call: that one is
+DEAD IN PRODUCTION, because `_crop_and_ocr` returns through `_ocr_crop_laddered` whenever
+`ocr_text_fn is _ocr_text` — the default (template_mapper.py:737) and what engine.py passes.
+Only a custom reader (a test stub) reaches the later call. Corrected 2026-08-10 after the first
+version of this docstring cited the dead line.
 
 MEASURED (live install, read-only census over documents whose page text is stored): 36 committed
 invoice_numbers had lost a separator their own page text still prints; all 36 via template_mapping;
@@ -118,6 +123,51 @@ ok("multi-word, date-typed and separator-free values take the existing early ret
 for v in ("PI/25/3861", "PI/26/6000", "OED/91377", "INV/2024/001", "SO-12-345"):
     assert run(v, armed=True) == v, f"{v} keeps its separators"
 ok("every shape seen in the live census survives when armed")
+
+# -- 8. THE ACCEPTED COST, pinned (Oracle C4) -------------------------------
+# The guard's premise is that an artefact leaves a ONE-CHARACTER group ("H/7R5326676") while a
+# structured code splits into groups that each stand on their own. That premise is a prior drawn
+# from the docstring's single exhibit, not a measured property of Tesseract: nothing constrains a
+# spurious stroke to position 1. So a genuine artefact that lands mid-token, with >=2 alphanumerics
+# on BOTH sides, is no longer repaired -- 'AB12/34567' is kept as read.
+#
+# THE CLASS IS NARROWER THAN IT LOOKS, and the reason is worth keeping: the repair only ever fired
+# when the whitelisted re-read DROPPED the character entirely. If OCR had substituted a glyph (a
+# '/' that is really a misread '1'), the alphanumeric comparison at the accept site fails and
+# nothing was repaired even before this guard. What is switched off is specifically "extra ink /
+# hallucinated separator with >=2 alnum either side".
+#
+# DO NOT "fix" this by tightening the predicate to require a minimum group count or a letter
+# prefix. Tightening it is exactly what re-breaks the 36 measured invoice_numbers, because
+# 'PI/25/3861' and 'OED/91377' have different group shapes. If the mid-token class ever needs
+# handling, it needs EVIDENCE about the token's own ink (the unwhitelisted PSM-8 pass), not a
+# tighter shape prior.
+assert run("AB12/34567", armed=True) == "AB12/34567", "mid-token artefact is NOT repaired when armed"
+assert run("AB12/34567", armed=False) == "AB1234567", "...and WAS repaired before the guard"
+ok("PINNED COST: a mid-token artefact with >=2 alnum either side is no longer repaired")
+
+# -- 9. CURRENCY IS EXCLUDED (Oracle C5) ------------------------------------
+# A '/' inside money is never a printed separator -- it is a misread decimal point. Keeping it
+# would drop the value to review (better in principle) but that is an UNMEASURED change on the
+# money lane, so currency keeps its existing behaviour and the guard's blast radius stays exactly
+# the code fields it was measured on.
+#
+# THE EXPOSED SHAPE IS NOT THE OBVIOUS ONE. Oracle's example, '1234/56', never reaches the repair
+# in EITHER state -- the pre-existing date-shape guard (\d{1,4}[./-]\d{1,2}) already claims it, so
+# the concern was inert for that string. The money values that DO reach it are the ones too long to
+# look like a date: '10603/44' is the misread of the exact value recorded in the 2026-08-09
+# handover (a right-aligned '\u00a310,603.44'), and five digits before the separator take it clear of
+# the date shape. That is the string worth pinning.
+assert run("1234/56", armed=True, val_type="currency") == "1234/56", "date-shaped money: pre-existing guard"
+assert run("1234/56", armed=False, val_type="currency") == "1234/56", "...in both states, unchanged"
+ok("CORRECTION: the obvious money example is already claimed by the date-shape guard, not by this one")
+
+assert run("10603/44", armed=True, val_type="currency") == "1060344", "currency keeps the old repair"
+assert run("10603/44", armed=False, val_type="currency") == "1060344", "...identical to unarmed"
+# CONTROL: the same string on a CODE field DOES take the guard. Without this the assertions above
+# would also pass if '10603/44' simply failed the shape rule, and the exclusion would be untested.
+assert run("10603/44", armed=True) == "10603/44", "the same token on a code field keeps its separator"
+ok("currency is excluded from the keep -- control proves it is the TYPE doing the excluding")
 
 pytesseract.image_to_string = _REAL_IMAGE_TO_STRING
 os.environ.pop(FLAG, None)

@@ -65,6 +65,26 @@ def accepts(value, pats, thresh=0.9):
     return best / len(v) >= thresh
 
 
+def accepts_prod(value, pats):
+    """PRODUCTION-EXACT acceptance, for the caption-collision checks below.
+
+    `accepts` above diverges from the pipeline in two ways that are inert while every vat
+    pattern is anchored ^...$ (coverage is then binary) but which would mislead anyone reusing
+    it: it strips ALL internal whitespace where `anchor._pattern_coverage` strips only the ends
+    (anchor.py:2552), and it uses 0.9 where production uses `_CREDIBLE_COVERAGE_MIN` = 0.8
+    (anchor.py:2529). The "No 651 0027 84" class is exactly a value with internal spaces, so it
+    is checked against the real semantics rather than the convenient ones."""
+    v = str(value or "").strip()
+    if not v:
+        return False
+    best = 0
+    for p in pats:
+        m = re.search(p, v, re.IGNORECASE)
+        if m and len(m.group(0)) > best:
+            best = len(m.group(0))
+    return best / len(v) >= 0.8
+
+
 def gb(armed):
     if armed:
         os.environ[FLAG] = "1"
@@ -139,5 +159,44 @@ assert "vat_eu_formats" in js and "vat_eu" in js, "the renderer's pattern source
 proc = open(os.path.join(ROOT, "src", "modules", "processing", "handler.js"), encoding="utf-8").read()
 assert "VAT_EU_FORMATS" in proc, "the extraction env bridge exists"
 ok("WIRING: pipeline and renderer both widen, from one setting (the iban lesson)")
+
+# -- 9. THE CAPTION COLLISION (Oracle C1, BLOCKING) --------------------------
+# `NO` is not only Norway's country code, it is the English caption word "No" -- and this
+# codebase already states that is what sits immediately left of a VAT number's digits
+# (`_VAT_ID_LEADIN` = reg...(no|nr|num|number|id|ident), keyword.py:1409). The separator class
+# swallows a space AND a full stop, both consumers compile IGNORECASE, and a UK VRN is exactly
+# NINE digits -- precisely Norway's element count. So a label-tail intrusion, the single
+# most-measured defect class in this repo (ANCHOR_LABEL_LEFT_CLAMP, template_code_edge_clean,
+# 007's "13/16 crops intrude the label tail"), turns a UK number into a valid Norwegian one.
+# Today those strings are REFUSED and the field falls to review; armed they would be credible,
+# committable, filable, and freezable as a template_fixed value -- a SILENT wrong value.
+#
+# THE FIX IS A MORE SPECIFIC RULE, NOT A LOOSER ONE (the principle the whole entry rests on):
+# the MVA suffix is MANDATORY, because a real Norwegian number is printed with it
+# ("Org.nr NNN NNN NNN MVA"). CHE takes the same treatment for symmetry.
+#
+# THIS BLOCK MUST BE ABLE TO FAIL: it was run against the pre-fix config and went RED on all
+# four caption strings. A green pin that cannot reproduce the bug is worse than no pin.
+on, off = gb(True), gb(False)
+for _v in ("No 651 0027 84", "No. 651 0027 84", "NO 651002784", "no 651 0027 84"):
+    assert not accepts_prod(_v, off), "%r must be refused with the flag OFF" % _v
+    assert not accepts_prod(_v, on), (
+        "%r is a UK VRN carrying its own caption tail and MUST NOT validate as Norwegian" % _v)
+ok("a label-tail 'No'/'No.' before nine digits is NOT a Norwegian VAT number (Oracle C1)")
+
+assert accepts_prod("NO 123 456 789 MVA", on), "a real Norwegian number still passes armed"
+assert accepts_prod("NO123456789MVA", on), "unspaced Norwegian passes armed"
+assert not accepts_prod("NO 123 456 789 MVA", off), "and is still refused with the flag off"
+ok("a REAL Norwegian number (MVA present) still passes -- the fix narrows, does not remove")
+
+assert accepts_prod("CHE 123 456 789 MWST", on), "a real Swiss number with MWST passes"
+assert not accepts_prod("CHE 123 456 789", on), "bare CHE + nine digits no longer passes"
+ok("CHE follows NO: the trade suffix is mandatory, so a bare nine-digit run is not Swiss")
+
+# The suffix carries the whole discrimination, so state the residual plainly: a Norwegian number
+# printed WITHOUT its MVA suffix now falls to review. That is the correct direction -- review,
+# never a silent wrong value -- and it is the price of not accepting every "No <nine digits>".
+assert not accepts_prod("NO 123 456 789", on)
+ok("PINNED COST: a suffix-less Norwegian number falls to review rather than being guessed")
 
 print(f"\n{passed} checks passed")
