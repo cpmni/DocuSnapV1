@@ -162,6 +162,7 @@ function ladderHtml(m) {
     if (st.outcome === 'won' || st.outcome === 'lost') {
       detail = `<span class="lval">${escapeHtml(shownVal(st.value))}</span>`
              + (st.method ? `<span class="conf">${escapeHtml(st.method)}</span>` : '')
+             + captionHtml(st.caption)
              + (st.confidence != null ? confBar(st.confidence) : '')
              // A LOST rung names what currently holds the field (state, not a claimed cause) so
              // "the taught anchor read X but lost to Y" is visible without re-running.
@@ -169,6 +170,7 @@ function ladderHtml(m) {
     } else if (st.outcome === 'already_resolved') {
       detail = `<span class="lval muted">${escapeHtml(shownVal(st.value))}</span>`
              + (st.by ? `<span class="conf">by ${escapeHtml(st.by)}</span>` : '')
+             + captionHtml(st.caption)
              + (st.reason ? `<span class="lreason">${escapeHtml(st.reason)}</span>` : '');
     } else { // no_candidate / skipped — the reason is the diagnostic datum
       detail = st.reason ? `<span class="lreason">${escapeHtml(st.reason)}</span>` : '';
@@ -176,13 +178,24 @@ function ladderHtml(m) {
     let rejects = '';
     if (stage === '2_anchor' && m.rejects && m.rejects.length) {
       rejects = `<div class="lrejects">` + m.rejects.map(r =>
-        `<div class="lreject">✗ <b>${escapeHtml(r.method || 'anchor')}</b> read ${escapeHtml(shownVal(r.value))} — ${escapeHtml(r.reason || 'rejected')}</div>`
+        `<div class="lreject">✗ <b>${escapeHtml(r.method || 'anchor')}</b>${captionHtml(r.caption)} read ${escapeHtml(shownVal(r.value))} — ${escapeHtml(r.reason || 'rejected')}</div>`
       ).join('') + `</div>`;
     }
     return `<div class="lrow"><span class="sbadge ${sm.cls}">${escapeHtml(sm.label)}</span>`
          + `<span class="oc ${om.cls}">${escapeHtml(om.label)}</span>${detail}${rejects}</div>`;
   }).join('');
   return `<div class="sec-label">Every step</div><div class="ladder">${rows}</div>`;
+}
+
+// The PRINTED CAPTION the rung matched (owner request 2026-08-09: "I would like to see the
+// winning keyword so I know what the app used to derive the value"). Engine-supplied
+// (`caption` on step / candidate / merge / anchor_reject), never re-derived here — and the
+// engine already suppresses the Stage-0.5 field-key fallback, so anything that arrives is a
+// caption the rung really answered. Absent on older traces and on rungs that match no label
+// (a positional read), which is itself the datum: no caption means nothing was matched BY NAME.
+function captionHtml(caption) {
+  const c = (caption == null ? '' : String(caption)).trim();
+  return c ? `<span class="lcap" title="the printed caption this rung matched">matched “${escapeHtml(c)}”</span>` : '';
 }
 
 function confBar(c) {
@@ -389,7 +402,7 @@ function renderField(field, m, flagged, open) {
   for (const w of m.wins) {
     const sm = stageMeta(w.stage);
     nodes.push(chainNode(sm, escapeHtml(w.value == null ? '—' : String(w.value)),
-      w.confidence, w.method, field, hasCrop(field, w.stage)));
+      w.confidence, w.method, field, hasCrop(field, w.stage), false, captionHtml(w.caption)));
   }
   for (const t of m.transforms) {
     const sm = stageMeta(t.stage);
@@ -443,7 +456,8 @@ function renderField(field, m, flagged, open) {
         : 'superseded (reason not recorded)';
       const vs = l.vs && l.vs.value != null ? ` vs <b>${escapeHtml(String(l.vs.value))}</b>` : '';
       return `<div class="loser"><div class="stage-line"><span class="sbadge ${sm.cls}">${escapeHtml(sm.label)}</span>`
-        + (l.method ? `<span class="conf">${escapeHtml(l.method)}</span>` : '') + `</div>`
+        + (l.method ? `<span class="conf">${escapeHtml(l.method)}</span>` : '')
+        + captionHtml(l.caption) + `</div>`
         + `<div class="val-line">${escapeHtml(shownVal(l.value))} ${confBar(l.confidence)}</div>`
         + `<div class="reason">✗ lost${vs} — ${reason}</div></div>`;
     }).join('');

@@ -475,6 +475,19 @@ max `overall_confidence` 95), so the exposure is latent. **Owner/Oracle decision
 The underlying `account_no` defect is worth 40 wrong cells corpus-wide and is its own slice.
 
 ## 2026-08-09 — SFDEV: show the WINNING KEYWORD (the caption the app actually matched)
+### STATUS: BUILT 2026-08-10 EVENING3. Dev-only, no flag (the whole surface is trace-gated).
+### The caption rides `step` / `candidate` / `merge` / `anchor_reject` as `caption`, read from the
+### rung's OWN result key (Stage 1 `label`, Stage 0.5 + Stage 2 `anchor`) and never re-derived.
+### Shown in the dev-inspector ladder, its LOST-rung line, the winning-lineage chain, the
+### "Other candidates" list, the Stage-2 reject rows, the Review trace console, and the bulk grid.
+### **VERIFIED END TO END on live document 482 and 525** (`trace_one_doc.js`), not just wired:
+### `vat_no` carries `caption: "VAT Reg No"` on the keyword rung, the 0.5 mapping rung, and the
+### already-resolved Stage-2 row.
+### **ONE SUPPRESSION IS LOAD-BEARING:** Stage 0.5 passes `anchor_text or field_key`, so a mapping
+### with no taught label carries the FIELD KEY in the caption slot. Showing that would invent a
+### printed line — `_caption` drops it, and the drop is pinned.
+### **WHAT THIS IS NOT: the caption is not persisted** — see the dead-column entry directly below,
+### which is why the bulk grid's captions are session-scoped.
 
 **Owner request, verbatim:** *"in SFDEV i would like to see the winning keyword so i know what the
 app used to derive the value."*
@@ -515,6 +528,41 @@ no `feedback_minimal_interaction_autofile` tension. Read-only display of data al
 byte-identical.
 
 **NOT BUILT — logged on the owner's "add to list" convention.**
+
+---
+
+## 2026-08-10 — `extractions.anchor_label` IS A DEAD COLUMN, AND SWITCHING IT ON IS CUSTOMER-FACING
+
+**Found while building the SFDEV caption feature above; verified at source and in the live data.**
+
+**The fact.** `extractions.anchor_label` (migration 14) is `NULL` on **all 3262 rows of the live
+install** — every method, including `anchor_crop` (69 rows) and `template_mapping` (1364). Both
+insert sites map it as `anchor_label: data.anchor || null`
+(`processing/handler.js`, `applyReprocessResult` + the import path), but `file_done` **PROJECTS a
+fixed field set** in `process_docs.py:1067-1087` — `value` / `confidence` / `method` plus four
+conditional keys (`validation_note`, `corrected_to`, `suggested_supplier`, `candidates`) — and
+`anchor` is not among them. So `data.anchor` has always been `undefined`. The write has never fired.
+
+**Why it is not just dead weight.** `review/renderer.js:2743` renders it to the CUSTOMER as
+*"From anchor: &lt;label&gt;"*, gated on `method === 'anchor' || method === 'anchor_crop'`. Feeding
+the column would therefore switch on a provenance line that has **never appeared in the product's
+life** — a customer-visible change arriving as a side effect. That is why the SFDEV feature above
+deliberately routes the caption through the dev TRACE instead, and why the gate is now pinned in
+`test_debug_table.js` (it fails if the gate is loosened to admit keyword reads).
+
+**The decision the owner owns, not the fix:**
+1. **Feed it and show it** — add `anchor`/`label` to the `file_done` projection; the Review line
+   starts rendering for anchor reads. Judge the copy first: *"From anchor: Invoice No"* is jargon by
+   the `customer-experience-review` banned-word test, and it appears on ~2% of rows, which reads as
+   arbitrary. Probably needs rewording before it is worth switching on.
+2. **Feed it and keep it dark** — persist for diagnostics only; the bulk grid then works for the
+   WHOLE queue instead of this session's traced documents. Costs a Settings bridge to stay honest
+   about the display staying off.
+3. **Delete the column and the render** — smallest surface, loses the latent feature.
+
+**Do not do (1) casually.** Check the copy against a real screen first. Related: the same class of
+"designed, mapped, never fed" is what `credit_sign_note`'s dead `raw_value` guard is waiting on —
+if both get fed in one change, two behaviours move at once and neither is attributable.
 
 ---
 

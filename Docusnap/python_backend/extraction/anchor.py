@@ -421,9 +421,18 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
     # the value; if nothing else fills the field, an empty+note row is emitted after the loop so the
     # doc routes to review (never a silent blank auto-file). See the guard + after-loop emit. Oracle C2.
     _caption_detected, _caption_field, _caption_note = False, None, None
+    # Dev-trace only: every reject below is raised INSIDE one anchor's iteration, so the
+    # caption that rung was answering is `anchor["anchor_label"]` — known here and at none
+    # of the ~20 raise sites. Rebind `on_reject` per iteration FROM THE ORIGINAL (never from
+    # the previous wrapper, which would nest one closure per anchor) so the raise sites keep
+    # their 4-argument call unchanged. None stays None: off-trace this loop is inert.
+    _on_reject_orig = on_reject
     for anchor in group_anchors:
         field_key   = anchor["field_key"]
         label       = anchor["anchor_label"].lower().strip()
+        if _on_reject_orig is not None:
+            on_reject = (lambda fk, st, v, r, _f=_on_reject_orig, _c=anchor.get("anchor_label"):
+                         _f(fk, st, v, r, _c))
         direction   = anchor["direction"]
         usage_count = anchor.get("usage_count", 1)
         conf_factor = anchor.get("confidence", 0.5)

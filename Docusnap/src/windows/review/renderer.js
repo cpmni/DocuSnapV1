@@ -7422,13 +7422,13 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
             ? `lost — lower confidence (${c.confidence}% < ${wc}%)`
             : (c.vs && c.vs.value != null ? `lost — superseded by "${shown(c.vs.value)}"` : 'lost — superseded');
         }
-        rows.push(cand(STAGE_LABEL[c.stage] || c.stage, c.value, c.confidence, c.method, won ? 'won' : 'lost', won ? '' : reason, pickSlice(field, c.method, c.geom), rxBadge(field, c.value), anchorSlice(field), field));
+        rows.push(cand(STAGE_LABEL[c.stage] || c.stage, c.value, c.confidence, c.method, won ? 'won' : 'lost', won ? '' : reason, pickSlice(field, c.method, c.geom), rxBadge(field, c.value), anchorSlice(field), field, c.caption));
       }
       for (const r of m.rejects) {
         // A rejected rung IS keyed by its method (e.g. "anchor_crop") — show the
         // exact crop it read so the operator sees WHERE the garbage came from. The
         // rx score explains a format-based rejection at a glance (e.g. rx 0%).
-        rows.push(cand(r.method || 'anchor', r.value, null, null, 'rej', `rejected — ${r.reason || 'failed gate'}`, pickSlice(field, r.method), rxBadge(field, r.value), anchorSlice(field), field));
+        rows.push(cand(r.method || 'anchor', r.value, null, null, 'rej', `rejected — ${r.reason || 'failed gate'}`, pickSlice(field, r.method), rxBadge(field, r.value), anchorSlice(field), field, r.caption));
       }
       // Stage 2.5 transforms (denoise / OCR-correct): value rewritten in place.
       for (const t of m.transforms) {
@@ -7528,7 +7528,7 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
     });
   }
 
-  function cand(stage, value, conf, method, tag, reason, slice, rx, aslice, fieldKey) {
+  function cand(stage, value, conf, method, tag, reason, slice, rx, aslice, fieldKey, caption) {
     const tagTxt = tag === 'rej' ? 'rejected' : tag;
     // The overlay ("All boxes") reads its label + detection note from these attributes rather than
     // scraping the rendered text, so what it draws is the SAME data the row was built from.
@@ -7542,6 +7542,9 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
     return `<div class="rdc-cand"${bboxAttr}>`
       + `<span class="rdc-stage">${escHtml(stage)}</span>`
       + `<span class="rdc-val">${escHtml(shown(value))}${method ? ` <span class="rdc-conf">${escHtml(method)}</span>` : ''}${rx || ''}</span>`
+      // The PRINTED CAPTION this rung matched (engine-supplied `caption`; the Stage-0.5
+      // field-key fallback is already suppressed there). Absent = matched nothing by name.
+      + (caption ? `<span class="rdc-cap" title="the printed caption this rung matched">matched “${escHtml(caption)}”</span>` : '')
       + (conf != null ? `<span class="rdc-conf">${conf}%</span>` : '')
       + `<span class="rdc-tag ${tag}">${tagTxt}</span>`
       + (reason ? `<span class="rdc-reason">${escHtml(reason)}</span>` : '')
@@ -7822,6 +7825,11 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
     let inner = `<span class="cv">${val === '' ? '—' : esc(val)}</span>`;
     const meta = [method, conf].filter(Boolean).join(' ');
     if (meta) inner += ` <span class="cm">${esc(meta)}</span>`;
+    // The printed CAPTION the winning rung matched. Shown on its own line because the whole
+    // point of the grid is spotting a SYSTEMIC mis-caption — one column of "Your PO" with three
+    // stray "Account No" reads down it is the diagnosis, and it has to be scannable to see that.
+    const cap = cell && cell.caption ? cell.caption : '';
+    if (cap) inner += `<span class="ccap" title="the printed caption this read matched">“${esc(cap)}”</span>`;
     return `<td class="${cls}" data-id="${row.id}" data-f="${esc(f)}">${inner}</td>`;
   }
 
@@ -8057,8 +8065,45 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
         : 'Failed to load the queue: ' + m;
       return;
     }
+    await mergeCaptions();
     renderTable();
   }
+
+  // ── The matched CAPTION per cell (owner request 2026-08-09: "show the winning keyword") ──
+  // The engine records the caption a rung matched on its trace events; nothing persists it (the
+  // `extractions.anchor_label` column that would is a dead write — see processing/handler.js), so
+  // it is read back from the DEV SESSION TRACE, the same store the crop slices come from. That
+  // makes it session-scoped BY CONSTRUCTION: a document processed with the console open has a
+  // caption, one imported last week does not. The grid must never IMPLY the second case matched
+  // nothing, which is why an absent caption renders as nothing at all rather than a dash.
+  //
+  // Only the WINNING rung's caption is taken (the `final` event's method, matched against the
+  // winning `merge`), because the grid answers "what did this value come from" — the losing
+  // rungs' captions are a per-document question and belong in the ladder, not a queue-wide cell.
+  async function mergeCaptions() {
+    if (!data || !data.rows.length) return;
+    if (typeof window.docusnap.devGetSessionDoc !== 'function') return;
+    await Promise.all(data.rows.map(async (row) => {
+      let evs = null;
+      try { evs = await window.docusnap.devGetSessionDoc(row.filename); } catch {}
+      if (!Array.isArray(evs) || !evs.length) return;
+      const finalMethod = new Map();     // field -> the method that actually committed
+      const caps = new Map();            // `${field}::${method}` -> caption
+      for (const ev of evs) {
+        if (!ev || ev.field == null) continue;
+        if (ev.event === 'final') finalMethod.set(ev.field, ev.method || null);
+        else if (ev.event === 'merge' && ev.caption) caps.set(`${ev.field}::${ev.method}`, ev.caption);
+      }
+      for (const [f, cell] of Object.entries(row.fields || {})) {
+        // Prefer the caption of the rung the FINAL value came from; fall back to the cell's own
+        // stored method, which is the same thing for every value the pipeline committed directly.
+        const meth = finalMethod.get(f) || (cell && cell.method) || null;
+        const cap = caps.get(`${f}::${meth}`);
+        if (cap) cell.caption = cap;
+      }
+    }));
+  }
+
   function closeTable() { if (!open) return; open = false; overlay.hidden = true; }
 
   async function submit() {
@@ -8073,7 +8118,8 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
         .filter(f => (row.fields || {})[f] || flagged.has(skey(row.id, f)))
         .map(f => {
           const cell = (row.fields || {})[f] || {};
-          return [f, { value: cell.value ?? null, method: cell.method ?? null, confidence: cell.confidence ?? null,
+          return [f, { value: cell.value ?? null, method: cell.method ?? null, caption: cell.caption ?? null,
+                       confidence: cell.confidence ?? null,
                        wrong: flagged.has(skey(row.id, f)), correct: null, slicePath: null }];
         })),
     }));

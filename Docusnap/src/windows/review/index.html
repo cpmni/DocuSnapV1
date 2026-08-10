@@ -1221,6 +1221,9 @@
   .rdt-cell.empty { color: var(--muted2); }
   .rdt-cell .cv { color: var(--text); }
   .rdt-cell .cm { color: var(--muted); font-size: 9.5px; }
+  /* The matched caption — its own line, tinted apart from the method, so a column can be
+     scanned for the odd one out. */
+  .rdt-cell .ccap { display: block; color: var(--accent); font-size: 9.5px; }
   .rdt-cell.wrong { background: rgba(214,69,69,.14) !important; box-shadow: inset 2px 0 0 var(--err); }
   .rdt-cell.wrong .cv { color: var(--err); text-decoration: line-through; }
   .rdt-cell .correct { display: block; margin-top: 3px; color: var(--ok); }
@@ -1294,6 +1297,10 @@
   .rdc-stage { color: var(--accent2); flex-shrink: 0; min-width: 64px; }
   .rdc-val { color: var(--text); flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .rdc-conf { color: var(--muted); flex-shrink: 0; }
+  /* The printed caption a rung matched — evidence off the page, so it is tinted apart
+     from .rdc-conf, which carries internal method names. */
+  .rdc-cap { color: var(--accent); background: var(--accent-bg); border-radius: var(--r-pill);
+             padding: 0 6px; flex-shrink: 0; cursor: help; }
   .rdc-tag { flex-shrink: 0; font-size: 9px; padding: 0 4px; border-radius: 3px; }
   .rdc-tag.won  { background: rgba(62,207,142,.18); color: var(--ok); }
   .rdc-tag.lost { background: var(--surface2); color: var(--muted); }

@@ -627,6 +627,12 @@ function _buildDebugTable(db) {
         value: (dv == null || dv === '') ? null : String(dv),
         confidence: e.confidence ?? null,
         method: e.extraction_method || null,
+        // `caption` (the printed line the winning rung matched) is NOT in the DB — the column
+        // that would hold it is a dead write (see applyReprocessResult). The renderer fills it
+        // from the dev SESSION TRACE, which is where the engine records it, so the grid stays a
+        // dev-only view of dev-only data. Null here means "this session has no trace for that
+        // document", never "the read matched no caption".
+        caption: null,
       };
     }
     rows.push({
@@ -686,6 +692,7 @@ function _saveDebugTable(ctx, payload) {
       fieldsOut[k] = {
         value: cell ? (cell.value ?? null) : null,
         method: cell ? (cell.method ?? null) : null,
+        caption: cell ? (cell.caption ?? null) : null,
         confidence: cell ? (cell.confidence ?? null) : null,
         wrong, correct, slice: sliceRel,
       };
@@ -2080,6 +2087,13 @@ function register(ctx) {
       extraction_method: data.method || null,
       validation_note:   data.validation_note || null,
       corrected_to:      data.corrected_to || null,
+      // NOTE (verified 2026-08-10): this is a DEAD WRITE. `file_done` PROJECTS a fixed field
+      // set in process_docs.py (value/confidence/method + four conditional keys) and `anchor`
+      // is not among them, so `data.anchor` is always undefined — `extractions.anchor_label`
+      // is NULL on all 3262 rows of the live install and Review's "From anchor:" line has
+      // never rendered from it. Left AS IS deliberately: feeding it would switch on a
+      // customer-facing provenance line for the first time, which is an owner decision, not
+      // a side effect of a dev tool. Filed in pendingfeatures.md.
       anchor_label:      data.anchor || null,
       candidates:        data.candidates ? JSON.stringify(data.candidates) : null,   // disambiguation picker
       suggested_supplier: data.suggested_supplier || null,   // branding cross-check → "Use '<name>'" button
@@ -3918,6 +3932,13 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
       extraction_method: data.method || null,
       validation_note:   data.validation_note || null,
       corrected_to:      data.corrected_to || null,
+      // NOTE (verified 2026-08-10): this is a DEAD WRITE. `file_done` PROJECTS a fixed field
+      // set in process_docs.py (value/confidence/method + four conditional keys) and `anchor`
+      // is not among them, so `data.anchor` is always undefined — `extractions.anchor_label`
+      // is NULL on all 3262 rows of the live install and Review's "From anchor:" line has
+      // never rendered from it. Left AS IS deliberately: feeding it would switch on a
+      // customer-facing provenance line for the first time, which is an owner decision, not
+      // a side effect of a dev tool. Filed in pendingfeatures.md.
       anchor_label:      data.anchor || null,
       candidates:        data.candidates ? JSON.stringify(data.candidates) : null,   // disambiguation picker
       suggested_supplier: data.suggested_supplier || null,   // branding cross-check → "Use '<name>'" button

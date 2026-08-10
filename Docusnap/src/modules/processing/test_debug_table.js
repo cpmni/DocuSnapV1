@@ -10,6 +10,13 @@
  *   3. A cell prefers display_value over raw_value and carries confidence + method.
  *   4. _saveDebugTable copies ONLY a slice path that resolves INSIDE devSliceDir (the same
  *      path-validation as dev-get-slice) — a path outside it is silently dropped, never read.
+ *   5. The matched CAPTION (owner request 2026-08-09 — "show the winning keyword") is a
+ *      DEV-TRACE datum, not a stored one: the builder emits `caption: null` for every cell and
+ *      the renderer fills it from the session trace. PINNED here because the tempting shortcut
+ *      — reading `extractions.anchor_label` — looks right and is a DEAD COLUMN: `file_done`
+ *      projects a fixed field set that omits `anchor`, so nothing has ever written it (NULL on
+ *      all 3262 rows of the live install). A cell must not silently start sourcing it.
+ *   6. _saveDebugTable round-trips whatever caption the renderer supplies.
  *
  *   ELECTRON_RUN_AS_NODE=1 node_modules/.bin/electron src/modules/processing/test_debug_table.js
  */
@@ -52,13 +59,15 @@ function seed() {
   mkDoc(3, 1, 'confirmed', 'inv2.pdf');    // MUST NOT appear (confirmed)
 
   const ex = db.prepare(
-    `INSERT INTO extractions (document_id, field_key, raw_value, display_value, confidence, extraction_method)
-     VALUES (?,?,?,?,?,?)`);
-  ex.run(1, 'invoice_number', 'INV-001', 'INV-001', 95, 'keyword');
-  ex.run(1, 'invoice_date', '01072025', '01-07-2025', 88, 'template_mapping');   // display_value preferred
-  ex.run(2, 'credit_note_number', 'CN-9', 'CN-9', 70, 'anchor_crop');
-  ex.run(2, 'reason', 'return', 'return', 60, 'keyword');
-  ex.run(3, 'invoice_number', 'INV-777', 'INV-777', 99, 'keyword');              // confirmed → excluded
+    `INSERT INTO extractions (document_id, field_key, raw_value, display_value, confidence, extraction_method, anchor_label)
+     VALUES (?,?,?,?,?,?,?)`);
+  ex.run(1, 'invoice_number', 'INV-001', 'INV-001', 95, 'keyword', 'Invoice No');
+  // A mapping with NO taught label stores the field KEY here (template_mapper passes
+  // `anchor_text or field_key`) — the grid must not show that as a printed caption.
+  ex.run(1, 'invoice_date', '01072025', '01-07-2025', 88, 'template_mapping', 'invoice_date');
+  ex.run(2, 'credit_note_number', 'CN-9', 'CN-9', 70, 'anchor_crop', 'Credit Note No.');
+  ex.run(2, 'reason', 'return', 'return', 60, 'keyword', null);
+  ex.run(3, 'invoice_number', 'INV-777', 'INV-777', 99, 'keyword', 'Invoice No');  // confirmed → excluded
   return db;
 }
 
@@ -90,6 +99,16 @@ check('a cell carries confidence + method',
       inv.invoice_number.confidence === 95 && inv.invoice_number.method === 'keyword');
 check('a queue doc surfaces its supplier + type on the row',
       t.rows[0].supplier === 'Castellan' && t.rows[0].typeName === 'Invoice');
+check('every cell carries an explicit caption SLOT (renderer fills it from the trace)',
+      'caption' in inv.invoice_number && 'caption' in inv.invoice_date);
+check('the builder does NOT source the caption from the dead anchor_label column',
+      inv.invoice_number.caption === null && t.rows[1].fields.credit_note_number.caption === null);
+{
+  // The dead column, asserted rather than assumed — the seed above stores a caption in
+  // anchor_label for three rows and the builder must still hand back null.
+  const stored = db.prepare("SELECT COUNT(*) n FROM extractions WHERE anchor_label IS NOT NULL").get().n;
+  check('(control) the fixture DOES store anchor_label values, so the null above is a decision', stored === 4);
+}
 
 // ── Saver (path-validated slice copy) ──────────────────────────────────────────
 const sliceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ds-dbgslice-'));
@@ -109,7 +128,7 @@ const ctx = { path, fs, devSliceDir: sliceDir };
 const payload = { rows: [
   { id: 1, filename: 'inv1.pdf', supplier: 'Castellan', typeName: 'Invoice', typeSlug: 'invoice', status: 'needs_review',
     fields: {
-      invoice_number: { value: 'INV-001', method: 'keyword', confidence: 95, wrong: true, correct: 'INV-002', slicePath: goodSlice },
+      invoice_number: { value: 'INV-001', method: 'keyword', caption: 'Invoice No', confidence: 95, wrong: true, correct: 'INV-002', slicePath: goodSlice },
       invoice_date:   { value: '01-07-2025', method: 'template_mapping', confidence: 88, wrong: false, correct: null, slicePath: outsideSlice },
     } },
 ] };
@@ -123,9 +142,32 @@ check('debug_values.json was written under the Debug dir', fs.existsSync(res.fil
 const json = JSON.parse(fs.readFileSync(res.file, 'utf8'));
 const f = json.rows[0].fields;
 check('the flagged cell records wrong + correct value', f.invoice_number.wrong === true && f.invoice_number.correct === 'INV-002');
+check('debug_values.json carries the matched caption for the cell', f.invoice_number.caption === 'Invoice No');
+check('a cell with no caption writes null, not undefined', f.invoice_date.caption === null);
 check('the good slice was copied to slices/<id>__<field>.png', f.invoice_number.slice === path.join('slices', '1__invoice_number.png')
       && fs.existsSync(path.join(path.dirname(res.file), f.invoice_number.slice)));
 check('the OUTSIDE-devSliceDir slice was DROPPED (path traversal defence)', f.invoice_date.slice === null);
+
+// ── PINNED TRADE-OFF: widening what is STORED must not widen what is DISPLAYED ───────
+// `extractions.anchor_label` now also receives a Stage-1 keyword read's matched caption
+// (handler.js: `data.anchor || data.label`), which is what gives the dev grid above its
+// caption column. Review shows that column to the CUSTOMER as "From anchor: <label>", gated
+// on the method being an anchor read — so the widening is display-inert today. This pin
+// fails if that gate is ever loosened without the change being deliberate: a keyword read
+// would then start telling customers its value came "from anchor", which is false.
+// Bound to the CODE BLOCK, never a character window (a fixed window silently shrinks past
+// what it checks — 2026-08-10).
+{
+  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'windows', 'review', 'renderer.js'), 'utf8');
+  const m = /const isAnchorMethod\s*=\s*([^;]+);/.exec(src);
+  check('Review still HAS an isAnchorMethod gate on the anchor-label display', !!m);
+  const gate = m ? m[1] : '';
+  check('the anchor-label display gate does NOT admit keyword reads (pinned trade-off)',
+        !!gate && !/keyword/.test(gate));
+  // The one place the stored label is RENDERED must still sit behind that gate.
+  const rendered = /const anchorHtml = \(isAnchorMethod && anchorLabel\)/.test(src);
+  check('the stored label is rendered ONLY behind isAnchorMethod', rendered);
+}
 
 // cleanup
 try { fs.rmSync(sliceDir, { recursive: true, force: true }); } catch {}

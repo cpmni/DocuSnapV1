@@ -2650,15 +2650,46 @@ class ExtractionEngine:
         self._trace(ev)
 
     @staticmethod
-    def _brief(d):
+    def _brief(d, field_key=None):
         if not isinstance(d, dict):
             return None
-        return {"method": d.get("method"), "value": d.get("value"),
-                "confidence": d.get("confidence")}
+        out = {"method": d.get("method"), "value": d.get("value"),
+               "confidence": d.get("confidence")}
+        # The matched caption rides along ONLY when the caller knows the field key, because
+        # that is what lets `_caption` suppress Stage 0.5's field-key fallback. `_t` briefs the
+        # `vs` dict WITHOUT a key, so that payload keeps its exact three-key shape.
+        if field_key is not None:
+            cap = ExtractionEngine._caption(d, field_key)
+            if cap:
+                out["caption"] = cap
+        return out
+
+    @staticmethod
+    def _caption(d, field_key=None):
+        """The PRINTED CAPTION a rung matched, for the dev trace only (owner request
+        2026-08-09: "I would like to see the winning keyword so I know what the app
+        used to derive the value"). Read from the rung's OWN result key — Stage 1
+        records it as `label` (keyword.py:1204), Stage 0.5 and Stage 2 as `anchor`
+        (`_mapping_result`, anchor.py:1571) — never re-derived here, so the trace can
+        only ever show what the rung itself recorded.
+
+        Stage 0.5 passes `mapping.get("anchor_text") or field_key`, so a mapping with
+        NO taught label carries the FIELD KEY in that slot. That is not a caption and
+        is suppressed: showing `matched 'po_ref'` would invent a printed line that is
+        not on the page. Returns None when there is nothing honest to show."""
+        if not isinstance(d, dict):
+            return None
+        cap = d.get("label") or d.get("anchor")
+        cap = str(cap).strip() if cap is not None else ""
+        if not cap:
+            return None
+        if field_key and cap.lower() == str(field_key).strip().lower():
+            return None
+        return cap
 
     def _snap(self, results: dict) -> dict:
         """Shallow per-field snapshot (method/value/confidence) of resolved fields."""
-        return {k: self._brief(v) for k, v in results.items()
+        return {k: self._brief(v, k) for k, v in results.items()
                 if not k.startswith("_") and isinstance(v, dict)}
 
     def _trace_stage(self, stage: str, stage_results: dict, pre: dict, results: dict):
@@ -2677,14 +2708,17 @@ class ExtractionEngine:
             # bbox) instead of the first same-stage capture (the abs box), which mislabels a
             # relocated/footer read. Absent off-trace ⇒ inert.
             _geom = cand.get("target_geom")
+            _cap = self._caption(cand, key)
             self._t("candidate", stage=stage, field=key, method=cand.get("method"),
-                    value=cand.get("value"), confidence=cand.get("confidence"), geom=_geom)
+                    value=cand.get("value"), confidence=cand.get("confidence"), geom=_geom,
+                    caption=_cap)
             after = results.get(key)
             won = (self._merge_outcome(cand, after) == "won")
             self._t("merge", stage=stage, field=key,
                     decision=("win" if won else "lose"),
                     method=cand.get("method"), value=cand.get("value"),
                     confidence=cand.get("confidence"), geom=_geom,
+                    caption=_cap,
                     vs=(pre.get(key) if won else after))
         self._t("stage_end", stage=stage)
 
@@ -2747,17 +2781,28 @@ class ExtractionEngine:
                     _held = results.get(f) or {}
                     _hv = _held.get("value")
                     if _hv:
-                        _kw["reason"] = f"kept '{_hv}' from {_held.get('method') or 'an earlier stage'}"
+                        # The HOLDER's caption is the payoff of the whole feature: a lost rung
+                        # is usually lost to a rung that answered a DIFFERENT printed line, and
+                        # "kept 'X' from keyword (matched 'Account No')" is the diagnosis.
+                        _hcap = self._caption(_held, f)
+                        _kw["reason"] = (f"kept '{_hv}' from {_held.get('method') or 'an earlier stage'}"
+                                         + (f" (matched '{_hcap}')" if _hcap else ""))
                 self._t("step", stage=stage, field=f, outcome=_out,
                         value=cand_v, method=cand.get("method"),
-                        confidence=cand.get("confidence"), **_kw)
+                        confidence=cand.get("confidence"),
+                        caption=self._caption(cand, f), **_kw)
                 continue
             pre_f = pre.get(f) or {}
             pre_v = pre_f.get("value")
             if pre_v:
                 by = pre_f.get("method") or "an earlier stage"
                 self._t("step", stage=stage, field=f, outcome="already_resolved",
+                        # `pre` is a BRIEFED snapshot (`_snap`), which already carries the
+                        # suppressed caption under its own key — the raw `label`/`anchor` keys
+                        # `_caption` reads are not in it. Fall back for callers that pass raw
+                        # result dicts (the unit harnesses do).
                         value=pre_v, by=pre_f.get("method"),
+                        caption=(pre_f.get("caption") or self._caption(pre_f, f)),
                         reason=f"already held a value from {by} before this stage")
             else:
                 self._t("step", stage=stage, field=f, outcome="no_candidate",
@@ -5843,8 +5888,8 @@ class ExtractionEngine:
             # Dev-trace only: record what each crop rung READ and which gate
             # dropped it, so a "field not pulled in" can be diagnosed (the winners-
             # only candidate trace can't show a rejected read). No-op without --trace.
-            _on_reject = ((lambda fk, st, v, r: self._t(
-                "anchor_reject", field=fk, method=st, value=v, reason=r))
+            _on_reject = ((lambda fk, st, v, r, cap=None: self._t(
+                "anchor_reject", field=fk, method=st, value=v, reason=r, caption=cap))
                 if self._trace else None)
             # Display labels of the IDENTITY fields ("Document Issuer") — an identity anchor whose
             # CAPTURED label IS one of these is a teaching artifact (the field's own display name,
@@ -6462,8 +6507,8 @@ class ExtractionEngine:
                 _r_identity_labels = {(f.get('label') or '').strip().lower()
                                       for f in field_defs if f.get('key') in _IDENTITY_FIELD_KEYS}
                 _r_identity_labels.discard('')
-                _r_on_reject = ((lambda fk, st, v, r: self._t(
-                    "anchor_reject", field=fk, method=st, value=v, reason=r))
+                _r_on_reject = ((lambda fk, st, v, r, cap=None: self._t(
+                    "anchor_reject", field=fk, method=st, value=v, reason=r, caption=cap))
                     if self._trace else None)
                 try:
                     rescue_results = anchor.extract_with_anchors(
