@@ -78,8 +78,13 @@ def _arm(on):
 # The real fingerprint from the live database, and real page text from the corpus.
 POISONED_FP = ["Bramblewood", "Joinery", "Ltd", "PURCHASE", "Unit", "Sawpit", "Lane",
                "Draymarket", "Tel", "VAT"]
+# `supplier_prints_name` is threaded onto every template payload by templates.js from that
+# supplier's OWN confirmed documents. It is what carves out a wordmark supplier BY MEASUREMENT, and
+# without it the guard abstains — so a fixture that omits it silently tests nothing.
 QUILLSTONE = {'id': 12, 'name': 'Quillstone Print & Packaging', 'document_type_slug': 'purchase_order',
-              'keyword_fingerprint': POISONED_FP, 'dominant_supplier': 'Quillstone Print & Packaging'}
+              'keyword_fingerprint': POISONED_FP, 'dominant_supplier': 'Quillstone Print & Packaging',
+              'supplier_prints_name': {'supplier': 'Quillstone Print & Packaging',
+                                       'ratio': 1.0, 'count': 1}}
 
 OAKHAVEN_PAGE = """OE
 Oakhaven Electrical Wholesale
@@ -193,6 +198,88 @@ def test_one_predicate_shared_with_the_fill_path():
                        ('Oakhaven Electrical Wholesale', OAKHAVEN_PAGE)):
         assert engine._template_identity_corroborated(name, text) \
                == mod.identity_present_on_page(name, text), (name, text[:30])
+
+
+
+# ── Oracle's conditions, each pinned on a case that is RED without the condition ─────────────────
+@case
+def test_identity_is_the_confirmed_supplier_NOT_the_cosmetic_template_name():
+    """C1. My first version read `templates.name`. This codebase has ruled twice that the cosmetic
+    name is never an identity — it is first-confirm luck and can be an OCR garble — and an admin
+    RENAME would otherwise stop a template matching its own documents for ever, silently, while
+    `rename()` documents in-code that it "can never affect extraction, identification"."""
+    mod = _arm(True)
+    renamed = dict(QUILLSTONE, name='Quillstone PO v2 (old)')
+    m = mod.identify_template(None, QUILLSTONE_PAGE, [renamed],
+                              detected_slug=None, title_trusted=False)
+    assert m and m['template']['id'] == 12,         'a renamed template must still match its own documents; the name is not the identity'
+    assert mod._template_identity(renamed) == 'Quillstone Print & Packaging'
+
+
+@case
+def test_an_auto_generated_template_name_cannot_pass_the_guard():
+    """C1, the other direction. When no supplier resolves, templates.js names a template
+    "<Type> Template". Reading that as an identity, {purchase, order} scores 2/3 on every purchase
+    order ever printed — so the guard would have PASSED exactly the unresolved-supplier templates
+    most likely to carry a poisoned fingerprint."""
+    mod = _arm(True)
+    anon = {'id': 99, 'name': 'Purchase Order Template', 'document_type_slug': 'purchase_order',
+            'keyword_fingerprint': POISONED_FP}
+    assert mod._template_identity(anon) == '', 'an auto-generated name is not an identity'
+    m = mod.identify_template(None, OAKHAVEN_PAGE, [anon], detected_slug=None, title_trusted=False)
+    assert m is not None, ('with no identity to test, the guard must ABSTAIN rather than guess — '
+                           'this template has no frozen supplier to stamp, so the wrong-COMPANY '
+                           'misfile cannot occur through it')
+
+
+@case
+def test_the_right_template_is_still_SELECTED_not_merely_the_wrong_one_refused():
+    """C2, and this is the condition that mattered most. Two templates built from the buyer's OWN
+    purchase orders share the same poisoned fingerprint, so both score 1.00 on every PO the buyer
+    issues and the winner is decided by LIST ORDER. Vetoing the WINNER turns "wrong template" into
+    "NO template" — the customer's experience is "teaching a second supplier broke the first one".
+    Filtering the candidate POOL selects the right one instead."""
+    mod = _arm(True)
+    other = {'id': 13, 'name': 'Harrowgate Timber Supplies', 'document_type_slug': 'purchase_order',
+             'keyword_fingerprint': POISONED_FP, 'dominant_supplier': 'Harrowgate Timber Supplies',
+             'supplier_prints_name': {'supplier': 'Harrowgate Timber Supplies',
+                                      'ratio': 1.0, 'count': 1}}
+    # `other` is FIRST in the list, so on list order alone it wins the tie.
+    m = mod.identify_template(None, QUILLSTONE_PAGE, [other, QUILLSTONE],
+                              detected_slug=None, title_trusted=False)
+    assert m and m['template']['id'] == 12,         f'the template whose company IS on the page must be selected, got {m and m["template"]["id"]}'
+
+
+@case
+def test_a_supplier_that_does_not_print_its_name_is_carved_out_by_MEASUREMENT():
+    """C3. A pure-wordmark letterhead — a graphic with no company name in text anywhere — would
+    otherwise be refused by every text arm for ever, and the logo arm cannot save it: that arm
+    accepts only a clean lock (distance <= 6) while this codebase's own measurement records
+    same-supplier phash drift reaching 36 on scans. The ratio answers "does THIS supplier print its
+    name?" from that supplier's own confirmed documents."""
+    mod = _arm(True)
+    wordmark = dict(QUILLSTONE, id=14, name='Wordmark Co', dominant_supplier='Wordmark Co',
+                    supplier_prints_name={'supplier': 'Wordmark Co', 'ratio': 0.0, 'count': 4})
+    m = mod.identify_template(None, OAKHAVEN_PAGE, [wordmark], detected_slug=None, title_trusted=False)
+    assert m is not None, 'a supplier that never prints its name must not be refused for not printing it'
+    # ...and the same template with a high print ratio IS refused.
+    prints = dict(wordmark, supplier_prints_name={'supplier': 'Wordmark Co', 'ratio': 1.0, 'count': 4})
+    assert mod.identify_template(None, OAKHAVEN_PAGE, [prints],
+                                 detected_slug=None, title_trusted=False) is None
+
+
+@case
+def test_no_three_confirm_floor_because_that_floor_is_what_slept_through_the_defect():
+    """C3's sharp edge, pinned deliberately. The sibling guard `nameBearingButAbsent` requires THREE
+    confirmed documents. That is the exact gate that slept through this defect: a template acquires
+    full authority at n=1 and stamps its issuer at 95 on document #1. Requiring three here would
+    re-open the hole. Anybody "restoring parity" with the JS twin turns this red."""
+    mod = _arm(True)
+    one_confirm = dict(QUILLSTONE,
+                       supplier_prints_name={'supplier': 'Quillstone Print & Packaging',
+                                             'ratio': 1.0, 'count': 1})
+    assert mod.identify_template(None, OAKHAVEN_PAGE, [one_confirm],
+                                 detected_slug=None, title_trusted=False) is None,         'one confirmed document is enough evidence to refuse; a 3-confirm floor re-opens the defect'
 
 
 def main():

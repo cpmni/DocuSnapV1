@@ -418,8 +418,12 @@ def _type_heading_absent(best_t, ocr_lower):
 # as the Bill To / Deliver To block. Scored against one document from each of ten suppliers, that
 # fingerprint hits 0.80 on every single one (0.90 on one, 1.00 on its own). It is not an identity
 # signal; eight of its ten words identify the RECIPIENT.
-# `_match_by_keywords` has no minimum score and no margin — a template need only BEAT the others,
-# never be good — so 18 Oakhaven Electrical delivery notes were claimed by the Quillstone template
+# `_match_by_keywords` has a 0.75 floor at its call site — what it has NO margin for is the
+# runner-up, so a template need only BEAT the others, not be good. (A margin would have been
+# VACUOUS here: the customer had no Oakhaven template, so the poisoned one had no rival to be
+# margined against — which is why raising the floor is not the fix either; it would have to go
+# above 0.80 and would re-gate every supplier's admission on no measurement.)
+# So 18 Oakhaven Electrical delivery notes were claimed by the Quillstone template
 # and stamped `supplier_name = 'Quillstone Print & Packaging'` at 95 via the frozen `template_fixed`
 # seed. One was confirmed by a user (nothing on screen suggested the company was wrong) and FILED
 # INTO THE WRONG COMPANY'S FOLDER, with the true supplier's VAT number in the XML beside it. The
@@ -435,9 +439,15 @@ def _type_heading_absent(best_t, ocr_lower):
 # on the actual error (this template's company is not mentioned on this document) rather than on a
 # number that would have to be tuned.
 #
-# SCOPED TO THE TEXT ARMS ON PURPOSE. The logo arm has `decide_logo_text_gate`, which already
-# distinguishes "branding absent" (abstain) from "unjudgeable" (suggest, review-bound) and must keep
-# that nuance — a logo-only letterhead is a real thing. The keyword arm had no such gate at all.
+# SCOPED TO THE TEXT ARMS ON PURPOSE — but NOT because the logo arm is safe (Oracle C5). The logo
+# arm has `decide_logo_text_gate`, which distinguishes "branding absent" from "unjudgeable" and
+# must keep that nuance, because a logo-only letterhead is a real thing that the text arms cannot
+# serve. It is NOT a guarantee: on this very corpus the ONE wrong sender that survives this guard
+# came through the logo arm (Castellan stamped on an Oakhaven delivery note). It is caught by the
+# BRANDING guard rather than by identification — capped to 69 with "This document's letterhead
+# doesn't match 'Castellan Security Systems'. Please confirm the correct company." — so it lands
+# below the auto-file floor with the reason on screen, which is the safe state but not a clean one.
+# The keyword arm, by contrast, had no identity gate of any kind.
 #
 # NAMED TRADE-OFF, pinned: a supplier whose name is genuinely NOT printed anywhere on the page — a
 # pure-wordmark letterhead — and whose fingerprint is nonetheless a good identity signal, now falls
@@ -448,6 +458,10 @@ def _type_heading_absent(best_t, ocr_lower):
 # whose letterhead sits in the page FOOTER, outside the 20-line harvest window. The page knows what
 # the fingerprint cannot.
 _IDENTITY_ON_PAGE_ON = os.environ.get('TEMPLATE_IDENTITY_ON_PAGE', '0') != '0'
+try:
+    _IDENTITY_PRINTS_RATIO = float(os.environ.get('TEMPLATE_IDENTITY_PRINTS_RATIO', '0.80'))
+except ValueError:
+    _IDENTITY_PRINTS_RATIO = 0.80
 
 
 def identity_present_on_page(name, ocr_text) -> bool:
@@ -471,12 +485,92 @@ def identity_present_on_page(name, ocr_text) -> bool:
     return present >= 1 and (present / len(toks)) >= 0.6
 
 
+def _template_identity(cand) -> str:
+    """The identity a template ASSERTS — mirrors templates.js `establishedIdentity` (Oracle C1).
+
+    Order: the DOMINANT confirmed issuer (live truth), else the FROZEN `supplier_name` fixed value
+    (what `template_fixed` would stamp), else '' = unjudgeable.
+
+    **NEVER the cosmetic `templates.name`.** That rule is not mine and it is not new — this codebase
+    has ruled it twice (`templates.js` "it is first-confirm luck, can be an OCR garble, and plays no
+    role in matching/filing/learning scope"; `namePresence.js` "NEVER the cosmetic template name").
+    My first version of this guard read `name`, and Oracle caught three consequences, all real:
+      * an auto-generated "Purchase Order Template" name scores 2 of its 3 tokens ({purchase, order})
+        on every purchase order ever printed, so the guard would have PASSED exactly the
+        unresolved-supplier templates most likely to be poisoned;
+      * an admin RENAME in the Template Manager would silently stop a template matching its own
+        documents for ever — and `rename()` documents in-code that it "can never affect extraction,
+        identification";
+      * a garbled first-confirm name would permanently blind a correct template.
+    """
+    for key in ('dominant_supplier',):
+        v = str((cand or {}).get(key) or '').strip()
+        if v:
+            return v
+    for f in ((cand or {}).get('fields') or []):
+        if (f or {}).get('field_key') == 'supplier_name' and not (f or {}).get('is_variable'):
+            v = str((f or {}).get('fixed_value') or '').strip()
+            if v:
+                return v
+    return ''
+
+
+def _identity_log(cand) -> None:
+    """C4 — a refusal must never be silent.
+
+    STDERR, not stdout: `process_docs.py` streams the JSON protocol on stdout and a stray line there
+    corrupts a whole batch. The Electron side already forwards Python stderr into the app log
+    (`processing/handler.js` — `logger.warn('Python stderr: ...')`), so this is retrievable from a
+    support bundle without any new plumbing. Same channel `template_mapper.py` uses for its own
+    inert-flag warning.
+
+    Why it matters: without it, the customer whose supplier does not print its name in text sees a
+    taught layout quietly stop working, re-teaches it, gets a second template with the same absent
+    name, and is refused again — with nothing to read anywhere explaining why."""
+    try:
+        import sys as _sys
+        _sys.stderr.write(
+            f"[template_matcher] identity guard: template {cand.get('id')} "
+            f"({_template_identity(cand)!r}) is not named on this page - not a candidate\n")
+    except Exception:
+        pass
+
+
 def _identity_refuses(cand, ocr_text) -> bool:
-    """True -> this text-arm match must NOT be returned (see the flag block)."""
+    """True -> this candidate may not be admitted by a TEXT arm (see the flag block).
+
+    ABSTAINS unless the template's own confirmed history says this company is NORMALLY PRINTED
+    (Oracle C3). `supplier_prints_name` = {supplier, ratio, count}, computed by
+    namePresence.supplierNamePresenceRatio over that supplier's confirmed documents and threaded on
+    the templates payload. Refuse on absence only when ratio >= 0.80; otherwise abstain.
+
+    WHY THAT CARVE-OUT IS THE POINT, not caution: a supplier whose letterhead is a pure WORDMARK —
+    a graphic with no company name in text anywhere — would otherwise be refused by every text arm,
+    permanently, and the logo arm cannot save them because it only accepts a clean lock (dist <= 6)
+    while this file's own measurement records same-supplier phash drift reaching 36 on scans. The
+    ratio answers "does THIS supplier print its name?" from that supplier's own documents, so the
+    wordmark case is carved out BY MEASUREMENT rather than by hope.
+
+    NO `count >= 3` FLOOR, DELIBERATELY, and this sentence is load-bearing: the sibling guard
+    `nameBearingButAbsent` requires three confirmed documents, and that is the exact gate that slept
+    through this defect — a template acquires full authority at n=1 and stamps its issuer at 95 on
+    document #1. Requiring three here would re-open the hole this guard exists to close. Do not
+    "restore parity" with the JS twin.
+    """
     if not _IDENTITY_ON_PAGE_ON:
         return False
-    name = (cand or {}).get('name') or (cand or {}).get('dominant_supplier') or ''
-    return not identity_present_on_page(name, ocr_text)
+    identity = _template_identity(cand)
+    if not identity:
+        return False                                  # unjudgeable -> today's behaviour
+    stats = (cand or {}).get('supplier_prints_name') or {}
+    try:
+        ratio = float(stats.get('ratio') or 0)
+        count = int(stats.get('count') or 0)
+    except (TypeError, ValueError):
+        return False
+    if count < 1 or ratio < _IDENTITY_PRINTS_RATIO:
+        return False                                  # this supplier does not reliably print its name
+    return not identity_present_on_page(identity, ocr_text)
 
 
 def identify_template(page_image, ocr_text: str, templates: list,
@@ -792,6 +886,29 @@ def identify_template(page_image, ocr_text: str, templates: list,
     # Slice C2: on an identity-veto fall-through both text arms search a universe EXCLUDING the
     # refuted supplier's templates (all siblings — see _veto_excluded). No veto ⇒ untouched list.
     _arm_templates = [t for t in templates if not _veto_excluded(t)] if _logo_vetoed else templates
+    # IDENTITY ADMISSION FILTER (TEMPLATE_IDENTITY_ON_PAGE — Oracle C2, and this placement is the
+    # whole condition). The first version vetoed the WINNER after ranking, which turns "the wrong
+    # template matched" into "NO template matched" — and that is a different, worse bug the moment a
+    # customer teaches a SECOND supplier of the same kind. Two templates built from the buyer's own
+    # purchase orders share the same poisoned fingerprint (the buyer's own address block), so both
+    # score 1.00 on every PO the buyer issues and the winner is decided by LIST ORDER. Veto the
+    # winner and the CORRECT template — sitting right there at 1.00 with its company printed on the
+    # page — is never reached, and the customer experiences "teaching a second supplier broke the
+    # first one".
+    # Filtering the POOL instead cannot loosen anything: every candidate removed here is one the
+    # winner-veto would also have refused, and whatever is promoted still faces the 0.75 keyword
+    # floor and the rescue arm's 0.80 overlap bar. It converts "refuse the wrong one" into "refuse
+    # the wrong one AND select the right one".
+    if _IDENTITY_ON_PAGE_ON:
+        _kept = [t for t in _arm_templates if not _identity_refuses(t, ocr_text)]
+        if len(_kept) != len(_arm_templates):
+            for _t in _arm_templates:
+                if _t not in _kept:
+                    # C4: never a silent refusal. Without this line the customer whose supplier does
+                    # not print its name sees a taught layout simply stop working, re-teaches it,
+                    # and is refused again with nothing to read anywhere.
+                    _identity_log(_t)
+        _arm_templates = _kept
 
     if detected_slug and title_trusted:
         _same_type = sorted(
@@ -811,8 +928,7 @@ def identify_template(page_image, ocr_text: str, templates: list,
             # Kill switch RESCUE_ENFORCE_LOGO_BAND=1 restores the old band (byte-identical to before).
             _enforce_band = os.environ.get('RESCUE_ENFORCE_LOGO_BAND', '0') != '0'
             if logo_phash is None or not _enforce_band or _min_set_dist(_cand, logo_phash) <= RESCUE_LOGO_BAND:
-                if (_fallthrough_supplier_ok(_cand) and _vetoed_fallthrough_ok(_cand)
-                        and not _identity_refuses(_cand, ocr_text)):
+                if _fallthrough_supplier_ok(_cand) and _vetoed_fallthrough_ok(_cand):
                     # C1: reject a type-refuse fall-through for a DIFFERENT supplier; C3: an
                     # identity-veto fall-through winner must clear the mark/branding bar.
                     # veto_fallthrough tag (G1/G2 guards, Oracle 2026-07-26): additive key, set ONLY
@@ -847,8 +963,7 @@ def identify_template(page_image, ocr_text: str, templates: list,
             return _type_refuse(kw_match['template'].get('document_type_slug'),
                                 kw_match['template'].get('document_type_slug'))
         if (_fallthrough_supplier_ok(kw_match['template'])
-                and _vetoed_fallthrough_ok(kw_match['template'])
-                and not _identity_refuses(kw_match['template'], ocr_text)):
+                and _vetoed_fallthrough_ok(kw_match['template'])):
             # C1: reject a type-refuse fall-through for a DIFFERENT supplier; C3: an identity-veto
             # fall-through winner must clear the mark/branding bar (else None, as today).
             if logo_phash:
