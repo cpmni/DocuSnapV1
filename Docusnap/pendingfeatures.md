@@ -693,6 +693,75 @@ confirms is still nulled (`engine.py:7181-7229`); only new confirms or Learning 
 
 ---
 
+## 2026-08-11 — THE SAFETY NET HAS 14 RED GATES, AND NOBODY KNEW BECAUSE THE SUITE CANNOT BE RUN
+
+**Measured, not estimated.** New runner `stress_test/run_all_suites.py` executes every test file in
+its OWN process (which is what `pytest tests/` cannot do — a script-style file `sys.exit`s at import
+and kills collection for everything after it). First full run, 2026-08-11:
+
+```
+457 files   442 pass   15 fail        (8 python + 7 js; one of the 15 is a runner artefact)
+```
+
+**ALL 15 REPRODUCE IDENTICALLY at `455d4a7`**, the commit this session started from — verified in a
+separate git worktree with the same interpreter and the same `node_modules`. **Zero regressions from
+any of tonight's work.** They are pre-existing, and several are long-standing.
+
+**CLAUDE.md's "four pre-existing Python failures" is STALE and was understating by nearly 4x.** The
+real figure is 14 genuine red gates (15 minus the artefact). The line has been repeated across
+handovers as reassurance; it should not be quoted again without a re-run.
+
+### The artefact (fixed in the runner, not a defect)
+`python_backend/test_mapping.py` is a CLI diagnostic requiring `--image-file`/`--mapping-file`; it
+exits 2 when run bare. Now in the runner's `SKIP_FILES`.
+
+### Family 1 — THREE fixtures whose schema has drifted behind the migrations (one shared cause)
+`database/modules/test_accept_correction.js` · `test_page_count.js` · `test_recycle_bin.js`
+all die with `SqliteError: table documents has no column named logo_detail_hash` — the column
+migration 47 adds. These fixtures build their schema by a route that does not run the full migration
+set, while the production code they exercise now writes that column. **Test-infrastructure rot, not
+a product defect** — but it means three gates over correction-acceptance, page counting and the
+recycle bin have been asserting nothing for some time. Likely one shared fix (migrate the fixture).
+
+### Family 2 — ELEVEN genuine assertion failures, each asserting something real
+| file | what it says |
+|---|---|
+| `tests/test_label_overrides.py` | 2 FAILED — *"auto-learned anchor does NOT override the hand-drawn mapping"*. This is the anchor-vs-mapping PRECEDENCE ladder, which several shipped fixes depend on. |
+| `tests/test_anchor_crop_crosscheck.py` | 3 FAILED — the crop-vs-page disagreement comparator. |
+| `database/modules/test_authoritative_anchor.js` | 2 FAILED — authoritative ⊕ teach precedence + usage-weight blending. |
+| `tests/test_template_rescue.py` | 1 FAILED — wrong-type rescue guard. |
+| `tests/test_engine_detail_thread.py` | 1 FAILED — detail-hash threading when there is no page image. |
+| `tests/test_identity_fusion.py` | 1 FAILED — `test_verdict_conflict_agree_abstain`. |
+| `tests/test_network_field_authority.py` | collection ERROR — `_run.<locals>.<lambda>() got an unexpected keyword argument 'trace'`: the test's stub has drifted from a signature that gained `trace`. |
+| `tests/test_reprocess_manifest.py` | collection ERROR — `ValueError: too many values to unpack (expected 5)`: a return arity changed under the test. |
+| `client/test_apiclient.js` | 1 FAILED — *"getDocument -> 200, type_slug=invoice + no leak"*, i.e. the detached client's DE-PATHING contract. |
+| `src/modules/api/test_v1_contract.js` | CRASHES at `:160` — the `/v1` contract gate does not even complete. |
+| `src/windows/shared/test_doctype_surface_parity.js` | 1 FAILED — *"the edit button is hidden while creating a new type"*. |
+
+**Two of these are worth the owner's attention specifically:** `test_v1_contract.js` is the gate on
+the frozen `/v1` contract and it is CRASHING, and `test_apiclient.js` is failing on a no-leak
+assertion — the de-pathing work of 2026-08-02 exists precisely so paths never reach the client.
+Neither is evidence of a live leak (both may be stale fixtures, like family 1), but a *security-
+adjacent gate that does not run* is indistinguishable from one that passes until someone looks.
+
+### WHAT I DID NOT DO, deliberately
+I did not fix any of them. They are pre-existing, it is the middle of the night, and blind
+test-repair is exactly how a real regression gets papered over — several of these could equally be a
+correct test catching a real defect introduced weeks ago as a stale fixture. Each needs the
+"is the test wrong or is the code wrong?" question answered individually, at the source.
+
+**Suggested order when picked up:** family 1 first (one shared fix, three gates back), then the two
+collection ERRORs (a changed signature/arity is usually a five-minute fix and until then those files
+assert NOTHING), then `test_v1_contract.js`, then the precedence pair
+(`test_label_overrides` + `test_authoritative_anchor`) which are the highest-value assertions in the
+list.
+
+**Baseline artefact:** `~/Desktop/TESTING/_measure/suite_results_20260810.json` (per-file rc, style,
+duration and output tail). Re-run with `py -3.12 stress_test/run_all_suites.py`. Compare against that
+file rather than against memory.
+
+---
+
 ## 2026-08-10 — ROOT-CAUSED: THE `I`→`1` MISREAD IS THE OCR LADDER PICKING THE MOST CONFIDENT
 ## WRONG READ. The correct read is already being produced and then discarded.
 

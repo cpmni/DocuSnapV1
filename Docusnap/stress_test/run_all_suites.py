@@ -40,6 +40,10 @@ SKIP_DIRS = {"node_modules", "Backup", "dist", "TESTING", "__pycache__", ".git",
 # Individual files that are interactive, need a real scanner/corpus, or are known long harnesses.
 SKIP_FILES = {
     "run_all_suites.py",
+    # NOT a test: a CLI diagnostic that requires --image-file/--mapping-file and exits 2 without
+    # them. Counting it as a failure is a runner artefact, so it is excluded by name rather than
+    # left to look like a red gate for ever.
+    "test_mapping.py",
 }
 
 
