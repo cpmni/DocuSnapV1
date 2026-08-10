@@ -282,6 +282,30 @@ def test_no_three_confirm_floor_because_that_floor_is_what_slept_through_the_def
                                  detected_slug=None, title_trusted=False) is None,         'one confirmed document is enough evidence to refuse; a 3-confirm floor re-opens the defect'
 
 
+@case
+def test_the_remembered_binding_is_subject_to_the_same_test():
+    """THE STICKY BINDING. Reprocess honours the template a document is already bound to instead of
+    re-identifying — deliberately, because that is what makes a teach stick. The cost, found while
+    gating this fix: a WRONG binding is equally permanent, and "Reprocess all in queue" — the button
+    anyone reaches for when they notice something is wrong — could not heal the 18 misfiled
+    documents. The engine's own comment above that fallback already warned it "re-imposes the poison".
+
+    A WIRING pin, and honest about being one: the behavioural proof is the corpus arm (on the
+    reprocess path, wrong senders 18 -> 1, every other lane unchanged), which needs a full engine run.
+    What this asserts is that the fallback consults the predicate at all — the thing a refactor would
+    silently drop."""
+    import inspect
+    from extraction import engine
+    src = inspect.getsource(engine.ExtractionEngine.extract)
+    # Bound by the block's own end (`if match:`) rather than a character count — a fixed window
+    # silently shrank past the trace call as soon as the explaining comment grew, which is the same
+    # class of self-deceiving test as a pin that reads prose instead of code.
+    i = src.index('known_template_id is not None or pinned_template_id is not None')
+    window = src[i:src.index('if match:', i)]
+    assert '_identity_refuses' in window,         'the remembered binding is honoured without testing whether the page names that company'
+    assert 'sticky_binding_declined' in window, 'and a declined binding must be traceable'
+
+
 def main():
     fails = 0
     for fn in CASES:

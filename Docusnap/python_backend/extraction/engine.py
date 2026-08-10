@@ -5099,6 +5099,32 @@ class ExtractionEngine:
                 # AND the doc is held below. Pin wins over a stale known link.
                 _fb_id = pinned_template_id if pinned_template_id is not None else known_template_id
                 known  = next((t for t in templates if t.get('id') == _fb_id), None)
+                # THE STICKY BINDING (TEMPLATE_IDENTITY_ON_PAGE, 2026-08-10). A remembered binding is
+                # honoured WITHOUT re-identifying — deliberately, because that is what makes a teach
+                # stick across reprocesses. The cost, found while gating the wrong-company misfile:
+                # a WRONG binding is equally permanent. 18 delivery notes stamped with another
+                # company's name could not be healed by "Reprocess all in queue", which is precisely
+                # the button a user reaches for when they notice something is wrong — and the
+                # comment six lines above already warned that this fallback "re-imposes the poison".
+                #
+                # So the MEMORY must pass the same test a fresh match does: is this template's
+                # company named anywhere on this page? If not, the memory is wrong — drop it and let
+                # identification decide (which, with the guard armed, yields the right template or
+                # none, and none routes to review).
+                #
+                # NOT "always re-identify on reprocess": that would discard the deliberate binding a
+                # teach created, which is the whole point of honouring it. This only declines a
+                # binding the page itself contradicts.
+                # Inert unless the identity guard is armed, and it abstains on exactly the same
+                # conditions (no judgeable identity, or a supplier that does not print its name), so
+                # it can never drop a binding on evidence the guard would not act on.
+                if known and template_matcher._identity_refuses(known, ocr_text):
+                    self.log(f"  Stage 0: NOT honouring {_fb_id} — "
+                             f"'{template_matcher._template_identity(known)}' is not named on this "
+                             f"page; re-identifying instead of re-imposing a stale binding")
+                    self._t('sticky_binding_declined', template_id=_fb_id,
+                            identity=template_matcher._template_identity(known))
+                    known = None
                 if known:
                     _fb_method = 'pinned_id' if pinned_template_id is not None else 'known_id'
                     match = {'template': known, 'confidence': 0, 'method': _fb_method}
