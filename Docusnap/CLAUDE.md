@@ -21,7 +21,49 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-10 DAY: **READ `HANDOVER_2026-08-10_DAY.md` FIRST**
+## ⏭ LATEST — 2026-08-10 EVENING: **READ `HANDOVER_2026-08-10_EVENING.md` FIRST**
+Branch **`feat/teach-side-overnight`**, HEAD **`6acf4e2`**, PUSHED, tree clean. Owner present.
+**UI/UX + COPY ONLY — no extraction-layer change, no flag flipped, no migration.** The whole
+UX/product group in `pendingfeatures.md` is closed or honestly re-scoped.
+**(1) THE BACKLOG WAS LYING IN FOUR PLACES.** Core Search re-skin (`d7ab2e2`+`23109fb`),
+document-detail DTO (`b747676`) and focus-sweep slice 1 (`01a2a43`) were **already shipped and never
+ticked**; the custom-stamp entry claimed the approver's note "is not printed on the stamp" — **FALSE
+and never true of the shipped code** (`pdfStamp.js:87`/`:111-114`, `workflowService.js:319`). All
+four corrected. **Check an entry at source before building it.**
+**(2) OWNER CAUGHT A REAL MISS:** my first TM-Straighten commit made the *mapping* overlay
+frame-aware but missed `drawRegistrationPreview` — the overlay actually in use when checking a
+template. `redrawTplCanvas` has **THREE exits** (`tplPreviewMode`, `tplLandmarkMode`, normal); a
+change to "the overlay" must address all three. Fixing it exposed that `currentTplPageB64` fed the
+resolver **whatever `tplImg` was showing** — after Straighten, the straightened bitmap, i.e. a page
+production never sees, whose results would then have been DOUBLE-transformed. Now pinned to the RAW
+page.
+**(3) `minimizable:false` on child windows rested on a STALE comment** — `NON_MODAL_CHILD`
+(`main.js:499`) contains every member of `CHILD_WINDOWS` (`:498`), so `modal` is always false and
+there is no "locked main shell". Minimise re-enabled + a docked chip on the main window; restore is
+sender-guarded; kill switch **`CHILD_DOCK=0`**. **If a child is ever made modal again, revisit the
+dock in the same change.**
+**(4) TEACH NO LONGER SELLS THE POSITION-LESS ROUTE.** The big accent "Always the same on every
+document? → Set a fixed value" card is GONE; manual entry is a quiet top-of-step hatch that states
+what the choice costs. Issuer copy now says the value may be drawn ANYWHERE printed, **footer
+included**. **NOT CHANGED: what a typed value persists** — still `{value, target:null, anchor:null,
+status:'fixed'}` ⇒ no geometry. That is an OPEN backlog entry with the deciding measurement named.
+**(5) STAMP: placement + size** (normalised TOP-LEFT-origin `box`, flip to pdf-lib's bottom-left
+happens once inside `stampPdf`; clamped at render; new `stamp_placement` setting where **UNSET means
+the built-in corner**) **+ the two-approvals-share-one-path wart FIXED** (per-route filenames;
+legacy copies still resolve because every reader uses the stored `route.stamped_path`). Notes now
+ELIDE — over `MAX_NOTES` used to produce **no stamped copy at all, silently**.
+**(6) Ageing chip** on open mailbox routes (no schema/scheduler/new toast events); `created_at` has
+no zone marker so it is parsed as **UTC explicitly**. Core only — the detached client did not get it.
+**(7) TM tightness: `search_expansion` now explains both failure modes + "tested N days ago".** The
+other knobs (registration on/off, label-lock strictness, absolute-vs-relocate) are **NOT columns** on
+`template_field_mappings` — a migration + per-mapping rung overrides, i.e. EXTRACTION work, not UI.
+**GATES:** pdfStamp 9→13 checks, workflow ×4, workflow-IPC, entitlement, settings-wiring — all green.
+**NOTHING WAS SMOKE-TESTED IN THE UI.** Owner must eyeball Straighten+registration-preview on a
+tilted sample and a box drawn-while-straightened round-tripping.
+**GOTCHA: `ELECTRON_RUN_AS_NODE=1` is REQUIRED** for most JS suites — without it the Electron binary
+launches a GUI and hangs until the tool times out.
+
+### Prior — 2026-08-10 DAY: **READ `HANDOVER_2026-08-10_DAY.md`**
 Branch **`feat/teach-side-overnight`**, HEAD **`65abd6f`**, PUSHED. Owner testing an installer.
 **INSTALLER BUILT:** `dist\ScanFinder Setup 2.0.0-r20260810-0915-29425c9.exe` with **43 reading
 improvements ON by default (migration 60)** — written as SETTINGS ROWS so the toggles render as on;
