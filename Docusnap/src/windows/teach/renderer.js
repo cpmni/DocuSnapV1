@@ -867,53 +867,24 @@ function renderFieldRail(){
 // snapped box is displayed for approval on every use, which is the gate).
 let TEACH_SNAP_ON = true;
 try { D.getSetting?.('teach_box_word_snap').then(v => { TEACH_SNAP_ON = v !== 'false'; }); } catch {}
+// The ALGORITHM now lives in shared/boxSnap.js so the Template Manager runs the SAME snap rather
+// than a second copy that drifts (2026-08-10). This wrapper keeps the teach-specific parts: the
+// wizard's own image + its native cropper, and the left-label cut, which applies only when a LEFT
+// label was actually detected AND read — a label we couldn't read is not evidence of where the
+// value starts.
 async function snapDrawnBox(box, anchor){
-  const im = state.img; if (!im) return null;
-  const natW = im.naturalWidth, natH = im.naturalHeight;
-  const padXn = (box.h * natH * 1.2) / natW;             // ~1.2 line-heights sideways, in x-norm
-  const padYn = box.h * 0.35;
-  const band = { x: Math.max(0, box.x - padXn), y: Math.max(0, box.y - padYn),
-                 w: Math.min(1 - Math.max(0, box.x - padXn), box.w + 2 * padXn),
-                 h: Math.min(1 - Math.max(0, box.y - padYn), box.h + 2 * padYn) };
-  let res = null;
-  try { res = await D.ocrRegionBoxes(await cropB64(band)); } catch { return null; }
-  const raw = (res && res.words) || [];
-  if (!raw.length) return null;
-  // Crop-px → page-norm (cropB64 sends NATIVE, ds=1.0 — same frame as autoLabel's fix).
-  const words = [];
-  for (const wd of raw){
-    const b = wd && wd.box; if (!Array.isArray(b) || b.length < 4) continue;
-    const [l, t, w, h] = b; if (!(w > 0 && h > 0)) continue;
-    words.push({ text: String(wd.text || ''), x: band.x + l / natW, y: band.y + t / natH,
-                 w: w / natW, h: h / natH });
-  }
-  if (!words.length) return null;
-  const bx2 = box.x + box.w, by2 = box.y + box.h;
-  let admitted = words.filter(wd => {
-    const ix = Math.max(0, Math.min(bx2, wd.x + wd.w) - Math.max(box.x, wd.x));
-    const iy = Math.max(0, Math.min(by2, wd.y + wd.h) - Math.max(box.y, wd.y));
-    return ix > 0 && iy > 0;                              // touches the DRAWN box — never reach out
+  const im = state.img; if (!im || !window.BoxSnap) return null;
+  const labelRightEdge = (anchor && anchor.box && anchor.dir === 'left' && anchor.anchor_text)
+    ? anchor.box.x + anchor.box.w
+    : undefined;
+  return window.BoxSnap.snapBoxToWords(box, {
+    natW: im.naturalWidth, natH: im.naturalHeight,
+    // cropB64 here is the wizard's own (native when TEACH_NATIVE_CROP, which is the shipped
+    // default and the resolution contract boxSnap depends on).
+    cropB64: (b) => cropB64(b),
+    ocrRegionBoxes: (b64) => D.ocrRegionBoxes(b64),
+    labelRightEdge,
   });
-  if (!admitted.length) return null;
-  // Left-label cut: never re-absorb the label tail the user's box brushed against.
-  if (anchor && anchor.box && anchor.dir === 'left' && anchor.anchor_text){
-    const lre = anchor.box.x + anchor.box.w;
-    admitted = admitted.filter(wd => wd.x + wd.w / 2 > lre);
-    if (!admitted.length) return null;
-  }
-  // Single-row scope: a multi-row draw (address block) keeps the drawn box untouched.
-  const cys = admitted.map(wd => wd.y + wd.h / 2).sort((a, b) => a - b);
-  const medH = admitted.map(wd => wd.h).sort((a, b) => a - b)[admitted.length >> 1] || box.h;
-  if (cys[cys.length - 1] - cys[0] > medH * 0.8) return null;
-  const x1 = Math.min(...admitted.map(wd => wd.x)), x2 = Math.max(...admitted.map(wd => wd.x + wd.w));
-  const y1 = Math.min(...admitted.map(wd => wd.y)), y2 = Math.max(...admitted.map(wd => wd.y + wd.h));
-  const pad = Math.min(0.004, box.h * 0.15);
-  const snapped = { x: Math.max(0, x1 - pad), y: Math.max(0, y1 - pad),
-                    w: Math.min(1, x2 + pad) - Math.max(0, x1 - pad),
-                    h: Math.min(1, y2 + pad) - Math.max(0, y1 - pad) };
-  if (snapped.w * snapped.h > 4 * Math.max(box.w * box.h, 1e-9)) return null;   // over-grab cap
-  const text = admitted.sort((a, b) => a.x - b.x).map(wd => wd.text).join(' ').trim();
-  return { box: snapped, text: text || null };
 }
 
 async function readBack(box){

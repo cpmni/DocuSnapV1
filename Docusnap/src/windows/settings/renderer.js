@@ -3570,6 +3570,9 @@ tplCanvas.addEventListener('mouseup', () => {
     exitDrawMode();
     updateMappingEditorState();
     redrawTplCanvas();
+    // Word-snap runs AFTER the draft is staged and drawn, so the hand-drawn box appears
+    // immediately and then tightens — a snap that blocked the first paint would read as lag.
+    tplSnapDraft(tplMapMode === 'anchor' ? 'anchor' : 'target');
     return;
   }
 
@@ -3615,6 +3618,71 @@ window.addEventListener('keydown', (e) => {
 // drops the recognised text into the label field, exactly the crop→base64→
 // ocrRegion round trip the review window's zone-OCR tool uses (just without
 // writing the result back into a document field).
+// ── Word-snap a freshly drawn mapping box (owner 2026-08-10) ─────────────────
+// The teach wizard has snapped drawn boxes to the printed words since 2026-08-04; the Template
+// Manager never did, so the same hand-drawn rectangle produced a tight box in one surface and a
+// loose one in the other — and a loose taught box is exactly what reads the neighbouring row on a
+// shifted scan. Same shared implementation (shared/boxSnap.js), same gate: the snapped box is
+// DRAWN on the canvas, so it is approved by being seen before it can be saved.
+//
+// Frame-safe by construction: the crop comes from `tplImg`, i.e. whatever is on screen, so with
+// Straighten on the snap happens in the straightened frame — the same frame the drawn box is in,
+// and the same frame `_frame` records. The existing save-time back-transform then rotates the
+// SNAPPED box to raw. Re-stamping the frame afterwards keeps that chain honest.
+//
+// Kill: setting `template_box_word_snap` = 'false' (default ON, mirroring `teach_box_word_snap`).
+let TPL_SNAP_ON = true;
+try { api.getSetting?.('template_box_word_snap').then(v => { TPL_SNAP_ON = v !== 'false'; }); } catch { /* default ON */ }
+
+async function tplSnapDraft(which) {
+  if (!TPL_SNAP_ON || !window.BoxSnap || !tplImg || !tplImg.naturalWidth) return;
+  const draft = which === 'anchor' ? tplDraftAnchor : tplDraftTarget;
+  if (!draft) return;
+  // Snapshot enough to prove, when the async OCR returns, that nothing moved underneath it. A
+  // snap applied to a box the user has since redrawn/navigated away from would land on the wrong
+  // words — the same fail-closed rule the save-time frame guard uses.
+  const page = tplCurrentPage, angle = tplDeskewOn ? tplDeskewAngle : 0;
+  const before = { ...draft };
+  try {
+    // The label cut only applies to the VALUE box, and only when the anchor sits to its LEFT —
+    // an anchor above (or right of) the value says nothing about where the value starts.
+    let labelRightEdge;
+    if (which === 'target' && tplDraftAnchor) {
+      const aRight = tplDraftAnchor.x_norm + tplDraftAnchor.w_norm;
+      const sameRow = Math.abs((tplDraftAnchor.y_norm + tplDraftAnchor.h_norm / 2)
+                             - (draft.y_norm + draft.h_norm / 2)) < Math.max(draft.h_norm, 1e-6);
+      if (sameRow && aRight <= draft.x_norm + draft.w_norm / 2) labelRightEdge = aRight;
+    }
+    const res = await window.BoxSnap.snapBoxToWords(
+      { x: draft.x_norm, y: draft.y_norm, w: draft.w_norm, h: draft.h_norm },
+      {
+        natW: tplImg.naturalWidth, natH: tplImg.naturalHeight,
+        cropB64: window.BoxSnap.makeNativeCropper(tplImg),
+        ocrRegionBoxes: (b64) => api.ocrRegionBoxes(b64),
+        labelRightEdge,
+      });
+    if (!res || !res.box) return;                       // every guard failed closed to the drawn box
+    const live = which === 'anchor' ? tplDraftAnchor : tplDraftTarget;
+    if (!live || page !== tplCurrentPage || angle !== (tplDeskewOn ? tplDeskewAngle : 0)) return;
+    if (live.x_norm !== before.x_norm || live.y_norm !== before.y_norm
+        || live.w_norm !== before.w_norm || live.h_norm !== before.h_norm) return;   // redrawn since
+    const snapped = tplStampFrame({
+      x_norm: res.box.x, y_norm: res.box.y, w_norm: res.box.w, h_norm: res.box.h,
+      page_number: live.page_number,
+    });
+    if (which === 'anchor') {
+      tplDraftAnchor = snapped;
+      // The words the snap admitted ARE the label text — better evidence than a separate OCR of
+      // the hand-drawn rectangle, which is what autoDetectAnchorText read a moment ago.
+      const el = document.getElementById('tpl-map-anchor-text');
+      if (el && res.text) el.value = res.text;
+    } else {
+      tplDraftTarget = snapped;
+    }
+    redrawTplCanvas();                                   // the operator SEES the snapped box
+  } catch { /* snapping is an improvement, never a requirement — keep the drawn box */ }
+}
+
 async function autoDetectAnchorText(rect) {
   try {
     const scaleX = tplImg.naturalWidth  / tplImg.offsetWidth;
