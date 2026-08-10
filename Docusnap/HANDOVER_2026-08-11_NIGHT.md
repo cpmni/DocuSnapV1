@@ -122,7 +122,53 @@ file, not against memory.
 
 ## Chris's re-run
 
-<!-- CHRIS_SECTION -->
+Full report + my verification: **`docs/CHRIS_FULL_APP_REVIEW_2026-08-11.md`**. He walked the same
+ground as last night on a fresh install, **with nothing armed by hand** — which matters, because
+`template_identity_on_page` is in `PROVEN_ON_DEFAULTS`, so a NEW customer gets the wrong-company fix
+automatically. **Your own install does not**, because your DB ran migration 60 before that flag
+existed. He therefore tested the fix exactly as a new customer receives it.
+
+**THE ANSWER IS A SPLIT DECISION, and both halves matter.**
+
+**FIXED where it counts most:** a clean supplier teach through the wizard gave **19 of 19 correct,
+with zero bleed onto any other company.** That is the thing he said last night he would stop using
+the product over.
+
+**STILL BROKEN for documents YOUR OWN COMPANY issued.** He taught a Quillstone **purchase order** —
+your letterhead, your address block — and 20 Oakhaven delivery notes took the value at 95%.
+**I verified it on disk, not on his word:** `Output/a-eens-Ee/` holds 20 documents, and the filed
+metadata for `Delivery-Note.28-04-2025.OED91377.xml` reads `<SupplierName>a eens Ee</SupplierName>`
+with `<VatNo>GB 512 8846 27</VatNo>` — **Quillstone's VAT number on an Oakhaven delivery note.**
+Last night one field crossed over; tonight two did.
+
+**Why the guard did not stop it, traced at source:** `template_identity_on_page` requires a layout
+to NAME its company before it may claim a document. A purchase order YOU issued carries YOUR name,
+and the supplier's delivery notes carry your address too, as the recipient — so the page does
+contain the name the template is keyed on, the guard is satisfied, and the claim proceeds.
+**This is the same buyer-issued class the 08-10 DAY fix was built for. It closed the supplier case
+and left the buyer-issued case open.** A narrowing, not a solve.
+
+**His second finding may be the more general defect, and it is new.** The teach read `@a eens Ee`,
+showed a green success toast, flagged nothing, and let him file — producing TWO junk folders that
+differ only by a leading `@`. His line for it is the sharpest thing in either report:
+
+> *"Every guard in this product is pointed at absence. None of them is pointed at confident
+> nonsense."*
+
+The app warns when the issuer is EMPTY and says nothing when it is GIBBERISH.
+`value_quality.name_quality` already exists and is not consulted on that path.
+
+**Also: Approve silently does nothing** (Reject works perfectly, first time) — likely a
+self-approval refusal that never reaches the renderer. He pressed it four times across two sessions.
+
+**Two copy defects where the app understates its own good behaviour:** Import says *"No documents
+found in this folder"* immediately after reading 200 from it (because it correctly moved them to
+`Processed`), and the progress counter reads *"132 processed of 132 found"* mid-run, which reads as
+finished.
+
+**Suggested order, in the doc:** the plausibility guard first (one predicate, an existing helper,
+and it protects the filing cabinet), then buyer-issued identity, then silent Approve, then copy.
+**Nothing implemented — it is all queued for you.**
 
 ---
 
