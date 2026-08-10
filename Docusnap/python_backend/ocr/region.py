@@ -46,6 +46,12 @@ def main():
     # union of detected word boxes in ORIGINAL (pre-upscale) crop pixels. Used by the ⊕ tool to
     # capture the taught LABEL's position for a drift-invariant label->value offset. Default: plain text.
     parser.add_argument('--boxes', action='store_true')
+    # --page-words: emit JSON {"w","h","words":[{"t":<text>,"b":[l,t,w,h],"c":<conf>}]} — every word
+    # on the WHOLE page with its geometry, in image pixels. Deliberately runs the PIPELINE's own
+    # full-page recipe (ocr.tesseract.reconstruct_page_text via its words_out hand-off), NOT the
+    # zone ladder above: the caller uses these boxes to decide where a value SITS so a template can
+    # read it later, and the only honest test of that is the word geometry extraction itself sees.
+    parser.add_argument('--page-words', action='store_true')
     # --skew: emit JSON {"angle": <deg>} — the page's detected skew (PIL CCW-positive, 0.0 when
     # < 0.2°). Straightens the DISPLAYED page so drawn ⊕ boxes align with the text. No OCR.
     parser.add_argument('--skew', action='store_true')
@@ -101,6 +107,32 @@ def main():
             angle = 0.0
         print(json.dumps({"angle": round(angle, 2)}), end='', flush=True)
         _emit_timing({"op": "skew"})
+        return
+
+    # --page-words: full-page word geometry, using the PIPELINE's reconstruct_page_text. Failure of
+    # any kind emits an EMPTY word list rather than an error — every caller treats "no words" as
+    # "couldn't locate it", which is the same safe outcome as not asking.
+    if args.page_words:
+        import json
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # python_backend
+        words = []
+        try:
+            from ocr.tesseract import reconstruct_page_text
+            wo = {}
+            reconstruct_page_text(img, words_out=wo)
+            for wd in (wo.get('words') or []):
+                # words_out rows are (left, top, w, h, text, conf) in the image's own pixels.
+                l, t, w, h, txt, conf = wd[0], wd[1], wd[2], wd[3], wd[4], wd[5]
+                if not (w > 0 and h > 0):
+                    continue
+                txt = str(txt or '').strip()
+                if not txt:
+                    continue
+                words.append({"t": txt, "b": [int(l), int(t), int(w), int(h)], "c": float(conf)})
+        except Exception:
+            words = []
+        print(json.dumps({"w": img.width, "h": img.height, "words": words}), end='', flush=True)
+        _emit_timing({"op": "page-words"})
         return
 
     # --deskew: return the STRAIGHTENED page as a base64 PNG + its angle, for the Review DISPLAY. The

@@ -19,13 +19,20 @@ quiet link-weight control at the TOP of the step, worded as the exception; the t
 what the choice costs before you type; and the issuer prompt + intro copy now say the value can be
 drawn anywhere it is printed, **the footer included**.
 
-**NOT SHIPPED — the owner's actual worry, which is a STORAGE question, not a UI one.** A typed value
-still persists exactly as before: `state.results[key] = {value, target:null, anchor:null,
-anchor_text:null, status:'fixed'}` (`teach/renderer.js` `showFixedInput`), which flows to the
-`fixed_value` path. So there is still **no geometry at all** — nothing for a future document of the
-same layout to match against, and the value is reused as-is on every document of the type.
-**Deliberately left alone in that commit: changing what a teach persists is an extraction-layer
-change and needs its own gate.**
+**SHIPPED 2026-08-10 EVENING — DIRECTION 1 IS BUILT.** When the operator types a value, the wizard
+now searches the page's own word geometry for that string (`src/windows/shared/valueLocate.js`, new
+`ocr-page-words` IPC → `region.py --page-words` → the PIPELINE's `reconstruct_page_text` words). A
+hit is DRAWN on the page and the operator says whether that is the place; accepting stores through
+the same `store()` the drawn-box path uses, so the field commits as a normal Stage-0.5 MAPPING and
+`doCommit` needs no special case. No hit — or "Save as a typed value" — keeps the old `fixed_value`
+path byte-identically. Kill: setting `teach_typed_value_locate` = 'false'. Pins:
+`src/windows/shared/test_value_locate.js` (12 checks). **What remains open is below.**
+
+**The ORIGINAL statement of the problem, kept because directions 2-4 still stand.** A typed value
+used to persist as `state.results[key] = {value, target:null, anchor:null, anchor_text:null,
+status:'fixed'}` (`teach/renderer.js` `showFixedInput`) → the `fixed_value` path: **no geometry at
+all**, nothing for a future document of the same layout to match against, and the value reused as-is
+on every document of the type.
 
 **Why this is more than a nicety — the `fixed_value` path has a bad record on this corpus.** Three
 separate defects this week all ran through a frozen fixed value stamped at high confidence:
@@ -35,12 +42,16 @@ caption `'VAT'` on 21 of 26 wrong reads; and `serials` committing `'Serial No:'`
 is the same shape: a value with no position, frozen from a sample of one, asserted confidently.
 Reducing how often the wizard mints one is therefore a genuine accuracy lever, not just tidier UI.
 
-**Directions to weigh (none built, none costed):**
-1. **Capture a location even when the value is typed.** If the typed string can be found in the
-   page's word geometry, store the box it was found at — the operator typed it because OCR misread
-   it, not because it is absent, and that case is common. This turns most manual entries back into
-   positioned teaches for free. Needs a match policy (exact / normalised / fuzzy) and a rule for
-   multiple hits.
+**Directions to weigh:**
+1. ~~**Capture a location even when the value is typed.**~~ **BUILT (see above).** Match policy
+   settled as EXACT-after-normalisation with no fuzzy tier, compared in two forms (whitespace-
+   collapsed and whitespace-free, so `'PI/26'`+`'/6000'` still matches `PI/26/6000`); a run is only
+   ever assembled within ONE visual row. Multiple hits are not resolved by a heuristic — every
+   occurrence is offered to the operator in reading order (the owner's letterhead-and-footer case).
+   **Known limitation, seen live during the build:** when OCR mangles the value (`GB651002784` read
+   as `GB85` + `1002784`), a strict matcher cannot find it and the field falls back to a typed
+   value. That is the fail-closed choice — a near-miss box is worse than no box — but it means the
+   89.5% census figure is an UPPER BOUND on what this recovers in practice.
 2. **Separate "typed because OCR failed" from "genuinely not on the page".** Only the second should
    ever become a position-less constant. Today they are indistinguishable in the stored row.
 3. **Stop a sample-of-one typed value being asserted at 95.** Related to `TEMPLATE_FREEZE_QUALIFY` /
@@ -83,6 +94,13 @@ bad value.** At least two of the 17 "printed" rows are values we already know ar
 raise that value's standing.** Either capture the box and leave confidence where it is, or gate
 capture on the value passing its field's format/quality check. A found box is evidence about
 WHERE, never about WHETHER.
+**How the shipped version answers it:** `locateValueInWords` returns `{box, text, wordCount}` and
+nothing else — no score, no confidence, no verdict — and that is PINNED (check 10 asserts the exact
+key set, using `vat_no='VAT'`, one of the two known-wrong values, as the fixture). The committed
+value stays exactly what the operator typed. Standing is not raised anywhere; what changes is that
+the template READS the position on each future document instead of re-asserting a constant, which
+is the mechanism all three frozen-value defects shared. **Not claimed: that the resulting read
+carries a LOWER confidence than `template_fixed` did — it may not, and that was not measured.**
 
 Two further notes from the run: the 2 genuine absentees are `serials = 'Serial No:'` (a caption,
 i.e. the known serials defect) and `po_ref = 'PO-59430'` — so the "genuine constant" bucket may be

@@ -829,16 +829,130 @@ function showFixedInput(f){
   const inp=$('rb-fixed-input');
   if (typeof focusField === 'function') focusField(inp).then(()=>{ try{ inp.select(); }catch{} });
   else { inp.focus(); inp.select(); }
-  const save=()=>{
-    const v=inp.value.trim();
-    if(!v){ inp.style.borderColor='var(--err)'; return; }
+  const saveAsFixed=(v)=>{
     state.results[f.key]={value:v,target:null,anchor:null,anchor_text:null,status:'fixed'};
     advanceField();
+  };
+  const save=async()=>{
+    const v=inp.value.trim();
+    if(!v){ inp.style.borderColor='var(--err)'; return; }
+    if(!TYPED_LOCATE_ON){ saveAsFixed(v); return; }
+    // Before accepting a position-less constant, look for the typed string in the page's own word
+    // geometry. Measured 2026-08-10: 17 of 19 measurable fixed values are PRINTED on their own
+    // sample page — they were typed because the READ was wrong, not because the value is absent.
+    const btn=$('rb-fixed-save'); if(btn){ btn.disabled=true; btn.textContent='Looking…'; }
+    setConfirm('<span class="muted">Looking for that value on the page…</span>');
+    let hits=[];
+    try{ hits=await locateTypedValue(v); }catch{}
+    if(btn){ btn.disabled=false; btn.textContent='Save →'; }
+    setConfirm('');
+    if(!hits.length){ saveAsFixed(v); return; }
+    showLocatedPick(f,v,hits,0);
   };
   inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();save();} });
   $('rb-fixed-save').onclick=save;
   $('rb-fixed-cancel').onclick=()=>promptField();
   drawnBox=null; redrawCanvas();
+}
+// ── Typed value → located position ───────────────────────────────────────────
+// A typed value used to record WHAT it says and nothing about WHERE it sits: it becomes a frozen
+// `fixed_value` re-asserted on every document of the type, whatever that document prints. The
+// census (`stress_test/fixed_value_locatable.js`, 2026-08-10) measured 17 of 19 measurable fixed
+// values as PRINTED on their own sample page — supplier_name 7/7, vat_no 6/6, account_no 3/3 — so
+// they were typed because the READ was wrong, not because the value is absent. Searching the page's
+// word geometry for the typed string turns most manual entries back into positioned teaches.
+//
+// A LOCATED BOX IS EVIDENCE ABOUT WHERE, NEVER ABOUT WHETHER. The same census found two of those
+// 17 are values already known to be WRONG (`vat_no = 'VAT'` matches because the CAPTION is on the
+// page). So nothing here raises the value's standing: the value committed for this document is
+// still exactly what the operator typed, and no confidence is granted for having found it. What
+// changes is that the template READS the position on each future document instead of repeating a
+// constant — which is the risk the three frozen-value defects of this week all shared.
+// Kill switch: setting `teach_typed_value_locate` = 'false' restores the old typed-value path
+// byte-identically (the search never runs).
+let TYPED_LOCATE_ON = true;
+try { D.getSetting?.('teach_typed_value_locate').then(v => { TYPED_LOCATE_ON = v !== 'false'; }); } catch {}
+// Page words are cached per (page, straighten angle): the operator may type several fields on one
+// page, and a full-page OCR per field would be a visible stall for no new information.
+let _pageWordsCache = { key:null, res:null };
+async function locateTypedValue(value){
+  const im = state.img; if (!im || !window.ValueLocate) return [];
+  const key = state.pageIndex + '|' + (state.deskewAngle || 0);
+  let res = _pageWordsCache.key === key ? _pageWordsCache.res : null;
+  if (!res){
+    _teachReadBusy = true;      // a page-wide read is in flight — block a straighten toggle mid-read
+    try { res = await D.ocrPageWords?.(await cropB64({x:0,y:0,w:1,h:1})); }
+    catch { res = null; }
+    finally { _teachReadBusy = false; }
+    // Only cache a real answer — caching a failure would make the retry silently impossible.
+    if (res && res.words) _pageWordsCache = { key, res };
+  }
+  if (!res || !res.words) return [];
+  // The words come back in the pixels of the image we submitted, which is `state.img` at native
+  // resolution. Prefer the dims the backend reports; fall back to the image's own.
+  const natW = res.w > 0 ? res.w : im.naturalWidth;
+  const natH = res.h > 0 ? res.h : im.naturalHeight;
+  const hits = window.ValueLocate.locateValueInWords(value, { words: res.words, natW, natH });
+  // Tag the frame the box is in, exactly as a drawn box is tagged at mouseup, so _teachBackBox
+  // canonicalises it to RAW with the right angle even if straighten is toggled afterwards.
+  const a = state.deskewAngle || 0;
+  hits.forEach(h => { h.box._ang = a; });
+  return hits;
+}
+// The pick step IS the gate: the candidate box is drawn on the page and nothing is stored until the
+// operator says that is the place. Same principle as the drawn-box word-snap — approved by being seen.
+function showLocatedPick(f, typed, hits, idx){
+  const h = hits[idx]; if (!h) return;
+  drawnBox = h.box; redrawCanvas();
+  setManualEntryVisible(false);
+  setPrompt('Is this the', f.label + '?');
+  $('rg-sub').textContent = hits.length > 1
+    ? `That value is printed in ${hits.length} places on this page. Pick the one to teach.`
+    : 'Found that value printed on the page — the box on the page shows where.';
+  $('rg-readback').innerHTML =
+    `<div style="padding:10px 12px;background:var(--surface2);border:1px solid var(--border2);`+
+        `border-radius:8px;font-size:12px;line-height:1.5;color:var(--muted)">`+
+      `<b style="color:var(--text)">Teaching the position is better than teaching the value.</b> `+
+      `The next document with this layout is then read from the page, so it still works when the `+
+      `${esc(f.label)} is different. Saving it as a typed value repeats <span class="mono">${esc(typed)}</span> `+
+      `on every document of this type.`+
+    `</div>`;
+  setConfirm(
+    `<div>Value: <span class="val mono">${esc(typed)}</span>`+
+      (hits.length > 1 ? `<span class="muted" style="margin-left:8px">${idx+1} of ${hits.length}</span>` : '')+
+    `</div>`+
+    `<div class="rb-actions">`+
+      `<button class="btn primary" id="rb-loc-yes">Yes — teach this position →</button>`+
+      `<span class="rb-sep"></span>`+
+      (hits.length > 1 ? `<button class="btn ghost quiet" id="rb-loc-next">Show the next one</button>` : '')+
+      `<button class="btn ghost quiet" id="rb-loc-fixed">Save as a typed value</button>`+
+    `</div>`);
+  onConfirm('rb-loc-yes', ()=>useLocatedBox(f, typed, h.box));
+  if (hits.length > 1) onConfirm('rb-loc-next', ()=>showLocatedPick(f, typed, hits, (idx+1) % hits.length));
+  onConfirm('rb-loc-fixed', ()=>{
+    drawnBox=null;
+    state.results[f.key]={value:typed,target:null,anchor:null,anchor_text:null,status:'fixed'};
+    advanceField();
+  });
+}
+// Accepted: detect the label the same way a drawn box does, then store through the SAME `store`
+// the drawn path uses — so from here on a located field is indistinguishable from a drawn one and
+// doCommit needs no special case (it takes the saveTemplateMapping branch, not setTemplateFieldFixed).
+async function useLocatedBox(f, value, box){
+  setConfirm('<span class="muted">Reading the label…</span>');
+  let anchor = { box:null, anchor_text:null, dir:null, suspicious:false };
+  if (!isIssuerField(f)){
+    _teachReadBusy = true;
+    try { anchor = await autoLabel(box); } catch {}
+    _teachReadBusy = false;
+  }
+  if (anchor && anchor.box) anchor.box._ang = box._ang;
+  // The VALUE stays exactly what the operator typed — the page's own words are not substituted in.
+  // They were typed because the read was wrong, so re-reading them here would undo the correction.
+  store(f, box, anchor, value, /*pending*/true);
+  $('rg-readback').innerHTML='';                 // drop the pick-step explainer
+  state.results[f.key].located = true;
+  showValueConfirm(f, state.results[f.key], /*located*/true);
 }
 function renderFieldRail(){
   const done=state.fields.filter(f=>state.results[f.key]).length;
@@ -943,12 +1057,19 @@ async function readBack(box){
 // label panel cost a click per field). The label was already detected during readBack,
 // so showing both here costs no extra OCR. Issuer stays value-only (no label — see
 // isIssuerField above).
-function showValueConfirm(f, r){
+// `located` = the value was TYPED and then found on the page, so there is no read to confirm — only
+// the label beside it. Saying "confirm what I read" there would be untrue: nothing was read.
+function showValueConfirm(f, r, _located){
   const issuer = isIssuerField(f);
-  setPrompt('Confirm what I read for', f.label);
+  // Carried on the result too, so the label Redraw / Left-Above controls — which call back in here —
+  // don't flip the heading back to "confirm what I read" on a value that was never read.
+  const located = _located || !!(r && r.located);
+  setPrompt(located ? 'Confirm the label for' : 'Confirm what I read for', f.label);
   $('rg-sub').textContent = issuer
     ? 'Check the company name — the issuer is recognised by its name and letterhead, no label needed.'
-    : 'Check both readings below. Scan Finder follows the printed label so the field keeps reading when the layout shifts.';
+    : (located
+      ? 'The value is the one you typed. Check the label Scan Finder found beside it — that is what keeps the field reading when the layout shifts.'
+      : 'Check both readings below. Scan Finder follows the printed label so the field keeps reading when the layout shifts.');
   // A garbled (suspicious) label read is treated as UNREADABLE: the junk string is never
   // displayed or vouched for — the offer becomes position-only and the junk is dropped on
   // confirm. The user can still redraw the label or flip the direction.

@@ -3137,6 +3137,32 @@ function register(ctx) {
     return _runRegion(base64png, true);
   });
 
+  // Every word on the page with its geometry: {w, h, words:[{t, b:[l,t,w,h], c}]} in the submitted
+  // image's own pixels. Used by the teach wizard to find a TYPED value on the page and store the box
+  // it was found at, so a manual entry still teaches a position (2026-08-10). Runs the PIPELINE's
+  // full-page recipe, not the zone ladder — see region.py --page-words for why that matters. Always
+  // resolves (never rejects): a failure comes back as an empty word list, i.e. "not found".
+  ipcMain.handle('ocr-page-words', async (_e, base64png) => {
+    requireRole('admin', 'edit');
+    const tmpFile = path.join(os.tmpdir(), `ds_pw_${Date.now()}_${_ocrTmpSeq++}.png`);
+    fs.writeFileSync(tmpFile, Buffer.from(base64png, 'base64'));
+    const script = ctx.resourcePath('python_backend', 'ocr', 'region.py');
+    const py = pythonExe();
+    return new Promise((resolve) => {
+      const proc = spawn(py, pythonArgs(script,
+        '--image-file', tmpFile, '--tesseract', tesseractPath(), '--page-words'), { windowsHide: true });
+      let out = '', err = '';
+      proc.stdout.on('data', d => { out += d.toString(); });
+      proc.stderr.on('data', d => { err += d.toString(); });
+      const done = (v) => { try { fs.unlinkSync(tmpFile); } catch {} resolve(v); };
+      proc.on('error', () => done({ w: 0, h: 0, words: [] }));
+      proc.on('close', () => {
+        if (err) console.error('ocr_page_words stderr:', err);
+        try { done(JSON.parse(out.trim())); } catch { done({ w: 0, h: 0, words: [] }); }
+      });
+    });
+  });
+
   // Straighten a rendered page for the Review DISPLAY: returns {angle, image} where image is a
   // base64 PNG of the deskewed page (SAME pixel dims as the input — region.py rotates with
   // expand=False) and angle is the applied straightening angle (PIL CCW-positive, 0 when the page

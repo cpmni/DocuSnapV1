@@ -260,6 +260,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   // ── Zone OCR & learning ──────────────────────────────────────────────────────
   ocrRegion:           (b64)      => ipcRenderer.invoke('ocr-region', b64),
   ocrRegionBoxes:      (b64)      => ipcRenderer.invoke('ocr-region-boxes', b64),
+  ocrPageWords:        (b64)      => ipcRenderer.invoke('ocr-page-words', b64),
   getPageDeskew:       (b64, minAngle) => ipcRenderer.invoke('get-page-deskew', b64, minAngle),
   testTemplateMapping: (pageB64, mapping, landmarks) => ipcRenderer.invoke('test-template-mapping', pageB64, mapping, landmarks),
   saveFieldAnchor:     (data)     => ipcRenderer.invoke('save-field-anchor', data),
