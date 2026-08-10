@@ -71,10 +71,14 @@ rejected-candidate census (C2).**
 **Separator guard: layer and root cause CONFIRMED** (Oracle ruled AGAINST making the re-read
 unreachable from the template rung). Applied C3 (my commit shipped a FALSE CITATION —
 `template_mapper.py:3638` is DEAD in production; the live reach is `anchor.py:3228`), C5 (currency
-excluded), C4/C6/C7 pins. **STILL BLOCKING: (a) the owner's own exhibit has never been shown to be
-fixed — two mechanisms give OPPOSITE outcomes and opening that invoice is their acceptance test;
-(b) the class the guard DISABLES is unmeasured, and eight byte-identical lanes may be vacuous for
-it.** Details + method in `pendingfeatures.md`.
+excluded), C4/C6/C7 pins. **C1 ANSWERED, and it is worse than either branch Oracle predicted:** armed, the owner's exhibit
+commits `P1/26/6000` — separators restored, `I`→`1` still wrong — and **the note CLEARS on 3 of 5
+live Pelican documents**, because their full-page OCR carries the SAME misread so Gate C now
+matches. The guard turns "wrong value + warning at 95" into "wrong value + NO warning at 94", which
+clears the 88 auto-file floor. **Tell the owner what they will actually see before they flip, and
+do not flip alongside a lowered `auto_file_threshold`.** The `I`→`1` defect now has its own entry.
+**STILL BLOCKING: C2 — the class the guard DISABLES is unmeasured; eight byte-identical lanes may
+be vacuous for it.** Details + method in `pendingfeatures.md`.
 **OUTSTANDING: the two measurements above, and the whole UI smoke list.**
 
 ### Prior — 2026-08-10 EVENING: **`HANDOVER_2026-08-10_EVENING.md`**

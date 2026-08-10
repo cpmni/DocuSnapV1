@@ -599,18 +599,51 @@ DB's 7 confirmed documents make it vacuous — consistent with the 08-09 EVENING
   this very defect — used to grant. 90 clears the 88 floor. **Do not "restore" the 95.**
 - **C7 — `re.fullmatch`** on `_STRUCTURED_CODE_SEP`.
 
-**OUTSTANDING, BOTH BLOCKING, BOTH MEASUREMENTS:**
-1. **C1 — the owner's own exhibit has never been shown to be fixed.** `P1266000` can arise two
-   ways and they give OPPOSITE outcomes: (a) the crop read `P1/26/6000` with the `I`→`1` upstream
-   (as on corpus doc 0025) → armed commits `P1/26/6000` and **the note the owner reported is still
-   there**; or (b) the crop read `PI/26/6000`, the repair stripped it, and Stage 2.5b substituted
-   `I`→`1` toward the poisoned template (`n_fixes=1`, boost 20 → `min(95, 90+20) = 95`, which fits
-   the observed 95 exactly) → armed commits `PI/26/6000` and **the exhibit heals**. The census
-   cannot answer it (`census_separator_loss.py:74` matches on alphanumeric identity, so it excludes
-   every glyph-mismatched document by construction). **Run the armed pipeline on that one document;
-   report the committed value, the method string, and whether the note clears — BEFORE the owner
-   flips, because opening that invoice is their acceptance test.**
-2. **C2 — measure the class the guard DISABLES; eight flat lanes do not stand in for it.**
+**C1 IS ANSWERED — AND THE ANSWER IS WORSE THAN EITHER BRANCH ORACLE PREDICTED.**
+Measured 2026-08-10 EVENING3 on the six live Pelican documents that still have their file, base
+vs armed, via `trace_one_doc.js` over the live snapshot:
+
+| doc | armed value | conf | the "doesn't appear on this page" note |
+|---|---|---|---|
+| 0023 (**the owner's exhibit**) | `P1/26/6000` | 95 → 94 | **CLEARED** |
+| 0022 | `P1/26/3711` | 90 → 94 | **CLEARED** |
+| 0029 | `P1/26/1792` | 90 → 94 | **CLEARED** |
+| 0025 | `P1/26/9923` | 95 → 90 | persists |
+| 0019 | `P1/26/2247` | 95 → 90 | persists |
+| 0030 | `\| PI/25/54451` | 70 | a DIFFERENT note (edge-cut), different rung |
+
+**It is Oracle's case (a): the crop really does read `P1`, so the `I`→`1` is upstream and armed the
+exhibit commits `P1/26/6000` — still wrong, because the page prints `PI/26/6000`.** (Confirmed by
+0030, same supplier and layout, which reads the prefix `PI` correctly on a different rung.)
+
+**BUT THE NOTE CLEARS ANYWAY ON THREE OF FIVE, AND THAT IS THE FINDING.** Gate C can only ask
+whether the committed value appears in the PAGE'S OWN OCR TEXT. On 0023/0022/0029 the full-page
+read carries the SAME `I`→`1` misread as the crop, so once the separators are restored the value
+matches the page text exactly and the warning goes. On 0025/0019 the full-page read got the `I`
+right, so the mismatch survives and the warning stays.
+
+**So on this supplier the guard converts "wrong value + warning at 95" into "wrong value + NO
+warning at 94" on three documents in five.** The warning that was protecting them was firing for
+the WRONG REASON — the separator — and fixing the separator removes it while the real defect goes
+unflagged. Nothing here says the guard is wrong (deleting a printed character is a real bug and it
+is really fixed); it says the guard was silently propped up by a false-positive warning, and
+removing that prop exposes how little protects this class.
+
+**CONSEQUENCE FOR THE FLIP, and it is Oracle's §3.4 made concrete:** 94 clears the 88 auto-file
+floor with no note. Latent on this install (`auto_file_threshold` 100, auto-file has never fired)
+but LIVE on a customer install with the slider at 88–90 — those three would auto-file a wrong
+reference. **Do not flip this alongside a lowered `auto_file_threshold`.**
+
+**CORRECTION TO MY OWN HANDOVER.** `HANDOVER_2026-08-10_EVENING2.md` says the note "correctly
+persists on the still-wrong one". True of 0025 — the only still-wrong document the CORPUS arm had —
+and false on three of the five live ones. A single corpus residual was generalised into a rule.
+
+**WHAT THE OWNER WILL SEE** if they flip and open the exhibit: the reference reads `P1/26/6000`
+and the warning is gone. The separators are back; the `I` is still wrong. Say this to them plainly
+BEFORE they flip, or the missing warning reads as the fix having worked completely.
+
+**STILL OUTSTANDING, BLOCKING — one measurement:**
+**C2 — measure the class the guard DISABLES; eight flat lanes do not stand in for it.**
    Instrument `_repair_single_token` with a counter: (a) reached with a `[\/|]`-bearing segment,
    (b) returned a real repair, (c) refused by `_STRUCTURED_CODE_SEP` — keyed by field and val_type.
    Run over the corpus AND the live snapshot. Also run the INVERSE census (committed value contains
@@ -623,6 +656,39 @@ become auto-file ELIGIBLE at 90. Latent on this install (threshold 100, never fi
 customer install with the slider at 88–90. And arming the guard does NOT un-poison the install —
 off the template rung, a corrected value read by keyword/anchor on a scope with ≥3 separator-free
 confirms is still nulled (`engine.py:7181-7229`); only new confirms or Learning Repair fix that.
+
+---
+
+## 2026-08-10 — THE `I`→`1` MISREAD ON PELICAN REFERENCES (isolated by the separator guard)
+
+**Now visible, and now the ONLY defect left on this class.** Every Pelican reference commits with
+its letter `I` read as the digit `1`: the page prints `PI/26/6000`, the crop reads `P1/26/6000`.
+Until the separator guard it was hidden behind a second defect (the deleted separators); armed, the
+value is `P1/26/6000` and the remaining error stands alone.
+
+**MEASURED (2026-08-10 EVENING3, six live documents, base vs armed):** 5 of 5 `template_mapping`
+reads carry it. The sixth (0030, a `template_mapping_edgecut` read) gets the prefix RIGHT — same
+supplier, same layout, same page — which is the useful contrast: **this is not a property of the
+font or the scan, it is a property of the crop/recipe the winning rung uses.** Start there.
+
+**WHY IT MATTERS MORE THAN IT DID:** on three of five documents the full-page OCR shares the same
+misread, so Gate C's page-presence check now MATCHES and the warning clears — leaving a wrong
+reference at confidence 94 with nothing flagging it (see the separator-guard entry above). Before
+the guard, the separator mismatch was accidentally keeping those documents flagged.
+
+**LEADS.**
+- `P` followed by `I` in a narrow crop is the classic 1/I/l confusion. The crop that wins here is
+  the Stage 0.5 absolute/relocate read; the edge-cut rung on 0030 uses a different window and gets
+  it right, so compare the two recipes before touching any classifier-level idea.
+- `ocr_corrector`'s learned misread table is the existing mechanism for exactly this shape, but the
+  install's confirmed history is itself poisoned with `P1` values, so it would currently learn the
+  WRONG direction. Check what `getFieldFormats` holds for `invoice_number` on this supplier before
+  relying on it.
+- A `tessedit_char_whitelist` without digits is NOT the answer — the value is mostly digits.
+- Whatever the fix, the gate is the corpus ref lane, which currently sits at 27 ok / 1 wrong armed;
+  the residual IS this defect.
+
+**NOT BUILT.**
 
 ---
 
