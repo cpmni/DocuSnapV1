@@ -113,6 +113,11 @@ recommendation: 67 documents, one exhibit, and the corpus cannot show what a low
 install with many suppliers and thin scans. Re-measure on a full corpus before believing it.
 
 ## 2026-08-10 — A WRONG TEMPLATE BINDING IS STICKY: REPROCESS NEVER RE-IDENTIFIES
+### STATUS: FIXED (`29425c9`) — a remembered binding the PAGE CONTRADICTS is no longer honoured.
+### Gated on the reprocess path, where the two arms were previously byte-identical:
+### issuer 29 ok / 18 wrong -> 29 / 1, every other lane unchanged. Reprocess now HEALS it.
+### Still open below: what else a user can do about a wrong binding, and whether the other
+### re-identify triggers (type disagreement, an explicit "wrong layout" action) are worth it.
 
 Found while gating the wrong-company misfile above, and it explains something the customer
 simulation reported independently.
