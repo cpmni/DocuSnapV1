@@ -470,6 +470,19 @@ function _reconcileEnv(db) {
     // references, dates and order numbers RECOVERED (they had been read off the wrong layout's
     // geometry). Nothing regressed. Default OFF, byte-identical off. App RESTART to load the bridge.
     if (learning.getSetting(db, 'template_identity_on_page', 'false') === 'true') env.TEMPLATE_IDENTITY_ON_PAGE = '1';
+    // -- THE TWO 08-09 FLAGS THAT WERE NEVER REACHABLE (bridged 2026-08-10) --
+    // Both were built, measured and recorded as "awaiting the owner's flip" — but neither had a
+    // bridge, and `npm start` injects no env, so THERE WAS NOTHING TO FLIP: the only way to reach
+    // them was a harness arm. This is the same class as the five flags bridged on 08-09 NIGHT;
+    // measuring a flag and shipping a flag are two different things, and a flag with no bridge is
+    // shipped OFF for ever. Both remain DEFAULT OFF and byte-identical off. App RESTART to load.
+    //
+    // TEMPLATE_FORMAT_FAIL_YIELD: a taught box whose read FAILS its own field's format yields to
+    // the next rung instead of committing the malformed value ('Account', 'L922.14').
+    if (learning.getSetting(db, 'template_format_fail_yield', 'false') === 'true') env.TEMPLATE_FORMAT_FAIL_YIELD = '1';
+    // CUSTOMER_PO_LABELS: on a document a SELLER issues, "Your Order" / "Your PO" names the
+    // CUSTOMER's purchase-order number, which is a different field from the seller's own po_number.
+    if (learning.getSetting(db, 'customer_po_labels', 'false') === 'true') env.CUSTOMER_PO_LABELS = '1';
     return env;
   } catch { return {}; }
 }

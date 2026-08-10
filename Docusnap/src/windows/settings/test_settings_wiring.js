@@ -95,6 +95,11 @@ const BRIDGES = [
   ['filing-sanity-flags-toggle','filing_value_sanity_flags',   'FILING_VALUE_SANITY_FLAGS'],
   ['letterhead-issuer-toggle',  'letterhead_issuer',           'LETTERHEAD_ISSUER'],
   ['identity-on-page-toggle',   'template_identity_on_page',   'TEMPLATE_IDENTITY_ON_PAGE'],
+  // Bridged 2026-08-10. Both were built and measured on 08-09 and recorded as awaiting a flip,
+  // but had NO bridge — env-only, and `npm start` injects no env, so they were unreachable in the
+  // product. Pinned here so the same gap can't reopen.
+  ['format-fail-yield-toggle',  'template_format_fail_yield',  'TEMPLATE_FORMAT_FAIL_YIELD'],
+  ['customer-po-labels-toggle', 'customer_po_labels',          'CUSTOMER_PO_LABELS'],
   ['vat-reg-toggle',            'vat_reg_not_amount',          'VAT_REG_NOT_AMOUNT'],
   ['credit-sign-toggle',        'credit_sign_coherence',       'CREDIT_SIGN_COHERENCE'],
   ['pad-window-read-toggle',    'template_pad_window_read',    'TEMPLATE_PAD_WINDOW_READ'],

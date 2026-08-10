@@ -50,9 +50,49 @@ Reducing how often the wizard mints one is therefore a genuine accuracy lever, n
    this one?" — the old card ASSUMED the first and never asked. The wizard now no longer advertises
    the assumption, but it still cannot record the answer.
 
-**Measure before building any of it:** count how many `fixed_value` rows in the live DB would have
-been locatable on their own sample page (direction 1's whole premise). If most typed values ARE on
-the page, direction 1 is the fix and the rest are secondary; if most are genuinely absent, it is 2+3.
+**MEASURED 2026-08-10 EVENING — `stress_test/fixed_value_locatable.js` (read-only, live-DB
+snapshot). DIRECTION 1 IS THE FIX.**
+
+```
+Fixed values (template_fields.fixed_value, non-empty): 22
+  PRINTED on its own sample page :   17   (89.5% of measurable)
+  NOT on the page                :    2   (10.5% of measurable)
+  no pinned sample document      :    3   (unmeasurable)
+  measurable total               :   19
+
+  field            printed  absent
+  supplier_name          7       0
+  vat_no                 6       0
+  account_no             3       0
+  serials                1       1
+  po_ref                 0       1
+```
+Nearly every typed value IS on its own page — it was typed because the READ was wrong, not because
+the value is absent. **`supplier_name`, `vat_no` and `account_no` are 16 for 16.** So the premise
+holds: search the page's word geometry for the typed string and store the box, and most manual
+entries become positioned teaches for free.
+
+**THE CATCH THE CENSUS ALSO FOUND — presence is not correctness, and direction 1 must not bless a
+bad value.** At least two of the 17 "printed" rows are values we already know are WRONG:
+- tpl 9 `vat_no = 'VAT'` — the caption-freeze defect (fixed for extraction by `92c7013`, but this
+  frozen row is still sitting in the DB). It scores as "printed" because the caption **is** on the
+  page, so a naive geometry search would happily pin a box around the word "VAT" and give a wrong
+  value a POSITION and therefore more credibility than it has now.
+- tpl 9 `supplier_name = 'Pelican Office Interiors -'` — the trailing-dash clip.
+**So the design gains a hard condition: capturing geometry for a typed value must not by itself
+raise that value's standing.** Either capture the box and leave confidence where it is, or gate
+capture on the value passing its field's format/quality check. A found box is evidence about
+WHERE, never about WHETHER.
+
+Two further notes from the run: the 2 genuine absentees are `serials = 'Serial No:'` (a caption,
+i.e. the known serials defect) and `po_ref = 'PO-59430'` — so the "genuine constant" bucket may be
+empty of *legitimate* constants entirely, which would weaken direction 4's premise. And tpl 11 has
+3 fixed values with NO pinned sample, so a real implementation needs an answer for templates whose
+sample is gone.
+
+**Caveat on the number: n=22 on one install.** The test is also deliberately GENEROUS — it asks
+"is this string anywhere in the sample's `ocr_text`", which is an UPPER BOUND on what a word-box
+search could find. Re-run it on a second taught state before treating 89.5% as the population rate.
 
 ---
 
@@ -2621,6 +2661,28 @@ Context: HANDOVER_2026-08-08.md. The SFDEV debug-table shipped + two DEFAULT-OFF
   each doc's winning-slice-per-field at reprocess-complete while the SFDEV console is open (owner's gate:
   "slices saved only on reprocess with SFDEV open"), reusing the 63e0cb3 target_geom bbox-match. Then Submit
   copies the real crops into the debug dir.
+
+## 2026-08-10 — THE TWO 08-09 FLAGS WERE NEVER REACHABLE; BRIDGED (still DEFAULT OFF)
+
+`TEMPLATE_FORMAT_FAIL_YIELD` and `CUSTOMER_PO_LABELS` were built, measured (gate GREEN / M=0) and
+recorded as "awaiting OWNER FLIP" on 2026-08-09 — but **neither had a Settings bridge**. They were
+read straight from `os.environ` in `engine.py:2158` and `keyword.py:1031`, and `npm start` injects
+no env, so **there was nothing for the owner to flip**: the only way to reach either was a harness
+arm. Shipped OFF for ever, silently.
+
+**This is the SAME CLASS as the five flags bridged on 08-09 NIGHT and it recurred one day later.**
+Measuring a flag and shipping a flag are two different jobs. **A flag is not "awaiting a flip"
+until a toggle exists that flips it** — check `test_settings_wiring.js` before writing that phrase
+into a handover again.
+
+Bridged 2026-08-10 via the standard `_reconcileEnv` + toggle pattern
+(`processing/handler.js`, `settings/{index.html,renderer.js}`), **both still DEFAULT OFF and
+byte-identical off**, and both now PINNED in `test_settings_wiring.js` so the gap cannot reopen.
+Settings → Processing carries them as "Don't accept a taught reading that isn't the right shape"
+and "Treat 'Your Order' as the customer's order number, not yours". **App RESTART loads a bridge**
+(the env is assembled when the extraction process is spawned).
+
+---
 
 ## 2026-08-09 (cont.) — format-fail-yield residual (READ-layer) + customer-PO field split + Your-Order son fix
 Context: HANDOVER_2026-08-09_CONT.md. This session REDESIGNED `TEMPLATE_FORMAT_FAIL_YIELD` (dark, gate GREEN,

@@ -686,6 +686,11 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // A learned layout may only claim a document that names its company -
                          // the wrong-company misfile (2026-08-10).
                          ['identity-on-page-toggle', 'template_identity_on_page'],
+                         // Bridged 2026-08-10: both were built + measured on 08-09 and recorded as
+                         // "awaiting the owner's flip", but neither had a bridge, so there was
+                         // nothing to flip - env-only, and npm start injects no env.
+                         ['format-fail-yield-toggle', 'template_format_fail_yield'],
+                         ['customer-po-labels-toggle', 'customer_po_labels'],
                          ['deskew-import-toggle', 'deskew_on_import'],
                          // NOT an extraction switch and NOT bridged through _reconcileEnv: the
                          // auto-file gate is JS-side, so database/modules/trust.js reads this key

@@ -896,6 +896,20 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Don&rsquo;t accept a taught reading that isn&rsquo;t the right shape</div>
+                <div class="threshold-sub">When you teach Scan Finder where a value sits, it reads that spot on every later document from the same sender. If the layout shifts, that spot can land on the wrong thing &mdash; and the wrong thing still gets used, because a taught reading is trusted. With this on, a taught reading that doesn&rsquo;t look like the field it belongs to (the word &ldquo;Account&rdquo; where an account number should be, or &ldquo;L922.14&rdquo; where a total should be) is set aside, and Scan Finder falls back to finding the value the usual way. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="format-fail-yield-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Treat &ldquo;Your Order&rdquo; as the customer&rsquo;s order number, not yours</div>
+                <div class="threshold-sub">On a document a supplier sends you, a line labelled &ldquo;Your Order&rdquo; or &ldquo;Your PO&rdquo; is <em>your</em> purchase-order number, not theirs &mdash; so it belongs in the customer order field rather than being read as the supplier&rsquo;s own order number. With this on, those labels fill the right field. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="customer-po-labels-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Straighten crooked scans before reading them</div>
                 <div class="threshold-sub">A page that went through the scanner slightly askew is read at an angle, and the boxes Scan Finder was taught drift off the values they were pointed at. This straightens each crooked page before reading it — the same thing the ∞ Straighten button does in Review, applied automatically as documents come in. Your filed file is never altered; only the reading is straightened. It also changes what gets filed without you looking at it, so treat it as a trade rather than a free improvement. Pages that are already straight, and documents that carry their own text, are skipped. Off by default, and not yet recommended — straightening can make a marginal scan read worse as easily as better, and that has not been proven either way on real paper.</div>
               </div>
