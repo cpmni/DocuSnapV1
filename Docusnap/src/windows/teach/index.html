@@ -283,6 +283,13 @@
       <h2>What kind of document is this?</h2>
       <p class="lead">This helps Scan Finder file it in the right place.</p>
       <div id="type-grid" class="grid"></div>
+      <!-- Parity with Settings > Document Types (owner, 2026-08-10): the type EDITOR was
+           already shared, but the catalog was not, so building a type mid-teach meant adding
+           every field by hand at the moment you least want to. -->
+      <div style="margin-top:10px;">
+        <button class="btn" id="btn-teach-catalog" data-help-key="add-catalog">+ Add from catalog…</button>
+        <button class="btn" id="btn-teach-edit-type" class="hidden" style="display:none;">Edit this type…</button>
+      </div>
 
       <div id="new-type-panel" class="panel hidden">
         <div id="nt-editor-host"></div>
@@ -397,6 +404,7 @@
   <script src="../shared/thumbs.js"></script>
   <script src="../shared/dialogFocus.js"></script>   <!-- arm native confirm()/alert() focus repair + focusField -->
   <script src="../shared/doctype-editor.js"></script>
+  <script src="../shared/doctype-catalog.js"></script>
   <script src="../shared/anchorLabel.js"></script>
   <script src="renderer.js"></script>
 </body>

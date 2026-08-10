@@ -213,13 +213,67 @@ async function renderTypeStep(){
   nu.innerHTML='<div class="ic">＋</div><div class="nm">It\'s something new</div>';
   nu.onclick=()=>selectType(nu,true);
   grid.appendChild(nu);
+  // PARITY WITH SETTINGS (owner, 2026-08-10). The type EDITOR was already the shared component, so
+  // fields and structural roles matched; the CATALOG was not, so a type built here started empty
+  // while the same type built in Settings arrived with its fields AND its likely printed labels
+  // already seeded. Re-render after adding so the new types are immediately pickable — the operator
+  // is mid-teach with a document in front of them and must not have to restart the wizard.
+  const cat=$('btn-teach-catalog');
+  if (cat && window.DocTypeCatalog){
+    cat.onclick=async()=>{
+      await window.DocTypeCatalog.open({ api:D, onAdded: async()=>{
+        await renderTypeStep();
+        toast('Added. Now pick the one this document is.');
+      }});
+    };
+  }
 }
 let dtEditor = null;   // shared DocTypeEditor (create mode); mounted lazily on "It's something new"
+
+// EDIT AN EXISTING TYPE, MID-TEACH (owner parity request, 2026-08-10). Settings can change a
+// type's fields, roles and "Also appears as" aliases; the wizard could only CREATE. That gap bites
+// exactly when it is most annoying: you are holding the document, you can see the type is missing a
+// field you are about to point at, and the only route was to abandon the teach and open Settings.
+// Same shared component, `mode:'edit'` — so whatever Settings can change here, the wizard can too,
+// and neither can drift from the other.
+async function openTypeEditorFor(slug){
+  let types=[]; try{ types=await D.getAllDocTypes()||[]; }catch{}
+  const t=types.find(x=>x.slug===slug);
+  if (!t) return;
+  if (dtEditor){ try{ dtEditor.destroy(); }catch{} dtEditor=null; }
+  $('new-type-panel').classList.remove('hidden');
+  dtEditor = window.DocTypeEditor.create($('nt-editor-host'), {
+    mode:'edit', api:D, initial:t,
+    // A field added here must reach the step the operator is walking through, or they would edit
+    // the type, see nothing change, and reasonably conclude it had not saved.
+    onChange: async () => {
+      let fresh=[]; try{ fresh=await D.getAllDocTypes()||[]; }catch{}
+      const u=fresh.find(x=>x.slug===slug);
+      if (u){
+        state.refFieldKey=u.ref_field_key||null; state.dateFieldKey=u.date_field_key||null;
+        state.fields=(u.fields||[]).filter(f=>f.enabled!==0)
+          .map(f=>({key:f.key,label:f.label,type:f.type,required:!!f.required}));
+      }
+      await renderTypeStep();
+      const again=$('type-grid').querySelector(`.card[data-slug="${slug}"]`);
+      if (again) again.classList.add('sel');
+      renderFooter();
+    },
+  });
+}
 
 function selectType(card,isNew){
   document.querySelectorAll('#type-grid .card').forEach(c=>c.classList.remove('sel'));
   card.classList.add('sel');
   $('new-type-panel').classList.toggle('hidden', !isNew);
+  // "Edit this type…" belongs to an EXISTING selection only — there is nothing to edit before the
+  // new type exists, and the create editor is already on screen in that case.
+  const eb=$('btn-teach-edit-type');
+  if (eb){
+    eb.style.display = isNew ? 'none' : '';
+    eb.onclick = () => openTypeEditorFor(card.dataset.slug);
+  }
+  if (!isNew && dtEditor){ try{ dtEditor.destroy(); }catch{} dtEditor=null; $('nt-editor-host').innerHTML=''; }
   // Mount the shared friendly creator lazily and keep it across toggles, so the
   // user's in-progress draft survives switching between cards. The component owns
   // the locked structural roles (Company/Date) + the removable Reference seed.
