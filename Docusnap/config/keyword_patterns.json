@@ -340,6 +340,29 @@
       "base_confidence": 82,
       "role_caption": "ref"
     },
+    "account_no": {
+      "labels": [
+        "Customer Account Number",
+        "Customer Account No",
+        "Customer Account",
+        "Account Number",
+        "Account No",
+        "Account Ref",
+        "Account Code",
+        "Account",
+        "A/C Number",
+        "A/C No",
+        "A/C",
+        "Client Account",
+        "Your Account"
+      ],
+      "directions": [
+        "right",
+        "below"
+      ],
+      "validation": "alphanumeric",
+      "base_confidence": 82
+    },
     "shipping": {
       "labels": [
         "Shipping",
