@@ -635,6 +635,34 @@ function register(ctx) {
       if (x + w > 1.0001 || y + h > 1.0001) return { success: false, error: `${side} box off the page` };
     }
     const saved = templates.saveMapping(getDb(), templateId, mapping);
+
+    // TAUGHT LABEL BECOMES THE KEYWORD — the WIZARD half (owner decision 2026-08-11).
+    // The ⊕ Review teach writes this from `save-field-anchor`; the TEACH WIZARD does not go
+    // through that path at all — it persists a Stage 0.5 anchor→target MAPPING instead. Hooking
+    // only the anchor path would have missed the very case the owner reported, and the live
+    // numbers say so plainly: 6 taught anchors carry a label against 38 template mappings
+    // carrying `anchor_text`. Most taught captions arrive HERE.
+    // Same rules as the anchor path: exclusive, doc-type-scoped, never an empty label (the
+    // issuer's position-only mapping deliberately has none), and never fatal to the save above.
+    // DEFAULT OFF — setting `teach_label_becomes_keyword`.
+    try {
+      const db = getDb();
+      const learning = require('../../../database/modules/learning');
+      if (learning.getSetting(db, 'teach_label_becomes_keyword', 'false') === 'true') {
+        const label = String(mapping.anchor_text || '').trim();
+        if (label) {
+          const tpl = templates.getById ? templates.getById(db, templateId) : null;
+          const slug = String((tpl && tpl.document_type_slug) || '').trim();
+          if (slug) {
+            require('../../../database/modules/label_overrides')
+              .addLabelOverride(db, { doc_type_slug: slug, field_key: mapping.field_key,
+                                      label, exclusive: 1 });
+          }
+        }
+      }
+    } catch (e) {
+      logger?.warn?.(`teach mapping label -> keyword: ${e.message}`);
+    }
     return { success: true, mapping: saved };
   });
 

@@ -279,6 +279,54 @@ ARM_ENV.noreg = { ...ARM_ENV.money };
 // than a hand-listed approximation of it that can drift (which is what `all4` did).
 ARM_ENV.sepguard = { CODE_SEPARATOR_STRUCTURE_GUARD: '1' };
 
+// TAUGHT LABEL BECOMES THE KEYWORD (owner decision 2026-08-11) — and this arm needs a MUTATOR,
+// not just an env flag, or it is VACUOUS.
+//
+// The feature writes an EXCLUSIVE `field_label_overrides` row at CONFIRM time. The owner's taught
+// state contains **0** such rows, because every teach in it predates the write. So arming the flag
+// alone changes literally nothing and the lane comes back flat — "never armed" wearing the costume
+// of "no effect", which is the exact trap the sepguard C2 census was built to expose.
+//
+// So the mutator BACKFILLS what those confirms would have written, from the taught state itself:
+//   * `field_anchors.anchor_label`      — the ⊕ Review teach path (6 rows live)
+//   * `template_field_mappings.anchor_text` — the WIZARD path (38 rows live), scoped by the
+//     template's own document_type_slug
+// That is the realistic end state after the operator re-confirms, which is what the flag actually
+// buys. Empty labels are skipped (the issuer's position-only teach has none, deliberately).
+//
+// IT PRINTS EVERY ROW IT BACKFILLS. An arm that backfills nothing is vacuous and its green score
+// proves nothing — say so rather than reporting a flat lane as a pass.
+MUTATORS.labelkw = (S, db) => {
+  const seen = new Set();
+  const add = (slug, field, label, src) => {
+    slug = String(slug || '').trim(); field = String(field || '').trim();
+    label = String(label || '').trim();
+    if (!slug || !field || !label) return;
+    const k = `${slug.toLowerCase()}|${field}|${label.toLowerCase()}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    S.overrides.push({ doc_type_slug: slug, field_key: field, label, exclusive: 1 });
+    console.log(`    [labelkw] ${slug} ${field} <- ${JSON.stringify(label)}  (${src})`);
+  };
+  try {
+    for (const r of db.prepare(
+      "SELECT document_type, field_key, anchor_label FROM field_anchors "
+      + "WHERE anchor_label IS NOT NULL AND TRIM(anchor_label) <> ''").all()) {
+      add(r.document_type, r.field_key, r.anchor_label, 'anchor');
+    }
+  } catch (e) { console.log('    [labelkw] anchors unavailable:', e.message); }
+  try {
+    for (const r of db.prepare(
+      "SELECT t.document_type_slug slug, m.field_key, m.anchor_text FROM template_field_mappings m "
+      + "JOIN templates t ON t.id = m.template_id "
+      + "WHERE m.anchor_text IS NOT NULL AND TRIM(m.anchor_text) <> ''").all()) {
+      add(r.slug, r.field_key, r.anchor_text, 'mapping');
+    }
+  } catch (e) { console.log('    [labelkw] mappings unavailable:', e.message); }
+  console.log(`    [labelkw] backfilled ${seen.size} exclusive override(s)`);
+  if (!seen.size) console.log('    [labelkw] *** VACUOUS ARM — nothing to measure ***');
+};
+
 // CENSUS ARMS (Oracle C2, 2026-08-10) — the same two arms with `_repair_single_token`'s outcome
 // counter switched on. They exist because eight byte-identical lanes are consistent with two very
 // different worlds: the repair fires everywhere and the shape rule agrees with it, OR the repair's
