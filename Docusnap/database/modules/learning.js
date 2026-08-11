@@ -130,7 +130,13 @@ function issuerReadLooksImplausible(value) {
   // catches '=state -', whose only substantive token would otherwise leave nothing to score.
   // Safe against every real name tested: they all begin with a letter or a digit (3M, 24/7).
   if (!/^[A-Za-z0-9]/.test(t)) return true;
-  if (!/\s/.test(t)) return false;            // single token -> not judged (the BP/IBM immunity)
+  if (!/\s/.test(t)) {
+    // Single token -> not judged (the BP/IBM immunity) — with ONE carve-out (owner exhibit
+    // 2026-08-11: a drawn box caught the word 'Order' off "ORDER CONFIRMATION" and the teach
+    // congratulated itself): a bare DOCUMENT-CHROME word is a page title fragment, never a
+    // company. The closed chrome set can't collide with BP/IBM/3M — none are chrome words.
+    return _DOC_CHROME_WORDS.has(t.toLowerCase().replace(/[^a-z]/g, ''));
+  }
   const kept = t.split(/\s+/).filter(w => w.replace(/[^A-Za-z0-9]/g, '').length > 1);
   if (kept.length < 2) return false;          // nothing substantive left to judge
   return nameQuality(kept.join(' ')) < 0.5;

@@ -55,6 +55,15 @@ console.log('\n3. THE BP/IBM IMMUNITY — why this is not isPlausibleSupplierNam
 for (const v of ['BP', 'IBM', '3M', 'H&M']) {
   check(`${JSON.stringify(v)} is NOT warned about`, !imp(v));
 }
+
+console.log('\n3b. THE ONE single-token carve-out — DOCUMENT-CHROME words (owner exhibit 2026-08-11)');
+// A drawn issuer box caught the word 'Order' off the page title "ORDER CONFIRMATION" and the
+// teach congratulated itself. A bare chrome/title word is never a company; the closed set cannot
+// collide with the BP/IBM immunity above — no real company is called 'Invoice'.
+for (const v of ['Order', 'ORDER', 'Invoice', 'Statement', 'Delivery']) {
+  check(`${JSON.stringify(v)} IS warned about (page-title fragment, not a company)`, imp(v));
+}
+check("'Orders R Us' (multi-token, real-name shaped) is NOT warned about", !imp('Orders R Us'));
 check('(control) isPlausibleSupplierName DOES reject BP — so the two are genuinely different '
       + 'and this pin is not vacuous', learning.isPlausibleSupplierName('BP') === false);
 
