@@ -538,22 +538,25 @@ function broadcastDock() {
 // Any event that puts the window back in front un-docks it, so the chip can never
 // outlive the minimised state (a stale chip that restores nothing is worse than no chip).
 function wireChildDock(win, name) {
+  // FOURTH iteration (owner screenshots, 2026-08-11), and the mechanism is finally understood:
+  // these are OWNED windows (they have a parent), and Windows NEVER gives an owned window a
+  // taskbar button — so the setSkipTaskbar juggle could not remove the desktop stub, and its
+  // style flip was what made minimised windows "randomly pop back open by themselves". And a
+  // window hidden IN the minimised state comes back blank (unpainted surface).
+  // The pattern that satisfies all three constraints (no stub, no blank, chips only):
+  // RESTORE-THEN-HIDE, synchronously, inside the minimise event — the window never remains
+  // minimised, so no stub is ever drawn, and it hides in its NORMAL painted state, so show()
+  // brings it back painted. The juggle guard stops our own restore() un-docking the chip.
   win.on('minimize', () => {
+    if (win._dockJuggle || win.isDestroyed()) return;
+    win._dockJuggle = true;
+    try { win.restore(); win.hide(); } catch { /* going away */ }
+    win._dockJuggle = false;
     dockedChildren.add(name); broadcastDock();
-    // While minimised the child gets a REAL taskbar entry (owner, 2026-08-11, third iteration):
-    // Windows renders a taskbar-less minimised window as a tiny unlabelled desktop stub at the
-    // screen's bottom-left — the artefact that was covering the dock chips — and hiding the
-    // window instead brought it back BLANK twice (surface unpainted around the minimise
-    // animation, invalidate() insufficient on this machine). A taskbar entry removes the stub
-    // the honest way: the window minimises INTO the taskbar (app icon + the window's own title),
-    // no paint tricks, and the dock chip still restores it with one click. skipTaskbar returns
-    // the moment the window is back in front, so the no-second-taskbar-icon rule holds whenever
-    // the window is actually open.
-    try { if (!win.isDestroyed()) win.setSkipTaskbar(false); } catch { /* going away */ }
   });
   const undock = () => {
+    if (win._dockJuggle) return;              // our own restore-then-hide is not a user restore
     if (dockedChildren.delete(name)) broadcastDock();
-    try { if (!win.isDestroyed()) win.setSkipTaskbar(true); } catch { /* going away */ }
   };
   win.on('restore', undock);
   win.on('show',    undock);
@@ -1497,13 +1500,11 @@ app.whenReady().then(() => {
     // rather than leaving a dead affordance on screen.
     if (!w || w.isDestroyed()) { if (dockedChildren.delete(name)) broadcastDock(); return; }
     try {
-      // Windows-friendly order for a HIDDEN minimised window (the dock hides on minimise):
-      // show first (still minimised), then restore, then focus — and force a repaint, because a
-      // surface hidden around the minimise animation can come back blank otherwise.
-      if (!w.isVisible())  w.show();
+      // The dock hides windows in their NORMAL state (restore-then-hide), so this is a plain
+      // show + focus; the isMinimized branch is belt-and-braces for any other route here.
       if (w.isMinimized()) w.restore();
+      if (!w.isVisible())  w.show();
       w.focus();
-      try { w.webContents.invalidate(); } catch { /* best-effort repaint */ }
     } catch { if (dockedChildren.delete(name)) broadcastDock(); }
   });
 
