@@ -178,6 +178,34 @@ function register(ctx) {
     return out;
   });
 
+  // ── Taught-issuer plausibility (warning only) ────────────────────────────────
+  // Chris round 2, 2026-08-11: a ⊕ teach read '@a eens Ee' off the page, showed a green
+  // "Captured the Document Issuer position" toast, flagged nothing, and the value became two
+  // output folders. His line for it — every guard in this product is pointed at ABSENCE, none at
+  // CONFIDENT NONSENSE — is exactly right: the app warns plainly on an EMPTY issuer and says
+  // nothing on a gibberish one.
+  //
+  // Answers a renderer question with the ONE shared predicate (learning.issuerReadLooksImplausible)
+  // rather than letting the teach surfaces grow their own copy — this repo already carries four
+  // spellings of a ref predicate and a warning about the fifth.
+  //
+  // WARNING ONLY. It never blocks a confirm, rewrites a value or rejects a teach. Kill switch:
+  // setting `teach_issuer_plausibility_warn` = 'false'. DEFAULT ON, mirroring
+  // `teach_typed_value_locate` — nothing is persisted or changed by it, it only adds a sentence,
+  // and the defect it answers files documents into junk folders silently.
+  ipcMain.handle('check-issuer-read', (_e, value) => {
+    requireLogin();
+    try {
+      if (learning.getSetting(getDb(), 'teach_issuer_plausibility_warn', 'true') === 'false') {
+        return { implausible: false, off: true };
+      }
+      return { implausible: !!learning.issuerReadLooksImplausible(value) };
+    } catch (e) {
+      logger?.warn?.(`check-issuer-read: ${e.message}`);
+      return { implausible: false };          // a failed check must never block a teach
+    }
+  });
+
   // ── Built-in field label words (read-only, for the label-overrides UI) ───────
   // The shipped `field_patterns` own the canonical fields' detection words globally
   // (invoice_number, supplier_name, total_amount, …). The Settings → label-overrides

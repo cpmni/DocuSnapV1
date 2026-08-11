@@ -67,7 +67,9 @@ function confirmCancel(){
   if (confirm('Stop teaching? Nothing is saved yet.')) D.windowClose();
 }
 
-function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1600); }
+// `ms` added 2026-08-11: the default 1600ms is right for a confirmation and far too short for
+// a WARNING the operator has to read and act on (see finishIssuerField).
+function toast(msg, ms){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), ms || 1600); }
 
 // ── Step router ────────────────────────────────────────────────────────────
 function setStep(n){
@@ -727,7 +729,23 @@ function finishIssuerField(f){
   const r = state.results[f.key]; if (!r) return;
   r.anchor = null; r.anchor_text = null; r.anchor_dir = null; r.anchorSuspicious = false;
   r.status = 'done'; drawMode = 'value';
-  toast(`Captured the ${f.label} position from this layout.`);
+  // PLAUSIBILITY, not just capture (Chris round 2, 2026-08-11). This line used to congratulate the
+  // operator whatever came back. In Review, the same message appeared over a read of '@a eens Ee'
+  // and the value went on to become two output folders — the app guards an EMPTY issuer and says
+  // nothing about a gibberish one. Asked asynchronously so the wizard never waits on it, and
+  // warning-only: the field is already marked done above and nothing here blocks or rewrites it.
+  const _v = r.value;
+  const _ok = () => toast(`Captured the ${f.label} position from this layout.`);
+  try {
+    Promise.resolve(window.docusnap.checkIssuerRead(_v))
+      .then(res => {
+        if (res && res.implausible) {
+          toast(`I read "${_v}" from that box \u2014 that doesn't look like a company name. `
+              + `Draw it again, or type the name in yourself.`, 7000);
+        } else { _ok(); }
+      })
+      .catch(_ok);
+  } catch { _ok(); }
   advanceField();
 }
 

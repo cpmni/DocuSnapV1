@@ -87,6 +87,53 @@ function _vqTokenGood(tok) {
   }
   return false;
 }
+// TEACH-TIME PLAUSIBILITY WARNING for a taught ISSUER read (Chris round 2, 2026-08-11).
+//
+// THE DEFECT IT ANSWERS. A ⊕ teach read `@a eens Ee` off the page, showed a green
+// "Captured the Document Issuer position from this layout" toast, flagged nothing, and let the
+// operator file — producing two output folders (`@a-eens-Ee` and `a-eens-Ee`) that differ only by a
+// leading `@`. His diagnosis is the one worth keeping: **every guard in this product is pointed at
+// ABSENCE, none at CONFIDENT NONSENSE.** The app warns plainly when the issuer is EMPTY and says
+// nothing at all when it is gibberish. A taught read is deliberately exempt from the shape gates
+// (`shape_mode='ignore'` — a human drew the box) but the human drew a BOX; they did not verify the
+// READ, and the toast told them it had worked.
+//
+// WHY NOT `isPlausibleSupplierName`, which already exists: MEASURED, it rejects `BP`, `IBM` and any
+// other <=3-char all-caps name on a rule written for a different job (extraction-time filtering of
+// caption fragments). Using it here would nag a customer whose supplier really is BP, on a correct
+// value, at the exact moment they are being helpful. So this is a NARROWER, warning-only predicate.
+//
+// THE RULE, and every clause is there because a real name failed without it:
+//   * a value with NO letters at all is never a company name;
+//   * a SINGLE-token value is never judged — that is what makes `BP` / `IBM` / `3M` / `H&M`
+//     structurally immune, and it is why this cannot inherit the <=3-char defect above;
+//   * one-letter tokens are dropped before scoring, because `J S Bloggs` and `A J Smith Ltd` are
+//     ordinary UK small-business names and their initials are not gibberish;
+//   * only then is the shared `nameQuality` consulted, on the substantive tokens.
+//
+// MEASURED 2026-08-11: 0 false positives over 22 real company names (BP, IBM, 3M, H&M, P&O
+// Ferries, W H Smith, J S Bloggs, E.ON UK plc, Marks & Spencer plc and the seven corpus suppliers);
+// catches 10 of 11 junk reads observed in Chris's round, including the one that made the folders.
+// KNOWN MISS, stated rather than tuned away: a garble whose tokens are individually word-shaped
+// (`RENN ERNE, Nh`) scores 0.67 and passes. Tightening the floor to catch it costs real names.
+//
+// WARNING ONLY. It must never block a confirm, rewrite a value, or reject a teach — the app's
+// review-not-reject posture, and the same posture the EMPTY-issuer note already takes.
+function issuerReadLooksImplausible(value) {
+  const t = String(value == null ? '' : value).trim();
+  if (!t) return false;                       // empty is the OTHER guard's job, and it has one
+  if (!/[A-Za-z]/.test(t)) return true;
+  // Leading DEBRIS: a company name does not begin with punctuation. Same signal the crop
+  // credibility check already uses for free text ('>alifornia', '. Ship Mode:'), and it is what
+  // catches '=state -', whose only substantive token would otherwise leave nothing to score.
+  // Safe against every real name tested: they all begin with a letter or a digit (3M, 24/7).
+  if (!/^[A-Za-z0-9]/.test(t)) return true;
+  if (!/\s/.test(t)) return false;            // single token -> not judged (the BP/IBM immunity)
+  const kept = t.split(/\s+/).filter(w => w.replace(/[^A-Za-z0-9]/g, '').length > 1);
+  if (kept.length < 2) return false;          // nothing substantive left to judge
+  return nameQuality(kept.join(' ')) < 0.5;
+}
+
 function nameQuality(value) {
   if (!value) return 1.0;
   let good = 0, bad = 0;
@@ -1727,7 +1774,7 @@ module.exports = {
   insertExtractions, deleteExtractions,
   getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue, getPrefixModelForScope,
   getSupplierScopeCounts, renameSupplier,
-  saveCorrections, retractConfirmHints, replantConfirmHints, getHints, getAllHints, isPlausibleSupplierName, isPlausibleSupplierNameBase, isNameLikeField, nameQuality, normalizeSupplierName,
+  saveCorrections, retractConfirmHints, replantConfirmHints, getHints, getAllHints, isPlausibleSupplierName, isPlausibleSupplierNameBase, isNameLikeField, nameQuality, issuerReadLooksImplausible, normalizeSupplierName,
   saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors, getAnchorsForScope, getTaughtFieldKeys, deleteAnchor,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   detailCrossPlantCloser: _detailCrossPlantCloser,   // exported for the detail-backfill script's final anti-poison check (2026-07-23)

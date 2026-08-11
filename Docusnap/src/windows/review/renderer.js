@@ -3589,7 +3589,24 @@ async function runZoneOcr(rect, fieldKey) {
             pendingAnchors[fieldKey].offset_dx_norm = null;
             pendingAnchors[fieldKey].offset_dy_norm = null;
           }
-          try { showToast('Captured the ' + (labelFor(fieldKey) || 'company name') + ' position from this layout.', 'ok'); } catch {}
+          // PLAUSIBILITY, not just capture (Chris round 2, 2026-08-11). The old line congratulated
+          // the operator whatever came back — a teach that read '@a eens Ee' showed this exact
+          // green toast, flagged nothing, and the value went on to become two output folders.
+          // Every guard here was pointed at an EMPTY issuer; none at a gibberish one. Warning only:
+          // the teach is still staged, nothing is blocked, and a wrong judgement costs a sentence.
+          let _implausible = false;
+          try {
+            const _r = await window.docusnap.checkIssuerRead(text);
+            _implausible = !!(_r && _r.implausible);
+          } catch { /* the check must never break a teach */ }
+          try {
+            if (_implausible) {
+              showToast('I read “' + text + '” from that box — that doesn’t look like a company '
+                      + 'name. Draw it again, or type the name in yourself.', 'warn');
+            } else {
+              showToast('Captured the ' + (labelFor(fieldKey) || 'company name') + ' position from this layout.', 'ok');
+            }
+          } catch {}
         } else {
           showAnchorReadout(detected, text);   // show which anchor was picked + the Left/Above toggle
         }

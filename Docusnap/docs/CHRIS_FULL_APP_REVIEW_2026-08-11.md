@@ -261,6 +261,36 @@ refusal never reaches the renderer.
 **Findings 4 and 7 are copy-only** and both are cases of the app understating its own good
 behaviour.
 
+### STATUS UPDATE 2026-08-11 (owner-directed): finding 2 is BUILT, default ON, NOT smoke-tested
+
+`learning.issuerReadLooksImplausible` + IPC `check-issuer-read`, consumed by BOTH teach surfaces
+(Review's forall teach read-back and the wizard's `finishIssuerField`). Where the app used to say
+*"Captured the Document Issuer position from this layout"* over any read at all, a gibberish read
+now says *"I read '@a eens Ee' from that box - that doesn't look like a company name. Draw it again,
+or type the name in yourself."*
+
+**It is a WARNING and nothing else** - the teach still stages, nothing is blocked, rewritten or
+rejected. Kill switch: setting `teach_issuer_plausibility_warn` = `'false'`. Default ON, matching
+its sibling `teach_typed_value_locate`, which likewise has no Settings toggle.
+
+**The obvious implementation was measured and REJECTED.** `isPlausibleSupplierName` already exists
+and looked like the answer, but it rejects **BP** and **IBM** on a <=3-char all-caps rule written
+for extraction-time filtering - it would have nagged a customer whose supplier really is BP, on a
+correct value, at the moment they were being helpful. So this is a narrower, warning-only predicate:
+no letters at all, or leading punctuation, or (multi-token, initials excluded) a shared
+`nameQuality` below 0.5. **Measured: 0 false positives over 22 real company names** including BP,
+IBM, 3M, H&M, P&O Ferries, W H Smith, J S Bloggs, E.ON UK plc and all seven corpus suppliers.
+
+**Known miss, pinned rather than tuned away:** `RENN ERNE, Nh` scores 0.67 and passes. Tightening
+the floor to catch it costs `J S Bloggs`.
+
+Pin: `database/modules/test_issuer_plausibility.js`, which fails in BOTH directions - it has a
+control asserting `isPlausibleSupplierName('BP') === false`, so a future dev who "simplifies" this
+back to the existing helper breaks the suite and reads why.
+
+**NOT smoke-tested in the UI** - it needs the owner to draw a bad box once and see the sentence.
+Findings 1, 3, 4-8 remain untouched and unimplemented.
+
 **Suggested order for the owner:** 2 (plausibility guard — one predicate, already-existing helper,
 protects the filing cabinet) → 1 (buyer-issued identity, the narrowed remainder) → 3 (silent
 Approve) → 4/7 (copy) → the rest.
