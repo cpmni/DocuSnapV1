@@ -121,8 +121,18 @@ async function obUpdatePreview() {
     // finish) — the old order kept showing the stale saved root after the user changed
     // the folder on the previous step (Chris r5).
     const root = state.outputFolder || (await D.getSetting('output_folder')) || 'Output folder';
-    const r = await D.previewOutputPath(folderEditor.getValue().trim(), filenameEditor.getValue().trim());
+    const fnPattern = filenameEditor.getValue().trim();
+    const r = await D.previewOutputPath(folderEditor.getValue().trim(), fnPattern);
     pEl.textContent = [root, ...(r.segments || []), r.filename].join('  ›  ');
+    // The default pattern carries FOUR blocks but the sample shows three — {title} collapses
+    // on documents without one, which is most of them. Say so, or the example looks broken
+    // against the builder above it (Chris r2 2026-08-11, tea item).
+    const note = $('#ob-preview-note');
+    if (note) {
+      const usesTitle = (fnPattern || state.filenamePattern || '').includes('{title}');
+      note.style.display = usesTitle ? '' : 'none';
+      if (usesTitle) note.textContent = 'The Title part only appears on documents that carry a title — for most (like this invoice) it simply drops out.';
+    }
   } catch {}
 }
 async function obSaveAndPreview() {

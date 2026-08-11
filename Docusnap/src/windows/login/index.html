@@ -168,6 +168,12 @@
           somewhere safe and offline.</strong> It will not be shown again.
         </div>
         <div class="code-box" id="recovery-code-text">XXXX-XXXX-XXXX-XXXX</div>
+        <!-- The copy above says "write it down or print it" — give the user a way to do
+             either without transcribing 16 characters by hand (Chris r2 2026-08-11). -->
+        <div style="display:flex; gap:8px; margin:6px 0 2px;">
+          <button class="btn btn-secondary" id="btn-recovery-copy" type="button" style="flex:1;">Copy code</button>
+          <button class="btn btn-secondary" id="btn-recovery-print" type="button" style="flex:1;">Print…</button>
+        </div>
         <div class="msg warn visible">
           This code works once. Using it generates a brand-new code and immediately
           invalidates this one — so re-store the new one if you ever have to use it.

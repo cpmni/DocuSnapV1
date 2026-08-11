@@ -1109,7 +1109,7 @@ function buildQueueItem(doc) {
       <div style="flex:1; min-width:0;">
         <span class="qi-name" title="${escHtml(doc.original_filename)}">${escHtml(doc.original_filename)}</span>
         <div style="display:flex; align-items:center; gap:6px;">
-          <span class="qi-supplier" style="flex:1; min-width:0;">${escHtml(doc.supplier_name || 'Not yet identified')}</span>
+          <span class="qi-supplier" style="flex:1; min-width:0;">${escHtml(doc.supplier_name || 'Sender not identified')}</span>
           ${doc.page_count > 1 ? `<span class="qi-multipage" title="Multi-page document (${doc.page_count} pages)" style="flex-shrink:0;display:inline-flex;color:var(--muted)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></svg></span>` : ''}
           ${confBadge}
         </div>
@@ -1159,7 +1159,7 @@ function renderDeferredList() {
       <div style="display:flex; align-items:flex-start; gap:4px;">
         <div style="flex:1; min-width:0;">
           <span class="qi-name" title="${escHtml(doc.original_filename)}">${escHtml(doc.original_filename)}</span>
-          <span class="qi-supplier">${escHtml(doc.supplier_name || 'Not yet identified')}</span>
+          <span class="qi-supplier">${escHtml(doc.supplier_name || 'Sender not identified')}</span>
         </div>
         <div style="display:flex; gap:3px; flex-shrink:0;" onclick="event.stopPropagation()">
           <button class="qi-btn qi-review-now" title="Move back to review queue" style="padding:2px 6px; font-size:10px;">Review</button>
@@ -6169,6 +6169,12 @@ async function reconnectRunningBatch(status) {
 async function runReprocessBatch(docs, scopeLabel) {
   if (!docs || docs.length === 0) { showToast('No documents to reprocess', 'warn'); return; }
   if (_batchActive) return;
+  // A batch reprocess always confirms first (Chris, both rounds: "Reprocess all warns you not
+  // at all — it re-read 160 documents on one click"). The harmless-sounding button is the one
+  // that changes the most documents; the count makes the scale visible before it runs.
+  if (!confirm(`Re-read all ${docs.length} document${docs.length === 1 ? '' : 's'} (${scopeLabel}) from their pages? `
+             + `Values the documents re-read may replace what's shown now, and this can take a while. `
+             + `Documents you've already confirmed and filed are not touched.`)) return;
   // The open document's unsaved edits/type choice are re-rendered away too (QA audit #3).
   if (hasPendingReviewEdits() && !confirm(REPROCESS_DISCARD_WARNING)) return;
 

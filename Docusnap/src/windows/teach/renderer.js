@@ -84,7 +84,9 @@ function renderFooter(){
   for (let i=0;i<=state.maxStep;i++){ const d=document.createElement('span'); d.className='sd'+(i===state.step?' on':''); dots.appendChild(d); }
   $('btn-back').style.visibility = state.step<=state.minStep ? 'hidden' : 'visible';
   const next = $('btn-next');
-  const labels = ["Let's start →","Continue →","Continue →","Review →","File this document","Done"];
+  // The last button must say what it really does: SAVE THE TEACHING and file (Chris, both
+  // rounds: "no mention of teaching" on the one button that commits it).
+  const labels = ["Let's start →","Continue →","Continue →","Review →","Save teaching & file","Done"];
   next.textContent = labels[state.step];
   next.disabled = !canAdvance();
   $('btn-cancel').style.visibility = state.step===5 ? 'hidden' : 'visible';
@@ -124,14 +126,27 @@ async function renderDocPicker(){
     try { state.docs = await D.getReviewQueue() || []; } catch { state.docs=[]; }
   }
   $('doc-picker-empty').classList.toggle('hidden', state.docs.length>0);
-  for (const d of state.docs){
+  // Filter box — shown only when the queue is big enough to need one (Chris r2 2026-08-11:
+  // 161 documents, no search). Matches file name, sender and type, case-insensitive.
+  const search=$('doc-picker-search');
+  if (search){
+    search.style.display = state.docs.length>8 ? '' : 'none';
+    if (!search._wired){ search._wired=true; search.addEventListener('input',()=>renderDocPicker()); }
+  }
+  const term=(search&&search.style.display!=='none'?search.value:'').trim().toLowerCase();
+  const shown = term
+    ? state.docs.filter(d => [d.original_filename, d.supplier_name, d.type_name]
+        .some(v => String(v||'').toLowerCase().includes(term)))
+    : state.docs;
+  $('doc-picker-nomatch')?.classList.toggle('hidden', !(term && !shown.length && state.docs.length));
+  for (const d of shown){
     const c=document.createElement('div'); c.className='card'+(state.doc&&state.doc.id===d.id?' sel':'');
     const name=d.original_filename||('Document #'+d.id);
     // 📄 emoji is the placeholder; the real page-1 thumbnail replaces it once
     // loaded. A doc with no renderable thumbnail keeps the emoji.
     c.innerHTML=`<div class="ic"><span class="ic-emoji">📄</span><img class="ic-thumb" alt=""></div>`+
       `<div class="nm" style="font-size:13px;word-break:break-all">${esc(name)}</div>`+
-      `<div class="muted" style="font-size:12px">${esc(d.supplier_name||'Unknown issuer')}</div>`;   // display name is "Document Issuer" (mig 38); supplier_name is only the internal key
+      `<div class="muted" style="font-size:12px">${esc(d.supplier_name||'Sender not identified')}</div>`;   // ONE phrase for the unknown-sender state everywhere (Chris r2 2026-08-11 saw four)
     if (window.Thumbs) window.Thumbs.lazy(c.querySelector('.ic-thumb'), d);
     // Toggle the selection IN PLACE. A full re-render rebuilt every card and re-ran the
     // lazy thumbnail loader on all of them, and left the enlarged state depending on a
@@ -147,8 +162,8 @@ async function renderDocPicker(){
   }
   // Open with one card already big, so the step starts in the state a click produces
   // rather than with every card the same size and nothing to look at.
-  if (!state.doc && state.docs.length){
-    state.doc = state.docs[0];
+  if (!state.doc && shown.length){
+    state.doc = shown[0];
     _prefetchTeachPage();                  // prefetch the default pick too, so accepting it is instant
     const first = grid.querySelector('.card');
     if (first) first.classList.add('sel');
@@ -653,6 +668,21 @@ function redrawCanvas(){
   // live drag rectangle, coloured by what we're drawing
   if (drag) drawBox(drag, drawMode==='anchor'?'#4f8ef7':'#3ecf8e',true,true);
 }
+// High-visibility ring around a located box (display-only, cleared by any redraw): a
+// word-sized 2px rectangle is invisible at page-fit zoom, and the locate pick step is
+// the one screen whose entire job is showing where the value sits.
+function emphasiseBox(n){
+  if (!n) return;
+  const x=n.x*canvas.width, y=n.y*canvas.height, w=n.w*canvas.width, h=n.h*canvas.height;
+  const br=canvas.getBoundingClientRect(), k=br.width? canvas.width/br.width : 1;
+  const pad=10*k;
+  ctx.save();
+  ctx.lineWidth=Math.max(2.5, 3*k);
+  ctx.strokeStyle='#3ecf8e';
+  ctx.shadowColor='rgba(62,207,142,.9)'; ctx.shadowBlur=14*k;
+  ctx.strokeRect(x-pad, y-pad, w+pad*2, h+pad*2);
+  ctx.restore();
+}
 function drawBox(n,color,solid,dashed){
   const x=n.x*canvas.width,y=n.y*canvas.height,w=n.w*canvas.width,h=n.h*canvas.height;
   // The buffer is full-res and CSS-downscaled, so scale the stroke to stay ~2px
@@ -921,7 +951,16 @@ async function locateTypedValue(value){
 // operator says that is the place. Same principle as the drawn-box word-snap — approved by being seen.
 function showLocatedPick(f, typed, hits, idx){
   const h = hits[idx]; if (!h) return;
+  // The pick step's whole job is SHOWING the box — Chris (r2 2026-08-11, finding 5) was asked
+  // to approve a position he couldn't see. Reset zoom/pan so the full page (and therefore the
+  // box) is in the viewport, scroll it into view, and ring the box so a word-sized rectangle
+  // can't hide on an A4 page.
+  tzReset();
   drawnBox = h.box; redrawCanvas();
+  emphasiseBox(h.box);
+  try {
+    canvas.scrollIntoView({ block: 'nearest' });
+  } catch {}
   setManualEntryVisible(false);
   setPrompt('Is this the', f.label + '?');
   $('rg-sub').textContent = hits.length > 1
@@ -973,8 +1012,12 @@ async function useLocatedBox(f, value, box){
   showValueConfirm(f, state.results[f.key], /*located*/true);
 }
 function renderFieldRail(){
-  const done=state.fields.filter(f=>state.results[f.key]).length;
-  $('rg-progress').textContent=`Details — ${done} of ${state.fields.length} done`;
+  // A field marked "not on this document" is NOT captured — counting it as done produced
+  // "7 OF 7 DONE / All fields captured" over two skips (Chris r2 2026-08-11, tea item).
+  const done=state.fields.filter(f=>state.results[f.key] && state.results[f.key].status!=='skip').length;
+  const skipped=state.fields.filter(f=>state.results[f.key] && state.results[f.key].status==='skip').length;
+  $('rg-progress').textContent=`Details — ${done} of ${state.fields.length} done`
+    + (skipped ? ` · ${skipped} not on this document` : '');
   const list=$('rg-fieldlist'); list.innerHTML='';
   state.fields.forEach((f,i)=>{
     const r=state.results[f.key];
@@ -1227,7 +1270,12 @@ function advanceField(){
     // Clear the last field's step header (owner 2026-07-30) — no lingering "confirm the printed label
     // for <field>" / per-field explanation. Show only the done-message + the Review pointer.
     setPrompt('Teaching complete', 'Ready to review');
-    $('rg-sub').textContent = 'All fields captured — choose Review → below to save this document type.';
+    // Honest tally — "All fields captured" was false over skipped fields (Chris r2 2026-08-11).
+    const _cap  = state.fields.filter(f=>state.results[f.key] && state.results[f.key].status!=='skip').length;
+    const _skip = state.fields.filter(f=>state.results[f.key] && state.results[f.key].status==='skip').length;
+    $('rg-sub').textContent = (_skip
+      ? `${_cap} field${_cap===1?'':'s'} captured, ${_skip} marked as not on this document`
+      : 'All fields captured') + ' — choose Review → below to save this document type.';
     const rb = $('rg-readback'); if (rb) rb.innerHTML = '';
     renderFieldRail(); redrawCanvas();
     setConfirm('');
@@ -1533,7 +1581,7 @@ async function doCommit(){
     setStep(5);
   }catch(e){
     $('commit-err').textContent=e.message||'Something went wrong while saving.';
-    next.disabled=false; next.textContent='File this document';
+    next.disabled=false; next.textContent='Save teaching & file';
   }
 }
 

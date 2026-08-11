@@ -135,8 +135,12 @@ function renderReview() {
   document.getElementById('rv-type').textContent = d.docType;
   document.getElementById('rv-dots').innerHTML = DOCS.map((_, i) =>
     `<i class="${i < idx ? 'ok' : i === idx ? 'on' : ''}"></i>`).join('');
+  // A fixed field must not keep the "one field is uncertain" sentence beside a green tick
+  // (Chris r2 2026-08-11, tea item) — switch to the done-copy once nothing is low. Also drop
+  // any lingering per-action toast from the previous document.
+  toastEl.classList.remove('on');
   const hasLow = d.fields.some(f => f.low && !isTaught(d, f.key));
-  setBanner(hasLow ? 'warn' : 'good', d.coach);
+  setBanner(hasLow ? 'warn' : 'good', hasLow ? d.coach : (d.coachDone || d.coach));
   renderDoc(d);
   renderFields(d);
   primary.textContent = (idx === DOCS.length - 1) ? 'Confirm and finish' : 'Confirm and file';

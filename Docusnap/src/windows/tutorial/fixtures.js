@@ -34,7 +34,8 @@ window.TUTORIAL_FIXTURES = [
     company: 'Practice Supplies Ltd',
     year: '2026', month: 'June',
     filedName: 'Invoice.15-06-2026.INV-1042',
-    coach: 'One field is uncertain — it’s outlined in amber. Press “Draw a box to fix it” and drag a box around the reference on the page — that’s exactly how Scan Finder learns.',
+    coach: 'One field is uncertain — it’s the one with the low reading score. Press “Draw a box to fix it” and drag a box around the reference on the page — that’s exactly how Scan Finder learns.',
+    coachDone: 'Nicely done — the reference now reads from the box you drew. Press “Confirm and file” to file it.',
     fields: [
       { key: 'supplier_name',  label: 'Document Issuer', value: 'Practice Supplies Ltd', confidence: 98 },
       { key: 'invoice_number', label: 'Reference',       value: 'INV-1O42',              confidence: 54, low: true,

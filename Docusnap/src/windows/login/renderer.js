@@ -78,6 +78,51 @@ document.getElementById('btn-recovery-continue').addEventListener('click', () =>
   if (_recoveryCodeContinue) _recoveryCodeContinue();
 });
 
+// Copy / Print for the recovery code — the copy says "write it down or print it", so both
+// must actually be possible without transcribing 16 characters by hand (Chris r2 2026-08-11).
+// SECURITY NOTE: this puts the code on the clipboard at the user's explicit request — the
+// same trade paper storage makes; nothing is logged or persisted here.
+document.getElementById('btn-recovery-copy')?.addEventListener('click', async () => {
+  const btn = document.getElementById('btn-recovery-copy');
+  const code = document.getElementById('recovery-code-text').textContent.trim();
+  try {
+    await navigator.clipboard.writeText(code);
+    btn.textContent = 'Copied ✓';
+  } catch {
+    btn.textContent = 'Copy failed — select it by hand';
+  }
+  setTimeout(() => { btn.textContent = 'Copy code'; }, 2500);
+});
+document.getElementById('btn-recovery-print')?.addEventListener('click', () => {
+  // Print ONLY the code sheet: a print-scoped stylesheet hides the app chrome and shows a
+  // dedicated block, so the printout is a clean quarter-page note rather than a screenshot.
+  const code = document.getElementById('recovery-code-text').textContent.trim();
+  let sheet = document.getElementById('recovery-print-sheet');
+  if (!sheet) {
+    sheet = document.createElement('div');
+    sheet.id = 'recovery-print-sheet';
+    document.body.appendChild(sheet);
+    const style = document.createElement('style');
+    style.textContent = `
+      #recovery-print-sheet { display: none; }
+      @media print {
+        body > *:not(#recovery-print-sheet) { display: none !important; }
+        #recovery-print-sheet { display: block; font-family: 'Segoe UI', sans-serif; color: #000; padding: 40px; }
+        #recovery-print-sheet .rp-code { font-family: Consolas, monospace; font-size: 22px; letter-spacing: 2px;
+          border: 1px solid #000; padding: 14px 18px; display: inline-block; margin: 16px 0; }
+      }`;
+    document.head.appendChild(style);
+  }
+  sheet.innerHTML = `
+    <h2>ScanFinder — admin recovery code</h2>
+    <div class="rp-code"></div>
+    <p>This one-time code is the only way back in if the administrator password is lost and no
+    other active Admin account exists. It works once: using it generates a new code and
+    invalidates this one. Store this sheet somewhere safe and offline.</p>`;
+  sheet.querySelector('.rp-code').textContent = code;
+  window.print();
+});
+
 // ── First-run admin setup ─────────────────────────────────────────────────────
 const setupMsg = document.getElementById('setup-msg');
 const setupInputs = {
