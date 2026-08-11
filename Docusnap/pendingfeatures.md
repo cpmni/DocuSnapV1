@@ -6,6 +6,42 @@
 
 ---
 
+## 2026-08-11 — NAME-CROP EDGE CLIP: owner's padding hypothesis MEASURED TRUE, blind pad REFUTED
+
+**Owner, on the third `Ltc` exhibit:** *"the padding for the supplier name needs to be slightly
+bigger. if you think about it d with the line clipped from it looks like a c."* Measured with
+`stress_test/pad_probe_customer.py` (read-only; taught tpl-7 `customer_name` box re-read at
+graduated pads through the mapper's OWN `_ocr_crop_laddered`, at the app's 200 DPI) over 20 live
+Castellan docs:
+
+| pad | true `Ltd` |
+|---|---|
+| pad-0 (as taught) | 9/20 |
+| top +0.004 | 10/20 |
+| **right +0.008** | **14/20** |
+| top+bot +0.004 | 11/20 |
+| all +0.004 | 12/20 |
+| all +0.008 | 13/20 |
+
+**The owner is right about the mechanism** — the `d`'s right-hand stem is clipped by the box's
+RIGHT edge (right pad alone is the strongest single heal), and pad-0 reproduces the live garble
+class, proving probe fidelity. **But a BLIND pad has a proven regression mode in the same table:**
+`all +0.008` read **`BILL TO` at conf 94** on doc 365 — the pad admitted the caption row above
+(the 2026-08-01 label-bleed class, which the label-tail CLAMP exists to kill), and right-pad
+leaves trailing junk (`Ltda` ×2). Bigger padding trades one defect for two known ones.
+
+**DIRECTION (not built — advisor + Oracle gate first):** not a pad — a **word-bounded right-edge
+grow for NAME fields**, i.e. exactly what `TEMPLATE_ABS_EDGE_GUARD`/word-snap already do for
+codes, which **exclude names by design** (`template_mapper.py:308`, "NAME_UNCLIP owns them") while
+NAME_UNCLIP_RECONCILE is OFF and measured structurally inert (0/110). The exclusion seam is the
+thing to revisit: grow the LAST word of a name crop to its word boundary with the edge-guard's
+existing witness ladder (cut word's locate text ⊂ grown), never a blind margin. Gate: this probe
+re-run (pad table must become word-grow ≥14/20 with ZERO label-bleed) + the teach-side corpus arm.
+Interim mitigation ALREADY SHIPPED (`0816b28`): the picker now ranks + labels the ≥3×-confirmed
+value first, so the operator sees "`Ltd` — you've confirmed this N times" above the garble.
+
+---
+
 ## 2026-08-11 — BUYER-ISSUED IDENTITY, slices 2+3 (slice 1 SHIPPED `ca0bb49`; these are DESIGNED, not built)
 
 Slice 1 (young-identity corroboration in `_identity_refuses`) closed the OBSERVED leak — Chris's
