@@ -3399,7 +3399,11 @@ function register(ctx) {
       if (learning.getSetting(db, 'teach_label_becomes_keyword', 'false') === 'true') {
         const label = String(data.anchor_label || '').trim();
         const slug  = String(data.document_type || '').trim();
-        const located = data.label_detected !== false;      // false = explicitly not found on the page
+        // REQUIRE a positive located signal, not merely the absence of a negative one. The
+        // issuer's position-only teach sets label_detected=false explicitly, but a caller that
+        // simply omits the field would otherwise sail through `!== false` and learn a caption
+        // nobody confirmed was on the page. Owner-requested tightening 2026-08-11.
+        const located = data.label_detected === true;
         if (label && slug && located && data.field_key) {
           require('../../../database/modules/label_overrides')
             .addLabelOverride(db, { doc_type_slug: slug, field_key: data.field_key,
