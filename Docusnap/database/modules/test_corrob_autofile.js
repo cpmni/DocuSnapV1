@@ -245,9 +245,13 @@ function main() {
   //   (a) frozen wrong issuer (memory) + the page's keyword DISAGREEING → refused (disagree);
   //   (b) frozen wrong issuer + hint echoing it (both descend from the poison confirms) with the
   //       page disagreeing → refused (disagree beats agree — any independent disagreement kills);
-  //   (c) the residual that CAN license: a buyer-issued layout where taught box AND keyword both
-  //       truthfully read the owner's own printed name — mitigated by the template_identity_on_page
-  //       flip PRECONDITION + docTrustGate's history check, named residual per the Oracle ruling.
+  //   (c) the residual that CAN license — pinned as 18c below. NOTE (Oracle correction, flip
+  //       review): template_identity_on_page does NOT mitigate the buyer-issued class — the
+  //       owner's name IS printed on the page (as recipient), so that guard is satisfied BY
+  //       CONSTRUCTION; it closes the supplier-issued class only. The mitigations that remain
+  //       are C1 (the wrong scope needs ≥3 clean human confirms, zero corrections ever) and
+  //       docTrustGate's history check; the measurement that closes it is the recreated
+  //       poison-state replay (Oracle trailing condition 2, owed before default-ON).
   db = freshDb(); nextId = 100;
   addConfirmed(db, 5);
   const LEAK_A = JSON.stringify({ winner_family: 'memory', agree: [],
@@ -258,6 +262,23 @@ function main() {
   check('18a. wrong frozen issuer, page keyword disagrees → refused', !elig(db, doc).eligible);
   doc = addCandidate(db, { corrobs: { supplier_name: LEAK_B } });
   check('18b. memory+hint echo WITH page disagreement → refused (disagree always kills)', !elig(db, doc).eligible);
+
+  // 18c — THE BUYER-ISSUED ABSTAIN RESIDUAL, pinned VISIBLE (Oracle flip-review condition 3).
+  // On a wrong-bound buyer-issued doc the mapping box reads the owner's name from the recipient
+  // block, memory agrees, and the keyword issuer pass ABSTAINS entirely (measured live: keyword
+  // appears in 0 of 29 issuer records — the disagreement rail never fires on the issuer in
+  // practice). fams = {memory, mapping}, mapping is a page family, disagree empty → the route
+  // LICENSES this shape. That is the accepted-and-BOUNDED residual: it still needs the WRONG
+  // scope to pass C1 (≥3 clean human confirms, zero corrections ever) + conf ≥95 + zero flags +
+  // docTrustGate. This pin asserts the licensing outcome EXPLICITLY so the residual is breakable,
+  // not latent — buyer-issued slices 2/3 (pendingfeatures) are the closing work; the recreated
+  // poison-state measurement (Oracle trailing condition) is the gold-standard exercise. A change
+  // that makes this pin FAIL in the refusing direction is the slice-2 fix landing — update the
+  // pin to refuse, don't delete it.
+  const ABSTAIN = JSON.stringify({ winner_family: 'memory', agree: ['mapping'], disagree: [], independent_agree: true });
+  doc = addCandidate(db, { corrobs: { supplier_name: ABSTAIN } });
+  check('18c. abstain residual: memory+mapping, no keyword voice → LICENSED (named, bounded, owed slice 2/3)',
+    elig(db, doc).eligible);
 
   console.log('\n' + (fails ? `${fails} FAILED` : 'ALL PASS'));
   process.exit(fails ? 1 : 0);

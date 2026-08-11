@@ -132,10 +132,20 @@ HEAD **`03b7d87`**, ALL PUSHED. Full detail in the commit messages; headline sta
    {mapping,crop,keyword} page-families with **memory+hint REFUSED** (near-circular — so the flag
    will NOT flip the current Castellan 13; their path is graduation, 2 more confirms), toggle in
    Settings→Processing, harness overlays threaded + canary-pinned. 19+16+wiring pins green.
-   **FLIP GATES NOT YET RUN (flag stays OFF):** 185-doc base arm byte-identical · armed applive
-   arm hand-checked · declined census · `template_identity_on_page` ON in the live DB ·
-   wrong-binding sandbox zero-file (Oracle C3) · never flip alongside
-   `CODE_SEPARATOR_STRUCTURE_GUARD` without re-running arms.
+   **FLIP GATES RUN LATE NIGHT — ORACLE VERDICT: HOLD.** Green: base arm byte-identical (80-doc
+   confirmed corpus, values identical, wouldFile deltas empty); armed effect = exactly 4
+   review-queue docs, ALL FOUR hand-checked GT-correct; declined census discriminates 5 buckets
+   (9 memory+hint refusals live); identity_on_page already 'true' (satisfied — but Oracle
+   CORRECTED the record: that flag does NOT mitigate the buyer-issued class, which satisfies it
+   BY CONSTRUCTION). **The decisive negative: keyword appears in 0 of 29 live issuer records —
+   the issuer disagreement rail NEVER fires in practice, so the buyer-issued ABSTAIN shape
+   (memory+mapping, no dissenting voice — pinned VISIBLE as battery 18c, licensed) is the live
+   norm.** Per Oracle's own decision rule the flip is HELD until the RECREATED POISON MEASUREMENT
+   runs: teach a buyer-issued PO in a scratch sandbox, import ~20 supplier notes, armed replay,
+   prove zero corroborated files (the 21-doc sandbox poison state no longer exists). That
+   measurement = the unlock; owed next session / before any default-ON. Instruments ready:
+   `census_corrob_declines.js` + the kw-issuer census pattern. Standing rule: never flip
+   alongside `CODE_SEPARATOR_STRUCTURE_GUARD` without re-running the Pelican exhibit.
 6. **Owner UX ruling: the Review "✓ Two independent readings agree" line is REMOVED** — a
    positive-only badge trains expectation and its structural absence (label-above layouts are
    INVISIBLE to Stage-1 keyword — same-line matching only; pendingfeatures entry) reads as alarm
