@@ -3134,8 +3134,14 @@ function openResolveOverlay(key, candidates, row, input) {
   cands.forEach((c, i) => {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'resolve-cand';
+    // History discriminator: a candidate the operator has already confirmed (≥3 times in this
+    // scope) says so — that count is the only evidence separating a one-glyph garble from the
+    // real value when both are well-formed. Engine-supplied; absent on older extractions.
+    const histN = Number(c.confirmed_count) || 0;
+    const hist = histN >= 3
+      ? `<br><span class="rc-hist" style="color:var(--ok);font-weight:600">✓ you've confirmed this ${histN === 1 ? 'once' : histN + ' times'}</span>` : '';
     b.innerHTML = `<span class="rc-num">${i + 1}</span><span><span class="rc-val">${escHtml(c.value)}</span><br>` +
-      `<span class="rc-src">${escHtml(c.source_label || 'read from the page')}${c.box ? '' : ' · position not marked'}</span></span>`;
+      `<span class="rc-src">${escHtml(c.source_label || 'read from the page')}${c.box ? '' : ' · position not marked'}</span>${hist}</span>`;
     b.addEventListener('click', () => {
       if (currentDoc?.id !== openDocId) { closeResolveOverlay(); return; }   // doc switched under the overlay — abort
       resolveCandidatePick(key, c, row, input);

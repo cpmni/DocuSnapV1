@@ -2230,6 +2230,7 @@ class ExtractionEngine:
         self.format_index        = {}   # populated by set_formats()
         self.dominant_index      = {}   # Stage 2.5d dominant-value snap (populated by set_formats)
         self.known_index         = {}   # confirmed values per scope — guards try_correct (set_formats)
+        self.confirmed_counts_index = {}   # per-scope confirmed-value counts — picker history ranking
         self.prefix_index        = {}   # dominant ref-code prefix per scope — prefix-outlier guard (set_formats)
         self.length_index        = {}   # dominant ref digit-run profile per scope — S-B length guard (set_formats)
         self.noise_profile_index = {}   # populated by set_formats()
@@ -2584,7 +2585,35 @@ class ExtractionEngine:
             reps = list(by_norm.values())
             if len(reps) < 2:
                 continue
-            reps.sort(key=lambda c: (0 if _cmp_norm(c.get("value")) == chosen_norm else 1,
+            # HISTORY DISCRIMINATOR (owner exhibit ×3, 2026-08-11): a candidate that exactly
+            # matches (under _cmp_norm) a value CONFIRMED for this field in scope outranks a
+            # never-seen one — a one-glyph garble ('Ltc') and the real value ('Ltd') are both
+            # well-formed, so confirmed frequency is the ONLY separating evidence. Supplier
+            # scope first, then the doc-type-scoped ('') learning — the same resolution order
+            # as _make_format_lookup. Threshold ≥3: frequency, not mere presence — a single
+            # past confirm of a garble must never promote it (pendingfeatures trap list).
+            # RANKING + LABEL ONLY: the picker is suggestion-only ("pick never files") and
+            # this changes no committed value. Kill switch CANDIDATE_HISTORY_RANK.
+            _hist_on = os.environ.get("CANDIDATE_HISTORY_RANK", "1") != "0"
+            _cci  = getattr(self, "confirmed_counts_index", None) or {}
+            _sup  = (results.get("_supplier_name") or "").lower().strip()
+            _slug = (results.get("_document_slug") or "").lower().strip()
+            def _hist_count(c):
+                if not (_hist_on and _slug and _cci):
+                    return 0
+                nk = _cmp_norm(c.get("value"))
+                if not nk:
+                    return 0
+                bucket = (_cci.get((_sup, _slug, key)) if _sup else None) \
+                         or _cci.get(("", _slug, key)) or {}
+                return int(bucket.get(nk, 0))
+            for c in reps:
+                c["confirmed_count"] = _hist_count(c)
+            # Sub-threshold counts must not touch the ORDER at all (frequency, not mere
+            # presence) — only a ≥3-confirmed candidate ranks by its history.
+            _qual = lambda c: c["confirmed_count"] if c["confirmed_count"] >= 3 else 0
+            reps.sort(key=lambda c: (0 if _qual(c) else 1, -_qual(c),
+                                     0 if _cmp_norm(c.get("value")) == chosen_norm else 1,
                                      -(c.get("confidence") or 0), str(c.get("value"))))
             emit[key] = [{
                 "value":        c.get("value"),
@@ -2592,6 +2621,7 @@ class ExtractionEngine:
                 "source_label": _candidate_source_label(c.get("method")),
                 "method":       c.get("method"),
                 "confidence":   c.get("confidence") or 0,
+                "confirmed_count": c.get("confirmed_count") or 0,
             } for c in reps[:3]]
         return emit
 
@@ -3061,6 +3091,24 @@ class ExtractionEngine:
         self.length_index        = ocr_corrector.build_length_index(_solid)   # S-B ref digit-run profiles
         self.format_class_index  = format_anomaly_checker.build_format_class_index(_solid)
         self.provisional_shape_index = format_anomaly_checker.build_provisional_shape_index(formats_data)
+        # Confirmed-value COUNTS per (supplier, doctype, field), keyed by _cmp_norm — the
+        # disambiguation picker's history discriminator ("you've confirmed this N times").
+        # Built from the provisional-stripped rows like every other index. A one-glyph garble
+        # ('Ltc') and the real value ('Ltd') are both well-formed, so shape can never separate
+        # them; confirmed frequency is the only evidence that can (owner exhibit ×3, 2026-08-11).
+        self.confirmed_counts_index = {}
+        for e in _solid:
+            fk = e.get('field_key', '')
+            counts = e.get('value_counts') or {}
+            if not fk or not counts:
+                continue
+            sk = ((e.get('supplier_name') or '').lower().strip(),
+                  (e.get('document_type') or '').lower().strip(), fk)
+            bucket = self.confirmed_counts_index.setdefault(sk, {})
+            for v, n in counts.items():
+                nk = _cmp_norm(v)
+                if nk:
+                    bucket[nk] = bucket.get(nk, 0) + int(n or 0)
         n = len([k for k in self.format_index if k != '_fallback'])
         m = len(self.noise_profile_index)
         p = len(self.format_class_index)
