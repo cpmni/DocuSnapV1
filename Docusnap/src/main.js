@@ -538,28 +538,48 @@ function broadcastDock() {
 // Any event that puts the window back in front un-docks it, so the chip can never
 // outlive the minimised state (a stale chip that restores nothing is worse than no chip).
 function wireChildDock(win, name) {
-  // ── SAFE STATE (reverted 2026-08-11 evening after four failed stub-removal iterations) ──
-  // The minimised child keeps its OS desktop stub (cosmetic wart, bottom-left of the SCREEN)
-  // and the dock chip both. Every stub-removal attempt broke something worse on this machine:
+  // ── FIFTH iteration: restore-then-hide with the chip-killing race actually closed ──
+  // Failure history (each hit LIVE on this machine — do not retry them):
   //   1. hide-on-minimise            → window restored BLANK (surface unpainted mid-animation);
   //   2. deferred hide + invalidate  → still blank;
   //   3. setSkipTaskbar(false)       → structurally impossible: these are OWNED windows and
   //      Windows never gives an owned window a taskbar button — and the style flip made
   //      minimised windows "randomly pop back open by themselves";
-  //   4. restore-then-hide + juggle guard → restore()'s events fire AFTER the handler returns,
-  //      when the guard is already down, so undock deleted the chip right after it was added:
-  //      the window vanished with NO way back — the one failure mode worse than the wart.
-  // NEXT ATTEMPT (designed, not built — see HANDOVER_2026-08-11_DAY2.md): keep a hide-based
-  // variant but make `undock` ignore events while the window is NOT visible (a hidden window
-  // cannot be "back in front", so the queued restore/focus artefacts can't kill the chip), and
-  // only clear the juggle flag once those queued events have drained (setTimeout 0). Working
-  // ugly beats broken pretty until that is TESTED live.
-  win.on('minimize', () => { dockedChildren.add(name); broadcastDock(); });
-  const undock = () => { if (dockedChildren.delete(name)) broadcastDock(); };
+  //   4. restore-then-hide + a SYNCHRONOUS juggle guard → restore()'s events are delivered
+  //      AFTER the minimize handler returns, when the guard was already down, so undock deleted
+  //      the chip right after it was added: hidden window, no chip, NO WAY BACK.
+  // Restore-then-hide itself is kept (the 4th's juggle — the only shape that fits owned
+  // windows: never stays minimised so no desktop stub is drawn, and it hides in its NORMAL
+  // painted state so show() brings it back painted). The 5th closes the race with three
+  // INDEPENDENT defences, so no single timing assumption is load-bearing:
+  //   (a) undock is VISIBILITY-guarded — a window that is not visible cannot be "back in
+  //       front", so the juggle's queued restore/show/focus artefacts can never remove the
+  //       chip, whenever they happen to drain;
+  //   (b) the juggle flag clears in setTimeout(0) — after the queued events, not before;
+  //   (c) failsafe at drain time — a hidden, live child MUST have a chip; re-add if anything
+  //       unforeseen removed it (the 4th's terminal state becomes self-healing).
+  win.on('minimize', () => {
+    if (win._dockJuggle || win.isDestroyed()) return;
+    win._dockJuggle = true;
+    try { win.restore(); win.hide(); } catch { /* going away */ }
+    dockedChildren.add(name); broadcastDock();
+    setTimeout(() => {
+      win._dockJuggle = false;
+      if (!win.isDestroyed() && !win.isVisible() && !dockedChildren.has(name)) {
+        dockedChildren.add(name); broadcastDock();
+      }
+    }, 0);
+  });
+  const undock = () => {
+    if (win._dockJuggle) return;                 // our own juggle, mid-flight
+    if (!win.isDestroyed() && !win.isVisible()) return;   // hidden = docked; queued juggle artefact
+    if (dockedChildren.delete(name)) broadcastDock();
+  };
   win.on('restore', undock);
   win.on('show',    undock);
   win.on('focus',   undock);
-  win.on('closed',  undock);
+  // closed is unconditional: a destroyed window's chip must die whatever its visibility was.
+  win.on('closed',  () => { if (dockedChildren.delete(name)) broadcastDock(); });
 }
 
 const winStateFile = () => path.join(app.getPath('userData'), 'window-state.json');
@@ -1503,6 +1523,10 @@ app.whenReady().then(() => {
       if (w.isMinimized()) w.restore();
       if (!w.isVisible())  w.show();
       w.focus();
+      // Deterministic undock: chip removal must not depend on the show/focus events' timing
+      // (the visibility-guarded undock also fires once the window is visible, but this path
+      // does not wait for it).
+      if (dockedChildren.delete(name)) broadcastDock();
     } catch { if (dockedChildren.delete(name)) broadcastDock(); }
   });
 
