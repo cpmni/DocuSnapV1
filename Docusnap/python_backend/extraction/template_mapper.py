@@ -3063,6 +3063,39 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
             # provable rather than plausible: '1060344'.endswith('060344').
             _do = re.sub(r'[^0-9]', '', str(abs_text))
             _dn = re.sub(r'[^0-9]', '', str(gv))
+            # SYMBOL-ONLY CUT stand-down (owner arc completion 2026-08-11; kill
+            # CURRENCY_SYMBOL_CUT_BENIGN=0). The customer instinctively draws the box around the
+            # VISIBLE NUMBER, so on right-aligned money the taught edge often cuts only the
+            # CURRENCY GLYPH ('£5,016.72' -> rigid '5,016.72'). The digit-restoring comparator
+            # below can then never verify — there are no digits to restore — so the guard flagged
+            # every such read at <=70 for ever (the Pelican totals exhibit, live 2026-08-11).
+            # Stand down ONLY when TWO INDEPENDENT tiers agree no digits were lost: the full-res
+            # GROWN re-read carries exactly the rigid digits, both reads are well-formed money,
+            # AND every absorbed locate-tier cut word carries no digits beyond the rigid read
+            # (a genuinely digit-cutting edge cannot pass — the absorbed word's own text carries
+            # the missing digits and fails that equality). Returning None commits the rigid read
+            # untouched: no cap, no note, no rewrite — the cut is provably cosmetic.
+            # Oracle C1 (blocking, 2026-08-11): the prefix class is NON-ALPHANUMERIC — a letter
+            # prefix would let the proven serif 1→l/I misread ('£15,016.72' read 'l5,016.72')
+            # sail through every digit-only equality below, converting "wrong value flagged at
+            # 70" into "wrong value silent at natural conf". Pinned (test #6).
+            if (_do and _dn == _do
+                    and os.environ.get('CURRENCY_SYMBOL_CUT_BENIGN', '1') != '0'
+                    and re.fullmatch(r'[^0-9A-Za-z]{0,3}[0-9][0-9,\s]*(?:\.[0-9]{1,2})?', str(gv).strip())
+                    and re.fullmatch(r'[^0-9A-Za-z]{0,3}[0-9][0-9,\s]*(?:\.[0-9]{1,2})?', str(abs_text).strip())):
+                _benign = True
+                for _cw in (left_cut, right_cut):
+                    if _cw is None:
+                        continue
+                    _wd = re.sub(r'[^0-9]', '', str(_cw.get("text") or ''))
+                    if _wd and _wd != _do:
+                        _benign = False
+                        break
+                if _benign:
+                    # Oracle C3: the census must SEE this verdict — a silent None here would
+                    # read as "the guard stopped firing" in every future arm.
+                    _EDGE_GUARD_FIRES.append((field_key, _edges, 'benign'))
+                    return None
             _int_o = re.sub(r'[^0-9]', '', str(abs_text).split('.')[0])
             _int_n = re.sub(r'[^0-9]', '', str(gv).split('.')[0])
             if not (_do and _dn and _dn != _do and _dn.endswith(_do) and len(_int_n) > len(_int_o)):
@@ -3115,7 +3148,9 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
         # learned-shape ladder is the wrong judge here — money magnitudes legitimately vary per
         # document, so a 5-digit total against a history of 4-digit ones is not an anomaly.
         _g = str(gv).strip()
-        consent = 'confirmed' if re.fullmatch(r'[^0-9]{0,3}[0-9][0-9,\s]*(?:\.[0-9]{1,2})?', _g) else 'none'
+        # Oracle C4 (2026-08-11): non-alphanumeric prefix only — the same 1→l letter-prefix
+        # exposure as the stand-down's C1, here on a REWRITTEN value.
+        consent = 'confirmed' if re.fullmatch(r'[^0-9A-Za-z]{0,3}[0-9][0-9,\s]*(?:\.[0-9]{1,2})?', _g) else 'none'
     elif val_type == 'date':
         try:
             from extraction.validator import parse_date
