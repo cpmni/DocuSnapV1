@@ -21,7 +21,53 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-11 DAY: **READ `HANDOVER_2026-08-11_DAY.md` FIRST**
+## ⏭ LATEST — 2026-08-11 DAY 2: **READ `HANDOVER_2026-08-11_DAY2.md` + `OWNER_TEST_SCRIPT_2026-08-11.md` FIRST**
+Branch **`feat/teach-side-overnight`**, HEAD **`8c6237e`**, PUSHED, tree clean. Owner's 4-part
+order all delivered; Oracle vetted all four changes (no SEND BACK), every blocking condition
+closed same-session. **MIGRATION 62 exists in code** (61+62 apply on next app start — live DB was
+still 60 this morning; the previous handover's "migration 61" line was stale).
+**(1) LIVE serials teach REPAIRED** (data, no commit): 2 caption-committing mappings + 2 frozen
+serials fields deleted; backup `_measure/live_backup_20260811_120903.db`; 24 docs keep the old
+value until reprocessed.
+**(2) CHRIS r2: findings 1,3,4,5,7,8 + verify-list FIXED** (4 commits). Approve was NEVER broken
+backend-side — it is an owner-approved two-step ARM whose armed state was invisible (no
+self-approval rule exists; the review doc's triage hypothesis was WRONG). Finding 1 =
+`ca0bb49` young-identity corroboration: the wordmark abstain ADMITTED unconditionally and the
+garble claim came through the KEYWORD arm (trace-proved); a young frozen-supplier template
+(frozen-string confirms <3) must now be NAMED on the page. Youth stays keyed on the FROZEN-STRING
+count DELIBERATELY — the bound-doc alternative reads File-All-Ready'd poison as mature (21 docs in
+the sandbox). Residuals (a) name-drift keeps a wordmark young, (b) frozen-garble/corrected-dominant
+split-brain — PINNED. Slices 2+3 designed in `pendingfeatures.md`, NOT built.
+**(3) TAUGHT LABEL → KEYWORD at TEMPLATE scope** (mig 62, flag `teach_label_becomes_keyword` OFF,
+NOW HAS A TOGGLE): rebuild in ONE transaction that THROWS rather than stamps (Oracle ship-blocker);
+backup restore REMAPS template_id through tmplMap, orphans DROPPED never widened (second
+ship-blocker); scoped rows apply only when THAT template matched; ⊕ path SKIPS with no template;
+admin list shows "replaces built-ins"/"<template> only" tags.
+**(4) CORROBORATION RECORD + SURFACE shipped, record-only** (owner principle, step 1+2 of the
+ordered plan; step 3 = moving decisions is DELIBERATELY not built). `_build_corroboration_emit`
+buckets by method family; **`template_fixed` = its own `memory` family INSIDE the emit only** —
+never re-tune the shared `_crosscheck_witness_bucket` (live in the flipped crosscheck reconcile).
+New `extractions.corroboration` column; survives reprocess merge; Review "✓ Two independent
+readings agree" (positive-only, note-suppressed); SFDEV ★FINAL shows the amber disagreement (the
+Oakhaven stamped-VAT-vs-page-VAT class made visible). Base arm 185 docs BYTE-IDENTICAL = the
+record-only proof. Kill `FIELD_CORROBORATION_EMIT=0`.
+**(5) LIST FIELD TYPE built** (owner idea; flag `list_field_scan` OFF + toggle + bridge): value =
+'A; B; C'; `_search_for_label(collect=True)` — ONE scan, shared guards, shared `_post_label_value`
+pipeline; method `keyword_list`; the collect scan ALONE writes list fields (mapping/anchor/late-
+rescue/hint skips — pinned invariant narrowing); never freezes; never a ref/date role; Stage-4.5
+rail + corrector skip; trust untouched (list blocks sub-100 auto-file, accepted v1); teach
+surfaces refuse at teach time. Corpus layout evidence settled Oracle's fork:
+`gen_customer_test.py:523` prints one 'Serial No: <sn>' line PER serial. Residuals named:
+vertical-column reads element 1; no count witness v1. Gates: pre/post-refactor byte-identical AND
+armed-zero-list-fields byte-identical (185 docs each).
+**GOTCHAS:** electron.exe does NOT support `--check` (silently fails every file — use plain
+`node --check`); git toplevel is `C:\GIT Projects` and the unanchored `templates/` ignore rule
+makes `git add` warn about `src/modules/templates` (the tracked handler commits fine); the 08-10
+coldstart2.json is a 66-doc subset, NOT comparable to 185-doc runs; harness `safe()` returns []
+on unmigrated snapshots for new getForExtraction columns; labelkw backfill arms construct rows
+WITHOUT template_id.
+
+### Prior — 2026-08-11 DAY: **READ `HANDOVER_2026-08-11_DAY.md` FIRST**
 Branch **`feat/teach-side-overnight`**, HEAD **`75d29ce`**, PUSHED, tree clean. Owner present.
 **MIGRATION IS NOW 61** — every older line in this file saying 60 is stale from here.
 **(1) CHRIS'S "CONFIDENT NONSENSE" GAP CLOSED** (`810ea8f`, DEFAULT ON, kill
