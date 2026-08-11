@@ -200,7 +200,7 @@
   .fieldrow.cur{background:var(--surface2)}
   .dot{width:10px;height:10px;border-radius:50%;background:var(--border2);flex:0 0 auto}
   .dot.done{background:var(--ok)} .dot.cur{background:var(--accent)} .dot.skip{background:var(--warn)} .dot.fixed{background:var(--muted)}
-  .readback{margin-top:12px;font-size:13px}
+  .readback{margin:0 0 12px;font-size:13px}   /* above the page since 2026-08-11 — was below it */
   .readback .val{font-size:15px;color:var(--ok)}
   .warn{color:var(--warn);font-size:13px;margin-top:8px}
   .err{color:var(--err);font-size:13px;margin-top:8px}
@@ -402,6 +402,11 @@
              being asked. The bottom copy (#rg-confirm) stays exactly where it is. -->
         <div class="rg-top" id="rg-confirm-top"></div>
       </div>
+      <!-- THE READ-BACK / TYPING PANEL LIVES ABOVE THE PAGE (owner, 2026-08-11): it used to sit
+           BELOW the canvas, and on lower-res displays the typing box (and the locate-pick
+           explainer) appeared below the fold — the operator clicked "Type it instead" and
+           nothing visibly happened. Same reasoning as the step-2 type editor move. -->
+      <div class="readback" id="rg-readback"></div>
       <div class="regionwrap">
         <div>
           <div class="canvaswrap" title="Right-drag to pan · +/− to zoom">
@@ -418,7 +423,6 @@
           <!-- Page strip — hidden entirely for a single-page document, so the common case is
                unchanged. A dot is filled for every page that already carries a taught field. -->
           <div id="rg-pagenav" class="pagenav hidden" data-help-key="teach-pagenav"></div>
-          <div class="readback" id="rg-readback"></div>
         </div>
         <div class="rail">
           <h3 id="rg-progress">Details</h3>
