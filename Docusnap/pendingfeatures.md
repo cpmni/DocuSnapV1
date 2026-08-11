@@ -693,6 +693,103 @@ confirms is still nulled (`engine.py:7181-7229`); only new confirms or Learning 
 
 ---
 
+## 2026-08-11 — OWNER-REPORTED (x2): THE APP ALREADY KNOWS THE ANSWER AND DOES NOT CONSULT IT
+
+Both raised from a live screen: an Ironclad statement whose `customer_name` picker offered
+**`Bramblewood Joinery Ltc`** (chosen, 70%, *"doesn't read like a name — please verify"*) against
+**`Bramblewood Joinery Ltd`** — the owner's OWN company, confirmed on hundreds of documents.
+
+---
+
+### (1) THE DISAMBIGUATION PICKER NEVER CHECKS WHETHER A CANDIDATE IS A VALUE WE ALREADY KNOW
+
+**VERIFIED AT SOURCE.** `engine._build_candidate_emit` orders the options with exactly this key:
+
+```python
+reps.sort(key=lambda c: (0 if _cmp_norm(c.get("value")) == chosen_norm else 1,
+                         -(c.get("confidence") or 0), str(c.get("value"))))
+```
+
+**Chosen-first, then confidence, then alphabetical. There is no consultation of confirmed history,
+`supplier_hints`, `corrections`, or `accepted_name_values` anywhere in the emitter.** So a one-glyph
+misread that happens to have won is presented FIRST and described neutrally, while the value the
+install has confirmed hundreds of times is second and unmarked.
+
+**THIS IS A REPEAT OF A KNOWN CLASS, which strengthens the case.** 2026-08-08 recorded the same
+shape: *"`supplier_hints` holds the correct value at `usage_count=10` and `keyword_override` reads it
+too, yet the clipped taught read beats both at 95 — the system knows the answer twice over and
+cannot apply it."* Same defect, different surface.
+
+**Why `Ltc` beat `Ltd` is worth stating precisely, because it rules out the easy fix:** they differ
+by ONE glyph and both are well-formed, so no format/shape gate can separate them — exactly the
+lesson the serials and VAT entries already record. The ONLY discriminator available is *"we have
+seen this exact string confirmed before, many times, and never the other one."*
+
+**DIRECTION (not built).** A candidate that EXACTLY matches (under `_cmp_norm`) a value previously
+CONFIRMED for this field in scope should (a) sort first, and (b) be labelled as such —
+*"Bramblewood Joinery Ltd — you've confirmed this 214 times"*. Ranking alone probably suffices;
+auto-picking is a separate, larger decision (Stage 4.6 `_resolve_candidates` already exists for
+that and is gated `off`).
+
+**TRAPS, each of which has bitten this repo before:**
+- **Scope it.** `customer_name` was UNLINKED from identity at migration 44 and mig 45 PURGED its
+  learning, so `supplier_hints` may hold nothing for it — check before relying on that table.
+  Confirmed `extractions` rows are the more reliable source here.
+- **The variability guard.** `supplier_hints` deliberately skips any field with >=2 distinct
+  confirmed values in scope; a recipient name on a buyer's documents is near-constant, so it should
+  qualify — but verify rather than assume.
+- **Do not let this auto-commit.** The picker is suggestion-only by design (`project_disambiguation_
+  picker`: "pick never files"). Ranking and labelling change no value.
+- **Frequency, not mere presence.** A single past confirm of a garble would otherwise promote it.
+
+---
+
+### (2) A CONFIRMED TEACH LABEL NEVER BECOMES THE KEYWORD FOR THAT FIELD
+
+**Owner, verbatim:** *"When we draw an anchor and set the label can we set that confirmed label
+value as the only keyword on that doc for that field — some are picking up the correct template
+mapping eg po number but the keyword for that field is looking elsewhere at 'ref'."*
+
+**VERIFIED AT SOURCE, and he is right.** The mechanism already exists and is fully wired into
+extraction: `field_label_overrides` (migration 19, `doc_type_slug` + `field_key` + `label`), read by
+`label_overrides.getForExtraction` and threaded to Python as `--label-overrides-file`
+(`processing/handler.js:1007`). **But the ONLY writers are the admin Settings screen
+(`settings/handler.js:269`/`:275`) and the preset-catalog seeder.** Nothing on the teach or confirm
+path ever writes one.
+
+So a ⊕ teach persists `anchor_label` into `field_anchors`, which drives **Stage 2 anchoring** — and
+Stage 1 keyword carries on using the generic caption bank, which is why a correct `po_number`
+template mapping coexists with a keyword hunting `'ref'`. The operator has told the app the caption
+and the app only half-listens.
+
+**DIRECTION (not built).** On confirm, when a taught mapping/anchor carries a non-empty
+`anchor_label`, write the doc-type-scoped override for that field. The plumbing is already there;
+this is a WRITE that is missing, not a new subsystem.
+
+**THE HARD PART IS THE WORD "ONLY", and it needs a decision before code.** `addLabelOverride` ADDS
+to the bank; the owner asked for the confirmed label to be the *only* keyword. Exclusivity is a
+different and riskier semantic — and it already has a relative: `KEYWORD_GENERIC_CAPTION_EXCLUSIVE`
+(shipped, default ON via migration 60) exists because *"one printed code was captured into THREE
+fields — every ref-role field is seeded the same generic caption bank"*. Whatever is built here
+must be reconciled with that flag rather than layered on top of it blindly.
+
+**FURTHER TRAPS:**
+- **The table has NO supplier column.** It is doc-type-scoped, so an override learned from one
+  supplier's statement applies to every supplier's statements. That may be wanted (a caption is
+  usually a document-type convention) but it MUST be a stated decision — `field_anchors` is
+  supplier-scoped and this is not.
+- **The issuer teaches with an EMPTY label ON PURPOSE** (Oracle-signed 2026-07-10: a phantom label
+  makes the teach silently do nothing). So `supplier_name` must be excluded, or the write must skip
+  empty labels — which is the same thing, but say which.
+- **A mis-read label would be learned as a keyword.** Chris's round produced `"Statement Re"`
+  (missing the f) as a confirmed label. Feed that into the keyword bank and it is wrong for every
+  future document of that type. Pair this with the plausibility guard shipped in `810ea8f`, or gate
+  the write on the label being located on the page.
+
+**Both NOT BUILT — logged on the owner's "add to list" convention.**
+
+---
+
 ## 2026-08-11 — THE SAFETY NET HAS 14 RED GATES, AND NOBODY KNEW BECAUSE THE SUITE CANNOT BE RUN
 
 **Measured, not estimated.** New runner `stress_test/run_all_suites.py` executes every test file in
