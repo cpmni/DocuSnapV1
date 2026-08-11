@@ -103,6 +103,46 @@ per-window .ico art; overlay badges via `setOverlayIcon`).
    A3 (registration preview on tilted sample) still unsmoked.
 6. Buyer-issued slices 2/3, Chris finding 6, I→1 witness — unchanged in `pendingfeatures.md`.
 
+## LATE EVENING SESSION (same day, owner present) — dock resolved · angle backfill APPLIED · corroborated auto-file BUILT (OFF)
+
+HEAD **`03b7d87`**, ALL PUSHED. Full detail in the commit messages; headline state:
+1. **Dock RESOLVED** (`5391c52`, live-smoked) — see the top-of-file resolution note.
+2. **SFDEV trace crops named per read** (`7dcb0be`): tags absolute box / derived offset / inline
+   harvest / edge grow / label locate etc.; anchor-overlay tooltip made honest (a keyword rung has
+   no crop — the blue box is the taught anchor, context only).
+3. **Picker history ranking LIVE** (`0816b28`): a ≥3×-confirmed candidate sorts first labelled
+   "you've confirmed this N times" — owner saw it live. Kill `CANDIDATE_HISTORY_RANK`.
+4. **THE 'Ltc' ROOT CAUSE: stale `sample_deskew_angle=0`** on pre-round-trip templates —
+   compose-scan misplaced every composed box by the sample's undeclared tilt. Proven -0.7
+   hand-set: 5/19→16/19 exact. **Oracle: backfill = PRIMARY layer, name edge-grow = WRONG LAYER
+   (not built), NAME_UNCLIP untouched.** Census C1: both detect regimes agree 0.00° on all 8
+   samples (DPI-invariance now verified fact). **BACKFILL APPLIED LIVE** (`--apply --plan`,
+   backup `docusnap_pre_angle_backfill_2026-08-11T1809.db`): tpl 5 → -0.30, tpl 7 → -0.70;
+   **tpl 9 Pelican HELD** (floor-row, only negative lane evidence — pendingfeatures). Gate: 118
+   review docs replayed, unchanged templates byte-identical, Castellan 6/13→12/13 exact, known
+   trade doc 0017 'Branblewood' (m→n interior — 007's `_PREVIEW_DOWNSCALE` ~80-DPI finding, own
+   backlog entry). Owner live-confirmed "most worked"; the `es we` scare was a stale Review
+   window. Instruments: `census_sample_angles.py` · `gate_sample_angle_backfill.js` ·
+   `backfill-sample-angles.js` · pins `test_backfill_sample_angles.js`. C4: heal arming now
+   covers `teach_angle_compose_scan` (was compose-only = never armed on the live config).
+5. **CORROBORATED AUTO-FILE BUILT, DEFAULT OFF** (`029b234`+`03b7d87`, Oracle SIGN-OFF-W/COND,
+   owner confirmed "extra route, all checks kept"): volume-only substitution (C1 probe:
+   ≥3 human confirms, zero corrections incl. machine files, verifiable required fields),
+   `confirmed_via='auto_corroborated'` excluded from the graduation window (C2), family licensing
+   {mapping,crop,keyword} page-families with **memory+hint REFUSED** (near-circular — so the flag
+   will NOT flip the current Castellan 13; their path is graduation, 2 more confirms), toggle in
+   Settings→Processing, harness overlays threaded + canary-pinned. 19+16+wiring pins green.
+   **FLIP GATES NOT YET RUN (flag stays OFF):** 185-doc base arm byte-identical · armed applive
+   arm hand-checked · declined census · `template_identity_on_page` ON in the live DB ·
+   wrong-binding sandbox zero-file (Oracle C3) · never flip alongside
+   `CODE_SEPARATOR_STRUCTURE_GUARD` without re-running arms.
+6. **Owner UX ruling: the Review "✓ Two independent readings agree" line is REMOVED** — a
+   positive-only badge trains expectation and its structural absence (label-above layouts are
+   INVISIBLE to Stage-1 keyword — same-line matching only; pendingfeatures entry) reads as alarm
+   on correct values. Record + SFDEV surfaces stay; do not resurrect as positive-only.
+7. Keyword label-above gap, tpl 9 hold, engine NULL-angle decision, name-crop supersede — all
+   filed in `pendingfeatures.md`.
+
 ## Gotchas added this evening
 - **`addMissingColumns` runs ONLY in the migration-2 block** — a new column for an existing
   install needs its own numbered migration. Third time this trap has featured; the mig-63 pin now

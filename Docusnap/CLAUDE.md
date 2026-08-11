@@ -21,9 +21,15 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-11 EVENING: **READ `HANDOVER_2026-08-11_EVENING.md` FIRST** (then DAY2 below)
-HEAD **`5391c52`**, PUSHED. Owner live-tested all afternoon; ~15 fix commits. **The child-window
-DOCK is RESOLVED (`5391c52`, LIVE-SMOKED late evening)**: 5th iteration = restore-then-hide +
+## ⏭ LATEST — 2026-08-11 EVENING+LATE: **READ `HANDOVER_2026-08-11_EVENING.md` FIRST** (its LATE
+EVENING section carries the night's second half). HEAD **`03b7d87`**, PUSHED. LATE-EVENING
+HEADLINES: **the 'Ltc' class root cause was a STALE `sample_deskew_angle=0`** (pre-round-trip
+teach; compose-scan misplaced every composed box) — Oracle-signed BACKFILL **APPLIED LIVE**
+(tpl 5/7; tpl 9 HELD; name edge-grow ruled WRONG LAYER, not built); **corroborated auto-file
+BUILT DEFAULT OFF** (volume-only substitution, memory+hint refused — does NOT flip Castellan;
+flip gates in the handover NOT yet run); **picker history ranking LIVE** ("confirmed N times");
+Review's positive-only agreement badge REMOVED (owner ruling); SFDEV trace crops named per read.
+**The child-window DOCK is RESOLVED (`5391c52`, LIVE-SMOKED)**: 5th iteration = restore-then-hide +
 visibility-guarded undock (a hidden window cannot be "back in front") + juggle flag drained in
 setTimeout(0) + drain-time chip failsafe + deterministic undock in the restore IPC. Smoke: no
 stub, chip persists, restores PAINTED, two-chip selective restore, no spontaneous restore (12s).
