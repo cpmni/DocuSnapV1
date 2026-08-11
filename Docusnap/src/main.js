@@ -538,26 +538,24 @@ function broadcastDock() {
 // Any event that puts the window back in front un-docks it, so the chip can never
 // outlive the minimised state (a stale chip that restores nothing is worse than no chip).
 function wireChildDock(win, name) {
-  // FOURTH iteration (owner screenshots, 2026-08-11), and the mechanism is finally understood:
-  // these are OWNED windows (they have a parent), and Windows NEVER gives an owned window a
-  // taskbar button — so the setSkipTaskbar juggle could not remove the desktop stub, and its
-  // style flip was what made minimised windows "randomly pop back open by themselves". And a
-  // window hidden IN the minimised state comes back blank (unpainted surface).
-  // The pattern that satisfies all three constraints (no stub, no blank, chips only):
-  // RESTORE-THEN-HIDE, synchronously, inside the minimise event — the window never remains
-  // minimised, so no stub is ever drawn, and it hides in its NORMAL painted state, so show()
-  // brings it back painted. The juggle guard stops our own restore() un-docking the chip.
-  win.on('minimize', () => {
-    if (win._dockJuggle || win.isDestroyed()) return;
-    win._dockJuggle = true;
-    try { win.restore(); win.hide(); } catch { /* going away */ }
-    win._dockJuggle = false;
-    dockedChildren.add(name); broadcastDock();
-  });
-  const undock = () => {
-    if (win._dockJuggle) return;              // our own restore-then-hide is not a user restore
-    if (dockedChildren.delete(name)) broadcastDock();
-  };
+  // ── SAFE STATE (reverted 2026-08-11 evening after four failed stub-removal iterations) ──
+  // The minimised child keeps its OS desktop stub (cosmetic wart, bottom-left of the SCREEN)
+  // and the dock chip both. Every stub-removal attempt broke something worse on this machine:
+  //   1. hide-on-minimise            → window restored BLANK (surface unpainted mid-animation);
+  //   2. deferred hide + invalidate  → still blank;
+  //   3. setSkipTaskbar(false)       → structurally impossible: these are OWNED windows and
+  //      Windows never gives an owned window a taskbar button — and the style flip made
+  //      minimised windows "randomly pop back open by themselves";
+  //   4. restore-then-hide + juggle guard → restore()'s events fire AFTER the handler returns,
+  //      when the guard is already down, so undock deleted the chip right after it was added:
+  //      the window vanished with NO way back — the one failure mode worse than the wart.
+  // NEXT ATTEMPT (designed, not built — see HANDOVER_2026-08-11_DAY2.md): keep a hide-based
+  // variant but make `undock` ignore events while the window is NOT visible (a hidden window
+  // cannot be "back in front", so the queued restore/focus artefacts can't kill the chip), and
+  // only clear the juggle flag once those queued events have drained (setTimeout 0). Working
+  // ugly beats broken pretty until that is TESTED live.
+  win.on('minimize', () => { dockedChildren.add(name); broadcastDock(); });
+  const undock = () => { if (dockedChildren.delete(name)) broadcastDock(); };
   win.on('restore', undock);
   win.on('show',    undock);
   win.on('focus',   undock);
