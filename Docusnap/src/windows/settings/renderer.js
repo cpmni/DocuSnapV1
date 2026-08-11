@@ -694,6 +694,8 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // LIST field type: collect every occurrence of the field's label
                          // (serial numbers). Bridged to LIST_FIELD_SCAN in _reconcileEnv.
                          ['list-field-scan-toggle', 'list_field_scan'],
+                         // Declared-absent fields stay EMPTY (engine drop + reprocess merge).
+                         ['hidden-field-drop-toggle', 'template_hidden_field_drop'],
                          // Bridged 2026-08-10: both were built + measured on 08-09 and recorded as
                          // "awaiting the owner's flip", but neither had a bridge, so there was
                          // nothing to flip - env-only, and npm start injects no env.

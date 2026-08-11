@@ -1128,9 +1128,11 @@ function renderFieldRail(){
   const list=$('rg-fieldlist'); list.innerHTML='';
   state.fields.forEach((f,i)=>{
     const r=state.results[f.key];
-    const cls=i===state.fieldIndex?'cur':''; const dot=r? (r.status==='skip'?'skip':(r.status==='fixed'?'fixed':(r.status==='pending'?'cur':'done'))) : (i===state.fieldIndex?'cur':'');
+    const cls=i===state.fieldIndex?'cur':'';
+    const dot=r? (r.status==='skip'?(r.hideForLayout?'hide':'skip'):(r.status==='fixed'?'fixed':(r.status==='pending'?'cur':'done'))) : (i===state.fieldIndex?'cur':'');
     const row=document.createElement('div'); row.className='fieldrow '+cls;
-    row.innerHTML=`<span class="dot ${dot}"></span><span>${esc(f.label)}</span>`;
+    if (r && r.hideForLayout) row.title="Won't be looked for on this sender's paperwork — Settings → Document Types → Field visibility to change.";
+    row.innerHTML=`<span class="dot ${dot}"></span><span${r&&r.hideForLayout?' class="muted"':''}>${esc(f.label)}</span>`;
     // A DONE field re-opens its CONFIRM state (view what's stored, change it) — the old behaviour
     // showed "draw a box" over an existing box, which read as the work having vanished. A FIXED
     // (typed, no spot) field re-opens the typing panel prefilled; everything else prompts as before.
@@ -1467,7 +1469,39 @@ function advanceField(){
 }
 // (The rail's duplicate Redraw button is GONE — 2026-08-11 flow rework. Redraw lives in the
 // confirm states, and clicking a DONE field row re-opens its confirm state.)
-$('rg-skip').onclick=()=>{ const f=curField(); if(!f)return; state.results[f.key]={value:'',target:null,anchor:null,anchor_text:null,status:'skip'}; advanceField(); };
+// SKIP → one optional follow-up (Chris-lens design 2026-08-11, owner: "no option for not
+// required for this doc"). The safe one-off skip is recorded IMMEDIATELY on the click — the
+// follow-up question only decides whether the absence is DURABLE ("Never — stop looking for
+// it" → template_hidden_fields at commit). Ignoring the question, clicking another rail row,
+// or Back all leave the already-saved safe skip; the durable hide needs the explicit click.
+$('rg-skip').onclick=()=>{
+  const f=curField(); if(!f)return;
+  state.results[f.key]={value:'',target:null,anchor:null,anchor_text:null,status:'skip'};
+  renderFieldRail();
+  // Only fields the hide can legally apply to get the question: setHiddenField refuses the
+  // structural roles + identity keys server-side, so the wizard never offers "Never" there.
+  const hideable = !isIssuerField(f) && f.key!==state.refFieldKey && f.key!==state.dateFieldKey
+                   && f.key!=='customer_name';
+  if (!hideable){ advanceField(); return; }
+  showSkipFollowUp(f);
+};
+function showSkipFollowUp(f){
+  drawMode='value'; hideStoredBoxes=true; drawnBox=null; redrawCanvas();
+  setPrompt('OK — nothing saved for', f.label);
+  $('rg-sub').textContent=`Does paperwork from this sender usually show a ${f.label}?`;
+  setConfirm(
+    `<div class="rb-actions" style="margin-top:0">`+
+      `<button class="btn ghost" id="rb-skip-once">Usually — it's just missing here</button>`+
+      `<button class="btn ghost" id="rb-skip-never">Never — stop looking for it</button>`+
+    `</div>`+
+    `<div class="muted" style="font-size:11.5px;margin-top:6px">If you choose “Never”, Scan Finder stops asking for the ${esc(f.label)} on this sender's paperwork. You can turn it back on any time in Settings → Document Types → Field visibility.</div>`);
+  // NEITHER button is primary (Chris: the safe one first, the consequence in the label itself).
+  onConfirm('rb-skip-once', ()=>advanceField());
+  onConfirm('rb-skip-never', ()=>{
+    const r=state.results[f.key]; if(r) r.hideForLayout=true;
+    renderFieldRail(); advanceField();
+  });
+}
 
 // crop a normalized box from the natural image → base64 PNG (no data: prefix).
 // The DISPLAY render is high-DPI for crispness, but OCR reads cleanest at ~108 DPI, so
@@ -1704,7 +1738,13 @@ function renderSummary(){
   for (const f of state.fields){
     const r=state.results[f.key];
     const isFixed=r&&r.status==='fixed';
-    const val = r&&r.status==='skip' ? "— you'll fill this in when reviewing" : (r?r.value:'');
+    // The durable hide is restated HERE, once more before anything commits (Chris-lens: the
+    // review step is the second safety net for a decision that outlives this document).
+    const val = r&&r.status==='skip'
+      ? (r.hideForLayout
+          ? "won't be looked for on this sender's paperwork — change any time in Settings → Document Types → Field visibility"
+          : "— you'll fill this in when reviewing")
+      : (r?r.value:'');
     addRow(s,f.label,val||'—', r&&(r.status==='skip'||!val), isFixed);
   }
 }
@@ -1733,6 +1773,15 @@ async function doCommit(){
       const r=state.results[f.key]; if(!r||r.status!=='fixed'||!r.value) continue;
       try{ await D.setTemplateFieldFixed(templateId, f.key, r.value); }
       catch(e){ console.warn('set fixed value failed:', e); }
+    }
+    // 2a') declared-absent fields ("Never — stop looking for it", Chris-lens design 2026-08-11):
+    // written HERE, after promote-to-template, so Back/Cancel stay safe (the wizard's
+    // deferred-commit principle). setHiddenField refuses structural roles server-side; the
+    // wizard never offers "Never" for them, so a refusal here is belt-and-braces only.
+    for (const f of state.fields){
+      const r=state.results[f.key]; if(!r||r.status!=='skip'||!r.hideForLayout) continue;
+      try{ await D.setTemplateHiddenField(templateId, f.key, true); }
+      catch(e){ console.warn('hide field failed:', e); }
     }
     // 2b) save a Stage 0.5 mapping per captured (non-fixed) field
     for (const f of state.fields){

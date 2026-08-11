@@ -896,6 +896,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Don&rsquo;t fill fields marked &ldquo;not on this layout&rdquo;</div>
+                <div class="threshold-desc">A field you&rsquo;ve hidden for a sender&rsquo;s layout (Document Types &rarr; Field visibility, or the teach wizard) stays empty instead of being filled with something read from elsewhere on the page &mdash; and a wrong value already stored is cleared on the next reprocess. Values you typed in yourself are always kept.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="hidden-field-drop-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Collect every value of a &ldquo;List&rdquo; field</div>
                 <div class="threshold-desc">A field typed as &ldquo;List (several values)&rdquo; — like serial numbers — is read by scanning the whole document for its label and collecting every occurrence (&ldquo;NW-123; NW-456&rdquo;). Also unlocks the List type in the field editor. Off: list-typed fields read like ordinary text fields.</div>
               </div>

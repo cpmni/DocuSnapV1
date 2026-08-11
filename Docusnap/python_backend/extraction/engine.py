@@ -6886,6 +6886,39 @@ class ExtractionEngine:
         # swap — when total≈subtotal AND a larger VAT-plausible total was also read. DEFAULT OFF.
         self._flag_net_misread_total(results, field_defs, credit_expected)
 
+        # ── DECLARED-ABSENT FIELD DROP (TEMPLATE_HIDDEN_FIELD_DROP, DEFAULT OFF) ──────────────
+        # gary design 2026-08-11 (owner: "unneeded fields incorrectly filled … when I remove them
+        # and reprocess, they return again"). The operator's `template_hidden_fields` declaration
+        # means "this supplier's layout does not print this field" — so a VALUE in that field is,
+        # by definition, a read of something else on the page. ONE choke point, before Stage 4, so
+        # no writer needs per-stage awareness and Stage 4/4.5 never see the ghost value (no
+        # cross-field maths poisoning, no minted note, no score drag). SAME resolver + SAME
+        # protected-keys strip as the scoring consumer below — one semantics, never two.
+        # Human data is sacred: the drop is engine-values-only here; the JS reprocess merge keeps
+        # any row the operator corrected (corrected_to). Unknown supplier ⇒ resolver returns empty
+        # ⇒ no drop ⇒ fills flow to review (fail toward display, never a silent wrong drop).
+        # Un-hide later ⇒ this block no-ops ⇒ the next reprocess fills again.
+        if (os.environ.get("TEMPLATE_HIDDEN_FIELD_DROP", "0") != "0"
+                and templates and supplier_name and document_slug):
+            try:
+                _hprot = {"supplier_name", "customer_name"}
+                if ref_field_key:
+                    _hprot.add(ref_field_key)
+                if date_field_key:
+                    _hprot.add(date_field_key)
+                _hdrop = template_matcher.hidden_fields_for_scope(
+                    templates, supplier_name, document_slug, protected_keys=_hprot)
+                for _hk in sorted((_hdrop or {}).get("keys") or ()):
+                    _hd = results.get(_hk)
+                    if isinstance(_hd, dict) and _hd.get("value"):
+                        self._t("hidden_field_drop", field=_hk,
+                                value=str(_hd.get("value"))[:40], method=_hd.get("method"))
+                        self.log(f"  Hidden-field drop: {_hk} '{str(_hd.get('value'))[:40]}' — "
+                                 f"declared absent for this layout; cleared")
+                        results[_hk] = {"value": None, "confidence": 0, "method": "unknown"}
+            except Exception:
+                pass   # resolver failure ⇒ no drop ⇒ today's behaviour
+
         # ── Stage 4: Validation ───────────────────────────────────────────────
         self.log("  Stage 4: validating…")
         self._t('stage_start', stage='4_validate')

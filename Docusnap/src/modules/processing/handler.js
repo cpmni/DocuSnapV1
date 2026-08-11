@@ -504,6 +504,11 @@ function _reconcileEnv(db) {
     // live serials teach committed its own caption 24 times proving it). OFF -> byte-identical,
     // and the 'list' type is hidden from the field-type dropdown.
     if (learning.getSetting(db, 'list_field_scan', 'false') === 'true') env.LIST_FIELD_SCAN = '1';
+    // TEMPLATE_HIDDEN_FIELD_DROP (gary 2026-08-11): a field the operator declared absent for a
+    // layout ("Field visibility") is never FILLED by extraction — one choke point before Stage 4
+    // — and the reprocess merge stops resurrecting stored fills (JS side reads this same setting).
+    // Without it a wrong fill returned on every reprocess: "when I remove them they return again."
+    if (learning.getSetting(db, 'template_hidden_field_drop', 'false') === 'true') env.TEMPLATE_HIDDEN_FIELD_DROP = '1';
     return env;
   } catch { return {}; }
 }
@@ -764,7 +769,7 @@ function cleanupFiles(files) {
 //   - noteText is planted on the new type's ref-field row (fallback: first row with a
 //     value, then first row) so the flip is explained in Review AND blocks auto-file
 //     (isAutoFileEligible refuses any doc carrying a validation_note — condition 3).
-function mergeReprocessRows(existing, newRows, flip = null, onTrace = null) {
+function mergeReprocessRows(existing, newRows, flip = null, onTrace = null, hiddenKeys = null) {
   const existingMap = {};
   for (const e of existing) existingMap[e.field_key] = e;
   const trace = (field, decision, oldV, newV) => { if (onTrace) onTrace(field, decision, oldV, newV); };
@@ -838,6 +843,20 @@ function mergeReprocessRows(existing, newRows, flip = null, onTrace = null) {
     target.validation_note = target.validation_note
       ? `${flip.noteText} ${target.validation_note}`
       : flip.noteText;
+  }
+  // DECLARED-ABSENT keys (TEMPLATE_HIDDEN_FIELD_DROP, gary 2026-08-11): without this clause the
+  // kept_existing carry-over RESURRECTED a stored wrong fill on every reprocess, so the engine-side
+  // drop appeared to do nothing on exactly the documents the operator was looking at. A hidden-key
+  // row is dropped from the merge UNLESS the operator corrected it (corrected_to — the human's
+  // answer is never lost; same convention as the annotated-empty Oracle-C1 exclusion above).
+  // hiddenKeys=null (flag off / no declarations) ⇒ byte-identical.
+  if (hiddenKeys && hiddenKeys.size) {
+    return mergedRows.filter(r => {
+      if (!hiddenKeys.has(r.field_key)) return true;
+      if (String(r.corrected_to || '').trim()) return true;
+      trace(r.field_key, 'dropped_hidden', r.display_value, null);
+      return false;
+    });
   }
   return mergedRows;
 }
@@ -2169,7 +2188,27 @@ function register(ctx) {
       if (gid) reprocDocTypeId = gid;
     }
 
-    const mergedRows = mergeReprocessRows(existing, newRows, flip, _emitMerge);
+    // DECLARED-ABSENT keys for this doc's scope (TEMPLATE_HIDDEN_FIELD_DROP, gary 2026-08-11):
+    // resolved by the doc's own template when bound, else by (supplier, type) — the same cold
+    // path the Review detail view uses. Structural roles + identity keys are protected at the
+    // source (setHiddenField refuses them). null when the flag is off ⇒ merge byte-identical.
+    let _hiddenKeys = null;
+    try {
+      const learningMod = require('../../../database/modules/learning');
+      if (learningMod.getSetting(db, 'template_hidden_field_drop', 'false') === 'true') {
+        const templatesMod = require('../../../database/modules/templates');
+        const _drow = db.prepare('SELECT template_id, supplier_name FROM documents WHERE id = ?').get(docId) || {};
+        let hk = [];
+        if (_drow.template_id) hk = templatesMod.getHiddenFields(db, _drow.template_id) || [];
+        if (!hk.length && _drow.supplier_name && reprocType) {
+          hk = templatesMod.getHiddenFieldsForSupplierType(db, {
+            supplier_name: _drow.supplier_name, document_type_slug: reprocType.slug }) || [];
+        }
+        if (hk.length) _hiddenKeys = new Set(hk.map(x => (typeof x === 'string' ? x : x.field_key)));
+      }
+    } catch { /* resolver failure ⇒ no drop ⇒ today's behaviour */ }
+
+    const mergedRows = mergeReprocessRows(existing, newRows, flip, _emitMerge, _hiddenKeys);
 
     const learning = require('../../../database/modules/learning');
     // ONE transaction (2026-08-11, found live): the un-wrapped pair stranded a document with

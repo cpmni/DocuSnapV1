@@ -72,6 +72,31 @@ console.log('\n§1b Oracle C2 (2026-08-11) — the corroboration RECORD rides wi
   check('a replaced value does NOT inherit the old record', fresh[0].corroboration == null);
 }
 
+console.log('\n§1c TEMPLATE_HIDDEN_FIELD_DROP (gary 2026-08-11) — declared-absent keys stop resurrecting:');
+{
+  // The owner's exhibit: "when I remove them and reprocess, they return again" — kept_existing
+  // carried the stored wrong fill over the engine's new empty on every reprocess.
+  const hidden = new Set(['account_no']);
+  const exHid = exRow({ field_key: 'account_no', display_value: 'JB-8887', raw_value: 'JB-8887',
+                        validation_note: null });
+  const out = merge([exHid], [newBareEmpty({ field_key: 'account_no' })], null, null, hidden);
+  check('a stored fill on a DECLARED-ABSENT key is dropped, not resurrected',
+        !out.some(r => r.field_key === 'account_no'));
+  // The human's answer is never lost — same convention as the annotated-empty corrected_to rule.
+  const exCorr = exRow({ field_key: 'account_no', display_value: 'ACC-1', raw_value: 'ACC-1',
+                         corrected_to: 'ACC-1', validation_note: null });
+  const out2 = merge([exCorr], [newBareEmpty({ field_key: 'account_no' })], null, null, hidden);
+  check('PINNED: a hidden row the OPERATOR corrected survives (corrected_to is sacred)',
+        out2.some(r => r.field_key === 'account_no' && r.corrected_to === 'ACC-1'));
+  // Carry-over rows (missing from new) obey the same rule.
+  const out3 = merge([exHid], [newBareEmpty({ field_key: 'supplier_name' })], null, null, hidden);
+  check('a hidden-key CARRY-OVER row is dropped too', !out3.some(r => r.field_key === 'account_no'));
+  // Control: hiddenKeys null/empty = byte-identical to the whole battery above and below.
+  const outNull = merge([exHid], [newBareEmpty({ field_key: 'account_no' })], null, null, null);
+  check('CONTROL: hiddenKeys=null keeps today\'s kept_existing byte-identically',
+        outNull.some(r => r.field_key === 'account_no' && r.display_value === 'JB-8887'));
+}
+
 console.log('\n§2 Annotated empty WINS (the abstain-speak class lands on reprocess):');
 {
   const traces = [];
