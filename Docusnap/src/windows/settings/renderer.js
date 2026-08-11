@@ -752,6 +752,62 @@ for (const [id, keys] of [['template-fixed-supplier-toggle', ['template_fixed_ne
   });
 }
 
+// ── ADVANCED READING SWITCHES gate (owner decision 2026-08-11) ───────────────────────────────
+// The Processing tab grew ~50 kill-switch/experimental toggles a customer should never meet
+// (Chris, both rounds: "58 switches, 46 ON"). They hide behind ONE persisted SFDEV unlock
+// (`dev_switches_unlocked`; password checked in MAIN — dev-switches-unlock IPC). Hiding changes
+// NO flag values — the rows still exist and the wiring pins still see them; only visibility
+// moves. The visible set = genuine customer choices (auto-file, thresholds, straighten,
+// watch/rotate/multiline, printing/slips, generic/title, name checks, telemetry/diag) plus the
+// three switches the owner is actively evaluating (teach-label-keyword, list-field-scan,
+// hidden-field-drop) — migrate those behind the gate once settled.
+const DEV_SWITCH_IDS = [
+  'right-grow-toggle', 'left-clamp-toggle', 'prefix-garble-toggle', 'crosscheck-reconcile-toggle',
+  'universal-verify-toggle', 'edge-clean-toggle', 'word-snap-toggle', 'struct-code-read-toggle',
+  'warm-ocr-toggle', 'parallel-reprocess-toggle',
+  'template-fixed-supplier-toggle', 'pad-window-code-toggle', 'vat-reg-toggle',
+  'frag-clean-toggle', 'clip-commit-toggle', 'edge-guard-toggle', 'date-clip-toggle',
+  'label-digit-toggle', 'angle-compose-toggle', 'edge-cut-relocate-toggle', 'clip-slack-toggle',
+  'date-invalid-yield-toggle', 'date-future-yield-toggle', 'pad-window-read-toggle',
+  'heading-absent-reread-toggle', 'credit-sign-toggle', 'inline-row-overlap-toggle',
+  'ref-role-digit-toggle', 'inline-offset-veto-toggle', 'drift-row-pitch-toggle',
+  'currency-edge-grow-toggle', 'angle-compose-scan-toggle', 'fixed-issuer-repair-toggle',
+  'reg-arbiter-anchor-evidence-toggle', 'issuer-region-presence-toggle',
+  'fixed-seed-agreement-toggle', 'stage05-ref-code-toggle', 'generic-caption-exclusive-toggle',
+  'type-title-owner-toggle', 'filing-sanity-flags-toggle', 'letterhead-issuer-toggle',
+  'identity-on-page-toggle', 'format-fail-yield-toggle', 'customer-po-labels-toggle',
+  'code-separator-guard-toggle', 'vat-eu-formats-toggle', 'shadow-row-skip-toggle',
+];
+function _applyDevSwitchVisibility(unlocked){
+  for (const id of DEV_SWITCH_IDS){
+    const row = document.getElementById(id)?.closest('.threshold-row');
+    if (row) row.classList.add('dev-switch');
+  }
+  const panel = document.getElementById('panel-processing');
+  if (panel) panel.classList.toggle('dev-unlocked', !!unlocked);
+  const lockRow = document.getElementById('dev-switches-lock-row');
+  const openRow = document.getElementById('dev-switches-open-row');
+  if (lockRow) lockRow.style.display = unlocked ? 'none' : '';
+  if (openRow) openRow.style.display = unlocked ? '' : 'none';
+}
+(async () => {
+  let unlocked = false;
+  try { unlocked = (await api.getSetting('dev_switches_unlocked')) === 'true'; } catch {}
+  _applyDevSwitchVisibility(unlocked);
+})();
+document.getElementById('dev-switches-show')?.addEventListener('click', async () => {
+  const inp = document.getElementById('dev-switches-pw');
+  const msg = document.getElementById('dev-switches-msg');
+  let r = null;
+  try { r = await api.devSwitchesUnlock((inp?.value || '').trim()); } catch {}
+  if (r && r.ok){ if (inp) inp.value = ''; if (msg) msg.textContent = ''; _applyDevSwitchVisibility(true); }
+  else if (msg) msg.textContent = 'That password isn’t right.';
+});
+document.getElementById('dev-switches-hide')?.addEventListener('click', async () => {
+  try { await api.setSetting('dev_switches_unlocked', 'false'); } catch {}
+  _applyDevSwitchVisibility(false);
+});
+
 // ── Read small reference/date print more clearly (STRUCT_CODE_READ, default OFF) ──
 (async () => {
   try {

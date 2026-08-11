@@ -140,6 +140,9 @@
     /* ── Threshold / toggle rows ── */
     .threshold-row { display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border); }
     .threshold-row:last-child { border-bottom:none; }
+    /* Advanced reading switches (2026-08-11): dev-tagged rows hide unless the panel is
+       unlocked (persisted SFDEV unlock). Values never change — visibility only. */
+    #panel-processing:not(.dev-unlocked) .threshold-row.dev-switch { display:none; }
     /* The type ladder per row: label = the medium-weight hero of the row; sub = visibly
        secondary (small, muted, line-length CAPPED — full-width 200-char lines were half
        the "wall of text" impression). Copy stays 100% visible, styled as secondary. */
@@ -1159,6 +1162,35 @@
                 <input type="range" class="conf-slider" id="global-threshold" min="0" max="100" value="70">
                 <span class="conf-val" id="global-threshold-val">70%</span>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Advanced reading switches gate (owner decision 2026-08-11): ~50 kill-switch /
+           experimental toggles hide behind one persisted SFDEV unlock. Hiding changes NO
+           values — the rows keep their ids (wiring pins unaffected); only visibility moves. -->
+      <div class="settings-group">
+        <div class="group-title">Advanced reading switches</div>
+        <div class="group-body">
+          <div class="section">
+            <div id="dev-switches-lock-row" class="threshold-row">
+              <div>
+                <div class="threshold-label">Fine-grained reading switches (developer)</div>
+                <div class="threshold-sub">Dozens of internal reading safeguards live here. They ship with the right defaults — changing them can quietly change how documents are read, so they're locked away. Support may ask you to open this.</div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <input type="password" id="dev-switches-pw" class="field-select" style="width:130px;" placeholder="Password" autocomplete="off">
+                <button class="btn" id="dev-switches-show" style="padding:6px 14px;">Show</button>
+              </div>
+            </div>
+            <div id="dev-switches-msg" style="font-size:12px;color:var(--err);padding:0 2px;"></div>
+            <div id="dev-switches-open-row" class="threshold-row" style="display:none;">
+              <div>
+                <div class="threshold-label">Advanced switches are shown</div>
+                <div class="threshold-sub">The developer switches above are visible on this computer. Values are unchanged either way.</div>
+              </div>
+              <button class="btn" id="dev-switches-hide" style="padding:6px 14px;">Hide them again</button>
             </div>
           </div>
         </div>

@@ -550,6 +550,22 @@ function register(ctx) {
     return true;
   });
 
+  // Advanced reading switches unlock (owner decision 2026-08-11): the Processing tab grew ~50
+  // kill-switch/experimental toggles a customer should never meet — they now hide behind ONE
+  // SFDEV unlock (same password + checked-in-MAIN convention as the dev inspector). Option (b):
+  // the unlock PERSISTS (`dev_switches_unlocked` setting) so the owner's install shows the
+  // section permanently while customer installs never do. Hiding is passwordless (plain
+  // set-setting) — only the reveal is gated. No flag VALUES change either way.
+  ipcMain.handle('dev-switches-unlock', (_e, pw) => {
+    requireRole('admin');
+    if (String(pw || '') !== 'SFDEV') return { ok: false };
+    const db = getDb();
+    learning.setSetting(db, 'dev_switches_unlocked', 'true');
+    logAudit(db, { action: 'dev_switches_unlocked', action_category: 'settings', target_type: 'setting',
+      target_id: 'dev_switches_unlocked', outcome: 'success' });
+    return { ok: true };
+  });
+
   // Opt-in diagnostics — read-only info for the Settings "see exactly what's sent"
   // view: the master on/off, the full event allowlist (what CAN be sent), and the
   // events currently buffered on THIS machine (verbatim). Admin only.

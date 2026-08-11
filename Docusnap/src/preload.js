@@ -195,6 +195,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   getDeferredQueue:            ()        => ipcRenderer.invoke('get-deferred-queue'),
   getReviewCount:              ()        => ipcRenderer.invoke('get-review-count'),
   getReviewSplit:              ()        => ipcRenderer.invoke('get-review-split'),
+  devSwitchesUnlock:           (pw)      => ipcRenderer.invoke('dev-switches-unlock', pw),
   getDeferredCount:            ()        => ipcRenderer.invoke('get-deferred-count'),
   getFieldRules:               ()        => ipcRenderer.invoke('get-field-rules'),
   getRecentAutoFiled:          ()        => ipcRenderer.invoke('get-recent-auto-filed'),
