@@ -1181,6 +1181,51 @@ async function readBack(box){
 // isIssuerField above).
 // `located` = the value was TYPED and then found on the page, so there is no read to confirm — only
 // the label beside it. Saying "confirm what I read" there would be untrue: nothing was read.
+// ── Date coherence for the read-back (owner, 2026-08-11) ─────────────────────────────────────
+// The wizard accepted ANY read for a date field — the exhibit: 'verbeck Cleaning Supplies'
+// offered as the Order Date under a green "Looks right →". Two-way, warn-only:
+//   * a DATE field whose read does NOT parse as a date -> "that doesn't read like a date";
+//   * a NON-date field whose read DOES parse as one -> "are you sure? that looks like a date"
+//     (fires ONLY on a real parse — a ref code like NW-12-34 must never trip it).
+function _isDateField(f){
+  return String(f.type || '').toLowerCase() === 'date' || f.key === state.dateFieldKey
+         || /(^|_)date($|_)/.test(String(f.key || '').toLowerCase());
+}
+// Conservative "reads as a printed date": common numeric + written-month forms only, with real
+// calendar bounds (either day/month order accepted — this is a plausibility test, not a parse).
+function _parsesAsDate(s){
+  const v = String(s || '').trim();
+  if (!v || v.length > 24) return false;
+  let d = null, m = null, y = null, mon = null, x;
+  if ((x = v.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2}|\d{4})$/)))      { d = +x[1]; m = +x[2]; y = +x[3]; }
+  else if ((x = v.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/)))       { y = +x[1]; m = +x[2]; d = +x[3]; }
+  else if ((x = v.match(/^(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\.?,?\s+(\d{2}|\d{4})$/))) { d = +x[1]; mon = x[2]; y = +x[3]; }
+  else if ((x = v.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{2}|\d{4})$/))) { mon = x[1]; d = +x[2]; y = +x[3]; }
+  else return false;
+  if (mon){
+    m = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
+        .indexOf(mon.slice(0, 3).toLowerCase()) + 1;
+    if (!m) return false;
+  }
+  if (y < 100) y += (y >= 70 ? 1900 : 2000);
+  const plaus = (dd, mm) => dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12;
+  return (plaus(d, m) || plaus(m, d)) && y >= 1990 && y <= 2099;
+}
+function _dateCoherenceWarn(f, value){
+  // PLAIN TEXT — the caller escapes for HTML; the toast consumer uses it verbatim.
+  if (isIssuerField(f)) return '';
+  const isDate = _isDateField(f), reads = _parsesAsDate(value);
+  if (isDate && !reads){
+    return `⚠ That doesn't read like a date. If the box caught the wrong text, redraw it — or type the ${f.label} below.`;
+  }
+  if (!isDate && reads){
+    const df = (state.fields || []).find(x => x.key === state.dateFieldKey);
+    return `⚠ Are you sure? That looks like a DATE, not a ${f.label}` +
+           (df ? ` — the ${df.label} is its own field.` : '.');
+  }
+  return '';
+}
+
 function showValueConfirm(f, r, _located){
   const issuer = isIssuerField(f);
   // Carried on the result too, so the label Redraw / Left-Above controls — which call back in here —
@@ -1223,8 +1268,10 @@ function showValueConfirm(f, r, _located){
   // Left EMPTY on purpose: pre-filling with the read would invite a rubber-stamp of the very value
   // being questioned. The box keeps the geometry already stored in `r` — only the VALUE changes,
   // so the taught position still teaches.
+  const _cohWarn = _dateCoherenceWarn(f, r.value);
   setConfirm(
     `<div>Value: <span class="val mono">${esc(r.value)}</span>${labelBit}</div>`+
+    (_cohWarn ? `<div class="rb-warn" style="margin-top:6px;color:var(--warn);font-size:12.5px;font-weight:600">${esc(_cohWarn)}</div>` : '')+
     `<div class="rb-actions">`+
       `<button class="btn primary" id="rb-yes">Looks right →</button>`+
       `<span class="rb-sep"></span>`+
@@ -1244,6 +1291,10 @@ function showValueConfirm(f, r, _located){
     if (!v) { markConfirmInvalid('rb-manual-input'); return; }
     r.value = v;
     if (issuer) return finishIssuerField(f);
+    // Same two-way date check on the TYPED value — non-blocking (the operator typed it
+    // deliberately), but the mix-up it catches is identical, so it must not pass silently.
+    const _tw = _dateCoherenceWarn(f, v);
+    if (_tw) toast(_tw.replace(/^⚠ /, ''), 4500);
     if (suspicious) r.anchor_text = null;
     r.status='done'; drawMode='value'; advanceField();
   };
