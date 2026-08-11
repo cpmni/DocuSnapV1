@@ -6,7 +6,27 @@
 
 ---
 
+## 2026-08-11 — compose-scan reads a NULL sample angle as "level" (absence-of-measurement = measurement-of-zero)
+
+`engine.py` (~:5426, the `TEACH_ANGLE_COMPOSE_SCAN` branch) defaults a NULL `sample_deskew_angle`
+to 0.0 and composes with it, where the deskew-side branch correctly stays inert on NULL. After the
+2026-08-11 angle backfill the NULL set is only missing-sample-file templates, so the exposure is
+small — but the honest behaviour would be "no measurement → no compose" there too. **Oracle ruled
+this a SEPARATE owner decision (backfill slice C4), deliberately not changed in that slice.**
+Decide: fail-inert on NULL (mirroring the deskew branch) vs keep 0.0. One-line change either way;
+pin whichever is chosen.
+
+---
+
 ## 2026-08-11 — NAME-CROP EDGE CLIP: owner's padding hypothesis MEASURED TRUE, blind pad REFUTED
+**⚠ SUPERSEDED same evening — Oracle ruled WRONG LAYER for the grow (do not build).** The true root
+cause was the STALE `sample_deskew_angle=0` on pre-round-trip templates (compose-scan misplacing
+every composed box by the sample's undeclared tilt): with the true angle hand-set the class went
+5/19 → 16/19 exact and the every-pad-garbled doc healed. Fixed by the sample-angle BACKFILL slice
+(scripts/backfill-sample-angles.js, census + gate + pins). Re-measure with the probe only if the
+class SURVIVES the backfill; the sections below stand as the measurement record. Also still open
+from that ruling: 007's `_PREVIEW_DOWNSCALE=0.4` effective-DPI probe (comment at anchor.py:3019
+says 300→~120 but the app renders 200→~80 effective — the interior 'Branblewood' m→n class).
 
 **Owner, on the third `Ltc` exhibit:** *"the padding for the supplier name needs to be slightly
 bigger. if you think about it d with the line clipped from it looks like a c."* Measured with

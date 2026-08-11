@@ -1017,10 +1017,18 @@ function buildTrainingArgs(db, configPath, logger = null) {
   // the healed angle). Gated on the kill switch so the dark slice is byte-identical incl.
   // zero spawns/writes. Renders the WORKING file (post-auto-rotate — the frame every teach
   // surface drew on). Stores 0.0 for a level sample (NULL = only never/failed detection).
-  let _composeOn = process.env.TEACH_ANGLE_COMPOSE === '1';
+  // Oracle C4 (2026-08-11 backfill slice): the heal used to arm ONLY on teach_angle_compose,
+  // while the live install's consumer is teach_angle_compose_scan — so on the owner's real
+  // config a NULL-angle template was never healed, and the scan path then read NULL as 0.0
+  // (engine.py treats absence-of-measurement as measurement-of-zero; changing THAT is a
+  // separate owner decision, named in pendingfeatures.md). Either compose flag now arms it.
+  let _composeOn = process.env.TEACH_ANGLE_COMPOSE === '1'
+                || process.env.TEACH_ANGLE_COMPOSE_SCAN === '1';
   if (!_composeOn) {
-    try { _composeOn = learning.getSetting(db, 'teach_angle_compose', 'false') === 'true'; }
-    catch { _composeOn = false; }
+    try {
+      _composeOn = learning.getSetting(db, 'teach_angle_compose', 'false') === 'true'
+                || learning.getSetting(db, 'teach_angle_compose_scan', 'false') === 'true';
+    } catch { _composeOn = false; }
   }
   if (_composeOn) {
     try { _healSampleAngles(db, allTemplates, logger); } catch (e) { logger?.warn?.(`[training] angle heal: ${e && e.message}`); }

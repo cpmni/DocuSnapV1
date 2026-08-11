@@ -43,6 +43,42 @@ def render_page1(pdf_path):
         pdf.close()
 
 
+def live_model_arms(page, box0):
+    """007's demanded arms (2026-08-11): model the REAL current reader, not the worst case.
+    (B) compose-scan placement only; (C) compose + the preview fast path (page/box threaded —
+    the full live model); (D) preview path on the raw box (isolates the two contributions).
+    Compose recipe mirrors engine.py:5421 exactly: net = θ_teach(0.0 for tpl 7) − θ_scan,
+    applied only in the [0.2, 5.0] band."""
+    from ocr.tesseract import detect_skew_angle
+    from extraction import engine as eng
+    W, H = page.size
+    ts = float(detect_skew_angle(page, 0.2) or 0.0)
+    net = 0.0 - ts
+    if 0.2 <= abs(net) <= 5.0:
+        nx, ny, nw, nh = eng._compose_box_to_level(
+            box0['x_norm'], box0['y_norm'], box0['w_norm'], box0['h_norm'], net, W, H)
+        cbox = {"x_norm": nx, "y_norm": ny, "w_norm": nw, "h_norm": nh}
+    else:
+        cbox = dict(box0)
+    out = {"theta_scan": ts, "net": net}
+    for lbl, box, thread in (("B compose only", cbox, False),
+                             ("C compose+preview", cbox, True),
+                             ("D preview only", box0, True)):
+        cb = tm._clamp_box(box)
+        crop = tm._crop(page, cb)
+        meta = {}
+        try:
+            if thread:
+                read = tm._ocr_crop_laddered(crop, 'text', verify_fn=None, meta=meta,
+                                             page=page, box=cb) or ''
+            else:
+                read = tm._ocr_crop_laddered(crop, 'text', verify_fn=None, meta=meta) or ''
+        except Exception as e:
+            read = f'<err {e}>'
+        out[lbl] = (read, meta.get('conf'))
+    return out
+
+
 def main():
     data = json.load(open(sys.argv[1], encoding='utf-8'))
     m = data['mapping']
@@ -51,6 +87,9 @@ def main():
     print(f"taught box: x={box0['x_norm']:.4f} y={box0['y_norm']:.4f} "
           f"w={box0['w_norm']:.4f} h={box0['h_norm']:.4f}\n")
 
+    ARMS = ["B compose only", "C compose+preview", "D preview only"]
+    arm_contains = {a: 0 for a in ARMS}
+    arm_exact = {a: 0 for a in ARMS}
     heals = {lbl: 0 for lbl, *_ in PADS}
     n = 0
     for d in data['docs']:
@@ -79,11 +118,24 @@ def main():
             if ok:
                 heals[lbl] += 1
             print(f"   {lbl:<18} -> {read!r}  conf={meta.get('conf')}  {'OK' if ok else ''}")
+        lm = live_model_arms(page, box0)
+        print(f"   scan tilt {lm['theta_scan']:+.2f}° net {lm['net']:+.2f}°")
+        for a in ARMS:
+            read, conf = lm[a]
+            exact = read.strip() == 'Bramblewood Joinery Ltd'
+            if 'Ltd' in read:
+                arm_contains[a] += 1
+            if exact:
+                arm_exact[a] += 1
+            print(f"   {a:<18} -> {read!r}  conf={conf}  {'EXACT' if exact else ('OK' if 'Ltd' in read else '')}")
         print()
 
-    print(f"=== summary over {n} docs: reads ending in a true 'Ltd' per pad ===")
+    print(f"=== summary over {n} docs: reads containing 'Ltd' per pad ===")
     for lbl, *_ in PADS:
         print(f"   {lbl:<18} {heals[lbl]}/{n}")
+    print(f"=== live-model arms (exact 'Bramblewood Joinery Ltd' / contains 'Ltd') ===")
+    for a in ARMS:
+        print(f"   {a:<18} exact {arm_exact[a]}/{n} · contains {arm_contains[a]}/{n}")
 
 
 if __name__ == '__main__':
