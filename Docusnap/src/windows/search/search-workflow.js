@@ -217,6 +217,10 @@ function _decisionBar(route) {
   }
   const acts = document.createElement('div'); acts.className = 'wf-acts'; wrap.appendChild(acts);
   const decide = (decision) => {
+    // A message from the PREVIOUS press must not narrate this one — Chris (r2 2026-08-11,
+    // finding 3) pressed Approve while a stale "Add a short note first" reject error sat on
+    // screen, so the only visible text described the wrong action.
+    wrap.querySelectorAll('.wf-err, .wf-info').forEach((x) => x.remove());
     const n = note ? note.value.trim() : '';
     if (decision === 'reject' && !n) {
       // NEVER a silent no-op (Chris r4 — "the Reject button silently does nothing"): the
@@ -242,13 +246,28 @@ function _decisionBar(route) {
     // inline-arm idiom as Cancel-route above (NO native confirm() — focus-desync site):
     // first click arms with the consequence spelled out, ~5s auto-revert, second click
     // commits. "Got it" (acknowledge) stays one-click; Reject already has the note friction.
+    // The arm must be UNMISSABLE (Chris r2 2026-08-11, finding 3): he pressed Approve four
+    // times, each press >5s apart, and read the silent re-arm as "the button does nothing".
+    // The relabel alone was not enough — so the armed state now also recolours the button
+    // AND states the mechanism in its own line, and a stale reject error is cleared so the
+    // only visible message describes THIS action.
     const approveBtn = _wfBtn('Approve', true, () => {
       if (approveBtn.dataset.armed) { decide('approve'); return; }
+      wrap.querySelectorAll('.wf-err, .wf-info').forEach((x) => x.remove());
       approveBtn.dataset.armed = '1';
       approveBtn.textContent = 'Confirm — approve and stamp with your name';
+      approveBtn.classList.add('wf-armed');
+      const info = document.createElement('div');
+      info.className = 'wf-info';
+      info.textContent = 'Press the button again to confirm — an approval is permanent and stamped with your name.';
+      wrap.appendChild(info);
       setTimeout(() => {
-        if (approveBtn.isConnected) { delete approveBtn.dataset.armed; approveBtn.textContent = 'Approve'; }
-      }, 5000);
+        if (approveBtn.isConnected && approveBtn.dataset.armed) {
+          delete approveBtn.dataset.armed; approveBtn.textContent = 'Approve';
+          approveBtn.classList.remove('wf-armed');
+          if (info.isConnected) info.remove();
+        }
+      }, 8000);
     });
     acts.appendChild(approveBtn);
     acts.appendChild(_wfBtn('Reject', false, () => decide('reject')));
