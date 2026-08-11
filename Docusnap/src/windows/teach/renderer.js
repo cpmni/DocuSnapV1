@@ -927,17 +927,25 @@ function showFixedInput(f){
   $('rg-sub').textContent=`Use this only when the ${f.label} can't be selected anywhere on the page.`;
   const existing=state.results[f.key];
   const prev=(existing&&existing.status==='fixed')?existing.value||'':'';
-  // SAY WHAT IS LOST. A typed value records WHAT it says but not WHERE it sits, so nothing is
-  // learned that a future document of this layout can be matched against — and the same typed
-  // value is then applied to every document of this type. That is the owner's own concern
-  // (2026-08-10) and it belongs on screen at the moment of the decision, not in a manual.
+  // HONEST COPY (owner, 2026-08-11 — superseding the 2026-08-10 "drawing teaches more" card):
+  // with the typed-value locate ON, a typed value that IS printed on the page gets FOUND, shown,
+  // and committed as the SAME position mapping a drawn box produces — typing then teaches just as
+  // much. The only lesser outcome is a value that isn't printed anywhere: that saves the value
+  // with no position. Say exactly that, not a blanket warning.
+  const _locateOn = typeof TYPED_LOCATE_ON === 'undefined' ? true : TYPED_LOCATE_ON;
   $('rg-readback').innerHTML=
     `<div style="margin-bottom:10px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border2);`+
         `border-radius:8px;font-size:12px;line-height:1.5;color:var(--muted)">`+
-      `<b style="color:var(--text)">Drawing a box teaches more than typing.</b> A box records where the `+
-      `${esc(f.label)} sits, so the next document with this layout is read from the page. A typed value `+
-      `records no position — it is reused as-is on every document of this type, even if the printed value `+
-      `changes. If it appears anywhere on the page (the footer counts), draw it instead.`+
+      (_locateOn
+        ? `<b style="color:var(--text)">If it's printed on the page, typing works just as well as drawing.</b> `+
+          `When you type the ${esc(f.label)}, Scan Finder looks for it on the page — if found, the position is `+
+          `shown for you to approve and taught exactly like a drawn box (use Next / Previous if it appears in `+
+          `more than one place). Only a value that isn't printed anywhere is saved without a position, and is `+
+          `then reused as-is on every document of this type.`
+        : `<b style="color:var(--text)">Drawing a box teaches more than typing.</b> A box records where the `+
+          `${esc(f.label)} sits, so the next document with this layout is read from the page. A typed value `+
+          `records no position — it is reused as-is on every document of this type, even if the printed value `+
+          `changes. If it appears anywhere on the page (the footer counts), draw it instead.`)+
     `</div>`+
     `<input type="text" id="rb-fixed-input" value="${esc(prev)}" placeholder="e.g. Acme Supplies Ltd" `+
     `style="width:100%;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:8px;padding:10px 12px;font-size:14px;font-family:inherit;margin-bottom:10px">`+
@@ -1043,13 +1051,19 @@ function showLocatedPick(f, typed, hits, idx){
   $('rg-sub').textContent = hits.length > 1
     ? `That value is printed in ${hits.length} places on this page. Pick the one to teach.`
     : 'Found that value printed on the page — the box on the page shows where.';
+  // HONEST COPY (owner, 2026-08-11): a located typed value commits as the SAME position mapping a
+  // drawn box does — this step is exactly as good as drawing. Don't lecture; explain the pick.
   $('rg-readback').innerHTML =
     `<div style="padding:10px 12px;background:var(--surface2);border:1px solid var(--border2);`+
         `border-radius:8px;font-size:12px;line-height:1.5;color:var(--muted)">`+
-      `<b style="color:var(--text)">Teaching the position is better than teaching the value.</b> `+
-      `The next document with this layout is then read from the page, so it still works when the `+
-      `${esc(f.label)} is different. Saving it as a typed value repeats <span class="mono">${esc(typed)}</span> `+
-      `on every document of this type.`+
+      `<b style="color:var(--text)">Approving this position teaches it exactly like a drawn box.</b> `+
+      `The next document with this layout is read from the page, so it still works when the `+
+      `${esc(f.label)} is different.`+
+      (hits.length > 1
+        ? ` It appears in ${hits.length} places — use Next / Previous until the ring sits on the right one.`
+        : '')+
+      ` Only "Save as a typed value" gives up the position (the value is then reused as-is on every `+
+      `document of this type).`+
     `</div>`;
   setConfirm(
     `<div>Value: <span class="val mono">${esc(typed)}</span>`+
@@ -1058,11 +1072,17 @@ function showLocatedPick(f, typed, hits, idx){
     `<div class="rb-actions">`+
       `<button class="btn primary" id="rb-loc-yes">Yes — teach this position →</button>`+
       `<span class="rb-sep"></span>`+
-      (hits.length > 1 ? `<button class="btn ghost quiet" id="rb-loc-next">Show the next one</button>` : '')+
+      (hits.length > 1
+        ? `<button class="btn ghost quiet" id="rb-loc-prev">← Previous</button>`+
+          `<button class="btn ghost quiet" id="rb-loc-next">Next instance →</button>`
+        : '')+
       `<button class="btn ghost quiet" id="rb-loc-fixed">Save as a typed value</button>`+
     `</div>`);
   onConfirm('rb-loc-yes', ()=>useLocatedBox(f, typed, h.box));
-  if (hits.length > 1) onConfirm('rb-loc-next', ()=>showLocatedPick(f, typed, hits, (idx+1) % hits.length));
+  if (hits.length > 1){
+    onConfirm('rb-loc-next', ()=>showLocatedPick(f, typed, hits, (idx+1) % hits.length));
+    onConfirm('rb-loc-prev', ()=>showLocatedPick(f, typed, hits, (idx-1+hits.length) % hits.length));
+  }
   onConfirm('rb-loc-fixed', ()=>{
     drawnBox=null;
     state.results[f.key]={value:typed,target:null,anchor:null,anchor_text:null,status:'fixed'};
