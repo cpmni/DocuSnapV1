@@ -21,7 +21,27 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-11 DAY 2: **READ `HANDOVER_2026-08-11_DAY2.md` + `OWNER_TEST_SCRIPT_2026-08-11.md` FIRST**
+## ⏭ LATEST — 2026-08-11 EVENING: **READ `HANDOVER_2026-08-11_EVENING.md` FIRST** (then DAY2 below)
+HEAD **`1edfb7c`**, PUSHED. Owner live-tested all afternoon; ~15 fix commits. **PICK UP FIRST: the
+child-window DOCK** — FOUR stub-removal iterations failed live (each documented at `src/main.js`
+wireChildDock; the 4th LOST windows — restore()'s events fire AFTER the minimize handler returns,
+so the juggle guard was already down and undock killed the chip); REVERTED to safe chips+stub; the
+designed 5th attempt (visibility-guarded undock + drained juggle flag) is in the handover, build +
+LIVE-smoke before pushing. **Owned windows can NEVER have taskbar buttons** — setSkipTaskbar flips
+on them cause spontaneous restores. Also shipped: teach capture-step FLOW REWORK (one question
+panel, valueSource provenance, typed-issuer commits from pick, NO-HIT typo recovery, stale-box
+suppression); typed corrections run the LOCATE flow (box-wrong re-targets, OCR-misread keeps box);
+two-way date-coherence warns; chrome-word issuer carve-out ('Order' warns, BP/IBM immune);
+**migration 63** (the `addMissingColumns`-only-runs-in-migration-2 trap AGAIN — owner hit
+`no column named corroboration` live; delete+insert now ONE transaction; `runJsMigrations` was
+never exported — runMigrations is the entry); **hidden-field drop** (`template_hidden_field_drop`
+OFF — declared-absent fields never filled, merge stops resurrecting, corrected_to sacred; wizard
+skip asks "usually / Never — stop looking"; **corpus arm still OWED**); **SFDEV settings gate**
+(~47 toggles behind ONE persisted unlock, gate INVISIBLE until Ctrl+Shift+D,M in Settings; split
+list = DEV_SWITCH_IDS; slice-2 proven-flag promotion = separate per-flag review). Owner-confirmed
+live: straighten round-trip boxes track values (A4 ✓); corroboration badge showing.
+
+### Prior — 2026-08-11 DAY 2: **READ `HANDOVER_2026-08-11_DAY2.md` + `OWNER_TEST_SCRIPT_2026-08-11.md` FIRST**
 Branch **`feat/teach-side-overnight`**, HEAD **`8c6237e`**, PUSHED, tree clean. Owner's 4-part
 order all delivered; Oracle vetted all four changes (no SEND BACK), every blocking condition
 closed same-session. **MIGRATION 62 exists in code** (61+62 apply on next app start — live DB was
