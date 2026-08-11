@@ -47,7 +47,20 @@ install is literally `"Serial No:"` ×23, the caption. **Still broken in the LIV
 `templates.getAll` returns **`field_mappings`** not `mappings` (a whole arm removed 0 rows and was
 caught ONLY by its own guard); and the backfill read the DB instead of the mutated state, so a
 "repaired" arm produced the unrepaired result — **a mutator arm must measure the state it mutated.**
-**(5) I REFUSED TO WRITE THE LIVE DB while the app held it** (`no such table: settings`, then
+**(5) OWNER DIRECTION, AND IT OUTRANKS THE INDIVIDUAL FIXES:** *"it is more about CORROBORATION
+than merely getting it right... otherwise there is a chance, from time to time the wrong value will
+be selected."* The trace above is a NEAR MISS, not a success: the two rungs answered DIFFERENT
+questions so they could never agree, and a 5-point margin decided it. **A margin is not evidence.**
+The vocabulary exists (`_anchor_corroborates`, `_template_identity_corroborated`, "no
+different-method-family rail agrees") but only inside specific guards — **agreement is invisible to
+field selection today.** Encode INDEPENDENCE OF METHOD FAMILY, never a witness count: caption-located
+vs geometry-located is independent; two preps of one crop is NOT (5:1 false:true, Oracle 2026-08-03,
+re-proved this week when two preps agreed on the wrong `P1`); full-page vs crop is WEAK. **It also
+revises my own arm verdict: a lane can be byte-identical and still be far better EVIDENCED, because
+the scorer counts values and cannot see corroboration.** Order: record it, surface it, only then let
+it move a decision; do NOT wire it to auto-file in the same slice. Read
+`HANDOVER_2026-08-11_DAY.md` §"THE DIRECTION THE OWNER SET" before any extraction work.
+**(6) I REFUSED TO WRITE THE LIVE DB while the app held it** (`no such table: settings`, then
 `SQLITE_CANTOPEN`, on a file that exists). No flip happened; the arm later said it would have been
 wrong anyway. **GOTCHA: a commit message containing backticks breaks the Bash heredoc — use
 `git commit -F <file>`.**

@@ -20,6 +20,10 @@ then work Chris's findings.
 4. **I refused to write to the live DB** while the app held it. The flip did not happen; the arm
    later said it would have been wrong anyway.
 5. **MIGRATION IS NOW 61.** Every CLAUDE.md/handover line saying 60 is stale from this point.
+6. **THE OWNER SET A DIRECTION AT THE END OF THE DAY, AND IT OUTRANKS THE INDIVIDUAL FIXES:**
+   *"it is more about corroboration than merely getting it right."* Read the section below before
+   picking up any extraction work — it changes how several backlog entries should be judged, and it
+   changes what a corpus arm is supposed to measure.
 
 ---
 
@@ -182,8 +186,71 @@ arm subsequently showed the flip would have been wrong at that moment anyway.
 
 ---
 
+## THE DIRECTION THE OWNER SET (read this before any extraction work)
+
+**Verbatim, looking at the trace in section 5:** *"it got the right value but it is more about
+corroboration than merely getting it right. all the mechanisms should work in the best way possible
+to enable us to confirm the values obtained. otherwise there is a chance, from time to time the
+wrong value will be selected."*
+
+**He is right, and it re-reads that trace as a near miss rather than a success.** The mapping matched
+`JOB SHEET NO` at 90% and the keyword matched a bare `Ref` at 85%. Those two rungs were answering
+**different questions**, so they could never AGREE — only compete — and the outcome was settled by a
+5-point margin. **A margin is not evidence.** When it tips the other way — the mapping fails, the
+page is dirtier, the generic caption sits nearer a plausible value — the wrong rung wins and nothing
+in the system notices, because nothing was ever asked to agree.
+
+**What exists, verified at source:** the vocabulary is already here — `_anchor_corroborates`
+(`engine.py` ~:278), `_template_identity_corroborated` (~:203), and a comment at ~:368 reading *"no
+different-method-family rail agrees"* — but only inside specific guards, never as a rule governing
+field selection. `_merge_outcome` is value+method equality; the disambiguation picker sorts
+chosen-first then confidence; `_build_candidate_emit` never asks whether the candidates agree.
+**Agreement is invisible to the system today.**
+
+**THE DISTINCTION THAT STOPS THIS BEING BUILT WRONG.** This repo has a hard, Oracle-ratified rule
+that SAME-PIXEL agreement is worthless — measured at **5:1 false:true** (`docs/oracle_log.md`
+2026-08-03) and re-proved this week, when two preps agreed on the wrong `P1` on 2 of 5 documents.
+Correlated error is indistinguishable from corroboration if you only count witnesses. So the thing
+to encode is **independence of METHOD FAMILY**:
+- caption-located (Stage 1 keyword) vs geometry-located (Stage 0.5 mapping) → **independent**, agreement counts
+- two preps of one crop, or a re-read of the same box → **not** independent, agreement counts for nothing
+- full-page OCR vs a crop of that page → **weak** — it caught the separator class and FAILED on the
+  `I`→`1` class where both carried the same misread
+
+**IT CHANGES WHAT AN ARM IS FOR.** The `labelkw_fixed` arm came back byte-identical and I reported
+zero cost. Under this principle that report is incomplete: **a lane can be byte-identical and still
+have become far better evidenced**, because the scorer counts final values and corroboration is
+invisible to it. Any future arm on this class must count AGREEMENT, not just correctness — and the
+same caveat retro-applies to the "no measured cost" verdict on `teach_label_becomes_keyword`.
+
+**IT ALSO GIVES THAT FLAG ITS REAL JUSTIFICATION.** Pointing the keyword rung at the taught caption
+does not merely stop it reading `Ref` — **it makes two independent rungs answer the same question, so
+their agreement becomes available at all.** That is a stronger argument than "fixes a wrong keyword
+read", and it is the one to put to Oracle.
+
+**Ordered directions (nothing built; principle-level, wants the advisor + Oracle gate):**
+1. **Record it before spending it** — emit, per field, which method families produced a value and
+   whether the independent ones agree. `_field_candidates` already collects the candidates; this is a
+   derived read, inert by construction.
+2. **Surface it** — in SFDEV beside the caption (the caption is what made this visible at all), and
+   in Review as the honest form of "verified": *"two independent readings agree"* rather than a bare
+   percentage. Information, not a new prompt — the standing rule is minimal interaction.
+3. **Only then let it move a decision.** Agreement licenses KEEPING or raising trust; DISAGREEMENT
+   between independent families is the flag. That order matters: a corroboration signal that starts
+   by changing outcomes cannot be measured against the outcomes it changed.
+4. **Do not wire it into `docTrustGate`/auto-file in the same slice that introduces it** — the
+   obvious payoff and the obvious risk.
+
+Full entry with the source citations: `pendingfeatures.md`, "OWNER PRINCIPLE: THE RUNGS SHOULD
+CORROBORATE, NOT MERELY COMPETE".
+
+---
+
 ## FIRST ACTIONS for the fresh session
 
+0. **Read "THE DIRECTION THE OWNER SET" above.** It is the frame for everything else here, and it
+   revises my own "zero measured cost" verdict in (1) — the arm could not see the thing that
+   actually matters.
 1. **Decide the `teach_label_becomes_keyword` flip.** Zero measured cost on the corpus, and the
    MECHANISM is now confirmed live on the owner's own trace (section 5) rather than inferred — a
    custom ref-role field inheriting bare `"Ref"` from `_REF_ROLE_CAPTIONS`. The benefit is still
