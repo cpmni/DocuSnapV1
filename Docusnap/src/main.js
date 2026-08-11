@@ -543,9 +543,13 @@ function wireChildDock(win, name) {
     // HIDE the minimised window (owner, 2026-08-11, with a screenshot): a skipTaskbar window
     // minimises to Windows' tiny unlabelled desktop stub at the SCREEN's bottom-left — the very
     // artefact the dock exists to replace — and it was landing on top of the chips. Hidden, no
-    // stub exists at all: the chip is the one representation. The restore path already does
-    // restore → show → focus in order, and show/restore events un-dock the chip.
-    try { if (!win.isDestroyed()) win.hide(); } catch { /* window going away */ }
+    // stub exists at all: the chip is the one representation.
+    // DEFERRED past the OS minimise animation: hiding mid-animation left the surface unpainted
+    // and the window came back BLANK (owner, live, first test). The restore path shows before
+    // restoring and forces a repaint — see restore-child-window.
+    setTimeout(() => {
+      try { if (!win.isDestroyed() && win.isMinimized()) win.hide(); } catch { /* going away */ }
+    }, 300);
   });
   const undock = () => { if (dockedChildren.delete(name)) broadcastDock(); };
   win.on('restore', undock);
@@ -1490,9 +1494,13 @@ app.whenReady().then(() => {
     // rather than leaving a dead affordance on screen.
     if (!w || w.isDestroyed()) { if (dockedChildren.delete(name)) broadcastDock(); return; }
     try {
-      if (w.isMinimized()) w.restore();
+      // Windows-friendly order for a HIDDEN minimised window (the dock hides on minimise):
+      // show first (still minimised), then restore, then focus — and force a repaint, because a
+      // surface hidden around the minimise animation can come back blank otherwise.
       if (!w.isVisible())  w.show();
+      if (w.isMinimized()) w.restore();
       w.focus();
+      try { w.webContents.invalidate(); } catch { /* best-effort repaint */ }
     } catch { if (dockedChildren.delete(name)) broadcastDock(); }
   });
 
