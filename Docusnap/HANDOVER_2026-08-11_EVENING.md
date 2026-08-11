@@ -166,6 +166,30 @@ HEAD **`03b7d87`**, ALL PUSHED. Full detail in the commit messages; headline sta
 7. Keyword label-above gap, tpl 9 hold, engine NULL-angle decision, name-crop supersede — all
    filed in `pendingfeatures.md`.
 
+## LATE NIGHT ADDENDUM — thread-cap parity · currency arc FINISHED (`6a78c69`)
+1. **Reprocess thread-cap parity** (`9087c97`): single reprocess ran UNCAPPED while batch workers
+   ran at cores/shards; Tesseract's LSTM is thread-count-nondeterministic on boundary glyphs
+   ('ACC-2291' vs 'ACC-229]', same doc). ONE cap now (`_reprocessThreadCap` = cores/min(conc,10),
+   from CONFIG never shard count) on both paths; on the owner's 16-core box it lands at 1 = full
+   determinism. Import workers keep their own cap (recorded residual). Pins
+   `tests/test_reprocess_threadcap.js`. A residual trace-mode/untraced oddity was observed twice
+   pre-fix and is superseded by the cap + the healed rows; re-open only if a fresh flip appears.
+2. **CURRENCY EDGE-GROW ARC FINISHED** (`6a78c69`, owner order "the customer will instinctively
+   draw round the current value"): a snug taught money box cuts only the '£' glyph; the guard's
+   digit-restoring comparator could never verify a symbol-only cut → permanent ≤70+note (the live
+   Pelican-totals auto-file blocker). SYMBOL-ONLY STAND-DOWN (kill `CURRENCY_SYMBOL_CUT_BENIGN=0`):
+   digits(grown)==digits(rigid) + both well-formed + the absorbed locate word carries no extra
+   digits → guard returns None, value commits untouched. Oracle SIGN-OFF-W/COND all applied — C1
+   non-alphanumeric prefix (the serif 1→l channel, pinned refusing), C2 dual-arm 102 docs GREEN
+   (only the two Pelican totals move: note gone, 78→98, values identical everywhere), C3
+   census-visible 'benign' verdict, C4 consent-regex tightening. **C5 honesty: the residual
+   false-benign is BOTH tiers dropping the same leading digit while keeping the symbol —
+   ink-correlated glyph-drop, priced rare; the arithmetic cross-check remains the net; the
+   counterfactual was the same wrong value at 70+note.** Pins test_currency_symbol_cut.py ×6.
+   **RESTART the app to arm; the two Pelican 99-100% docs then auto-file on their next pass.**
+3. Phantom-DB heredoc trap recorded in memory (backslash escape level lost → better-sqlite3
+   silently creates an empty DB at the mangled path — reads exactly like corruption).
+
 ## Gotchas added this evening
 - **`addMissingColumns` runs ONLY in the migration-2 block** — a new column for an existing
   install needs its own numbered migration. Third time this trap has featured; the mig-63 pin now
