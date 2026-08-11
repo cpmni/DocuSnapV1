@@ -6,6 +6,32 @@
 
 ---
 
+## 2026-08-11 — NAME-BOX FLUSH-EDGE CLIP: the snap's pad is thinner than sibling drift (PICK UP FIRST)
+
+Owner hit it live AFTER the angle backfill (Ironclad statement 0028-1, customer `Ltc` @70): page
+tilt +0.4°, taught box right edge **0.2389**, this page's `Ltd` word right edge **0.2399** — the
+box cuts the `d`. Tpl 10's sample is genuinely level (backfill correctly left it) — this is NOT
+the stale-angle class; it is the flush-BOX class, and it survives the repair, which re-opens the
+name-grow question under Oracle's recorded revival conditions ("build it only if the class
+survives the repair"). **Root measurement: `boxSnap.js` pads `min(0.004, h*0.15)` — a single-line
+name box (h≈0.0145) gets ~0.002, thinner than sibling drift (~0.003-0.005) + tilt shear.** The
+snap itself produces flush boxes, so a re-teach reproduces the defect.
+
+**The fork (design + gate next session, owner-priority):**
+- (a) TEACH-side: raise the snap pad floor for the trailing edge (glyph-aware or flat 0.004) —
+  fixes future teaches only; cheap, low blast; stored boxes stay flush.
+- (b) READ-side: revive gary's `TEMPLATE_NAME_EDGE_GROW` v1 (flag-only, never clean-commit) under
+  Oracle's recorded conditions: comparator needs the NAME_UNCLIP-C3 page-present defence; do NOT
+  lower the overhang floor (his ruling: the 4-7px nick sits inside word-box noise — but THIS class
+  is a ~1-glyph cut the predicate CAN see); fire-rate census on the 185-corpus first.
+- (c) DATA-side one-shot widen of stored name-box trailing edges — blast-radius-heavy, likely refuse.
+Probably (a)+(b) together: (a) stops minting the class, (b) heals the seven pre-existing templates.
+**Live mitigations meanwhile**: picker ranks the ≥3×-confirmed value first ("Ltd — confirmed 5
+times", owner-seen working); the flag correctly holds the doc. Probe: `iron_probe.py` pattern in
+the 08-11 session tmp — measure box vs word geometry per page before arguing.
+
+---
+
 ## 2026-08-11 — OCR thread-count nondeterminism: reprocess paths ALIGNED, import residual + option-2 open
 
 Owner-observed live: a single reprocess read `ACC-2291`, Reprocess-All read `ACC-229]` — SAME doc,
