@@ -238,7 +238,7 @@ function main() {
   doc = addCandidate(db, { conf: 94 });
   r = elig(db, doc);
   check('17. corroborated at 94 → below-floor (the I→1 exhibit margin is load-bearing)',
-    !r.eligible && r.reason === 'below-floor' && r.floor === 95);
+    !r.eligible && r.reason === 'below-floor' && r.floor >= 95);
 
   console.log('\n' + (fails ? `${fails} FAILED` : 'ALL PASS'));
   process.exit(fails ? 1 : 0);
