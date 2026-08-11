@@ -718,6 +718,7 @@ function fitCanvas(){
   canvas.height=Math.round(natH*s);
   _fitW=0;   // new buffer → re-measure the fit width on next zoom
 }
+let hideStoredBoxes=false;   // true while a state is REPLACING the value (TYPE/NO-HIT/PICK)
 function redrawCanvas(){
   if (!state.img) return;
   // Draw only while a field is still being captured. At "Teaching complete" curField() is
@@ -732,6 +733,11 @@ function redrawCanvas(){
   // below → nothing drawn). The stored results (state.results) are untouched; this is display-only.
   // current field: its label (blue) + value (green) — same colours as Template Manager
   const cf=curField(); let cr=cf?state.results[cf.key]:null;
+  // While the operator is REDOING the value (TYPE / NO-HIT / PICK states) the old stored boxes
+  // must not linger on the page (owner screenshot 2026-08-11) — and in PICK they actively hid
+  // the located ring (cr.target wins the else-if over drawnBox). Confirm states clear this so
+  // the green/blue boxes show where the panel says they do.
+  if (hideStoredBoxes) cr=null;
   // MULTI-PAGE: a stored box belongs to the page it was drawn on. Drawing page 1's rectangle over
   // page 2 would put a green box on unrelated content and invite the operator to "correct" it.
   if (cr && Number.isInteger(cr.page) && cr.page !== state.pageIndex) cr = null;
@@ -900,6 +906,7 @@ function promptField(){
 function renderFieldPrompt(){
   const f=curField(); if(!f) return;
   drawMode='value';
+  hideStoredBoxes=false;
   setValueBanner(f);
   // "Or type it instead" — a ghost button in the QUESTION ZONE (owner + Chris-lens 2026-08-11;
   // it was a corner link nobody saw, quiet by a 2026-08-10 rationale that typed-value locate
@@ -940,6 +947,7 @@ function _wireTypeRow(handler, focus){
 // in the question zone like every other question (Chris-lens spec 2026-08-11).
 function showFixedInput(f, prefill){
   drawMode='value';
+  hideStoredBoxes=true;
   setPrompt('Type the value for', f.label);
   $('rg-sub').textContent = TYPED_LOCATE_ON
     ? `If it's printed on the page I'll find it and teach that spot, same as drawing. If it isn't printed anywhere, it's saved as typed and reused as-is on every document of this type.`
@@ -1043,6 +1051,7 @@ function showLocatedPick(f, typed, hits, idx){
   // box) is in the viewport, scroll it into view, and ring the box so a word-sized rectangle
   // can't hide on an A4 page.
   tzReset();
+  hideStoredBoxes=true;
   drawnBox = h.box; redrawCanvas();
   emphasiseBox(h.box);
   try {
@@ -1280,6 +1289,7 @@ function _dateCoherenceWarn(f, value){
 
 function showValueConfirm(f, r){
   const issuer = isIssuerField(f);
+  hideStoredBoxes=false; drawnBox=null; redrawCanvas();
   // PROVENANCE drives the whole panel (Chris-lens spec 2026-08-11, replacing the old `located`
   // heading flip): a READ value is checked as a read; a TYPED value is NEVER asked "confirm what
   // I read" — only its label is checked. Persisted on the result (like `located` before it) so
