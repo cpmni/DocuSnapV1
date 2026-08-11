@@ -807,6 +807,30 @@ document.getElementById('dev-switches-hide')?.addEventListener('click', async ()
   try { await api.setSetting('dev_switches_unlocked', 'false'); } catch {}
   _applyDevSwitchVisibility(false);
 });
+// The familiar dev combo (Ctrl+Shift+D then M — the main window's inspector / Review's trace
+// console) works HERE too (owner, 2026-08-11, reached for it on day one): it jumps to the
+// Processing tab and puts the caret in the unlock's password box — or scrolls to the hide row
+// when already unlocked. Same 3-second two-key window as the other surfaces.
+let _devComboArmed = 0;
+window.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.shiftKey && String(e.key).toLowerCase() === 'd') { _devComboArmed = Date.now(); return; }
+  if (String(e.key).toLowerCase() === 'm' && _devComboArmed && Date.now() - _devComboArmed < 3000) {
+    _devComboArmed = 0;
+    document.querySelector('.tab[data-tab="processing"]')?.click();
+    const lockRow = document.getElementById('dev-switches-lock-row');
+    const unlocked = !lockRow || lockRow.style.display === 'none';
+    if (unlocked) {
+      document.getElementById('dev-switches-open-row')?.scrollIntoView({ block: 'center' });
+      return;
+    }
+    lockRow.scrollIntoView({ block: 'center' });
+    const pw = document.getElementById('dev-switches-pw');
+    if (pw) {
+      if (typeof focusField === 'function') focusField(pw);
+      else try { pw.focus(); } catch {}
+    }
+  }
+});
 
 // ── Read small reference/date print more clearly (STRUCT_CODE_READ, default OFF) ──
 (async () => {
