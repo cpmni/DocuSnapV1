@@ -140,12 +140,25 @@ HEAD **`03b7d87`**, ALL PUSHED. Full detail in the commit messages; headline sta
    BY CONSTRUCTION). **The decisive negative: keyword appears in 0 of 29 live issuer records —
    the issuer disagreement rail NEVER fires in practice, so the buyer-issued ABSTAIN shape
    (memory+mapping, no dissenting voice — pinned VISIBLE as battery 18c, licensed) is the live
-   norm.** Per Oracle's own decision rule the flip is HELD until the RECREATED POISON MEASUREMENT
-   runs: teach a buyer-issued PO in a scratch sandbox, import ~20 supplier notes, armed replay,
-   prove zero corroborated files (the 21-doc sandbox poison state no longer exists). That
-   measurement = the unlock; owed next session / before any default-ON. Instruments ready:
-   `census_corrob_declines.js` + the kw-issuer census pattern. Standing rule: never flip
-   alongside `CODE_SEPARATOR_STRUCTURE_GUARD` without re-running the Pelican exhibit.
+   norm.** The flip was HELD pending the RECREATED POISON MEASUREMENT — **which then RAN the
+   same night and UNLOCKED it.** Fresh sandbox, fresh-install defaults, flag ARMED: the
+   original leak PO taught through the wizard's own commit handler (promote-to-template) in
+   BOTH naming variants — vendor-frozen 'Quillstone Print & Packaging' AND owner-frozen
+   'Bramblewood Joinery Ltd' (SELECT-verified: template 2 fixed_value = the owner's name,
+   which IS printed on every note — the variant satisfying identity_on_page BY CONSTRUCTION);
+   fingerprint = the Bramblewood address-block wildcard, the true leak fingerprint. All 21
+   original Oakhaven notes imported live: **21/21 REFUSED at Stage-0 identification, zero
+   claims, zero corroborated files, zero files of any kind** (app import stream + direct
+   single-doc trace + DB census). **MAJOR FINDING: the wrong claim no longer forms even with
+   the frozen identity printed on the page** — the 08-10 misfile fix + 08-11 young-identity
+   corroboration close the class upstream of auto-file entirely. Oracle verdict UNLOCK
+   (condition 2 discharged on the SELECT per his pre-committed rule). Recorded caveats: a
+   bare confirm no longer creates a template (poison needs the wizard path — itself a
+   finding); the recreated teach had no drawn mappings (irrelevant to Stage-0 refusal); the
+   depth variant (drawn mappings + pre-loaded 3-confirm wrong scope) recorded nice-to-have,
+   NOT owed. **Owner may flip: Settings → Processing → "Auto-file earlier when two readings
+   agree".** Standing rule: never flip alongside `CODE_SEPARATOR_STRUCTURE_GUARD` without
+   re-running the Pelican exhibit; the 18c abstain pin stays visible (`3d2b2af`).
 6. **Owner UX ruling: the Review "✓ Two independent readings agree" line is REMOVED** — a
    positive-only badge trains expectation and its structural absence (label-above layouts are
    INVISIBLE to Stage-1 keyword — same-line matching only; pendingfeatures entry) reads as alarm
