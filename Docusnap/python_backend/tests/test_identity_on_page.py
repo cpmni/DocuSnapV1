@@ -282,6 +282,96 @@ def test_no_three_confirm_floor_because_that_floor_is_what_slept_through_the_def
                                  detected_slug=None, title_trusted=False) is None,         'one confirmed document is enough evidence to refuse; a 3-confirm floor re-opens the defect'
 
 
+# ── YOUNG-IDENTITY CORROBORATION (2026-08-11, Chris r2 finding 1) ───────────────────────────────
+# The abstain (count<1 or ratio<floor) used to ADMIT unconditionally. A garbled teach is
+# indistinguishable from a wordmark supplier at n<=1 — Chris's '@a eens Ee' template (frozen
+# supplier, ZERO corroborating confirms at claim time) rode the abstain onto 20 Oakhaven delivery
+# notes at 95 via the KEYWORD arm, and the VAT number crossed over with it. Verified by trace:
+# "Template matched: @a eens Ee (80% via keywords)" on the very page where this guard refused the
+# two healthy templates. While count < TEMPLATE_IDENTITY_YOUNG_N (default 3) and the template
+# carries a frozen supplier to stamp, the abstain now falls back to the presence test.
+
+GARBLE = {'id': 15, 'name': '@a eens Ee', 'document_type_slug': 'purchase_order',
+          'keyword_fingerprint': POISONED_FP,
+          'fields': [{'field_key': 'supplier_name', 'is_variable': 0, 'fixed_value': '@a eens Ee'}],
+          'supplier_prints_name': {'supplier': '@a eens Ee', 'ratio': 0.0, 'count': 0}}
+
+
+@case
+def test_the_leak_pin_a_young_garble_identity_may_not_ride_the_abstain():
+    """THE LEAK. Frozen identity '@a eens Ee', zero corroborating confirms, a page that names
+    Oakhaven and not the garble -> refused. Before 2026-08-11 this ADMITTED (the abstain), which is
+    how one bad teach filed 20 documents into a folder that isn't a company."""
+    mod = _arm(True)
+    m = mod.identify_template(None, OAKHAVEN_PAGE, [GARBLE], detected_slug=None, title_trusted=False)
+    assert m is None, f"'eens' is nowhere on an Oakhaven page; a young identity must corroborate, got {m}"
+    # count 1 (the taught doc confirmed) is still young — the leak state after File All Ready.
+    one = dict(GARBLE, supplier_prints_name={'supplier': '@a eens Ee', 'ratio': 0.0, 'count': 1})
+    assert mod.identify_template(None, OAKHAVEN_PAGE, [one],
+                                 detected_slug=None, title_trusted=False) is None
+
+
+@case
+def test_young_n_zero_restores_the_old_abstain():
+    """The kill switch, proven live in BOTH directions — TEMPLATE_IDENTITY_YOUNG_N=0 must reproduce
+    the old admit-through-abstain exactly (that is what 'kill switch' means here)."""
+    os.environ['TEMPLATE_IDENTITY_YOUNG_N'] = '0'
+    try:
+        mod = _arm(True)
+        assert mod._IDENTITY_YOUNG_N == 0
+        m = mod.identify_template(None, OAKHAVEN_PAGE, [GARBLE],
+                                  detected_slug=None, title_trusted=False)
+        assert m is not None, 'YOUNG_N=0 must restore the unconditional abstain (the old behaviour)'
+    finally:
+        os.environ.pop('TEMPLATE_IDENTITY_YOUNG_N', None)
+        _arm(True)
+
+
+@case
+def test_the_named_trade_off_a_YOUNG_genuine_wordmark_routes_to_review():
+    """ACCEPTED COST, pinned so nobody 'fixes' it back into the leak: a genuine wordmark supplier
+    (name truly absent from its pages) is refused during its first N-1 confirms and its documents
+    route to review. Temporary, fail-toward-review. At count >= N the measured carve-out takes over
+    (test_a_supplier_that_does_not_print_its_name_is_carved_out_by_MEASUREMENT, count=4)."""
+    mod = _arm(True)
+    young_wordmark = dict(QUILLSTONE, id=16, name='Wordmark Co', dominant_supplier='Wordmark Co',
+                          fields=[{'field_key': 'supplier_name', 'is_variable': 0,
+                                   'fixed_value': 'Wordmark Co'}],
+                          supplier_prints_name={'supplier': 'Wordmark Co', 'ratio': 0.0, 'count': 1})
+    m = mod.identify_template(None, OAKHAVEN_PAGE, [young_wordmark],
+                              detected_slug=None, title_trusted=False)
+    assert m is None, 'a YOUNG name-less identity may not claim by fingerprint alone — accepted cost'
+
+
+@case
+def test_a_young_supplier_whose_name_IS_printed_still_matches():
+    """The Ironclad case — the 19/19 clean teach must survive. Young history (count 1, unjudgeable
+    ratio), but the page NAMES the company -> presence corroborates -> admitted."""
+    mod = _arm(True)
+    young_named = {'id': 17, 'name': 'Oakhaven', 'document_type_slug': 'delivery_note',
+                   'keyword_fingerprint': ['Oakhaven', 'Electrical', 'Wholesale', 'Conduit'],
+                   'fields': [{'field_key': 'supplier_name', 'is_variable': 0,
+                               'fixed_value': 'Oakhaven Electrical Wholesale'}],
+                   'supplier_prints_name': {'supplier': 'Oakhaven Electrical Wholesale',
+                                            'ratio': 0.0, 'count': 1}}
+    m = mod.identify_template(None, OAKHAVEN_PAGE, [young_named],
+                              detected_slug=None, title_trusted=False)
+    assert m and m['template']['id'] == 17, f'a young template whose company IS on the page must match, got {m}'
+
+
+@case
+def test_scope_a_variable_supplier_template_is_untouched_by_the_young_rule():
+    """gary's scope note: a template with NO frozen supplier does not stamp template_fixed identity,
+    so the young fallback does not apply to it — its admission behaviour is exactly the old abstain."""
+    mod = _arm(True)
+    variable = {'id': 18, 'name': 'Var', 'document_type_slug': 'purchase_order',
+                'keyword_fingerprint': POISONED_FP, 'dominant_supplier': 'Someone Ltd',
+                'supplier_prints_name': {'supplier': 'Someone Ltd', 'ratio': 0.0, 'count': 0}}
+    m = mod.identify_template(None, OAKHAVEN_PAGE, [variable],
+                              detected_slug=None, title_trusted=False)
+    assert m is not None, 'no frozen supplier -> out of the young rule\'s scope -> old behaviour'
+
+
 @case
 def test_the_remembered_binding_is_subject_to_the_same_test():
     """THE STICKY BINDING. Reprocess honours the template a document is already bound to instead of

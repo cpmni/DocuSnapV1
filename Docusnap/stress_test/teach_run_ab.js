@@ -236,6 +236,12 @@ ARM_ENV.coldstart = { ...ARM_ENV.applive, LETTERHEAD_ISSUER: '1' };
 // flatters it, because there the wrong template fills the field and the document never counts as
 // cold at all.
 ARM_ENV.coldstart2 = { ...ARM_ENV.applive, LETTERHEAD_ISSUER: '1', TEMPLATE_IDENTITY_ON_PAGE: '1' };
+// The OFF twin of the 2026-08-11 young-identity fallback (Chris r2 finding 1): identical to
+// coldstart2 with TEMPLATE_IDENTITY_YOUNG_N=0 restoring the old unconditional abstain, so
+// `coldstart2` minus `coldstart2_y0` is exactly the young-N rule and nothing else. On THIS
+// snapshot every frozen-supplier template is mature (count >= 3), so byte-identical is the
+// EXPECTED result and means class-absent — the non-flat evidence is the _chris2 sandbox repro.
+ARM_ENV.coldstart2_y0 = { ...ARM_ENV.coldstart2, TEMPLATE_IDENTITY_YOUNG_N: '0' };
 // The page's own wording is not a value. Measured against what is actually PRINTED: account_no is
 // committed on 40 pages that carry no account number, and serials commits the literal 'Serial No:'
 // on 19. Both are a confident value with NO SOURCE on the page - the worst kind, because the human

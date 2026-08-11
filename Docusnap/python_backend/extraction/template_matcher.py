@@ -462,6 +462,19 @@ try:
     _IDENTITY_PRINTS_RATIO = float(os.environ.get('TEMPLATE_IDENTITY_PRINTS_RATIO', '0.80'))
 except ValueError:
     _IDENTITY_PRINTS_RATIO = 0.80
+# YOUNG-IDENTITY CORROBORATION (2026-08-11, Chris r2 finding 1 — the leak the abstain left open).
+# The wordmark carve-out below ABSTAINS whenever the confirmed history cannot say "this supplier
+# normally prints its name" (count < 1 or ratio < floor) — and a template is at its least
+# corroborated exactly when it is YOUNGEST, while its stamping authority is already full at n=1.
+# Chris's garble teach ('@a eens Ee', count 0 at claim time) rode that abstain onto 20 Oakhaven
+# delivery notes at 95 via the KEYWORD arm (verified by trace: "Template matched: @a eens Ee (80%
+# via keywords)" while the guard refused the two healthy templates on the same page). Until a
+# frozen-supplier template has _IDENTITY_YOUNG_N corroborating confirms, an abstain therefore
+# falls back to the presence test instead of admitting. 0 restores the old unconditional abstain.
+try:
+    _IDENTITY_YOUNG_N = int(os.environ.get('TEMPLATE_IDENTITY_YOUNG_N', '3'))
+except ValueError:
+    _IDENTITY_YOUNG_N = 3
 
 
 def identity_present_on_page(name, ocr_text) -> bool:
@@ -515,6 +528,17 @@ def _template_identity(cand) -> str:
     return ''
 
 
+def _has_frozen_supplier(cand) -> bool:
+    """True when this template carries a NON-VARIABLE supplier_name fixed value — i.e. it would
+    stamp that identity at 95 via template_fixed on every document it claims. This is the harm
+    vector the young-identity fallback exists for; templates without one are out of its scope."""
+    for f in ((cand or {}).get('fields') or []):
+        if (f or {}).get('field_key') == 'supplier_name' and not (f or {}).get('is_variable'):
+            if str((f or {}).get('fixed_value') or '').strip():
+                return True
+    return False
+
+
 def _identity_log(cand) -> None:
     """C4 — a refusal must never be silent.
 
@@ -551,11 +575,24 @@ def _identity_refuses(cand, ocr_text) -> bool:
     ratio answers "does THIS supplier print its name?" from that supplier's own documents, so the
     wordmark case is carved out BY MEASUREMENT rather than by hope.
 
-    NO `count >= 3` FLOOR, DELIBERATELY, and this sentence is load-bearing: the sibling guard
-    `nameBearingButAbsent` requires three confirmed documents, and that is the exact gate that slept
-    through this defect — a template acquires full authority at n=1 and stamps its issuer at 95 on
-    document #1. Requiring three here would re-open the hole this guard exists to close. Do not
-    "restore parity" with the JS twin.
+    NO `count >= 3` FLOOR ON THE REFUSE DIRECTION, DELIBERATELY, and this sentence is load-bearing:
+    the sibling guard `nameBearingButAbsent` requires three confirmed documents, and that is the
+    exact gate that slept through this defect — a template acquires full authority at n=1 and stamps
+    its issuer at 95 on document #1. Requiring three before the guard may REFUSE would re-open the
+    hole this guard exists to close. Do not "restore parity" with the JS twin.
+
+    THE ADMIT DIRECTION IS DIFFERENT (2026-08-11): the abstain used to ADMIT unconditionally, and a
+    garbled teach is indistinguishable from a wordmark supplier at n<=1 — Chris's '@a eens Ee'
+    template (count 0-1, ratio unjudgeable) claimed 20 Oakhaven delivery notes through exactly this
+    door. While the history is YOUNG (count < _IDENTITY_YOUNG_N) an abstain now falls back to the
+    page-presence test: a young frozen-supplier template may only claim pages that actually name it.
+    NAMED TRADE-OFF, pinned in test_identity_on_page.py: a GENUINE wordmark supplier's siblings
+    route to review during its first (N-1) confirms — fail-toward-review, temporary — and a teach on
+    a name-less supplier no longer catches silently on document #2. A mature wordmark history
+    (count >= N, low ratio) keeps the carve-out untouched.
+    RESIDUAL, named: three confirms of a garbled supplier graduate it into the protected carve-out
+    (ratio 0 at count>=3 is indistinguishable from a real wordmark). The issuer-plausibility warn at
+    teach time and Learning Repair are the upstream/downstream answers to that.
     """
     if not _IDENTITY_ON_PAGE_ON:
         return False
@@ -569,7 +606,15 @@ def _identity_refuses(cand, ocr_text) -> bool:
     except (TypeError, ValueError):
         return False
     if count < 1 or ratio < _IDENTITY_PRINTS_RATIO:
-        return False                                  # this supplier does not reliably print its name
+        # This supplier's history cannot vouch that it prints its name. Mature history -> the
+        # wordmark carve-out stands (abstain -> admit). Young history -> the abstain must not
+        # admit: require the page itself to name the claimed identity. SCOPED to templates that
+        # would actually STAMP the identity (a frozen supplier_name fixed value) — a
+        # variable-supplier template does not commit template_fixed identity, so its admission
+        # behaviour is unchanged (gary's scope note; stats are only threaded for frozen ones).
+        if _IDENTITY_YOUNG_N > 0 and count < _IDENTITY_YOUNG_N and _has_frozen_supplier(cand):
+            return not identity_present_on_page(identity, ocr_text)
+        return False
     return not identity_present_on_page(identity, ocr_text)
 
 
