@@ -240,6 +240,25 @@ function main() {
   check('17. corroborated at 94 → below-floor (the I→1 exhibit margin is load-bearing)',
     !r.eligible && r.reason === 'below-floor' && r.floor >= 95);
 
+  // 18. THE WRONG-BINDING LEAK SHAPES (Oracle C3b substitute — the 21-doc sandbox poison state
+  // no longer exists, so the leak's three corroboration shapes are pinned directly):
+  //   (a) frozen wrong issuer (memory) + the page's keyword DISAGREEING → refused (disagree);
+  //   (b) frozen wrong issuer + hint echoing it (both descend from the poison confirms) with the
+  //       page disagreeing → refused (disagree beats agree — any independent disagreement kills);
+  //   (c) the residual that CAN license: a buyer-issued layout where taught box AND keyword both
+  //       truthfully read the owner's own printed name — mitigated by the template_identity_on_page
+  //       flip PRECONDITION + docTrustGate's history check, named residual per the Oracle ruling.
+  db = freshDb(); nextId = 100;
+  addConfirmed(db, 5);
+  const LEAK_A = JSON.stringify({ winner_family: 'memory', agree: [],
+    disagree: [{ family: 'keyword', value: 'Oakhaven Electrical Wholesale' }], independent_agree: false });
+  const LEAK_B = JSON.stringify({ winner_family: 'memory', agree: ['hint'],
+    disagree: [{ family: 'keyword', value: 'Oakhaven Electrical Wholesale' }], independent_agree: true });
+  doc = addCandidate(db, { corrobs: { supplier_name: LEAK_A } });
+  check('18a. wrong frozen issuer, page keyword disagrees → refused', !elig(db, doc).eligible);
+  doc = addCandidate(db, { corrobs: { supplier_name: LEAK_B } });
+  check('18b. memory+hint echo WITH page disagreement → refused (disagree always kills)', !elig(db, doc).eligible);
+
   console.log('\n' + (fails ? `${fails} FAILED` : 'ALL PASS'));
   process.exit(fails ? 1 : 0);
 }

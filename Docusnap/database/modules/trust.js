@@ -958,6 +958,7 @@ module.exports = {
   _dominantStructuredClass,        // exported for the contaminated-history pin (test_scope_trust.js §18b)
   _nonRoleLenientEnabled,          // single source of the default, so tests can't drift from it
   _shadowRowSkipEnabled,           // ditto for the shadow-row skip (TRUST_SHADOW_ROW_SKIP)
+  _corrobLicensed,                 // exported for the declined census + pins — decision logic stays HERE
   validDate: _validDate, validIban: _validIban, validVatGb: _validVatGb,
   currencyDpConsistent: _currencyDpConsistent, currencyConsistentForField: _currencyConsistentForField, matchesTypePattern: _matchesTypePattern,
   scopeTrust, docTrustGate, isAutoFileEligible, autoFileEligibleIds,
