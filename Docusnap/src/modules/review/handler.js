@@ -267,6 +267,7 @@ function register(ctx) {
   ipcMain.handle('get-review-queue',  () => { requireRole('admin', 'edit'); return documents.getReviewQueue(getDb()); });
   ipcMain.handle('get-deferred-queue',() => { requireRole('admin', 'edit'); return documents.getDeferredQueue(getDb()); });
   ipcMain.handle('get-review-count',  () => { requireRole('admin', 'edit'); return documents.getReviewCount(getDb()); });
+  ipcMain.handle('get-review-split',  () => { requireRole('admin', 'edit'); return documents.getReviewSplit(getDb()); });
   ipcMain.handle('get-deferred-count',() => { requireRole('admin', 'edit'); return documents.getDeferredCount(getDb()); });
 
   // Advanced → "View learning history": list the confirmed values learned for a
@@ -849,6 +850,20 @@ function register(ctx) {
     notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
     notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
     return true;
+  });
+
+  // Bulk restore — the counterpart Empty bin always had and Restore didn't (Chris r2
+  // 2026-08-11, finding 8: "still no Restore all"). Same role gate as single restore.
+  ipcMain.handle('restore-all-deleted', () => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const ids = documents.getDeletedQueue(db).map(d => d.id);
+    for (const id of ids) documents.restoreDeleted(db, id);
+    logAudit(db, { action: 'recycle_bin_restored', action_category: 'document', target_type: 'document',
+      outcome: 'success', metadata: { count: ids.length } });
+    notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
+    notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+    return { restored: ids.length };
   });
 
   // Permanent removal (irreversible) — admin only. Unlinks the filed file + the app's

@@ -399,6 +399,22 @@ function getReviewCount(db) {
   ).get().n;
 }
 
+// Home-dashboard split of the review queue: how many docs genuinely NEED a look
+// (flagged / under-threshold / missing a required field) vs how many are ready to
+// confirm as-is. Derives from getReviewQueue's OWN rows and the same predicate the
+// Review window uses (isFlagged || missing_required_labels) so the two can never
+// disagree — do not re-implement the flag logic in SQL here.
+function getReviewSplit(db) {
+  const rows = getReviewQueue(db);
+  let need = 0;
+  for (const d of rows) {
+    if ((d.review_flag_count || 0) > 0
+        || (d.below_threshold_count || 0) > 0
+        || String(d.missing_required_labels || '').trim()) need++;
+  }
+  return { total: rows.length, need, ready: rows.length - need };
+}
+
 function getDeferredCount(db) {
   return db.prepare(
     "SELECT COUNT(*) as n FROM documents WHERE status = 'deferred'"
@@ -652,7 +668,7 @@ function getWorkingPaths(db) {
 module.exports = {
   insert, update, getById, getExtractedTotalDisplay, getExtractedTotalContext, getWithExtractions,
   getReviewQueue, getDeferredQueue, getByIds,
-  getReviewCount, getDeferredCount, getStuckCount, getStuckQueue, getFiledCounts,
+  getReviewCount, getReviewSplit, getDeferredCount, getStuckCount, getStuckQueue, getFiledCounts,
   softDelete, restoreDeleted, getDeletedQueue, getDeletedCount,
   requeueConfirmedDocsForScope, getConfirmedDocsForScope, getConfirmedDocsByIds, getConfirmedFieldValues, deconfirmDocument,
   getFieldValueSuggestions,

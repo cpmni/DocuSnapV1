@@ -61,6 +61,11 @@ setInterval(tickClock, 1000);
 // ── Dashboard (Home) ─────────────────────────────────────────────────────────
 let _lastRunSummary = null;                         // {ok,err} of the latest manual run this session
 let _reviewCount = 0, _stuckCount = 0, _deferredCount = 0;  // cached so count-change events stay CHEAP
+// The need/ready split of the review queue (Chris r2 2026-08-11, verify-list #3: "Home still
+// just says 200 waiting"). Fetched ONLY in refreshDashboard (it walks the queue), cached here;
+// updateAttention renders it only while its total still matches the live count, so a stale
+// split between refreshes silently hides rather than lies.
+let _reviewSplit = null;
 
 // CHEAP repaint of the attention card from the cached counts — NO DB query, so it
 // is safe to call on every review/stuck/deferred count-change event, even mid-import.
@@ -74,6 +79,17 @@ function updateAttention() {
   const allClear  = document.getElementById('dash-allclear');
   const openRev   = document.getElementById('dash-open-review');
   if (reviewEl) reviewEl.textContent = _reviewCount;
+  const splitEl = document.getElementById('dash-review-split');
+  if (splitEl) {
+    const fresh = _reviewSplit && _reviewSplit.total === _reviewCount && _reviewCount > 0;
+    splitEl.style.display = fresh ? '' : 'none';
+    if (fresh) {
+      splitEl.textContent = _reviewSplit.need > 0
+        ? `${_reviewSplit.need} need${_reviewSplit.need === 1 ? 's' : ''} your review`
+          + (_reviewSplit.ready > 0 ? ` · ${_reviewSplit.ready} ready to file` : '')
+        : 'all ready to file';
+    }
+  }
   if (defEl)    defEl.textContent    = _deferredCount;
   if (defRow)   defRow.style.display   = _deferredCount > 0 ? '' : 'none';
   if (stuckEl)  stuckEl.textContent  = _stuckCount;
@@ -93,6 +109,7 @@ async function refreshDashboard() {
   try { _reviewCount   = await window.docusnap.getReviewCount(); } catch {}
   try { _stuckCount    = await window.docusnap.getStuckCount(); } catch {}
   try { _deferredCount = await window.docusnap.getDeferredCount(); } catch {}
+  try { _reviewSplit   = _userCanReview ? await window.docusnap.getReviewSplit() : null; } catch { _reviewSplit = null; }
   updateAttention();
 
   const dashFolder = document.getElementById('dash-folder');
@@ -177,8 +194,12 @@ async function renderLearning(confirmed) {
   // The truthful "suppliers auto-committing" tally comes from the graduation ROSTER (the same list
   // Settings shows), NOT a distinct-count of a recent CONFIRMED sample — that sample count diverged
   // from the roster (the reported ambiguity). Fall back to the sample only if the tally is missing.
-  let na = null;
-  try { const x = await window.docusnap.getDashboardExtra(); if (x && x.autoFilingSuppliers) na = x.autoFilingSuppliers.suppliers; } catch {}
+  let na = null, autoFiledEver = null;
+  try {
+    const x = await window.docusnap.getDashboardExtra();
+    if (x && x.autoFilingSuppliers) na = x.autoFilingSuppliers.suppliers;
+    if (x && x.autoFiled) autoFiledEver = x.autoFiled.auto || 0;
+  } catch {}
   if (na == null) {
     const s = new Set();
     for (const d of confirmed) { if (d.supplier_name) s.add(d.supplier_name.trim().toLowerCase()); }
@@ -186,8 +207,12 @@ async function renderLearning(confirmed) {
   }
   const lay = layouts == null ? ''
     : ` · learned <span class="n">${layouts}</span> ${layouts === 1 ? 'layout' : 'layouts'}`;
+  // "N suppliers now file automatically" was FALSE on installs where nothing has ever
+  // auto-filed (Chris, both rounds: graduation is ELIGIBILITY; the filing bar decides
+  // whether it happens). Say "qualified", and admit when none has actually fired.
   body.innerHTML = na > 0
-    ? `<span class="n">${na}</span> ${na === 1 ? 'supplier now files' : 'suppliers now file'} automatically${lay}.`
+    ? `<span class="n">${na}</span> ${na === 1 ? 'supplier has' : 'suppliers have'} qualified for automatic filing${lay}.`
+      + (autoFiledEver === 0 ? `<div class="dash-card-note">Nothing filed automatically in the last 7 days — that also depends on the filing bar in Settings → Processing.</div>` : '')
     : `No suppliers file automatically yet — they graduate after a run of clean confirmations${lay}.`;
 }
 
@@ -712,7 +737,7 @@ async function chooseSourceFolder() {
 // The native folder picker can't show files, so list the folder's documents (import is
 // non-recursive → matches exactly what "Process" will handle) so the operator confirms content
 // before processing. Disables Process for an empty folder (e.g. a parent that only has subfolders).
-async function showFolderPreview(folder) {
+async function showFolderPreview(folder, opts) {
   const el = document.getElementById('folder-preview');
   if (!el) return;
   el.style.display = '';
@@ -722,8 +747,15 @@ async function showFolderPreview(folder) {
   try { res = await window.docusnap.listImportFolder?.(folder); } catch {}
   if (selectedFolder !== folder) return;   // user re-picked while this was loading
   if (!res || res.count === 0) {
+    // An empty folder straight after a successful batch is the app's OWN good behaviour —
+    // the originals were moved to Processed/ as promised. Chris (r2 2026-08-11, finding 4)
+    // read the generic "pick the folder that contains the scans" alarm as "what has it done
+    // with my scans?" at the exact moment everything had worked.
+    const justDid = opts && opts.justProcessed > 0 ? opts.justProcessed : 0;
     el.className = 'folder-preview empty';
-    el.textContent = 'No documents found directly in this folder — pick the folder that contains the scans (PDFs or images).';
+    el.textContent = justDid
+      ? `All ${justDid} scan${justDid === 1 ? '' : 's'} from this folder ${justDid === 1 ? 'has' : 'have'} been brought in and moved to its Processed subfolder. Drop new scans here whenever you like.`
+      : 'No documents found directly in this folder — pick the folder that contains the scans (PDFs or images).';
     btnRun.disabled = true;
     return;
   }
@@ -869,7 +901,7 @@ async function startProcessing() {
   // Imported originals have drained to Processed/, so the pick-time
   // "N documents ready to import" count is now stale — re-scan the folder so
   // the preview reflects what's actually left (and disables Process if empty).
-  if (selectedFolder) showFolderPreview(selectedFolder);
+  if (selectedFolder) showFolderPreview(selectedFolder, { justProcessed: batch.done });
   if (processResult && processResult.stopped) {
     logStatus.textContent = 'Stopped';
     progressText.textContent = `Stopped — ${batch.done} of ${batch.total} processed`;
@@ -1168,7 +1200,13 @@ function appendLog(text, cls = '') {
 }
 
 function updateStats() {
-  document.getElementById('stat-total').textContent = stats.total;
+  // Mid-run, "found" must include the KNOWN remainder of this batch (the aggregate 'start'
+  // event carries the full folder count) — otherwise the counter reads "132 processed of
+  // 132 found", a false "done" signal four minutes into a 200-doc run (Chris r2 2026-08-11,
+  // finding 7). Session-cumulative semantics stay: once the run ends the remainder is 0 and
+  // the old "docs actually processed this session" number stands.
+  const remaining = running && batch.total > 0 ? Math.max(0, batch.total - batch.done) : 0;
+  document.getElementById('stat-total').textContent = stats.total + remaining;
   document.getElementById('stat-done').textContent  = stats.done;
   document.getElementById('stat-ok').textContent    = stats.ok;
   document.getElementById('stat-err').textContent   = stats.err;
