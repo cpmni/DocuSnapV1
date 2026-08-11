@@ -7375,7 +7375,7 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
         if (!sliceMap[f]) sliceMap[f] = {};
         const key = ev.stage || '_';
         if (!sliceMap[f][key]) sliceMap[f][key] = [];
-        sliceMap[f][key].push({ kind: ev.kind || 'target', bbox: ev.bbox || null, page: ev.page ?? 0, stage: ev.stage || '_', method: ev.method || null, path: ev.path || null });
+        sliceMap[f][key].push({ kind: ev.kind || 'target', bbox: ev.bbox || null, page: ev.page ?? 0, stage: ev.stage || '_', method: ev.method || null, path: ev.path || null, tag: ev.tag || null });
       }
     }
     // Map a candidate's METHOD to the slice-event stage it produced. The slice
@@ -7539,8 +7539,12 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
         ? `<div class="rdc-slices">` + slices.map(s => {
             const isRead = winGeoms.some(g => bboxMatch(s.bbox, g));
             const pos = (Array.isArray(s.bbox) && s.bbox.length === 4) ? ` @${Math.round(s.bbox[1] * 100)}%` : '';
+            // Name the crop by the READ that produced it (engine `tag`) so two same-kind
+            // crops of one field are distinguishable — e.g. "target · absolute box" vs
+            // "target · derived offset". Untagged (older traces) falls back to kind alone.
+            const nm = s.tag ? `${s.kind || 'crop'} · ${s.tag}` : (s.method || s.kind || 'crop');
             return `<figure class="rdc-slice${isRead ? ' read' : ''}"><img data-slice-path="${escHtml(s.path)}" alt="crop" loading="lazy">`
-            + `<figcaption>${escHtml(s.method || s.kind || 'crop')}${escHtml(pos)}${isRead ? ' · ← read' : ''}</figcaption></figure>`; }).join('')
+            + `<figcaption>${escHtml(nm)}${escHtml(pos)}${isRead ? ' · ← read' : ''}</figcaption></figure>`; }).join('')
           + `</div>`
         : '';
 
@@ -7597,7 +7601,13 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
                 + ` data-value="${escHtml(shown(value))}"`;
     const tAttr = (slice && slice.bbox) ? ` data-bbox="${escHtml(JSON.stringify(slice.bbox))}" data-kind="${escHtml(slice.kind || 'target')}" data-page="${slice.page ?? 0}" data-stage="${escHtml(slice.stage || '_')}"` : '';
     const aAttr = (aslice && aslice.bbox) ? ` data-anchor-bbox="${escHtml(JSON.stringify(aslice.bbox))}" data-anchor-page="${aslice.page ?? 0}" data-anchor-stage="${escHtml(aslice.stage || 'anchor_label')}"` : '';
-    const clickAttr = (slice || aslice) ? ` style="cursor:pointer" title="Click to highlight the value box (amber)${aslice ? ' + anchor box (blue)' : ''} on the page"` : '';
+    // A rung with NO crop of its own (e.g. keyword — it matches on the reconstructed text
+    // layer, nothing is cropped) still gets the field's TAUGHT-ANCHOR overlay for context.
+    // Say so plainly: the blue box is NOT where this rung read, and implying it was is how
+    // "clicking keyword highlighted the taught label" gets misread as agreement.
+    const clickAttr = slice
+      ? ` style="cursor:pointer" title="Click to highlight the value box (amber)${aslice ? ' + anchor box (blue)' : ''} on the page"`
+      : (aslice ? ` style="cursor:pointer" title="This rung matched on the page text — no crop of its own. Click shows the field's TAUGHT ANCHOR (blue) for context only."` : '');
     const bboxAttr = tAttr + aAttr + dAttr + clickAttr;
     return `<div class="rdc-cand"${bboxAttr}>`
       + `<span class="rdc-stage">${escHtml(stage)}</span>`

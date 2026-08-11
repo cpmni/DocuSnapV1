@@ -764,7 +764,7 @@ def extract_with_mappings(page_images, mappings, field_patterns=None,
         _acap = ((lambda c, _m=mapping, _p=page_idx, _ab=anchor_box:
                     slice_capture(_m.get("field_key"), "template_mapping", _p,
                                   (_ab["x_norm"], _ab["y_norm"], _ab["w_norm"], _ab["h_norm"]),
-                                  c, "anchor")) if slice_capture else None)
+                                  c, "anchor", "label locate")) if slice_capture else None)
         located_cache[id(mapping)] = _locate_anchor(
             page_images[page_idx], anchor_box, mapping.get("anchor_text"),
             float(mapping.get("search_expansion") or 0.0), ocr_lines_fn,
@@ -831,7 +831,7 @@ def resolve_geometry(page, mapping, field_patterns=None, template_landmarks=None
                                      _ocr_lines, min_search=_ANCHOR_SEARCH_MIN)
 
     captured = {}
-    def _cap(_fk, _stage, _pi, bbox, _img, kind):
+    def _cap(_fk, _stage, _pi, bbox, _img, kind, tag=None):
         captured[kind] = [round(float(v), 5) for v in bbox] if bbox else None
 
     # INDEX-ALIGN THE PAGE LIST (TEMPLATE_PREVIEW_PAGE_PAD, Oracle SIGN OFF 2026-08-08).
@@ -1373,7 +1373,7 @@ def _read_inline_box(page, located, val_type, ocr_text_fn, field_key,
         _pad = _expand_box(inline_box, 0.005)                 # guard against clipping edge glyphs
         _icap = ((lambda c: slice_capture(field_key, "template_mapping", page_idx,
                    (_pad["x_norm"], _pad["y_norm"], _pad["w_norm"], _pad["h_norm"]),
-                   c, "target")) if slice_capture else None)
+                   c, "target", "inline harvest")) if slice_capture else None)
         _imeta = {}
         inline_val = _crop_and_ocr(page, _pad, val_type, ocr_text_fn, capture=_icap, meta=_imeta)
         inline_conf = _imeta.get('conf')
@@ -1632,7 +1632,7 @@ def _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
                                             line_cache, label_box=located.get("label_box"))
         _cap = ((lambda c: slice_capture(field_key, "template_mapping", page_idx,
                    (derived_target["x_norm"], derived_target["y_norm"],
-                    derived_target["w_norm"], derived_target["h_norm"]), c, "target")) if slice_capture else None)
+                    derived_target["w_norm"], derived_target["h_norm"]), c, "target", "derived offset")) if slice_capture else None)
         _d_meta = {}
         text = _crop_and_ocr(page, derived_target, val_type, ocr_text_fn, capture=_cap, meta=_d_meta)
         # ORACLE C3: a money snap must PROVE its read against the un-snapped box before the value is
@@ -1717,7 +1717,7 @@ def _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
                                     int((ib["y_norm"] + ib["h_norm"]) * ph)))
                 slice_capture(field_key, "template_mapping", page_idx,
                               (ib["x_norm"], ib["y_norm"], ib["w_norm"], ib["h_norm"]),
-                              _icrop, "target")
+                              _icrop, "target", "inline fallback")
             except Exception:
                 pass                # dev-only; never disrupt extraction
         # _ft_fallthrough_cap: this rung has NO ocr_conf to give _mapping_result, so a free-text
@@ -1762,7 +1762,7 @@ def _read_registration(page, mapping, target_box, val_type, ocr_text_fn, expansi
                                  line_cache, label_box=_reg_label)
     _rcap = ((lambda c: slice_capture(field_key, "template_registration", page_idx,
                (reg_box["x_norm"], reg_box["y_norm"], reg_box["w_norm"], reg_box["h_norm"]),
-               c, "target")) if slice_capture else None)
+               c, "target", "registration")) if slice_capture else None)
     rtext = _crop_and_ocr(page, reg_box, val_type, ocr_text_fn, capture=_rcap)
     # ORACLE C3, same proof on the registration rung — this one is MORE exposed, not less: it
     # assembles its own result dict rather than going through `_mapping_result`, and its confidence
@@ -2187,7 +2187,7 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
     # ALWAYS re-derived the crop and the drawn box was never read on a clean page.
     _tcap = ((lambda c: slice_capture(field_key, "template_mapping", page_idx,
                (target_box["x_norm"], target_box["y_norm"],
-                target_box["w_norm"], target_box["h_norm"]), c, "target")) if slice_capture else None)
+                target_box["w_norm"], target_box["h_norm"]), c, "target", "absolute box")) if slice_capture else None)
     _abs_meta = {}
     abs_text = _crop_and_ocr(page, target_box, val_type, ocr_text_fn, capture=_tcap, meta=_abs_meta)
     abs_expanded = False
@@ -3010,7 +3010,7 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
     grown = _clamp_box({"x_norm": gx1, "y_norm": read_box["y_norm"],
                         "w_norm": gx2 - gx1, "h_norm": read_box["h_norm"]})
     _gcap = ((lambda c: slice_capture(field_key, "template_mapping", page_idx,
-              (grown["x_norm"], grown["y_norm"], grown["w_norm"], grown["h_norm"]), c, "target"))
+              (grown["x_norm"], grown["y_norm"], grown["w_norm"], grown["h_norm"]), c, "target", "edge grow"))
              if slice_capture else None)
     _gmeta = {}
     raw = _crop_and_ocr(page, grown, val_type, ocr_text_fn, capture=_gcap, meta=_gmeta)

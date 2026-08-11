@@ -2880,12 +2880,14 @@ class ExtractionEngine:
                 self._t("step", stage=stage, field=f, outcome="no_candidate",
                         reason=self._STEP_NO_CAND_REASON.get(stage, "no candidate produced"))
 
-    def _capture_slice(self, field, stage, page, bbox, pil_img, kind="target"):
+    def _capture_slice(self, field, stage, page, bbox, pil_img, kind="target", tag=None):
         """Dev-only: save the exact crop used for an OCR attempt to the session
         temp dir and emit a typed `slice` trace event pointing at it. `kind` is
         'anchor' (the region used to find/verify the anchor) or 'target' (the
-        region OCR'd for the field value). No-op unless a trace callback AND a
-        slice dir are set. Never raises into extraction."""
+        region OCR'd for the field value); `tag` names WHICH read produced the
+        crop (e.g. 'absolute box' vs 'derived offset') so two same-kind crops of
+        one field are distinguishable in the trace console. No-op unless a trace
+        callback AND a slice dir are set. Never raises into extraction."""
         if not (self._trace and self._slice_dir):
             return
         try:
@@ -2894,7 +2896,7 @@ class ExtractionEngine:
             path = os.path.join(self._slice_dir, f"slice_{self._slice_n}_{kind}.png")
             pil_img.save(path)
             self._t("slice", field=field, stage=stage, kind=kind, page=page,
-                    bbox=(list(bbox) if bbox else None), path=path)
+                    bbox=(list(bbox) if bbox else None), path=path, tag=tag)
         except Exception:
             pass  # diagnostics must never disrupt extraction
 

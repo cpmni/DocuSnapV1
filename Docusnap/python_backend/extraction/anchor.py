@@ -524,7 +524,7 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
             w_norm   = anchor.get("w_norm") or 0.0
             h_norm   = anchor.get("h_norm") or 0.0
             _cap = ((lambda c: slice_capture(field_key, "anchor_crop", 0,
-                       (x_norm, y_norm, w_norm, h_norm), c, "target")) if slice_capture else None)
+                       (x_norm, y_norm, w_norm, h_norm), c, "target", "taught box")) if slice_capture else None)
             _m = {}
             # ANCHOR_LABEL_LEFT_CLAMP at the RIGID site (C2 full gate): the rigid crop reads
             # the TAUGHT box, so a LOCATED-frame boundary is only coherent when the located
@@ -996,7 +996,7 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                                                                      tol_x=_RELOC_TOL_X, tol_y=_RELOC_TOL_Y))
                     slice_capture(field_key, "anchor_label", 0,
                                   (_lb["x_norm"], _lb["y_norm"], _lb["w_norm"], _lb["h_norm"]),
-                                  _lcrop, "anchor_vetoed" if _t_vetoed else "anchor")
+                                  _lcrop, "anchor_vetoed" if _t_vetoed else "anchor", "label locate")
             except Exception:
                 pass  # dev-only diagnostic; never disrupt extraction
 
@@ -1128,7 +1128,7 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                                                          int(_ib["y_norm"] * page0.size[1]),
                                                          int((_ib["x_norm"] + _ib["w_norm"]) * page0.size[0]),
                                                          int((_ib["y_norm"] + _ib["h_norm"]) * page0.size[1])))
-                                    slice_capture(field_key, "anchor_inline", 0, _ibox, _icrop, "target")
+                                    slice_capture(field_key, "anchor_inline", 0, _ibox, _icrop, "target", "inline harvest")
                                 except Exception:
                                     pass   # dev-only; never disrupt extraction
                     elif hv and on_reject:

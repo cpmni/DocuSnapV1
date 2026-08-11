@@ -211,7 +211,7 @@ def test_slice_capture_reports_relocated_target():
     page = FakePage()
     lines = page_words_stub([{"text": "Location", "x": 0.12, "y": 0.20 + SHIFT, "w": 0.14, "h": 0.02}])
     targets = []
-    def cap(_fk, _stage, _pi, bbox, _img, kind):
+    def cap(_fk, _stage, _pi, bbox, _img, kind, tag=None):
         if kind == "target" and bbox:
             targets.append(bbox)
     res = template_mapper.extract_with_mappings(
