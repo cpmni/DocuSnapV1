@@ -21,7 +21,38 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-11 OVERNIGHT: **READ `HANDOVER_2026-08-11_NIGHT.md` FIRST**
+## ⏭ LATEST — 2026-08-11 DAY: **READ `HANDOVER_2026-08-11_DAY.md` FIRST**
+Branch **`feat/teach-side-overnight`**, HEAD **`75d29ce`**, PUSHED, tree clean. Owner present.
+**MIGRATION IS NOW 61** — every older line in this file saying 60 is stale from here.
+**(1) CHRIS'S "CONFIDENT NONSENSE" GAP CLOSED** (`810ea8f`, DEFAULT ON, kill
+`teach_issuer_plausibility_warn`). A ⊕ teach read `@a eens Ee`, showed a green success toast, flagged
+nothing, and made two output folders. **Every guard in this product was pointed at ABSENCE and none
+at CONFIDENT NONSENSE** — the app warns on an EMPTY issuer and said nothing on a gibberish one. Both
+teach surfaces now warn. **`isPlausibleSupplierName` was MEASURED AND REJECTED for this job — it
+rejects BP and IBM** on a ≤​3-char all-caps rule; the shipped predicate never judges a single-token
+value, which is what makes BP/IBM/3M/H&M immune. 0 false positives over 22 real names.
+**(2) A CONFIRMED TEACH LABEL NOW REPLACES THE GENERIC KEYWORDS** (`48bcc48`, **migration 61**,
+`field_label_overrides.exclusive`, DEFAULT OFF, `teach_label_becomes_keyword`). Owner-reported: a
+correct taught `po_number` mapping coexisted with a Stage 1 keyword hunting `'ref'`. The store was
+already wired to Python; **the only writers were the admin Settings screen and the preset seeder** —
+the missing piece was a WRITE. **REPLACE, not add: precedence is not exclusivity**, because
+`extract_fields` falls THROUGH to the shipped labels when the override does not hit. **BOTH teach
+paths write it** — the wizard does NOT use `save-field-anchor` (6 anchors-with-labels vs 38 mappings
+with `anchor_text`), which the arm caught.
+**(3) THE ARM: `labelkw` red, `labelkw_fixed` CLEAN.** Only `serials` moved (empty → WRONG via
+`keyword_override`); with the bad serials teach removed, **all nine lanes byte-identical to base**.
+**The regression was the TEACH, not the feature** — the most-committed `serials` value on this
+install is literally `"Serial No:"` ×23, the caption. **Still broken in the LIVE DB.**
+**(4) THREE OF MY OWN CLAIMS WERE WRONG AND ARE CORRECTED IN THE HANDOVER:** "18 overrides" was 38;
+`templates.getAll` returns **`field_mappings`** not `mappings` (a whole arm removed 0 rows and was
+caught ONLY by its own guard); and the backfill read the DB instead of the mutated state, so a
+"repaired" arm produced the unrepaired result — **a mutator arm must measure the state it mutated.**
+**(5) I REFUSED TO WRITE THE LIVE DB while the app held it** (`no such table: settings`, then
+`SQLITE_CANTOPEN`, on a file that exists). No flip happened; the arm later said it would have been
+wrong anyway. **GOTCHA: a commit message containing backticks breaks the Bash heredoc — use
+`git commit -F <file>`.**
+
+### Prior — 2026-08-11 OVERNIGHT: **`HANDOVER_2026-08-11_NIGHT.md`**
 Branch **`feat/teach-side-overnight`**, autonomous night run, owner asleep. **NOTHING FLIPPED, no
 live-DB write, no destructive action.** Migration still 60.
 **(1) DO NOT FLIP `CODE_SEPARATOR_STRUCTURE_GUARD` ALONE — this reverses last night's advice.**
@@ -64,7 +95,7 @@ a real scanner is HYPOTHESIS.
 
 ### Prior — 2026-08-10 EVENING2: **`HANDOVER_2026-08-10_EVENING2.md`**
 Branch **`feat/teach-side-overnight`**, HEAD **`8ee7456`**, PUSHED, tree clean. Owner present.
-Migration still 60. **Nothing flipped; NOTHING smoke-tested in the UI.**
+Migration was 60 at that point (**now 61** — see the 08-11 DAY block). **Nothing flipped; NOTHING smoke-tested in the UI.**
 **(1) A TYPED TEACH VALUE NOW CAPTURES A POSITION** (`3f21ddb`, default ON, operator-gated): the
 typed string is searched for in the page's own word geometry, the hit is DRAWN and the operator
 approves it, and it then commits through the SAME `store()` as a drawn box — an ordinary Stage 0.5

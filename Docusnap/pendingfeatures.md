@@ -762,7 +762,15 @@ Stage 1 keyword carries on using the generic caption bank, which is why a correc
 template mapping coexists with a keyword hunting `'ref'`. The operator has told the app the caption
 and the app only half-listens.
 
-**DIRECTION (not built).** On confirm, when a taught mapping/anchor carries a non-empty
+**BUILT 2026-08-11 (`48bcc48`, migration 61, DEFAULT OFF `teach_label_becomes_keyword`) — and the
+owner's SFDEV trace later CONFIRMED the mechanism live:** on a Castellan service worksheet the
+mapping matched `"JOB SHEET NO"` and WON at 90% while the keyword rung matched a bare `"Ref"` at
+85% and lost. Traced: `_REF_ROLE_CAPTIONS = ["Reference No", "Reference", "Ref No", "Ref"]`
+(`keyword.py:396`, applied `:490`) is seeded onto every ref-role field, and `worksheet_number` has
+NO shipped `field_patterns` entry, so it inherits the generic bank including bare `Ref`. The wrong
+keyword costs nothing while the mapping holds; the exposure is documents where the mapping fails.
+
+**DIRECTION (as built).** On confirm, when a taught mapping/anchor carries a non-empty
 `anchor_label`, write the doc-type-scoped override for that field. The plumbing is already there;
 this is a WRITE that is missing, not a new subsystem.
 
