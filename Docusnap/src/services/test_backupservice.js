@@ -84,6 +84,38 @@ applyBackup(db, { tables: { supplier_hints: [{ id: 5, supplier_name: 'Beta', fie
 const shRows = db.prepare('SELECT supplier_name FROM supplier_hints').all();
 check('M5: a non-empty learned table still fully REPLACES', shRows.length === 1 && shRows[0].supplier_name === 'Beta');
 
+// ── ORACLE C2 (2026-08-11): field_label_overrides.template_id must REMAP through tmplMap ──
+// Template ids differ across machines (templates upsert by SLUG). An unmapped restore would
+// attach one supplier's exclusive taught caption to a DIFFERENT supplier's template — the exact
+// cross-supplier bleed migration 62 exists to prevent, resurrected through backup. An orphaned
+// scoped row (its template not in the backup) is DROPPED, never widened to doc-type-wide.
+db.exec(`
+  CREATE TABLE templates(id INTEGER PRIMARY KEY, name TEXT, slug TEXT, document_type_slug TEXT);
+  CREATE TABLE field_label_overrides(id INTEGER PRIMARY KEY, doc_type_slug TEXT, field_key TEXT,
+    label TEXT, created_at TEXT, exclusive INTEGER DEFAULT 0, template_id INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(doc_type_slug, field_key, label, template_id));
+`);
+// Target machine already has the SAME template slug at a DIFFERENT id (7 vs the backup's 5).
+db.prepare("INSERT INTO templates VALUES(7,'Castellan','castellan_ws','service_worksheet')").run();
+applyBackup(db, { tables: {
+  templates: [{ id: 5, name: 'Castellan', slug: 'castellan_ws', document_type_slug: 'service_worksheet' }],
+  field_label_overrides: [
+    { id: 1, doc_type_slug: 'service_worksheet', field_key: 'worksheet_number',
+      label: 'JOB SHEET NO', created_at: null, exclusive: 1, template_id: 5 },   // scoped → remap
+    { id: 2, doc_type_slug: 'service_worksheet', field_key: 'account_no',
+      label: 'Acct', created_at: null, exclusive: 0, template_id: 0 },           // global → kept as-is
+    { id: 3, doc_type_slug: 'invoice', field_key: 'po_number',
+      label: 'Orphan Cap', created_at: null, exclusive: 1, template_id: 99 },    // orphan → DROPPED
+  ],
+} });
+const lo = db.prepare('SELECT label, template_id, exclusive FROM field_label_overrides ORDER BY label').all();
+const localTplId = db.prepare("SELECT id FROM templates WHERE slug='castellan_ws'").get().id;
+check('C2: a template-scoped override remaps to the LOCAL template id',
+  (lo.find(x => x.label === 'JOB SHEET NO') || {}).template_id === localTplId);
+check('C2: a doc-type-wide row restores unchanged', (lo.find(x => x.label === 'Acct') || {}).template_id === 0);
+check('C2 PINNED: an orphaned scoped row is DROPPED, never widened to doc-type-wide',
+  !lo.some(x => x.label === 'Orphan Cap'));
+
 db.close();
 console.log(fail ? `\n${fail} check(s) FAILED` : '\nAll backupService checks passed.');
 process.exit(fail ? 1 : 0);

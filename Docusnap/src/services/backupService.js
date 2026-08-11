@@ -278,7 +278,24 @@ function applyBackup(db, payload) {
       if (!rows || !rows.length || !cols) continue;
       db.prepare(`DELETE FROM ${t}`).run();
       let n = 0;
-      for (const raw of rows) { insertRow(t, cols, { ...raw }); n++; }
+      for (const raw of rows) {
+        const row = { ...raw };
+        // ORACLE C2 (2026-08-11): field_label_overrides.template_id (migration 62) is a TEMPLATE
+        // scope, and template ids differ across machines — restoring it unmapped would attach one
+        // supplier's exclusive taught caption to a DIFFERENT supplier's template, resurrecting the
+        // exact cross-supplier bleed the scope exists to prevent. Remap through tmplMap; an
+        // unmappable scoped row is DROPPED (never widened to 0 = doc-type-wide — an orphaned
+        // exclusive row falling back to global scope would be the same bleed, worse). Pinned in
+        // test_backupservice.js.
+        if (t === 'field_label_overrides') {
+          const tid = Number(row.template_id) || 0;
+          if (tid > 0) {
+            if (!tmplMap.has(tid)) continue;          // orphaned template scope → drop the row
+            row.template_id = tmplMap.get(tid);
+          }
+        }
+        insertRow(t, cols, row); n++;
+      }
       applied[t] = n;
     }
   })();

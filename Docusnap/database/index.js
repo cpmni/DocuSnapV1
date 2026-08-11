@@ -1369,10 +1369,17 @@ function runJsMigrations(db, applied) {
   // UNIQUE in place. NOT NULL DEFAULT 0 (never NULL) so the 4-column UNIQUE actually dedupes —
   // NULLs are pairwise-distinct inside a SQLite UNIQUE and would let admin rows duplicate.
   if (!applied.has(62)) {
-    try {
-      const hasTpl = db.prepare('PRAGMA table_info(field_label_overrides)').all()
-        .some(c => c.name === 'template_id');
-      if (!hasTpl) {
+    // ORACLE C1 (2026-08-11): the rebuild must be ONE transaction and the stamp must depend on it.
+    // `db.exec` of a four-statement script is per-statement autocommit in better-sqlite3 — a crash
+    // between DROP and RENAME would leave the table GONE, and a catch-then-stamp would make that
+    // state permanent (getForExtraction then throws on every processing run for ever). So: drop any
+    // leftover `_new` from a previous failed attempt first, run the rebuild inside one transaction,
+    // and let a genuine failure THROW rather than stamp.
+    const hasTpl = db.prepare('PRAGMA table_info(field_label_overrides)').all()
+      .some(c => c.name === 'template_id');
+    if (!hasTpl) {
+      db.exec('DROP TABLE IF EXISTS field_label_overrides_new');
+      db.transaction(() => {
         db.exec(`
           CREATE TABLE field_label_overrides_new (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1390,8 +1397,8 @@ function runJsMigrations(db, applied) {
           DROP TABLE field_label_overrides;
           ALTER TABLE field_label_overrides_new RENAME TO field_label_overrides;
         `);
-      }
-    } catch (e) { console.warn(`  migration 62: ${e.message}`); }
+      })();
+    }
     db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (62)').run();
     console.log('JS migration 62 applied: field_label_overrides.template_id (0 = doc-type-wide)');
   }

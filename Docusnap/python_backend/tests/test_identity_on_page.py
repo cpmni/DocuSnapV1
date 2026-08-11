@@ -360,6 +360,65 @@ def test_a_young_supplier_whose_name_IS_printed_still_matches():
 
 
 @case
+def test_oracle_c2_joint_pin_young_garble_refused_AND_correct_sibling_selected():
+    """ORACLE C2 (joint, same run): refusing the garble must not merely empty the pool — the
+    healthy template whose company IS on the page must still be SELECTED. A refusal-only suite
+    could not catch a future dev converting the pool filter back into a winner veto."""
+    mod = _arm(True)
+    oakhaven = {'id': 17, 'name': 'Oakhaven', 'document_type_slug': 'delivery_note',
+                'keyword_fingerprint': ['Oakhaven', 'Electrical', 'Wholesale', 'Conduit'],
+                'fields': [{'field_key': 'supplier_name', 'is_variable': 0,
+                            'fixed_value': 'Oakhaven Electrical Wholesale'}],
+                'supplier_prints_name': {'supplier': 'Oakhaven Electrical Wholesale',
+                                         'ratio': 0.0, 'count': 1}}
+    # GARBLE first in the list so list order alone would hand it the tie.
+    m = mod.identify_template(None, OAKHAVEN_PAGE, [GARBLE, oakhaven],
+                              detected_slug=None, title_trusted=False)
+    assert m and m['template']['id'] == 17, \
+        f'the garble must be filtered from the POOL and the named sibling SELECTED, got {m}'
+
+
+@case
+def test_oracle_c1a_accepted_residual_name_drift_keeps_a_wordmark_young():
+    """ORACLE C1(a), ACCEPTED RESIDUAL — do not 'fix' this by re-keying youth on the template's
+    bound-document count: in the reproducing sandbox the garble template carries 21 confirmed docs
+    (the leak was File-All-Ready'd), so bound-doc youth would read the POISON as mature and re-open
+    the hole. Cost pinned here: a genuine wordmark supplier whose confirms are typed differently
+    from the frozen string ('Wordmark Co Ltd' vs frozen 'Wordmark Co') keeps count(frozen)=0 and
+    stays young — refused, fail-toward-review, until a confirm matches the frozen value."""
+    mod = _arm(True)
+    drifted = dict(QUILLSTONE, id=19, name='Wordmark Co', dominant_supplier='Wordmark Co Ltd',
+                   fields=[{'field_key': 'supplier_name', 'is_variable': 0,
+                            'fixed_value': 'Wordmark Co'}],
+                   # frozen-string count stays 0 because every confirm says 'Wordmark Co Ltd'
+                   supplier_prints_name={'supplier': 'Wordmark Co', 'ratio': 0.0, 'count': 0})
+    m = mod.identify_template(None, OAKHAVEN_PAGE, [drifted],
+                              detected_slug=None, title_trusted=False)
+    assert m is None, 'the drift-kept-young wordmark is refused — the ACCEPTED residual'
+
+
+@case
+def test_oracle_c1b_accepted_residual_split_brain_matches_on_dominant_stamps_frozen():
+    """ORACLE C1(b), ACCEPTED RESIDUAL, documented not celebrated: frozen value still a garble,
+    dominant corrected to the real name. `_template_identity` returns the DOMINANT first, so the
+    presence test passes on pages naming the real supplier and the template MATCHES — while
+    template_fixed will stamp the FROZEN garble. The garble class is fully closed only while
+    dominant == frozen; the stamped value's own rails (branding guard, name-presence veto) are the
+    defence on that side. This pin records the behaviour so the handover cannot overclaim."""
+    mod = _arm(True)
+    split = {'id': 20, 'name': 'x', 'document_type_slug': 'delivery_note',
+             'keyword_fingerprint': ['Oakhaven', 'Electrical', 'Wholesale', 'Conduit'],
+             'dominant_supplier': 'Oakhaven Electrical Wholesale',
+             'fields': [{'field_key': 'supplier_name', 'is_variable': 0,
+                         'fixed_value': '@a eens Ee'}],
+             'supplier_prints_name': {'supplier': '@a eens Ee', 'ratio': 0.0, 'count': 0}}
+    m = mod.identify_template(None, OAKHAVEN_PAGE, [split],
+                              detected_slug=None, title_trusted=False)
+    assert m is not None and m['template']['id'] == 20, \
+        'split-brain: matches via the corrected dominant name — the residual this pin documents'
+
+
+@case
 def test_scope_a_variable_supplier_template_is_untouched_by_the_young_rule():
     """gary's scope note: a template with NO frozen supplier does not stamp template_fixed identity,
     so the young fallback does not apply to it — its admission behaviour is exactly the old abstain."""

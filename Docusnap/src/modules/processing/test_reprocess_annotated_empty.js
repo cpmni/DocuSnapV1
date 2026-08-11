@@ -54,6 +54,24 @@ console.log('§1 PIN — un-annotated empty keeps existing (byte-identical legac
   check("trace decision 'kept_existing'", traces.includes('kept_existing'));
 }
 
+console.log('\n§1b Oracle C2 (2026-08-11) — the corroboration RECORD rides with a kept value:');
+{
+  // A kept value whose record was dropped read as "no longer corroborated" in Review after
+  // every reprocess-that-kept. Both keep branches carry it: kept_existing and the
+  // missing-from-new carry-over.
+  const corrobJson = '{"winner_family":"mapping","agree":["keyword"],"disagree":[],"independent_agree":true}';
+  const kept = merge([exRow({ corroboration: corrobJson })], [newBareEmpty()], null, null);
+  check('kept_existing carries corroboration', kept[0].corroboration === corrobJson);
+  const carried = merge([exRow({ field_key: 'vat_no', corroboration: corrobJson })],
+                        [newBareEmpty({ field_key: 'supplier_name' })], null, null);
+  const vatRow = carried.find(r => r.field_key === 'vat_no');
+  check('missing-from-new carry-over carries corroboration', vatRow && vatRow.corroboration === corrobJson);
+  // Control: a NEW value (used_new) keeps ITS OWN record, never the stale one.
+  const fresh = merge([exRow({ corroboration: corrobJson })],
+                      [exRow({ display_value: 'New Co', raw_value: 'New Co', corroboration: null })], null, null);
+  check('a replaced value does NOT inherit the old record', fresh[0].corroboration == null);
+}
+
 console.log('\n§2 Annotated empty WINS (the abstain-speak class lands on reprocess):');
 {
   const traces = [];

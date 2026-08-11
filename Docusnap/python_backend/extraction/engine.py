@@ -2614,6 +2614,21 @@ class ExtractionEngine:
         Kill: FIELD_CORROBORATION_EMIT=0 (metadata only, default on)."""
         if os.environ.get('FIELD_CORROBORATION_EMIT', '1') == '0':
             return {}
+
+        # ORACLE C1 (2026-08-11): `template_fixed` is a MEMORY stamp — no pixels at all — and the
+        # shared bucket folds every template* into the mapping family, which would suppress BOTH the
+        # most valuable agreement (this page's own taught-box read corroborates the memory) AND the
+        # most valuable disagreement (the frozen stamp contradicted by the page — the Oakhaven VAT
+        # class) as "same family". Special-cased HERE ONLY: `_crosscheck_witness_bucket` itself is
+        # shared with the LIVE crosscheck-outlier reconcile and must not be re-tuned by a record.
+        _MEMORY_METHODS = ('template_anchor', 'template_identity', 'template_identity_corroborated')
+
+        def _corrob_bucket(stage, method):
+            m = str(method or '')
+            if m.startswith('template_fixed') or m in _MEMORY_METHODS:
+                return ('memory', False)
+            return _crosscheck_witness_bucket(stage, method)
+
         out = {}
         for key, data in results.items():
             if key.startswith('_') or not isinstance(data, dict):
@@ -2623,11 +2638,11 @@ class ExtractionEngine:
                 continue
             win_norm = _cmp_norm(val)
             method = str(data.get('method') or '')
-            win_bucket = _crosscheck_witness_bucket(None, method)
+            win_bucket = _corrob_bucket(None, method)
             win_family = win_bucket[0] if win_bucket else _method_family(method)
             agree, disagree = set(), {}
             for c in (self._field_candidates.get(key) or []):
-                b = _crosscheck_witness_bucket(c.get('stage'), c.get('method'))
+                b = _corrob_bucket(c.get('stage'), c.get('method'))
                 if not b:
                     continue
                 fam = b[0]

@@ -5292,8 +5292,16 @@ async function loLoadList() {
         + '</div>';
     }
     for (const r of overrides) {
+      // Oracle C3 (2026-08-11): teach-written rows must be VISIBLE here — deletion in this list
+      // is the only remediation once teach_label_becomes_keyword has written them (turning the
+      // flag off gates writes, never retires rows). "replaces built-ins" = exclusive; the layout
+      // tag names the template scope (migration 62); nothing = a plain additive admin row.
+      const tags = [];
+      if (r.exclusive) tags.push('<span style="font-size:10px; padding:1px 6px; border-radius:var(--r-pill); background:var(--accent-bg); color:var(--accent2);" title="Taught label — replaces the built-in labels for this field (instead of adding to them)">replaces built-ins</span>');
+      if (r.template_id > 0) tags.push(`<span style="font-size:10px; padding:1px 6px; border-radius:var(--r-pill); background:var(--surface3); color:var(--muted);" title="Applies only to documents matching this learned layout">${escHtml(r.template_name || 'layout #' + r.template_id)} only</span>`);
       html += `<div class="row-flex" style="gap:8px; align-items:center; padding:3px 0;">
         <span style="font-family:var(--mono); color:var(--accent2);">&ldquo;${escHtml(r.label)}&rdquo;</span>
+        ${tags.join(' ')}
         <button class="btn" data-lo-del="${r.id}" style="padding:2px 8px; font-size:11px;">Remove</button>
       </div>`;
     }

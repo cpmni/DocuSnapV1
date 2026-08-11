@@ -72,6 +72,21 @@ assert e["independent_agree"] is False, e
 assert e["disagree"] == [{"family": "keyword", "value": "GB 660 1173 45"}], e
 ok("a stamped value contradicted by the page's own caption read is RECORDED (not acted on)")
 
+# ── 2b. ORACLE C1: a MEMORY stamp is its own family, not the mapping family ──
+# template_fixed carries no pixels. Folding it into 'mapping' (as the shared crosscheck bucket
+# does) would suppress both the page-corroborates-memory agreement AND the stamp-contradicted-by-
+# the-page disagreement as "same family" — hiding the Oakhaven class entirely.
+res = {"vat_no": {"value": "GB 512 8846 27", "method": "template_fixed", "confidence": 95}}
+e = emit(res, {"vat_no": [cand("0.5_mapping", "template_mapping", "GB 512 8846 27")]})["vat_no"]
+assert e["winner_family"] == "memory" and e["independent_agree"] is True and e["agree"] == ["mapping"], e
+ok("ORACLE C1: the page's own taught-box read CORROBORATES a memory stamp (memory != mapping)")
+
+res = {"vat_no": {"value": "GB 512 8846 27", "method": "template_fixed", "confidence": 95}}
+e = emit(res, {"vat_no": [cand("0.5_mapping", "template_mapping", "GB 660 1173 45")]})["vat_no"]
+assert e["independent_agree"] is False, e
+assert e["disagree"] == [{"family": "mapping", "value": "GB 660 1173 45"}], e
+ok("ORACLE C1: a frozen stamp CONTRADICTED by the page's own read is recorded, not suppressed")
+
 # ── 3. Same-family agreement counts for NOTHING ──────────────────────────────
 res = {"ref": {"value": "PO-1", "method": "keyword", "confidence": 85}}
 cands = {"ref": [cand("1_keyword", "keyword", "PO-1"),

@@ -792,6 +792,10 @@ function mergeReprocessRows(existing, newRows, flip = null, onTrace = null) {
         display_value: ex.display_value, confidence: ex.confidence,
         validation_note: ex.validation_note || null,
         corrected_to: ex.corrected_to || null,
+        // Oracle C2 (2026-08-11): the kept VALUE keeps its corroboration record — dropping it
+        // here made the Review badge vanish on every reprocess-that-kept, which reads as
+        // "no longer corroborated" for an unchanged value.
+        corroboration: ex.corroboration || null,
       };
     }
     if (ex.display_value) trace(row.field_key, 'used_new', ex.display_value, row.display_value);
@@ -815,6 +819,7 @@ function mergeReprocessRows(existing, newRows, flip = null, onTrace = null) {
         corrected_to:      ex.corrected_to || null,
         candidates:        ex.candidates || null,   // preserve the stored picker JSON on carry-over
         suggested_supplier: ex.suggested_supplier || null,   // preserve the branding-detected name on carry-over
+        corroboration:     ex.corroboration || null,   // Oracle C2: the record rides with the kept value
       });
     }
   }

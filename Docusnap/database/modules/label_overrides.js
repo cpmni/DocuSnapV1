@@ -13,12 +13,20 @@
  * scoped to the detected doc-type slug (see keyword.merge_label_overrides).
  */
 
-// Full rows for the admin UI (Settings → Advanced).
+// Full rows for the admin UI (Settings → Learning). exclusive + template scope included
+// (Oracle C3, 2026-08-11): turning `teach_label_becomes_keyword` OFF does not retire rows —
+// only WRITES are gated — so deletion in this list is the one remediation, and the operator
+// must be able to SEE which rows are teach-written (exclusive) and which template they scope
+// to. template_name is joined for display; the scope key stays template_id.
 function listLabelOverrides(db) {
   return db.prepare(`
-    SELECT id, doc_type_slug, field_key, label, created_at
-    FROM field_label_overrides
-    ORDER BY doc_type_slug, field_key, label
+    SELECT o.id, o.doc_type_slug, o.field_key, o.label, o.created_at,
+           COALESCE(o.exclusive, 0) AS exclusive,
+           COALESCE(o.template_id, 0) AS template_id,
+           t.name AS template_name
+    FROM field_label_overrides o
+    LEFT JOIN templates t ON t.id = o.template_id
+    ORDER BY o.doc_type_slug, o.field_key, o.label
   `).all();
 }
 

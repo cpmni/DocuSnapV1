@@ -586,13 +586,27 @@ def _identity_refuses(cand, ocr_text) -> bool:
     template (count 0-1, ratio unjudgeable) claimed 20 Oakhaven delivery notes through exactly this
     door. While the history is YOUNG (count < _IDENTITY_YOUNG_N) an abstain now falls back to the
     page-presence test: a young frozen-supplier template may only claim pages that actually name it.
-    NAMED TRADE-OFF, pinned in test_identity_on_page.py: a GENUINE wordmark supplier's siblings
-    route to review during its first (N-1) confirms — fail-toward-review, temporary — and a teach on
-    a name-less supplier no longer catches silently on document #2. A mature wordmark history
-    (count >= N, low ratio) keeps the carve-out untouched.
-    RESIDUAL, named: three confirms of a garbled supplier graduate it into the protected carve-out
-    (ratio 0 at count>=3 is indistinguishable from a real wordmark). The issuer-plausibility warn at
-    teach time and Learning Repair are the upstream/downstream answers to that.
+
+    THE YOUTH METRIC IS THE FROZEN-STRING CONFIRM COUNT, DELIBERATELY (Oracle C1, both branches
+    weighed). `supplier_prints_name.count` counts confirmed docs whose supplier equals the FROZEN
+    string exactly (namePresence.js). The alternative — the template's own bound-document count —
+    was REJECTED because wrong confirms mature the poison: in the reproducing sandbox the garble
+    template carries 21 confirmed docs (the operator File-All-Ready'd the leak), which would read
+    as "mature" and re-open the exact hole. Neither metric survives careless bulk confirms; this
+    one at least keys on the identity the template would STAMP. Two consequences, ACCEPTED and
+    pinned in test_identity_on_page.py rather than hidden:
+      (a) NOT merely temporary: a genuine wordmark supplier whose operator types the issuer
+          differently from the frozen value at confirm keeps count(frozen)=0 and stays young —
+          refused until a confirm matches the frozen string (or the value is corrected). Fails
+          toward review, logged to stderr, but it is a real "taught it and it never catches" cost.
+      (b) split-brain: frozen garble + dominant corrected to the real name — the presence test
+          evaluates the DOMINANT name (it is what `_template_identity` returns first), so the
+          template matches pages naming the real supplier while `template_fixed` still stamps the
+          frozen garble. The garble class is fully closed only while dominant == frozen; the
+          branding guard and name-presence veto are the rails on the stamped value itself.
+    RESIDUAL, named: three confirms of the garbled STRING graduate it into the protected carve-out.
+    The issuer-plausibility warn at teach time and Learning Repair are the upstream/downstream
+    answers to that.
     """
     if not _IDENTITY_ON_PAGE_ON:
         return False
