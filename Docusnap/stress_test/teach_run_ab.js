@@ -296,6 +296,42 @@ ARM_ENV.sepguard = { CODE_SEPARATOR_STRUCTURE_GUARD: '1' };
 //
 // IT PRINTS EVERY ROW IT BACKFILLS. An arm that backfills nothing is vacuous and its green score
 // proves nothing — say so rather than reporting a flat lane as a pass.
+// The same arm with the BAD SERIALS TEACH REPAIRED first (owner-directed 2026-08-11).
+// `labelkw`'s only measured effect was a regression: serials went empty -> WRONG via
+// keyword_override. The cause is not the feature, it is the teach it faithfully propagated. The
+// taught target box lands on the CAPTION rather than the value: the most-committed serials value on
+// this install is literally "Serial No:" x23, against real values shaped NW-9931617. That is the
+// same class STAGE05_REF_CODE_GATE was built for — "a taught box committed its own caption 'Ref'".
+//
+// The repair is DELETION, not re-aiming. Re-aiming would mean inventing target coordinates for one
+// document, which is the one-document hack the working rules forbid; and a teach that commits its
+// own caption on 23 documents is strictly worse than no teach at all.
+//
+// This arm therefore answers the question the owner actually asked: with the bad teach gone, does
+// the label-becomes-keyword feature cost anything?
+MUTATORS.labelkw_fixed = (S, db) => {
+  let dropped = 0;
+  for (const t of S.templates) {
+    // NOTE the key: templates.getAll returns `field_mappings`, not `mappings`. The first version
+    // of this arm used the wrong name, removed 0 rows and was caught only by the guard below —
+    // which is why the guard exists.
+    const before = (t.field_mappings || []).length;
+    if (t.field_mappings) {
+      t.field_mappings = t.field_mappings.filter(m => {
+        const bad = m.field_key === 'serials';
+        if (bad) console.log(`    [fixteach] drop tpl ${t.id} serials mapping (label ${JSON.stringify(m.anchor_text)})`);
+        return !bad;
+      });
+      dropped += before - t.field_mappings.length;
+    }
+    if (t.fields) t.fields = t.fields.filter(f => f.field_key !== 'serials');
+  }
+  S.anchors = (S.anchors || []).filter(a => a.field_key !== 'serials');
+  console.log(`    [fixteach] removed ${dropped} serials mapping(s) — the teach that commits its own caption`);
+  if (!dropped) console.log('    [fixteach] *** nothing removed — check the state shape ***');
+  MUTATORS.labelkw(S, db);
+};
+
 MUTATORS.labelkw = (S, db) => {
   const seen = new Set();
   const add = (slug, field, label, src) => {
@@ -315,12 +351,15 @@ MUTATORS.labelkw = (S, db) => {
       add(r.document_type, r.field_key, r.anchor_label, 'anchor');
     }
   } catch (e) { console.log('    [labelkw] anchors unavailable:', e.message); }
+  // Read the MUTATED STATE, not the DB. Reading the DB here silently undid `labelkw_fixed`'s
+  // repair — the arm dropped the bad serials mappings from S and the backfill put their captions
+  // straight back, so a "repaired" run produced the unrepaired result. A mutator arm must measure
+  // the state it mutated.
   try {
-    for (const r of db.prepare(
-      "SELECT t.document_type_slug slug, m.field_key, m.anchor_text FROM template_field_mappings m "
-      + "JOIN templates t ON t.id = m.template_id "
-      + "WHERE m.anchor_text IS NOT NULL AND TRIM(m.anchor_text) <> ''").all()) {
-      add(r.slug, r.field_key, r.anchor_text, 'mapping');
+    for (const t of (S.templates || [])) {
+      for (const m of (t.field_mappings || [])) {
+        add(t.document_type_slug, m.field_key, m.anchor_text, 'mapping');
+      }
     }
   } catch (e) { console.log('    [labelkw] mappings unavailable:', e.message); }
   console.log(`    [labelkw] backfilled ${seen.size} exclusive override(s)`);
