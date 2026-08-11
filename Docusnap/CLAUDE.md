@@ -21,7 +21,38 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-11 LATE: **READ `HANDOVER_2026-08-11_LATE.md` FIRST** (the whole
+## ⏭ LATEST — 2026-08-12 OVERNIGHT (autonomous): **READ `HANDOVER_2026-08-12_OVERNIGHT.md` FIRST.**
+HEAD **`afe8da0`** + docs commit, PUSHED. No flips, no live-DB writes. THREE things happened:
+**(1) "Pelican did autofile" VERIFIED FALSE at source** — every Pelican filing is a HUMAN
+`review_confirmed` (incl. a File-All-Ready burst); the only machine auto-file ever is 20
+Meadowvale notes @95 graduation (08-10). **0016 is HELD CORRECTLY at 99**: its invoice_number is
+the serif I→1 class (crop rung beat the correct mapping read — the corroboration record captured
+the disagreement) + the frozen trailing-dash supplier. Tell the owner: the hold is the system
+working. **(2) The NAME-BOX FLUSH-EDGE CLIP slice SHIPPED** (`afe8da0`, Oracle SIGN-OFF-W/COND):
+fix (a) teach-side trailing-pad floor 0.004 (boxSnap+valueLocate, asymmetry PINNED — right only;
+left snug = label-tail, vertical snug = row-below) + fix (b) `TEMPLATE_NAME_EDGE_GROW` DEFAULT
+OFF (toggle exists; nested under `template_abs_edge_guard`; right-cut only, last-token repair,
+page-present witness with NO short-token skip, FLAG-ONLY ≤70+note, declines SILENT). Gates: OFF
+md5-identical · armed +22 heals/0 losses · census 29 heal/14 decline, **1 direct/28 superseded**
+(the @70 result un-squats the clipped 90 read; correct keyword/fixed/hint wins unnoted — flip
+buys ~zero review volume). **Oracle C1, SAY BEFORE ANY FLIP: it does NOT fix the Ironclad 'Ltc'
+exhibit** (overhang 0.0010 < the untouched 0.004 floor) — that page needs a RE-TEACH under the
+new pad, or the **C7 stored-box repair arm** (OPEN, owner decision, backlog top). C3 owner-watch
+(90→70 un-squat's 71-89 window can swap wrong-for-wrong unnoted, 'SITE ADDRESS' @78); C6: never
+arm `NAME_UNCLIP_RECONCILE` alongside. Hidden-field-drop corpus arm (owed) RAN CLEAN: 30 ghost
+serials dropped in GT-certified-absent scopes, 0 collateral. **(3) CHRIS ROUND 3
+(`docs/CHRIS_FULL_APP_REVIEW_2026-08-12.md`): THE BLEED IS FIXED, BOTH VARIANTS** — his exact
+repeat of the owner-issued-PO poison touched 0/20 Oakhaven, garble contained+flagged on 5
+same-supplier docs, zero VAT crossover, first unconditional two-week verdict. 14 prior findings
+FIXED (Approve arm, locate glow, reprocess warning…). His top NEW finds (owner vet queue,
+NOTHING implemented): the teach-time plausibility warn NEVER SPOKE — DIAGNOSED: the warn block
+(`review/renderer.js` ~:3634) is nested inside `if (detected)` so a garbled read that also fails
+anchor capture is SILENT (also explains the ⊕ saying nothing on success); and the RECYCLE-BIN
+VIEW GOES STALE (open bin during Delete-All reads "empty", Restore-all no-ops silently — fresh
+entry restored all 152). Screenshots `~/Desktop/TESTING/_chris3_screens/`; sandbox left on CDP
+9223 PID 132896.
+
+### Prior — 2026-08-11 LATE: **READ `HANDOVER_2026-08-11_LATE.md`** (the whole
 evening→midnight arc; `_EVENING.md` = the afternoon). HEAD **`dc285a3`**, PUSHED, tree clean.
 Owner's app RUNNING on this code. EIGHT gated arcs live: dock resolved · trace crops named ·
 **picker history ranking** ("confirmed N times", owner-seen) · **sample-angle BACKFILL APPLIED**
