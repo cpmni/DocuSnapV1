@@ -230,6 +230,11 @@ async function renderTypeStep(){
   nu.innerHTML='<div class="ic">＋</div><div class="nm">It\'s something new</div>';
   nu.onclick=()=>selectType(nu,true);
   grid.appendChild(nu);
+  // The create editor is always on screen at the TOP of the step (no click needed) — typing a
+  // name there auto-selects this card; clicking the card just focuses the name box up top.
+  // NOT while an EDIT editor owns the slot: the mid-teach edit flow re-renders this grid on every
+  // change (onChange -> renderTypeStep) and must not have its editor torn down under the cursor.
+  if (dtEditorMode !== 'edit') _ensureCreateEditor();
   // PARITY WITH SETTINGS (owner, 2026-08-10). The type EDITOR was already the shared component, so
   // fields and structural roles matched; the CATALOG was not, so a type built here started empty
   // while the same type built in Settings arrived with its fields AND its likely printed labels
@@ -262,7 +267,34 @@ function setEditTypeEnabled(on){
   if (d) d.textContent = on ? EDIT_TYPE_DESC_ON : EDIT_TYPE_DESC_OFF;
 }
 
-let dtEditor = null;   // shared DocTypeEditor (create mode); mounted lazily on "It's something new"
+let dtEditor = null;   // shared DocTypeEditor, mounted in the ALWAYS-VISIBLE top panel
+let dtEditorMode = null;   // 'create' | 'edit' — which flavour currently owns #nt-editor-host
+
+// The create editor is ALWAYS mounted at the top of step 2 (owner, 2026-08-11): it used to mount
+// below the grid on the "It's something new" click, and on lower-res displays nothing visibly
+// happened — the editor was below the fold. Typing a name in it IS choosing "new": the first
+// input auto-selects the card, no prior click required (the step-3 manual-entry hatch pattern).
+function _ensureCreateEditor(){
+  if (dtEditor && dtEditorMode === 'create') return;         // keep the in-progress draft
+  if (dtEditor){ try{ dtEditor.destroy(); }catch{} dtEditor=null; $('nt-editor-host').innerHTML=''; }
+  if (!window.DocTypeEditor) return;
+  dtEditor = window.DocTypeEditor.create($('nt-editor-host'), {
+    mode:'create', api:D,
+    onValidityChange: () => renderFooter(),   // live-enable the Continue button
+  });
+  dtEditorMode = 'create';
+  const host = $('nt-editor-host');
+  if (!host._newTypeWired){
+    host._newTypeWired = true;
+    host.addEventListener('input', () => {
+      // Typing in the CREATE editor selects "It's something new" — never steal selection while
+      // the operator is editing an EXISTING type in the same slot.
+      if (dtEditorMode !== 'create' || isNewTypeSelected()) return;
+      const nu = document.getElementById('card-new');
+      if (nu) selectType(nu, true, { focus:false });
+    });
+  }
+}
 
 // EDIT AN EXISTING TYPE, MID-TEACH (owner parity request, 2026-08-10). Settings can change a
 // type's fields, roles and "Also appears as" aliases; the wizard could only CREATE. That gap bites
@@ -275,7 +307,10 @@ async function openTypeEditorFor(slug){
   const t=types.find(x=>x.slug===slug);
   if (!t) return;
   if (dtEditor){ try{ dtEditor.destroy(); }catch{} dtEditor=null; }
-  $('new-type-panel').classList.remove('hidden');
+  $('nt-editor-host').innerHTML='';
+  const head = $('nt-panel-head');
+  if (head) head.textContent = `Editing “${t.name}” — changes apply everywhere this type is used.`;
+  dtEditorMode = 'edit';
   dtEditor = window.DocTypeEditor.create($('nt-editor-host'), {
     mode:'edit', api:D, initial:t,
     // A field added here must reach the step the operator is walking through, or they would edit
@@ -297,10 +332,9 @@ async function openTypeEditorFor(slug){
   });
 }
 
-function selectType(card,isNew){
+function selectType(card,isNew,opts){
   document.querySelectorAll('#type-grid .card').forEach(c=>c.classList.remove('sel'));
   card.classList.add('sel');
-  $('new-type-panel').classList.toggle('hidden', !isNew);
   // "Edit this type…" belongs to an EXISTING selection only — there is nothing to edit before the
   // new type exists, and the create editor is already on screen in that case.
   // Visible-but-DISABLED rather than hidden: a control that only exists after you click something
@@ -309,15 +343,19 @@ function selectType(card,isNew){
   setEditTypeEnabled(!isNew);
   const eb=$('btn-teach-edit-type');
   if (eb) eb.onclick = () => { if (!eb.disabled) openTypeEditorFor(card.dataset.slug); };
-  if (!isNew && dtEditor){ try{ dtEditor.destroy(); }catch{} dtEditor=null; $('nt-editor-host').innerHTML=''; }
-  // Mount the shared friendly creator lazily and keep it across toggles, so the
-  // user's in-progress draft survives switching between cards. The component owns
-  // the locked structural roles (Company/Date) + the removable Reference seed.
-  if (isNew && !dtEditor && window.DocTypeEditor){
-    dtEditor = window.DocTypeEditor.create($('nt-editor-host'), {
-      mode:'create', api:D,
-      onValidityChange: () => renderFooter(),   // live-enable the Continue button
-    });
+  // The top panel is ALWAYS visible (owner, 2026-08-11 — the below-the-fold trap). Selecting an
+  // EXISTING card tears down only an EDIT-mode editor and restores the create hatch, so a new-type
+  // draft survives switching between cards (the component keeps its own state).
+  const head = $('nt-panel-head');
+  if (!isNew && dtEditorMode === 'edit'){
+    try{ dtEditor.destroy(); }catch{} dtEditor=null; dtEditorMode=null; $('nt-editor-host').innerHTML='';
+  }
+  _ensureCreateEditor();
+  if (head && dtEditorMode === 'create') head.textContent =
+    'Is it something new? Name it here to create it — or pick one of your existing types below.';
+  if (isNew && (!opts || opts.focus !== false)){
+    const first = $('nt-editor-host').querySelector('input, select, textarea');
+    if (first) try { first.focus(); } catch {}
   }
   renderFooter();
 }

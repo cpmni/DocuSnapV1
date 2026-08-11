@@ -349,6 +349,17 @@
     <section class="step" data-step="2">
       <h2>What kind of document is this?</h2>
       <p class="lead">This helps Scan Finder file it in the right place.</p>
+      <!-- THE TYPE EDITOR LIVES AT THE TOP (owner, 2026-08-11), same pattern as step 3's
+           manual-entry hatch: it used to mount BELOW the grid, and on lower-res displays the
+           user clicked "It's something new" and never realised anything had appeared — the
+           editor was below the fold. Always visible, no click needed: typing a name here IS
+           choosing "new" (the renderer auto-selects the card). "Edit this type…" reuses the
+           same top slot, so a mid-teach edit is equally visible. -->
+      <div id="new-type-panel" class="panel">
+        <div class="sub" id="nt-panel-head" style="margin:0 0 8px; color:var(--muted); font-size:13px;">
+          Is it something new? Name it here to create it — or pick one of your existing types below.</div>
+        <div id="nt-editor-host"></div>
+      </div>
       <div id="type-grid" class="grid"></div>
       <!-- Parity with Settings > Document Types (owner, 2026-08-10): the type EDITOR was
            already shared, but the catalog was not, so building a type mid-teach meant adding
@@ -370,9 +381,6 @@
         </button>
       </div>
 
-      <div id="new-type-panel" class="panel hidden">
-        <div id="nt-editor-host"></div>
-      </div>
     </section>
 
     <!-- Step 3: Point out the details -->
