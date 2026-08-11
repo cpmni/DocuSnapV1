@@ -693,6 +693,78 @@ confirms is still nulled (`engine.py:7181-7229`); only new confirms or Learning 
 
 ---
 
+## 2026-08-11 — OWNER PRINCIPLE: THE RUNGS SHOULD CORROBORATE, NOT MERELY COMPETE
+
+**Owner, verbatim, on the SFDEV trace where the mapping matched `JOB SHEET NO` at 90% and the
+keyword matched a bare `Ref` at 85%:** *"it got the right value but it is more about corroboration
+than merely getting it right. all the mechanisms should work in the best way possible to enable us
+to confirm the values obtained. otherwise there is a chance, from time to time the wrong value will
+be selected."*
+
+**HE IS RIGHT, AND IT REFRAMES SEVERAL THINGS IN THIS BACKLOG.** That trace is not a success story.
+The two rungs were answering **different questions** — one hunting the taught caption, one hunting a
+generic `Ref` — so they could never AGREE; they could only compete, and the outcome was decided by a
+5-point confidence margin. A margin is not evidence. When it tips the other way (the mapping fails,
+the page is dirtier, the generic caption happens to sit nearer a plausible value) the wrong rung
+wins and **nothing in the system notices**, because nothing was ever asked to agree.
+
+### What exists today, verified at source
+The vocabulary is already here, but only inside specific guards, never as a governing rule:
+- `_anchor_corroborates` (engine.py ~:278) — CORROBORATE-ONLY, used by the ownership cap.
+- `_template_identity_corroborated` (~:203) — identity/template claiming.
+- "no different-method-family rail agrees" (~:368) — the closest thing to the owner's principle,
+  and it is a REFUSAL condition for one guard, not a general signal.
+- An existing doctrine at ~:142: *"confirmation grants no new authority — so agreement should
+  license KEEPING what is already there"*.
+
+**What does NOT exist:** anything that rewards, records or surfaces the fact that two INDEPENDENT
+rungs reached the same value. `_merge_outcome` is value+method equality; the disambiguation picker
+sorts chosen-first then confidence; `_build_candidate_emit` never asks whether the candidates agree.
+Agreement is currently invisible.
+
+### THE DISTINCTION THAT MUST NOT BE LOST, or this gets built wrong
+This repo has a hard, Oracle-ratified rule that **same-pixel agreement is worthless**:
+`docs/oracle_log.md` 2026-08-03 measured same-pixels-different-postprocess witnesses at **5:1
+false:true**, and the 2026-08-11 `I`→`1` work re-proved it (light and heavy preps AGREE on the wrong
+`P1` on 2 of 5 documents — correlated error, not corroboration).
+
+**Keyword vs template_mapping is a genuinely different case.** They locate the value by different
+means — caption search versus taught geometry — so when they land on the same string that IS
+independent evidence. The rule to encode is therefore about **independence of METHOD FAMILY**, not
+about counting witnesses:
+- caption-located (Stage 1 keyword) vs geometry-located (Stage 0.5 mapping) → INDEPENDENT, agreement counts
+- two preps of the same crop, or a re-read of the same box → NOT independent, agreement counts for nothing
+- full-page OCR vs a crop of that same page → PARTIALLY independent (it caught the separator class,
+  and it also FAILED on the `I`→`1` class where both carried the same misread — see the sepguard C1
+  finding). Treat as weak.
+
+### WHY THIS IS THE REAL ARGUMENT FOR `teach_label_becomes_keyword`
+Pointing the keyword rung at the taught caption does not merely stop it reading `Ref`. **It makes
+two independent rungs answer the same question, so that their agreement becomes available as
+evidence for the first time.** That is a better justification than the one currently in this file,
+and it explains why the corpus arm measured nothing: the scorer counts final values, and
+corroboration is invisible to it. **A lane that is byte-identical can still have become far better
+evidenced.** Any future arm for this should count AGREEMENT, not just correctness.
+
+### DIRECTIONS (nothing built; this is a principle, and it needs the advisor + Oracle gate)
+1. **Record it first, spend it later.** Emit per-field: which method families produced a value, and
+   whether the independent ones agree. The `_field_candidates` ledger already collects the
+   candidates — this is a derived read of it, and it is inert by construction.
+2. **Then surface it** — in SFDEV (beside the caption, which is what made this visible at all), and
+   in Review as the honest version of "verified": *"two independent readings agree"* rather than a
+   bare confidence percentage. The owner's standing rule is minimal interaction, so this is
+   information, not a new prompt.
+3. **Only then let it move a decision** — agreement licenses KEEPING or raising trust; DISAGREEMENT
+   between independent families is the flag. That ordering matters: a corroboration signal that
+   starts by changing outcomes cannot be measured against the outcomes it changed.
+4. **Interaction to check before any of it:** auto-file already has `docTrustGate`; adding a
+   corroboration input there is the obvious payoff and the obvious risk. Do not wire it to auto-file
+   in the same slice that introduces it.
+
+**NOT BUILT.**
+
+---
+
 ## 2026-08-11 — OWNER-REPORTED (x2): THE APP ALREADY KNOWS THE ANSWER AND DOES NOT CONSULT IT
 
 Both raised from a live screen: an Ironclad statement whose `customer_name` picker offered
