@@ -1362,6 +1362,26 @@ function defaultConcurrency() {
   return Math.max(1, Math.min(maxConcurrency(), cores - 2));
 }
 
+// ONE Tesseract thread cap for EVERY reprocess read (owner-approved "option 1", 2026-08-11).
+// Tesseract's LSTM scores differ slightly with OpenMP thread count (float accumulation order —
+// upstream-documented; OMP_THREAD_LIMIT=1 is their reproducibility advice), so a boundary glyph
+// can read differently under different caps: the owner watched a single reprocess read
+// 'ACC-2291' and Reprocess-All read 'ACC-229]' on the SAME document — single ran UNCAPPED
+// while each batch worker ran at cores/shards. The cap is now derived from the CONFIGURED
+// concurrency (never the per-run shard count), so single-doc, small-batch and full-queue
+// reprocess all read under identical threading on a given machine + settings. Small batches
+// (docs < concurrency) run mildly under-threaded rather than differently-read — the safe
+// direction. NOT full determinism (that is OMP_THREAD_LIMIT=1 everywhere — the declined
+// "option 2"), and first-IMPORT workers keep their own cap (a known, recorded residual).
+function _reprocessThreadCap(db) {
+  const cores = os.cpus().length || 1;
+  let conc = parseInt(require('../../../database/modules/learning')
+    .getSetting(db, 'processing_concurrency', String(defaultConcurrency())), 10);
+  if (!Number.isFinite(conc)) conc = 1;
+  conc = Math.max(1, Math.min(10, conc));
+  return Math.max(1, Math.floor(cores / conc));
+}
+
 function register(ctx) {
   const { ipcMain, getDb, pythonExe, pythonArgs, tesseractPath,
           backendScript, configPath, notifyMainWindow, notifyDevInspector,
@@ -2476,7 +2496,11 @@ function register(ctx) {
       // Gated by a setting, DEFAULT OFF; passed ONLY here on the single-reprocess spawn, NEVER the
       // batch/import/shard path (those already parallelise ACROSS docs with their own OMP cap, so
       // nesting a per-doc pool inside them would oversubscribe). The python side caps OMP to 1.
-      let spawnEnv = { ...process.env, ..._ocrDpiEnv(db), ..._anchorCropEnv(db), ..._reconcileEnv(db) };   // ocr_dpi + crop + reconcile opt-ins on reprocess (all default = byte-identical)
+      let spawnEnv = { ...process.env, ..._ocrDpiEnv(db), ..._anchorCropEnv(db), ..._reconcileEnv(db),
+        // Same Tesseract thread cap as every Reprocess-All worker (owner "option 1", 2026-08-11):
+        // an uncapped single reprocess read boundary glyphs DIFFERENTLY from the capped batch
+        // (LSTM thread-count nondeterminism — 'ACC-2291' vs 'ACC-229]' on one document).
+        OMP_THREAD_LIMIT: String(_reprocessThreadCap(db)) };
       try {
         if (require('../../../database/modules/learning').getSetting(db, 'ocr_parallel_reprocess_enabled', 'false') === 'true') {
           // B = parallel full-page OCR passes (straighten/enhance/first-import); C = parallel per-field
@@ -3075,12 +3099,13 @@ function register(ctx) {
     // uses it (was throttled to 5). threadCap = cores/shards keeps the pool from thrashing.
     concurrency = Math.max(1, Math.min(10, concurrency));
     const shards  = partitionRoundRobin(tmpNames, Math.min(concurrency, tmpNames.length));
-    // Per-worker thread cap = cores / workers, so the pool doesn't oversubscribe the
-    // CPU. Caps Tesseract's OpenMP threads (OMP_THREAD_LIMIT in the spawn env — without
-    // it N workers each grab ~all cores ≈ N×cores threads and thrash, making a parallel
-    // run crawl as if it were serial). >1 shard only.
-    const threadCap = shards.length > 1
-      ? Math.max(1, Math.floor((os.cpus().length || 1) / shards.length)) : 0;
+    // Per-worker thread cap — from the CONFIGURED concurrency, never the per-run shard count
+    // (see _reprocessThreadCap: identical Tesseract threading across single/small/full
+    // reprocess is what keeps a boundary glyph reading the SAME on every path). Still bounds
+    // total threads ≈ cores when the pool is full; a smaller batch runs mildly under-threaded
+    // rather than differently-read. Applied to EVERY shard incl. a single-shard run (an
+    // uncapped 1-shard batch was the old single-vs-batch disparity in miniature).
+    const threadCap = _reprocessThreadCap(db);
 
     _reprocessStatus = { running: true, total: tmpNames.length, done: 0, failed: 0, pendingCompletion: false };
     mirrorReprocess({ type: 'start', total: tmpNames.length });

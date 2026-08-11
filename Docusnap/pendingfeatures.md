@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-08-11 — OCR thread-count nondeterminism: reprocess paths ALIGNED, import residual + option-2 open
+
+Owner-observed live: a single reprocess read `ACC-2291`, Reprocess-All read `ACC-229]` — SAME doc,
+same DPI. Cause: Tesseract's LSTM scores boundary glyphs differently under different OpenMP thread
+counts (upstream-documented), and the single spawn ran UNCAPPED while batch workers ran at
+cores/shards (itself varying per batch size). **SHIPPED (owner "option 1"): one shared cap
+`_reprocessThreadCap` = cores / min(configured concurrency, 10) on BOTH reprocess paths**, pinned
+in `tests/test_reprocess_threadcap.js`. Residuals, both deliberate: (a) **first-IMPORT workers
+keep their own per-shard cap** — an import-vs-reprocess boundary-glyph flip remains possible
+(pin allows exactly that one surviving formula); (b) **run-to-run identity is NOT guaranteed** —
+that is `OMP_THREAD_LIMIT=1` everywhere ("option 2", declined for speed). Revisit option 2 if
+determinism ever outranks single-doc latency; extend the cap to the import path if the
+import-vs-reprocess flip is observed live.
+
+---
+
 ## 2026-08-11 — Stage-1 keyword is SAME-LINE only, so label-above layouts can never corroborate
 
 Owner-reported live (Silverbeck sales order 0020): `sales_order_number` mapping matched
