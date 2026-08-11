@@ -540,18 +540,21 @@ function broadcastDock() {
 function wireChildDock(win, name) {
   win.on('minimize', () => {
     dockedChildren.add(name); broadcastDock();
-    // HIDE the minimised window (owner, 2026-08-11, with a screenshot): a skipTaskbar window
-    // minimises to Windows' tiny unlabelled desktop stub at the SCREEN's bottom-left — the very
-    // artefact the dock exists to replace — and it was landing on top of the chips. Hidden, no
-    // stub exists at all: the chip is the one representation.
-    // DEFERRED past the OS minimise animation: hiding mid-animation left the surface unpainted
-    // and the window came back BLANK (owner, live, first test). The restore path shows before
-    // restoring and forces a repaint — see restore-child-window.
-    setTimeout(() => {
-      try { if (!win.isDestroyed() && win.isMinimized()) win.hide(); } catch { /* going away */ }
-    }, 300);
+    // While minimised the child gets a REAL taskbar entry (owner, 2026-08-11, third iteration):
+    // Windows renders a taskbar-less minimised window as a tiny unlabelled desktop stub at the
+    // screen's bottom-left — the artefact that was covering the dock chips — and hiding the
+    // window instead brought it back BLANK twice (surface unpainted around the minimise
+    // animation, invalidate() insufficient on this machine). A taskbar entry removes the stub
+    // the honest way: the window minimises INTO the taskbar (app icon + the window's own title),
+    // no paint tricks, and the dock chip still restores it with one click. skipTaskbar returns
+    // the moment the window is back in front, so the no-second-taskbar-icon rule holds whenever
+    // the window is actually open.
+    try { if (!win.isDestroyed()) win.setSkipTaskbar(false); } catch { /* going away */ }
   });
-  const undock = () => { if (dockedChildren.delete(name)) broadcastDock(); };
+  const undock = () => {
+    if (dockedChildren.delete(name)) broadcastDock();
+    try { if (!win.isDestroyed()) win.setSkipTaskbar(true); } catch { /* going away */ }
+  };
   win.on('restore', undock);
   win.on('show',    undock);
   win.on('focus',   undock);
