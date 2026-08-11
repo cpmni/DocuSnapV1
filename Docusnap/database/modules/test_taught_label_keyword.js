@@ -76,6 +76,36 @@ check('missing doc-type slug refused', lo.addLabelOverride(db, { doc_type_slug: 
 check('over-long label refused (unchanged cap)',
       lo.addLabelOverride(db, { doc_type_slug: 'invoice', field_key: 'po_number', label: 'x'.repeat(121), exclusive: 1 }).code === 'label_too_long');
 
+console.log('\n5b. Migration 62 — TEMPLATE scope ("per doc type for each supplier")');
+// The doc-type-wide form is why the mig-61 flag stayed OFF: one supplier's caption became the
+// keyword for EVERY supplier's documents of that type. A teach now writes its template's id;
+// 0 = doc-type-wide (admin/preset rows only).
+check('field_label_overrides.template_id exists',
+      db.prepare('PRAGMA table_info(field_label_overrides)').all().some(c => c.name === 'template_id'));
+check('an admin row is doc-type-wide (template_id 0)',
+      db.prepare("SELECT template_id FROM field_label_overrides WHERE label='Admin Typed'").get().template_id === 0);
+const t1 = lo.addLabelOverride(db, { doc_type_slug: 'service_worksheet', field_key: 'worksheet_number',
+                                     label: 'JOB SHEET NO', exclusive: 1, template_id: 4 });
+check('a teach write stores its template id', t1.ok && t1.inserted === 1 &&
+      db.prepare("SELECT template_id FROM field_label_overrides WHERE label='JOB SHEET NO'").get().template_id === 4);
+const t2 = lo.addLabelOverride(db, { doc_type_slug: 'service_worksheet', field_key: 'worksheet_number',
+                                     label: 'JOB SHEET NO', exclusive: 1, template_id: 7 });
+check('a SECOND template may teach the SAME caption (4-column UNIQUE)', t2.ok && t2.inserted === 1);
+check('re-teaching the same (label, template) is still a no-op',
+      lo.addLabelOverride(db, { doc_type_slug: 'service_worksheet', field_key: 'worksheet_number',
+                                label: 'JOB SHEET NO', exclusive: 1, template_id: 4 }).inserted === 0);
+const extRow = lo.getForExtraction(db).find(o => o.label === 'JOB SHEET NO' && o.template_id === 4);
+check('getForExtraction carries template_id', !!extRow, JSON.stringify(extRow));
+// The promote step must never widen an ADMIN row's scope: an exclusive teach on template 9 of the
+// admin's caption creates its OWN row rather than promoting the doc-type-wide one.
+lo.addLabelOverride(db, { doc_type_slug: 'invoice', field_key: 'account_no', label: 'Scoped Base' });
+const p9 = lo.addLabelOverride(db, { doc_type_slug: 'invoice', field_key: 'account_no',
+                                     label: 'Scoped Base', exclusive: 1, template_id: 9 });
+check('a template-scoped teach of an admin caption INSERTS its own row (never promotes tpl-0)',
+      p9.inserted === 1 && p9.promoted === 0
+      && db.prepare("SELECT COALESCE(exclusive,0) e FROM field_label_overrides WHERE label='Scoped Base' AND template_id=0").get().e === 0);
+db.prepare("DELETE FROM field_label_overrides WHERE label='Scoped Base'").run();
+
 console.log('\n6. CONTROL — the fixture can tell exclusive from additive at all');
 // A FRESH additive row, because section 3 deliberately promoted the earlier one: asserting on the
 // end state there would be asserting that the promotion did not happen.

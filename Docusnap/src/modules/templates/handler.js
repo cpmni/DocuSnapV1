@@ -654,9 +654,11 @@ function register(ctx) {
           const tpl = templates.getById ? templates.getById(db, templateId) : null;
           const slug = String((tpl && tpl.document_type_slug) || '').trim();
           if (slug) {
+            // template_id (migration 62): the override applies only when THIS template matches
+            // — "per doc type for each supplier, set at the template level" (owner 2026-08-11).
             require('../../../database/modules/label_overrides')
               .addLabelOverride(db, { doc_type_slug: slug, field_key: mapping.field_key,
-                                      label, exclusive: 1 });
+                                      label, exclusive: 1, template_id: Number(templateId) || 0 });
           }
         }
       }

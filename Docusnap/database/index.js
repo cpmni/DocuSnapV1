@@ -1354,6 +1354,48 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 61 applied: field_label_overrides.exclusive (0/NULL-inert)');
   }
 
+  // ── Migration 62: field_label_overrides.template_id — TEMPLATE-scoped taught labels ──────────
+  // OWNER DECISION 2026-08-11 (same day, sharpening mig 61): "It needs to be per doc type for each
+  // supplier, so set at the template level." A caption is usually a doc-type convention, but the
+  // teach that donates it is performed on ONE supplier's layout — doc-type-wide scope made one
+  // supplier's caption the keyword for EVERY supplier's documents of that type, which is why the
+  // mig-61 flag stayed OFF. template_id = 0 keeps a row DOC-TYPE-WIDE (the admin Settings screen
+  // and the preset seeder — their behaviour is unchanged); a teach now writes its template's id and
+  // Python applies the row only when that template matched the document (a template IS the
+  // supplier+doctype pairing — templates bind suppliers via their confirmed history, there is no
+  // supplier column to key on).
+  // TABLE REBUILD, not ALTER: the original UNIQUE(doc_type_slug, field_key, label) would forbid two
+  // templates teaching the same caption for the same field, and SQLite cannot amend a table-level
+  // UNIQUE in place. NOT NULL DEFAULT 0 (never NULL) so the 4-column UNIQUE actually dedupes —
+  // NULLs are pairwise-distinct inside a SQLite UNIQUE and would let admin rows duplicate.
+  if (!applied.has(62)) {
+    try {
+      const hasTpl = db.prepare('PRAGMA table_info(field_label_overrides)').all()
+        .some(c => c.name === 'template_id');
+      if (!hasTpl) {
+        db.exec(`
+          CREATE TABLE field_label_overrides_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            doc_type_slug TEXT NOT NULL,
+            field_key TEXT NOT NULL,
+            label TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now')),
+            exclusive INTEGER DEFAULT 0,
+            template_id INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(doc_type_slug, field_key, label, template_id)
+          );
+          INSERT INTO field_label_overrides_new (id, doc_type_slug, field_key, label, created_at, exclusive)
+            SELECT id, doc_type_slug, field_key, label, created_at, COALESCE(exclusive, 0)
+            FROM field_label_overrides;
+          DROP TABLE field_label_overrides;
+          ALTER TABLE field_label_overrides_new RENAME TO field_label_overrides;
+        `);
+      }
+    } catch (e) { console.warn(`  migration 62: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (62)').run();
+    console.log('JS migration 62 applied: field_label_overrides.template_id (0 = doc-type-wide)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the
@@ -1529,6 +1571,10 @@ function addMissingColumns(db) {
   safeAdd('documents', 'doc_date',         'TEXT');
   safeAdd('documents', 'reference_number', 'TEXT');
   safeAdd('extractions', 'extraction_method', 'TEXT');
+  // Corroboration record (owner principle 2026-08-11: "the rungs should corroborate, not merely
+  // compete"). JSON {winner_family, agree[], disagree[], independent_agree} — which independent
+  // METHOD FAMILIES read the same value. Record-only; nothing gates on it yet by design.
+  safeAdd('extractions', 'corroboration', 'TEXT');
   safeAdd('corrections', 'document_type',  'TEXT');
   safeAdd('supplier_hints', 'document_type', 'TEXT');
 

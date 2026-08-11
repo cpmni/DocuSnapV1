@@ -686,6 +686,11 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // A learned layout may only claim a document that names its company -
                          // the wrong-company misfile (2026-08-10).
                          ['identity-on-page-toggle', 'template_identity_on_page'],
+                         // A confirmed taught label REPLACES the generic keyword bank for its
+                         // field, scoped to the template it was taught on (migrations 61+62).
+                         // JS-side setting read (both teach writers + the extraction payload);
+                         // no env bridge needed.
+                         ['teach-label-keyword-toggle', 'teach_label_becomes_keyword'],
                          // Bridged 2026-08-10: both were built + measured on 08-09 and recorded as
                          // "awaiting the owner's flip", but neither had a bridge, so there was
                          // nothing to flip - env-only, and npm start injects no env.

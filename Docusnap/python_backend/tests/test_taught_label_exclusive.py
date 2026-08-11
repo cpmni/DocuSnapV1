@@ -110,6 +110,45 @@ other = merge_label_overrides(
 assert labels_of(other) == ["Ref", "Your PO", "Order No"]
 ok("an override for another doc type is ignored — the bank is untouched")
 
+# ── 6b. TEMPLATE SCOPE (migration 62) ────────────────────────────────────────
+# "Per doc type for each supplier — set at the template level" (owner, 2026-08-11). A teach-written
+# row carries the template it was taught on; it applies ONLY when that template matched the
+# document. Doc-type-wide rows (template_id 0/absent — admin/preset) keep applying everywhere.
+TPL_ROW = {"doc_type_slug": SLUG, "field_key": "po_number",
+           "label": "JOB SHEET NO", "exclusive": 1, "template_id": 4}
+
+pats = shipped()
+hit = merge_label_overrides(pats, [TPL_ROW], SLUG, template_id=4)
+assert labels_of(hit) == ["JOB SHEET NO"], labels_of(hit)
+ok("a template-scoped row applies when ITS template matched (and is exclusive)")
+
+pats = shipped()
+miss = merge_label_overrides(pats, [TPL_ROW], SLUG, template_id=7)
+assert labels_of(miss) == ["Ref", "Your PO", "Order No"], labels_of(miss)
+ok("a template-scoped row is INERT when a different template matched — no cross-supplier bleed")
+
+pats = shipped()
+none = merge_label_overrides(pats, [TPL_ROW], SLUG, template_id=None)
+assert labels_of(none) == ["Ref", "Your PO", "Order No"], labels_of(none)
+ok("a template-scoped row is INERT when NO template matched (cold documents keep the shipped bank)")
+
+pats = shipped()
+wide = merge_label_overrides(
+    pats, [{"doc_type_slug": SLUG, "field_key": "po_number", "label": "Admin Wide"}],
+    SLUG, template_id=99)
+assert labels_of(wide) == ["Admin Wide", "Ref", "Your PO", "Order No"], labels_of(wide)
+ok("a doc-type-wide (admin) row still applies whatever template matched")
+
+# The dangerous cross-product: template 4's exclusive row must not make the FIELD exclusive on a
+# document template 7 matched — the bank-clear is scoped with the row, not global.
+pats = shipped()
+cross = merge_label_overrides(pats, [
+    TPL_ROW,
+    {"doc_type_slug": SLUG, "field_key": "po_number", "label": "Admin Wide"},
+], SLUG, template_id=7)
+assert labels_of(cross) == ["Admin Wide", "Ref", "Your PO", "Order No"], labels_of(cross)
+ok("PINNED: an out-of-scope exclusive row neither clears the bank nor contributes its label")
+
 # ── 7. PURITY — the caller's dict is threaded into every stage ──────────────
 pats = shipped()
 merge_label_overrides(pats, [{"doc_type_slug": SLUG, "field_key": "po_number",

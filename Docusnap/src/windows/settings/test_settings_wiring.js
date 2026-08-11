@@ -122,6 +122,9 @@ for (const [id, key, env] of BRIDGES) {
 // consumer stops reading the key is the same dead-toggle failure, just one file over.
 const SETTING_SWITCHES = [
   ['shadow-row-skip-toggle', 'trust_shadow_row_skip', 'database/modules/trust.js'],
+  // Taught label becomes the keyword (migrations 61+62): the gate is a settings read at the two
+  // teach WRITE sites; the processing handler is the higher-traffic consumer to pin.
+  ['teach-label-keyword-toggle', 'teach_label_becomes_keyword', 'src/modules/processing/handler.js'],
   // Straighten-on-import: read directly where the import worker is spawned (a CLI FLAG to the
   // extractor, not an env bridge), so the consumer to pin is the processing handler itself.
   ['deskew-import-toggle', 'deskew_on_import', 'src/modules/processing/handler.js'],

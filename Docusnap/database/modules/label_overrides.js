@@ -22,37 +22,44 @@ function listLabelOverrides(db) {
   `).all();
 }
 
-// Minimal shape the Python extractor consumes.
+// Minimal shape the Python extractor consumes. template_id (migration 62): 0 = doc-type-wide
+// (admin/preset rows); non-zero = applies only when THAT template matched the document.
 function getForExtraction(db) {
   return db.prepare(
-    'SELECT doc_type_slug, field_key, label, exclusive FROM field_label_overrides'
+    'SELECT doc_type_slug, field_key, label, exclusive, template_id FROM field_label_overrides'
   ).all();
 }
 
 // `exclusive` (migration 61, owner decision 2026-08-11): the label REPLACES the shipped caption
 // bank for its (doc type, field) instead of being prepended to it — see keyword.merge_label_overrides.
-// Written by the TEACH path (a confirmed taught caption); the admin Settings screen never passes it,
-// so an admin-typed override keeps its long-standing additive behaviour.
+// `template_id` (migration 62, owner decision same day): a TEACH-written override is scoped to the
+// template it was taught on ("per doc type for each supplier — set at the template level"), so one
+// supplier's caption never becomes the keyword for every supplier's documents of that type.
+// Written by the TEACH path (a confirmed taught caption); the admin Settings screen never passes
+// either, so an admin-typed override stays additive and doc-type-wide.
 // NOTE the INSERT OR IGNORE: re-teaching the SAME label is a no-op, which is correct, but it also
 // means an existing ADDITIVE row for that label is not promoted to exclusive. Promote explicitly so
-// a re-teach after an admin typed the same caption still does what the operator asked.
-function addLabelOverride(db, { doc_type_slug, field_key, label, exclusive } = {}) {
+// a re-teach after an admin typed the same caption still does what the operator asked — the promote
+// targets the SAME-SCOPE row (matching template_id), never an admin's doc-type-wide row.
+function addLabelOverride(db, { doc_type_slug, field_key, label, exclusive, template_id } = {}) {
   const slug = String(doc_type_slug || '').trim();
   const key  = String(field_key || '').trim();
   const lab  = String(label || '').trim();
   if (!slug || !key || !lab) return { ok: false, code: 'missing_fields' };
   if (lab.length > 120) return { ok: false, code: 'label_too_long' };
   const ex = exclusive ? 1 : 0;
+  const tpl = Number.isInteger(template_id) && template_id > 0 ? template_id : 0;
   const info = db.prepare(`
-    INSERT OR IGNORE INTO field_label_overrides (doc_type_slug, field_key, label, exclusive)
-    VALUES (?, ?, ?, ?)
-  `).run(slug, key, lab, ex);
+    INSERT OR IGNORE INTO field_label_overrides (doc_type_slug, field_key, label, exclusive, template_id)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(slug, key, lab, ex, tpl);
   let promoted = 0;
   if (ex && !info.changes) {
     promoted = db.prepare(`
       UPDATE field_label_overrides SET exclusive = 1
-      WHERE doc_type_slug = ? AND field_key = ? AND label = ? AND COALESCE(exclusive, 0) = 0
-    `).run(slug, key, lab).changes;
+      WHERE doc_type_slug = ? AND field_key = ? AND label = ? AND template_id = ?
+        AND COALESCE(exclusive, 0) = 0
+    `).run(slug, key, lab, tpl).changes;
   }
   return { ok: true, inserted: info.changes, promoted };  // inserted=0 -> duplicate (no-op)
 }

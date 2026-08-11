@@ -2098,6 +2098,7 @@ function register(ctx) {
       // a side effect of a dev tool. Filed in pendingfeatures.md.
       anchor_label:      data.anchor || null,
       candidates:        data.candidates ? JSON.stringify(data.candidates) : null,   // disambiguation picker
+      corroboration:     data.corroboration ? JSON.stringify(data.corroboration) : null, // independent method-family agreement (owner principle 2026-08-11)
       suggested_supplier: data.suggested_supplier || null,   // branding cross-check → "Use '<name>'" button
     }));
 
@@ -3381,11 +3382,14 @@ function register(ctx) {
     // (doc type, field) rather than being prepended to them (migration 61 + keyword.
     // merge_label_overrides). Additive was the old behaviour and is what let 'ref' keep winning.
     //
-    // SCOPE WARNING, stated because the table cannot express it: `field_label_overrides` is keyed
-    // (doc_type_slug, field_key) with NO supplier column, while `field_anchors` IS supplier-scoped.
-    // So a caption taught on one supplier's statement becomes the keyword for EVERY supplier's
-    // statements. That is usually right — a caption is a document-type convention, not a supplier
-    // one — but it is wider than the teach the operator performed, and it is why this ships OFF.
+    // SCOPE (migration 62, owner decision 2026-08-11): "per doc type for each supplier — set at
+    // the template level." The override row carries the template the taught document matched, and
+    // Python applies it only when that template matches again — so a caption taught on one
+    // supplier's statement can never become the keyword for every supplier's statements (the
+    // doc-type-wide bleed that kept the mig-61 version of this flag OFF). A ⊕ teach on a document
+    // with NO matched template has no template to scope to, and the write is SKIPPED — the anchor
+    // itself (Stage 2) still carries the teach; the wizard path always has a template and is where
+    // 38 of the 44 live taught captions come from anyway.
     //
     // Three guards, each earning its place:
     //   * an EMPTY label is the issuer's position-only sentinel (Oracle-signed 2026-07-10 — a
@@ -3404,10 +3408,11 @@ function register(ctx) {
         // simply omits the field would otherwise sail through `!== false` and learn a caption
         // nobody confirmed was on the page. Owner-requested tightening 2026-08-11.
         const located = data.label_detected === true;
-        if (label && slug && located && data.field_key) {
+        const tplId = Number.isInteger(data.template_id) && data.template_id > 0 ? data.template_id : 0;
+        if (label && slug && located && data.field_key && tplId > 0) {
           require('../../../database/modules/label_overrides')
             .addLabelOverride(db, { doc_type_slug: slug, field_key: data.field_key,
-                                    label, exclusive: 1 });
+                                    label, exclusive: 1, template_id: tplId });
         }
       }
     } catch (e) {
@@ -3989,6 +3994,7 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
       // a side effect of a dev tool. Filed in pendingfeatures.md.
       anchor_label:      data.anchor || null,
       candidates:        data.candidates ? JSON.stringify(data.candidates) : null,   // disambiguation picker
+      corroboration:     data.corroboration ? JSON.stringify(data.corroboration) : null, // independent method-family agreement (owner principle 2026-08-11)
       suggested_supplier: data.suggested_supplier || null,   // branding cross-check → "Use '<name>'" button
     }));
     learning.insertExtractions(db, docId, rows);

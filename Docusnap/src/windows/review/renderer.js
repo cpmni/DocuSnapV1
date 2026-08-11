@@ -173,7 +173,7 @@ function clearFieldWarning(row, input) {
 // value-actually-changed; the same edit re-runs fieldValidationError so a bad structured value re-flags.
 function dismissServerNote(row, key) {
   if (!row) return;
-  const note = row.querySelector('.field-note:not(.field-validation-warn):not(.verified):not(.corrected)');
+  const note = row.querySelector('.field-note:not(.field-validation-warn):not(.verified):not(.corrected):not(.corroborated)');
   if (note) note.remove();
   const ex = (currentDoc?.extractions || []).find(e => e.field_key === key);
   if (ex) { ex.validation_note = null; ex.corrected_to = null; }
@@ -2484,7 +2484,7 @@ function renderFields(doc) {
     // remove). A hidden field that unexpectedly HAS a value is still shown: hiding is a display
     // mask, never a way to lose real data. Inert when nothing is hidden (empty set).
     if (hiddenKeys.has(key) && String(val).trim() === '') continue;
-    appendFieldRow(scroll, key, val, ext.confidence ?? null, ext.validation_note || null, ext.corrected_to || null, ext.anchor_label || null, ext.extraction_method || null, ext.candidates || null, ext.suggested_supplier || null);
+    appendFieldRow(scroll, key, val, ext.confidence ?? null, ext.validation_note || null, ext.corrected_to || null, ext.anchor_label || null, ext.extraction_method || null, ext.candidates || null, ext.suggested_supplier || null, ext.corroboration || null);
   }
   _prefillGenericScanDate(doc, scroll);
   validateConfirm();
@@ -2661,7 +2661,7 @@ function _refreshTaughtDot(key) {
   dot.title = _taughtDotTitle(taught);
 }
 
-function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, method, candidates, suggestedSupplier) {
+function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, method, candidates, suggestedSupplier, corroboration) {
   const low      = conf !== null && conf < 70;
   const confClass = conf === null ? '' : conf >= 70 ? 'high' : conf >= 40 ? 'mid' : 'low';
   // Pair the % with a plain word so non-technical users read it at a glance.
@@ -2743,6 +2743,15 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   const anchorHtml = (isAnchorMethod && anchorLabel)
     ? `<div class="field-anchor-note">From anchor: ${escHtml(anchorLabel)}</div>`
     : '';
+  // CORROBORATION (owner principle 2026-08-11: "the rungs should corroborate, not merely
+  // compete"). The honest form of "verified": two INDEPENDENT method families — e.g. the taught
+  // position and a caption search — read the same value. Information only (minimal-interaction
+  // rule): shown only on positive agreement; disagreement stays in SFDEV until the principle's
+  // step-3 slice decides what it may move. Suppressed under a validation note so a flagged field
+  // never carries a reassuring tick beside a warning.
+  const corrobHtml = (corroboration && corroboration.independent_agree && !note)
+    ? `<div class="field-note corroborated" title="Two independent reading methods (${escHtml((corroboration.agree || []).concat(corroboration.winner_family || []).join(' + '))}) found this same value on the page">✓ Two independent readings agree</div>`
+    : '';
 
   const row = document.createElement('div');
   row.className   = 'field-row';
@@ -2771,7 +2780,7 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
              value="${escHtml(val)}" placeholder="Not found">
       <button class="pick-btn" data-key="${key}" title="Teach this field — only if it's showing the WRONG value. Draw a box round the correct value; Scan Finder pins that position and reads it on every future document from this supplier. A field already reading correctly doesn't need teaching.">&#8853;</button>
     </div>
-    ${noteHtml}${anchorHtml}
+    ${noteHtml}${anchorHtml}${corrobHtml}
   `;
 
   const input = row.querySelector('input');
@@ -4387,7 +4396,10 @@ async function confirmCurrentDoc({ bulk = false, expectId = null, acknowledgePre
     const taughtSupplier = cleanSupplierName(allValues.supplier_name || currentDoc?.supplier_name);
     for (const fk of taughtKeys) {
       try {
-        await window.docusnap.saveFieldAnchor({ ...pendingAnchors[fk], supplier_name: taughtSupplier });
+        // template_id: lets the taught-label→keyword write scope to the TEMPLATE the doc matched
+        // (migration 62) — null when the doc has none, and the handler then skips that write.
+        await window.docusnap.saveFieldAnchor({ ...pendingAnchors[fk], supplier_name: taughtSupplier,
+                                                template_id: currentDoc?.template_id ?? null });
       } catch (err) {
         console.error(`Anchor save failed for "${fk}":`, err);
         if (!bulk) {

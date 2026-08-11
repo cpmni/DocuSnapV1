@@ -131,8 +131,11 @@ function getWithExtractions(db, id) {
   ).all(id);
   // Disambiguation picker: parse the stored candidates JSON (migration 48) back to an array so the
   // renderer consumes it directly. Malformed/NULL → undefined (renderer shows today's behaviour).
+  // Same for the corroboration record (owner principle 2026-08-11 — independent method-family
+  // agreement; record-only).
   for (const ex of doc.extractions) {
     if (ex.candidates) { try { ex.candidates = JSON.parse(ex.candidates); } catch { ex.candidates = undefined; } }
+    if (ex.corroboration) { try { ex.corroboration = JSON.parse(ex.corroboration); } catch { ex.corroboration = undefined; } }
   }
   return doc;
 }

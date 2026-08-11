@@ -896,6 +896,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">A label you teach becomes the keyword for that field</div>
+                <div class="threshold-desc">When you teach a field and confirm its printed label (e.g. &ldquo;Job Sheet No&rdquo;), that label replaces the generic ones (like &ldquo;Ref&rdquo;) when reading documents that match the layout you taught it on. Off: taught labels only guide the position, and the generic keywords keep hunting too.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="teach-label-keyword-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Don&rsquo;t accept a taught reading that isn&rsquo;t the right shape</div>
                 <div class="threshold-sub">When you teach Scan Finder where a value sits, it reads that spot on every later document from the same sender. If the layout shifts, that spot can land on the wrong thing &mdash; and the wrong thing still gets used, because a taught reading is trusted. With this on, a taught reading that doesn&rsquo;t look like the field it belongs to (the word &ldquo;Account&rdquo; where an account number should be, or &ldquo;L922.14&rdquo; where a total should be) is set aside, and Scan Finder falls back to finding the value the usual way. Off by default.</div>
               </div>

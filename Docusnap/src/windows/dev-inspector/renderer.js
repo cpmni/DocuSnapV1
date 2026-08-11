@@ -426,12 +426,26 @@ function renderField(field, m, flagged, open) {
     const desc = rc.verdict ? `<span class="desc">${escapeHtml(String(rc.verdict))}</span>` : '';
     nodes.push(chainNode(stageMeta('4_validate'), escapeHtml(calc), null, 'reconcile', field, false, false, desc));
   }
-  // Final node
+  // Final node — plus the CORROBORATION line (owner principle 2026-08-11: agreement between
+  // INDEPENDENT method families is evidence; same-family agreement counts for nothing). Green
+  // when an independent family agrees with the winner, amber when one read a DIFFERENT value —
+  // the disagreement surfaces HERE first, deliberately, before it is allowed to move anything.
   if (m.final) {
+    const cb = m.final.corrob;
+    let corrobLine = '';
+    if (cb && (cb.agree || []).length) {
+      corrobLine = `<div class="desc" style="color:var(--ok)" title="independent method families that read the same value">✓ corroborated by ${escapeHtml(cb.agree.join(' + '))}</div>`;
+    } else if (cb && (cb.disagree || []).length) {
+      const d = cb.disagree.map(x => `${x.family}: “${shownVal(x.value)}”`).join(' · ');
+      corrobLine = `<div class="desc" style="color:var(--warn)" title="an independent method family read a different value — nothing acts on this yet; it is recorded so it can be seen">⚠ uncorroborated — ${escapeHtml(d)}</div>`;
+    } else if (cb) {
+      corrobLine = `<div class="desc" style="color:var(--muted)">sole witness (${escapeHtml(cb.winner_family || '?')})</div>`;
+    }
     nodes.push(`<div class="node final"><div class="rail"><div class="dot"></div></div>`
       + `<div class="body"><div class="stage-line"><span class="sbadge s2" style="background:rgba(62,207,142,.16);color:var(--final)">★ FINAL</span>`
       + (reviewForced ? `<span class="desc" style="color:var(--warn)">held for review</span>` : '')
-      + `</div><div class="val-line">${escapeHtml(shownVal(finalVal))} ${finalMethod ? `<span class="conf">${escapeHtml(finalMethod)}</span>` : ''}</div></div></div>`);
+      + `</div><div class="val-line">${escapeHtml(shownVal(finalVal))} ${finalMethod ? `<span class="conf">${escapeHtml(finalMethod)}</span>` : ''}</div>`
+      + corrobLine + `</div></div>`);
   }
 
   // Reprocess-merge node (post-pipeline JS decision) — shown first if present.

@@ -982,6 +982,9 @@ def main():
             identity_shadow_v = raw_extractions.pop("_identity_shadow", None)
             # Disambiguation picker: {field_key: [candidate,…]} for flagged name fields (or {}).
             field_candidates  = raw_extractions.pop("_field_candidate_emit", None) or {}
+            # Corroboration record (owner principle 2026-08-11): {field_key: {winner_family,
+            # agree, disagree, independent_agree}} — record-only, woven per-field below.
+            field_corrob      = raw_extractions.pop("_corroboration_emit", None) or {}
             raw_extractions.pop("_mode_used", None)
             raw_extractions.pop("_document_slug", None)
 
@@ -1082,6 +1085,11 @@ def main():
                         # armed it (>=2 distinct candidates on a noted name field).
                         **({"candidates": field_candidates[k]}
                            if field_candidates.get(k) else {}),
+                        # Corroboration record: which independent method families read this same
+                        # value (owner principle 2026-08-11). Record-only; persisted to
+                        # extractions.corroboration by the handler.
+                        **({"corroboration": field_corrob[k]}
+                           if field_corrob.get(k) else {}),
                     }
                     for k, v in extractions.items()
                 },

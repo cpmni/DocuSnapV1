@@ -304,11 +304,12 @@ def is_caption_continuation(value, val_type=None, label=None, vocab=None) -> boo
 KNOWN_CAPTION_GUARD_ENABLED = os.environ.get('KNOWN_CAPTION_GUARD', '1') != '0'
 
 
-def merge_label_overrides(patterns: dict, overrides: list, doc_slug: str | None) -> dict:
+def merge_label_overrides(patterns: dict, overrides: list, doc_slug: str | None,
+                          template_id=None) -> dict:
     """Merge admin keyword label overrides for `doc_slug` onto `patterns`.
 
-    Each override is {doc_type_slug, field_key, label}. Only those whose
-    doc_type_slug matches `doc_slug` (case-insensitive) apply. The merge is
+    Each override is {doc_type_slug, field_key, label[, exclusive][, template_id]}. Only those
+    whose doc_type_slug matches `doc_slug` (case-insensitive) apply. The merge is
     ADDITIVE BY DEFAULT: a field's shipped labels are preserved and the override label is
     consulted first (see PRECEDENCE below). An override carrying `exclusive` truthy instead
     REPLACES that field's shipped labels entirely (migration 61) — the taught caption becomes the
@@ -317,15 +318,35 @@ def merge_label_overrides(patterns: dict, overrides: list, doc_slug: str | None)
     keyword-extractable). Returns the ORIGINAL `patterns` object unchanged when
     there's nothing to merge, so the common (no-override) path costs nothing.
 
+    TEMPLATE SCOPE (migration 62; owner decision 2026-08-11 — "per doc type for each supplier,
+    set at the template level"): a row whose template_id is non-zero applies ONLY when that
+    template matched this document (`template_id` argument = the Stage-0 match, settled before
+    Stage 1 runs). template_id 0/absent on a row = doc-type-wide (admin/preset rows — unchanged).
+    A document that matched NO template therefore sees only the doc-type-wide rows, so one
+    supplier's taught caption can never hunt on another supplier's documents.
+
     Pure: never mutates the input patterns; builds shallow copies of only the
     field_patterns entries it touches.
     """
     if not overrides or not doc_slug:
         return patterns
     slug = str(doc_slug).strip().lower()
+    try:
+        tid = int(template_id) if template_id is not None else 0
+    except (TypeError, ValueError):
+        tid = 0
+
+    def _row_in_scope(o):
+        try:
+            row_tpl = int(o.get("template_id") or 0)
+        except (TypeError, ValueError):
+            row_tpl = 0
+        return row_tpl == 0 or row_tpl == tid
+
     relevant = [o for o in overrides
                 if str(o.get("doc_type_slug", "")).strip().lower() == slug
-                and o.get("field_key") and o.get("label")]
+                and o.get("field_key") and o.get("label")
+                and _row_in_scope(o)]
     if not relevant:
         return patterns
 

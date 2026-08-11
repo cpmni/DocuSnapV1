@@ -2595,6 +2595,63 @@ class ExtractionEngine:
             } for c in reps[:3]]
         return emit
 
+    def _build_corroboration_emit(self, results):
+        """OWNER PRINCIPLE (2026-08-11): "the rungs should CORROBORATE, not merely compete."
+        Per committed field, which INDEPENDENT method families read the same value — a derived,
+        record-only read of the per-run candidate ledger. Commits nothing, vetoes nothing.
+
+        INDEPENDENCE IS METHOD FAMILY, NEVER A WITNESS COUNT. Same-pixel agreement is worthless
+        (Oracle 2026-08-03: 5:1 false:true; re-proved 2026-08-11 when two preps agreed on the wrong
+        P1), so buckets come from `_crosscheck_witness_bucket` — the Oracle-ratified grouping that
+        already excludes the independence frauds (anchor_registration, bare `anchor` = the same
+        full-page line the keyword pass reads). A winner whose method is EXCLUDED from bucketing can
+        never claim `independent_agree` (its would-be corroborators may share its pixels) — but a
+        bucketed candidate DISAGREEING with it is still recorded, because that is information in
+        either direction. Caveat, stated: `template_fixed` buckets into the mapping family, so its
+        record reads as memory-vs-page rather than crop-vs-page — for a RECORD that is the honest
+        framing (the Oakhaven leak's stamped VAT vs the page's own printed VAT is exactly this row).
+
+        Kill: FIELD_CORROBORATION_EMIT=0 (metadata only, default on)."""
+        if os.environ.get('FIELD_CORROBORATION_EMIT', '1') == '0':
+            return {}
+        out = {}
+        for key, data in results.items():
+            if key.startswith('_') or not isinstance(data, dict):
+                continue
+            val = data.get('value')
+            if val in (None, ''):
+                continue
+            win_norm = _cmp_norm(val)
+            method = str(data.get('method') or '')
+            win_bucket = _crosscheck_witness_bucket(None, method)
+            win_family = win_bucket[0] if win_bucket else _method_family(method)
+            agree, disagree = set(), {}
+            for c in (self._field_candidates.get(key) or []):
+                b = _crosscheck_witness_bucket(c.get('stage'), c.get('method'))
+                if not b:
+                    continue
+                fam = b[0]
+                if fam == win_family:
+                    continue          # same family = same pixels/recipe — counts for NOTHING
+                cv = c.get('value')
+                if cv in (None, ''):
+                    continue
+                if _cmp_norm(cv) == win_norm:
+                    if win_bucket is not None:
+                        agree.add(fam)
+                else:
+                    disagree.setdefault(fam, str(cv))
+            out[key] = {
+                'winner_family': win_family,
+                'agree': sorted(agree),
+                # a family with two candidates, one agreeing and one not, counts as agreement —
+                # its differing read stays out of `disagree` so the record never contradicts itself
+                'disagree': [{'family': f, 'value': v}
+                             for f, v in sorted(disagree.items()) if f not in agree],
+                'independent_agree': bool(agree),
+            }
+        return out
+
     def _resolve_candidates(self, results, field_defs, supplier_name, document_slug):
         """Stage 4.6 — gated, deterministic, suggestion-first override. Runs only when
         candidate_override != 'off'. Never touches a protected winner, defers to a
@@ -5619,7 +5676,12 @@ class ExtractionEngine:
         # so it becomes keyword-extractable). Returns self.patterns unchanged when
         # there's nothing to merge — no per-run copy in the common case.
         patterns_for_run = keyword.merge_label_overrides(
-            self.patterns, self.label_overrides, document_slug)
+            self.patterns, self.label_overrides, document_slug,
+            # TEMPLATE SCOPE (migration 62): a teach-written override applies only when the
+            # template it was taught on matched THIS document. Stage 0 settled matched_tmpl
+            # before this line, so the scope needs no re-identification. None -> 0 -> only
+            # doc-type-wide (admin/preset) rows apply.
+            template_id=(matched_tmpl or {}).get('id'))
         # RC1 (2026-07-10): seed a Stage-1 keyword entry for a CUSTOM ref/date field from its own DB
         # label (+ role short-forms), so a custom-type field with no shipped pattern and no admin
         # override is still attempted here instead of depending on a learned anchor. Runs AFTER the
@@ -7752,6 +7814,15 @@ class ExtractionEngine:
                     self.log(f"  Inline-absence hold: {_ck} '{_cd.get('value')}' anchor_inline "
                              f"uncorroborated + page-absent — held for review")
 
+        # ── CORROBORATION RECORD (owner principle 2026-08-11) ─────────────────
+        # "It is more about corroboration than merely getting it right." Which INDEPENDENT method
+        # families read the committed value — derived from the per-run candidate ledger, computed
+        # AFTER every guard so it describes the final state. RECORD-ONLY by design: it moves no
+        # value, no confidence, no gate — the ordered plan is record → surface → only then decide,
+        # because a corroboration signal that starts by changing outcomes cannot be measured
+        # against the outcomes it changed.
+        _corrob = self._build_corroboration_emit(results)
+
         # Final resolved value per field — the inspector marks any earlier
         # candidate whose value differs from this as a superseded intermediate.
         if self._trace:
@@ -7760,13 +7831,14 @@ class ExtractionEngine:
                     continue
                 self._t("final", field=key, value=data.get("value"),
                         method=data.get("method"), confidence=data.get("confidence"),
-                        note=data.get("validation_note"))
+                        note=data.get("validation_note"), corrob=_corrob.get(key))
 
         # ── Disambiguation picker: candidate map for flagged name fields ──────
         # Built LAST, after every flag guard, so a note applied late (identity /
         # caption-demotion) still arms the picker. Additive `_` metadata (popped +
         # woven into the per-field emit by process_docs); commits no value.
         results["_field_candidate_emit"] = self._build_candidate_emit(results, ocr_text)
+        results["_corroboration_emit"] = _corrob
 
         return results
 
