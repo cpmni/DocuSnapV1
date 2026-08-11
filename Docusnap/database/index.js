@@ -1403,6 +1403,21 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 62 applied: field_label_overrides.template_id (0 = doc-type-wide)');
   }
 
+  // ── Migration 63: extractions.corroboration on EXISTING installs ─────────────────────────────
+  // The safeAdd for this column sits inside addMissingColumns, which only runs in the
+  // migration-2 block — stamped long ago on every real install, so the column landed on FRESH
+  // databases only. EXACTLY the trap migration 43's comment documents, walked into again
+  // (2026-08-11, caught live by the owner: `SqliteError: table extractions has no column named
+  // corroboration` on the first reprocess after the corroboration-record feature). Idempotent
+  // against the fresh-DB path having already added it.
+  if (!applied.has(63)) {
+    if (tableExists(db, 'extractions') && !hasColumn(db, 'extractions', 'corroboration')) {
+      db.exec('ALTER TABLE extractions ADD COLUMN corroboration TEXT');
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (63)').run();
+    console.log('JS migration 63 applied: extractions.corroboration (record-only)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

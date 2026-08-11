@@ -2172,8 +2172,13 @@ function register(ctx) {
     const mergedRows = mergeReprocessRows(existing, newRows, flip, _emitMerge);
 
     const learning = require('../../../database/modules/learning');
-    learning.deleteExtractions(db, docId);
-    learning.insertExtractions(db, docId, mergedRows);
+    // ONE transaction (2026-08-11, found live): the un-wrapped pair stranded a document with
+    // ZERO extraction rows when the insert threw after the delete (the missing-column incident).
+    // better-sqlite3 nests the insert's own transaction as a savepoint.
+    db.transaction(() => {
+      learning.deleteExtractions(db, docId);
+      learning.insertExtractions(db, docId, mergedRows);
+    })();
 
     const _supBlanked = supplierColumnBlanked(mergedRows);
     db.prepare(

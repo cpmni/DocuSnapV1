@@ -117,5 +117,21 @@ check('both states coexist in one table, so the assertions above are not vacuous
 check('and the two are independent — promoting po_number left account_no additive',
       all.find(x => x.label === 'Still Additive').e === 0);
 
+console.log('\n7. Migration 63 — extractions.corroboration reaches an EXISTING install');
+// The safeAdd lives in addMissingColumns (migration-2 block, stamped long ago everywhere), so a
+// fresh-DB test alone is EXACTLY how this shipped broken — the owner hit
+// "table extractions has no column named corroboration" live on the first reprocess. Simulate an
+// already-migrated install missing the column and prove migration 63 heals it.
+db.prepare("DELETE FROM migrations WHERE version = 63").run();
+db.exec('ALTER TABLE extractions DROP COLUMN corroboration');
+check('CONTROL: the column is genuinely gone',
+      !db.prepare('PRAGMA table_info(extractions)').all().some(c => c.name === 'corroboration'));
+// NOTE runJsMigrations is INTERNAL to database/index.js (runMigrations calls it with the
+// precomputed `applied` set) — the top-of-file destructure of it has always been undefined and
+// its call a swallowed no-op; runMigrations is the real entry and runs the JS migrations itself.
+runMigrations(db);
+check('migration 63 restores extractions.corroboration on an existing DB',
+      db.prepare('PRAGMA table_info(extractions)').all().some(c => c.name === 'corroboration'));
+
 console.log(fails ? `\n${fails} FAILED` : '\nAll taught-label-keyword pins passed');
 process.exit(fails ? 1 : 0);
