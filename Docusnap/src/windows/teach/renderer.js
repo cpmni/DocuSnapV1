@@ -855,9 +855,10 @@ function finishIssuerField(f){
 // ── The ONE question zone (#rg-confirm-top) ──────────────────────────────────
 // 2026-08-11 flow rework (Chris-lens spec): every question — readouts, buttons, and THE typing
 // row — renders here and only here, directly under the instruction it belongs to. The banner's
-// four slots have fixed jobs: #rg-prompt (truthful action + field title), #rg-sub (guidance,
-// never contradicting the prompt), this zone (the live question), and #rg-manual-entry (the
-// hatch, DRAW state only). The old #rg-readback third panel is gone.
+// three slots have fixed jobs: #rg-prompt (truthful action + field title), #rg-sub (guidance,
+// never contradicting the prompt), and this zone (the live question — incl. the DRAW state's
+// "Or type it instead" ghost button). The old #rg-readback third panel and the top-right
+// corner hatch are both gone.
 const CONFIRM_SEL = (id) => `#rg-confirm-top [id="${id}"]`;
 function onConfirm(id, handler){
   const el = document.querySelector(CONFIRM_SEL(id));
@@ -899,23 +900,18 @@ function promptField(){
 function renderFieldPrompt(){
   const f=curField(); if(!f) return;
   drawMode='value';
-  setConfirm('');   // clear any prior read-back overlay
   setValueBanner(f);
-  // The prominent accent "Always the same on every document? → Set a fixed value" card that used
-  // to live here is GONE (owner, 2026-08-10). It advertised the one route that teaches NO POSITION
-  // as if it were the convenient one, right at the moment the operator is deciding how to teach the
-  // field. The same capability is still one click away, at the TOP of the step, worded as the
-  // exception it is (see #rg-manual-entry).
-  setManualEntryVisible(true);
+  // "Or type it instead" — a ghost button in the QUESTION ZONE (owner + Chris-lens 2026-08-11;
+  // it was a corner link nobody saw, quiet by a 2026-08-10 rationale that typed-value locate
+  // made obsolete — typing now teaches the spot too). Four words, an exit not a second question;
+  // the TYPE state explains the locate behaviour the moment it's clicked. Mirrors the TYPE
+  // state's "Draw it instead", which itself teaches that the two methods are equals. Because
+  // every other state overwrites the zone via setConfirm, the button vanishes automatically
+  // whenever a question is in progress — no visibility bookkeeping to forget.
+  setConfirm(`<button type="button" class="btn ghost quiet" id="rg-manual-entry" data-help-key="teach-manual-entry">Or type it instead</button>`);
+  onConfirm('rg-manual-entry', ()=>{ const cf=curField(); if (cf) showFixedInput(cf); });
   drawnBox=null; redrawCanvas();
   renderFieldRail();
-}
-// The top-of-step escape hatch. Hidden whenever the panel is showing something else (a read-back
-// confirmation, the typing box itself), so it never offers a route out of a question in progress.
-function setManualEntryVisible(on){
-  const b=$('rg-manual-entry'); if(!b) return;
-  b.classList.toggle('hidden', !on);
-  b.onclick = () => { const f=curField(); if (f) showFixedInput(f); };
 }
 // ONE typing row, one id, rendered by every state that needs typing (2026-08-11 flow rework —
 // there used to be THREE differently-shaped inputs across two panels). Plain HTML builder; the
@@ -944,7 +940,6 @@ function _wireTypeRow(handler, focus){
 // in the question zone like every other question (Chris-lens spec 2026-08-11).
 function showFixedInput(f, prefill){
   drawMode='value';
-  setManualEntryVisible(false);        // you are already here — don't offer the way in again
   setPrompt('Type the value for', f.label);
   $('rg-sub').textContent = TYPED_LOCATE_ON
     ? `If it's printed on the page I'll find it and teach that spot, same as drawing. If it isn't printed anywhere, it's saved as typed and reused as-is on every document of this type.`
@@ -1053,7 +1048,6 @@ function showLocatedPick(f, typed, hits, idx){
   try {
     canvas.scrollIntoView({ block: 'nearest' });
   } catch {}
-  setManualEntryVisible(false);
   setPrompt('Is this the right spot for', f.label);
   $('rg-sub').textContent = hits.length > 1
     ? `It's printed in ${hits.length} places. Step through until the green box sits on the right one.`
@@ -1137,8 +1131,7 @@ function renderFieldRail(){
       if (rr && rr.status==='done' && rr.target){
         if (Number.isInteger(rr.page) && rr.page !== state.pageIndex) gotoTeachPage(rr.page);
         drawnBox=null; redrawCanvas(); renderFieldRail();
-        setManualEntryVisible(false);
-        showValueConfirm(f, rr);
+              showValueConfirm(f, rr);
         return;
       }
       if (rr && rr.status==='fixed'){ renderFieldRail(); showFixedInput(f); return; }
@@ -1183,7 +1176,6 @@ async function snapDrawnBox(box, anchor){
 
 async function readBack(box){
   const f=curField();
-  setManualEntryVisible(false);    // a read is in flight — don't offer a way out of the question
   setConfirm('<span class="muted">Reading…</span>');
   _teachReadBusy = true;
   // Read via --boxes first with a plain fallback — the SAME order Review's runZoneOcr uses
@@ -1295,7 +1287,6 @@ function showValueConfirm(f, r){
   const typed = (r && r.valueSource === 'typed') || !!(r && r.located);
   // Point at the page: the confirm's boxes are drawn on the canvas — make sure they're in view.
   try { canvas.scrollIntoView({ block: 'nearest' }); } catch {}
-  setManualEntryVisible(false);
   if (issuer){
     setPrompt('Check the company name', f.label);
     $('rg-sub').textContent = `This is how the sender will be filed. No label for this one — the name itself is what's recognised.`;

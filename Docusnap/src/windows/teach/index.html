@@ -123,21 +123,11 @@
   /* Region step */
   .regionwrap{display:grid;grid-template-columns:1fr 240px;gap:16px}
   .banner{background:var(--surface);border:1px solid var(--accent);border-radius:10px;padding:12px 16px;margin-bottom:12px;position:relative}
-  /* Top-right escape hatch. Deliberately a `link`-weight control: it must be FINDABLE without
-     ever looking like the recommended route — drawing the value is what teaches a position. */
-  #rg-manual-entry{position:absolute;top:8px;right:10px;font-size:12px;padding:6px 8px;
-    border:1px solid transparent;border-radius:7px}
-  #rg-manual-entry:hover{border-color:var(--border2);color:var(--text)}
-  #rg-manual-entry:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-  #rg-manual-entry.hidden{display:none}
-  /* The right padding reserves space for the hatch — only while the hatch is actually shown
-     (it is DRAW-state-only); a confirm state gets the full banner width. */
-  .banner:has(#rg-manual-entry:not(.hidden)) .big,
-  .banner:has(#rg-manual-entry:not(.hidden)) .sub{padding-right:210px}
-  @media (max-width:900px){
-    #rg-manual-entry{position:static;display:block;margin:0 0 6px auto}
-    .banner .big, .banner .sub{padding-right:0}
-  }
+  /* (The top-right absolutely-positioned hatch is GONE — 2026-08-11, owner + Chris-lens. It was
+     made corner-quiet on 2026-08-10 when typing taught nothing; typed-value locate made typing
+     an equal, so "Or type it instead" now renders as a ghost button IN THE QUESTION ZONE during
+     the DRAW state — the natural reading path — and vanishes automatically whenever any other
+     question occupies the zone. No padding reservation, no @media stack rule needed. */
   /* Plain-text fallback (e.g. the "couldn't load that page" error). The normal
      prompt is the two-part .pact/.ptitle pair below. */
   .banner .big{font-size:16px;font-weight:620}
@@ -393,15 +383,9 @@
     <!-- Step 3: Point out the details -->
     <section class="step" data-step="3">
       <div class="banner">
-        <!-- MANUAL ENTRY LIVES AT THE TOP (owner, 2026-08-10), replacing the big accent
-             "Always the same on every document? / Set a fixed value" card that used to sit under
-             the page. That card SOLD typing as the easy option for the issuer, and a typed value
-             carries NO POSITION — nothing for a future document of the same layout to match
-             against. Here it is a quiet escape hatch for the one case that needs it: the value
-             genuinely cannot be selected on the page. Drawing stays the default, and it counts
-             wherever the value appears — the footer is a perfectly good place to draw it. -->
-        <button type="button" class="btn link" id="rg-manual-entry" data-help-key="teach-manual-entry"
-                title="Only if the value can't be selected anywhere on the page — including the footer">Can't select it on the page? Type it instead</button>
+        <!-- "Or type it instead" renders in the question zone below during the DRAW state
+             (2026-08-11, owner + Chris-lens — the corner link was invisible; typing is now an
+             equal input since typed-value locate, so the frame "can't select it?" was false). -->
         <div class="big" id="rg-prompt">Step 1 — draw a box around the value</div>
         <div class="sub" id="rg-sub">Drag a rectangle over the value itself. After I read it, you can also mark its label.</div>
         <!-- The ONE question zone (2026-08-11 flow rework, Chris-lens spec): readouts, buttons
