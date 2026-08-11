@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-08-11 — tpl 9 (Pelican) sample-angle row HELD out of the backfill (Oracle apply-condition 1)
+
+The angle census says tpl 9 stored 0 / detected **-0.30** — exactly the apply floor, one
+noise-width from the 0.2 detection minimum — and its ONLY lane outcome in the 118-doc gate replay
+was negative: `Pelican-Office_invoice_0016-1.pdf` `account_no` `'ACC-2291'` → `'ACC-229]'`.
+Oracle: a floor-row whose only evidence is negative is HELD, "correct in principle does not
+outrank measured net-negative at the detector's noise floor." Condition-2 capture: the regressed
+value commits at **70, FLAGGED** "unexpected characters (]) — please verify", needs_review —
+nothing silent — and its corroboration record carries the disagreeing memory value `ACC-2291`.
+**To revisit:** more Pelican lane evidence (heals ≥ regressions) or a better angle measurement;
+apply via `scripts/backfill-sample-angles.js --apply --plan` with tpl 9 added to the plan. The
+Pelican `customer_name` exhibit remains a box-SIZE defect (flush edge + 2.2 line-heights) whose
+lever is a re-teach under the now-ON teach snap, not this angle.
+
+---
+
 ## 2026-08-11 — compose-scan reads a NULL sample angle as "level" (absence-of-measurement = measurement-of-zero)
 
 `engine.py` (~:5426, the `TEACH_ANGLE_COMPOSE_SCAN` branch) defaults a NULL `sample_deskew_angle`

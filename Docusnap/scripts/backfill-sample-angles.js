@@ -79,9 +79,31 @@ if (require.main === module) {
   const flags = plan.filter(p => p.action === 'census-flag');
   if (flags.length) console.log(`\nOWNER REVIEW NEEDED — non-zero stored angles disagreeing with detection (NOT written): ${flags.map(f => f.id).join(', ')}`);
 
+  // Oracle condition 4 (apply invariant, 2026-08-11): the apply may only write the PRE-APPROVED
+  // plan. The fresh census must match it exactly (same rows, same angles to 0.01°); any drift
+  // aborts — the apply never improvises a new decision. Rows the census would write that are NOT
+  // in the plan (e.g. tpl 9, HELD by Oracle condition 1: its only lane evidence was negative)
+  // are reported and skipped, never written.
+  const planIdx = process.argv.indexOf('--plan');
+  let approved = null;
+  if (planIdx > -1) approved = JSON.parse(fs.readFileSync(process.argv[planIdx + 1], 'utf8'));
+
+  let toWrite = writes;
+  if (apply) {
+    if (!approved) { console.error('REFUSED: --apply requires --plan <json> (the pre-approved rows).'); process.exit(2); }
+    toWrite = [];
+    for (const a of approved) {
+      const p = writes.find(x => x.id === a.id);
+      if (!p) { console.error(`ABORT: plan row tpl ${a.id} is no longer a census write (drift).`); process.exit(2); }
+      if (Math.abs(p.angle - a.angle) > 0.01) { console.error(`ABORT: tpl ${a.id} angle drifted (plan ${a.angle} vs census ${p.angle.toFixed(2)}).`); process.exit(2); }
+      toWrite.push(p);
+    }
+    for (const p of writes) if (!approved.find(a => a.id === p.id)) console.log(`HELD (not in plan, NOT written): tpl ${p.id} ${p.angle.toFixed(2)}`);
+  }
+
   if (!apply) {
-    console.log(`\ncensus only — ${writes.length} write(s) planned. Re-run with --apply (app closed) to write.`);
-  } else if (!writes.length) {
+    console.log(`\ncensus only — ${writes.length} write(s) planned. Re-run with --apply --plan <json> (app closed) to write.`);
+  } else if (!toWrite.length) {
     console.log('\nnothing to write.');
   } else {
     const backup = LIVE_DB.replace(/docusnap\.db$/, `docusnap_pre_angle_backfill_${new Date().toISOString().replace(/[:.]/g, '').slice(0, 15)}.db`);
@@ -89,13 +111,21 @@ if (require.main === module) {
     try { fs.copyFileSync(LIVE_DB + '-wal', backup + '-wal'); } catch {}
     console.log(`\nbackup: ${backup}`);
     const upd = db.prepare('UPDATE templates SET sample_deskew_angle = ? WHERE id = ? AND (sample_deskew_angle IS NULL OR sample_deskew_angle = 0.0)');
-    const tx = db.transaction(() => { for (const p of writes) upd.run(p.angle, p.id); });
+    const tx = db.transaction(() => { for (const p of toWrite) upd.run(p.angle, p.id); });
     tx();
-    for (const p of writes) {
+    for (const p of toWrite) {
       const now = db.prepare('SELECT sample_deskew_angle a FROM templates WHERE id = ?').get(p.id);
       console.log(`  tpl ${p.id}: sample_deskew_angle -> ${now.a}`);
+      if (Math.abs(now.a - p.angle) > 0.001) { console.error(`POST-VERIFY FAILED on tpl ${p.id}`); process.exit(3); }
     }
-    console.log(`applied ${writes.length} write(s).`);
+    // Post-apply invariant: nothing outside the plan moved.
+    const others = db.prepare('SELECT id, sample_deskew_angle a FROM templates').all()
+      .filter(t => !toWrite.find(p => p.id === t.id));
+    for (const o of others) {
+      const orig = plan.find(p => p.id === o.id);
+      if (orig && String(orig.stored) !== String(o.a === null ? null : o.a)) { console.error(`POST-VERIFY: tpl ${o.id} moved unexpectedly (${orig.stored} -> ${o.a})`); process.exit(3); }
+    }
+    console.log(`applied ${toWrite.length} write(s); all other rows verified untouched.`);
   }
   db.close();
 }
