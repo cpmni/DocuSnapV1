@@ -1335,6 +1335,25 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 60 applied: proven reading improvements default ON');
   }
 
+  // ── Migration 61: field_label_overrides.exclusive ────────────────────────────
+  // OWNER DECISION 2026-08-11: "when we draw an anchor and set the label, set that confirmed label
+  // as the ONLY keyword on that doc for that field." Today an override is ADDITIVE — it is consulted
+  // FIRST and then falls through to the shipped caption bank, which is why a correct taught
+  // po_number mapping coexists with a Stage 1 keyword still hunting the generic 'ref'.
+  // This column marks an override as EXCLUSIVE: for that (doc type, field) the shipped labels are
+  // not consulted at all. NULL/0 = today's additive behaviour, so every existing row is inert and
+  // the admin Settings screen is unchanged.
+  if (!applied.has(61)) {
+    try {
+      const cols = db.prepare('PRAGMA table_info(field_label_overrides)').all().map(c => c.name);
+      if (!cols.includes('exclusive')) {
+        db.exec('ALTER TABLE field_label_overrides ADD COLUMN exclusive INTEGER DEFAULT 0');
+      }
+    } catch (e) { console.warn(`  migration 61: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (61)').run();
+    console.log('JS migration 61 applied: field_label_overrides.exclusive (0/NULL-inert)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

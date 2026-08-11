@@ -3368,6 +3368,48 @@ function register(ctx) {
     const learning = require('../../../database/modules/learning');
     const db = getDb();
     learning.saveAnchor(db, data);
+
+    // TAUGHT LABEL BECOMES THE KEYWORD (owner decision 2026-08-11).
+    // A ⊕ teach persists `anchor_label` into `field_anchors`, which drives STAGE 2 anchoring —
+    // and Stage 1 keyword carried on using the shipped caption bank. That is why a correct taught
+    // `po_number` mapping coexisted with a keyword still hunting the generic 'ref': the operator
+    // told the app the caption and the app only half-listened. The store that fixes it
+    // (`field_label_overrides`) already existed and was already threaded into extraction; the only
+    // writers were the admin Settings screen and the preset seeder. This is the missing WRITE.
+    //
+    // EXCLUSIVE, per the owner: the confirmed label REPLACES the shipped labels for that
+    // (doc type, field) rather than being prepended to them (migration 61 + keyword.
+    // merge_label_overrides). Additive was the old behaviour and is what let 'ref' keep winning.
+    //
+    // SCOPE WARNING, stated because the table cannot express it: `field_label_overrides` is keyed
+    // (doc_type_slug, field_key) with NO supplier column, while `field_anchors` IS supplier-scoped.
+    // So a caption taught on one supplier's statement becomes the keyword for EVERY supplier's
+    // statements. That is usually right — a caption is a document-type convention, not a supplier
+    // one — but it is wider than the teach the operator performed, and it is why this ships OFF.
+    //
+    // Three guards, each earning its place:
+    //   * an EMPTY label is the issuer's position-only sentinel (Oracle-signed 2026-07-10 — a
+    //     phantom label makes the teach silently do nothing), so it must never become a keyword;
+    //   * no doc-type slug means the override could not be scoped, so there is nothing to write;
+    //   * a label that did not LOCATE on the page is a guess, and Chris's round produced exactly
+    //     that ('Statement Re', missing the f) — learning it would poison every future document
+    //     of the type.
+    // DEFAULT OFF — this changes what Stage 1 reads. Arm: setting `teach_label_becomes_keyword`.
+    try {
+      if (learning.getSetting(db, 'teach_label_becomes_keyword', 'false') === 'true') {
+        const label = String(data.anchor_label || '').trim();
+        const slug  = String(data.document_type || '').trim();
+        const located = data.label_detected !== false;      // false = explicitly not found on the page
+        if (label && slug && located && data.field_key) {
+          require('../../../database/modules/label_overrides')
+            .addLabelOverride(db, { doc_type_slug: slug, field_key: data.field_key,
+                                    label, exclusive: 1 });
+        }
+      }
+    } catch (e) {
+      // A learning nicety must never fail the teach that has already been persisted above.
+      logger?.warn?.(`teach label -> keyword: ${e.message}`);
+    }
     // Recording verification (diagnostic only): record exactly what now sits in
     // field_anchors for this (supplier, doc_type, field) after the save, so a
     // diagnostic log shows whether the ⊕ teach actually persisted the drawn

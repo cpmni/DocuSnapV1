@@ -309,8 +309,10 @@ def merge_label_overrides(patterns: dict, overrides: list, doc_slug: str | None)
 
     Each override is {doc_type_slug, field_key, label}. Only those whose
     doc_type_slug matches `doc_slug` (case-insensitive) apply. The merge is
-    ADDITIVE: a field's shipped labels are preserved and the override label is
-    appended; a field_key with NO shipped entry gets one created (so a CUSTOM
+    ADDITIVE BY DEFAULT: a field's shipped labels are preserved and the override label is
+    consulted first (see PRECEDENCE below). An override carrying `exclusive` truthy instead
+    REPLACES that field's shipped labels entirely (migration 61) — the taught caption becomes the
+    only keyword for that (doc type, field); a field_key with NO shipped entry gets one created (so a CUSTOM
     doc-type field — which keyword.extract_fields would otherwise skip — becomes
     keyword-extractable). Returns the ORIGINAL `patterns` object unchanged when
     there's nothing to merge, so the common (no-override) path costs nothing.
@@ -328,6 +330,17 @@ def merge_label_overrides(patterns: dict, overrides: list, doc_slug: str | None)
         return patterns
 
     field_patterns = {k: dict(v) for k, v in (patterns.get("field_patterns") or {}).items()}
+    # EXCLUSIVE overrides (migration 61; owner decision 2026-08-11). An override marked exclusive
+    # REPLACES the shipped caption bank for its (doc type, field) instead of being prepended to it:
+    # "when we draw an anchor and set the label, set that confirmed label as the ONLY keyword on
+    # that doc for that field." Without this, a taught `po_number` mapping coexists with a Stage 1
+    # keyword still hunting the generic 'ref', because the additive form falls THROUGH to the
+    # shipped labels whenever the taught one does not hit.
+    # Collected FIRST so the per-override loop below can clear the bank exactly once per field —
+    # clearing inside the loop would drop a second exclusive label for the same field.
+    exclusive_keys = {str(o["field_key"]).strip() for o in relevant
+                      if o.get("exclusive") and str(o.get("field_key") or "").strip()}
+    _cleared = set()
     for o in relevant:
         key = str(o["field_key"]).strip()
         lab = str(o["label"]).strip()
@@ -343,6 +356,13 @@ def merge_label_overrides(patterns: dict, overrides: list, doc_slug: str | None)
             inferred = _infer_validation(key)
             if inferred:
                 entry["validation"] = inferred
+        # An exclusive field starts from an EMPTY bank the first time it is touched, so only the
+        # taught label(s) remain. Deliberately NOT applied to a field with no shipped entry (the
+        # custom-field seed above already starts empty), and never to a field whose overrides are
+        # all additive.
+        if key in exclusive_keys and key not in _cleared:
+            entry["labels"] = []
+            _cleared.add(key)
         labels = list(entry.get("labels") or [])
         # PRECEDENCE: an admin override is a deliberate per-install instruction to
         # look for THIS label, so it is consulted BEFORE the shipped/auto labels —
