@@ -21,14 +21,26 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-11 EVENING+LATE: **READ `HANDOVER_2026-08-11_EVENING.md` FIRST** (its LATE
-EVENING section carries the night's second half). HEAD **`03b7d87`**, PUSHED. LATE-EVENING
-HEADLINES: **the 'Ltc' class root cause was a STALE `sample_deskew_angle=0`** (pre-round-trip
-teach; compose-scan misplaced every composed box) — Oracle-signed BACKFILL **APPLIED LIVE**
-(tpl 5/7; tpl 9 HELD; name edge-grow ruled WRONG LAYER, not built); **corroborated auto-file
-BUILT DEFAULT OFF** (volume-only substitution, memory+hint refused — does NOT flip Castellan;
-flip gates in the handover NOT yet run); **picker history ranking LIVE** ("confirmed N times");
-Review's positive-only agreement badge REMOVED (owner ruling); SFDEV trace crops named per read.
+## ⏭ LATEST — 2026-08-11 LATE: **READ `HANDOVER_2026-08-11_LATE.md` FIRST** (the whole
+evening→midnight arc; `_EVENING.md` = the afternoon). HEAD **`dc285a3`**, PUSHED, tree clean.
+Owner's app RUNNING on this code. EIGHT gated arcs live: dock resolved · trace crops named ·
+**picker history ranking** ("confirmed N times", owner-seen) · **sample-angle BACKFILL APPLIED**
+(the 'Ltc' root cause = stale `sample_deskew_angle` on pre-round-trip teaches; tpl 5/7 written,
+tpl 9 HELD; backup beside the live DB) · **corroborated auto-file BUILT + all flip gates run +
+Oracle UNLOCK + owner-flipped ON** (volume-only substitution; memory+hint refused so
+frozen-issuer scopes still need graduation; cold poison recreation 21/21 Stage-0 refusals — the
+wrong claim no longer forms even with the frozen identity on-page; never flip alongside
+`CODE_SEPARATOR_STRUCTURE_GUARD`) · Review's positive-only agreement badge REMOVED (owner
+ruling: absence reads as alarm; Stage-1 keyword is SAME-LINE only so label-above cells never
+corroborate) · **reprocess THREAD-CAP parity** (`_reprocessThreadCap` from CONFIG concurrency —
+Tesseract is thread-count-nondeterministic on boundary glyphs; cap=1 here = deterministic) ·
+**currency SYMBOL-CUT stand-down** (`6a78c69` — snug box cutting only '£' no longer flags;
+Pelican totals 78→98; Oracle C1 = NON-alphanumeric prefix, the serif 1→l channel pinned).
+**PICK UP FIRST: the NAME-BOX FLUSH-EDGE CLIP** (pendingfeatures top): `boxSnap.js` pads
+name boxes ~0.002 < sibling drift — the snap itself mints flush boxes; Oracle's recorded
+name-grow revival condition ("class survives the repair") is now MET on the Ironclad exhibit.
+GOTCHA: Bash-heredoc JS loses a backslash escape level — better-sqlite3 silently CREATES an
+empty phantom DB at the mangled path ("no such table" = print the resolved path first).
 **The child-window DOCK is RESOLVED (`5391c52`, LIVE-SMOKED)**: 5th iteration = restore-then-hide +
 visibility-guarded undock (a hidden window cannot be "back in front") + juggle flag drained in
 setTimeout(0) + drain-time chip failsafe + deterministic undock in the restore IPC. Smoke: no
