@@ -538,7 +538,15 @@ function broadcastDock() {
 // Any event that puts the window back in front un-docks it, so the chip can never
 // outlive the minimised state (a stale chip that restores nothing is worse than no chip).
 function wireChildDock(win, name) {
-  win.on('minimize', () => { dockedChildren.add(name); broadcastDock(); });
+  win.on('minimize', () => {
+    dockedChildren.add(name); broadcastDock();
+    // HIDE the minimised window (owner, 2026-08-11, with a screenshot): a skipTaskbar window
+    // minimises to Windows' tiny unlabelled desktop stub at the SCREEN's bottom-left — the very
+    // artefact the dock exists to replace — and it was landing on top of the chips. Hidden, no
+    // stub exists at all: the chip is the one representation. The restore path already does
+    // restore → show → focus in order, and show/restore events un-dock the chip.
+    try { if (!win.isDestroyed()) win.hide(); } catch { /* window going away */ }
+  });
   const undock = () => { if (dockedChildren.delete(name)) broadcastDock(); };
   win.on('restore', undock);
   win.on('show',    undock);

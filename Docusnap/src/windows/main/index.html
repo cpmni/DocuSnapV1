@@ -662,12 +662,14 @@
     /* ── Child-window dock ──────────────────────────────────────────────────
        Owner 2026-08-02: minimised child windows used to go to "a tiny stub at the
        desktop's bottom-left that vanished into the background". These chips are the
-       replacement — anchored to the MAIN app's bottom-left, raised off the surface
-       with a real shadow and an accent left-edge so they read as live windows waiting,
-       not as decoration. */
+       replacement — one labelled chip per minimised window, stacked, newest at the
+       bottom. BOTTOM-RIGHT since 2026-08-11 (owner screenshot): bottom-left collided
+       with the rail foot (clock / Local-only badge / theme toggle) AND with the OS
+       stub the minimised window itself used to leave there — the stub is gone too
+       (main.js hides the window on minimise), so the chip is the one representation. */
     .child-dock {
-      position: fixed; left: 16px; bottom: 16px; z-index: 4000;
-      display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 8px;
+      position: fixed; right: 16px; bottom: 16px; z-index: 4000;
+      display: flex; flex-direction: column-reverse; align-items: flex-end; gap: 8px;
       pointer-events: none;                 /* the chips take the clicks, not the strip */
     }
     .child-dock[hidden] { display: none; }
