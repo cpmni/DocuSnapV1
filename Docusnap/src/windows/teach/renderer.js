@@ -1348,11 +1348,23 @@ function showValueConfirm(f, r){
       dirBtns+
     `</div>`+
     typeRow);
-  // A typed correction REPLACES the read but keeps the box/label already stored, so the position
-  // is still taught. Marked done immediately — the operator has just told us what it says.
-  const doTyped = ()=>{
+  // A typed correction TEACHES too (owner, 2026-08-11 — "the option to type a value here doesn't
+  // teach"). Two distinct wrongs hide behind one typing row:
+  //   * the BOX was on the wrong text → the typed value is printed SOMEWHERE ELSE. Keeping the
+  //     drawn box would silently teach the wrong position on every future document. So the typed
+  //     value goes through the SAME locate flow as the hatch: found → ring + approve the spot
+  //     (re-targets the box, then the label re-detects beside the REAL position).
+  //   * the OCR misread the RIGHT box → the printed word is garbled in the page's own word
+  //     geometry too, so the locate MISSES — and keeping the drawn box is exactly correct.
+  // The miss case is therefore the old behaviour byte-for-byte; the hit case is the new teach.
+  const doTyped = async ()=>{
     const v = (($('rb-input')||{}).value||'').trim();
     if (!v) { const i=$('rb-input'); if(i) i.style.borderColor='var(--err)'; return; }
+    if (TYPED_LOCATE_ON && v !== String(r.value||'').trim()){
+      setConfirm('<span class="muted">Looking for that on the page…</span>');
+      let hits=[]; try{ hits=await locateTypedValue(v); }catch{}
+      if (hits.length){ showLocatedPick(f, v, hits, 0); return; }
+    }
     r.value = v; r.valueSource = 'typed';
     if (issuer) return finishIssuerField(f);
     // Same two-way date check on the TYPED value — non-blocking (typed deliberately), but the
