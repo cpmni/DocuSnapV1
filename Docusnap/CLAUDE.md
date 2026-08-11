@@ -22,12 +22,14 @@ touches that area — read the pointed-to doc BEFORE working in it:
   ➜AN there). Read the matching block before changing one of those files.
 
 ## ⏭ LATEST — 2026-08-11 EVENING: **READ `HANDOVER_2026-08-11_EVENING.md` FIRST** (then DAY2 below)
-HEAD **`1edfb7c`**, PUSHED. Owner live-tested all afternoon; ~15 fix commits. **PICK UP FIRST: the
-child-window DOCK** — FOUR stub-removal iterations failed live (each documented at `src/main.js`
-wireChildDock; the 4th LOST windows — restore()'s events fire AFTER the minimize handler returns,
-so the juggle guard was already down and undock killed the chip); REVERTED to safe chips+stub; the
-designed 5th attempt (visibility-guarded undock + drained juggle flag) is in the handover, build +
-LIVE-smoke before pushing. **Owned windows can NEVER have taskbar buttons** — setSkipTaskbar flips
+HEAD **`5391c52`**, PUSHED. Owner live-tested all afternoon; ~15 fix commits. **The child-window
+DOCK is RESOLVED (`5391c52`, LIVE-SMOKED late evening)**: 5th iteration = restore-then-hide +
+visibility-guarded undock (a hidden window cannot be "back in front") + juggle flag drained in
+setTimeout(0) + drain-time chip failsafe + deterministic undock in the restore IPC. Smoke: no
+stub, chip persists, restores PAINTED, two-chip selective restore, no spontaneous restore (12s).
+Incidental pre-existing: createWindow parents children to the FOCUSED window — Review opened while
+Settings has focus dies with Settings on close. The four failed iterations stay documented at
+`wireChildDock`. **Owned windows can NEVER have taskbar buttons** — setSkipTaskbar flips
 on them cause spontaneous restores. Also shipped: teach capture-step FLOW REWORK (one question
 panel, valueSource provenance, typed-issuer commits from pick, NO-HIT typo recovery, stale-box
 suppression); typed corrections run the LOCATE flow (box-wrong re-targets, OCR-misread keeps box);

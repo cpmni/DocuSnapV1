@@ -7,6 +7,16 @@ owner tested live and drove ~15 fix commits. **`OWNER_TEST_SCRIPT_2026-08-11.md`
 now** — the teach-wizard sections describe the pre-rework flow.
 
 ## PICK UP FIRST — the dock (the one thing left broken-then-reverted)
+**✓ RESOLVED 2026-08-11 late evening — `5391c52`, PUSHED, LIVE-SMOKED.** The 5th attempt below was
+built exactly as designed plus two hardenings: (c) a drain-time failsafe (a hidden live child MUST
+have a chip — re-adds if anything removed it, so the 4th's "no way back" state self-heals) and
+(d) the restore IPC undocks deterministically after show() instead of waiting for event timing.
+Smoked on a sandboxed instance (CDP-driven, screenshots): chip persists 0.3s/1.8s/4.8s after
+minimise; NO desktop stub + one taskbar entry; chip-restore returns Settings AND Review fully
+painted (the blank failure is gone); toolbar-reopen undocks; two chips + selective restore;
+close-while-docked kills the chip; 12s soak = no spontaneous restore. Incidental pre-existing
+finding: createWindow parents a child to the FOCUSED window, so Review opened while Settings has
+focus becomes Settings' child and dies with it on close — not a dock defect, noted for later.
 
 Minimised child windows: **SAFE STATE shipped** — the OS desktop stub (bottom-left of the screen,
 ugly) + the working dock chip (bottom-right of the main window) coexist. FOUR stub-removal
