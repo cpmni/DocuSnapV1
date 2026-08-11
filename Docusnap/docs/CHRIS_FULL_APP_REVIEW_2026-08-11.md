@@ -294,3 +294,33 @@ Findings 1, 3, 4-8 remain untouched and unimplemented.
 **Suggested order for the owner:** 2 (plausibility guard — one predicate, already-existing helper,
 protects the filing cabinet) → 1 (buyer-issued identity, the narrowed remainder) → 3 (silent
 Approve) → 4/7 (copy) → the rest.
+
+### STATUS UPDATE 2026-08-11 (owner-directed day session): findings 1, 3, 4, 5, 7, 8 ADDRESSED
+
+- **Finding 1 — FIXED for the observed class** (`ca0bb49`): the identity guard's wordmark abstain
+  used to ADMIT; a YOUNG frozen-supplier template (fewer than 3 corroborating confirms) must now be
+  NAMED on the page it claims. The `_chris2` sandbox repro now refuses the garble template — the
+  Oakhaven notes fall back to "Sender not identified", the state Chris said he can work with. The
+  triage hypothesis above was wrong about the mechanism: the trace shows the guard never fired for
+  the garble (abstain), and the claim came through the KEYWORD arm, not the logo. Route A (a
+  correctly-taught buyer-issued template) + the VAT rail remain designed-not-built
+  (`pendingfeatures.md`).
+- **Finding 3 — Approve was never broken in the backend**: it is a two-step ARM (first click arms,
+  auto-reverts in 5s; second click within the window executes) and there is NO self-approval rule
+  anywhere. Four slow presses were four invisible arms. The armed state now recolours the button,
+  states the mechanism in its own line, holds 8s, and clears any stale reject error.
+- **Finding 4 — fixed**: after a batch the folder preview now says the scans were brought in and
+  moved to Processed, instead of the "pick the folder that contains the scans" alarm.
+- **Finding 5 — fixed**: the locate pick step resets zoom/pan so the page is in the viewport and
+  rings the located box with a glow — a word-sized rectangle can no longer hide on an A4 page.
+- **Finding 7 — fixed**: the mid-run counter now includes the known batch total ("132 of 200").
+- **Finding 8 — fixed**: the recycle bin row leads with the filename, and "Restore all" now sits
+  beside "Empty bin" (admin/edit, counted confirm).
+- **Also from the verify list**: batch "Reprocess all" now always confirms with the count; Home
+  splits the queue ("X need your review · Y ready to file"); the auto-file card says "qualified
+  for automatic filing" and admits when nothing has fired; ONE phrase for the unknown-sender state;
+  teach picker gained a filter box; the last wizard button says "Save teaching & file"; the wizard
+  tally counts skips honestly; recovery code gained Copy + Print; the tutorial's "amber" copy and
+  stale coach line are fixed; the filing preview explains the collapsing {title} block.
+- **Finding 6 — NOT built** (heading-as-company): mechanism + fix direction filed in
+  `pendingfeatures.md`; the 19 documents are Check-flagged (held) today.

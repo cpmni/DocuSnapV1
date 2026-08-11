@@ -6,6 +6,44 @@
 
 ---
 
+## 2026-08-11 — BUYER-ISSUED IDENTITY, slices 2+3 (slice 1 SHIPPED `ca0bb49`; these are DESIGNED, not built)
+
+Slice 1 (young-identity corroboration in `_identity_refuses`) closed the OBSERVED leak — Chris's
+garble template riding the wordmark abstain at n<=1. Two designed remainders from gary's pass:
+
+- **Slice 2 — `templates.buyer_issued` mark (closes Route A, which exists in NO corpus).** A
+  *correctly* taught buyer-issued template (operator enters their OWN company as the issuer) passes
+  the presence test on every inbound page, because the owner's name is printed on everything the
+  business receives (as recipient). Design: additive `templates.buyer_issued` column (migration),
+  written at template creation/confirm when the source doc is buyer-issued (JS twin of
+  `engine._buyer_issued` — type's `ref_field_key == 'po_number'` or trusted PO heading); a marked
+  template is refused by TEXT arms for a doc whose TRUSTED detected title declares a different
+  type. Go-forward-only; kill `TEMPLATE_BUYER_ISSUED_TYPE_SCOPE`, DEFAULT OFF. Coverage is
+  unit-level only until a corpus exhibit exists — say so in the gate.
+- **Slice 3 — the VAT-contradiction rail (Chris's own proposal; catches the LOGO-arm residual the
+  identity guard is deliberately scoped out of).** A `template_fixed` stamp of a
+  `_PRECISE_VAL_TYPES` field contradicted by a DIFFERENT well-formed same-type value printed on the
+  page → review note + hold below auto-file. Never blank, never unfreeze (unfreezing VAT was
+  measured 51→16% on 08-08 and is REFUTED). The live exhibit is already in today's trace: Oakhaven
+  prints `GB 660 1173 45` (keyword, 87) while the stamp said `GB 512 8846 27` (template_fixed, 95)
+  — the new corroboration RECORD (`extractions.corroboration`) now captures exactly this row, so
+  the rail can be measured from recorded disagreements before it acts on them.
+
+## 2026-08-11 — CHRIS r2 FINDING 6: a printed HEADING ("SUPPLIER") becomes the company on 19 documents
+
+**Symptom:** one ⊕ teach on a Quillstone PO; after reprocess, 19 siblings read the block-heading
+caption as the company — queue groups "SUPPLIER ×13", "UPPLIER ×5", "rans ×1". All 19 carry a
+Check flag (held — the safe state), unlike the identity-leak class. **Why the shipped guards miss
+it:** `issuerReadLooksImplausible` (810ea8f) never judges a single token (BP/IBM immunity), and
+"SUPPLIER"/"UPPLIER" are single tokens; the G3b known-caption value guard arms CUSTOMER-SIDE
+name fields only — `supplier_name` is explicitly excluded; `CAPTION_VALUE_REFUSE` shipped inert.
+**Fix direction (NOT built):** the anchor-read supplier path should refuse a value that IS a known
+caption for the field it fills (the caption vocab already exists per-run —
+`keyword.build_caption_vocab`), scoped to the ANCHOR/template rungs, refuse-to-empty (falls to the
+cold-start letterhead suggest, which names the real company). Needs its own measurement: the
+08-10 `captionrefuse` arm exists and measured the class (`account_no` 40 no-source commits,
+serials 19) — re-run it before building. Severity medium: flagged-and-held today.
+
 ## 2026-08-10 — A TYPED TEACH VALUE CAPTURES NO LOCATION (UI done; the STORAGE question is OPEN)
 
 **Owner, verbatim:** *"we need to lose this and add an option in the top to type manually if not
