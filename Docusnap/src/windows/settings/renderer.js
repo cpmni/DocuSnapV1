@@ -691,6 +691,9 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // JS-side setting read (both teach writers + the extraction payload);
                          // no env bridge needed.
                          ['teach-label-keyword-toggle', 'teach_label_becomes_keyword'],
+                         // LIST field type: collect every occurrence of the field's label
+                         // (serial numbers). Bridged to LIST_FIELD_SCAN in _reconcileEnv.
+                         ['list-field-scan-toggle', 'list_field_scan'],
                          // Bridged 2026-08-10: both were built + measured on 08-09 and recorded as
                          // "awaiting the owner's flip", but neither had a bridge, so there was
                          // nothing to flip - env-only, and npm start injects no env.
@@ -1245,6 +1248,9 @@ thresholdSlider.addEventListener('change', async () => {
 let allTypesWithFields = [];
 
 async function loadDocTypes() {
+  // LIST field type gate: the shared editor offers 'List (several values)' only while
+  // list_field_scan is armed (an existing list-typed field always keeps its option).
+  try { window.__listFieldTypeOn = (await api.getSetting('list_field_scan')) === 'true'; } catch {}
   allTypesWithFields = await api.getAllDocTypesAll();
   renderDocTypesList();
 }

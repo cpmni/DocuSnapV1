@@ -896,6 +896,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Collect every value of a &ldquo;List&rdquo; field</div>
+                <div class="threshold-desc">A field typed as &ldquo;List (several values)&rdquo; — like serial numbers — is read by scanning the whole document for its label and collecting every occurrence (&ldquo;NW-123; NW-456&rdquo;). Also unlocks the List type in the field editor. Off: list-typed fields read like ordinary text fields.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="list-field-scan-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">A label you teach becomes the keyword for that field</div>
                 <div class="threshold-desc">When you teach a field and confirm its printed label (e.g. &ldquo;Job Sheet No&rdquo;), that label replaces the generic ones (like &ldquo;Ref&rdquo;) when reading documents that match the layout you taught it on. Off: taught labels only guide the position, and the generic keywords keep hunting too.</div>
               </div>

@@ -285,8 +285,9 @@ async function openTypeEditorFor(slug){
       const u=fresh.find(x=>x.slug===slug);
       if (u){
         state.refFieldKey=u.ref_field_key||null; state.dateFieldKey=u.date_field_key||null;
-        state.fields=(u.fields||[]).filter(f=>f.enabled!==0)
-          .map(f=>({key:f.key,label:f.label,type:f.type,required:!!f.required}));
+        { const _sp=_splitListFields((u.fields||[]).filter(f=>f.enabled!==0)
+            .map(f=>({key:f.key,label:f.label,type:f.type,required:!!f.required})));
+          state.fields=_sp.teach; state.listFields=_sp.lists; }
       }
       await renderTypeStep();
       const again=$('type-grid').querySelector(`.card[data-slug="${slug}"]`);
@@ -338,6 +339,16 @@ function _collectTypeHeadingNames(types, extra){
   if (extra) names.push(extra);
   return names;
 }
+// LIST fields are caption-collected, never box-taught (Oracle C1, 2026-08-11): a stored box for a
+// list field would be silently dead — the scan owns the field — and a dead operator instruction is
+// the inverse-of-"teaching must never hurt" class. They are pulled from the capture flow HERE, at
+// teach time, with the reason on screen, rather than accepted and ignored.
+function _splitListFields(fields){
+  if (!window.__listFieldTypeOn) return { teach: fields, lists: [] };
+  const lists = fields.filter(f => String(f.type || '').toLowerCase() === 'list');
+  return { teach: fields.filter(f => !lists.includes(f)), lists };
+}
+
 async function commitTypeChoice(){
   if (!isNewTypeSelected()){
     const card=$('type-grid').querySelector('.card.sel');
@@ -346,8 +357,13 @@ async function commitTypeChoice(){
     state.typeHeadingNames=_collectTypeHeadingNames(types, state.docTypeName);
     const t=types.find(x=>x.slug===state.docTypeSlug);
     state.refFieldKey=(t&&t.ref_field_key)||null; state.dateFieldKey=(t&&t.date_field_key)||null;
-    state.fields=(t&&t.fields?t.fields:[]).filter(f=>f.enabled!==0).map(f=>({key:f.key,label:f.label,type:f.type,required:!!f.required}));
+    { const _sp=_splitListFields((t&&t.fields?t.fields:[]).filter(f=>f.enabled!==0)
+        .map(f=>({key:f.key,label:f.label,type:f.type,required:!!f.required})));
+      state.fields=_sp.teach; state.listFields=_sp.lists; }
     if (!state.fields.length){ toast('That type has no fields to teach.'); return false; }
+    if (state.listFields.length){
+      toast(`${state.listFields.map(f=>f.label).join(', ')}: collected automatically by label — nothing to draw for ${state.listFields.length===1?'it':'them'}.`, 4200);
+    }
     return true;
   }
   // Create the new type via the shared editor (immediate commit; teach keeps its
@@ -361,10 +377,14 @@ async function commitTypeChoice(){
   { let types=[]; try{ types=await D.getAllDocTypes()||[]; }catch{}
     state.typeHeadingNames=_collectTypeHeadingNames(types, state.docTypeName); }
   state.refFieldKey=(t&&t.ref_field_key)||null; state.dateFieldKey=(t&&t.date_field_key)||null;
-  state.fields=(t&&t.fields?t.fields:[]).map(f=>({
-    key:f.key, label:f.label, type:f.type,
-    required:(f.key===t.ref_field_key || f.key===t.date_field_key),
-  }));
+  { const _sp=_splitListFields((t&&t.fields?t.fields:[]).map(f=>({
+      key:f.key, label:f.label, type:f.type,
+      required:(f.key===t.ref_field_key || f.key===t.date_field_key),
+    })));
+    state.fields=_sp.teach; state.listFields=_sp.lists; }
+  if (state.listFields && state.listFields.length){
+    toast(`${state.listFields.map(f=>f.label).join(', ')}: collected automatically by label — nothing to draw for ${state.listFields.length===1?'it':'them'}.`, 4200);
+  }
   return true;
 }
 
@@ -920,6 +940,9 @@ function showFixedInput(f){
 // byte-identically (the search never runs).
 let TYPED_LOCATE_ON = true;
 try { D.getSetting?.('teach_typed_value_locate').then(v => { TYPED_LOCATE_ON = v !== 'false'; }); } catch {}
+// LIST field type (2026-08-11): unlocks 'List (several values)' in the shared doctype editor,
+// and marks list-typed fields as caption-collected in the capture step (no box teach).
+try { D.getSetting?.('list_field_scan').then(v => { window.__listFieldTypeOn = v === 'true'; }); } catch {}
 // Page words are cached per (page, straighten angle): the operator may type several fields on one
 // page, and a full-page OCR per field would be a visible stall for no new information.
 let _pageWordsCache = { key:null, res:null };

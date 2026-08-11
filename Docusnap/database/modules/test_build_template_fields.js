@@ -112,6 +112,20 @@ function main() {
   check('customer_name STILL variable even with uniform confirmed history (accepted fail-toward-review trade-off)',
         rows3.customer_name && rows3.customer_name.is_variable === true);
 
+  section('5. (E) a LIST-typed field NEVER freezes (2026-08-11 — the serials-defect pin)');
+  // The live DB carried template_fixed 'Serial No:' ×24 because a TEXT-typed code field froze from
+  // one taught document. A field typed 'list' is per-document by construction — unconditional, no
+  // kill switch; a future dev restoring the freeze "for recall" turns this red.
+  const dtList = { id: 1, ref_field_key: 'invoice_number', date_field_key: 'invoice_date',
+    fields: [{ key: 'serials', label: 'Serials', type: 'list', is_variable: 0 },
+             { key: 'payment_terms', label: 'Payment Terms', type: 'text', is_variable: 0 }] };
+  const rowsL = byKey(_buildTemplateFields(db, { serials: 'NW-1; NW-2', payment_terms: '30 days' }, dtList));
+  check('list-typed field is variable (never frozen), whatever its schema flag says',
+        rowsL.serials && rowsL.serials.is_variable === true && rowsL.serials.fixed_value === null);
+  check('CONTROL: a constant text sibling still freezes (the exclusion is type-scoped)',
+        rowsL.payment_terms && rowsL.payment_terms.is_variable === false
+        && rowsL.payment_terms.fixed_value === '30 days');
+
   console.log('\n' + (fails === 0 ? 'ALL PASS' : `${fails} FAILED`));
   process.exit(fails ? 1 : 0);
 }

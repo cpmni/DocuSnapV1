@@ -497,6 +497,13 @@ function _reconcileEnv(db) {
     // `_sharedValidationPatterns` (freeze_guard + the auto-file checksum), deliberately does NOT
     // widen; the reasoning is recorded there.
     if (learning.getSetting(db, 'vat_eu_formats', 'false') === 'true') env.VAT_EU_FORMATS = '1';
+    // LIST_FIELD_SCAN (2026-08-11, gary + Oracle): a field typed 'list' is collected by the label
+    // scan — EVERY occurrence of its caption on the page, deduped, joined '; ' (owner: "scans the
+    // whole doc for the label and pulls all occurrences"). Also arms the ownership skips (a list
+    // field is never written by the mapping/anchor/hint rungs — one box cannot hold N values; the
+    // live serials teach committed its own caption 24 times proving it). OFF -> byte-identical,
+    // and the 'list' type is hidden from the field-type dropdown.
+    if (learning.getSetting(db, 'list_field_scan', 'false') === 'true') env.LIST_FIELD_SCAN = '1';
     return env;
   } catch { return {}; }
 }

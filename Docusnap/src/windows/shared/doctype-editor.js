@@ -51,6 +51,11 @@
     ['website', 'Website', 'A web address.  e.g. www.company.com · https://company.com'],
     ['mac_address', 'MAC address', 'A hardware (MAC) address — accepts colons.  e.g. D4:F0:C9:25:9B:64'],
     ['ip_address', 'IP address', 'An IP address (IPv4 or IPv6) — accepts dots/colons.  e.g. 192.168.1.200 · fe80::1'],
+    // LIST (2026-08-11, kill switch `list_field_scan` — hidden from the dropdown while OFF, but an
+    // EXISTING list-typed field still renders its label if the flag is later turned off).
+    // guessType must NEVER return 'list' (pinned): auto-selecting it would silently change how a
+    // field extracts; the operator chooses it deliberately.
+    ['list', 'List (several values)', 'Several values on one document sharing the same label — each occurrence is collected, e.g. serial numbers.  e.g. NW-123; NW-456; NW-789'],
   ];
   const TYPE_TIP = Object.fromEntries(TYPE_OPTS.map(([v, , t]) => [v, t || '']));
   const tipFor = (v) => TYPE_TIP[v] || '';
@@ -209,8 +214,14 @@
   }
 
   function typeSelectHtml(current, disabled) {
-    const opts = TYPE_OPTS.map(([v, l, t]) =>
-      `<option value="${v}"${v === current ? ' selected' : ''} title="${esc(t || '')}">${l}</option>`).join('');
+    // 'list' is offered only while the list_field_scan flag is armed (window.__listFieldTypeOn,
+    // set by the hosting window from the setting) — but an EXISTING list-typed field always
+    // renders its own option, so turning the flag off never blanks a select.
+    const listOn = (typeof window !== 'undefined' && window.__listFieldTypeOn) || current === 'list';
+    const opts = TYPE_OPTS
+      .filter(([v]) => v !== 'list' || listOn)
+      .map(([v, l, t]) =>
+        `<option value="${v}"${v === current ? ' selected' : ''} title="${esc(t || '')}">${l}</option>`).join('');
     return `<select class="field-select dte-type"${disabled ? ' disabled' : ''} title="${esc(tipFor(current))}">${opts}</select>`;
   }
 

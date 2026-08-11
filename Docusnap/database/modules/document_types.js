@@ -223,7 +223,8 @@ function _annotateFieldVariability(dt) {
       f.key === dt.ref_field_key ||
       f.key === dt.date_field_key ||
       f.type === 'date' ||
-      f.type === 'currency'
+      f.type === 'currency' ||
+      f.type === 'list'          // a list (e.g. serial numbers) is per-document by construction (2026-08-11)
     ) ? 1 : 0;
     // STRUCTURAL = Company / Date / Reference role: permanent, can't be deleted,
     // disabled, renamed or retyped (the value stays editable). Surfaced so the
@@ -405,12 +406,14 @@ function updateType(db, id, changes) {
   // caller create a dangling ref/date role (which would make Review's Confirm gate
   // impossible to satisfy). A non-null role key with no matching field is dropped from
   // the update; clearing a role to null/'' is always allowed.
+  // A LIST-typed field can never be a role (2026-08-11): the ref role feeds the {ref}
+  // FILENAME token, and a joined 'A; B; C' in a filename is never right.
   for (const role of ['ref_field_key', 'date_field_key']) {
     if (role in changes && changes[role]) {
-      const exists = db.prepare(
-        'SELECT 1 FROM fields WHERE document_type_id = ? AND key = ? LIMIT 1'
+      const row = db.prepare(
+        'SELECT type FROM fields WHERE document_type_id = ? AND key = ? LIMIT 1'
       ).get(id, changes[role]);
-      if (!exists) delete changes[role];
+      if (!row || String(row.type || '').toLowerCase() === 'list') delete changes[role];
     }
   }
   const sets = Object.keys(changes)

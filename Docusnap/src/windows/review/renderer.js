@@ -113,6 +113,15 @@ function fieldValidationError(key, value) {
     return 'Usually all digits for this field';
   }
   const def  = (fieldDefs || []).find(f => f.key === key);
+  // LIST fields (2026-08-11): the value is 'A; B; C' — validated PER ELEMENT (the whole-value
+  // >=0.8 coverage rule below would fail on the separators; that is the exact defect the
+  // reverted 2026-08-10 serial_list field-level pattern had). Warn-only, like every check here.
+  if (def && String(def.type || '').toLowerCase() === 'list') {
+    const parts = v.split(/[;,]/).map(s => s.trim());
+    if (parts.some(s => !s)) return 'This list has an empty entry — remove a stray separator';
+    if (parts.some(s => !/[A-Za-z0-9]/.test(s))) return 'A list entry has no letters or digits';
+    return null;
+  }
   const valKey = validationKeyFor(def);
   if (!valKey) return null;                      // free-text / untyped → no constraint
   const pats = validationPatterns && validationPatterns[valKey];
@@ -581,6 +590,14 @@ window.__drawConcurrentAnchor = false;
 (async () => {
   try { window.__drawConcurrentAnchor = (await window.docusnap.getSetting('draw_concurrent_anchor_reads')) === 'true'; }
   catch { /* stays false — serial path */ }
+})();
+
+// LIST field type (2026-08-11): when armed, a ⊕ teach on a list-typed field is refused with the
+// reason (the scan owns the field; a stored box would be dead). OFF = the ⊕ behaves as ever.
+window.__listFieldScanOn = false;
+(async () => {
+  try { window.__listFieldScanOn = (await window.docusnap.getSetting('list_field_scan')) === 'true'; }
+  catch { /* stays false */ }
 })();
 document.getElementById('generic-chip')?.addEventListener('click', () => {
   const sel = document.getElementById('doctype-select');
@@ -2888,6 +2905,14 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   }
 
   row.querySelector('.pick-btn').addEventListener('click', () => {
+    // A LIST field is caption-collected (Oracle C1, 2026-08-11): a taught box would be stored and
+    // never consulted — a dead operator instruction. Refuse AT TEACH TIME with the reason, rather
+    // than accept the draw and silently ignore it.
+    const _def = (fieldDefs || []).find(f => f.key === key);
+    if (_def && String(_def.type || '').toLowerCase() === 'list' && window.__listFieldScanOn) {
+      showToast(`${labelFor(key)} is a List field — it's collected by finding its label everywhere on the page, so there's no position to teach. Edit the value directly, or adjust its label in Settings → Learning.`, 'warn');
+      return;
+    }
     if (activeField === key) cancelZoneMode();
     else enterZoneMode(key, labelFor(key));
   });

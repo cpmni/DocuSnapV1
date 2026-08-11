@@ -1500,8 +1500,12 @@ function _buildTemplateFields(db, allValues, dtInfo) {
         ? freezeDeclineReason(key, value, meta, { companyKeys,
             extraCaptions: (dtInfo?.fields || []).map(f => f && f.label) })
         : null;
+      // (E) A LIST-typed field NEVER freezes (2026-08-11, gary + Oracle — the real lever for the
+      // serials defect class: template_fixed 'Serial No:' ×24 in the live DB). A list is
+      // per-document by construction; unconditional, no kill switch — freezing one is never right.
+      const listTyped = meta && String(meta.type || '').toLowerCase() === 'list';
       const isVariable = schemaVariable || multiValued.has(key) || recipientName
-                         || nonIssuerBlocked || !!declineReason;
+                         || nonIssuerBlocked || !!declineReason || listTyped;
       return {
         field_key:    key,
         anchor_label: null,

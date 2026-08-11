@@ -242,6 +242,11 @@ ARM_ENV.coldstart2 = { ...ARM_ENV.applive, LETTERHEAD_ISSUER: '1', TEMPLATE_IDEN
 // snapshot every frozen-supplier template is mature (count >= 3), so byte-identical is the
 // EXPECTED result and means class-absent — the non-flat evidence is the _chris2 sandbox repro.
 ARM_ENV.coldstart2_y0 = { ...ARM_ENV.coldstart2, TEMPLATE_IDENTITY_YOUNG_N: '0' };
+// LIST field scan armed over a corpus with ZERO list-typed fields (Oracle C2 on the 2026-08-11
+// list build): the yield refactor of the Stage-1 occurrence loop must be byte-identical BOTH with
+// the flag off (arm `base`) and with it on while no field is typed 'list'. Any diff here is the
+// refactor leaking, not the feature.
+ARM_ENV.listscan = { LIST_FIELD_SCAN: '1' };
 // The page's own wording is not a value. Measured against what is actually PRINTED: account_no is
 // committed on 40 pages that carry no account number, and serials commits the literal 'Serial No:'
 // on 19. Both are a confident value with NO SOURCE on the page - the worst kind, because the human

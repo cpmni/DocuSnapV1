@@ -5106,6 +5106,7 @@ class ExtractionEngine:
         self._slice_n   = 0
         self._field_candidates = {}   # per-run candidate ledger — ALWAYS built (_remember_candidates is
                                       # unconditional); safety-load-bearing for G1 arm (i), do not re-gate
+        self._list_field_keys = set()  # per-run; filled at Stage 1 when LIST_FIELD_SCAN is armed
         results      = {}
         field_keys   = [f["key"] for f in field_defs]
         # Straighten-arc frame election (C1: computed ONCE, the SAME list feeds every crop
@@ -5727,10 +5728,30 @@ class ExtractionEngine:
             if f.get('key') and f.get('key') != 'supplier_name'
             and (value_quality.is_name_like_field(f.get('key'))
                  or (patterns_for_run.get('field_patterns', {}).get(f.get('key')) or {}).get('role_caption') == 'party')}
+        # LIST fields (2026-08-11, kill switch LIST_FIELD_SCAN, DEFAULT OFF): fields the type
+        # declares as 'list' are collected by the label scan — every occurrence, deduped, joined
+        # '; '. The set also drives the ownership skips at the mapping/anchor/hint stages (a list
+        # is caption-collected; one taught box structurally cannot hold N occurrences — the live
+        # serials teach committed its own caption 23 times proving it). Empty when the flag is
+        # off -> byte-identical.
+        _list_field_keys = set()
+        if os.environ.get('LIST_FIELD_SCAN', '0') != '0':
+            _list_field_keys = {f.get('key') for f in (field_defs or [])
+                                if f.get('key') and str(f.get('type') or '').lower() == 'list'}
+        self._list_field_keys = _list_field_keys        # read by the Stage-2/hint ownership skips
+        # RECLAIM a list field a scalar rung already filled (Stage 0 template seed / Stage 0.5
+        # mapping run before this point): their single value is at best element 1 of N and at
+        # worst the caption itself. The collect scan below is the only writer for these keys.
+        for _lk in _list_field_keys:
+            if isinstance(results.get(_lk), dict):
+                _old = results.pop(_lk)
+                self.log(f"  List field '{_lk}': reclaimed scalar {_old.get('method')} read "
+                         f"for the collect scan")
         kw_results = keyword.extract_fields(ocr_text, field_keys, patterns_for_run,
                                             caption_vocab=_caption_vocab,
                                             caption_guard_keys=_caption_guard_keys,
-                                            trace=self._t)
+                                            trace=self._t,
+                                            list_keys=_list_field_keys or None)
         # ── INPUT HYGIENE for name-like free-text keyword reads ── a keyword/label
         # capture has NO crop-path cleaning, so OCR edge junk ("--« Beaumont Care
         # Homes Ltd -") enters verbatim and — being the highest-authority source
@@ -5992,6 +6013,12 @@ class ExtractionEngine:
             _pre_s2 = self._snap(results)
             self._remember_candidates('2_anchor', anchor_results)
             for key, data in anchor_results.items():
+                # LIST ownership (2026-08-11): a list-typed field belongs to the caption collect
+                # scan alone — one anchor box structurally cannot hold N occurrences, and the
+                # live serials teach committed its own caption 23 times proving what a scalar
+                # writer does to a list field. Empty stays empty -> review (fail-toward-review).
+                if key in getattr(self, '_list_field_keys', ()):
+                    continue
                 existing = results.get(key)
                 # Protect an admin-LOCKED fixed value from any NON-authoritative anchor
                 # read (incl. the supplier-identity rescue + credibility-gate paths
@@ -6610,6 +6637,8 @@ class ExtractionEngine:
                 for key, data in rescue_results.items():
                     if (results.get(key) or {}).get("value"):
                         continue                      # fill-empty-only — never displace
+                    if key in getattr(self, '_list_field_keys', ()):
+                        continue                      # LIST ownership: the collect scan alone writes these
                     data = dict(data)
                     data["confidence"] = min(int(data.get("confidence") or 0), _LATE_RESCUE_CAP)
                     data["late_rescue"] = True        # provenance for trace; method string untouched
@@ -6755,6 +6784,12 @@ class ExtractionEngine:
             n_corrected = 0
             for key, data in list(results.items()):
                 if not isinstance(data, dict) or not data.get("value"):
+                    continue
+                # LIST fields excluded from learned-format correction (gary 2026-08-11): a learned
+                # "template" over varying-length delimited values is nonsense, and value_to_template
+                # keeps separators as literals while try_correct rewrites at min(95,+20) with no
+                # note (the separator-guard finding). Do not rely on length-mismatch masking.
+                if key in getattr(self, '_list_field_keys', ()):
                     continue
                 # Never rewrite a value the corpus has actually CONFIRMED (reggie): the count-weighted
                 # derive_template can force a position to a category, and try_correct would then
@@ -6928,6 +6963,14 @@ class ExtractionEngine:
                     continue  # Stage 4 already flagged this field
                 val = data.get('value')
                 if not val:
+                    continue
+                # LIST fields skip the whole learned-shape/charset/wordness rail (gary 2026-08-11):
+                # varying element counts make the learned skeletons incoherent (false flags after
+                # 2-3 confirms), the charset would flag the '; ' separators, and per-element
+                # validation already ran inside the collect scan. ACCEPTED COST: no shape rail on
+                # a wrong list — the residual guard is element validation + review. Per-element
+                # shape learning is a later slice, deliberately.
+                if key in getattr(self, '_list_field_keys', ()):
                     continue
                 # ── EDGE-JUNK CLEANUP (name-like free-text) ── a real name never
                 # STARTS with "--«" / a stray symbol; strip OCR edge artefacts BEFORE
@@ -7915,6 +7958,12 @@ class ExtractionEngine:
         # confirmed values to disarm, so the FIRST stale title would otherwise fill an
         # empty title on a same-supplier reprocess (a wrong value wearing 60-90 conf).
         hints = [h for h in hints if str((h or {}).get("field_key") or "").lower() != "title"]
+        # LIST ownership (2026-08-11): a list is per-document by nature too — replaying one
+        # document's serial set onto another is the hint-fill failure mode with N values at once.
+        # The variability guard can't protect a cold scope (needs >=2 distinct confirms).
+        _lk = getattr(self, '_list_field_keys', None)
+        if _lk:
+            hints = [h for h in hints if (h or {}).get("field_key") not in _lk]
 
         # Evidence-based variability: a field with >=2 DISTINCT confirmed values for
         # this supplier+type is variable IN FACT (e.g. a per-document customer name),

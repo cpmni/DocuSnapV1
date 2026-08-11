@@ -1054,11 +1054,20 @@ ROLE_KEY_ALIASES = {
 def extract_fields(ocr_text: str, field_keys: list[str],
                    patterns: dict, caption_vocab: dict | None = None,
                    caption_guard_keys: "set | None" = None,
-                   trace = None) -> dict:
+                   trace = None,
+                   list_keys: "set | None" = None) -> dict:
     """
     Extract field values using keyword patterns.
     Returns dict of {field_key: {"value": str, "confidence": int, "method": "keyword"}}
     Only includes fields that were found.
+
+    list_keys (2026-08-11, LIST field type — owner: "scans the whole doc for the label and pulls
+    all occurrences and puts the serials in a list"): field keys declared type 'list'. For those,
+    the label scan COLLECTS every accepted occurrence (collect=True — shared guards, one scan)
+    instead of stopping at the first; elements pass the SAME _post_label_value pipeline
+    per-element, dedupe exact-match first-seen (a page-2 summary repeat is one element), and join
+    as 'A; B; C'. Method 'keyword_list'. None/empty (the default, and whenever LIST_FIELD_SCAN
+    is off) -> byte-identical scalar behaviour.
 
     caption_vocab / caption_guard_keys (G3b KNOWN-CAPTION VALUE GUARD, 2026-07-11): the run's
     caption vocabulary (build_caption_vocab) + the set of field keys ARMED for it (name-like/party,
@@ -1070,6 +1079,73 @@ def extract_fields(ocr_text: str, field_keys: list[str],
     validation     = patterns.get("validation_patterns", {})
     results        = {}
     lines          = ocr_text.split("\n")
+
+    def _post_label_value(value, field_key, fp, role_caption, pk):
+        """The per-value pipeline every accepted label hit passes through — caption-debris strip,
+        currency normalisation, format validation (+census), _clean_value, digit gate. ONE
+        implementation shared by the scalar path and the LIST collect path (2026-08-11) so the two
+        can never drift. Returns the cleaned value, or None to reject."""
+        if role_caption == 'ref' and value:
+            # A seeded ref caption "Reference No." / "Ref No" leaves the "No"/"Number" suffix
+            # (and its trailing dot) glued to a right-read value ("No.  WS111238") — strip a
+            # dangling ref-suffix token, then a stray leading dot the caption left behind. Only
+            # seeded ref fields hit this (role_caption='ref'); shipped patterns are byte-identical.
+            value = re.sub(r'^(?:(?:no|number|nº)\b\.?|#)\s*', '', value, flags=re.I)
+            value = re.sub(r'^[.\s:|\-–]+', '', value).strip()
+        elif value and fp.get("validation") in ('alphanumeric', 'reference_code', 'date'):
+            # CAPTION-PUNCTUATION debris on ANY structured read (owner live report
+            # 2026-08-05 — the Larkspur '. DN-98447' class): a label list carries both the
+            # dotless and dotted caption forms ('Delivery Note No' before 'Delivery Note
+            # No.'), the dotless form matches first against the printed 'Delivery Note No.
+            # DN-98447', and the caption's own '. ' rides into the committed value — on
+            # shipped, seeded AND override labels alike. No structured value can
+            # legitimately BEGIN with caption punctuation (each validator requires an
+            # alnum start), so strip the leading run. Deliberately NOT the seeded path's
+            # 'No/Number' token strip — that would mangle a genuine 'NO-1234' code; the
+            # punctuation-only strip cannot (it stops at the first alnum). Free-text and
+            # currency reads are byte-identical.
+            value = re.sub(r'^[.\s:|\-–]+', '', value).strip()
+        if not value or len(value.strip()) < 1:
+            return None
+
+        # Region-normalise a currency amount to canonical 1234.56 (no-op for anglo) so a
+        # Continental "1.234,56" / Swiss "1'234.56" passes the Anglo currency pattern below
+        # and is stored canonically.
+        if fp.get("validation") == "currency":
+            value = number_format.canonical(value)
+            # Rejoin an OCR-split thousands/decimal ("$15 707.84" → "$15,707.84") BEFORE
+            # the contiguous currency pattern below truncates it to "$15". Shared with
+            # anchor.py so the crop and keyword paths agree on OCR-split money.
+            value = number_format.normalise_currency_spacing(value)
+
+        # Validate value format if validator defined
+        val_type = fp.get("validation")
+        if val_type and val_type in validation:
+            val_census("keyword", val_type, value, _validate(value, validation[val_type]))
+            if not _validate(value, validation[val_type]):
+                return None  # doesn't match expected format
+
+        # Clean up the value
+        value = _clean_value(value, val_type, validation)
+
+        # reggie 2026-07-29 (PO_REF_DIGIT_GATE): an order-family reference is a CODE — a spaceless
+        # run bearing >=2 digits — never footer prose ("... on all correspondence and delivery
+        # notes") that the loose 'alphanumeric' re.search would otherwise accept as a value.
+        # Un-anchored + space-tolerant so a noisy real header (", p0-22954" / OCR-split "PO 22954")
+        # still reads (contrast the anchored reference_code — the 2026-07-24 null regression). Fail
+        # toward review: no code here -> reject, else the field stays empty for Review.
+        # REF_ROLE_DIGIT_GATE (reggie slice 1, 2026-08-07, DEFAULT OFF) — widen the ARMING, not
+        # the predicate; see the flag block comment in the git history for the measurements.
+        _digit_gate_armed = field_key in ('po_number', 'sales_order_number')
+        if (not _digit_gate_armed
+                and os.environ.get('REF_ROLE_DIGIT_GATE', '0') != '0'
+                and _infer_validation(field_key) == 'alphanumeric'):
+            _digit_gate_armed = True
+        if (os.environ.get('PO_REF_DIGIT_GATE', '1') != '0'
+                and _digit_gate_armed
+                and not re.search(r'\d\S*\d', value or '')):
+            return None
+        return value
 
     # Role aliases: a doc type may key its money fields "total"/"subtotal" while the shipped
     # config lives under "total_amount"/"subtotal". Without this a "total"-keyed field gets NO
@@ -1148,6 +1224,46 @@ def extract_fields(ocr_text: str, field_keys: list[str],
         _cap_guard = (caption_vocab if (KNOWN_CAPTION_GUARD_ENABLED and caption_vocab
                                         and field_key in (caption_guard_keys or ())) else None)
 
+        # ── LIST fields: collect EVERY accepted occurrence of the label ──────────────────
+        if list_keys and field_key in list_keys:
+            elements, seen = [], set()
+            _won_label = None
+            for label in labels:
+                is_override = False
+                if isinstance(label, dict):
+                    label_text = label["text"]
+                    label_dirs = label.get("directions", dirs)
+                    is_override = bool(label.get("override"))
+                else:
+                    label_text = label
+                    label_dirs = dirs
+                for raw_val, _dir in _search_for_label(
+                        lines, label_text, label_dirs, role_caption=role_caption,
+                        caption_guard=_cap_guard, vat_role=(pk == 'vat_tax'),
+                        trace=trace, collect=True):
+                    v = _post_label_value(raw_val, field_key, fp, role_caption, pk)
+                    if v is None:
+                        continue                      # a bad occurrence never poisons the rest
+                    k = v.strip().casefold()
+                    if k in seen:
+                        continue                      # exact dedupe, first-seen order (Oracle C5)
+                    seen.add(k)
+                    elements.append(v.strip())
+                # Mirror the scalar break: the first label that yields ANY element owns the
+                # field — a later generic label must not append strays onto a taught caption's
+                # clean list.
+                if elements:
+                    _won_label = label_text
+                    break
+            if elements:
+                results[field_key] = {
+                    "value":      "; ".join(elements),
+                    "confidence": min(95, base_conf + 5),
+                    "method":     "keyword_list",
+                    "label":      _won_label,
+                }
+            continue                                  # a list field never runs the scalar loop
+
         for label in labels:
             # Support per-label direction override: {"text": "Bill From", "directions": ["below"]}
             # and the admin label-override flag ({"text": ..., "override": True}).
@@ -1166,76 +1282,11 @@ def extract_fields(ocr_text: str, field_keys: list[str],
                 continue
 
             value, direction = found
-            if role_caption == 'ref' and value:
-                # A seeded ref caption "Reference No." / "Ref No" leaves the "No"/"Number" suffix
-                # (and its trailing dot) glued to a right-read value ("No.  WS111238") — strip a
-                # dangling ref-suffix token, then a stray leading dot the caption left behind. Only
-                # seeded ref fields hit this (role_caption='ref'); shipped patterns are byte-identical.
-                value = re.sub(r'^(?:(?:no|number|nº)\b\.?|#)\s*', '', value, flags=re.I)
-                value = re.sub(r'^[.\s:|\-–]+', '', value).strip()
-            elif value and fp.get("validation") in ('alphanumeric', 'reference_code', 'date'):
-                # CAPTION-PUNCTUATION debris on ANY structured read (owner live report
-                # 2026-08-05 — the Larkspur '. DN-98447' class): a label list carries both the
-                # dotless and dotted caption forms ('Delivery Note No' before 'Delivery Note
-                # No.'), the dotless form matches first against the printed 'Delivery Note No.
-                # DN-98447', and the caption's own '. ' rides into the committed value — on
-                # shipped, seeded AND override labels alike. No structured value can
-                # legitimately BEGIN with caption punctuation (each validator requires an
-                # alnum start), so strip the leading run. Deliberately NOT the seeded path's
-                # 'No/Number' token strip — that would mangle a genuine 'NO-1234' code; the
-                # punctuation-only strip cannot (it stops at the first alnum). Free-text and
-                # currency reads are byte-identical.
-                value = re.sub(r'^[.\s:|\-–]+', '', value).strip()
-            if not value or len(value.strip()) < 1:
-                continue
-
-            # Region-normalise a currency amount to canonical 1234.56 (no-op for anglo) so a
-            # Continental "1.234,56" / Swiss "1'234.56" passes the Anglo currency pattern below
-            # and is stored canonically.
-            if fp.get("validation") == "currency":
-                value = number_format.canonical(value)
-                # Rejoin an OCR-split thousands/decimal ("$15 707.84" → "$15,707.84") BEFORE
-                # the contiguous currency pattern below truncates it to "$15". Shared with
-                # anchor.py so the crop and keyword paths agree on OCR-split money.
-                value = number_format.normalise_currency_spacing(value)
-
-            # Validate value format if validator defined
-            val_type = fp.get("validation")
-            if val_type and val_type in validation:
-                val_census("keyword", val_type, value, _validate(value, validation[val_type]))
-                if not _validate(value, validation[val_type]):
-                    continue  # doesn't match expected format — try next label
-
-            # Clean up the value
-            value = _clean_value(value, val_type, validation)
-
-            # reggie 2026-07-29 (PO_REF_DIGIT_GATE): an order-family reference is a CODE — a spaceless
-            # run bearing >=2 digits — never footer prose ("... on all correspondence and delivery
-            # notes") that the loose 'alphanumeric' re.search would otherwise accept as a value.
-            # Un-anchored + space-tolerant so a noisy real header (", p0-22954" / OCR-split "PO 22954")
-            # still reads (contrast the anchored reference_code — the 2026-07-24 null regression). Fail
-            # toward review: no code here -> try the next label, else the field stays empty for Review.
-            # REF_ROLE_DIGIT_GATE (reggie slice 1, 2026-08-07, DEFAULT OFF) — widen the ARMING, not
-            # the predicate. The gate above was armed by a hardcoded PAIR, so every other reference
-            # field on every type stayed ungated: delivery_number committed the caption 'Delivery'
-            # at conf 70, and the Pelican teach sample stored 'Your PO' and seeded Learning History
-            # with it. The ROLE is what makes a field a code-bearing reference, so arm by the role
-            # inference Stage 1 already trusts to seed a custom field's format gate. Newly armed
-            # here: credit_note_number, delivery_number, invoice_number, reference_number.
-            # RECALL MEASURED BEFORE BUILDING: across every CONFIRMED value of those fields on this
-            # install (713 rows), ZERO fail `\d\S*\d` — the widened gate throws away nothing real.
-            # EXPECT A THROUGHPUT CHANGE, NOT AN ACCURACY ONE: a document that used to commit a
-            # caption now arrives EMPTY and routes to review. That is the intended direction.
-            # STRICT SUBSET — PO_REF_DIGIT_GATE=0 still disables both tiers. OFF = byte-identical.
-            _digit_gate_armed = field_key in ('po_number', 'sales_order_number')
-            if (not _digit_gate_armed
-                    and os.environ.get('REF_ROLE_DIGIT_GATE', '0') != '0'
-                    and _infer_validation(field_key) == 'alphanumeric'):
-                _digit_gate_armed = True
-            if (os.environ.get('PO_REF_DIGIT_GATE', '1') != '0'
-                    and _digit_gate_armed
-                    and not re.search(r'\d\S*\d', value or '')):
-                continue
+            # The whole per-value pipeline lives in _post_label_value (shared with the LIST
+            # collect path, 2026-08-11) — strip/currency/validate/clean/digit-gate, unchanged.
+            value = _post_label_value(value, field_key, fp, role_caption, pk)
+            if value is None:
+                continue  # rejected — try next label
 
             # Confidence boost for exact label match
             conf = base_conf
@@ -1612,9 +1663,17 @@ def _search_for_label(lines: list[str], label: str,
                       role_caption: str | None = None,
                       caption_guard: dict | None = None,
                       vat_role: bool = False,
-                      trace = None) -> tuple[str, str] | None:
+                      trace = None,
+                      collect: bool = False) -> "tuple[str, str] | list | None":
     """
     Search lines for a label and return (value, direction) or None.
+
+    collect=True (LIST fields, 2026-08-11 — owner: "scans the whole doc for the label and pulls
+    all occurrences"): instead of returning the FIRST accepted occurrence, gather EVERY accepted
+    (value, direction) across all lines and return the list (possibly empty). The occurrence
+    skip-guards above each accept point are SHARED between the two modes by construction — this
+    is one scan with two exits, never a second scan function that could drift (gary's rule).
+    collect=False is byte-identical to the historical first-wins behaviour.
 
     role_caption (RC1/RC5): 'ref' for a SEEDED custom-ref field, so a buyer/seller party caption
     ("Customer Reference") can't cross-fill it. None for shipped patterns → behaviour unchanged.
@@ -1635,8 +1694,9 @@ def _search_for_label(lines: list[str], label: str,
     """
     pattern = _label_pattern(label)
     if pattern is None:
-        return None
+        return [] if collect else None
 
+    _hits = [] if collect else None
     _is_bare_total = label.strip().lower() == 'total'
     _is_bare_order = (os.environ.get('PO_ORDER_NO_LABELS', '1') != '0'
                       and label.strip().lower().split()[:1] == ['order'])
@@ -1752,10 +1812,14 @@ def _search_for_label(lines: list[str], label: str,
                     and not after.endswith(':')
                     and not _is_label_line(after)
                     and not re.search(r'[A-Za-z]{2,}\s*:', after)):
+                if collect:
+                    _hits.append((after, "right"))
+                    continue          # next occurrence of the label — list mode wants them all
                 return after, "right"
 
         # Try BELOW direction — value is on the next non-empty line
         if "below" in directions:
+            _below_hit = False
             for j in range(i + 1, min(i + 4, len(lines))):
                 candidate = lines[j].strip()
                 if not candidate:
@@ -1775,16 +1839,25 @@ def _search_for_label(lines: list[str], label: str,
                 if (candidate
                         and not _is_label_line(candidate)
                         and not re.search(r'[A-Za-z]{2,}\s*:', candidate)):
+                    if collect:
+                        _hits.append((candidate, "below"))
+                        _below_hit = True
+                        break     # one value per occurrence; move on to the next occurrence
                     return candidate, "below"
+            if collect and _below_hit:
+                continue
 
         # Try ABOVE direction
         if "above" in directions:
             for j in range(i - 1, max(i - 4, -1), -1):
                 candidate = lines[j].strip()
                 if candidate and not _is_label_line(candidate):
+                    if collect:
+                        _hits.append((candidate, "above"))
+                        break
                     return candidate, "above"
 
-    return None
+    return _hits if collect else None
 
 
 def _is_label_line(text: str) -> bool:
