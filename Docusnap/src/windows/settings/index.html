@@ -1167,17 +1167,20 @@
         </div>
       </div>
 
-      <!-- Advanced reading switches gate (owner decision 2026-08-11): ~50 kill-switch /
-           experimental toggles hide behind one persisted SFDEV unlock. Hiding changes NO
+      <!-- Advanced reading switches gate (owner decision 2026-08-11, sharpened same day): ~50
+           kill-switch / experimental toggles hide behind one persisted SFDEV unlock — and the
+           GATE ITSELF is invisible to customers ("i dont want them seeing there are options
+           gated that they cannot access, it leads to curiosity"). The whole group renders ONLY
+           via Ctrl+Shift+D then M (or while the persisted unlock is on). Hiding changes NO
            values — the rows keep their ids (wiring pins unaffected); only visibility moves. -->
-      <div class="settings-group">
+      <div class="settings-group" id="dev-switches-group" style="display:none;">
         <div class="group-title">Advanced reading switches</div>
         <div class="group-body">
           <div class="section">
             <div id="dev-switches-lock-row" class="threshold-row">
               <div>
                 <div class="threshold-label">Fine-grained reading switches (developer)</div>
-                <div class="threshold-sub">Dozens of internal reading safeguards live here. They ship with the right defaults — changing them can quietly change how documents are read, so they're locked away. Support may ask you to open this.</div>
+                <div class="threshold-sub">Dozens of internal reading safeguards live here. They ship with the right defaults — changing them can quietly change how documents are read.</div>
               </div>
               <div style="display:flex;gap:8px;align-items:center;">
                 <input type="password" id="dev-switches-pw" class="field-select" style="width:130px;" placeholder="Password" autocomplete="off">

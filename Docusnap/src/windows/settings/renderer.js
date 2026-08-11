@@ -778,7 +778,7 @@ const DEV_SWITCH_IDS = [
   'identity-on-page-toggle', 'format-fail-yield-toggle', 'customer-po-labels-toggle',
   'code-separator-guard-toggle', 'vat-eu-formats-toggle', 'shadow-row-skip-toggle',
 ];
-function _applyDevSwitchVisibility(unlocked){
+function _applyDevSwitchVisibility(unlocked, revealGate){
   for (const id of DEV_SWITCH_IDS){
     const row = document.getElementById(id)?.closest('.threshold-row');
     if (row) row.classList.add('dev-switch');
@@ -789,6 +789,10 @@ function _applyDevSwitchVisibility(unlocked){
   const openRow = document.getElementById('dev-switches-open-row');
   if (lockRow) lockRow.style.display = unlocked ? 'none' : '';
   if (openRow) openRow.style.display = unlocked ? '' : 'none';
+  // The GATE ITSELF is invisible unless unlocked or explicitly summoned by the dev combo
+  // (owner: a visible locked door "leads to curiosity"). Customers see nothing at all.
+  const group = document.getElementById('dev-switches-group');
+  if (group) group.style.display = (unlocked || revealGate) ? '' : 'none';
 }
 (async () => {
   let unlocked = false;
@@ -808,9 +812,9 @@ document.getElementById('dev-switches-hide')?.addEventListener('click', async ()
   _applyDevSwitchVisibility(false);
 });
 // The familiar dev combo (Ctrl+Shift+D then M — the main window's inspector / Review's trace
-// console) works HERE too (owner, 2026-08-11, reached for it on day one): it jumps to the
-// Processing tab and puts the caret in the unlock's password box — or scrolls to the hide row
-// when already unlocked. Same 3-second two-key window as the other surfaces.
+// console) is the ONLY way to summon the gate (owner, 2026-08-11): it reveals the hidden
+// group on the Processing tab and puts the caret in the password box — or scrolls to the hide
+// row when already unlocked. Same 3-second two-key window as the other surfaces.
 let _devComboArmed = 0;
 window.addEventListener('keydown', (e) => {
   if (e.ctrlKey && e.shiftKey && String(e.key).toLowerCase() === 'd') { _devComboArmed = Date.now(); return; }
@@ -823,6 +827,7 @@ window.addEventListener('keydown', (e) => {
       document.getElementById('dev-switches-open-row')?.scrollIntoView({ block: 'center' });
       return;
     }
+    _applyDevSwitchVisibility(false, /*revealGate*/true);
     lockRow.scrollIntoView({ block: 'center' });
     const pw = document.getElementById('dev-switches-pw');
     if (pw) {
