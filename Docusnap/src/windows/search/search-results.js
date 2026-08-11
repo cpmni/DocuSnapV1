@@ -74,14 +74,18 @@ function _resultItem(doc) {
   el.className  = 'result-item';
   el.dataset.id = doc.id;
 
-  const name     = doc.stored_filename || doc.original_filename || '—';   // thumb alt only
+  const name     = doc.stored_filename || doc.original_filename || '—';   // thumb alt; also bin detail
   const supplier = doc.supplier_name || '—';
   const typeName = doc.type_name || '';
   const date     = doc.doc_date || '';
   const ref      = doc.reference_number || '';
   // The row shows the FIELD DATA (reference · date · type) in monospace — not the raw
   // filename (owner 2026-08-03: match the client's row; the filename is noise to a reader).
-  const detail   = [ref, date, typeName].filter(Boolean).map(escHtml).join('  ·  ') || '—';
+  // EXCEPT in the recycle bin: a deleted doc often has no supplier/ref, so a row read
+  // "— / Sales Order" and the user couldn't tell which document they'd deleted (Chris r2
+  // 2026-08-11, finding 8) — the delete dialog names the file, so the bin must too.
+  const detailParts = doc.status === 'deleted' ? [name, ref, date, typeName] : [ref, date, typeName];
+  const detail   = detailParts.filter(Boolean).map(escHtml).join('  ·  ') || '—';
 
   let statusBadge = '';
   if      (doc.status === 'confirmed')    statusBadge = `<span class="result-status-badge confirmed">Confirmed</span>`;
@@ -104,7 +108,7 @@ function _resultItem(doc) {
           <span class="result-supplier" title="${escHtml(supplier)}">${escHtml(supplier)}</span>
           ${statusBadge}
         </div>
-        <div class="result-detail" title="${escHtml([ref, date, typeName].filter(Boolean).join(' · '))}">${detail}</div>
+        <div class="result-detail" title="${escHtml(detailParts.filter(Boolean).join(' · '))}">${detail}</div>
         ${footer}
       </div>
     </div>

@@ -61,6 +61,19 @@ function initInputs() {
     _setBin(!(window.SearchState && window.SearchState.binMode));
     doSearch();
   });
+  // Restore all (Chris r2 2026-08-11, finding 8): the undo counterpart beside Empty bin.
+  // Available to edit-role too — single Restore already is; only PURGE is admin-only.
+  const restoreAllBtn = document.getElementById('btn-restore-all');
+  if (restoreAllBtn) restoreAllBtn.addEventListener('click', async () => {
+    const n = document.querySelectorAll('#results-scroll .result-item').length;
+    if (!n) return;
+    if (!confirm(`Restore all ${n} document${n === 1 ? '' : 's'} from the recycle bin? They go back to where they were deleted from (the review queue, or their filed folder).`)) return;
+    try { await window.docusnap.restoreAllDeleted(); } catch (e) { console.error('restore all:', e); }
+    if (window.SearchState) window.SearchState.selectedDoc = null;
+    const pe = document.getElementById('preview-empty'); if (pe) pe.style.display = '';
+    const pd = document.getElementById('preview-doc');  if (pd) pd.style.display = 'none';
+    doSearch();
+  });
   const emptyBtn = document.getElementById('btn-empty-bin');
   if (emptyBtn) emptyBtn.addEventListener('click', async () => {
     // Counted + explicit (Chris r5 card 6): purge REALLY deletes the PDF files from disk
@@ -80,12 +93,15 @@ function initInputs() {
 
 // Toggle recycle-bin view: relabel the button + flag state (rendered by doSearch).
 // The "Empty bin" button shows only in the bin, and only for admins (purge is admin-only).
+// "Restore all" shows for admin/edit — the roles single Restore already serves.
 function _setBin(on) {
   if (window.SearchState) window.SearchState.binMode = on;
   const b = document.getElementById('btn-recycle');
   if (b) { b.textContent = on ? '← Back to search' : 'Recycle bin'; b.classList.toggle('active', on); }
   const e = document.getElementById('btn-empty-bin');
   if (e) e.style.display = (on && window.SearchState && window.SearchState.role === 'admin') ? '' : 'none';
+  const r = document.getElementById('btn-restore-all');
+  if (r) r.style.display = (on && window.SearchState && ['admin', 'edit'].includes(window.SearchState.role)) ? '' : 'none';
 }
 
 // Toggle the recycle-bin view (reused by the vertical rail's recycle button + the
