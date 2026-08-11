@@ -352,13 +352,14 @@
       <!-- THE TYPE EDITOR LIVES AT THE TOP (owner, 2026-08-11), same pattern as step 3's
            manual-entry hatch: it used to mount BELOW the grid, and on lower-res displays the
            user clicked "It's something new" and never realised anything had appeared — the
-           editor was below the fold. Always visible, no click needed: typing a name here IS
-           choosing "new" (the renderer auto-selects the card). "Edit this type…" reuses the
-           same top slot, so a mid-teach edit is equally visible. -->
+           editor was below the fold. COLLAPSED to one quiet line by default (a second owner
+           screenshot showed the always-open editor burying the existing-type cards); it expands
+           IN PLACE, at the top, on the hatch or the "It's something new" card. "Edit this
+           type…" reuses the same top slot, so a mid-teach edit is equally visible. -->
       <div id="new-type-panel" class="panel">
-        <div class="sub" id="nt-panel-head" style="margin:0 0 8px; color:var(--muted); font-size:13px;">
-          Is it something new? Name it here to create it — or pick one of your existing types below.</div>
-        <div id="nt-editor-host"></div>
+        <button type="button" class="btn link" id="nt-panel-head" style="padding:0; font-size:13px;"
+                title="Create a brand-new document type — or pick one of your existing types below">It&rsquo;s something new? Create a type here…</button>
+        <div id="nt-editor-host" class="hidden"></div>
       </div>
       <div id="type-grid" class="grid"></div>
       <!-- Parity with Settings > Document Types (owner, 2026-08-10): the type EDITOR was

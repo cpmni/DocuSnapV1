@@ -230,11 +230,26 @@ async function renderTypeStep(){
   nu.innerHTML='<div class="ic">＋</div><div class="nm">It\'s something new</div>';
   nu.onclick=()=>selectType(nu,true);
   grid.appendChild(nu);
-  // The create editor is always on screen at the TOP of the step (no click needed) — typing a
-  // name there auto-selects this card; clicking the card just focuses the name box up top.
-  // NOT while an EDIT editor owns the slot: the mid-teach edit flow re-renders this grid on every
-  // change (onChange -> renderTypeStep) and must not have its editor torn down under the cursor.
-  if (dtEditorMode !== 'edit') _ensureCreateEditor();
+  // Wire the top hatch: expanding it IS choosing "It's something new" (selects the card, mounts
+  // the create editor in the top slot, focuses the name box). Grid rebuilds drop every `.sel`,
+  // so default to collapsed — EXCEPT while an EDIT editor owns the slot: the mid-teach edit flow
+  // re-renders this grid on every change (onChange -> renderTypeStep) and must not have its
+  // editor torn down or hidden under the cursor.
+  const _head = $('nt-panel-head');
+  if (_head) _head.onclick = () => {
+    const host = $('nt-editor-host');
+    if (dtEditorMode === 'edit') return;                     // the edit flow owns the slot
+    if (host && !host.classList.contains('hidden') && isNewTypeSelected()){
+      _setNtExpanded(false);                                 // second click folds it away
+      const sel = $('type-grid').querySelector('.card.sel');
+      if (sel && sel.id === 'card-new') sel.classList.remove('sel');
+      renderFooter();
+      return;
+    }
+    const nu = document.getElementById('card-new');
+    if (nu) selectType(nu, true);
+  };
+  if (dtEditorMode !== 'edit') _setNtExpanded(false);
   // PARITY WITH SETTINGS (owner, 2026-08-10). The type EDITOR was already the shared component, so
   // fields and structural roles matched; the CATALOG was not, so a type built here started empty
   // while the same type built in Settings arrived with its fields AND its likely printed labels
@@ -270,10 +285,10 @@ function setEditTypeEnabled(on){
 let dtEditor = null;   // shared DocTypeEditor, mounted in the ALWAYS-VISIBLE top panel
 let dtEditorMode = null;   // 'create' | 'edit' — which flavour currently owns #nt-editor-host
 
-// The create editor is ALWAYS mounted at the top of step 2 (owner, 2026-08-11): it used to mount
-// below the grid on the "It's something new" click, and on lower-res displays nothing visibly
-// happened — the editor was below the fold. Typing a name in it IS choosing "new": the first
-// input auto-selects the card, no prior click required (the step-3 manual-entry hatch pattern).
+// The top panel: COLLAPSED to a one-line hatch by default (owner screenshot 2026-08-11 — the
+// always-open editor buried the existing-type cards); expands IN PLACE at the top of the step,
+// so on lower-res displays the editor is visible the moment it exists. The create draft survives
+// a collapse (the editor stays mounted, only hidden).
 function _ensureCreateEditor(){
   if (dtEditor && dtEditorMode === 'create') return;         // keep the in-progress draft
   if (dtEditor){ try{ dtEditor.destroy(); }catch{} dtEditor=null; $('nt-editor-host').innerHTML=''; }
@@ -283,16 +298,15 @@ function _ensureCreateEditor(){
     onValidityChange: () => renderFooter(),   // live-enable the Continue button
   });
   dtEditorMode = 'create';
-  const host = $('nt-editor-host');
-  if (!host._newTypeWired){
-    host._newTypeWired = true;
-    host.addEventListener('input', () => {
-      // Typing in the CREATE editor selects "It's something new" — never steal selection while
-      // the operator is editing an EXISTING type in the same slot.
-      if (dtEditorMode !== 'create' || isNewTypeSelected()) return;
-      const nu = document.getElementById('card-new');
-      if (nu) selectType(nu, true, { focus:false });
-    });
+}
+function _setNtExpanded(on){
+  const host = $('nt-editor-host'); if (!host) return;
+  host.classList.toggle('hidden', !on);
+  const head = $('nt-panel-head');
+  if (head && dtEditorMode !== 'edit'){
+    head.textContent = on
+      ? 'Name your new type below — or pick one of your existing types instead.'
+      : 'It’s something new? Create a type here…';
   }
 }
 
@@ -308,9 +322,10 @@ async function openTypeEditorFor(slug){
   if (!t) return;
   if (dtEditor){ try{ dtEditor.destroy(); }catch{} dtEditor=null; }
   $('nt-editor-host').innerHTML='';
+  dtEditorMode = 'edit';
   const head = $('nt-panel-head');
   if (head) head.textContent = `Editing “${t.name}” — changes apply everywhere this type is used.`;
-  dtEditorMode = 'edit';
+  $('nt-editor-host').classList.remove('hidden');
   dtEditor = window.DocTypeEditor.create($('nt-editor-host'), {
     mode:'edit', api:D, initial:t,
     // A field added here must reach the step the operator is walking through, or they would edit
@@ -343,19 +358,20 @@ function selectType(card,isNew,opts){
   setEditTypeEnabled(!isNew);
   const eb=$('btn-teach-edit-type');
   if (eb) eb.onclick = () => { if (!eb.disabled) openTypeEditorFor(card.dataset.slug); };
-  // The top panel is ALWAYS visible (owner, 2026-08-11 — the below-the-fold trap). Selecting an
-  // EXISTING card tears down only an EDIT-mode editor and restores the create hatch, so a new-type
-  // draft survives switching between cards (the component keeps its own state).
-  const head = $('nt-panel-head');
+  // The top hatch expands for "new", collapses for an existing pick. An EDIT-mode editor is torn
+  // down when another card is chosen; a CREATE draft survives collapse (mounted, hidden).
   if (!isNew && dtEditorMode === 'edit'){
     try{ dtEditor.destroy(); }catch{} dtEditor=null; dtEditorMode=null; $('nt-editor-host').innerHTML='';
   }
-  _ensureCreateEditor();
-  if (head && dtEditorMode === 'create') head.textContent =
-    'Is it something new? Name it here to create it — or pick one of your existing types below.';
-  if (isNew && (!opts || opts.focus !== false)){
-    const first = $('nt-editor-host').querySelector('input, select, textarea');
-    if (first) try { first.focus(); } catch {}
+  if (isNew){
+    _ensureCreateEditor();
+    _setNtExpanded(true);
+    if (!opts || opts.focus !== false){
+      const first = $('nt-editor-host').querySelector('input, select, textarea');
+      if (first) try { first.focus(); } catch {}
+    }
+  } else {
+    _setNtExpanded(false);
   }
   renderFooter();
 }
