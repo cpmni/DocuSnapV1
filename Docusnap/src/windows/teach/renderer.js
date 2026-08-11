@@ -56,7 +56,6 @@ window.initHelpMode?.('help-mode-toggle', {
   'user-guide':'Open the full user guide.',
   'teach-canvas':'Draw a box around a field’s value on the page. Scan Finder reads it back so you can check it’s right.',
   'teach-zoom':'Zoom the document in or out; Reset fits it to the pane. The page stays sharp.',
-  'rg-redraw': 'Draw the box again if the read-back wasn’t quite right.',
   'rg-skip':   'This document does not print this field — leave it untaught and carry on. Nothing is guessed, and no box is saved for it. If this sender NEVER shows the field, you can also hide it for this template in Settings → Templates.',
   'rg-fieldlist':'The fields for this document type, and which ones you’ve pointed out so far.',
   'help-mode': 'Help mode: click any control to see what it does. Press Esc to leave.',
@@ -853,19 +852,17 @@ function finishIssuerField(f){
   advanceField();
 }
 
-// ── Read-back panel: ONE place, at the top ───────────────────────────────────
-// The question used to sit at the BOTTOM of the page pane while the instruction sat
-// at the top, so the eye had to ping-pong and you never knew which end the next
-// thing would appear at. It now renders only in the banner, directly under the
-// instruction it belongs to. Every write goes through setConfirm() so there is a
-// single seam if it ever needs to move again.
+// ── The ONE question zone (#rg-confirm-top) ──────────────────────────────────
+// 2026-08-11 flow rework (Chris-lens spec): every question — readouts, buttons, and THE typing
+// row — renders here and only here, directly under the instruction it belongs to. The banner's
+// four slots have fixed jobs: #rg-prompt (truthful action + field title), #rg-sub (guidance,
+// never contradicting the prompt), this zone (the live question), and #rg-manual-entry (the
+// hatch, DRAW state only). The old #rg-readback third panel is gone.
 const CONFIRM_SEL = (id) => `#rg-confirm-top [id="${id}"]`;
-function eachConfirm(id, fn){ document.querySelectorAll(CONFIRM_SEL(id)).forEach(fn); }
-function onConfirm(id, handler){ eachConfirm(id, el => { el.onclick = handler; }); }
-function confirmValue(id){
-  let v=''; eachConfirm(id, el => { if (!v) v = (el.value||'').trim(); }); return v;
+function onConfirm(id, handler){
+  const el = document.querySelector(CONFIRM_SEL(id));
+  if (el) el.onclick = handler;
 }
-function markConfirmInvalid(id){ eachConfirm(id, el => { el.style.borderColor='var(--err)'; }); }
 function setConfirm(html){
   const top=$('rg-confirm-top'); if (top) top.innerHTML = html || '';
 }
@@ -883,8 +880,10 @@ function setValueBanner(f){
     // The footer note is deliberate (owner, 2026-08-10): the issuer is often only selectable down
     // there, and an operator who thinks the letterhead is the only valid place will type the name
     // instead — losing the position that makes the next document of this layout match.
-    ? `Drag a rectangle right over the company name — anywhere it's printed, including the footer. There's no label to mark; the issuer is recognised by its name and letterhead.`
-    : `Drag a rectangle right over the value on the page (not the label next to it). After reading it you'll mark its label.`;
+    ? `Drag a rectangle right over the company name — anywhere it's printed, including the footer. There's no label for this one; the company is recognised by its name.`
+    // TRUTH FIX (Chris-lens spec 2026-08-11): the label is auto-found and merely CHECKED — the
+    // old "you'll mark its label" promised work that never happens.
+    : `Drag a rectangle right over the value on the page (not the label next to it). I'll read it back before anything is saved.`;
 }
 function promptField(){
   const f=curField(); if(!f) return;
@@ -907,7 +906,6 @@ function renderFieldPrompt(){
   // as if it were the convenient one, right at the moment the operator is deciding how to teach the
   // field. The same capability is still one click away, at the TOP of the step, worded as the
   // exception it is (see #rg-manual-entry).
-  $('rg-readback').innerHTML='';
   setManualEntryVisible(true);
   drawnBox=null; redrawCanvas();
   renderFieldRail();
@@ -919,70 +917,79 @@ function setManualEntryVisible(on){
   b.classList.toggle('hidden', !on);
   b.onclick = () => { const f=curField(); if (f) showFixedInput(f); };
 }
-function showFixedInput(f){
+// ONE typing row, one id, rendered by every state that needs typing (2026-08-11 flow rework —
+// there used to be THREE differently-shaped inputs across two panels). Plain HTML builder; the
+// caller wires the button/Enter after injecting.
+function _typeRowHtml(caption, placeholder, btnLabel, prefill){
+  return `<div style="display:flex;gap:8px;align-items:center;margin-top:8px">`+
+      (caption ? `<span class="muted" style="font-size:12px;flex-shrink:0">${esc(caption)}</span>` : '')+
+      `<input type="text" id="rb-input" value="${esc(prefill||'')}" style="flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit" placeholder="${esc(placeholder||'')}">`+
+      `<button class="btn ${caption?'ghost':'primary'}" id="rb-input-go">${esc(btnLabel||'Use this')}</button>`+
+    `</div>`;
+}
+function _wireTypeRow(handler, focus){
+  const inp=$('rb-input'), go=$('rb-input-go');
+  if (!inp || !go) return;
+  const run=()=>{ const v=(inp.value||'').trim(); if(!v){ inp.style.borderColor='var(--err)'; return; } handler(v); };
+  go.onclick=run;
+  inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); run(); } });
+  if (focus){
+    // Programmatic focus goes through the shared repair (forward convention, owner 2026-08-02): a
+    // bare .focus() can't trigger the preload pointerdown chokepoint.
+    if (typeof focusField === 'function') focusField(inp).then(()=>{ try{ inp.select(); }catch{} });
+    else { try{ inp.focus(); inp.select(); }catch{} }
+  }
+}
+// TYPE state (the hatch). The old third-panel explainer card is now the sub-line; the input lives
+// in the question zone like every other question (Chris-lens spec 2026-08-11).
+function showFixedInput(f, prefill){
   drawMode='value';
-  setConfirm('');
   setManualEntryVisible(false);        // you are already here — don't offer the way in again
   setPrompt('Type the value for', f.label);
-  $('rg-sub').textContent=`Use this only when the ${f.label} can't be selected anywhere on the page.`;
+  $('rg-sub').textContent = TYPED_LOCATE_ON
+    ? `If it's printed on the page I'll find it and teach that spot, same as drawing. If it isn't printed anywhere, it's saved as typed and reused as-is on every document of this type.`
+    : `A typed value records no position — it is reused as-is on every document of this type. If it appears anywhere on the page (the footer counts), draw it instead.`;
   const existing=state.results[f.key];
-  const prev=(existing&&existing.status==='fixed')?existing.value||'':'';
-  // HONEST COPY (owner, 2026-08-11 — superseding the 2026-08-10 "drawing teaches more" card):
-  // with the typed-value locate ON, a typed value that IS printed on the page gets FOUND, shown,
-  // and committed as the SAME position mapping a drawn box produces — typing then teaches just as
-  // much. The only lesser outcome is a value that isn't printed anywhere: that saves the value
-  // with no position. Say exactly that, not a blanket warning.
-  const _locateOn = typeof TYPED_LOCATE_ON === 'undefined' ? true : TYPED_LOCATE_ON;
-  $('rg-readback').innerHTML=
-    `<div style="margin-bottom:10px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border2);`+
-        `border-radius:8px;font-size:12px;line-height:1.5;color:var(--muted)">`+
-      (_locateOn
-        ? `<b style="color:var(--text)">If it's printed on the page, typing works just as well as drawing.</b> `+
-          `When you type the ${esc(f.label)}, Scan Finder looks for it on the page — if found, the position is `+
-          `shown for you to approve and taught exactly like a drawn box (use Next / Previous if it appears in `+
-          `more than one place). Only a value that isn't printed anywhere is saved without a position, and is `+
-          `then reused as-is on every document of this type.`
-        : `<b style="color:var(--text)">Drawing a box teaches more than typing.</b> A box records where the `+
-          `${esc(f.label)} sits, so the next document with this layout is read from the page. A typed value `+
-          `records no position — it is reused as-is on every document of this type, even if the printed value `+
-          `changes. If it appears anywhere on the page (the footer counts), draw it instead.`)+
-    `</div>`+
-    `<input type="text" id="rb-fixed-input" value="${esc(prev)}" placeholder="e.g. Acme Supplies Ltd" `+
-    `style="width:100%;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:8px;padding:10px 12px;font-size:14px;font-family:inherit;margin-bottom:10px">`+
-    `<div style="display:flex;gap:8px">`+
-      `<button class="btn primary" id="rb-fixed-save">Save →</button>`+
-      `<button class="btn ghost" id="rb-fixed-cancel">Draw it instead</button>`+
-    `</div>`;
-  // Programmatic focus goes through the shared repair (forward convention, owner 2026-08-02): a
-  // bare .focus() can't trigger the preload pointerdown chokepoint, which is how a field ends up
-  // with no caret until you click out of the app and back.
-  const inp=$('rb-fixed-input');
-  if (typeof focusField === 'function') focusField(inp).then(()=>{ try{ inp.select(); }catch{} });
-  else { inp.focus(); inp.select(); }
+  const prev = prefill != null ? prefill : ((existing&&existing.status==='fixed')?existing.value||'':'');
+  setConfirm(
+    _typeRowHtml('', `${f.label} as printed…`, 'Save →', prev)+
+    `<div style="margin-top:8px"><button class="btn ghost quiet" id="rb-type-cancel">Draw it instead</button></div>`);
   const saveAsFixed=(v)=>{
     state.results[f.key]={value:v,target:null,anchor:null,anchor_text:null,status:'fixed'};
     advanceField();
   };
-  const save=async()=>{
-    const v=inp.value.trim();
-    if(!v){ inp.style.borderColor='var(--err)'; return; }
-    if(!TYPED_LOCATE_ON){ saveAsFixed(v); return; }
+  _wireTypeRow(async (v)=>{
+    if(!TYPED_LOCATE_ON){ saveAsFixed(v); return; }   // kill switch: the old path, byte-identical
+    // LOCATING — ONE indicator (the question zone), not a button relabel plus a second line.
     // Before accepting a position-less constant, look for the typed string in the page's own word
     // geometry. Measured 2026-08-10: 17 of 19 measurable fixed values are PRINTED on their own
     // sample page — they were typed because the READ was wrong, not because the value is absent.
-    const btn=$('rb-fixed-save'); if(btn){ btn.disabled=true; btn.textContent='Looking…'; }
-    setConfirm('<span class="muted">Looking for that value on the page…</span>');
+    setConfirm('<span class="muted">Looking for that on the page…</span>');
     let hits=[];
     try{ hits=await locateTypedValue(v); }catch{}
-    if(btn){ btn.disabled=false; btn.textContent='Save →'; }
-    setConfirm('');
-    if(!hits.length){ saveAsFixed(v); return; }
+    if(!hits.length){ showNoHit(f, v, saveAsFixed); return; }
     showLocatedPick(f,v,hits,0);
-  };
-  inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();save();} });
-  $('rb-fixed-save').onclick=save;
-  $('rb-fixed-cancel').onclick=()=>promptField();
+  }, /*focus*/true);
+  const c=$('rb-type-cancel'); if (c) c.onclick=()=>promptField();
   drawnBox=null; redrawCanvas();
+}
+// NO-HIT state (2026-08-11 — was a SILENT commit-and-advance): the one moment typing genuinely
+// loses the position, and the one moment a typo becomes a frozen wrong constant on every future
+// document, now gets an acknowledgement and a way back.
+function showNoHit(f, v, saveAsFixed){
+  setPrompt(`That isn't printed on this page`, f.label);
+  $('rg-sub').textContent = `No matching text found. I can still save it — it will be filled in as typed on every document of this type.`;
+  setConfirm(
+    `<div>Value: <span class="val mono">${esc(v)}</span></div>`+
+    `<div class="rb-actions">`+
+      `<button class="btn primary" id="rb-nohit-save">Save it as typed →</button>`+
+      `<span class="rb-sep"></span>`+
+      `<button class="btn ghost quiet" id="rb-nohit-edit">Edit the value</button>`+
+      `<button class="btn ghost quiet" id="rb-nohit-draw">Draw it instead</button>`+
+    `</div>`);
+  $('rb-nohit-save').onclick=()=>saveAsFixed(v);
+  $('rb-nohit-edit').onclick=()=>showFixedInput(f, v);   // the typo recovery — input prefilled
+  $('rb-nohit-draw').onclick=()=>promptField();
 }
 // ── Typed value → located position ───────────────────────────────────────────
 // A typed value used to record WHAT it says and nothing about WHERE it sits: it becomes a frozen
@@ -1047,42 +1054,33 @@ function showLocatedPick(f, typed, hits, idx){
     canvas.scrollIntoView({ block: 'nearest' });
   } catch {}
   setManualEntryVisible(false);
-  setPrompt('Is this the', f.label + '?');
+  setPrompt('Is this the right spot for', f.label);
   $('rg-sub').textContent = hits.length > 1
-    ? `That value is printed in ${hits.length} places on this page. Pick the one to teach.`
-    : 'Found that value printed on the page — the box on the page shows where.';
-  // HONEST COPY (owner, 2026-08-11): a located typed value commits as the SAME position mapping a
-  // drawn box does — this step is exactly as good as drawing. Don't lecture; explain the pick.
-  $('rg-readback').innerHTML =
-    `<div style="padding:10px 12px;background:var(--surface2);border:1px solid var(--border2);`+
-        `border-radius:8px;font-size:12px;line-height:1.5;color:var(--muted)">`+
-      `<b style="color:var(--text)">Approving this position teaches it exactly like a drawn box.</b> `+
-      `The next document with this layout is read from the page, so it still works when the `+
-      `${esc(f.label)} is different.`+
-      (hits.length > 1
-        ? ` It appears in ${hits.length} places — use Next / Previous until the ring sits on the right one.`
-        : '')+
-      ` Only "Save as a typed value" gives up the position (the value is then reused as-is on every `+
-      `document of this type).`+
-    `</div>`;
+    ? `It's printed in ${hits.length} places. Step through until the green box sits on the right one.`
+    : `Found it — the green box shows where. Teaching the spot means future documents are read from the page, even when the value changes.`;
+  // PICK state (Chris-lens spec 2026-08-11): ONE panel, ONE voice. The explainer card is gone —
+  // its substance is the sub-line; the n-of-N stepper is inline with the value, not two wide
+  // buttons competing with the primary. "Seen = approved" stays the gate.
   setConfirm(
     `<div>Value: <span class="val mono">${esc(typed)}</span>`+
-      (hits.length > 1 ? `<span class="muted" style="margin-left:8px">${idx+1} of ${hits.length}</span>` : '')+
+      (hits.length > 1
+        ? `<span class="rb-step"><button class="btn ghost quiet" id="rb-loc-prev" title="Previous place">‹</button>`+
+          `${idx+1} of ${hits.length}`+
+          `<button class="btn ghost quiet" id="rb-loc-next" title="Next place">›</button></span>`
+        : '')+
     `</div>`+
     `<div class="rb-actions">`+
-      `<button class="btn primary" id="rb-loc-yes">Yes — teach this position →</button>`+
+      `<button class="btn primary" id="rb-loc-yes">Yes — teach this spot →</button>`+
       `<span class="rb-sep"></span>`+
-      (hits.length > 1
-        ? `<button class="btn ghost quiet" id="rb-loc-prev">← Previous</button>`+
-          `<button class="btn ghost quiet" id="rb-loc-next">Next instance →</button>`
-        : '')+
-      `<button class="btn ghost quiet" id="rb-loc-fixed">Save as a typed value</button>`+
+      `<button class="btn ghost quiet" id="rb-loc-back">Back</button>`+
+      `<button class="btn ghost quiet" id="rb-loc-fixed">Save without a spot</button>`+
     `</div>`);
   onConfirm('rb-loc-yes', ()=>useLocatedBox(f, typed, h.box));
   if (hits.length > 1){
     onConfirm('rb-loc-next', ()=>showLocatedPick(f, typed, hits, (idx+1) % hits.length));
     onConfirm('rb-loc-prev', ()=>showLocatedPick(f, typed, hits, (idx-1+hits.length) % hits.length));
   }
+  onConfirm('rb-loc-back', ()=>showFixedInput(f, typed));   // back to TYPE, input prefilled
   onConfirm('rb-loc-fixed', ()=>{
     drawnBox=null;
     state.results[f.key]={value:typed,target:null,anchor:null,anchor_text:null,status:'fixed'};
@@ -1093,20 +1091,29 @@ function showLocatedPick(f, typed, hits, idx){
 // the drawn path uses — so from here on a located field is indistinguishable from a drawn one and
 // doCommit needs no special case (it takes the saveTemplateMapping branch, not setTemplateFieldFixed).
 async function useLocatedBox(f, value, box){
+  // ISSUER: commit DIRECTLY (Chris-lens spec 2026-08-11 — this deletes the incoherent screenshot
+  // state: "Confirm the label for / Document Issuer" over "no label needed"). The pick step WAS
+  // the approval — the value is operator-typed, the spot operator-approved, and there is no label
+  // to check, so a second confirm carried zero new information. The plausibility warning still
+  // fires inside finishIssuerField.
+  if (isIssuerField(f)){
+    store(f, box, { box:null, anchor_text:null, dir:null, suspicious:false }, value, /*pending*/true);
+    state.results[f.key].located = true;
+    state.results[f.key].valueSource = 'typed';
+    return finishIssuerField(f);
+  }
   setConfirm('<span class="muted">Reading the label…</span>');
   let anchor = { box:null, anchor_text:null, dir:null, suspicious:false };
-  if (!isIssuerField(f)){
-    _teachReadBusy = true;
-    try { anchor = await autoLabel(box); } catch {}
-    _teachReadBusy = false;
-  }
+  _teachReadBusy = true;
+  try { anchor = await autoLabel(box); } catch {}
+  _teachReadBusy = false;
   if (anchor && anchor.box) anchor.box._ang = box._ang;
   // The VALUE stays exactly what the operator typed — the page's own words are not substituted in.
   // They were typed because the read was wrong, so re-reading them here would undo the correction.
   store(f, box, anchor, value, /*pending*/true);
-  $('rg-readback').innerHTML='';                 // drop the pick-step explainer
   state.results[f.key].located = true;
-  showValueConfirm(f, state.results[f.key], /*located*/true);
+  state.results[f.key].valueSource = 'typed';
+  showValueConfirm(f, state.results[f.key]);
 }
 function renderFieldRail(){
   // A field marked "not on this document" is NOT captured — counting it as done produced
@@ -1121,7 +1128,22 @@ function renderFieldRail(){
     const cls=i===state.fieldIndex?'cur':''; const dot=r? (r.status==='skip'?'skip':(r.status==='fixed'?'fixed':(r.status==='pending'?'cur':'done'))) : (i===state.fieldIndex?'cur':'');
     const row=document.createElement('div'); row.className='fieldrow '+cls;
     row.innerHTML=`<span class="dot ${dot}"></span><span>${esc(f.label)}</span>`;
-    row.onclick=()=>{ state.fieldIndex=i; promptField(); };
+    // A DONE field re-opens its CONFIRM state (view what's stored, change it) — the old behaviour
+    // showed "draw a box" over an existing box, which read as the work having vanished. A FIXED
+    // (typed, no spot) field re-opens the typing panel prefilled; everything else prompts as before.
+    row.onclick=()=>{
+      state.fieldIndex=i;
+      const rr=state.results[f.key];
+      if (rr && rr.status==='done' && rr.target){
+        if (Number.isInteger(rr.page) && rr.page !== state.pageIndex) gotoTeachPage(rr.page);
+        drawnBox=null; redrawCanvas(); renderFieldRail();
+        setManualEntryVisible(false);
+        showValueConfirm(f, rr);
+        return;
+      }
+      if (rr && rr.status==='fixed'){ renderFieldRail(); showFixedInput(f); return; }
+      promptField();
+    };
     list.appendChild(row);
   });
   renderFooter();
@@ -1161,7 +1183,6 @@ async function snapDrawnBox(box, anchor){
 
 async function readBack(box){
   const f=curField();
-  $('rg-readback').innerHTML='';
   setManualEntryVisible(false);    // a read is in flight — don't offer a way out of the question
   setConfirm('<span class="muted">Reading…</span>');
   _teachReadBusy = true;
@@ -1194,20 +1215,23 @@ async function readBack(box){
     }
   }catch{}
   if (!value){
-    setConfirm(
-      `<div class="warn">Couldn't read that clearly. Try a bigger box, or type the value:</div>`+
-      `<div style="margin-top:8px;display:flex;gap:8px;align-items:center">`+
-        `<input type="text" id="rb-manual-input" style="flex:1;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:8px;padding:8px 10px;font-size:14px;font-family:inherit" placeholder="${esc(f.label)} value…">`+
-        `<button class="btn ghost" id="rb-type">Use this</button>`+
-      `</div>`);
-    // Both copies are live: read whichever the user typed into, flag both if empty.
-    const doManual=()=>{ const v=confirmValue('rb-manual-input'); if(!v){markConfirmInvalid('rb-manual-input');return;} store(f,box,anchor,v,true); showValueConfirm(f,state.results[f.key]); };
-    onConfirm('rb-type', doManual);
-    eachConfirm('rb-manual-input', el => el.addEventListener('keydown', e=>{ if(e.key==='Enter'){e.preventDefault();doManual();} }));
-    { const mi=$('rb-manual-input'); if (mi) mi.focus(); }
+    // READ-FAILED state (Chris-lens spec 2026-08-11): truthful heading — nothing was read, so a
+    // later confirm must never claim "what I read". A value typed HERE keeps the drawn box (the
+    // position still teaches) and carries valueSource='typed', so the follow-up is the honest
+    // label-check, not a value confirm — and the issuer commits directly (no label to check).
+    setPrompt(`I couldn't read that clearly`, f.label);
+    $('rg-sub').textContent = `Try a bigger box around the value — or type it in below.`;
+    setConfirm(_typeRowHtml('', `${f.label} as printed…`, 'Use this →'));
+    _wireTypeRow((v)=>{
+      store(f, box, anchor, v, /*pending*/true);
+      state.results[f.key].valueSource = 'typed';
+      if (isIssuerField(f)) return finishIssuerField(f);
+      showValueConfirm(f, state.results[f.key]);
+    }, /*focus*/true);
     return;
   }
   store(f, usedBox, anchor, value, /*pending*/true);
+  state.results[f.key].valueSource = 'read';
   showValueConfirm(f, state.results[f.key]);
 }
 // Value stored; ONE combined confirmation for the value read AND the detected label
@@ -1262,17 +1286,26 @@ function _dateCoherenceWarn(f, value){
   return '';
 }
 
-function showValueConfirm(f, r, _located){
+function showValueConfirm(f, r){
   const issuer = isIssuerField(f);
-  // Carried on the result too, so the label Redraw / Left-Above controls — which call back in here —
-  // don't flip the heading back to "confirm what I read" on a value that was never read.
-  const located = _located || !!(r && r.located);
-  setPrompt(located ? 'Confirm the label for' : 'Confirm what I read for', f.label);
-  $('rg-sub').textContent = issuer
-    ? 'Check the company name — the issuer is recognised by its name and letterhead, no label needed.'
-    : (located
-      ? 'The value is the one you typed. Check the label Scan Finder found beside it — that is what keeps the field reading when the layout shifts.'
-      : 'Check both readings below. Scan Finder follows the printed label so the field keeps reading when the layout shifts.');
+  // PROVENANCE drives the whole panel (Chris-lens spec 2026-08-11, replacing the old `located`
+  // heading flip): a READ value is checked as a read; a TYPED value is NEVER asked "confirm what
+  // I read" — only its label is checked. Persisted on the result (like `located` before it) so
+  // the Left/Above toggle and Redraw-label, which re-enter here, can't flip the heading.
+  const typed = (r && r.valueSource === 'typed') || !!(r && r.located);
+  // Point at the page: the confirm's boxes are drawn on the canvas — make sure they're in view.
+  try { canvas.scrollIntoView({ block: 'nearest' }); } catch {}
+  setManualEntryVisible(false);
+  if (issuer){
+    setPrompt('Check the company name', f.label);
+    $('rg-sub').textContent = `This is how the sender will be filed. No label for this one — the name itself is what's recognised.`;
+  } else if (typed){
+    setPrompt('Check the label I found for', f.label);
+    $('rg-sub').textContent = `The value is the one you typed. The blue box is the printed label that keeps this field findable when the page shifts.`;
+  } else {
+    setPrompt('Check what I read for', f.label);
+    $('rg-sub').textContent = `The green box is the value; the blue box is the printed label I'll look for next time.`;
+  }
   // A garbled (suspicious) label read is treated as UNREADABLE: the junk string is never
   // displayed or vouched for — the offer becomes position-only and the junk is dropped on
   // confirm. The user can still redraw the label or flip the direction.
@@ -1281,12 +1314,10 @@ function showValueConfirm(f, r, _located){
   const dir = r.anchor_dir || 'left';
   const labelBit = issuer ? '' :
     `<span class="muted" style="margin:0 8px">·</span>Label: ` + (hasLabel
-      ? `<span class="val mono">${esc(r.anchor_text)}</span> <span class="muted">(${dir==='above'?'above':'left of'} the value)</span>`
-      : `<span class="muted">${suspicious ? "⚠ couldn't read it cleanly — its position will be remembered" : 'none found — its position will be remembered'}</span>`);
+      ? `<span class="lab mono">${esc(r.anchor_text)}</span> <span class="muted">(${dir==='above'?'above':'left of'} the value)</span>`
+      : `<span class="muted">${suspicious ? "⚠ couldn't read it cleanly — I'll remember the spot instead" : "none found — I'll remember the spot instead"}</span>`);
   // The label DIRECTION is a setting, not an action — so it renders as a segmented control whose
-  // selected side is an inset surface, never the accent fill. It used to be a `btn primary`, i.e.
-  // byte-identical styling to the accept button beside it, so the bar showed TWO large filled
-  // buttons and nothing said which one moved you on (owner, 2026-08-02, with a screenshot).
+  // selected side is an inset surface, never the accent fill (owner, 2026-08-02).
   const dirBtns = issuer ? '' :
     `<span class="spacer"></span>`+
     `<span class="rb-seg-lab">Label is</span>`+
@@ -1294,50 +1325,44 @@ function showValueConfirm(f, r, _located){
       `<button class="seg-opt ${dir==='left'?'on':''}" id="rb-dir-left" aria-pressed="${dir==='left'}">← Left</button>`+
       `<button class="seg-opt ${dir==='above'?'on':''}" id="rb-dir-above" aria-pressed="${dir==='above'}">↑ Above</button>`+
     `</div>`;
-  // TYPE IT INSTEAD — always offered, never pre-filled (Chris round 3, 2026-08-09, finding 5).
-  // The escape hatch used to exist ONLY on the harmless failure ("Couldn't read that clearly →
-  // type the value") and was withheld from the DANGEROUS one: a confident but WRONG read. Chris
-  // hit "~ Neltrix Automotive Parts" on a coloured letterhead — the exact misread that poisoned a
-  // real supplier scope in the owner's own run — and his only choices were to accept it under a
-  // button reading "Looks right →" or redraw and hope. He reached the typing box by ACCIDENT, by
-  // drawing SMALLER, which the on-screen advice tells you not to do.
-  // Left EMPTY on purpose: pre-filling with the read would invite a rubber-stamp of the very value
-  // being questioned. The box keeps the geometry already stored in `r` — only the VALUE changes,
-  // so the taught position still teaches.
   const _cohWarn = _dateCoherenceWarn(f, r.value);
+  // THE typing row appears only where the VALUE is in question (a read, or the issuer's name) —
+  // never on the typed-value label check, where the operator wrote the value themselves moments
+  // ago (Chris r3 2026-08-09 finding 5 established the row for the dangerous confident-wrong
+  // read; the Chris-lens spec removes it where it can only invite second-guessing their typing).
+  // Never pre-filled: pre-filling with the read would invite a rubber-stamp of the very value
+  // being questioned. The box keeps the geometry in `r` — only the VALUE changes.
+  const typeRow = (issuer)
+    ? _typeRowHtml('Name wrong? Type it as printed:', `${f.label} as printed…`, 'Use this →')
+    : (typed ? '' : _typeRowHtml('Value wrong? Type it as printed:', `${f.label} as printed…`, 'Use this →'));
   setConfirm(
-    `<div>Value: <span class="val mono">${esc(r.value)}</span>${labelBit}</div>`+
+    `<div>${issuer ? 'Company name' : 'Value'}: <span class="val mono">${esc(r.value)}</span>${labelBit}</div>`+
     (_cohWarn ? `<div class="rb-warn" style="margin-top:6px;color:var(--warn);font-size:12.5px;font-weight:600">${esc(_cohWarn)}</div>` : '')+
     `<div class="rb-actions">`+
-      `<button class="btn primary" id="rb-yes">Looks right →</button>`+
+      `<button class="btn primary" id="rb-yes">${typed && !issuer ? 'Save this field →' : 'Looks right →'}</button>`+
       `<span class="rb-sep"></span>`+
-      `<button class="btn ghost quiet" id="rb-redraw">Redraw value</button>`+
+      (typed && !issuer
+        ? `<button class="btn ghost quiet" id="rb-redraw">Start this field over</button>`
+        : `<button class="btn ghost quiet" id="rb-redraw">${issuer ? 'Redraw' : 'Redraw value'}</button>`)+
       (issuer ? '' : `<button class="btn ghost quiet" id="rb-redraw-label">Redraw label</button>`)+
       dirBtns+
     `</div>`+
-    `<div style="margin-top:10px;display:flex;gap:8px;align-items:center">`+
-      `<span class="muted" style="font-size:12px;flex-shrink:0">Not right? Type it:</span>`+
-      `<input type="text" id="rb-manual-input" style="flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:8px;padding:6px 9px;font-size:13px;font-family:inherit" placeholder="${esc(f.label)} as printed…">`+
-      `<button class="btn ghost" id="rb-type">Use this</button>`+
-    `</div>`);
-  // A typed value REPLACES the read but keeps the box/label already stored, so the position is
-  // still taught. Marked done immediately — the operator has just told us what it says.
+    typeRow);
+  // A typed correction REPLACES the read but keeps the box/label already stored, so the position
+  // is still taught. Marked done immediately — the operator has just told us what it says.
   const doTyped = ()=>{
-    const v = confirmValue('rb-manual-input');
-    if (!v) { markConfirmInvalid('rb-manual-input'); return; }
-    r.value = v;
+    const v = (($('rb-input')||{}).value||'').trim();
+    if (!v) { const i=$('rb-input'); if(i) i.style.borderColor='var(--err)'; return; }
+    r.value = v; r.valueSource = 'typed';
     if (issuer) return finishIssuerField(f);
-    // Same two-way date check on the TYPED value — non-blocking (the operator typed it
-    // deliberately), but the mix-up it catches is identical, so it must not pass silently.
+    // Same two-way date check on the TYPED value — non-blocking (typed deliberately), but the
+    // mix-up it catches is identical, so it must not pass silently.
     const _tw = _dateCoherenceWarn(f, v);
     if (_tw) toast(_tw.replace(/^⚠ /, ''), 4500);
     if (suspicious) r.anchor_text = null;
     r.status='done'; drawMode='value'; advanceField();
   };
-  onConfirm('rb-type', doTyped);
-  eachConfirm('rb-manual-input', el => el.addEventListener('keydown', e=>{
-    if (e.key === 'Enter') { e.preventDefault(); doTyped(); }
-  }));
+  if (typeRow) _wireTypeRow(doTyped, /*focus*/false);
   onConfirm('rb-yes', ()=>{
     if (issuer) return finishIssuerField(f);
     if (suspicious) r.anchor_text = null;   // junk never persists — position-only
@@ -1407,7 +1432,6 @@ function store(f,box,anchor,value,pending){
 }
 function advanceField(){
   redrawCanvas();
-  const next=state.fields.findIndex((f,i)=>i>state.fieldIndex && !state.results[f.key] || (i>state.fieldIndex && state.results[f.key] && state.results[f.key].status==='pending'));
   const firstMissing=state.fields.findIndex(f=>!state.results[f.key]);
   if (firstMissing>=0){ state.fieldIndex=firstMissing; promptField(); }
   else {
@@ -1424,12 +1448,12 @@ function advanceField(){
     $('rg-sub').textContent = (_skip
       ? `${_cap} field${_cap===1?'':'s'} captured, ${_skip} marked as not on this document`
       : 'All fields captured') + ' — choose Review → below to save this document type.';
-    const rb = $('rg-readback'); if (rb) rb.innerHTML = '';
     renderFieldRail(); redrawCanvas();
     setConfirm('');
   }
 }
-$('rg-redraw').onclick=()=>{ const f=curField(); if(f) delete state.results[f.key]; promptField(); };
+// (The rail's duplicate Redraw button is GONE — 2026-08-11 flow rework. Redraw lives in the
+// confirm states, and clicking a DONE field row re-opens its confirm state.)
 $('rg-skip').onclick=()=>{ const f=curField(); if(!f)return; state.results[f.key]={value:'',target:null,anchor:null,anchor_text:null,status:'skip'}; advanceField(); };
 
 // crop a normalized box from the natural image → base64 PNG (no data: prefix).

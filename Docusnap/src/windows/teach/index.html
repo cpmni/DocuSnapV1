@@ -130,7 +130,10 @@
   #rg-manual-entry:hover{border-color:var(--border2);color:var(--text)}
   #rg-manual-entry:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   #rg-manual-entry.hidden{display:none}
-  .banner .big, .banner .sub{padding-right:210px}
+  /* The right padding reserves space for the hatch — only while the hatch is actually shown
+     (it is DRAW-state-only); a confirm state gets the full banner width. */
+  .banner:has(#rg-manual-entry:not(.hidden)) .big,
+  .banner:has(#rg-manual-entry:not(.hidden)) .sub{padding-right:210px}
   @media (max-width:900px){
     #rg-manual-entry{position:static;display:block;margin:0 0 6px auto}
     .banner .big, .banner .sub{padding-right:0}
@@ -146,13 +149,17 @@
   .banner .ptitle{display:block;font-size:23px;font-weight:700;color:var(--accent2);
     line-height:1.2;margin-top:1px;letter-spacing:-.01em}
   .banner .sub{font-size:13px;color:var(--muted);margin-top:5px}
-  /* Top mirror of the read-back question. Both copies are LIVE — renderer.js rewrites
-     id="x" to data-mirror-id="x" in this copy so the DOM stays valid, binds handlers to
-     both, and keeps mirrored inputs in sync. Collapses when there's nothing to ask. */
+  /* THE question zone — the ONLY place with buttons or an input (2026-08-11 flow rework;
+     the old "mirror" comment described a bottom copy that no longer exists). Collapses
+     when there's nothing to ask. .val matches the green VALUE box on the page, .lab the
+     blue LABEL box — the panel points at the page by colour. */
   .banner .rg-top{margin-top:10px;padding-top:10px;border-top:1px solid var(--border2);
     font-size:13px;line-height:1.5;color:var(--text)}
   .banner .rg-top:empty{display:none}
-  .banner .rg-top .val{color:var(--ok);font-weight:700}
+  .banner .rg-top .val{color:#3ecf8e;font-weight:700}
+  .banner .rg-top .lab{color:#4f8ef7;font-weight:700}
+  .banner .rg-top .rb-step{display:inline-flex;align-items:center;gap:6px;margin-left:10px;color:var(--muted)}
+  .banner .rg-top .rb-step button{padding:1px 9px;font-size:14px;line-height:1.3}
   /* Fixed-height pane: the page zooms INSIDE it (overflow clipped) instead of growing the
      pane and pushing the controls below it off-screen. */
   .canvaswrap{position:relative;background:#0a0c12;border:1px solid var(--border);border-radius:10px;
@@ -200,8 +207,7 @@
   .fieldrow.cur{background:var(--surface2)}
   .dot{width:10px;height:10px;border-radius:50%;background:var(--border2);flex:0 0 auto}
   .dot.done{background:var(--ok)} .dot.cur{background:var(--accent)} .dot.skip{background:var(--warn)} .dot.fixed{background:var(--muted)}
-  .readback{margin:0 0 12px;font-size:13px}   /* above the page since 2026-08-11 — was below it */
-  .readback .val{font-size:15px;color:var(--ok)}
+  /* (.readback is gone — 2026-08-11 flow rework; the question zone is .rg-top in the banner.) */
   .warn{color:var(--warn);font-size:13px;margin-top:8px}
   .err{color:var(--err);font-size:13px;margin-top:8px}
 
@@ -398,16 +404,11 @@
                 title="Only if the value can't be selected anywhere on the page — including the footer">Can't select it on the page? Type it instead</button>
         <div class="big" id="rg-prompt">Step 1 — draw a box around the value</div>
         <div class="sub" id="rg-sub">Drag a rectangle over the value itself. After I read it, you can also mark its label.</div>
-        <!-- The read-back question is MIRRORED here, beside the instruction, so the user
-             never has to hunt between the top of the pane and the bottom to find what is
-             being asked. The bottom copy (#rg-confirm) stays exactly where it is. -->
+        <!-- The ONE question zone (2026-08-11 flow rework, Chris-lens spec): readouts, buttons
+             and — when a state needs it — THE typing row all render here and only here. The
+             old #rg-readback third panel is gone; its explainer cards became #rg-sub sentences. -->
         <div class="rg-top" id="rg-confirm-top"></div>
       </div>
-      <!-- THE READ-BACK / TYPING PANEL LIVES ABOVE THE PAGE (owner, 2026-08-11): it used to sit
-           BELOW the canvas, and on lower-res displays the typing box (and the locate-pick
-           explainer) appeared below the fold — the operator clicked "Type it instead" and
-           nothing visibly happened. Same reasoning as the step-2 type editor move. -->
-      <div class="readback" id="rg-readback"></div>
       <div class="regionwrap">
         <div>
           <div class="canvaswrap" title="Right-drag to pan · +/− to zoom">
@@ -429,14 +430,16 @@
           <h3 id="rg-progress">Details</h3>
           <div id="rg-fieldlist" data-help-key="rg-fieldlist"></div>
           <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">
-            <button class="btn ghost" id="rg-redraw" data-help-key="rg-redraw">Redraw</button>
+            <!-- The rail's duplicate "Redraw" button is GONE (2026-08-11 flow rework): the confirm
+                 states own redraw, and two voices offering it in two places was part of the
+                 bolted-on feel. Clicking a DONE field row re-opens its confirm state instead. -->
             <!-- DISCOVERABILITY (owner, 2026-08-08, found while teaching): this was a `btn link`
                  labelled "Skip for now" — the quietest element on the panel, and the label read as
                  "do it later" rather than "this document doesn't have one". The owner missed it and
                  was about to point the serials box at a PO number just to advance, which would have
                  taught a wrong value onto every document of that supplier. A control nobody finds is
                  a control that doesn't exist, and this one's absence pushes people toward the single
-                 most damaging thing they can do in this wizard. Same weight as Redraw now, and
+                 most damaging thing they can do in this wizard. Same weight as a button now, and
                  labelled for the situation rather than the mechanism. -->
             <button class="btn ghost" id="rg-skip" data-help-key="rg-skip">This isn't on this document</button>
           </div>
@@ -446,7 +449,8 @@
           </div>
           <div class="muted" style="font-size:12px;margin-top:12px;line-height:1.6">
             <span style="color:#3ecf8e;font-weight:700">▮</span> value (what I read)<br>
-            <span style="color:#4f8ef7;font-weight:700">▮</span> label (what I look for)
+            <span style="color:#4f8ef7;font-weight:700">▮</span> label (what I look for)<br>
+            <span style="color:var(--muted);font-weight:700">●</span> grey dot = saved as typed (no spot on the page)
           </div>
         </div>
       </div>
