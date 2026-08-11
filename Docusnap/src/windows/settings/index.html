@@ -612,6 +612,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Auto-file earlier when two readings agree</div>
+                <div class="threshold-sub">For a supplier you've confirmed a few times cleanly (but fewer than the usual ten), file a 95%+ document automatically when two independent reading methods found the same issuer, reference and date on the page — every other safety check still applies. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="corrob-autofile-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Read values that wrap onto the next line</div>
                 <div class="threshold-sub">When a field is taught to wrap (e.g. an address whose first line ends “-”), read the line below and join them. Single-line values are unaffected.</div>
               </div>

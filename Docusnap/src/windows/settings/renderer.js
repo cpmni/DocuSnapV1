@@ -550,6 +550,17 @@ document.getElementById('auto-rotate-toggle').addEventListener('change', async (
   await api.setSetting('auto_rotate_enabled', e.target.checked ? 'true' : 'false');
 });
 
+// ── Corroborated auto-file (corroboration_autofile, default OFF; Oracle-signed 2026-08-11) ──
+(async () => {
+  try {
+    const v = await api.getSetting('corroboration_autofile');
+    document.getElementById('corrob-autofile-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('corrob-autofile-toggle').checked = false; }
+})();
+document.getElementById('corrob-autofile-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('corroboration_autofile', e.target.checked ? 'true' : 'false');
+});
+
 // ── Recover long refs the crop cuts off (ANCHOR_VALUE_RIGHT_GROW, default OFF) ──
 (async () => {
   try {

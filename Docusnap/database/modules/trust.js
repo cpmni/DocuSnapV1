@@ -366,6 +366,73 @@ function _shadowRowSkipEnabled(db) {
   } catch { return false; }
 }
 
+// ── Corroborated auto-file (owner order 2026-08-11, step 3 of the record→surface→decide plan;
+//    Oracle SIGN-OFF-W/COND — C1 volume-only substitution, C2 window exclusion, both applied) ──
+// A doc on a scope that fails graduation ONLY on volume may file at the TRUSTED_FLOOR when the
+// page independently corroborates every filename-deciding role. Same C5 read pattern as the
+// shadow-row switch: env wins both directions for harness arms, setting is the product truth.
+function _corrobAutofileEnabled(db) {
+  const env = process.env.CORROB_AUTOFILE;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try {
+    return require('./learning').getSetting(db, 'corroboration_autofile', 'false') === 'true';
+  } catch { return false; }
+}
+
+// Method families that READ THIS PAGE'S PIXELS (engine `_build_corroboration_emit` vocabulary —
+// pinned cross-language in python_backend/tests/test_corroboration_emit.py; a rename there must
+// break a test, because an unknown name here silently fails closed).
+const _CORROB_PAGE_FAMILIES = new Set(['mapping', 'crop', 'keyword']);
+
+// One field's corroboration record licenses filing iff: independent agreement is RECORDED, no
+// independent family DISAGREES, and the agreeing set contains at least one PAGE family.
+// LOAD-BEARING REFUSAL (Oracle C7): memory+hint never licenses — `template_fixed` (memory) and
+// `supplier_hints` both DESCEND FROM PAST CONFIRMS, so under a wrong template binding both echo
+// the same wrong name (the Quillstone class); their agreement is near-circular, not independence.
+// This refusal also backstops the DAY2 young-identity analysis (machine confirms must not mature
+// a frozen-issuer template) — relaxing it needs BOTH analyses re-run, not just this table.
+// Unknown/future family names count toward set size but never toward the page requirement —
+// fails closed. Malformed/missing records (incl. every pre-migration-63 row) → not licensed.
+function _corrobLicensed(record) {
+  let rec = record;
+  if (typeof rec === 'string') { try { rec = JSON.parse(rec); } catch { return false; } }
+  if (!rec || typeof rec !== 'object') return false;
+  if (rec.independent_agree !== true) return false;
+  if (Array.isArray(rec.disagree) && rec.disagree.length) return false;
+  const fams = new Set([rec.winner_family, ...(Array.isArray(rec.agree) ? rec.agree : [])].filter(Boolean));
+  if (fams.size < 2) return false;
+  for (const f of fams) if (_CORROB_PAGE_FAMILIES.has(f)) return true;
+  return false;
+}
+
+// Every FILENAME-DECIDING role (issuer + ref + date — the same roleKeys set docTrustGate builds)
+// must carry a non-empty value AND a licensed record. Both role keys must exist on the type
+// (a dangling role → route off). Rows come from opts.extractions when supplied (harness /
+// batch) — those rows must carry `corroboration` or this fails closed (the vacuous-green trap:
+// an un-threaded overlay disables the route, never widens it).
+function _docFullyCorroborated(db, doc, dtRow, opts = {}) {
+  if (!dtRow || !dtRow.ref_field_key || !dtRow.date_field_key) return false;
+  const roles = [...new Set([...require('./document_types').COMPANY_KEYS,
+                             dtRow.ref_field_key, dtRow.date_field_key])];
+  const byKey = new Map();
+  if (opts.extractions) {
+    for (const e of opts.extractions) if (e && e.field_key) byKey.set(e.field_key, e);
+  } else {
+    for (const e of db.prepare(
+      'SELECT field_key, display_value, raw_value, corroboration FROM extractions WHERE document_id = ?'
+    ).all(doc.id)) byKey.set(e.field_key, e);
+  }
+  for (const k of roles) {
+    const e = byKey.get(k);
+    if (!e) return false;
+    const v = String(e.display_value ?? e.raw_value ?? '').trim();
+    if (!v) return false;                       // stricter than graduation (empty-ref docs never corroborate-file)
+    if (!_corrobLicensed(e.corroboration)) return false;
+  }
+  return true;
+}
+
 const _DOMINANT_MIN_SAMPLES = 5;
 const _DOMINANT_MIN_SHARE   = 0.75;
 function _dominantStructuredClass(sampleValues) {
@@ -454,12 +521,46 @@ function scopeTrust(db, supplier, slug, opts = {}) {
     SELECT d.id, COALESCE(d.confirmed_at, '') AS ts FROM documents d
     JOIN document_types dt ON dt.id = d.document_type_id
     WHERE d.status = 'confirmed' AND LOWER(TRIM(d.supplier_name)) = ? AND LOWER(dt.slug) = ?
-      ${viaFilter ? "AND COALESCE(d.confirmed_via, '') <> 'scope_sweep'" : ''}
+      ${viaFilter ? "AND COALESCE(d.confirmed_via, '') NOT IN ('scope_sweep', 'auto_corroborated')" : ''}
     ORDER BY d.confirmed_at DESC, d.id DESC
   `;
+  // NOTE (Oracle 2026-08-11, corroborated auto-file C2): 'auto_corroborated' machine files are
+  // excluded from the HUMAN window above exactly like 'scope_sweep' — a corroborated file must
+  // never advance the graduation window it was allowed to bypass (the route would otherwise
+  // manufacture the trust it substitutes for). The corrections SPAN below still covers them.
   const human = db.prepare(_confirmedSql(hasVia)).all(sup, sl);
   const confirmedCount = human.length;
-  if (confirmedCount < W) return no('volume', { confirmedCount, needed: W - confirmedCount });
+  if (confirmedCount < W) {
+    const extra = { confirmedCount, needed: W - confirmedCount };
+    // Corroborated-auto-file probe (Oracle C1): `reason === 'volume'` is a SHORT-CIRCUIT label —
+    // the corrections and verifiability checks below never ran, so the caller must not read
+    // "volume" as "clean but for volume". When asked (opts.corrobProbe, set only when the
+    // corroboration_autofile route is on), continue the checks here and report the stricter
+    // verdict: >=3 HUMAN confirms, ZERO corrections over ALL in-scope confirmed docs (any
+    // confirmed_via — machine files count toward dirt, never toward volume), and every required
+    // field verifiable on the available history. Only a scope failing NOTHING BUT volume may be
+    // bridged by per-document corroboration.
+    if (opts.corrobProbe && confirmedCount >= 3) {
+      try {
+        const allIds = db.prepare(_confirmedSql(false)).all(sup, sl).map(r => r.id);
+        const ph0 = allIds.map(() => '?').join(',');
+        const corr = allIds.length ? db.prepare(
+          `SELECT COUNT(*) c FROM corrections WHERE document_id IN (${ph0})
+             AND COALESCE(original_value, '') <> COALESCE(corrected_value, '')`
+        ).get(...allIds).c : 0;
+        let verifiable = true;
+        if (corr === 0) {
+          const fmts0 = _scopeFormats(db, sup, sl, opts.formats);
+          for (const rf of reqFields) {
+            const cls = (fmts0.get(rf.key) || {}).cls || 'none';
+            if (!fieldVerifiable(rf.type, cls)) { verifiable = false; break; }
+          }
+        }
+        extra.cleanButForVolume = corr === 0 && verifiable;
+      } catch { extra.cleanButForVolume = false; }
+    }
+    return no('volume', extra);
+  }
 
   const windowRows = human.slice(0, W);
   const windowIds = windowRows.map(r => r.id);
@@ -692,13 +793,30 @@ function isAutoFileEligible(db, doc, opts = {}) {
   // test_generic_autofile_refusal.js — do not weaken or move below the floor logic.
   if (slug === require('./document_types').GENERIC_SLUG)
     return { eligible: false, floor: UNTRUSTED_FLOOR, reason: 'generic-type' };
-  const t = scopeTrust(db, doc.supplier_name, slug, opts);
+  const corrobOn = (opts.corrobAutoFile !== undefined) ? !!opts.corrobAutoFile : _corrobAutofileEnabled(db);
+  const t = scopeTrust(db, doc.supplier_name, slug, { ...opts, corrobProbe: corrobOn });
   // Graduation is gated by the master switch + a per-scope opt-out (the visible controls). If
   // either is off, a trusted scope keeps the user's threshold — no 98 floor.
   const gradOn   = (opts.gradOn !== undefined) ? opts.gradOn : _graduationEnabled(db);
   const optedOut = (opts.optOut || _optedOutScopes(db)).includes(_scopeKey(doc.supplier_name, slug));
   const graduated = t.trusted && gradOn && !optedOut;
-  const floor = graduated ? Math.min(userThr, TRUSTED_FLOOR) : userThr;
+  // Corroborated route (owner order 2026-08-11, Oracle-signed): per-doc corroboration may
+  // substitute for missing history VOLUME ONLY — never cleanliness, verifiability, or a human
+  // correction (scopeTrust's corrobProbe reports exactly that verdict). Same master switch and
+  // per-scope opt-out as graduation; evaluated only when it could change the outcome (the doc
+  // sits in [TRUSTED_FLOOR, userThr) and the scope is not already graduated). Every safety
+  // below this floor decision — the flagged refusal, the 88 critical per-field floor, the full
+  // sub-100 docTrustGate, the generic-type refusal above — runs regardless of which route
+  // lowered the floor and cannot be bypassed. Floors compose by min with the CONSTANT 95, so
+  // no stacking exists (owner at 90 → identical with or without this route).
+  const _conf0 = doc.overall_confidence || 0;
+  let corroborated = false;
+  if (corrobOn && !graduated && gradOn && !optedOut
+      && t.reason === 'volume' && t.cleanButForVolume === true
+      && userThr > TRUSTED_FLOOR && _conf0 >= TRUSTED_FLOOR && _conf0 < userThr) {
+    corroborated = _docFullyCorroborated(db, doc, dtRow, opts);
+  }
+  const floor = (graduated || corroborated) ? Math.min(userThr, TRUSTED_FLOOR) : userThr;
   if ((doc.overall_confidence || 0) < floor)
     return { eligible: false, floor, trusted: t.trusted, reason: 'below-floor' };
   // Flagged = a real validation note OR a pending Stage-4.5 correction candidate (corrected_to).
@@ -757,7 +875,11 @@ function isAutoFileEligible(db, doc, opts = {}) {
     const g = docTrustGate(db, doc.id, doc.supplier_name, slug, { ...opts, at100: true });
     if (!g.ok) return { eligible: false, floor, trusted: t.trusted, reason: g.reason };
   }
-  return { eligible: true, floor, trusted: t.trusted, reason: 'ok' };
+  // `basis` names WHICH route lowered the floor (or none) — the auto-file claim stamps
+  // confirmed_via from it (Oracle C2: 'auto_corroborated' is excluded from the graduation
+  // window) and the claim username stays honest (Oracle C5).
+  return { eligible: true, floor, trusted: t.trusted, reason: 'ok',
+           basis: graduated ? 'graduated' : (corroborated ? 'corroborated' : 'threshold') };
 }
 
 /**
@@ -774,9 +896,12 @@ function autoFileEligibleIds(db, docs, opts = {}) {
   // document. An explicit opts.shadowRowSkip from the caller still wins.
   const shadowRowSkip = (opts.shadowRowSkip !== undefined)
     ? !!opts.shadowRowSkip : _shadowRowSkipEnabled(db);
+  // Same hoist for the corroborated-route switch (Oracle C6) — one settings read per batch.
+  const corrobAutoFile = (opts.corrobAutoFile !== undefined)
+    ? !!opts.corrobAutoFile : _corrobAutofileEnabled(db);
   const ids = [];
   for (const d of (docs || [])) {
-    if (isAutoFileEligible(db, d, { ...opts, formats, gradOn, optOut, shadowRowSkip }).eligible) ids.push(d.id);
+    if (isAutoFileEligible(db, d, { ...opts, formats, gradOn, optOut, shadowRowSkip, corrobAutoFile }).eligible) ids.push(d.id);
   }
   return ids;
 }

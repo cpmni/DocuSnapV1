@@ -160,4 +160,37 @@ assert set(e.keys()) == {"ref"}, e
 assert e["ref"]["winner_family"] == "keyword" and e["ref"]["agree"] == [], e
 ok("metadata and empty fields are skipped; a sole witness records as such")
 
+# ── 11. VOCABULARY FREEZE (2026-08-11, the record became DECISION-BEARING) ────
+# trust.js's corroborated auto-file route licenses filing off these family names
+# (_CORROB_PAGE_FAMILIES = {mapping, crop, keyword}; memory+hint refused as near-circular).
+# The JS side FAILS CLOSED on an unknown name — safe but SILENT: a rename here would quietly
+# inert the route with every gate still green. So the emitted vocabulary is frozen: every
+# family string this emit can produce must be one of exactly these five. A new family is a
+# deliberate cross-language change (update trust.js + its battery + this pin together).
+_FROZEN = {"mapping", "crop", "keyword", "hint", "memory"}
+res = {"f": {"value": "V", "method": "template_mapping", "confidence": 90}}
+sweep = {"f": [
+    cand("0.5_mapping", "template_mapping", "V"),
+    cand("0.5_mapping", "template_fixed", "V"),
+    cand("0.5_mapping", "template_anchor", "V"),
+    cand("1_keyword", "keyword", "V"),
+    cand("1_keyword", "keyword_override", "V"),
+    cand("2_anchor", "anchor_crop", "V"),
+    cand("2_anchor", "anchor_crop_relocated", "V"),
+    cand("2_anchor", "anchor_inline", "V"),
+    cand("2_anchor", "hint", "V"),
+    cand("2_anchor", "hint_fill", "V"),
+]}
+e = emit(res, sweep)["f"]
+seen = {e["winner_family"], *e["agree"], *(d["family"] for d in e["disagree"])}
+assert seen <= _FROZEN, f"emit produced a family OUTSIDE the frozen vocabulary: {seen - _FROZEN}"
+ok(f"family vocabulary frozen to {sorted(_FROZEN)} (saw {sorted(seen)})")
+
+# ── 12. independent_agree TRUTH now gates filing: same-family echo must not set it ──
+res = {"f": {"value": "V", "method": "template_mapping", "confidence": 90}}
+e = emit(res, {"f": [cand("0.5_mapping", "template_mapping", "V"),
+                     cand("0.5_mapping", "template_mapping", "V")]})["f"]
+assert e["independent_agree"] is False and e["agree"] == [], e
+ok("a same-family echo can never set independent_agree (now load-bearing for auto-file)")
+
 print(f"\n{passed} checks passed")

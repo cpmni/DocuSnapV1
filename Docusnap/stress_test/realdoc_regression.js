@@ -293,6 +293,9 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
         validation_note: (e && typeof e === 'object') ? e.validation_note : null,
         confidence: (e && typeof e === 'object') ? e.confidence : null,
         extraction_method: (e && typeof e === 'object') ? e.method : null,
+        // THREADED 2026-08-11 (Oracle C4): the corroborated auto-file route keys on this —
+        // omitting it here fails the route closed and makes every armed arm vacuously green.
+        corroboration: (e && typeof e === 'object') ? (e.corroboration ?? null) : null,
       }));
       const fakeDoc = { id: g.id, supplier_name: m.supplier_name, document_type_id: detId, overall_confidence: m.overall_confidence };
       try { const _af = trust.isAutoFileEligible(db, fakeDoc, { extractions: rex }); wouldFile = _af.eligible; afReason = _af.reason; } catch {}

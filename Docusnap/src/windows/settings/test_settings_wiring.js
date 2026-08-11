@@ -124,6 +124,9 @@ for (const [id, key, env] of BRIDGES) {
 // consumer stops reading the key is the same dead-toggle failure, just one file over.
 const SETTING_SWITCHES = [
   ['shadow-row-skip-toggle', 'trust_shadow_row_skip', 'database/modules/trust.js'],
+  // Corroborated auto-file (Oracle-signed 2026-08-11): the gate is a settings read inside
+  // trust.js (env CORROB_AUTOFILE wins both directions for harness arms — the C5 pattern).
+  ['corrob-autofile-toggle', 'corroboration_autofile', 'database/modules/trust.js'],
   // Taught label becomes the keyword (migrations 61+62): the gate is a settings read at the two
   // teach WRITE sites; the processing handler is the higher-traffic consumer to pin.
   ['teach-label-keyword-toggle', 'teach_label_becomes_keyword', 'src/modules/processing/handler.js'],

@@ -2761,14 +2761,16 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     ? `<div class="field-anchor-note">From anchor: ${escHtml(anchorLabel)}</div>`
     : '';
   // CORROBORATION (owner principle 2026-08-11: "the rungs should corroborate, not merely
-  // compete"). The honest form of "verified": two INDEPENDENT method families — e.g. the taught
-  // position and a caption search — read the same value. Information only (minimal-interaction
-  // rule): shown only on positive agreement; disagreement stays in SFDEV until the principle's
-  // step-3 slice decides what it may move. Suppressed under a validation note so a flagged field
-  // never carries a reassuring tick beside a warning.
-  const corrobHtml = (corroboration && corroboration.independent_agree && !note)
-    ? `<div class="field-note corroborated" title="Two independent reading methods (${escHtml((corroboration.agree || []).concat(corroboration.winner_family || []).join(' + '))}) found this same value on the page">✓ Two independent readings agree</div>`
-    : '';
+  // compete"). The record is live (extractions.corroboration) and DECISION-BEARING in the
+  // corroborated auto-file route; SFDEV surfaces agreement AND the amber disagreement.
+  // The Review-facing "✓ Two independent readings agree" line was REMOVED the same evening,
+  // OWNER DECISION: a positive-only badge trains the customer to expect it, and its absence
+  // on a perfectly correct value then reads as alarm ("it worked before — is this one
+  // wrong?"). Structural absence is common (label-above layouts are invisible to the keyword
+  // family — see pendingfeatures), so the badge would be missing on correct docs routinely.
+  // Do not resurrect it as a positive-only line; if corroboration ever surfaces in Review
+  // again it must be a state that is MEANINGFUL in both directions.
+  const corrobHtml = '';
 
   const row = document.createElement('div');
   row.className   = 'field-row';

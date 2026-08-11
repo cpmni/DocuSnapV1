@@ -4173,7 +4173,8 @@ async function _autoFileDoc(db, docId, folderPath, notifyMainWindow, logger) {
   // trusted supplier files at 98, else the user's auto_file_threshold), the flagged-field
   // refusal, and — for any sub-100 file — the structural safety gate. Re-checked here against
   // the DB (not the stale file_done msg) so a doc a human touched in the gap can't slip through.
-  if (!trust.isAutoFileEligible(db, doc).eligible) return;
+  const _elig = trust.isAutoFileEligible(db, doc);
+  if (!_elig.eligible) return;
   const dtRow  = db.prepare('SELECT slug FROM document_types WHERE id = ?').get(doc.document_type_id);
   const dtInfo = dtRow && dtRow.slug ? doctypes.getWithFields(db, dtRow.slug) : null;
   if (!dtInfo) return;
@@ -4186,7 +4187,14 @@ async function _autoFileDoc(db, docId, folderPath, notifyMainWindow, logger) {
   // Claim the doc BEFORE filing (atomic compare-and-set) so the 100% auto-file can't
   // double-file a doc a human confirmed in the gap since the status check above, and so it's
   // honestly attributed. If the claim doesn't land, someone else already took it — don't file.
-  const claim = documents.confirmIfReviewable(db, docId, { confirmed_by_username: 'Auto-filed (100%)' });
+  // Oracle C2 (corroborated auto-file): a corroborated machine file stamps
+  // confirmed_via='auto_corroborated' so scopeTrust's HUMAN graduation window excludes it —
+  // the route must never manufacture the trust it substitutes for (the scope_sweep precedent).
+  // C5: the claim username says what actually happened instead of the false '(100%)'.
+  const _viaStamp  = _elig.basis === 'corroborated' ? 'auto_corroborated' : null;
+  const _userStamp = _elig.basis === 'corroborated' ? 'Auto-filed (corroborated)' : 'Auto-filed (100%)';
+  const claim = documents.confirmIfReviewable(db, docId, {
+    confirmed_by_username: _userStamp, confirmed_via: _viaStamp });
   if (!claim || claim.changes === 0) return;
   let fr;
   try {

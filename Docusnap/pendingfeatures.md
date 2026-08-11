@@ -6,6 +6,24 @@
 
 ---
 
+## 2026-08-11 — Stage-1 keyword is SAME-LINE only, so label-above layouts can never corroborate
+
+Owner-reported live (Silverbeck sales order 0020): `sales_order_number` mapping matched
+"SALES ORDER NO" and won — and NO keyword rung fired at all, so no "two independent readings
+agree". `'Sales Order No'` IS in the shipped label bank; the caption just sits ABOVE the value in
+a boxed table cell, and Stage-1 keyword matches label+value on the SAME reconstructed text line
+only. Every stacked-cell field on box-form layouts (this doc's order number AND order date) is
+structurally invisible to the keyword family — which bounds BOTH the corroboration badge and the
+new corroborated auto-file route (such docs fail closed to Review, today's behaviour, no harm).
+**Directions if coverage is wanted** (extraction work, own advisor+Oracle gate): (a) Stage-1
+label-above extension (capture the value from the NEXT line below a matched bare caption —
+precision risk: a bare 'Date' caption above a column of dates; needs the same guards the anchor
+path has); (b) let the anchor-CROP family witness (no ⊕ anchors exist on wizard-taught installs —
+same evidence gap NAME_UNCLIP hit); (c) the slice-2 `page_presence` witness (already named in the
+corroboration design). NOT built; recorded so the "why no badge here?" question has an answer.
+
+---
+
 ## 2026-08-11 — tpl 9 (Pelican) sample-angle row HELD out of the backfill (Oracle apply-condition 1)
 
 The angle census says tpl 9 stored 0 / detected **-0.30** — exactly the apply floor, one

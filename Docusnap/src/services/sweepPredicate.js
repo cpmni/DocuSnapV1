@@ -96,6 +96,10 @@ function evaluateSweepConsistency({ storedRows, freshFields, roleKeys, storedSlu
       // THREADED 2026-08-07: docTrustGate's shadow-row skip keys on extraction_method. Dropping it
       // here would silently present every stored row as a non-shadow row to the re-asked gate.
       extraction_method: srow.extraction_method ?? null,
+      // THREADED 2026-08-11 (Oracle C4): the corroborated auto-file route keys on this. An
+      // overlay omitting it fails CLOSED (the route never fires) — safe but VACUOUSLY GREEN in
+      // any armed measurement, the TRUST_SHADOW_ROW_SKIP trap.
+      corroboration: srow.corroboration ?? null,
     });
   }
   return { pass: true, reason: 'ok', field: null, overlay };
