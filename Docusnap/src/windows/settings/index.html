@@ -829,6 +829,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Finish a company name whose last letter the box just clips</div>
+                <div class="threshold-sub">A box drawn around a company name usually ends exactly at its last letter. The next scan sits a fraction to one side, so that edge can shear the final letter — a “d” with its edge cut off reads as “c”, and “Bramblewood Joinery Ltd” becomes “…Ltc”. This lets the reading stretch just far enough to finish that one word, and only when the page itself shows the full word in that spot. The corrected name always comes to you for checking — it is never filed silently. OFF until you turn it on here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="name-edge-grow-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Allow for a slightly crooked scan when reading a taught field</div>
                 <div class="threshold-sub">When you point out where a field sits, Scan Finder records that position against the page you taught it on. The next scan of the same document usually goes through the scanner at a very slightly different angle, so the remembered box arrives tilted against the printing — often by around half a line, which is enough to read the heading above a value, or the address line below a company name, instead of the value itself. This tilts the remembered box to match each page as it arrives. It does not straighten or alter your document in any way; it only measures the angle and reads in the right place. ON by default &mdash; you can turn it off here.</div>
               </div>

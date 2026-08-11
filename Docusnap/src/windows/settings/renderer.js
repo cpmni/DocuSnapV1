@@ -668,6 +668,10 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // both already true on this install, and both have their own rows above.
                          ['drift-row-pitch-toggle', 'template_drift_row_pitch'],
                          ['currency-edge-grow-toggle', 'template_currency_edge_grow'],
+                         // NAME leg of the edge guard (2026-08-11 flush-edge clip class):
+                         // right-edge cut only, last-token repair, page-present witness,
+                         // FLAG-ONLY commit — inert unless template_abs_edge_guard is also on.
+                         ['name-edge-grow-toggle', 'template_name_edge_grow'],
                          // Teach-side pair. 'angle-compose-scan' is the SIBLING of the
                          // 'angle-compose-toggle' row above and they are mutually exclusive in the
                          // extractor by construction, so both may be on; on the ordinary import
@@ -782,7 +786,8 @@ const DEV_SWITCH_IDS = [
   'date-invalid-yield-toggle', 'date-future-yield-toggle', 'pad-window-read-toggle',
   'heading-absent-reread-toggle', 'credit-sign-toggle', 'inline-row-overlap-toggle',
   'ref-role-digit-toggle', 'inline-offset-veto-toggle', 'drift-row-pitch-toggle',
-  'currency-edge-grow-toggle', 'angle-compose-scan-toggle', 'fixed-issuer-repair-toggle',
+  'currency-edge-grow-toggle', 'name-edge-grow-toggle', 'angle-compose-scan-toggle',
+  'fixed-issuer-repair-toggle',
   'reg-arbiter-anchor-evidence-toggle', 'issuer-region-presence-toggle',
   'fixed-seed-agreement-toggle', 'stage05-ref-code-toggle', 'generic-caption-exclusive-toggle',
   'type-title-owner-toggle', 'filing-sanity-flags-toggle', 'letterhead-issuer-toggle',

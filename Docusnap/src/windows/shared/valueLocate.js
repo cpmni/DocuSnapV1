@@ -112,10 +112,14 @@
           const x2 = Math.max(...run.map((w) => w.x + w.w));
           const y1 = Math.min(...run.map((w) => w.y));
           const y2 = Math.max(...run.map((w) => w.y + w.h));
+          // Trailing-edge floor mirrors boxSnap.js: a single-line hit's height-scaled pad
+          // (~0.002) is thinner than sibling drift (0.003-0.005), which stores a flush right
+          // edge that shears the final glyph on drifted siblings. Right edge only.
           const pad = Math.min(0.004, (y2 - y1) * 0.15);
+          const TRAIL_PAD = 0.004;
           const box = {
             x: Math.max(0, x1 - pad), y: Math.max(0, y1 - pad),
-            w: Math.min(1, x2 + pad) - Math.max(0, x1 - pad),
+            w: Math.min(1, x2 + TRAIL_PAD) - Math.max(0, x1 - pad),
             h: Math.min(1, y2 + pad) - Math.max(0, y1 - pad),
           };
           const key = [box.x, box.y, box.w, box.h].map((v) => Math.round(v * 2000)).join(':');

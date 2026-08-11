@@ -290,6 +290,43 @@ ARM_ENV.noreg = { ...ARM_ENV.money };
 // than a hand-listed approximation of it that can drift (which is what `all4` did).
 ARM_ENV.sepguard = { CODE_SEPARATOR_STRUCTURE_GUARD: '1' };
 
+// NAME EDGE-GROW (2026-08-11 late-night). `namegrow` minus `base` is exactly
+// TEMPLATE_NAME_EDGE_GROW: the parent guard (template_abs_edge_guard) is 'true' in the sandbox
+// settings, so EVERY arm inherits it armed via the settings mirror — the leg nests under it.
+// NAMEGROW_CENSUS_DIR makes the leg's SILENT declines countable — a flat lane cannot separate
+// "fires and declines everywhere" from "never fires" (the sepguard C2 lesson).
+ARM_ENV.namegrow = { TEMPLATE_NAME_EDGE_GROW: '1',
+                     NAMEGROW_CENSUS_DIR: path.join(HOME, 'Desktop', 'TESTING', '_measure', 'namegrow_census') };
+
+// DECLARED-ABSENT FIELD DROP (the owed corpus arm; feature shipped 2026-08-11 afternoon). The
+// flag alone is VACUOUS here: the sandbox state carries ZERO template_hidden_fields rows
+// (verified at source), the "never armed wearing the costume of no effect" trap. The mutator
+// declares what an owner using the wizard's "Never — stop looking" would have declared: for each
+// template, exactly the fields the corpus GROUND TRUTH says are ALWAYS absent for that
+// (issuer, type) — n=220 each, 0 present (precomputed from ground_truth.json 2026-08-11; scopes
+// without GT rows are skipped). Prints every declaration; declaring nothing = vacuous, said so.
+MUTATORS.hiddendrop = (S) => {
+  const ABSENT = {
+    'Pelican Office Interiors|invoice': ['serials'],
+    'Castellan Security Systems|service_worksheet': ['po_ref'],
+    'Meadowvale Dairy Wholesale|credit_note': ['serials', 'po_ref'],
+    'Nordwind Refrigeration Ltd|quote': ['po_ref'],
+    'Oakhaven Electrical Wholesale|delivery_note': ['serials'],
+    'Harrowgate Timber Supplies|sales_order': ['serials', 'po_ref'],
+    'Ironclad Tool Hire|statement': ['serials', 'po_ref'],
+  };
+  let n = 0;
+  for (const t of S.templates) {
+    const hide = ABSENT[`${t.name}|${t.document_type_slug}`];
+    if (!hide) continue;
+    t.hidden_fields = [...new Set([...(t.hidden_fields || []), ...hide])];
+    for (const f of hide) { console.log(`    [hiddendrop] tpl ${t.id} "${t.name}" ${t.document_type_slug}: hide ${f}`); n++; }
+  }
+  console.log(`    [hiddendrop] declared ${n} hidden field(s)`);
+  if (!n) console.log('    [hiddendrop] *** nothing declared — the arm is VACUOUS ***');
+};
+ARM_ENV.hiddendrop = { TEMPLATE_HIDDEN_FIELD_DROP: '1' };
+
 // TAUGHT LABEL BECOMES THE KEYWORD (owner decision 2026-08-11) — and this arm needs a MUTATOR,
 // not just an env flag, or it is VACUOUS.
 //

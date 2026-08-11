@@ -941,7 +941,9 @@ def _candidate_source_label(method) -> str:
     m = method or ""
     if m in ("keyword", "keyword_override"):
         return "beside the label"
-    if m.startswith("anchor") or m in ("template_mapping", "template_mapping_expanded"):
+    if m.startswith("anchor") or m.startswith("template_mapping"):
+        # Prefix, not a tuple: suffixed variants (_edgegrow/_edgecut/_namegrow/_relocated/...)
+        # are still reads of the taught box (Oracle C4, 2026-08-11 name-grow vet).
         return "from the taught box"
     if m.startswith("template_fixed") or m == "template":
         return "from the template"

@@ -6,29 +6,32 @@
 
 ---
 
-## 2026-08-11 — NAME-BOX FLUSH-EDGE CLIP: the snap's pad is thinner than sibling drift (PICK UP FIRST)
+## 2026-08-11 LATE-NIGHT — NAME-BOX FLUSH-EDGE CLIP: (a)+(b) SHIPPED (Oracle SIGN-OFF-W/COND); C7 stored-box repair arm OPEN
 
-Owner hit it live AFTER the angle backfill (Ironclad statement 0028-1, customer `Ltc` @70): page
-tilt +0.4°, taught box right edge **0.2389**, this page's `Ltd` word right edge **0.2399** — the
-box cuts the `d`. Tpl 10's sample is genuinely level (backfill correctly left it) — this is NOT
-the stale-angle class; it is the flush-BOX class, and it survives the repair, which re-opens the
-name-grow question under Oracle's recorded revival conditions ("build it only if the class
-survives the repair"). **Root measurement: `boxSnap.js` pads `min(0.004, h*0.15)` — a single-line
-name box (h≈0.0145) gets ~0.002, thinner than sibling drift (~0.003-0.005) + tilt shear.** The
-snap itself produces flush boxes, so a re-teach reproduces the defect.
+**(a) teach-side + (b) read-side BOTH BUILT** (see the overnight commit; oracle_log 2026-08-11
+LATE-NIGHT entry). (a) `boxSnap.js` + `valueLocate.js` trailing-edge pad floored at 0.004
+(TRAIL_PAD; asymmetry pinned — left/vertical stay snug). (b) `TEMPLATE_NAME_EDGE_GROW` DEFAULT
+OFF, toggle `name-edge-grow-toggle`, nested under `template_abs_edge_guard`: right-cut only,
+last-token-only repair, page-present witness (cut word's locate text == grown last token, NO
+short-token skip), FLAG-ONLY <=70+note, silent declines. Gates: OFF md5-identical · armed +22
+lane heals / 0 losses · census 29 heal / 14 decline (1 direct commit, 28 superseded un-squats).
 
-**The fork (design + gate next session, owner-priority):**
-- (a) TEACH-side: raise the snap pad floor for the trailing edge (glyph-aware or flat 0.004) —
-  fixes future teaches only; cheap, low blast; stored boxes stay flush.
-- (b) READ-side: revive gary's `TEMPLATE_NAME_EDGE_GROW` v1 (flag-only, never clean-commit) under
-  Oracle's recorded conditions: comparator needs the NAME_UNCLIP-C3 page-present defence; do NOT
-  lower the overhang floor (his ruling: the 4-7px nick sits inside word-box noise — but THIS class
-  is a ~1-glyph cut the predicate CAN see); fire-rate census on the 185-corpus first.
-- (c) DATA-side one-shot widen of stored name-box trailing edges — blast-radius-heavy, likely refuse.
-Probably (a)+(b) together: (a) stops minting the class, (b) heals the seven pre-existing templates.
-**Live mitigations meanwhile**: picker ranks the ≥3×-confirmed value first ("Ltd — confirmed 5
-times", owner-seen working); the flag correctly holds the doc. Probe: `iron_probe.py` pattern in
-the 08-11 session tmp — measure box vs word geometry per page before arguing.
+**STILL OPEN from the Oracle verdict:**
+- **C1 owner expectation (BLOCKING at flip, discharged by SAYING it):** the flip does NOT change
+  Ironclad 0028-1 — its overhang (0.0010) is under the untouched 0.004 floor. That page is cured
+  by a RE-TEACH under the new snap pad, or by C7.
+- **C7 — stored-box repair arm (owner decision, NOT built):** widen EXISTING live name-box
+  trailing edges to the new 0.004 floor — the sample-angle-backfill pattern (census → plan →
+  backup → apply → replay gate). Fix (a) only protects future teaches; without C7 the live flush
+  boxes heal only where sibling drift clears the floor.
+- **C3 owner-watch:** the 90→70 un-squat opens a 71-89 window for un-noted mid-confidence junk
+  (observed once: 'SITE ADDRESS' @78 keyword, wrong→wrong, zero lane cost). Watch via
+  NAMEGROW_CENSUS_DIR; v2 candidate (namegrow loser taints a different-valued winner with a
+  review flag) — do NOT build without a fresh measurement.
+- **C6 standing rule:** never arm `NAME_UNCLIP_RECONCILE` alongside this leg without a fresh A/B
+  — two owners of one class.
+- Full-shear under-reach recorded: a box excluding the last word ENTIRELY (token-count change)
+  declines by design; census 'declined' rows measure the size of that class later.
 
 ---
 

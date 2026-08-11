@@ -80,6 +80,7 @@ const BRIDGES = [
   ['ref-role-digit-toggle',     'ref_role_digit_gate',         'REF_ROLE_DIGIT_GATE'],
   ['drift-row-pitch-toggle',    'template_drift_row_pitch',    'TEMPLATE_DRIFT_ROW_PITCH'],
   ['currency-edge-grow-toggle', 'template_currency_edge_grow', 'TEMPLATE_CURRENCY_EDGE_GROW'],
+  ['name-edge-grow-toggle',     'template_name_edge_grow',     'TEMPLATE_NAME_EDGE_GROW'],
   ['angle-compose-scan-toggle', 'teach_angle_compose_scan',    'TEACH_ANGLE_COMPOSE_SCAN'],
   ['fixed-issuer-repair-toggle','template_fixed_issuer_repair','TEMPLATE_FIXED_ISSUER_REPAIR'],
   ['reg-arbiter-anchor-evidence-toggle', 'template_reg_arbiter_anchor_evidence',

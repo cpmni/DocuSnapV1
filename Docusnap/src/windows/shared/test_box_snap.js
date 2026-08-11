@@ -158,6 +158,28 @@ function harness(pageWords) {
     ok('assembled text is ordered by x, not by OCR order');
   }
 
+  // ── 8b. Trailing-edge pad floor — and ONLY the trailing edge ───────────────
+  // A single-line box's height-scaled pad (~0.002) is thinner than sibling drift (0.003-0.005),
+  // so a flush right edge shears the final glyph on drifted siblings ('Ltd' reads 'Ltc'). The
+  // RIGHT edge gets a flat 0.004 floor. The asymmetry is deliberate and load-bearing: the left
+  // edge stays snug (a wider left pad re-absorbs label tails) and the vertical pads stay snug
+  // (a taller box admits the row below — the Pelican 2.2-line-height exhibit). A future
+  // "simplification" back to a uniform pad re-mints the flush-edge class.
+  {
+    const words = [{ text: 'Ltd', x: 0.300, y: 0.500, w: 0.030, h: 0.012 }];
+    const h = harness(words);
+    const drawn = { x: 0.299, y: 0.501, w: 0.033, h: 0.010 };   // single-line: pad = h*0.15 ≈ 0.0015
+    const res = await snapBoxToWords(drawn, h);
+    assert.ok(res, 'snapped');
+    const rightPad = (res.box.x + res.box.w) - 0.330;           // word right edge = 0.330
+    const leftPad  = 0.300 - res.box.x;
+    const topPad   = 0.500 - res.box.y;
+    assert.ok(rightPad > 0.004 - 1e-6, `trailing pad has the 0.004 floor (got ${rightPad.toFixed(4)})`);
+    assert.ok(leftPad < 0.002, `left pad stays height-scaled snug (got ${leftPad.toFixed(4)})`);
+    assert.ok(topPad < 0.002, `vertical pad stays height-scaled snug (got ${topPad.toFixed(4)})`);
+    ok('trailing edge floored at 0.004; left/vertical stay snug (pinned asymmetry)');
+  }
+
   // ── 9. ONE implementation — a second copy must not regrow ──────────────────
   // The whole point of extracting this was that teach and the Template Manager stop drifting.
   // A future edit that re-inlines the maths in either renderer would pass every test above while

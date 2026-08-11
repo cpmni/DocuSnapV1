@@ -166,4 +166,23 @@ const find = (v, words) => locateValueInWords(v, { words, natW: NAT_W, natH: NAT
   ok('WIRING: renderer → preload → handler → region.py, with the fallback and kill switch intact');
 }
 
+// ── 13. Trailing-edge pad floor — and ONLY the trailing edge ─────────────────
+// Mirrors the boxSnap.js pin: a single-line hit's height-scaled pad (~0.002) is thinner than
+// sibling drift (0.003-0.005), so a flush stored right edge shears the final glyph on drifted
+// siblings ('Ltd' reads 'Ltc'). Right edge floored at 0.004; left/vertical stay snug (a wider
+// left pad re-absorbs label tails, a taller box admits the row below).
+{
+  const words = [W('Invoice', 0.10, 0.20), W('GB651002784', 0.30, 0.20)];
+  const hits = find('GB651002784', words);
+  assert.strictEqual(hits.length, 1, 'located');
+  const b = hits[0].box;
+  const rightPad = (b.x + b.w) - 0.36;      // word right edge = 0.30 + 0.06
+  const leftPad  = 0.30 - b.x;
+  const topPad   = 0.20 - b.y;
+  assert.ok(rightPad > 0.004 - 1e-6, `trailing pad has the 0.004 floor (got ${rightPad.toFixed(4)})`);
+  assert.ok(leftPad < 0.002, `left pad stays height-scaled snug (got ${leftPad.toFixed(4)})`);
+  assert.ok(topPad < 0.002, `vertical pad stays height-scaled snug (got ${topPad.toFixed(4)})`);
+  ok('trailing edge floored at 0.004; left/vertical snug (pinned asymmetry)');
+}
+
 console.log(`\n${passed} checks passed`);

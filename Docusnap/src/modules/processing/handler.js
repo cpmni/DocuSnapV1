@@ -347,6 +347,13 @@ function _reconcileEnv(db) {
     // n=145). App RESTART to load the bridge.
     if (learning.getSetting(db, 'template_drift_row_pitch', 'false') === 'true') env.TEMPLATE_DRIFT_ROW_PITCH = '1';
     if (learning.getSetting(db, 'template_currency_edge_grow', 'false') === 'true') env.TEMPLATE_CURRENCY_EDGE_GROW = '1';
+    //  • TEMPLATE_NAME_EDGE_GROW — NAME leg of the edge guard (2026-08-11 flush-edge clip class):
+    //    the teach snap's trailing pad is thinner than sibling drift, so a stored name box sits
+    //    flush against its last glyph and a drifted sibling shears it ('Ltd' reads 'Ltc').
+    //    Right-edge cut only, last-token-only repair, page-present witness, FLAG-ONLY commit
+    //    (<=70 + note) — never a clean heal, declines silent. INERT unless template_abs_edge_guard
+    //    is also on (nested like the currency leg).
+    if (learning.getSetting(db, 'template_name_edge_grow', 'false') === 'true') env.TEMPLATE_NAME_EDGE_GROW = '1';
     // ── THE TEACH-SIDE PAIR (2026-08-09 morning arc; bridged 2026-08-09 evening) ──
     // Both were measured on 140 unseen siblings of 10 taught documents and then left env-only, so
     // neither could be reached from the app at all: `npm start` is a plain `electron .` with no env

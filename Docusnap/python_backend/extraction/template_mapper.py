@@ -518,6 +518,30 @@ _SNAP_UNION_WITNESS_ON = os.environ.get('TEMPLATE_SNAP_UNION_WITNESS', '0') != '
 # pendingfeatures). Default OFF (=1 arms); OFF = byte-identical. Pins: tests/test_template_edge_cut_relocate.py.
 _EDGE_CUT_RELOCATE_ON = os.environ.get('TEMPLATE_EDGE_CUT_RELOCATE', '0') != '0'
 
+# NAME EDGE-GROW v1 (flush-edge clip class, 2026-08-11 — revived under the Oracle-RECORDED
+# conditions after the class survived the sample-angle backfill; pendingfeatures 'NAME-BOX
+# FLUSH-EDGE CLIP'). The teach snap's trailing pad (~0.002 for a single-line name) is thinner
+# than sibling drift (0.003-0.005), so a stored name box sits flush against its last glyph and a
+# drifted sibling shears it ('Ltd' reads 'Ltc' — the box cuts the ascender off the 'd'). Names
+# were EXCLUDED from Slice C v1 (NAME_UNCLIP_RECONCILE owned the class; measured structurally
+# inert 2026-08-08). This leg re-admits them NARROWLY:
+#   • RIGHT-edge cut only — a left grow risks absorbing a label tail or a letterhead neighbour;
+#   • the grow may only COMPLETE/REPAIR the LAST token (all leading tokens must read identically);
+#   • PAGE-PRESENT witness: the absorbed cut word's own locate-tier text must EQUAL the grown
+#     last token, with NO short-token skip (the NAME_UNCLIP-C3 defect skipped alnum cores <4 —
+#     literally 'Ltd' — so its defence never tested the class it existed for);
+#   • the overhang floor is UNCHANGED (Oracle: a 4-7px nick sits inside word-box noise) — pages
+#     whose drift sits under the floor stay with the wordness flag + picker net;
+#   • FLAG-ONLY, NEVER a clean commit: a successful grow commits the fuller value capped <=70
+#     with its own note (review sees the corrected prefill; auto-file never sees it silently);
+#   • every decline returns None — names never take the '_edgecut' defer-cap, so arming can only
+#     ADD the healed-flagged outcome; nothing else moves.
+# Nested under _ABS_EDGE_GUARD_ON like the currency leg. Default OFF (=1 arms); OFF =
+# byte-identical. Pins: tests/test_template_name_edge_grow.py.
+_NAME_EDGE_GROW_ON = os.environ.get('TEMPLATE_NAME_EDGE_GROW', '0') != '0'
+_NAME_GROW_NOTE = ("The taught box's edge cuts through the last word of this name — the fuller "
+                   "reading from the page is shown; please verify it.")
+
 # PAD-WINDOW DATE READ (Oracle SIGN-OFF-W/COND 2026-08-06 — the DATE-CROP read ROOT fix; SUPERSEDES
 # the raw-frame-election premise in docs/designs/DATE_CROP_DESKEW_READ_2026-08-06.md). A taught DATE
 # box, drawn tight on the teach sample, CLIPS the value's leading glyph on a sibling scan
@@ -2291,20 +2315,28 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
     # the reconcile's independent inline witness then arbitrates the corrected read).
     _edge_healed = False
     _edge_suspect = False
+    _ng = _NAME_EDGE_GROW_ON and _name_grow_scope(field_key, val_type)
     if _ABS_EDGE_GUARD_ON and (val_type in _SNAP_VAL_TYPES
-                              or (_CURRENCY_EDGE_GROW_ON and val_type in _EDGE_GUARD_VAL_TYPES)):
+                              or (_CURRENCY_EDGE_GROW_ON and val_type in _EDGE_GUARD_VAL_TYPES)
+                              or _ng):
         _eg = _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text,
                               val_type, field_key, ocr_lines_fn, ocr_text_fn,
                               validation_patterns, format_lookup, provisional_lookup,
                               line_cache, (located if located is not _UNSET else None),
                               slice_capture, page_idx,
                               has_label=bool(mapping.get("anchor_text")),
-                              anchor_name=mapping.get("anchor_text"))
+                              anchor_name=mapping.get("anchor_text"),
+                              name_grow=_ng)
         if _eg is not None:
             if "rewrite" in _eg:
                 abs_text, _abs_meta['conf'] = _eg["rewrite"]
                 abs_salvaged = False
                 _edge_healed = True
+            elif _eg.get("name_grow"):
+                # NAME leg: flag-only and FINAL. The edge-cut relocate below re-seats via the
+                # word-snap, which EXCLUDES names by design, and a name result never defer-caps —
+                # so neither interception applies.
+                return _eg["result"]
             else:
                 # The guard could NOT clean-heal this cut (defer_cap floor OR flagged {'result'}).
                 # Before committing either, try the PLACEMENT primitive: re-seat the value off the
@@ -2948,10 +2980,73 @@ def _snap_union_witness(lines, grown, gx1, gx2, gv, target_box, edges):
     return True
 
 
+def _name_grow_census(field_key, edges, outcome, old=None, new=None):
+    """MEASUREMENT ONLY (Oracle revival condition — fire-rate census before any flip): the name
+    leg's declines are SILENT by design, so a flat corpus lane cannot distinguish 'fires and
+    declines everywhere' from 'never fires'; only counting can. One JSON line per fire to
+    $NAMEGROW_CENSUS_DIR/ng_<pid>.jsonl (per-PID: the harness fans out across shard workers).
+    Completely inert unless the env var is set; a measurement must never break an extraction."""
+    d = os.environ.get("NAMEGROW_CENSUS_DIR")
+    if not d:
+        return
+    try:
+        import json as _json
+        with open(os.path.join(d, f"ng_{os.getpid()}.jsonl"), "a", encoding="utf-8") as fh:
+            fh.write(_json.dumps({"field": field_key, "edges": edges, "outcome": outcome,
+                                  "old": old, "new": new}) + "\n")
+    except Exception:
+        pass
+
+
+def _name_grow_scope(field_key, val_type):
+    """NAME-leg admission (see the _NAME_EDGE_GROW_ON flag block): name-like fields only, and
+    never a field the code/date/currency legs already own — one leg per class, no racing."""
+    if val_type in _EDGE_GUARD_VAL_TYPES:
+        return False
+    try:
+        from extraction.value_quality import is_name_like_field
+        return bool(is_name_like_field(field_key))
+    except Exception:
+        return False
+
+
+def _name_norm_token(s):
+    return re.sub(r'[^0-9a-z&]', '', str(s or '').lower())
+
+
+def _name_norm_join(s):
+    return ' '.join(_name_norm_token(t) for t in str(s or '').split() if _name_norm_token(t))
+
+
+def _name_grow_comparator(old, new, cut):
+    """NAME-leg comparator + PAGE-PRESENT witness (both Oracle-recorded revival conditions).
+    The grow may only COMPLETE or REPAIR the last token: every leading token must read
+    identically, the grown last token must extend-or-equal the rigid one on a shared prefix
+    (the cut glyph itself is untrusted — 'Ltc' may repair to 'Ltd'), and carry no digits.
+    The witness: the absorbed cut word's own LOCATE-tier text must EQUAL the grown last token —
+    an independent OCR tier testifying the full word, with NO short-token skip ('Ltd' is exactly
+    the token that must be tested; skipping short cores is the NAME_UNCLIP-C3 defect)."""
+    ot = [t for t in str(old or '').split() if t]
+    nt = [t for t in str(new or '').split() if t]
+    if not ot or not nt or len(nt) != len(ot):
+        return False
+    for a, b in zip(ot[:-1], nt[:-1]):
+        if _name_norm_token(a) != _name_norm_token(b):
+            return False
+    lo, ln = _name_norm_token(ot[-1]), _name_norm_token(nt[-1])
+    if not lo or not ln or len(ln) < len(lo):
+        return False
+    if any(ch.isdigit() for ch in ln):
+        return False
+    if not (ln.startswith(lo) or (len(lo) > 1 and ln.startswith(lo[:-1]))):
+        return False
+    return _name_norm_token((cut or {}).get("text")) == ln
+
+
 def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_type, field_key,
                     ocr_lines_fn, ocr_text_fn, validation_patterns, format_lookup,
                     provisional_lookup, line_cache, located, slice_capture, page_idx,
-                    has_label=True, anchor_name=None):
+                    has_label=True, anchor_name=None, name_grow=False):
     """Slice C action contract (007's GROW, Oracle-ruled — full rationale in the
     _ABS_EDGE_GUARD_ON flag block). Returns:
       None                          — no fire / silent-keep (caller continues untouched);
@@ -2980,6 +3075,14 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
     left_cut, right_cut = _find_edge_cut_words(lines, read_box)
     if left_cut is None and right_cut is None:
         return None
+    if name_grow and (right_cut is None or left_cut is not None):
+        # NAME leg (v1): RIGHT-edge cut only — a left grow risks absorbing a label tail or a
+        # letterhead neighbour, and the measured class is trailing-glyph shear. Silent decline.
+        _ne = (('L' if left_cut is not None else '')
+               + ('R' if right_cut is not None else ''))
+        _EDGE_GUARD_FIRES.append((field_key, _ne, 'name_declined_edges'))
+        _name_grow_census(field_key, _ne, 'declined_edges', old=abs_text)
+        return None
 
     def _floor():
         """Fail-toward-review, but NEVER pre-empt a later heal: the caller keeps its full
@@ -2987,7 +3090,13 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
         then the commit), and only the FINAL abs commit wears the cap + note. Returning a
         result here amputated the reconcile and turned healable partials into capped
         partials on the clean arm ('PP-808' -> 'QPP-8083' class) — the deferred-cap
-        contract is what the t300s->t300c diff bought."""
+        contract is what the t300s->t300c diff bought.
+        NAME leg: every decline is SILENT (None, no defer-cap, no note) — the wordness flag
+        + picker remain the net, so arming can only ADD the healed-flagged outcome."""
+        if name_grow:
+            _EDGE_GUARD_FIRES.append((field_key, _edges, 'name_declined'))
+            _name_grow_census(field_key, _edges, 'declined', old=abs_text)
+            return None
         _EDGE_GUARD_FIRES.append((field_key, _edges, 'capped'))
         return {"defer_cap": True} if abs_text else None
 
@@ -3023,7 +3132,7 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
     # If so it stands in for the missing shape history — it SKIPS ONLY the glyph-frag gate
     # below (a garbled clip can't vouch for its own fuller read) and licenses a CLEAN heal at
     # the consent ladder; the negative per-cut-word veto and the `refused` guard still gate.
-    witness_ok = (_SNAP_UNION_WITNESS_ON and val_type != 'date'
+    witness_ok = (_SNAP_UNION_WITNESS_ON and not name_grow and val_type != 'date'
                   and _snap_union_witness(lines, grown, gx1, gx2, gv, target_box, _edges))
     # Per-type, EDGE-DIRECTIONAL comparator — the cut fragment's edge glyph is untrusted
     # (a half-cut 'C' reads '5'), so the discipline mirrors the cut: a RIGHT cut leaves a
@@ -3054,7 +3163,19 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
                 return True
         return False
 
-    if abs_text:
+    if name_grow:
+        # NAME comparator + page-present witness (see the flag block). A rigid read is required
+        # (a grow with no comparator anchor proves nothing), an unchanged grown read is a no-op,
+        # and any comparator/witness failure declines SILENTLY via the name-aware floor.
+        if not abs_text:
+            return _floor()
+        if _name_norm_join(gv) == _name_norm_join(abs_text):
+            _EDGE_GUARD_FIRES.append((field_key, _edges, 'name_noop'))
+            _name_grow_census(field_key, _edges, 'noop', old=abs_text)
+            return None
+        if not _name_grow_comparator(abs_text, gv, right_cut):
+            return _floor()
+    elif abs_text:
         if val_type == 'currency':
             # Money is right-aligned, so a cut takes LEADING digits: the rigid read must be a strict
             # DIGIT-SUFFIX of the grown value and the grown value must carry MORE integer digits.
@@ -3140,6 +3261,18 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
         _wt = _code_norm(str(_cw.get("text") or ""))
         if _wt and _wt not in _code_norm(str(gv)):
             return _floor()
+    if name_grow:
+        # FLAG-ONLY, NEVER clean (Oracle-recorded revival condition): the fuller name goes to
+        # review pre-filled, capped, noted. The consent ladder below is the wrong judge for a
+        # free-text name and no witness may clean-commit one in v1.
+        _EDGE_GUARD_FIRES.append((field_key, _edges, 'name_healed_flagged'))
+        _name_grow_census(field_key, _edges, 'healed_flagged', old=abs_text, new=gv)
+        r = _mapping_result(gv, has_label, False, False, anchor_name or field_key,
+                            val_type=val_type, ocr_conf=_gmeta.get('conf'))
+        r["confidence"] = min(r["confidence"], 70)
+        r["method"] += "_namegrow"
+        r["validation_note"] = _NAME_GROW_NOTE
+        return {"result": r, "name_grow": True}
     # Consent: dates self-consent on a complete, un-suspect parse (self-validating type —
     # learned-shape stats never veto a real calendar date); codes take the shared ladder.
     if val_type == 'currency':

@@ -96,9 +96,15 @@
     const y1 = Math.min(...admitted.map((wd) => wd.y));
     const y2 = Math.max(...admitted.map((wd) => wd.y + wd.h));
     const pad = Math.min(0.004, box.h * 0.15);
+    // Trailing-edge floor: sibling drift measures 0.003-0.005 page-norm, so a pad thinner than
+    // that stores a box flush against the last glyph and a drifted sibling shears the final
+    // letter ('Ltd' reads 'Ltc'). Only the RIGHT edge gets the full floor — the left edge stays
+    // snug so the pad never re-absorbs a label tail, and the vertical pads stay snug so a
+    // single-line box never admits the row below.
+    const TRAIL_PAD = 0.004;
     const snapped = {
       x: Math.max(0, x1 - pad), y: Math.max(0, y1 - pad),
-      w: Math.min(1, x2 + pad) - Math.max(0, x1 - pad),
+      w: Math.min(1, x2 + TRAIL_PAD) - Math.max(0, x1 - pad),
       h: Math.min(1, y2 + pad) - Math.max(0, y1 - pad),
     };
     // Over-grab cap: a snap that quadruples the drawn area is not a correction, it is a mistake.

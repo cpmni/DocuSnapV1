@@ -1315,3 +1315,36 @@ along with T2, the now-false "teach does NOT share this picker" comment in the s
 defects shipped (`c15f679`) — and the JS pin written for them caught a gap in my own IPv6 fix that
 the Python `re.search` assertion had waved through. T1/T2 shipped (`b41cad6`). `ocr_type` retired
 (`2a85838`) and `delivery_number` retyped (`3dc162c`) as owner decisions.
+
+## 2026-08-11 LATE-NIGHT — NAME-BOX FLUSH-EDGE CLIP slice (fix a: teach-side trailing pad · fix b: `TEMPLATE_NAME_EDGE_GROW` v1)
+
+**Verdict: SIGN OFF WITH CONDITIONS** — merge clean as built (default OFF, OFF proven md5
+byte-identical on the 200-doc replay); the FLIP carries two blocking conditions, both honesty
+items, both discharged same-session:
+- **C1 (blocking, expectation note):** fix (b) does NOT heal the owner's own Ironclad 0028-1
+  exhibit — its overhang is 0.0010 page-norm, under the untouched 0.004 floor (his own recorded
+  condition 3). The corpus heals are real because sibling drift (0.003-0.005) straddles the floor;
+  the live exhibit is cured only by fix (a) + a re-teach, or the C7 repair arm. MUST be said to
+  the owner before the flip.
+- **C2 (blocking, direct/indirect split):** of the 29 census heals, **1 is a DIRECT namegrow
+  commit** (noted, review volume) and **28 are superseded** — the flagged @70 result un-squats the
+  clipped 90 read and a correct keyword/template_fixed/hint wins arbitration unnoted. The flip
+  buys ~zero new review volume on this corpus.
+- Ruled the equality page-present witness (cut word's locate text == grown last token, NO
+  short-token skip) the RIGHT defence — do not widen in this slice. Confirmed all four recorded
+  revival conditions genuinely implemented; confirmed no seam with snap-union witness /
+  edge-cut-relocate / pad-date / corroborated auto-file / currency legs.
+- The real seam named: the 90→70 un-squat opens a 71-89 arbitration window for un-noted
+  candidates; measured zero lane cost (every window doc was already wrong @90 in base — arming
+  changes WHICH wrong string, not whether), but the 'SITE ADDRESS' @78 caption swap class is
+  **owner-watch (C3)** via the census.
+- **C4 (applied):** `_candidate_source_label` now prefix-matches `template_mapping*` so suffixed
+  variants read "from the taught box" in the picker. **C5 (applied):** `TRAIL_PAD` named in
+  valueLocate.js. **C6 (standing rule):** never arm `NAME_UNCLIP_RECONCILE` alongside this leg
+  without a fresh A/B — two owners of one class. **C7 (open, owner decision):** the cure for
+  EXISTING live templates is a stored-box repair arm (widen name-box trailing edges to the new
+  floor — the sample-angle-backfill pattern, backup-first, own gate); fix (a) only protects
+  future teaches.
+Gates at sign-off: OFF md5-identical pre/post-edit · armed +22 lane heals / 0 losses (issuer +9,
+customer +11, vat +2), all other lanes cell-identical · census 43 fires/200 docs (29 heal,
+14 silent decline) · 22 Python pins + 11/13 JS pins + wiring pin + adjacent batteries green.
