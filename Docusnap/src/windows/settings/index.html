@@ -993,6 +993,20 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Don't hold a ready document just because an optional field is blank</div>
+                <div class="threshold-sub">One filing decision, everywhere: a document a trusted sender's history says is safe to file no longer waits in Review because an optional field (like a VAT number the page doesn't print) read empty. A missing Reference or Date still holds the document, and any field with a real warning always holds it. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="autofile-gate-unify-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">"File All Ready" files documents whose only note is a blank optional field</div>
+                <div class="threshold-sub">The orange "low confidence" check only counts fields that actually read a value. A document whose optional fields simply came back empty shows as ready and files with File All Ready; anything with a warning or a weak <em>valued</em> read still waits for you. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="far-valued-only-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Blame the right figure when totals don't add up</div>
                 <div class="threshold-sub">When the maths check fails but the total itself was read the same way by two independent methods, and the only disagreeing figures are hidden working reads your form has no field for, the note names the working figure instead of marking the total down. The document still waits for your check — nothing files silently. Off by default.</div>
               </div>

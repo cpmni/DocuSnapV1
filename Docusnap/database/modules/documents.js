@@ -196,6 +196,21 @@ function getReviewQueue(db) {
            AND (f.enabled IS NULL OR f.enabled = 1)
            AND e.confidence < COALESCE(f.confidence_threshold, 70)
       ) AS below_threshold_count,
+      -- below_threshold_valued_count: the SUBSET of the above whose row actually carries a
+      -- VALUE — a low-confidence VALUED read (risk: wrong value) vs an attempted-but-empty
+      -- field @0 (risk: a blank optional). The FAR two-tier rule (far_lowconf_valued_only,
+      -- gate-unify slice, Oracle option (i)) keys the flagged tier on THIS count so an
+      -- empty-optional doc reads clean everywhere (colouring, tab count, Mark Reviewed, File
+      -- All Ready, getReviewSplit) while a weak valued read still holds for a human glance.
+      (SELECT COUNT(*) FROM extractions e
+         JOIN fields f ON f.document_type_id = d.document_type_id AND f.key = e.field_key
+         WHERE e.document_id = d.id
+           AND e.confidence IS NOT NULL
+           AND (f.enabled IS NULL OR f.enabled = 1)
+           AND e.confidence < COALESCE(f.confidence_threshold, 70)
+           AND ( (e.display_value IS NOT NULL AND TRIM(e.display_value) <> '')
+              OR (e.raw_value     IS NOT NULL AND TRIM(e.raw_value)     <> '') )
+      ) AS below_threshold_valued_count,
       -- missing_required_labels: the labels of the fields that BLOCK confirm and are
       -- still EMPTY — the assigned Date/Reference roles + any custom field flagged
       -- Required, EXCLUDING the identity (Document-Issuer is warn-only, not a hard
@@ -409,13 +424,29 @@ function getReviewCount(db) {
 // disagree — do not re-implement the flag logic in SQL here.
 function getReviewSplit(db) {
   const rows = getReviewQueue(db);
+  // FAR two-tier rule (far_lowconf_valued_only, gate-unify slice): when ON, only a VALUED
+  // below-threshold read counts as "needs a look" — an attempted-but-empty optional field @0
+  // does not. Must match the renderer's isFlagged (the "never disagree" contract above) — the
+  // renderer caches the same setting at queue load. OFF = byte-identical to today.
+  const valuedOnly = _farValuedOnlyEnabled(db);
   let need = 0;
   for (const d of rows) {
     if ((d.review_flag_count || 0) > 0
-        || (d.below_threshold_count || 0) > 0
+        || ((valuedOnly ? d.below_threshold_valued_count : d.below_threshold_count) || 0) > 0
         || String(d.missing_required_labels || '').trim()) need++;
   }
   return { total: rows.length, need, ready: rows.length - need };
+}
+
+// C5 read pattern (see trust.js _shadowRowSkipEnabled): env wins both directions for harness
+// arms; the setting is the product truth; a fixture DB without a settings table defaults OFF.
+function _farValuedOnlyEnabled(db) {
+  const env = process.env.FAR_LOWCONF_VALUED_ONLY;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try {
+    return require('./learning').getSetting(db, 'far_lowconf_valued_only', 'false') === 'true';
+  } catch { return false; }
 }
 
 function getDeferredCount(db) {
@@ -672,6 +703,7 @@ module.exports = {
   insert, update, getById, getExtractedTotalDisplay, getExtractedTotalContext, getWithExtractions,
   getReviewQueue, getDeferredQueue, getByIds,
   getReviewCount, getReviewSplit, getDeferredCount, getStuckCount, getStuckQueue, getFiledCounts,
+  _farValuedOnlyEnabled,           // single source of the FAR two-tier default (pins + renderer parity)
   softDelete, restoreDeleted, getDeletedQueue, getDeletedCount,
   requeueConfirmedDocsForScope, getConfirmedDocsForScope, getConfirmedDocsByIds, getConfirmedFieldValues, deconfirmDocument,
   getFieldValueSuggestions,

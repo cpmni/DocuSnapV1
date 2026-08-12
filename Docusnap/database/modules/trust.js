@@ -366,6 +366,63 @@ function _shadowRowSkipEnabled(db) {
   } catch { return false; }
 }
 
+// ── Auto-file gate unification (2026-08-12 NIGHT slice; gary+eric → Oracle SIGN-OFF-W/COND) ──
+// ONE flag covers three coupled changes that must never ship apart: (T1) the import pre-gate in
+// processing/handler.js stops bailing on the Python `needs_review` summary and defers to THIS
+// predicate; (T2) the predicate gains the `missing-required` refusal below — the pre-gate's one
+// unique safety, moved to the authoritative layer; (T3) machine auto-files stamp a basis-derived
+// confirmed_via so they can never fill the human graduation window. Same C5 read pattern as the
+// shadow-row switch: env wins both directions for harness arms, setting is the product truth.
+function _gateUnifyEnabled(db) {
+  const env = process.env.AUTOFILE_GATE_UNIFY;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try {
+    return require('./learning').getSetting(db, 'autofile_gate_unify', 'false') === 'true';
+  } catch { return false; }
+}
+
+// T2 — the missing-required refusal: the ref role, date role, or a required non-identity custom
+// field with NO non-empty value refuses `missing-required:<key>`. EXACT mirror of the
+// missing_required_labels SQL in documents.js getReviewQueue (which itself mirrors the Review
+// window's validateConfirm): identity keys excluded (Document-Issuer is warn-only there), and a
+// field HIDDEN for the doc's matched template (template_hidden_fields, the per-sender editor's
+// "Never — stop looking") is excluded — Oracle C1: a declared-absent field must never become a
+// permanent auto-file blocker on exactly the scopes the owner said stop asking about.
+// Data paths mirror the critical floor: opts.extractions (batch/harness) else the DB rows.
+// try/catch fail-open per leg matches the fixture-resilience style of the critical floor — a
+// minimal fixture without a fields table simply has no required roles to refuse on.
+function _missingRequiredKey(db, doc, dtRow, opts) {
+  let fields;
+  try {
+    fields = db.prepare(
+      'SELECT key FROM fields WHERE document_type_id = ? AND COALESCE(enabled, 1) = 1 AND (' +
+      ' key = ? OR key = ? OR (required = 1 AND key NOT IN (\'supplier_name\', \'customer_name\')))'
+    ).all(doc.document_type_id, dtRow.ref_field_key || '', dtRow.date_field_key || '');
+  } catch { return null; }
+  if (!fields.length) return null;
+  let hidden = new Set();
+  if (doc.template_id != null) {
+    try {
+      hidden = new Set(db.prepare(
+        'SELECT field_key FROM template_hidden_fields WHERE template_id = ?'
+      ).all(doc.template_id).map(r => r.field_key));
+    } catch { hidden = new Set(); }
+  }
+  const valued = new Set();
+  const rows = opts.extractions
+    ? opts.extractions
+    : db.prepare('SELECT field_key, display_value, raw_value FROM extractions WHERE document_id = ?').all(doc.id);
+  for (const e of rows) {
+    if (e && e.field_key && String(e.display_value ?? e.raw_value ?? '').trim()) valued.add(e.field_key);
+  }
+  for (const f of fields) {
+    if (hidden.has(f.key)) continue;
+    if (!valued.has(f.key)) return f.key;
+  }
+  return null;
+}
+
 // ── Corroborated auto-file (owner order 2026-08-11, step 3 of the record→surface→decide plan;
 //    Oracle SIGN-OFF-W/COND — C1 volume-only substitution, C2 window exclusion, both applied) ──
 // A doc on a scope that fails graduation ONLY on volume may file at the TRUSTED_FLOOR when the
@@ -535,13 +592,18 @@ function scopeTrust(db, supplier, slug, opts = {}) {
     SELECT d.id, COALESCE(d.confirmed_at, '') AS ts FROM documents d
     JOIN document_types dt ON dt.id = d.document_type_id
     WHERE d.status = 'confirmed' AND LOWER(TRIM(d.supplier_name)) = ? AND LOWER(dt.slug) = ?
-      ${viaFilter ? "AND COALESCE(d.confirmed_via, '') NOT IN ('scope_sweep', 'auto_corroborated', 'auto_reprocess')" : ''}
+      ${viaFilter ? "AND COALESCE(d.confirmed_via, '') NOT IN ('scope_sweep', 'auto_corroborated', 'auto_reprocess', 'auto_graduated', 'auto_threshold')" : ''}
     ORDER BY d.confirmed_at DESC, d.id DESC
   `;
   // NOTE (Oracle 2026-08-11, corroborated auto-file C2): 'auto_corroborated' machine files are
   // excluded from the HUMAN window above exactly like 'scope_sweep' — a corroborated file must
   // never advance the graduation window it was allowed to bypass (the route would otherwise
   // manufacture the trust it substitutes for). The corrections SPAN below still covers them.
+  // 'auto_graduated'/'auto_threshold' (gate-unify slice, Oracle 2026-08-12 T3: BOTH machine
+  // bases stamp) join the exclusion for the same reason — a graduated OR conf-100 machine file
+  // is still a machine file and must never fill a human W-slot (the sweep-incident mechanism).
+  // The exclusion itself is unconditional (no historic rows carry these values → byte-identical
+  // until the stamp ships under the flag); the stamps ride `autofile_gate_unify` in handler.js.
   const human = db.prepare(_confirmedSql(hasVia)).all(sup, sl);
   const confirmedCount = human.length;
   if (confirmedCount < W) {
@@ -842,6 +904,17 @@ function isAutoFileEligible(db, doc, opts = {}) {
         "SELECT COUNT(*) c FROM extractions WHERE document_id = ? AND ((validation_note IS NOT NULL AND TRIM(validation_note) <> '') OR (corrected_to IS NOT NULL AND TRIM(corrected_to) <> ''))"
       ).get(doc.id).c;
   if (flagged) return { eligible: false, floor, trusted: t.trusted, reason: 'flagged' };
+  // T2 (gate-unify slice): an EMPTY ref role / date role / required non-identity field refuses
+  // with a reason instead of relying on the import pre-gate's blanket needs_review bail (which
+  // the flag retires in handler.js). Flag-gated so OFF is byte-identical; also reachable via
+  // opts.gateUnify for batch hoisting (autoFileEligibleIds) and harness arms. Runs at EVERY
+  // floor — an empty filename-deciding role must hold at conf 100 too (it would file as
+  // 'Unknown'). Placement AFTER `flagged` so refusal reasons stay stable for existing consumers.
+  const gateUnify = (opts.gateUnify !== undefined) ? !!opts.gateUnify : _gateUnifyEnabled(db);
+  if (gateUnify && dtRow) {
+    const mk = _missingRequiredKey(db, doc, dtRow, opts);
+    if (mk) return { eligible: false, floor, trusted: t.trusted, reason: `missing-required:${mk}` };
+  }
   // Filing-critical per-field confidence floor (see CRITICAL_FIELD_FLOOR). A PRESENT reference/date
   // value must itself clear the floor — a blended overall can hide a weak critical read, and the
   // reference/date decide the filename, so they can't ride an average into a silent auto-file. Applies
@@ -913,9 +986,12 @@ function autoFileEligibleIds(db, docs, opts = {}) {
   // Same hoist for the corroborated-route switch (Oracle C6) — one settings read per batch.
   const corrobAutoFile = (opts.corrobAutoFile !== undefined)
     ? !!opts.corrobAutoFile : _corrobAutofileEnabled(db);
+  // And for the gate-unify switch (T2 missing-required refusal) — one settings read per batch.
+  const gateUnify = (opts.gateUnify !== undefined)
+    ? !!opts.gateUnify : _gateUnifyEnabled(db);
   const ids = [];
   for (const d of (docs || [])) {
-    if (isAutoFileEligible(db, d, { ...opts, formats, gradOn, optOut, shadowRowSkip, corrobAutoFile }).eligible) ids.push(d.id);
+    if (isAutoFileEligible(db, d, { ...opts, formats, gradOn, optOut, shadowRowSkip, corrobAutoFile, gateUnify }).eligible) ids.push(d.id);
   }
   return ids;
 }
@@ -972,6 +1048,8 @@ module.exports = {
   _dominantStructuredClass,        // exported for the contaminated-history pin (test_scope_trust.js §18b)
   _nonRoleLenientEnabled,          // single source of the default, so tests can't drift from it
   _shadowRowSkipEnabled,           // ditto for the shadow-row skip (TRUST_SHADOW_ROW_SKIP)
+  _gateUnifyEnabled,               // ditto for gate-unify — handler.js T1 and the T2 refusal share ONE read
+  _missingRequiredKey,             // exported for the T2 pins (test_scope_trust.js)
   _corrobLicensed,                 // exported for the declined census + pins — decision logic stays HERE
   validDate: _validDate, validIban: _validIban, validVatGb: _validVatGb,
   currencyDpConsistent: _currencyDpConsistent, currencyConsistentForField: _currencyConsistentForField, matchesTypePattern: _matchesTypePattern,

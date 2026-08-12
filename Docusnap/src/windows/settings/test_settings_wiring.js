@@ -131,6 +131,12 @@ for (const [id, key, env] of BRIDGES) {
 // consumer stops reading the key is the same dead-toggle failure, just one file over.
 const SETTING_SWITCHES = [
   ['shadow-row-skip-toggle', 'trust_shadow_row_skip', 'database/modules/trust.js'],
+  // Gate-unify slice (Oracle W/COND 2026-08-12 NIGHT): trust.js reads autofile_gate_unify (ONE
+  // shared read for the import gate T1, the missing-required refusal T2 and the via stamps T3);
+  // documents.js reads far_lowconf_valued_only (getReviewSplit twin; the Review renderer caches
+  // the same key for isFlagged).
+  ['autofile-gate-unify-toggle', 'autofile_gate_unify', 'database/modules/trust.js'],
+  ['far-valued-only-toggle', 'far_lowconf_valued_only', 'database/modules/documents.js'],
   // Graduation issuer freeze: a JS-main-process BIRTH decision — graduationTemplate.js reads the
   // key itself (the module's own _enabled precedent); no Python leg exists.
   ['graduation-freeze-issuer-toggle', 'graduation_freeze_issuer', 'database/modules/graduationTemplate.js'],

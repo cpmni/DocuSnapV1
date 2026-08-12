@@ -4313,6 +4313,14 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
   });
 }
 
+// Auto-file dispatches run through ONE sequential promise chain (Oracle C6, gate-unify slice):
+// commitDocument does SYNCHRONOUS file I/O (multi-MB copyFileSync), and the gate-unify flip can
+// raise auto-file volume from ~zero to 50-90 per import — unbounded parallel setImmediate
+// dispatches would run those copies back-to-back in one tick and stall the main thread. The
+// chain serialises them with event-loop yields between docs; the per-doc catch keeps one failed
+// commit from aborting the rest (each doc still rolls itself back inside _autoFileDoc).
+let _autoFileChain = Promise.resolve();
+
 function _maybeAutoFile(db, msg, folderPath, notifyMainWindow, logger) {
   try {
     const learning = require('../../../database/modules/learning');
@@ -4324,13 +4332,26 @@ function _maybeAutoFile(db, msg, folderPath, notifyMainWindow, logger) {
     const userThr = parseInt(learning.getSetting(db, 'auto_file_threshold', '100'), 10) || 100;
     const preFloor = Math.min(userThr, trust.TRUSTED_FLOOR);
     if (!msg.db_id || (msg.overall_confidence || 0) < preFloor) return;
-    // Any sub-100 auto-file (graduation or a lowered slider) must be a CLEAN doc — never one
-    // that processing flagged for review.
-    if (preFloor < 100 && msg.needs_review) return;
-    setImmediate(() => {
+    // GATE UNIFY T1 (flag OFF = today): the legacy bail refuses EVERY doc whose Python file_done
+    // said needs_review — a BROADER signal than the predicate (it fires on an empty/below-
+    // threshold non-required field, which the predicate deliberately leaves to Review). Since
+    // preFloor is always min(userThr, 95) it parks docs at ANY confidence, including 100, and
+    // the authoritative isAutoFileEligible in _autoFileDoc never gets asked (the live 08-12
+    // measure: 49 eligible docs parked for an empty optional vat_no/po_ref/account_no @0).
+    // Flag ON: defer to the predicate — every note-backed hold is already persisted to
+    // extractions BEFORE this runs (insertExtractions is synchronous in the file_done handler,
+    // ordering pinned in test_import_autofile_gate.js), and the predicate's T2 missing-required
+    // refusal (trust.js) owns the one safety this bail uniquely provided. ONE shared flag read
+    // (trust._gateUnifyEnabled) so T1 and T2 cannot drift.
+    if (!trust._gateUnifyEnabled(db)) {
+      // Any sub-100 auto-file (graduation or a lowered slider) must be a CLEAN doc — never one
+      // that processing flagged for review.
+      if (preFloor < 100 && msg.needs_review) return;
+    }
+    _autoFileChain = _autoFileChain.then(() =>
       _autoFileDoc(db, msg.db_id, folderPath, notifyMainWindow, logger)
-        .catch(e => { try { logger?.warn?.(`auto-file ${msg.db_id}: ${e.message}`); } catch {} });
-    });
+        .catch(e => { try { logger?.warn?.(`auto-file ${msg.db_id}: ${e.message}`); } catch {} })
+    );
   } catch {}
 }
 
@@ -4364,8 +4385,17 @@ async function _autoFileDoc(db, docId, folderPath, notifyMainWindow, logger) {
   // confirmed_via='auto_corroborated' so scopeTrust's HUMAN graduation window excludes it —
   // the route must never manufacture the trust it substitutes for (the scope_sweep precedent).
   // C5: the claim username says what actually happened instead of the false '(100%)'.
-  const _viaStamp  = _elig.basis === 'corroborated' ? 'auto_corroborated' : null;
-  const _userStamp = _elig.basis === 'corroborated' ? 'Auto-filed (corroborated)' : 'Auto-filed (100%)';
+  // GATE UNIFY T3 (Oracle 2026-08-12: stamp BOTH machine bases): a graduated OR threshold
+  // machine file must never count as a HUMAN confirm in the graduation window — via-NULL machine
+  // rows filling W-slots is the sweep-incident mechanism (101-doc remediation, 08-12). The
+  // trust.js:538 window exclusion for these values ships unconditionally; the stamp itself rides
+  // the flag so OFF stays byte-identical. Usernames stay honest per Oracle C5 (graduated files
+  // at the 95 discount, so '(100%)' would be a false claim on them).
+  const _unify = trust._gateUnifyEnabled(db);
+  const _viaStamp  = _elig.basis === 'corroborated' ? 'auto_corroborated'
+    : (_unify ? (_elig.basis === 'graduated' ? 'auto_graduated' : 'auto_threshold') : null);
+  const _userStamp = _elig.basis === 'corroborated' ? 'Auto-filed (corroborated)'
+    : (_unify && _elig.basis === 'graduated' ? 'Auto-filed (graduated)' : 'Auto-filed (100%)');
   const claim = documents.confirmIfReviewable(db, docId, {
     confirmed_by_username: _userStamp, confirmed_via: _viaStamp });
   if (!claim || claim.changes === 0) return;

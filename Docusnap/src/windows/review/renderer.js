@@ -602,6 +602,18 @@ window.__listFieldScanOn = false;
   try { window.__listFieldScanOn = (await window.docusnap.getSetting('list_field_scan')) === 'true'; }
   catch { /* stays false */ }
 })();
+
+// FAR two-tier rule (far_lowconf_valued_only, gate-unify slice, Oracle option (i) 2026-08-12):
+// when ON, isFlagged keys its below-threshold tier on VALUED low-confidence reads only — an
+// attempted-but-empty optional field @0 no longer flags. ALL five consumers (queue colouring,
+// tab need-count, Mark Reviewed, File All Ready, and the getReviewSplit DB twin) move together
+// through isFlagged/the twin's own read of the SAME setting, so the banner, the colours and the
+// bulk-file behaviour can never disagree. OFF = byte-identical to today.
+window.__farValuedOnly = false;
+(async () => {
+  try { window.__farValuedOnly = (await window.docusnap.getSetting('far_lowconf_valued_only')) === 'true'; }
+  catch { /* stays false — legacy tier */ }
+})();
 document.getElementById('generic-chip')?.addEventListener('click', () => {
   const sel = document.getElementById('doctype-select');
   sel.value = 'general_document';
@@ -2015,7 +2027,10 @@ async function linkCurrentDocToTemplate(targetId, btn) {
 // eligibility, and the Mark Reviewed button. Counts come from getReviewQueue()
 // and live on the in-memory queue object (currentDoc is that same object).
 function isFlagged(doc) {
-  return (doc?.review_flag_count || 0) > 0 || (doc?.below_threshold_count || 0) > 0;
+  // review_flag_count (notes / correction candidates) ALWAYS flags — pinned; the two-tier rule
+  // only narrows the below-threshold leg to VALUED reads (see window.__farValuedOnly above).
+  const below = window.__farValuedOnly ? doc?.below_threshold_valued_count : doc?.below_threshold_count;
+  return (doc?.review_flag_count || 0) > 0 || (below || 0) > 0;
 }
 
 // Show Mark Reviewed only for the flagged current document. A flagged doc is

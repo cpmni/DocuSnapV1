@@ -38,8 +38,8 @@ check("machine username stamped for auto_reprocess only ('Auto-filed (reprocess)
       /_via === 'auto_reprocess' \? 'Auto-filed \(reprocess\)' : actorName/.test(service));
 
 console.log('2. trust: human window excludes the sentinel; span stays via-agnostic');
-check('window NOT-IN list carries all three machine sentinels',
-      /NOT IN \('scope_sweep', 'auto_corroborated', 'auto_reprocess'\)/.test(trustSrc));
+check('window NOT-IN list carries all five machine sentinels (gate-unify added auto_graduated/auto_threshold)',
+      /NOT IN \('scope_sweep', 'auto_corroborated', 'auto_reprocess', 'auto_graduated', 'auto_threshold'\)/.test(trustSrc));
 check('corrections span still built via-agnostic (_confirmedSql(false) present)',
       /_confirmedSql\(false\)/.test(trustSrc));
 

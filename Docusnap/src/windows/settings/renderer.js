@@ -757,6 +757,12 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // itself, once per document. That also means it takes effect on the next
                          // filing decision rather than needing an app restart.
                          ['shadow-row-skip-toggle', 'trust_shadow_row_skip'],
+                         // Gate-unify (Oracle W/COND 2026-08-12 NIGHT): JS-side reads — trust.js
+                         // owns autofile_gate_unify (T1 import gate + T2 missing-required refusal
+                         // + T3 via stamps share trust._gateUnifyEnabled); documents.js + the
+                         // Review renderer own far_lowconf_valued_only. No _reconcileEnv leg.
+                         ['autofile-gate-unify-toggle', 'autofile_gate_unify'],
+                         ['far-valued-only-toggle', 'far_lowconf_valued_only'],
                          // A corroborated total is no longer capped when the only disagreeing
                          // operands are invisible shadow reads (Oracle W/COND ×5, 2026-08-12).
                          ['shadow-attrib-toggle', 'reconcile_shadow_attribution'],
