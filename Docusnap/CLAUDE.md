@@ -21,23 +21,44 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-12 NIGHT2: **READ `HANDOVER_2026-08-12_NIGHT2.md` FIRST.** The import arc
+## ⏭ LATEST — 2026-08-13: **READ `HANDOVER_2026-08-13.md` FIRST.** The NIGHT2 queue EXECUTED:
+HEAD **`e752b95`** PUSHED, 3 commits, zero SEND BACKs (gary ×3 → Oracle ×3, all W/COND applied).
+**Slice-1 date-demote owed gates CLOSED** (live 5/5 correct + 200-DPI targeted arm fired 6 demotes
+byte-identical — flip bar demoted-and-wrong=0 met; the first armed arm was VACUOUS: realdoc runs
+python at 300 DPI while the app runs ocr_dpi=200 — set `OCR_RENDER_DPI=200` for class arms).
+THREE new dark slices, ALL DEFAULT OFF + toggles: **`df3f668` slice 2** `recon_total_note_demote`
+(adjusted-total note releases on penny-exact SIGN-agreeing crop witness + arithmetic re-verify; NO
+conf minting; PASS-2 subtotal note survives — 34 pins; flip evidence complete, say the §2 caveats) ·
+**`f6fea09` slice 3** `name_corrob_note_demote` (W1 crop minus template_fixed/'+corrected' AND W2
+keyword + D1 recorded guard-rejection + D2 unanimity; supplier_name NEVER; **B1 production change:
+anchor rejection recorder ALWAYS ON (`_rejected_reads`), Stage-2b parallel predicate now takes
+`force_serial` — never key it on on_reject**; 39 pins; **FLIP BLOCKED on B2** #259-class replay) ·
+**`e752b95` machine-feed slice 1** `learning_exclude_machine_confirms` (NEW shared
+`database/modules/machine_vias.js` — FIVE sentinels; templates.js had DRIFTED to 2/5 while
+_autoFileDoc drives learnTemplateOnCommit (Oracle C1, now armed-blocked); C2 carve-out: human
+corrections stay counted; `machine_value_counts` additive+inert; 16 pins; census groupsDie 0,
+Quillstone backup gate 0.888→0.900 PASSES; **FLIP BLOCKED on the armed realdoc arm — RUNNING at
+wrap, read `%TEMP%\rr_machine_armed_diff.txt` FIRST ACTION** — + C5 unify round-trip pin).
+Full-902 OFF arm md5-identical (both slices + B1 dark). Oracle also found
+`test_xcheck_corrob_demote.py:158-160` is a DEAD pin (vacuous — filed for repair-or-delete).
+Priors below.
+
+### Prior — 2026-08-12 NIGHT2: **`HANDOVER_2026-08-12_NIGHT2.md`.** The import arc
 EXECUTED: corpus auto-file **70/200 → ~184/200 (92%)**, all live-proven, HEAD **`fa1c0cb`** PUSHED,
 13 commits, zero SEND BACKs. FIVE new toggles, **ALL OWNER-FLIPPED ON**: `autofile_gate_unify`
 (pre-gate defers to the ONE predicate; `missing-required` refusal; `auto_graduated`/`auto_threshold`
 via-stamps — 165-file cohort stamped, backup beside live DB) · `far_lowconf_valued_only` (isFlagged
 two-tier, all five consumers) · `type_election_title_first` (address captions never headings;
 Meadowvale healed live) · `reprocess_shadow_stale_drop` (stale shadow rows die on reprocess) ·
-`xcheck_corrob_note_demote` (corroboration STEP 3 slice 1, DATES only — **live re-verify OWED
-after `775ad2c`**, first action). VAT-reg guard: 3 garble variants fixed (speckle/cc-floor-8/
+`xcheck_corrob_note_demote` (corroboration STEP 3 slice 1, DATES only — live re-verify DONE
+2026-08-13, 5/5 correct, gates closed). VAT-reg guard: 3 garble variants fixed (speckle/cc-floor-8/
 doubled-cc, reggie-vetted). Name-lexicon POISON remediated live (Quillstone 0.888→0.955 STRONG;
 Castellan single-key — CONFADOPT unblocked; `repair-poison-name-confirms-20260812.js` RUN).
 gary rulings that supersede filed designs: the CONFUSABLE-SNAP tier is WRONG LAYER (`_is_confusion`
 has no letter↔letter arm; the 4.5 STRONG repair owns the class — evidence supply was the failure);
-corroboration-clears-notes ALREADY SHIPS (E2). QUEUED (own Oracle passes): note-demote slice 2
-(adjusted-total, money) + slice 3 (names) + machine-files-feed-learning (getFieldFormats doesn't
-filter machine confirms). Trace console: every-step rows + top-left; SFDEV dialog focus fixed.
-Priors below.
+corroboration-clears-notes ALREADY SHIPS (E2). The queued slices (note-demote 2+3,
+machine-files-feed-learning) EXECUTED 2026-08-13 — see LATEST. Trace console: every-step rows +
+top-left; SFDEV dialog focus fixed.
 
 ### Prior — 2026-08-12 NIGHT (early): **`HANDOVER_2026-08-12_NIGHT.md`** — the import-arc measure
 (70/200, the three-gate decomposition, CJB-5054 filed) that NIGHT2 executed. Read for the original
