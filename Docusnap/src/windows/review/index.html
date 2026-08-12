@@ -1249,7 +1249,10 @@
        bounded by the viewport so a narrow display can never push it off-screen. The header also
        WRAPS now — widening alone just postpones the same overflow the next time a control is
        added, and this panel accumulates them. */
-    position: fixed; top: 52px; right: 16px; width: 520px; max-width: calc(100vw - 32px);
+    /* TOP-LEFT (owner request 2026-08-12): the right edge covered the Extracted Fields panel —
+       the thing you are usually comparing the trace AGAINST; top-left sits over the queue list,
+       which SFDEV work doesn't need. */
+    position: fixed; top: 52px; left: 16px; width: 520px; max-width: calc(100vw - 32px);
     height: 70vh; max-height: 84vh;
     z-index: 90000; background: var(--surface); border: 1px solid var(--border2);
     border-radius: 8px; box-shadow: 0 12px 34px rgba(0,0,0,.5); display: flex;
