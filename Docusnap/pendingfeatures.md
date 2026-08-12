@@ -88,12 +88,18 @@ snap also writes a note (not silent). **C4 DISCHARGED**: the one flip = Bramblew
 customer_name freetext→constant('Quillstone Print & Packaging') — direction FAVOURABLE (exclusion
 un-shields the garble class; the lost values are the 2 garbles + the 4 wrong-party Bramblewood rows
 already queued for owner ruling). Script: scratchpad machine_c3_c4_census.js.
-**REMAINING before flip:** C5 gate-unify round-trip pin owed (armed exclusion + unify-ON stamp);
-realdoc M=0/zero-drop on a POST-STAMP snapshot with the flag armed; Quillstone pre-remediation
-backup doc_freq gate (docusnap_pre_namerepair_20260812.db must cross 0.9 STRONG under exclusion);
-C6 CONFADOPT docstring fix (engine.py:2703) — rides the commit; C1 small census (post-stamp docs
-that drove template learning). Slice 2 (refusal-side unions from machine_value_counts) = own pass.
-Oracle ruling record below:
+**ARMED REALDOC GATE RAN (2026-08-13 wrap, post-stamp live DB, 902 docs): M=0 BOTH COUNTS.**
+Values IDENTICAL (same 484 pre-existing replay regressions, same docs/values); auto-file IDENTICAL
+(14 would-file, same 3 pre-existing wrong dates #400/#976/#1176; ZERO new wrong auto-files).
+**Counted cost (the Oracle wrong-direction edge, SAY AT FLIP):** 54 wrong reads lost their review
+FLAG (231→285 silent) — ONE class, the Pelican invoice-ref separator-stripped replays
+('PI/25/3699'→'PI253699' + two I→1): the field's learned shape was machine-fed, exclusion kills the
+shape warn. ALL 54 stay review-bound (zero crossed into auto-file) — cost = lost warning copy in
+Review, never a silent file. Reports: %TEMP%\rr_machine_armed_report.md + _diff.txt.
+**REMAINING before flip:** C5 gate-unify round-trip pin (armed exclusion + unify-ON stamp);
+Quillstone gate ✅ PASSED (backup 0.888 all-rows → 0.900 human-only STRONG); C6 ✅ rode `e752b95`;
+C1 small census (post-stamp docs that drove template learning). Slice 2 (refusal-side unions from
+machine_value_counts) = own pass. Oracle ruling record below:
 
 ## (ruling record) 2026-08-13 — MACHINE-FEED ARC: gary design + Oracle SIGN-OFF-W/COND (C1-C6)
 gary consumer map + Oracle pass both run 2026-08-13 (agents; census run same day). **Design (slice 1):**
