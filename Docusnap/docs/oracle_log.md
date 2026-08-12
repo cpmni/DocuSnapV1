@@ -1466,3 +1466,33 @@ matched 'template_maPINg' — the exact substring-consumer trap the rider named.
 histogram + adopted-and-filed vs adopted-and-held split; run on the LIVE replay too — the corpus's
 customer_name is near-constant by construction and would flatter the residual). FLIP BAR:
 would-adopt-vs-GT 100% — a single wrong would-adopt is a no-flip, full stop.
+
+## 2026-08-12 NIGHT — GATE-UNIFY (three-gate disparity, the import arc's Priority 1): SIGN OFF W/COND, BUILT DARK same night (`83dc89e`)
+gary+eric consensus, both independently BLOCKING on the via-NULL trust seam (the gap the CONFADOPT
+B3 entry above filed as "own arc" — closed here). Oracle premise check upheld the mechanism trace:
+the pre-gate's msg.needs_review bail is policy-broader, not information-richer (all 13 engine.py
+_needs_review writers persist a validation_note; rows insert synchronously before the gate —
+ordering PINNED). Census split ruled the policy: 49/51 parked-eligible docs were EMPTY-OPTIONAL-only
+(vat_no/po_ref/account_no @0), 0 valued-below, 0 empty-required. RULINGS: (1) FILE the
+empty-optional class — a blank optional files blank, not wrong; a human Confirm files the identical
+blank; conditional on T2 (missing-required predicate refusal, exact mirror of
+missing_required_labels incl. hidden-field + identity exclusions — Oracle C1: a per-sender
+"Never — stop looking" hide must never become the new parking). (2) Valued-below defers to the
+predicate; the docTrustGate unverifiable-value refusal is the fail-closed guard — pin PAIR shipped
+(breaks-shape refused / matches-shape files; classifier semantics discovered en route: spaced
+values classify freetext, <5 samples stay on the non-role lenient path). (3) T3 stamps BOTH machine
+bases (auto_graduated/auto_threshold + trust.js:538 exclusions, unconditional — no historic rows);
+via-NULL machine confirms filling human W-slots is the sweep-incident mechanism at scale. (4) FAR =
+option (i): ALL FIVE isFlagged consumers move to the valued-only tier together (option (ii) trades
+a mysterious park for file-despite-warning). (5) HISTORIC COHORT STAMP BLOCKING FOR THE FLIP:
+165 via-NULL machine files live (90 graduated Ironclad 40/Meadowvale 50 + 75 threshold Bramblewood
+36/Harrowgate 39) — scripts/stamp-machine-autofiles-20260812.js, APPLY verified on a snapshot:
+windows shrink to genuine human volume, ZERO revocations. (6) Sequential auto-file dispatch chain
+(sync commitDocument I/O × 50-90 docs would stall main). (7) Acceptance restated honestly: Oracle's
+~163 assumed trust_shadow_row_skip OFF — VERIFIED ON in the live DB, so the 15 Nordwind are already
+predicate-eligible; the 5 type-election mistypes recur on fresh import (own filed arc). Q5 ruled:
+the 49 machine files skipping saveCorrections hint learning is directionally SAFE (machine files
+feeding learning is what the sweep incident punished; scopes are post-graduation, counts mature).
+Gates: pin suite 33/33 (headline: armed + empty vat_no@0 FILES — parking cannot be silently
+restored); decision-layer A/B 74/74 identical dark-vs-armed, 0 armed-widenings; zero
+extraction-layer changes. Flags autofile_gate_unify + far_lowconf_valued_only, both OFF + toggles.

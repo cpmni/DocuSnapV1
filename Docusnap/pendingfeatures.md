@@ -6,7 +6,18 @@
 
 ---
 
-## 2026-08-12 NIGHT — IMPORT AUTO-FILE PRE-GATE vs THE SHARED PREDICATE: the last two-gate disparity (owner-ordered slice, NOT built)
+## 2026-08-12 NIGHT — IMPORT AUTO-FILE PRE-GATE vs THE SHARED PREDICATE — ✅ BUILT DARK `83dc89e` (same night, gary+eric → Oracle SIGN-OFF-W/COND; see docs/oracle_log.md 2026-08-12 NIGHT)
+**Shipped:** flags `autofile_gate_unify` (T1 pre-gate defers to predicate + T2 missing-required
+refusal + T3 auto_graduated/auto_threshold via stamps) and `far_lowconf_valued_only` (all five
+isFlagged consumers → valued-only tier), both OFF + toggles; pin suite
+`test_import_autofile_gate.js` 33/33; census instrument `stress_test/census_parked_eligible.js`
+(live BEFORE: 51/74 parked-eligible, 49 = empty-optional-only). **FLIP BLOCKED on the historic
+cohort stamp (Oracle): run `scripts/stamp-machine-autofiles-20260812.js` APPLY=1 app-closed,
+owner-consented — 165 via-NULL machine files; snapshot-verified ZERO revocations.** The
+needs_review trace below is superseded (source-verified: validator.py:960 any-below-threshold leg;
+all 13 engine _needs_review writers persist notes). Original entry kept for context:
+
+## (superseded original) 2026-08-12 NIGHT — IMPORT AUTO-FILE PRE-GATE vs THE SHARED PREDICATE: the last two-gate disparity (owner-ordered slice, NOT built)
 **Symptom (live, owner-hit):** a fresh Castellan import left 20 docs @95 in the queue that
 `trust.isAutoFileEligible` judges ELIGIBLE (trusted scope, floor 95, zero flags, basis graduated) —
 they never auto-filed and nothing re-asks. **Verified mechanism:** `_maybeAutoFile`
