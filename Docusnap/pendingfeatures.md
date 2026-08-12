@@ -6,6 +6,34 @@
 
 ---
 
+## 2026-08-12 NIGHT — NOTE-DEMOTE SLICE 2: the ADJUSTED-TOTAL note (owner exhibit, boundary framework established — build under it)
+**Exhibit (live Nordwind quote 0021-4):** anchor_inline misread 3,864.72; the validator adjusted to
+3,564.72 — the value the TAUGHT MAPPING independently read (crop-side family, matched 'Total (inc
+VAT)' @90) AND the line arithmetic proves (2,970.60 + 594.12 = 3,564.72, reconciles, "mathematically
+verified" badge shown) — yet "adjusted to the total that balances against the line amounts — please
+verify" stands and blocks auto-file. **Build under the Oracle boundary ruled 2026-08-12 NIGHT
+(oracle_log entry 3):** (1) hoist the validator's adjusted-total note to a shared constant,
+write-site opt-in, EXACT-equality eligibility; (2) witnesses = the crop-side mapping ledger read
+(un-noted, >=80, the B3 bars) AND the reconcile's own arithmetic verdict — genuinely independent
+families; (3) conf never minted; dissent (the pre-adjustment misread) into note_demoted; B1
+recompute at the call site (reuse the shipped block). Money, not dates — so the B2 date-only ruling
+does NOT auto-extend: own gary+Oracle pass required (the money floors + graduated-scope exposure
+differ). Same flip bar: demoted-and-wrong = 0.
+
+## 2026-08-12 NIGHT — MACHINE AUTO-FILES FEED THE NAME LEXICON/VALUE-COUNTS (found via the Quillstone poison; own arc, NOT built)
+**Mechanism (provenance-verified):** a conf-100 machine auto-file of a GARBLED read becomes
+status='confirmed' and feeds getFieldFormats value_counts -> the 4.5 name lexicon, dominance
+buckets, CONFADOPT counts. Live damage: 'Quilistone' x3 + 'Quiltstone' x1 auto_threshold confirms +
+'Branblewood' x3 auto_graduated echoes diluted the Quillstone customer lexicon to doc_freq 0.888 <
+the 0.9 STRONG bar — the machine's own mistakes disarmed the repair that would have fixed them
+(the T3/window-exclusion principle one level down: the route manufactures the evidence it
+consumes). Design question: exclude (or down-weight) machine-confirmed rows (confirmed_via IN the
+sentinel set) from getFieldFormats value_counts/lexicon inputs — precedent: CONFADOPT B3 already
+excludes '+confirmed_adopt' rows unconditionally. BLAST RADIUS: every learning consumer (formats,
+shapes, noise profiles, corrector indices) — needs gary census (how much learning volume is
+machine-derived now that auto-file volume is real) + Oracle. Interim mitigation: the
+repair-poison-name-confirms remediation script (shipped, owner-consented APPLY owed).
+
 ## 2026-08-12 NIGHT — IMPORT AUTO-FILE PRE-GATE vs THE SHARED PREDICATE — ✅ BUILT DARK `83dc89e` (same night, gary+eric → Oracle SIGN-OFF-W/COND; see docs/oracle_log.md 2026-08-12 NIGHT)
 **Shipped:** flags `autofile_gate_unify` (T1 pre-gate defers to predicate + T2 missing-required
 refusal + T3 auto_graduated/auto_threshold via stamps) and `far_lowconf_valued_only` (all five
