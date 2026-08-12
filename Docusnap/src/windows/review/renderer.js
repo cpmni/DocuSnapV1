@@ -8058,8 +8058,23 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
       box.append(title, input, msg, row);
       ov.append(box);
       document.body.append(ov);
-      // Auto-focus + widget-focus repair so the password box takes keystrokes without an alt-tab.
-      (window.repairModalInputFocus || ((el) => el.focus()))(input);
+      // Auto-focus, the FULL proven pattern (owner-reported "quite common" no-caret on this
+      // dialog, 2026-08-12). The old one-liner focused on the SAME TICK as the append — Chromium
+      // drops that — and never armed the page-focus repair, so on a desynced page (the Review
+      // window right after an OCR spawn / native dialog — the usual state when someone reaches
+      // for SFDEV) the box showed no caret and keystrokes went to <body> until an alt-tab.
+      // Mirrors the two proven sites (:781 new-type modal, :3825 draw-commit input): defer to the
+      // next frame, focus synchronously, arm + drive the page-focus edge, then re-assert the
+      // caret past the cross-process transition. Click-to-focus stays as the manual fallback.
+      requestAnimationFrame(() => {
+        try {
+          input.focus();
+          window.docusnap.markFocusSuspect?.();
+          window.docusnap.ensureWindowFocus?.();
+          window.repairModalInputFocus?.(input);
+        } catch { try { input.focus(); } catch {} }
+      });
+      input.addEventListener('mousedown', () => { try { input.focus(); } catch {} });
     });
   }
 })();
