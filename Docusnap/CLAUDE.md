@@ -21,7 +21,57 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-13: **READ `HANDOVER_2026-08-13.md` FIRST.** The NIGHT2 queue EXECUTED:
+## ⏭ LATEST — 2026-08-13 NIGHT: **READ `HANDOVER_2026-08-13_NIGHT.md` FIRST.** HEAD **`53db7eb`**,
+PUSHED. Owner ordered the slice-3 B2 gate, then slept; the Chris round ran autonomously. **No flag
+flipped, no live-DB write, no migration (63), NO production code changed.**
+**(1) THE SLICE-3 ORACLE B2 GATE IS BUILT AND RUN** (`1766c62`, new
+`stress_test/name_demote_b2_gate.js`): 914 replayable docs, OFF vs ARMED, import path, 200 DPI,
+slice 2 armed in both arms. **demoted-and-wrong at DOC level = 0 · collateral 0 · class rate 2/914,
+both correct · census 0 declines.** Not vacuous — it resolves corpus GT for 1335/1336 docs and
+scores 124 of the 914 as wrong in BOTH arms. **A2 = YES:** no conf is minted so the field stays at
+70, but the review threshold is `< 70` (documents.js:209) so 70 does NOT trip
+`below_threshold_valued_count` — both docs go `flagged → auto-file ELIGIBLE`; and with
+`autofile_gate_unify` ON, `_maybeAutoFile` defers to the predicate, so Python saying
+`needs_review:true` does NOT hold them. **Releasing this note FILES the document.** **B2 clause 1 is
+NOT met** — the #259 shape is absent from the corpus, so the gate spoils a released doc's ref
+(unnoted, same conf) and re-asks the real predicate: **STILL ELIGIBLE, nothing else holds it.** The
+"or the census must catch it" branch IS met by SHIPPED code (`note_demoted` persists in
+`extractions.corroboration`). `name_corrob_note_demote` stays OFF — owner + an Oracle read of the
+counterfactual.
+**(2) THE BIGGER FINDING — `realdoc_regression.js` HAS NEVER RUN THE APP'S FLAGS.** handler.js
+spawns with `_autoTitleEnv + _ocrDpiEnv + _anchorCropEnv + _reconcileEnv` (:2008-2014) = **63 env
+vars** here; realdoc passes NONE. Stack that on realdoc replaying **CONFIRMED docs only** and on
+`--reprocess-manifest` **modelling REPROCESS** (Stage 0.5 answers before a Stage-2 noting rung can
+fire) = three blinders. **That artefact produced the recorded "the note does not re-form on harness
+replay — import-batch-specific" claim for BOTH slice 2 and slice 3.** Clear all three and both
+classes fire on the FIRST document, on the owner's own exhibits (slice 2's total 3,864.72→3,564.72
+demote and slice 1's date demote both captured). Struck in `pendingfeatures.md`. realdoc gained
+**`RR_APP_ENV=1`, DEFAULT OFF** (it changes every historical baseline in that file). **OWED and now
+possible: a slice-2 OFF-vs-ON arm over the same 914 docs** — slice 2's "evidence complete" verdict
+rested on the struck claim.
+**(3) CHRIS ROUND 4** (`53db7eb`, `docs/CHRIS_FULL_APP_REVIEW_2026-08-13.md`; sandbox left on CDP
+9223 PID 16240). FIXED since round 3: Processing 63→24 toggles in plain English · junk-fragment
+company suggestion gone · Split PDF speaks · a "type it as printed" box on the dead-end panel.
+**UNCHANGED: the teach surface says NOTHING on success or failure** — and this round it cost real
+files. **VERIFIED IN THE SANDBOX DB: a teach OVERWRITES a template's FROZEN identity value**
+(`template_fields.fixed_value='B8ramblewood Joinery Ltd'`, `is_variable=0`), which then stamped **20
+Quillstone POs via `template_fixed` at 95 with an EMPTY validation_note**; 20 confirmed, **12 filed
+to disk** under the misspelling, and the garble became a learning SCOPE key. **The catching signal
+is NEAR-MATCH TO A KNOWN COMPANY, not name shape** — `B8ramblewood Joinery Ltd` passes any
+plausibility check by construction, so `teach_issuer_plausibility_warn` is the wrong instrument for
+this class. **DO NOT chase his "40 docs under the owner's company at 95% with the owner's VAT" as a
+regression: `seed-taught-state.js` grafts exactly ONE template and which one is ARBITRARY** — round
+4 drew live template 13 (Bramblewood/purchase_order, `supplier_name`+`vat_no` frozen), i.e. the
+KNOWN still-open buyer-issued class; round 3 drew a different row. Same cause inflates his 188-vs-147
+and 19-vs-5 counts. **Record which template grafts every round or the comparison is not one.** Also
+new: teaching one field silently empties two others · "Empty bin" promises to delete filed PDFs and
+doesn't · File All Ready has no count and no summary · credit notes type as Invoices while the fix
+switch ships OFF · stale recycle bin (he counted ZERO swallowed dialogs). He praised the approval
+workflow end to end and the practice run — which says *"Read 'INV-1042' from your box"* every time,
+the exact sentence the real teach has never said. Verdict slipped: round 3 *"without a condition
+attached to my documents' safety"* → round 4 *"the condition is back on."* NOTHING IMPLEMENTED.
+
+### Prior — 2026-08-13: **READ `HANDOVER_2026-08-13.md`.** The NIGHT2 queue EXECUTED:
 HEAD **`e752b95`** PUSHED, 3 commits, zero SEND BACKs (gary ×3 → Oracle ×3, all W/COND applied).
 **Slice-1 date-demote owed gates CLOSED** (live 5/5 correct + 200-DPI targeted arm fired 6 demotes
 byte-identical — flip bar demoted-and-wrong=0 met; the first armed arm was VACUOUS: realdoc runs
