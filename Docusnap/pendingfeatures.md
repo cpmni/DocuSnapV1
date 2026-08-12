@@ -6,6 +6,37 @@
 
 ---
 
+## 2026-08-12 EVE — TYPE ELECTION: address caption 'bill to' outvotes the printed CREDIT NOTE title (traced, design ready, NOT built)
+**Owner-reported disparity: import types Meadowvale `-2` credit-note pages as INVOICE; a straighten-reprocess flips them to credit_note.**
+Traced end-to-end (agent FINDINGS: scratchpad session 30ca4b35 `disparity\FINDINGS.md`; both premises REFUTED —
+title never dropped, heading flags played no role, threading identical). Mechanism, all FACT-labelled:
+`config/keyword_patterns.json` Invoice bucket contains the ADDRESS caption `'bill to'`; on tilted scans it OCRs
+alone on its own line → passes the strict whole-line heading test (`keyword.py:946`) → 2× + `head=True` ⇒ Invoice
+~6.0 conf 90 heading=TRUE, while 'CREDIT NOTE' shares its row with the letterhead and the column-aware heading
+test checks only the LEFTMOST segment (`keyword.py:943`) ⇒ mention-only ~5.7; 3 of 5 were EXACT TIES and `max()`
+takes config insertion order = Invoice (`keyword.py:965`). The trusted wrong heading then pre-gates OFF all
+heading re-read rungs + `REPROCESS_HEADING_GEOM` (`process_docs.py:573/:598/:628/:668`) and makes
+`identify_template` REFUSE the credit_note template ("Couldn't match … saved Invoice layout", `engine.py:8118`).
+Deterministic per route; plain reprocess can NEVER self-heal (cached text pins the election — arm B); only
+deskew re-reads (arm C byte-matches live #609's flip). **Fix design (own advisor+Oracle gate before build):**
+(1) address-block captions (`bill to`, `billed to`, …) mention-only — never heading-eligible (alone heals all 5);
+(2) heading test checks EVERY column segment, not seg0; (3) tie-break prefers the heading-backed candidate over
+config order. **Gate: full-corpus TYPE census, M=0 outside the healed class.** Wrong layers (do not build):
+heading rungs, template refuse, threading, DPI, deskew.
+
+## 2026-08-12 EVE — LIVE-DATA REMEDIATION of the 101 sweep-filed docs (OWED, owner-vetted, app closed)
+Shipped `0177716` fixes the DOOR (consent bar); the DATA is still wrong: the 12:36:29-46 UTC cohort (101 docs,
+audit `review_confirmed` burst) sits with `confirmed_via` NULL under the human username — INFLATING human
+graduation windows across every touched scope while corroboration_autofile + floor-95 flips are LIVE, and their
+`saveCorrections` hint learning ran (usage counts polluted; CONFADOPT ≥5× literal counts suspect — Oracle catch).
+Plan (Oracle-ordered, AFTER `0177716` is running): backup live DB → stamp the cohort
+`confirmed_via='auto_reprocess'` (NEVER 'scope_sweep' — the Undo-all mass-revert path is via-checked,
+`handler.js:3001`) → re-measure scopeTrust on affected scopes → THEN run the owed censuses (pin-discharge /
+CONFADOPT / shadow-attribution) treating this cohort as suspect. Hint-usage rollback = owner decision (list the
+101 filed paths for spot-check; they never entered `recent_auto_filed`, so the banner cannot re-surface them).
+
+---
+
 ## 2026-08-12 — PLAUSIBLE-WORD NAME GARBLE vs DOMINANT LITERAL: why was the Lid→Ltd repair silent? (owner-reported, NEXT ARC — root-cause FIRST)
 
 **Exhibit (post-reprocess Meadowvale credit_note 0011):** customer = 'Bramblewood Joinery **Lid**'
