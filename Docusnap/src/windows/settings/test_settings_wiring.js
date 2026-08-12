@@ -142,6 +142,7 @@ const SETTING_SWITCHES = [
   // the same key for isFlagged).
   ['autofile-gate-unify-toggle', 'autofile_gate_unify', 'database/modules/trust.js'],
   ['far-valued-only-toggle', 'far_lowconf_valued_only', 'database/modules/documents.js'],
+  ['shadow-stale-drop-toggle', 'reprocess_shadow_stale_drop', 'src/modules/processing/handler.js'],
   // Graduation issuer freeze: a JS-main-process BIRTH decision — graduationTemplate.js reads the
   // key itself (the module's own _enabled precedent); no Python leg exists.
   ['graduation-freeze-issuer-toggle', 'graduation_freeze_issuer', 'database/modules/graduationTemplate.js'],

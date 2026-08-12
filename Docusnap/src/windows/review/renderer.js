@@ -7540,7 +7540,7 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
     // sliceMap[field][stage] = [ {kind, bbox, page}, ... ] — links candidates to page regions
     const sliceMap = {};
     const get = (f) => {
-      if (!byField.has(f)) byField.set(f, { merges: [], rejects: [], transforms: [], validations: [], final: null, reconcile: null });
+      if (!byField.has(f)) byField.set(f, { merges: [], rejects: [], transforms: [], validations: [], final: null, reconcile: null, steps: [] });
       return byField.get(f);
     };
     for (const ev of events) {
@@ -7550,6 +7550,12 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
       if (ev.event === 'reconcile') { if (ev.total_key) get(ev.total_key).reconcile = ev; continue; }
       if (ev.field == null) continue;
       if (ev.event === 'merge') get(ev.field).merges.push(ev);
+      // Every-step ladder rows (owner demand 2026-08-12: "I need to ALWAYS see keyword with
+      // either the keyword or a reason it wasn't used"). The engine already emits ONE `step`
+      // event per configured field per read stage (won/lost/no_candidate/already_resolved/
+      // skipped — engine.py _trace_steps); the dev-inspector consumed them but THIS console
+      // dropped them, so a field whose keyword rung found nothing showed no keyword row at all.
+      else if (ev.event === 'step') get(ev.field).steps.push(ev);
       else if (ev.event === 'anchor_reject') get(ev.field).rejects.push(ev);
       else if (ev.event === 'transform') get(ev.field).transforms.push(ev);   // Stage 2.5 denoise/correct
       else if (ev.event === 'validation') get(ev.field).validations.push(ev);  // Stage 4/4.5 normalise/flag/withhold
@@ -7648,7 +7654,7 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
       return;
     }
     elEmpty.hidden = true;
-    const EMPTY_M = { merges: [], rejects: [], transforms: [], validations: [], final: null, reconcile: null };
+    const EMPTY_M = { merges: [], rejects: [], transforms: [], validations: [], final: null, reconcile: null, steps: [] };
     const blocks = [];
     for (const field of orderedFields) {
       const m = byField.get(field) || EMPTY_M;
@@ -7670,6 +7676,27 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
             : (c.vs && c.vs.value != null ? `lost — superseded by "${shown(c.vs.value)}"` : 'lost — superseded');
         }
         rows.push(cand(STAGE_LABEL[c.stage] || c.stage, c.value, c.confidence, c.method, won ? 'won' : 'lost', won ? '' : reason, pickSlice(field, c.method, c.geom), rxBadge(field, c.value), anchorSlice(field), field, c.caption));
+      }
+      // EVERY READ STAGE IS VISIBLE (owner demand 2026-08-12): a stage with no merge row still
+      // gets a line — the engine-declared `step` outcome with its reason ("no keyword pattern
+      // matched this field" / "skipped: no anchors learned…" / "already resolved by X"). won/lost
+      // steps are skipped here — the merge rows above already carry them with full detail.
+      {
+        const mergedStages = new Set(m.merges.map(c => c.stage));
+        const stepRows = [];
+        for (const st of (m.steps || [])) {
+          if (!st.stage || mergedStages.has(st.stage)) continue;
+          if (st.outcome === 'won' || st.outcome === 'lost') continue;   // merge rows own these
+          if (stepRows.some(x => x.stage === st.stage)) continue;        // one line per stage
+          stepRows.push(st);
+        }
+        for (const st of stepRows.sort((a, b) => (STAGE_ORDER[a.stage] ?? 9) - (STAGE_ORDER[b.stage] ?? 9))) {
+          const lbl = STAGE_LABEL[st.stage] || st.stage;
+          const txt = st.outcome === 'already_resolved'
+            ? `already resolved${st.value != null ? ` — kept ${escHtml(shown(st.value))}` : ''}${st.reason ? ` (${escHtml(st.reason)})` : ''}${st.by ? ` by ${escHtml(st.by)}` : ''}`
+            : `${st.outcome === 'skipped' ? 'skipped' : 'no candidate'} — ${escHtml(st.reason || 'this stage produced nothing for this field')}`;
+          rows.push(noteRow(lbl, txt, 'skip'));
+        }
       }
       for (const r of m.rejects) {
         // A rejected rung IS keyed by its method (e.g. "anchor_crop") — show the

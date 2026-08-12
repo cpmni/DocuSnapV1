@@ -1007,6 +1007,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Let a reprocess clear out stale hidden working figures</div>
+                <div class="threshold-sub">The maths check sometimes keeps an old hidden working figure (like a VAT amount misread from the letterhead's VAT registration number) even after a reprocess reads the page correctly — so a fixed document keeps failing its "adds up" check forever. On, a reprocess drops any hidden working figure the fresh read no longer produces. Values you corrected yourself are never touched. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="shadow-stale-drop-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">"File All Ready" files documents whose only note is a blank optional field</div>
                 <div class="threshold-sub">The orange "low confidence" check only counts fields that actually read a value. A document whose optional fields simply came back empty shows as ready and files with File All Ready; anything with a warning or a weak <em>valued</em> read still waits for you. Off by default.</div>
               </div>

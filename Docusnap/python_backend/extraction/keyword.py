@@ -1615,15 +1615,57 @@ def _vat_identifier_tail(tail: str) -> str | None:
     if not m:
         return None
     groups = [g for g in re.split(r'[ \-]', m.group('digits')) if g]
-    if sum(len(g) for g in groups) < _VAT_ID_MIN_DIGITS:
-        return None
-    if len(groups) == 1:
-        return 'unbroken'                             # one run, >= 9 digits — never an amount
-    if any(len(g) != 3 for g in groups[1:]):
-        return 'grouping'
-    if m.group('cc'):
-        return 'country'
-    return 'keyword' if had_keyword else None
+
+    def _legs(gs):
+        """The shipped leg ladder, unchanged, over a group list."""
+        if sum(len(g) for g in gs) < _VAT_ID_MIN_DIGITS:
+            return None
+        if len(gs) == 1:
+            return 'unbroken'                         # one run, >= 9 digits — never an amount
+        if any(len(g) != 3 for g in gs[1:]):
+            return 'grouping'
+        if m.group('cc'):
+            return 'country'
+        return 'keyword' if had_keyword else None
+
+    first = _legs(groups)
+    if first:
+        return first
+    # GARBLE-TOLERANT SECOND PASS (2026-08-12 NIGHT — the Pelican live miss; reggie-vetted, his
+    # three narrowings applied). One OCR speckle inside the registration run ('VAT GB 774 20!
+    # 2093 55' — the '!' is noise on the page's own '2093') truncated the regex run at '774 20'
+    # = 5 digits, under the 9-digit floor, so the guard stayed SILENT and '2093 55' was minted
+    # into a 2093.55 tax amount downstream — the exact class this guard ships to stop.
+    # SECOND CHANCE, NEVER A REPLACEMENT (reggie BLOCKING): the shipped legs above ran first on
+    # the regex's own groups, so a verdict the shipped guard reaches can never be un-reached by
+    # the walk (his exhibit: 'VAT 651002784 ! 123' — extending would flip 'unbroken' to silent).
+    # The walk continues past the regex's stop point: in-token speckle is stripped ('20!' → 20,
+    # unlimited — the exhibit's own shape); ONE standalone pure-punctuation token may be stepped
+    # over (bounding table rules / dot leaders out); a COMMA-GROUPED token (\d,\d) BREAKS — comma
+    # grouping is the MONEY signature the separator class deliberately excluded, and the strip
+    # would otherwise erase that distinction ('VAT 123,456,789', a 9-digit whole-pound amount);
+    # any lettered token ends the run (confusable folding is ocr_corrector's job). A second-pass
+    # verdict is suffixed '+walk' so the vat_reg_skip trace stays diagnostic (Oracle C5).
+    _rest = (tail[lead.end():] if lead else tail)[m.end():]
+    ext = list(groups)
+    _skips = 0
+    for _tok in _rest.split():
+        if re.search(r'\d,\d', _tok):
+            break                         # comma-grouped digits = money, never an identifier
+        _core = re.sub(r'[^0-9A-Za-z]+', '', _tok)
+        if not _core:
+            _skips += 1
+            if _skips > 1:
+                break                     # one speckle token only — never stitch across a table
+            continue
+        if _core.isdigit() and len(ext) < 7:      # mirror the regex's own {0,6} group bound
+            ext.append(_core)
+            continue
+        break                             # a word / letter-garbled group ends the identifier run
+    if len(ext) == len(groups):
+        return None                       # walk added nothing — same abstain as shipped
+    second = _legs(ext)
+    return (second + '+walk') if second else None
 
 
 # RC1 SLICE 2 guards (2026-07-10) — a SEEDED custom FREE-TEXT field (role_caption='party')

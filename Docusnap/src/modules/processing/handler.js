@@ -809,6 +809,23 @@ function cleanupFiles(files) {
 //   - noteText is planted on the new type's ref-field row (fallback: first row with a
 //     value, then first row) so the flip is explained in Review AND blocks auto-file
 //     (isAutoFileEligible refuses any doc carrying a validation_note — condition 3).
+// C5 read pattern (trust.js _shadowRowSkipEnabled precedent): env wins both directions for
+// harness arms; the setting is the product truth; no DB handle here so the setting is read
+// through the module-scoped db at call time by the wrapper below (mergeReprocessRows is a PURE
+// function — it must stay DB-free for its unit battery, so the flag resolves via env or the
+// injected global).
+function _shadowStaleDropEnabled() {
+  const env = process.env.REPROCESS_SHADOW_STALE_DROP;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try {
+    const learning = require('../../../database/modules/learning');
+    const db = _mergeFlagDb;
+    return !!db && learning.getSetting(db, 'reprocess_shadow_stale_drop', 'false') === 'true';
+  } catch { return false; }
+}
+let _mergeFlagDb = null;   // set by applyReprocessResult before merging; pure tests leave it null
+
 function mergeReprocessRows(existing, newRows, flip = null, onTrace = null, hiddenKeys = null) {
   const existingMap = {};
   for (const e of existing) existingMap[e.field_key] = e;
@@ -859,6 +876,23 @@ function mergeReprocessRows(existing, newRows, flip = null, onTrace = null, hidd
     if (!newFieldKeys.has(ex.field_key) && ex.display_value) {
       if (flip && !flip.newTypeKeys.has(ex.field_key)) {
         trace(ex.field_key, 'dropped_stale_type', ex.display_value, null);
+        continue;
+      }
+      // REPROCESS_SHADOW_STALE_DROP (designed 2026-08-07, built 2026-08-12 NIGHT off the live
+      // Pelican exhibit; DEFAULT OFF + toggle). A shadow_reconcile row is MACHINE WORKING DATA
+      // (excluded from learning, deleted at confirm, never a filing input) minted purely to back
+      // the totals check. When a reprocess produces NO row for that role — e.g. the vat_reg
+      // guard now correctly refuses the letterhead registration number the old run minted as a
+      // 2093.55 tax — carrying the stale row forward re-poisons the reconciliation forever: the
+      // fix can never reach an already-poisoned doc through reprocess. Armed, the stale shadow
+      // row is DROPPED so the doc's maths reflect THIS run's reads. A row the operator corrected
+      // (corrected_to) is human data and is NEVER dropped. The realdoc harness runs fresh
+      // extraction and is structurally blind to this merge — the unit battery is the gate
+      // (the REPROCESS_ANNOTATED_EMPTY_WINS precedent, Oracle 2026-08-08).
+      if (String(ex.extraction_method || '') === 'shadow_reconcile'
+          && !String(ex.corrected_to || '').trim()
+          && _shadowStaleDropEnabled()) {
+        trace(ex.field_key, 'dropped_stale_shadow', ex.display_value, null);
         continue;
       }
       mergedRows.push({
@@ -2276,6 +2310,7 @@ function register(ctx) {
       }
     } catch { /* resolver failure ⇒ no drop ⇒ today's behaviour */ }
 
+    _mergeFlagDb = db;    // stale-shadow-drop flag resolves against THIS db (pure tests leave it null)
     const mergedRows = mergeReprocessRows(existing, newRows, flip, _emitMerge, _hiddenKeys);
 
     const learning = require('../../../database/modules/learning');

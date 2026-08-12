@@ -766,6 +766,9 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // Review renderer own far_lowconf_valued_only. No _reconcileEnv leg.
                          ['autofile-gate-unify-toggle', 'autofile_gate_unify'],
                          ['far-valued-only-toggle', 'far_lowconf_valued_only'],
+                         // Stale shadow-row drop on reprocess (2026-08-12 NIGHT, the Pelican
+                         // re-poison exhibit): processing/handler.js reads the key at merge time.
+                         ['shadow-stale-drop-toggle', 'reprocess_shadow_stale_drop'],
                          // A corroborated total is no longer capped when the only disagreeing
                          // operands are invisible shadow reads (Oracle W/COND ×5, 2026-08-12).
                          ['shadow-attrib-toggle', 'reconcile_shadow_attribution'],

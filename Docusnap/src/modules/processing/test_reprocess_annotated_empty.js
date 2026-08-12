@@ -174,6 +174,46 @@ console.log('\n§7 PIN — mergeReextractRows untouched (Oracle C3, fill-only la
   check('annotated-empty fast result → no suggestion', !sugg || !sugg.supplier_name);
 }
 
+console.log('\n§8 PIN — REPROCESS_SHADOW_STALE_DROP (built 2026-08-12 NIGHT, the Pelican re-poison exhibit):');
+{
+  // A stale shadow_reconcile row (the vat-reg 2093.55 mint) whose field the fresh run no longer
+  // produces: DARK = carried forward (today's behaviour, the doc stays poisoned); ARMED = dropped
+  // so the maths reflect THIS run's reads. A row the operator corrected is human data — never
+  // dropped, either way.
+  const shadowRow = { field_key: 'vat_tax', raw_value: '2093.55', display_value: '2093.55',
+                      confidence: 90, extraction_method: 'shadow_reconcile',
+                      validation_note: null, corrected_to: null };
+  const freshRows = [{ field_key: 'total', raw_value: '11,052.96', display_value: '11,052.96',
+                       confidence: 94, extraction_method: 'template_mapping',
+                       validation_note: null, corrected_to: null }];
+  delete process.env.REPROCESS_SHADOW_STALE_DROP;
+  const dark = merge([shadowRow], freshRows, null, null);
+  check('DARK: stale shadow row carried forward (byte-identical today)',
+        dark.some(r => r.field_key === 'vat_tax' && r.display_value === '2093.55'));
+  process.env.REPROCESS_SHADOW_STALE_DROP = '1';
+  const traces = [];
+  const armed = merge([shadowRow], freshRows, null, (f, d) => traces.push(`${f}:${d}`));
+  check('ARMED: stale shadow row DROPPED', !armed.some(r => r.field_key === 'vat_tax'));
+  check('ARMED: drop is traced (dropped_stale_shadow)', traces.includes('vat_tax:dropped_stale_shadow'));
+  const armedCorr = merge([{ ...shadowRow, corrected_to: '1,842.16' }], freshRows, null, null);
+  check('ARMED: an operator-corrected shadow row is NEVER dropped (human data sacred)',
+        armedCorr.some(r => r.field_key === 'vat_tax'));
+  const armedFresh = merge([shadowRow],
+    freshRows.concat([{ field_key: 'vat_tax', raw_value: '1,842.16', display_value: '1,842.16',
+                        confidence: 90, extraction_method: 'shadow_reconcile',
+                        validation_note: null, corrected_to: null }]), null, null);
+  check('ARMED: a field the fresh run DID produce uses the new read (used_new path, not the drop)',
+        armedFresh.some(r => r.field_key === 'vat_tax' && r.display_value === '1,842.16'));
+  const armedNonShadow = merge([{ ...shadowRow, extraction_method: 'keyword' }], freshRows, null, null);
+  check('ARMED: a NON-shadow row is untouched by the drop (carried as today)',
+        armedNonShadow.some(r => r.field_key === 'vat_tax'));
+  process.env.REPROCESS_SHADOW_STALE_DROP = '0';
+  const killed = merge([shadowRow], freshRows, null, null);
+  check('env =0 kills the drop even if the setting were on (harness both-directions)',
+        killed.some(r => r.field_key === 'vat_tax'));
+  delete process.env.REPROCESS_SHADOW_STALE_DROP;
+}
+
 console.log('');
 if (fails) { console.log(`FAILED: ${fails} check(s)`); process.exit(1); }
 console.log('ALL PASS');

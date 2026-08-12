@@ -177,6 +177,43 @@ finally:
         os.environ['VAT_REG_NOT_AMOUNT'] = _prev
 
 
+print('\n== GARBLE-TOLERANT RUN (2026-08-12 NIGHT — the Pelican live miss) ==')
+# One OCR speckle inside the registration run truncated the regex digit run at 5 digits (< the
+# 9 floor) and the guard stayed SILENT: doc 1061's letterhead read 'VAT GB 774 20! 2093 55' and
+# '2093 55' was minted to a 2093.55 tax amount, failing total reconciliation on a CORRECT doc.
+# The token walk now steps over pure-punctuation speckle and keeps counting digit groups.
+GARBLED = '82 Wharfside Business Park    thaven,    EH113PL VAT GB 774 20! 2093 55'
+check('speckled registration run is still recognised — guard fires (live doc 1061 verbatim)',
+      vat_of(GARBLED, on=True) is None, f'got {vat_of(GARBLED, on=True)!r}')
+check('dark stays byte-identical on the same text (the mint still happens with the guard off)',
+      vat_of(GARBLED, on=False) is not None)
+# A letter-garbled group ('2O93', O for 0) deliberately ENDS the run — conservative, the guard
+# abstains rather than guessing; the money veto (a real dd.dd anywhere) still always wins.
+check('letter-garbled group ends the run (guard abstains, no over-reach)',
+      vat_of('VAT GB 774 2O93 55', on=True) is not None)
+check('money veto still outranks the walk (a cents group anywhere → never fire)',
+      vat_of('VAT 774 20! 2093 55 total £12.34', on=True) is not None)
+# reggie BLOCKING (2026-08-12): the walk is a SECOND CHANCE, never a replacement — a verdict the
+# shipped legs reach on the regex's own groups must survive a garbled continuation. His exhibit:
+# extending ['651002784'] with '123' would flip the 'unbroken' leg silent and re-admit the mint.
+check("two-pass: shipped 'unbroken' verdict survives trailing garble (never un-fired by the walk)",
+      vat_of('VAT 651002784 ! 123', on=True) is None)
+# reggie narrowing 2+3 pinned on the PREDICATE directly (the end-to-end extractor happens to
+# read nothing from these constructed lines even with the guard silent, so vat_of can't
+# distinguish "guard fired" from "nothing minted" — the predicate call can).
+check('comma-grouped 9-digit whole-pound amount: predicate abstains (comma = money signature)',
+      keyword._vat_identifier_tail(' 123,456,789') is None)
+check('comma-grouped rate-band summary row: predicate abstains',
+      keyword._vat_identifier_tail(' 1,234 2,468 3,702') is None)
+check('table-rule separated columns: predicate abstains (never stitched into an identifier)',
+      keyword._vat_identifier_tail(' 123 456 -- 789 012') is None)
+check('the live 1061 tail fires on the SECOND pass with the +walk trace suffix',
+      keyword._vat_identifier_tail(' GB 774 20! 2093 55') == 'grouping+walk')
+# Rate decoration + reg number on one line: the shipped first pass already fires ('2093' ≠ 3).
+check('reg number followed by a rate decoration still fires on the FIRST pass',
+      vat_of('VAT GB 774 2093 55 @ 20%', on=True) is None)
+
+
 def main():
     print(f'\n{"-" * 68}')
     if FAILURES:
