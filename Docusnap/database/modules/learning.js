@@ -1290,6 +1290,14 @@ function getFieldFormats(db, opts) {
       -- Never learn from SHADOW reconciliation reads: they back the "verified" total check
       -- for fields the type doesn't define, and are unconfirmed by the user.
       AND (e.extraction_method IS NULL OR e.extraction_method <> 'shadow_reconcile')
+      -- Never learn from CONFIRMED-DOMINANT ADOPTIONS (Oracle B3, 2026-08-12): the adopted value
+      -- IS the learned dominant, so counting it would let dominance vote for itself — machine
+      -- echoes would lock the literal in past a real-world change and permanently mask emerging
+      -- variety (the strict variability clause could never see a genuine second value). A human
+      -- EDIT of an adopted value changes the method via corrections and re-enters learning
+      -- normally. Unconditional (confirmed_via cannot separate graduated machine files from
+      -- humans — both stamp NULL).
+      AND (e.extraction_method IS NULL OR e.extraction_method NOT LIKE '%+confirmed\\_adopt' ESCAPE '\\')
     ORDER BY d.confirmed_at DESC, d.id DESC
   `).all();
 

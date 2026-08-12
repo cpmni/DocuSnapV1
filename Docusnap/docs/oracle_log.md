@@ -1439,3 +1439,30 @@ natural-read notes + trust floors. Pins: test_supplier_pin.py +11 · test_suppli
 5 pins) · Learning-Repair currency magnitude exclusion (both detectors, 4 pins) · containment
 predicate substantial_containment (INERT, reggie spec, 10 pins). Build order standing: freeze →
 backfill → discharge census.
+
+## 2026-08-12 — CONFIRMED_DOMINANT_ADOPT (owner: "minimise interaction where positive confirmation exists"): SIGN OFF W/COND B1-B5, BUILT DARK same day
+gary root cause: Stage-2.5d snap QUADRUPLE-SEALED on exhibit A (name-field skip :7009, method skip
+:7010, single-token+digit index gate ocr_corrector.py:424-425, ≤1-confusion distance :388-402);
+exhibit B (account number in customer) is a wrong-SOURCE grab beyond any distance corrector. Right
+layer = terminal step `_adopt_confirmed_dominant`, placed B5: AFTER the corrob build, BEFORE the
+final trace (the inspector must never show the dead junk as final). Oracle rulings: the SECOND
+named _override_eligible carve-out ACCEPTED (docstring amended to name both, "only these two");
+premise-failure note removal ACCEPTED (the note's referent is destroyed — distinct from the
+forbidden corroboration-clears-notes); template_mapping inclusion ACCEPTED (S-A/S-B: the teach
+fixed the POSITION); "files silently" claim CORRECTED (format_anomaly_flagged already counted —
+exhibits open in Review with the right value pre-filled, no picker, no note; that IS the owner's
+win). Conditions applied: B1 adoptee must itself PASS the junk predicates (else picker); B2 the
+field's corroboration record rewritten in-step (memory family, independent_agree False, dead value
+retained as disagreement — _corrobLicensed refuses STRUCTURALLY); B3 `+confirmed_adopt` rows
+excluded from getFieldFormats UNCONDITIONALLY (confirmed_via can't split graduated machine files
+from humans — both NULL; Oracle verified _autoFileDoc stamps 'auto_corroborated' only for the
+corroborated basis. SEPARATE pre-existing gap filed: graduated/threshold auto-files stamping NULL
+count toward the HUMAN graduation window — own arc); B4 STRICT variability pinned (a second
+distinct key at ANY count refuses — the multi-party Bill-To/Ship-To residual's bound); B5
+placement + both stale comments amended. Build's own bug caught by its pins: `"pin" in m`
+matched 'template_maPINg' — the exact substring-consumer trap the rider named. Pins: 22 python
+(both exhibits, all refusal gates, picker-suppression via the :2612 note-gate, OFF byte-identical)
++ 3 JS (B3 with a falsifiable control) + wiring row. Census CONFADOPT_CENSUS_DIR (refusal
+histogram + adopted-and-filed vs adopted-and-held split; run on the LIVE replay too — the corpus's
+customer_name is near-constant by construction and would flatter the residual). FLIP BAR:
+would-adopt-vs-GT 100% — a single wrong would-adopt is a no-flip, full stop.

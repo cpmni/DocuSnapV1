@@ -146,6 +146,9 @@ function _reconcileEnv(db) {
     // Self-discharging operator pins (gary → Oracle W/COND 2026-08-12): a pin whose value the
     // pipeline now reads independently is released on reprocess — natural row kept, pin cleared.
     if (learning.getSetting(db, 'supplier_pin_self_discharge', 'false') === 'true') env.SUPPLIER_PIN_SELF_DISCHARGE = '1';
+    // Confirmed-dominant adoption (Oracle B1-B5, 2026-08-12): a junk-flagged name read is replaced
+    // by the scope's single ≥5×-confirmed literal read on-page — no picker, no confirm demand.
+    if (learning.getSetting(db, 'confirmed_dominant_adopt', 'false') === 'true') env.CONFIRMED_DOMINANT_ADOPT = '1';
     if (learning.getSetting(db, 'crosscheck_outlier_reconcile', 'false') === 'true') env.CROSSCHECK_OUTLIER_RECONCILE = '1';
     if (learning.getSetting(db, 'universal_verify_restore', 'false') === 'true') env.UNIVERSAL_VERIFY_RESTORE = '1';
     if (learning.getSetting(db, 'universal_verify_flag', 'false') === 'true') env.UNIVERSAL_VERIFY_FLAG = '1';

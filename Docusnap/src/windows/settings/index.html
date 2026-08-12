@@ -1000,6 +1000,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Use your confirmed history to fix unreadable names</div>
+                <div class="threshold-sub">When a name field reads as obvious junk (a code, a garble) and every one of your past confirmations for that sender agrees on ONE name (five or more times, never a second value), Scan Finder fills the confirmed name from where it's printed on the page — no "which is correct?" question. Any sender where you've ever confirmed two different values keeps asking. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="confirmed-adopt-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Let a trusted sender's name release your "set by you" holds</div>
                 <div class="threshold-sub">When you set a sender's name on a batch, each document waits for your confirm. With this on, reprocessing a held document releases the hold automatically IF Scan Finder now reads the same name on its own — the document then files (or not) on its own merits, exactly like any other. A document whose reading disagrees with your name keeps waiting. Off by default.</div>
               </div>

@@ -2551,11 +2551,13 @@ class ExtractionEngine:
         """A winner may be reconsidered ONLY if it is a generic/auto source — NEVER
         an authoritative ⊕ anchor, a Stage 0.5 located mapping/registration, or an
         admin label. This is what preserves the committed precedence guarantees.
-        ⚠ ONE named, predicate-bound carve-out exists OUTSIDE this gate (Oracle 2026-08-04):
-        _reconcile_name_truncation may rewrite a Stage-0.5 free-text winner's VALUE — justified
-        solely by C3 page-absence (the drawn box's remnant is provably not printed on the page)
-        + a keyword+crop token-identical witness pair. It is NOT precedent for broad Stage-0.5
-        rewrites; do not add exceptions here."""
+        ⚠ TWO named, predicate-bound carve-outs exist OUTSIDE this gate — and only these two:
+        (1) _reconcile_name_truncation (Oracle 2026-08-04): rewrite justified solely by C3
+        page-absence + a keyword+crop token-identical witness pair. (2) _adopt_confirmed_dominant
+        (Oracle B-conditions 2026-08-12): a junk-flagged name-like read (re-fails the deterministic
+        junk predicates) replaced by an on-page candidate matching the scope's SINGLE confirmed
+        literal at ≥5 human confirms (owner-ruled strict variability clause). Neither is precedent
+        for broad Stage-0.5 rewrites; do not add exceptions here."""
         if incumbent.get('authoritative'):
             return False
         m = incumbent.get('method')
@@ -2684,6 +2686,145 @@ class ExtractionEngine:
                 "confirmed_count": c.get("confirmed_count") or 0,
             } for c in reps[:3]]
         return emit
+
+    def _adopt_confirmed_dominant(self, results, ocr_text, corrob):
+        """CONFIRMED_DOMINANT_ADOPT (owner-directed "minimise interaction where positive
+        confirmation exists"; gary design → Oracle SIGN-OFF-W/COND B1-B5, 2026-08-12; DEFAULT OFF).
+
+        Terminal adoption step — the SECOND named exception to _override_eligible's "never rewrite
+        a Stage-0.5 winner" (see that docstring): when the COMMITTED name-like value is provably
+        JUNK (re-fails the deterministic predicates that flagged it — so accepted_names /
+        authoritative exemptions provably did not apply) and the scope's confirmed history holds
+        EXACTLY ONE distinct value at ≥5 human confirms (owner-ruled STRICT variability clause —
+        any second distinct key at ANY count refuses), adopt the on-page candidate that matches the
+        confirmed literal. Both live exhibits: Ironclad 'Sramblewood Joinery Ltg' garble vs 20×
+        'Bramblewood Joinery Ltd'; Meadowvale account-number-in-customer vs 38×.
+
+        Semantics: the CANDIDATE'S OWN page-read string is adopted (the counts index stores no
+        literals — memory LICENSES a this-page read, it never supplies a value); method gains
+        '+confirmed_adopt' (suffix inherits the base prefix so substring consumers still fire);
+        confidence = min(90, candidate's earned) — NO boost; note dies by PREMISE-FAILURE (the
+        flagged value is REPLACED — distinct from the forbidden corroboration-clears-notes, whose
+        target is a note about a value that stays). B1: the adoptee must itself PASS the junk
+        predicates — else fall to the picker. B2: the field's corroboration record is rewritten
+        HERE — winner_family 'memory', independent_agree False, the dead value retained as a
+        disagreement — so trust.js _corrobLicensed refuses STRUCTURALLY (memory never licenses the
+        corroborated auto-file route). Operator VALUES (override/template_fixed/fixed/pin) are
+        never rewritten; taught POSITIONS are ("the teach fixed the position, not the value" —
+        the S-A/S-B precedent). Refusals fall toward today's picker. Census:
+        CONFADOPT_CENSUS_DIR outcome counter. Pins: tests/test_confirmed_dominant_adopt.py."""
+        if os.environ.get("CONFIRMED_DOMINANT_ADOPT", "0") == "0" and not os.environ.get("CONFADOPT_CENSUS_DIR"):
+            return
+        armed = os.environ.get("CONFIRMED_DOMINANT_ADOPT", "0") != "0"
+        from extraction import wordness
+        _cci  = getattr(self, "confirmed_counts_index", None) or {}
+        _sup  = (results.get("_supplier_name") or "").lower().strip()
+        _slug = (results.get("_document_slug") or "").lower().strip()
+
+        def _census(row):
+            _cdir = os.environ.get("CONFADOPT_CENSUS_DIR")
+            if not _cdir:
+                return
+            try:
+                import json as _json
+                with open(os.path.join(_cdir, "confadopt_census.jsonl"), "a", encoding="utf-8") as _f:
+                    _f.write(_json.dumps(row) + "\n")
+            except Exception:
+                pass
+
+        _CHARSET_MARK = "unexpected characters ("
+
+        def _is_junk(v, note):
+            try:
+                if wordness.ref_bleed(v):
+                    return True
+                if wordness.name_structure_flag(v) is not None:
+                    return True
+            except Exception:
+                return False
+            return bool(note and str(note).startswith(_CHARSET_MARK))
+
+        for key, data in list(results.items()):
+            if key.startswith("_") or not isinstance(data, dict):
+                continue
+            if key == "supplier_name" or not value_quality.is_name_like_field(key):
+                continue
+            note = str(data.get("validation_note") or "")
+            val  = str(data.get("value") or "")
+            if not note or not val:
+                continue
+            m = str(data.get("method") or "")
+            refusal = None
+            # Operator-VALUE methods only — exact/prefix, never bare substring ('pin' ⊂ 'maPINg',
+            # the substring-consumer trap Oracle's rider named; caught by this slice's own pin 1).
+            if ("override" in m or m.startswith("template_fixed") or m == "fixed"
+                    or m == "operator_pin"):
+                refusal = "operator-method"
+            elif not _is_junk(val, note):
+                refusal = "not-junk"
+            elif not (_sup and _slug):
+                refusal = "no-scope"
+            else:
+                bucket = _cci.get((_sup, _slug, key)) or {}
+                keys5 = {k: c for k, c in bucket.items() if c}
+                # B4 STRICT: exactly ONE distinct normalised key in the exact-scope bucket, at any
+                # count — a second key at count 1 refuses (the multi-party residual's bound).
+                if len(keys5) != 1:
+                    refusal = "variability" if len(keys5) > 1 else "no-history"
+                else:
+                    dom_key, dom_count = next(iter(keys5.items()))
+                    if dom_count < 5:
+                        refusal = "count-below-5"
+                    elif int(bucket.get(_cmp_norm(val), 0)) >= 3:
+                        refusal = "committed-value-known"   # belt-and-braces under STRICT
+                    else:
+                        cand = None
+                        for c in (self._field_candidates.get(key) or []):
+                            cv = str(c.get("value") or "")
+                            if not cv or _cmp_norm(cv) != dom_key:
+                                continue
+                            on_page = bool(c.get("box")) or (cv and cv in (ocr_text or ""))
+                            if not on_page:
+                                continue
+                            # B1: the adoptee must itself PASS the junk predicates.
+                            try:
+                                if wordness.ref_bleed(cv) or wordness.name_structure_flag(cv) is not None:
+                                    continue
+                            except Exception:
+                                continue
+                            cand = c
+                            break
+                        if cand is None:
+                            refusal = "no-on-page-witness"
+                        else:
+                            _census({"field": key, "committed": val, "adopted": armed,
+                                     "to": str(cand.get("value")), "count": dom_count, "refusal": None})
+                            if not armed:
+                                continue
+                            old_rec = corrob.get(key) or {}
+                            new_val = str(cand.get("value"))
+                            results[key] = {
+                                **data,
+                                "value": new_val, "display_value": new_val,
+                                "method": str(cand.get("method") or "unknown") + "+confirmed_adopt",
+                                "confidence": min(90, int(cand.get("confidence") or 0)),
+                                "was_corrected": True, "corrected_to": new_val,
+                                "validation_note": None,
+                            }
+                            # B2: memory-family record, never independent; dead value retained.
+                            dis = list(old_rec.get("disagree") or [])
+                            dis.append({"family": old_rec.get("winner_family") or "unknown", "value": val})
+                            corrob[key] = {"winner_family": "memory", "agree": [],
+                                           "disagree": dis, "independent_agree": False}
+                            if self._trace:
+                                self._t("confirmed_adopt", field=key, from_value=val,
+                                        to_value=new_val, count=dom_count,
+                                        method=results[key]["method"])
+                            self.log(f"  Confirmed-dominant adopt: {key} '{val[:30]}' → "
+                                     f"'{new_val[:40]}' ({dom_count}× confirmed, junk read replaced)")
+                            continue
+            if refusal:
+                _census({"field": key, "committed": val, "adopted": False, "refusal": refusal})
 
     def _build_corroboration_emit(self, results):
         """OWNER PRINCIPLE (2026-08-11): "the rungs should CORROBORATE, not merely compete."
@@ -8091,11 +8232,18 @@ class ExtractionEngine:
         # ── CORROBORATION RECORD (owner principle 2026-08-11) ─────────────────
         # "It is more about corroboration than merely getting it right." Which INDEPENDENT method
         # families read the committed value — derived from the per-run candidate ledger, computed
-        # AFTER every guard so it describes the final state. RECORD-ONLY by design: it moves no
-        # value, no confidence, no gate — the ordered plan is record → surface → only then decide,
-        # because a corroboration signal that starts by changing outcomes cannot be measured
-        # against the outcomes it changed.
+        # AFTER every guard. RECORD-ONLY by design: it moves no value, no confidence, no gate —
+        # the ordered plan is record → surface → only then decide. ONE later mutation exists:
+        # _adopt_confirmed_dominant (below, Oracle B2/B5 2026-08-12) may REPLACE a junk-flagged
+        # name value and rewrites this record for that field in the same step (memory family,
+        # independent_agree False, dead value retained) — the final trace + persisted emit then
+        # describe the ADOPTED state truthfully.
         _corrob = self._build_corroboration_emit(results)
+
+        # CONFIRMED_DOMINANT_ADOPT (Oracle B5 placement: AFTER the corrob build — so the record's
+        # pre-adoption disagreement is captured — and BEFORE the final trace, so the inspector's
+        # `final` row carries the adopted value, never the dead junk).
+        self._adopt_confirmed_dominant(results, ocr_text, _corrob)
 
         # Final resolved value per field — the inspector marks any earlier
         # candidate whose value differs from this as a superseded intermediate.

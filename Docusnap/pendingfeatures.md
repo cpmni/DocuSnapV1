@@ -6,6 +6,29 @@
 
 ---
 
+## 2026-08-12 — DOMINANT CONFIRMED LITERAL SHOULD OUTVOTE A FLAGGED READ (BUILT DARK same day — `confirmed_dominant_adopt` OFF + toggle; gary spec + Oracle SIGN-OFF-W/COND B1-B5, all applied; 22 py pins + 3 JS pins green; flip needs the CONFADOPT census + would-adopt-vs-GT 100%)
+
+**Owner rule (two live exhibits, same session):** when the committed value is FLAGGED as junk AND a
+picker candidate normalise-equals the scope's dominant confirmed literal at high count, ADOPT the
+literal — no picker, no confirm demand. "Surely 20 confirms is confirmation it is correct."
+**Exhibit A** — Ironclad statement 0011 (THE flush-edge-clip template): taught-box garble
+'Sramblewood Joinery Ltg' committed @70 ("doesn't read like a name") while candidate 'Bramblewood
+Joinery Ltd' (page-read, **confirmed 20×**) sits in the picker. **Exhibit B** — Meadowvale credit
+note 0011: keyword grabbed the ACCOUNT NUMBER 'MDW.-315' into customer ("looks like a
+reference/code") while 'Bramblewood Joinery Ltd' (**confirmed 38×**) is candidate 1.
+**Three shipped guards, none owns the case:** Stage-2.5d dominant-value snap (count-weighted
+adoption ≥5-count/≥80%-share — SILENT in both; investigate why: substitution-distance rule?
+name-field exclusion? kill SNAP_ALLOW_SUBSTITUTION state?); the disambiguation picker (surfaces,
+never decides); the name-relocate disagreement guard (holds clean keyword, but only for
+relocate/caption-bleed methods — a straight template_mapping/keyword junk read sails past).
+**Design direction:** the snap's charter extended to the candidate layer — committed value flagged
++ candidate == dominant confirmed literal (count ≥ N, share ≥ 80%, same normalise family as the
+snap) ⇒ adopt the literal; note the adoption honestly; review-hold only if something ELSE flags.
+Interacts with: corroboration record (adoption = memory family — never fabricate independence),
+the C7/re-teach decision for Ironclad's box (still the durable per-template cure, STILL OPEN),
+never-clears-notes standing rule (adoption REPLACES the flagged value — the flag premise dies with
+the value, same premise-failure argument as the containment ruling). NOT BUILT.
+
 ## 2026-08-12 — AFTERNOON BATCH STATUS (owner mandate "do the fix and address everything"): FIVE slices BUILT DARK + two live tools
 All gates in `docs/oracle_log.md` (2026-08-12 afternoon entry). BUILT, flags DEFAULT OFF + toggles:
 `reconcile_shadow_attribution` · `vat_rate_at_skip` · `graduation_freeze_issuer` (flip WITH
