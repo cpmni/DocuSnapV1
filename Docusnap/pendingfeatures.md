@@ -19,6 +19,15 @@ families; (3) conf never minted; dissent (the pre-adjustment misread) into note_
 recompute at the call site (reuse the shipped block). Money, not dates — so the B2 date-only ruling
 does NOT auto-extend: own gary+Oracle pass required (the money floors + graduated-scope exposure
 differ). Same flip bar: demoted-and-wrong = 0.
+**SLICE 3 exhibit (owner, same evening — NAME field, Nordwind quote 0021-4 customer):** mapping@90 +
+keyword_override@78 + anchor_crop@70 ALL read 'Bramblewood Joinery Ltd'; the two dissenters were
+REJECTED by guards ('DELIVERY ADDRESS' inline_off_taught_position, 'scone' name_guard_junk_candidate);
+yet the caption-disagreement note ("The value found beside this document's own caption disagreed
+with the taught position") stands and caps to 70. Oracle B2 deliberately EXCLUDED names tonight
+(wrong-for-wrong swap history, the 'SITE ADDRESS'@78 owner-watch; the name-repair machinery itself
+rewrites names so witness independence needs its own analysis). Build as its own pass; note the
+extra evidence available here: the disagreeing reads were guard-REJECTED, which the date slice's
+predicate never even needed.
 
 ## 2026-08-12 NIGHT — MACHINE AUTO-FILES FEED THE NAME LEXICON/VALUE-COUNTS (found via the Quillstone poison; own arc, NOT built)
 **Mechanism (provenance-verified):** a conf-100 machine auto-file of a GARBLED read becomes
