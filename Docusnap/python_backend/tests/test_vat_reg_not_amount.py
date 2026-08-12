@@ -209,6 +209,23 @@ check('table-rule separated columns: predicate abstains (never stitched into an 
       keyword._vat_identifier_tail(' 123 456 -- 789 012') is None)
 check('the live 1061 tail fires on the SECOND pass with the +walk trace suffix',
       keyword._vat_identifier_tail(' GB 774 20! 2093 55') == 'grouping+walk')
+
+print('\n== CC-FLOOR relaxation (reggie 2026-08-12 — the doc-#1064 digit-dropped exhibit) ==')
+# 'VAT GB 774 206 55' = the reg number with ONE digit dropped by OCR: 8 digits, under the 9
+# floor, so both passes abstained and 774206.55 was minted as a tax amount. An UPPERCASE cc +
+# >=2 groups relaxes the floor to 8 — the true NATIVE minimum (DK/FI/HU/LU/MT/SI VRNs are
+# 8 digits), and no money print shape leads with a country code.
+check("digit-dropped 'GB 774 206 55' fires the cc_floor leg (doc #1064 verbatim shape)",
+      keyword._vat_identifier_tail(' GB 774 206 55') == 'cc_floor')
+check('dark parity: the same line still mints with the guard OFF',
+      vat_of('VAT GB 774 206 55', on=False) is not None)
+check('armed end-to-end: the mint is suppressed', vat_of('VAT GB 774 206 55', on=True) is None)
+check('lowercase word never binds as the relaxation cc (fail toward the 9 floor)',
+      keyword._vat_identifier_tail(' at 1234 5678') is None)
+check('6 digits with cc still abstains (the new floor has a lower edge)',
+      keyword._vat_identifier_tail(' GB 123 456') is None)
+check("native-8 EU VRN 'DK 12 34 56 78' fires — do not tighten back to 9 without reading the rationale",
+      keyword._vat_identifier_tail(' DK 12 34 56 78') == 'cc_floor')
 # Rate decoration + reg number on one line: the shipped first pass already fires ('2093' ≠ 3).
 check('reg number followed by a rate decoration still fires on the FIRST pass',
       vat_of('VAT GB 774 2093 55 @ 20%', on=True) is None)

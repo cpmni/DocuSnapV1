@@ -1583,6 +1583,13 @@ _VAT_ID_RUN = re.compile(r"^(?P<cc>[A-Za-z]{2})?[\s\-]*(?P<digits>\d+(?:[ \-]\d+
 # Oracle C4: >=9 digits counted UNGROUPED. Every European VRN is 9-12 digits; a small-business VAT
 # AMOUNT is not. Counted ungrouped so a spaceless 'GB651002784' clears the floor too.
 _VAT_ID_MIN_DIGITS = 9
+# CC-FLOOR (reggie 2026-08-12, the doc-#1064 digit-dropped exhibit 'GB 774 206 55' = 8 digits):
+# when an UPPERCASE 2-letter country code leads the run AND it has >=2 groups, the floor relaxes
+# to 8 — no money print shape leads with a country code (3-letter currency codes are the veto's
+# job), and 8 is the true NATIVE minimum across the cc population (DK/FI/HU/LU/MT/SI VRNs are
+# 8 digits — not merely garble tolerance). 7 stays unearned (no exhibit); the cc-less floors are
+# UNCHANGED (the bare 'grouping' class is where the real money false-positive surface lives).
+_VAT_ID_CC_MIN_DIGITS = 8
 
 
 def _vat_identifier_tail(tail: str) -> str | None:
@@ -1617,8 +1624,20 @@ def _vat_identifier_tail(tail: str) -> str | None:
     groups = [g for g in re.split(r'[ \-]', m.group('digits')) if g]
 
     def _legs(gs):
-        """The shipped leg ladder, unchanged, over a group list."""
-        if sum(len(g) for g in gs) < _VAT_ID_MIN_DIGITS:
+        """The shipped leg ladder over a group list; floors per reggie 2026-08-12."""
+        total = sum(len(g) for g in gs)
+        if total < _VAT_ID_MIN_DIGITS:
+            # CC-FLOOR leg (see _VAT_ID_CC_MIN_DIGITS): uppercase cc REQUIRED — the cc class is
+            # [A-Za-z]{2} on the ORIGINAL-case tail, so lowercase English words ('at', 'on', 'is')
+            # bind as cc and must never become the relaxation's witness; a lowercase-OCR'd 'gb'
+            # falls back to the 9 floor (fail toward abstain). >=2 groups: a spaceless 8-digit run
+            # can't be minted anyway (rule 3 needs a space-split trailing pair), so the unbroken
+            # leg keeps its 9. Distinct leg name so the vat_reg_skip trace attributes any misfire
+            # on an unmet supplier to the relaxation specifically (C5 discipline).
+            _cc = m.group('cc')
+            if (_cc and _cc.isupper() and len(gs) >= 2
+                    and total >= _VAT_ID_CC_MIN_DIGITS):
+                return 'cc_floor'
             return None
         if len(gs) == 1:
             return 'unbroken'                         # one run, >= 9 digits — never an amount
