@@ -81,9 +81,32 @@ function snap(db) {
 // early on then we can deal with them rather than running through the whole batch"). Shards run in
 // PARALLEL, so arrival order is interleaved and a checkpoint is a count of documents COMPLETED, never
 // a position in the file list. `ctl` (optional) receives a kill() used only by RR_ABORT_ON.
+// ⚠ THIS HARNESS DOES NOT RUN THE APP'S FLAG CONFIGURATION (found 2026-08-13, name_demote_b2_gate).
+// `handler.js` spawns every import/batch extraction with _autoTitleEnv + _ocrDpiEnv + _anchorCropEnv
+// + _reconcileEnv (handler.js:2008-2014) — on this install that is 63 environment variables, i.e.
+// ~47 shipped toggles the owner has ON. `runP` below passes NONE of them, so every arm here runs a
+// DIFFERENT product configuration from the app: flags default OFF inside Python. That is fine for an
+// A/B (both arms share the deficit) but it is NOT a faithful replay, and it has already produced a
+// false negative — the slice-3 name-guard note "did not re-form on harness replay" and was written
+// off as import-batch-specific; with the app env mirrored it re-forms on the first document.
+// RR_APP_ENV=1 mirrors the real builders. DEFAULT OFF deliberately: turning it on changes the
+// BASELINE of every historical arm in this file, so it is opt-in and must be stated when used.
+function _appSpawnEnv() {
+  if (process.env.RR_APP_ENV !== '1') return {};
+  try {
+    const db = new Database(LIVE_DB, { readonly: true, fileMustExist: true });
+    const H = require(path.join(REPO, 'src', 'modules', 'processing', 'handler.js'));
+    const e = { ...safe(() => H._autoTitleEnv(db), {}), ...safe(() => H._anchorCropEnv(db), {}),
+                ...safe(() => H._reconcileEnv(db), {}) };
+    db.close();
+    console.log(`    [env] RR_APP_ENV — mirroring ${Object.keys(e).length} app spawn vars (NOT the historical baseline)`);
+    return e;
+  } catch (e) { console.log('    [env] RR_APP_ENV failed:', e.message); return {}; }
+}
 function runP(folder, snapArgs, files, manifest, onDoc, ctl) {
   const N = 8; const shards = Array.from({ length: N }, () => []); files.forEach((f, i) => shards[i % N].push(f));
   const sf = shards.filter(x => x.length).map(names => w('shard', names));
+  const appEnv = _appSpawnEnv();
   // FAITHFUL REPROCESS (2026-08-03): pass the per-doc known template/type like the app's
   // Reprocess All (--reprocess-manifest), so Stage 0.5 template_mapping fires on docs whose logo
   // no longer self-matches — WITHOUT this the harness silently skips Stage 0.5 and is blind to the
@@ -92,7 +115,8 @@ function runP(folder, snapArgs, files, manifest, onDoc, ctl) {
   const procs = [];
   if (ctl) ctl.kill = () => { for (const p of procs) { try { p.kill(); } catch {} } };
   const one = shardFile => new Promise(res => {
-    const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', folder, '--files-file', shardFile, '--mode', 'fast', '--tesseract', TESS, ...manifestArgs, ...snapArgs], { windowsHide: true });
+    const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', folder, '--files-file', shardFile, '--mode', 'fast', '--tesseract', TESS, ...manifestArgs, ...snapArgs],
+      { windowsHide: true, env: Object.keys(appEnv).length ? { ...process.env, ...appEnv } : undefined });
     procs.push(p);
     let out = '', tail = '';
     p.stdout.on('data', d => {

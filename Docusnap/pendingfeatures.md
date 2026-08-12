@@ -19,10 +19,21 @@ correct AST/string scan) or delete; do NOT touch in the slice-2 commit (Oracle C
 ## ✅ SHIPPED 2026-08-13 — NOTE-DEMOTE SLICE 2 (adjusted-total, money) — `df3f668`, DEFAULT OFF
 gary → Oracle SIGN-OFF-W/COND C1-C5, all applied. Flag `RECON_TOTAL_NOTE_DEMOTE` / toggle
 `recon_total_note_demote`. Pins test_recon_note_demote.py 34/34; slice-1 suite 26/26 untouched.
-Gates: OFF arm md5-identical; armed changes nothing (M=0); **the adjusted-total note does NOT
+Gates: OFF arm md5-identical; armed changes nothing (M=0); ~~**the adjusted-total note does NOT
 re-form on harness replay** (recon census 0 rows over 73 Nordwind docs incl. needs_review — the
 anchor_inline misread is import-batch-specific) → class-exercised acceptance = the owner's live
-reprocess after flip (08-07 precedent: gates prove NO-REGRESSION, heals owner-watched). SAY AT
+reprocess after flip (08-07 precedent: gates prove NO-REGRESSION, heals owner-watched).~~
+**← STRUCK 2026-08-13 LATE. THAT WAS THE SAME HARNESS ARTEFACT AS SLICE 3** (realdoc never mirrors
+the app's 63-var spawn env, and `--reprocess-manifest` lets Stage 0.5 answer before the noting rung
+runs — see the B2 block below). Re-run through `name_demote_b2_gate.js` with the app env mirrored
+and `B2_FRESH=1`, the class re-forms on the FIRST document: `recon_demote_census.jsonl` on #1217
+reads `{"field":"total","committed":"3,564.72","demoted":true,"witness":"template_mapping",
+"witness_conf":90,"committed_conf":93,"arith":true,"rejected":"3,864.72"}` — the owner's own
+exhibit, demoted correctly (the doc scores 0 wrong vs corpus GT). **Slice 2 is therefore
+harness-gateable after all; its OWED work is now a slice-2-OFF-vs-ON arm over the same 914-doc
+population, which was never run because the class was believed unreachable.** (Slice 1's
+`xcheck_demote_census.jsonl` fires on the same doc too — `quote_date` 26-03-2025 demoted over a
+rejected 26-08-2025, correct vs GT.) SAY AT
 FLIP: no confidence minting (a 78 stays 78 — release may not un-park under the floors); PASS-2
 docs stay held by the surviving subtotal note; the classic drift exhibit (no crop backing) is
 deliberately NOT demoted. Slice-1 owed gates CLOSED same session (full-902 base==armed;
@@ -32,10 +43,56 @@ deliberately NOT demoted. Slice-1 owed gates CLOSED same session (full-902 base=
 flag `NAME_CORROB_NOTE_DEMOTE` / toggle `name_corrob_note_demote`; pins test_name_corrob_demote.py
 39/39 (incl. B1 predicate-recorder-independence pin, W2-mandatory pin, template_fixed-masquerade pin,
 supplier_name pin, no-mint pin, B3 interaction pin); keyword-clear + name-lock suites green; OFF arm
-md5-identical; armed changes nothing; **the name note does NOT re-form on harness replay** (name
+md5-identical; armed changes nothing; ~~**the name note does NOT re-form on harness replay** (name
 census 0 rows over the nr-widened Nordwind arm) → live acceptance at owner flip, same 08-07 precedent
-as slice 2. B2 (armed #259-class replay + doc-level demoted-and-wrong) REMAINS OWED BEFORE FLIP —
-the flag must stay OFF until it runs. Design record below:
+as slice 2~~ **← STRUCK 2026-08-13 LATE: that was a HARNESS ARTEFACT, not a property of the class —
+see the B2 result immediately below.** B2 BUILT AND RUN — result below; the flag still ships OFF
+pending the owner's read of what it actually buys and costs. Design record further down.
+
+**▶ B2 GATE BUILT + RUN 2026-08-13 LATE — `stress_test/name_demote_b2_gate.js` (new instrument).**
+*The harness finding that comes first, because it invalidates a claim in this file and in two
+handovers:* **`realdoc_regression.js` has never mirrored the app's spawn env.** `handler.js`
+spawns every import/batch extraction with `_autoTitleEnv + _ocrDpiEnv + _anchorCropEnv +
+_reconcileEnv` (handler.js:2008-2014) = **63 environment variables on this install**, i.e. ~47
+shipped toggles the owner has ON. realdoc passes NONE, so every realdoc arm runs a DIFFERENT
+product configuration (flags default OFF inside Python). Combined with realdoc replaying
+**CONFIRMED docs only** (the live carriers of this note are 4 DELETED + 1 `needs_review`) and with
+`--reprocess-manifest` pinning the template so Stage 0.5 answers the name before the Stage-2
+relocate guard can note it, the class was **structurally unreachable** — which is why it was
+written off as "import-batch-specific". Mirror the env + drop the manifest and it fires on the
+first document. `realdoc_regression.js` now takes `RR_APP_ENV=1` (DEFAULT OFF — turning it on
+changes the baseline of every historical arm in that file, so it is opt-in and must be stated).
+**RESULTS — wide arm, 914 replayable docs (every doc on the install with a file, ANY status),
+OFF vs ARMED, `B2_FRESH=1` (import path), 200 DPI, slice 2 armed in BOTH arms so the delta is
+slice 3 alone; report `stress_test/out/b2_wide.md`:**
+- **Class rate 2/914.** Demotes fire on #442 (confirmed) + #1217 (needs_review), both
+  `customer_name='Bramblewood Joinery Ltd'`, both **correct vs corpus GT**. Census: 2 demoted,
+  **0 DECLINED**, 0 rows in the OFF arm.
+- **Collateral 0** — no other field differs between the arms on any of the 914.
+- **GATE: demoted-and-wrong at DOC level on newly-unparked auto-files = 0.** The instrument is
+  NOT vacuous: it resolves corpus GT for 1335/1336 docs and scores 124 of the 914 as carrying at
+  least one wrong value — identically in both arms.
+- **A2 ANSWERED = YES, and it is the headline for the owner.** With no confidence minted the field
+  stays at 70, but the field-level review threshold is `< 70` (documents.js:209), so 70 does NOT
+  trip `below_threshold_valued_count`: both docs go `flagged → auto-file ELIGIBLE` and leave the
+  "needs a look" bucket. And with `autofile_gate_unify` ON (live), `_maybeAutoFile` no longer bails
+  on `needs_review` — it defers to the predicate — so python still saying `needs_review:true` does
+  NOT hold the doc. **Releasing this note files the document.**
+- **B2 clause 1 is NOT met, and this is the finding to hand Oracle.** The #259 SHAPE (name note the
+  sole hold while a sibling is silently wrong) does not occur in the population, so the harness asks
+  the real predicate about a deliberately spoiled doc (§4b counterfactual): corrupt the ref-role
+  value, no note, same confidence ⇒ **STILL ELIGIBLE — nothing else holds it.** The accidental
+  safety Oracle worried about is real: today the phantom name note is the only thing standing
+  between these docs and the filing cabinet, and it is not evidence about the ref.
+- **The "or the census must catch it" branch IS met, by SHIPPED code, not new code:** the demote
+  writes `note_demoted` into the field's corroboration record, which is PERSISTED
+  (`extractions.corroboration`) and surfaced in Review/SFDEV — verified present on both docs with
+  the witness pair (`template_mapping` + `keyword_override`) and 2 recorded guard-rejections each.
+  Every release is queryable after the fact with no env-gated census.
+- **What the owner is deciding, in one line:** a 2-in-914 release rate, both correct, both auditable
+  — against the fact that after the release nothing else holds the doc if a sibling is silently
+  wrong. Recommend an Oracle read of the counterfactual before the flip.
+Design record below:
 Exhibit (owner, live Nordwind quote 0021-4 customer_name): mapping@90 + keyword_override@78 +
 anchor_crop@70 ALL read 'Bramblewood Joinery Ltd'; the two dissenters guard-REJECTED ('DELIVERY
 ADDRESS' inline_off_taught_position, 'scone' name_guard_junk_candidate); the caption-disagreement
