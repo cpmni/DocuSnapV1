@@ -226,6 +226,21 @@ check('6 digits with cc still abstains (the new floor has a lower edge)',
       keyword._vat_identifier_tail(' GB 123 456') is None)
 check("native-8 EU VRN 'DK 12 34 56 78' fires — do not tighten back to 9 without reading the rationale",
       keyword._vat_identifier_tail(' DK 12 34 56 78') == 'cc_floor')
+
+print('\n== DOUBLED cc (live doc #1065: OCR echoed the country code) ==')
+# 'VAT GB GB 774 2093 55' — the regex met letters where it demanded digits and the whole guard
+# fell silent; the 2093.55 mint re-poisoned the doc on every reprocess. The cc may now repeat
+# IDENTICALLY (backreference) — two different words can never chain.
+check("doubled cc 'GB GB 774 2093 55' fires (doc #1065 verbatim shape)",
+      keyword._vat_identifier_tail(' GB GB 774 2093 55') == 'grouping')
+check('dark parity: the doubled-cc line still mints with the guard OFF',
+      vat_of('VAT GB GB 774 2093 55', on=False) is not None)
+check('armed end-to-end: the doubled-cc mint is suppressed',
+      vat_of('VAT GB GB 774 2093 55', on=True) is None)
+check("two DIFFERENT words never chain into a cc ('at on …' stays out)",
+      keyword._vat_identifier_tail(' at on 1234 5678') is None)
+check("footer 8-digit variant 'GB 774 209 55' fires via cc_floor (doc #1065 line 19)",
+      keyword._vat_identifier_tail(' GB 774 209 55') == 'cc_floor')
 # Rate decoration + reg number on one line: the shipped first pass already fires ('2093' ≠ 3).
 check('reg number followed by a rate decoration still fires on the FIRST pass',
       vat_of('VAT GB 774 2093 55 @ 20%', on=True) is None)

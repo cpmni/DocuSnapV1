@@ -1579,7 +1579,10 @@ _VAT_ID_LEADIN = re.compile(r"^[\s:.|\-–]*(?:reg(?:d|istered|istration)?\b\.?\
 # The identifier itself: an optional 2-letter country code, then space/hyphen-grouped digits.
 # `\d+` per group, NOT `\d{1,4}` — a spaceless 'GB651002784' must reach the digit floor as ONE
 # group, else the unbroken-run leg is dead code (caught by tests/test_vat_reg_not_amount.py).
-_VAT_ID_RUN = re.compile(r"^(?P<cc>[A-Za-z]{2})?[\s\-]*(?P<digits>\d+(?:[ \-]\d+){0,6})")
+# The cc may repeat IDENTICALLY (backreference, live doc #1065: OCR echoed the code — 'VAT GB GB
+# 774 2093 55' made the regex meet letters where it demanded digits and the whole guard fell
+# silent). Identical-only: 'GB GB' binds, 'at on' can never chain two English words into a cc.
+_VAT_ID_RUN = re.compile(r"^(?P<cc>(?P<cc1>[A-Za-z]{2})(?:[\s\-]+(?P=cc1))*)?[\s\-]*(?P<digits>\d+(?:[ \-]\d+){0,6})")
 # Oracle C4: >=9 digits counted UNGROUPED. Every European VRN is 9-12 digits; a small-business VAT
 # AMOUNT is not. Counted ungrouped so a spaceless 'GB651002784' clears the floor too.
 _VAT_ID_MIN_DIGITS = 9
