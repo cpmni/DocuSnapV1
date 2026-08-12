@@ -59,6 +59,15 @@ _TIER_A_OCR_MIN = 70
 # reads ~88-93). See _reconciliation_pick_total.
 _RECON_PICK_MIN_CONF = 70
 
+# The reconciliation pick's review note — SINGLE SOURCE (note-demote slice 2, Oracle W/COND
+# 2026-08-13). Both TOTAL write sites in _reconciliation_pick_total reference this constant, and
+# _demote_recon_total_corroborated_note's eligibility is EXACT equality with it (the C3 posture:
+# a write site opts IN by using the constant; composed/other notes are structurally ineligible).
+# The PASS-2 SUBTOTAL note deliberately stays a literal — in PASS 2 the pair elected each other,
+# so no per-field independent witness exists for the subtotal (never unify it into this).
+RECON_TOTAL_ADJUSTED_NOTE = ('adjusted to the total that balances against the line amounts '
+                             '— please verify')
+
 # The supplier IDENTITY fields — their VALUE is the learning scope key, so a GLOBAL ('' supplier)
 # format aggregates DIFFERENT suppliers and must never constrain them (see the fmt_entry fallback
 # in the Stage 4.5 loop). Mirrors COMPANY_KEYS in database/modules/document_types.js.
@@ -2944,6 +2953,133 @@ class ExtractionEngine:
             demoted = True
         return demoted
 
+    def _demote_recon_total_corroborated_note(self, results, corrob):
+        """RECON_TOTAL_NOTE_DEMOTE (owner corroboration STEP 3, slice 2 — MONEY; gary design →
+        Oracle SIGN-OFF-W/COND C1-C5, 2026-08-13; DEFAULT OFF).
+
+        The exhibit (live Nordwind quote 0021-4): anchor_inline misread the total 3,864.72; the
+        reconciliation pick adjusted to 3,564.72 — the value the TAUGHT MAPPING independently read
+        (crop @90) AND the line arithmetic proves (2,970.60 + 594.12) — yet the pick's "please
+        verify" note stands and blocks auto-file on a doubly-verified value.
+
+        BOUNDARY (Oracle-ruled): (1) eligibility = EXACT equality with RECON_TOTAL_ADJUSTED_NOTE
+        (write-site opt-in; the PASS-2 subtotal note is DELIBERATELY excluded — in PASS 2 the pair
+        elected each other, so the subtotal has no independent per-field witness; a PASS-2 doc with
+        its total demoted stays held by the surviving subtotal note, pinned). No method gate is
+        possible — the pick commits the CANDIDATE's method — the constant IS the gate. (2) Witness
+        = BOTH legs: a CROP-SIDE ledger read (the independence load: mapping/crop family, un-noted,
+        conf ≥80, mapping exempt from `located` — set by construction, never by the mapper — the
+        slice-1 carve-out) whose value is PENNY-EXACT (round(x*100), NO tolerance — the 2% tolerance
+        belongs to the arithmetic leg only) AND SIGN-AGREEING (validator._is_negative_value both
+        sides, raw-string based — Oracle C1: parse_amount is structurally sign-blind, the fourth
+        member of the 08-07 sign-blind-comparator family; without this a credit -3,564.72 and an
+        unsigned crop 3,564.72 would "agree"); AND the arithmetic re-verifies: total_reconciles(...)
+        `is True` — None (no subtotal) and False both keep the note. The arithmetic leg is honestly
+        a STABILITY/PRECISION RE-CHECK, not independence — it is the same computation that caused
+        the note; the crop leg carries the entire independence load, and it MAY be the very
+        candidate the pick swapped to (the founding exhibit: it is) — the corroborating PAIR is
+        (crop pixels, component arithmetic), two evidence families. (3) NO CONFIDENCE CHANGE AT ALL
+        — deliberately below slice 1's E2 posture: money has no shape rail (currency is
+        self-validating), and the pick commits max(inc, cand), so the swapped value can INHERIT the
+        displaced wrong incumbent's confidence — minting on top would let the demoter itself carry
+        a value over the floors. (4) The dissent (the displaced pre-swap read, stashed per-doc in
+        _recon_displaced) survives in the corroboration record's note_demoted; independent_agree is
+        NEVER read or written (C4 — the floor back door stays shut).
+
+        Remaining rails on a wrong-but-balancing swap after this demote: the 2% component-balance
+        precondition + the penny-exact sign-agreeing crop common-mode required ON TOP + credit_sign_
+        coherence + the trust floors. NOT rails: net-misread (no-ops when reconciling), shape
+        (self-validating), Stage-4 arithmetic (it elected the value). This removes the last
+        value-specific reviewer signal on the total — the census flip bar (demoted-and-wrong = 0)
+        is the evidence it is safe.
+
+        Census: XCHECK_DEMOTE_CENSUS_DIR (shared env, OWN file recon_demote_census.jsonl — records
+        DECLINED demotes too, the silent-decline instrument, plus committed/witness conf for the
+        max()-inheritance visibility Oracle C5 requires). Returns True when demoted (the caller
+        feeds the shared B1 recompute — never `or` the demoter calls inline: short-circuit would
+        skip this one)."""
+        if os.environ.get("RECON_TOTAL_NOTE_DEMOTE", "0") == "0":
+            return False
+        from extraction import validator as _v
+        total_key = None
+        for k in ('total_amount', *keyword.ROLE_KEY_ALIASES.get('total_amount', ())):
+            d = results.get(k)
+            if isinstance(d, dict) and d.get('value'):
+                total_key = k
+                break                                      # the WRITER's own alias walk (Oracle C4)
+        if not total_key:
+            return False
+        data = results[total_key]
+        if str(data.get('validation_note') or '') != RECON_TOTAL_ADJUSTED_NOTE:
+            return False                                   # exact equality ONLY (C3 posture)
+        committed = str(data.get('value') or '')
+        c_amt = _v.parse_amount(committed)
+        if c_amt is None:
+            return False
+        witness = fam = None
+        for c in (self._field_candidates.get(total_key) or []):
+            f = _crosscheck_witness_bucket(c.get('stage'), c.get('method'))
+            if not f or not f[1]:
+                continue                                   # crop-side family only
+            if f[0] != 'mapping' and not c.get('located'):
+                continue                                   # slice-1 mapping carve-out
+            if c.get('noted'):
+                continue                                   # B3: a flagged read never licenses
+            if int(c.get('confidence') or 0) < 80:
+                continue
+            cv = str(c.get('value') or '')
+            w_amt = _v.parse_amount(cv)
+            if w_amt is None:
+                continue
+            if round(w_amt * 100) != round(c_amt * 100):
+                continue                                   # penny-exact, NO tolerance
+            if _v._is_negative_value(cv) != _v._is_negative_value(committed):
+                continue                                   # Oracle C1: sign agreement
+            witness, fam = c, f
+            break
+        arith = _v.total_reconciles(committed, results) is True   # None/False ⇒ keep the note
+        _cdir = os.environ.get("XCHECK_DEMOTE_CENSUS_DIR")
+        if _cdir:
+            try:
+                import json as _json
+                with open(os.path.join(_cdir, "recon_demote_census.jsonl"), "a",
+                          encoding="utf-8") as _f:
+                    _f.write(_json.dumps({
+                        "field": total_key, "committed": committed,
+                        "demoted": bool(witness is not None and arith),
+                        "witness": (witness or {}).get("method"),
+                        "witness_conf": (witness or {}).get("confidence"),
+                        "committed_conf": data.get("confidence"),
+                        "arith": arith,
+                        "rejected": str(self._recon_displaced.get(total_key) or "")}) + "\n")
+            except Exception:
+                pass
+        if witness is None or not arith:
+            return False
+        data.pop('validation_note', None)
+        data.pop('was_corrected', None)
+        data.pop('corrected_to', None)
+        # NO confidence change — pinned (test_recon_note_demote.py §2); see the docstring.
+        data['method'] = str(data.get('method') or '') + '+corrob_clear'
+        rec = dict(corrob.get(total_key) or {})
+        rec['note_demoted'] = {
+            'note':           RECON_TOTAL_ADJUSTED_NOTE,
+            'witness_family': fam[0],
+            'witness_method': witness.get('method'),
+            'witness_value':  witness.get('value'),
+            'arithmetic':     True,
+            'rejected_read':  self._recon_displaced.get(total_key),
+        }
+        corrob[total_key] = rec                            # additive; independent_agree untouched (C4)
+        if self._trace:
+            self._t('recon_note_demote', field=total_key, value=committed,
+                    witness=str(witness.get('method')),
+                    rejected=str(self._recon_displaced.get(total_key) or ''))
+        self.log(f"  Reconcile note demoted: {total_key} '{committed}' corroborated by "
+                 f"{witness.get('method')} + arithmetic — adjustment note released "
+                 f"(dissent recorded)")
+        return True
+
     def _build_corroboration_emit(self, results):
         """OWNER PRINCIPLE (2026-08-11): "the rungs should CORROBORATE, not merely compete."
         Per committed field, which INDEPENDENT method families read the same value — a derived,
@@ -5163,9 +5299,11 @@ class ExtractionEngine:
         first check and is NEVER touched: the reconciliation check IS the protection, so no special
         authoritative carve-out is needed. Only a total that PROVABLY doesn't add up is reconsidered,
         and only replaced by a candidate that (a) actually balances and (b) is confident (>= floor),
-        so a weak/garbage read can't win. The swap is review-flagged. Runs AFTER shadow-reconcile
-        (all components present) and BEFORE the Stage-4 flag, so a swapped total validates clean.
-        Best-effort — never breaks extraction."""
+        so a weak/garbage read can't win. The swap is review-flagged — unless corroboration later
+        demotes the note (RECON_TOTAL_NOTE_DEMOTE, slice 2: a penny-exact sign-agreeing crop
+        witness + an arithmetic re-verify; see _demote_recon_total_corroborated_note). Runs AFTER
+        shadow-reconcile (all components present) and BEFORE the Stage-4 flag, so a swapped total
+        validates clean. Best-effort — never breaks extraction."""
         try:
             from extraction import validator as _v
             total_key = None
@@ -5188,13 +5326,16 @@ class ExtractionEngine:
                 if _v.total_reconciles(cv, results):
                     self._t('reconcile_pick', field=total_key, was=inc_v, now=str(cv),
                             method=c.get('method'), confidence=c.get('confidence'))
+                    # The displaced read feeds note_demoted.rejected_read + the demote census
+                    # (slice 2, Oracle C1 parity — the retro-audit key). Reset per doc.
+                    self._recon_displaced[total_key] = inc_v
                     results[total_key] = {
                         **inc,
                         'value':           cv,
                         'display_value':   cv,
                         'method':          c.get('method') or inc.get('method'),
                         'confidence':      max(inc.get('confidence') or 0, c.get('confidence') or 0),
-                        'validation_note': 'adjusted to the total that balances against the line amounts — please verify',
+                        'validation_note': RECON_TOTAL_ADJUSTED_NOTE,
                     }
                     return
 
@@ -5251,11 +5392,12 @@ class ExtractionEngine:
                     'confidence':      max(sub_inc.get('confidence') or 0, sc.get('confidence') or 0),
                     'validation_note': 'adjusted to the subtotal that balances against the total — please verify',
                 }
+                self._recon_displaced[total_key] = inc_v
                 results[total_key] = {
                     **inc, 'value': tv, 'display_value': tv,
                     'method':          tc.get('method') or inc.get('method'),
                     'confidence':      max(inc.get('confidence') or 0, tc.get('confidence') or 0),
-                    'validation_note': 'adjusted to the total that balances against the line amounts — please verify',
+                    'validation_note': RECON_TOTAL_ADJUSTED_NOTE,
                 }
         except Exception:
             pass  # reconciliation aid — must never break extraction
@@ -5475,6 +5617,11 @@ class ExtractionEngine:
         self._slice_n   = 0
         self._field_candidates = {}   # per-run candidate ledger — ALWAYS built (_remember_candidates is
                                       # unconditional); safety-load-bearing for G1 arm (i), do not re-gate
+        self._recon_displaced = {}    # per-run: total_key -> the read the reconciliation pick displaced
+                                      # (slice-2 note_demoted.rejected_read + census retro-audit key;
+                                      # Oracle C3 — without this reset, doc N's displaced value would
+                                      # land in doc N+1's record and corrupt the only instrument that
+                                      # can observe the balancing-garbage disaster class)
         self._list_field_keys = set()  # per-run; filled at Stage 1 when LIST_FIELD_SCAN is armed
         results      = {}
         field_keys   = [f["key"] for f in field_defs]
@@ -8375,14 +8522,15 @@ class ExtractionEngine:
         # (above) = flip REFUTED by the ledger · this step = flip corroborated by a CROP-SIDE
         # ledger witness the incumbent test couldn't see. Runs AFTER CONFADOPT (adopted rows are
         # note-less + memory-family — inert here by ordering).
-        if self._demote_xcheck_corroborated_note(results, field_defs, date_field_keys,
-                                                 _xcheck_rejected, _corrob):
-            # Oracle B1 (blocking): overall_conf (:7885) and _needs_review (:7905) were computed
-            # ~350 lines UPSTREAM — without this recompute a demoted doc parks with no visible
-            # reason (the mysterious-hold class). overall recomputed with the SAME exclusion +
-            # format delta; _needs_review downgraded ONLY when the demoted note was the doc's
-            # last one AND the validator agrees — the 13 direct _needs_review writers all cap
-            # confidence and write notes, so the any-note guard keeps their holds intact.
+        _d1 = self._demote_xcheck_corroborated_note(results, field_defs, date_field_keys,
+                                                    _xcheck_rejected, _corrob)
+        # Slice 2: evaluated UNCONDITIONALLY (inline `or` would short-circuit it), shared recompute.
+        _d2 = self._demote_recon_total_corroborated_note(results, _corrob)
+        if _d1 or _d2:
+            # Oracle B1: overall/_needs_review were computed upstream — recompute or a demoted
+            # doc parks with no visible reason. Same exclusion + format delta; needs_review
+            # drops ONLY when the demoted note was the doc's LAST (the any-note guard keeps
+            # every direct writer's hold — all 13 cap + note).
             _oc2 = validator.overall_confidence(results, field_defs, exclude_keys=_hidden_excl)
             if fc_delta:
                 _oc2 = max(0, min(100, _oc2 + fc_delta))

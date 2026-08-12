@@ -6,6 +6,16 @@
 
 ---
 
+## 2026-08-13 — DEAD STRUCTURAL PIN in test_xcheck_corrob_demote.py (Oracle-found, repair-or-delete)
+`test_xcheck_corrob_demote.py:158-160` (the "no independent_agree write in the demoter window" structural
+check) is VACUOUS — an OR of two disjuncts where the second (`'independent_agree' not in window`) is
+permanently False (slice-1's own docstring at engine.py:2862 + comment :2937 contain the string) and the
+first's `{0,4000}`/`{0,2000}` char budgets can never bridge def-name → violation → terminator, so it is
+essentially always True. Net: the pin passes today by budget accident and would STILL pass if a demoter
+wrote `independent_agree = True` — the exact bug it claims to prevent. The REAL guard is the behavioural
+pin at :74-75 (`'independent_agree' not in corrob`). Repair (rewrite as a behavioural assertion or a
+correct AST/string scan) or delete; do NOT touch in the slice-2 commit (Oracle C2, 2026-08-13 slice-2 pass).
+
 ## 2026-08-12 NIGHT — NOTE-DEMOTE SLICE 2: the ADJUSTED-TOTAL note (owner exhibit, boundary framework established — build under it)
 **Exhibit (live Nordwind quote 0021-4):** anchor_inline misread 3,864.72; the validator adjusted to
 3,564.72 — the value the TAUGHT MAPPING independently read (crop-side family, matched 'Total (inc
@@ -19,17 +29,76 @@ families; (3) conf never minted; dissent (the pre-adjustment misread) into note_
 recompute at the call site (reuse the shipped block). Money, not dates — so the B2 date-only ruling
 does NOT auto-extend: own gary+Oracle pass required (the money floors + graduated-scope exposure
 differ). Same flip bar: demoted-and-wrong = 0.
-**SLICE 3 exhibit (owner, same evening — NAME field, Nordwind quote 0021-4 customer):** mapping@90 +
-keyword_override@78 + anchor_crop@70 ALL read 'Bramblewood Joinery Ltd'; the two dissenters were
-REJECTED by guards ('DELIVERY ADDRESS' inline_off_taught_position, 'scone' name_guard_junk_candidate);
-yet the caption-disagreement note ("The value found beside this document's own caption disagreed
-with the taught position") stands and caps to 70. Oracle B2 deliberately EXCLUDED names tonight
-(wrong-for-wrong swap history, the 'SITE ADDRESS'@78 owner-watch; the name-repair machinery itself
-rewrites names so witness independence needs its own analysis). Build as its own pass; note the
-extra evidence available here: the disagreeing reads were guard-REJECTED, which the date slice's
-predicate never even needed.
+**SLICE 3 (names) — gary design + Oracle SIGN-OFF-W/COND 2026-08-13, BUILD-READY under B1-B3:**
+Exhibit (owner, live Nordwind quote 0021-4 customer_name): mapping@90 + keyword_override@78 +
+anchor_crop@70 ALL read 'Bramblewood Joinery Ltd'; the two dissenters guard-REJECTED ('DELIVERY
+ADDRESS' inline_off_taught_position, 'scone' name_guard_junk_candidate); the caption-disagreement
+note (anchor.py:800-802, attaches :1661, 70-cap :1432) stands. **Design:** hoist note to
+`anchor.NAME_GUARD_DISAGREE_NOTE` (:185 beside XCHECK_DISAGREE_NOTE; cross-pin the literal in
+test_name_guard_keyword_clear.py:22); new `_demote_name_guard_corroborated_note` after slice-2's,
+`_d3` into the shared B1 recompute. Eligibility: is_name_like_field + type∈{None,text,multiline_text}
++ **key != supplier_name (PINNED — identity machinery gets own slice or never)** + method=='anchor_crop'
+EXACT + note exact-equal + not junk-shaped. Equality `_values_normalise_equal(...,False)` NO fuzzy —
+clipped 'Lt' never equals 'Ltd', pinned both directions. Witness = BOTH **W1** crop-side ledger
+(slice-1 bars + mapping located carve-out, MINUS method startswith template_fixed — the F8
+memory-masquerade hole: template* buckets as mapping — and minus '+corrected'/'+confirmed_adopt')
+AND **W2** keyword/keyword_override un-noted ≥70 normalise-equal (mandatory — Oracle Q1 ruled; breaks
+the flush-clip crop↔crop common mode; committed value is crop-side so full-page agreement IS
+pixel-independent — the INVERSE of slice 1's Gate-C geometry). Dissent legs: **D1** rejection recorded
+for the field (new additive `self._rejected_reads` plumbing — see B1) + **D2** ledger unanimity (no
+un-noted ≥60 candidate normalise-UNEQUAL, any family). NO confidence minting (money posture; the dark
+NAME_GUARD_KEYWORD_CLEAR mints at :6462 — this is strictly safer). note_demoted gains rejected_reads
+list. Flag `NAME_CORROB_NOTE_DEMOTE` OFF + toggle `name_corrob_note_demote` + bridge + wiring pin;
+census own `name_demote_census.jsonl` in XCHECK_DEMOTE_CENSUS_DIR.
+**Oracle conditions: B1 BLOCKING** — the always-on `_on_reject` closure as designed breaks
+`anchor.py:1745-1747` (parallel dispatch keys on `on_reject is None` → forced-serial = a READ-DETERMINISM
+change, Tesseract thread-count-nondeterministic; the deskew→COMPOSE_SCAN interaction class): rework the
+predicate to key serial on trace/slice_capture only, PIN the predicate recorder-independent, closure keeps
+the `cap=None` kwarg (:439-440 rebind), both engine sites (:6367,:7042), trace event only under _trace,
+reset per doc. **B2** flip gate: armed #259-class replay (sole-hold release over a sibling misread → doc
+still held) + demoted-and-wrong=0 measured DOC-LEVEL on unparked auto-files (Oracle ruled #259 NOT
+discharged by design — needs the gate); 101-doc auto_reprocess cohort = SUSPECT GT. **B3** interaction
+pin: extend engine.py:975-981 comment to name this slice; pin both-ON idempotence with
+NAME_GUARD_KEYWORD_CLEAR (merge clear fires first, weaker bar + mints — demoter no-ops). Q3 ruled: ship
+even if A2 false (note release may not un-park under far_lowconf two-tier — census must ANSWER A2, tell
+the owner which product they flip). Q4 unanimous-wrong printed name = accepted census-monitored residual.
+**Non-blocking backport observation: slice 1 (dates) shares the F8 hole** — template_fixed buckets as a
+mapping witness for DATE demotes too (frozen dates rare; consider W1 exclusions backport).
 
-## 2026-08-12 NIGHT — MACHINE AUTO-FILES FEED THE NAME LEXICON/VALUE-COUNTS (found via the Quillstone poison; own arc, NOT built)
+## 2026-08-13 — MACHINE-FEED ARC: gary design + Oracle SIGN-OFF-W/COND (C1-C6) — BUILD-READY, not built
+gary consumer map + Oracle pass both run 2026-08-13 (agents; census run same day). **Design (slice 1):**
+flag `learning_exclude_machine_confirms` DEFAULT OFF (+toggle + env winning both ways, the
+trust_shadow_row_skip C5 pattern, setting read INSIDE learning.js); when armed + via column exists, add
+`AND (COALESCE(d.confirmed_via,'') NOT IN (<MACHINE_VIAS>) OR c.corrected_value IS NOT NULL)` to the
+learning.js:1272 getFieldFormats query (the OR leg = Oracle C2 human-correction carve-out, RETAIN ruled —
+preserves the remediation mechanism; a correction row is a human act, machine confirms never write one);
+extract shared `MACHINE_VIAS` constant {scope_sweep, auto_corroborated, auto_reprocess, auto_graduated,
+auto_threshold} (FIVE, not four) used by learning.js + trust.js:595 + templates.js:1122; emit additive
+`machine_value_counts` key consumed by NOTHING in slice 1 (pinned inert — slice 2 restores refusal-side
+evidence from it). Rejected: down-weight (garble ×20 crosses any bar); per-consumer split (~10 drift seams).
+**LIVE CENSUS (post-remediation): totalGroups 65 · groupsDie 0 (NO group starves) · shapeFlips 1 ·
+domMachineMaj 20 (name-like groups w/ machine-majority dominant) · confadoptDrop 0 · strongFlips 0.**
+Script: scratchpad machine_learning_census.js (session 4223d9fa).
+**Oracle conditions:** **C1 BLOCKING (this arc):** templates.js:1122 filters only scope_sweep/auto_reprocess
+(2 of 5) and `_autoFileDoc` DOES call learnTemplateOnCommit (handler.js:4517) — every auto_graduated/
+auto_threshold/auto_corroborated file TODAY drives template learning incl. the frozen-string confirm counts
+keying the young-identity guard; Oracle position: EXCLUDE (extend MACHINE_VIAS there), own small census
+(post-stamp docs that drove template learning), may ride slice 1 or ship as slice 1.5 — cannot stay unruled.
+**C2** (blocking before flip): the correction carve-out above, pinned either way. **C3** (blocking before
+flip): snap-known-loss census — scopes where dominant stays armed post-exclusion AND ocr_corrector `known`
+(engine.py:7275 immunity) loses machine-only values = potential SILENT REWRITE window (fail-toward-WRONG);
+zero required, else ship the slice-2 known-union first. **C4** (blocking before flip): name + direction the
+one live shapeFlip, pin it. **C5:** pin the gate-unify dependency (armed exclusion + unify-ON stamp
+round-trip; exclusion is BLIND when autofile_gate_unify OFF — via stamps NULL at handler.js:4458) + toggle
+copy says "requires Auto-file gate unification ON". **C6** (ride slice 1): fix CONFADOPT docstring
+engine.py:2703 ("≥5 human confirms" is FALSE — code counts ALL confirmed rows) + the stale learning.js:1298
+comment in the same commit. Rulings: shape-loss ACCEPTED (no per-consumer split); CONFADOPT refusal union =
+acceptable residual (confadoptDrop 0) but snap known-union NOT (C3); cold-start thinning ACCEPTED (pin);
+Learning History = ANNOTATE never exclude ("not used for learning" tag when armed). Flip bar: census +
+realdoc M=0/zero-drop on POST-STAMP snapshot + Quillstone pre-remediation backup doc_freq crosses 0.9 STRONG
+(docusnap_pre_namerepair_20260812.db — real gate, fails on the bug) + starvation pin + C2-C5. Original entry:
+
+## (superseded original) 2026-08-12 NIGHT — MACHINE AUTO-FILES FEED THE NAME LEXICON/VALUE-COUNTS (found via the Quillstone poison; own arc, NOT built)
 **Mechanism (provenance-verified):** a conf-100 machine auto-file of a GARBLED read becomes
 status='confirmed' and feeds getFieldFormats value_counts -> the 4.5 name lexicon, dominance
 buckets, CONFADOPT counts. Live damage: 'Quilistone' x3 + 'Quiltstone' x1 auto_threshold confirms +

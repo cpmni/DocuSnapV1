@@ -797,6 +797,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Don't ask about a corrected total the page's own arithmetic proves</div>
+                <div class="threshold-sub">When a misread total is corrected to the amount that balances against the line amounts, a "please verify" warning is left on it. If a second independent reading of the total's own box read the same amount to the penny (same sign), and the arithmetic still checks out, that warning is released — the original misread is still recorded for the developer view. Totals only; anything genuinely unresolved still asks. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="recon-demote-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Check a credit note's total for a missing minus sign</div>
                 <div class="threshold-sub">A credit note's total is money going back to you, but the minus sign in front of it can be lost when the page is read — so a £160.32 credit is filed as a £160.32 charge. ScanFinder checks the total's sign against the document's type and flags it for a quick check instead of filing it silently. It never changes the amount itself — you type the minus. ON by default &mdash; you can turn it off here.</div>
               </div>

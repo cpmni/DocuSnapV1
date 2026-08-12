@@ -258,6 +258,14 @@ function _reconcileEnv(db) {
     if (learning.getSetting(db, 'xcheck_corrob_note_demote', 'false') === 'true') {
       env.XCHECK_CORROB_NOTE_DEMOTE = '1';
     }
+    // CORROBORATION STEP 3, slice 2 (gary → Oracle W/COND 2026-08-13): the reconciliation pick's
+    // "adjusted to the total that balances" note is released when a crop-side ledger witness reads
+    // the SAME total (penny-exact, sign-agreeing) AND the arithmetic re-verifies. Money only; no
+    // confidence minted (deliberately below slice 1's E2 posture — money has no shape rail).
+    // Dissent survives in the corroboration record. Default OFF, byte-identical off.
+    if (learning.getSetting(db, 'recon_total_note_demote', 'false') === 'true') {
+      env.RECON_TOTAL_NOTE_DEMOTE = '1';
+    }
     // CREDIT-NOTE SIGN COHERENCE (Oracle 2026-08-07, slice C — DETECTION only). The app has no
     // representation of a signed money value: the readers strip a leading '-' at BOTH sites
     // (anchor.py + keyword.py), so a -£160.32 CREDIT commits as a +£160.32 CHARGE and files silently.
