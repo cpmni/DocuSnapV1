@@ -6,6 +6,207 @@
 
 ---
 
+## 2026-08-12 — Containment witness for name corroboration (OWNER IDEA, design stage — reggie+gary+Oracle before build)
+
+**Exhibit:** Nordwind quote 0026-1 (doc 454, bound to the garbage tpl 11) — keyword read "Bramblewood
+Joinery Ltd" (clean, 78, won) vs `anchor_crop_relocated` "ne ay - Bramblewood Joinery Ltd" (24, lost;
+"ne ay" = partial-glyph fragments of a chopped address row inside the mis-sized taught box — the
+Pelican customer_name class). NAME-RELOCATE DISAGREEMENT guard held the keyword + capped 69 + noted —
+correct. But the comparator is normalized EQUALITY only (`_cmp_norm` at `engine.py:995`): the system
+cannot see that the dirty read CONTAINS the clean value, i.e. the taught box witnessed the same name
+plus junk — the VALUE is actually doubly-witnessed (mapping-family + keyword-family = the strong
+independence pair).
+
+**Owner question ruled on: would containment work for corroboration? Direction: YES for the RECORD,
+NO for the flag.** (a) Token-level containment, contained value must be SUBSTANTIAL (multi-token /
+majority of tokens — else "Ltd" ⊂ anything corroborates everything); (b) direction-aware: clean ⊂
+dirty corroborates the CLEAN value while proving the dirty READ/box needs attention; (c) feeds the
+corroboration record (`independent_agree` via a `contained` qualifier). Prior art to reuse:
+`caption_bleed` leading-token check, name-grow page-present witness (cut word's locate text ⊂ grown
+token), `_name_relocate_should_hold` (`engine.py:955-1008`, pins in
+`test_name_relocate_disagreement.py`).
+
+**OWNER FOLLOW-UP (same day): "containment true + template exists → accept as 100% read?" RULED:
+goal endorsed, 100 refused.** (1) conf==100 makes `docTrustGate` lenient BY DESIGN and 100 = the
+operator-confirmed grade — never minted from a heuristic (the 88-floor principle: confidence is
+earned, notes do the blocking). (2) "Template exists" is a weak license — tpl 11 exists and is the
+poisoned party in the very exhibit. (3) "Accept" would be corroboration-clears-notes by the back
+door (standing condition, shadow-attribution entry above). **The agreed shape instead:** substantial
+containment = `independent_agree` in the record; the NAME-RELOCATE note's premise ("two DIFFERENT
+names") is then factually false so the guard does not fire — clean value keeps its EARNED confidence,
+no blocking note (this is premise-failure, not note-clearing); the mis-sized-box signal moves to a
+NON-blocking surface (trace/census + template health); the already-ON corroborated auto-file route
+then files these docs naturally. Closes the 08-08 finding "the system knows the answer twice over
+and cannot apply it." Needs its own gate: pin that a non-containment genuine disagreement still
+flags; census the containment class size before flip.
+
+## 2026-08-12 — Review field-editing entry point: template-first, "Save as template" retired (OWNER PROPOSAL, design stage — advisor+Oracle gate before build)
+
+**Owner direction (verbatim intent):** the first time a customer opens a doc with unnecessary fields,
+they will want to change the fields for it — so the Review entry point for field editing should ALSO
+create a template when none exists. Template Manager is an ADVANCED admin tool, reached via Settings
+only; ordinary users shouldn't see template machinery, and **the Review window should be the same for
+everyone**. Replace the "Save as template" button with something like "Edit this doc's fields" (wording
+TBD, better than that). If no template exists yet, the button elevates the doc to a template FIRST —
+with a prompt to double-check the supplier name, because **the supplier name at mint time becomes the
+template identity** (live exhibit same morning: tpl 11 "Reg No GB 903" — a VAT-reg caption garble
+minted a duplicate Nordwind quote template that now outclaims the real tpl 4 on re-imports).
+
+**Current state (verified):** "✏ Edit type" = admin-only deep-link to Settings → Document Types,
+TYPE-scoped fields/roles (`review/renderer.js:414-422`, `index.html:1054`). "Save as template" =
+`promote-to-template` → `_upsertTemplate` (+ sample pin, landmarks, fingerprint,
+`review/handler.js:1007-1053`). Templates otherwise mint only on taught confirm (`onTaughtConfirm`) or
+scope graduation (`onScopeGraduated`, 10 clean confirms).
+
+**Design notes / seams for the vet:**
+- Supplier-confirm prompt should reuse the shipped plausibility predicate
+  (`teach_issuer_plausibility_warn` arc — BP/IBM-immune) so a garbled name gets warned at the mint
+  prompt, not silently baked into a template identity. Same class as Chris r3 finding 1.
+- "Unnecessary fields" removal is per-template FIELD scope (hidden-field drop
+  `template_hidden_field_drop`, template field visibility) — NOT global type edits; the new flow must
+  route the user's intent to template scope, not `document_types.fields` (a type edit would strip the
+  field from EVERY supplier's docs of that type).
+- Role split RESOLVED (owner + verified at source 2026-08-12): `open-review-window` is BLOCKED in main
+  without admin/edit (`main.js:1538`) — Read Only never reaches Review (their surface is Search), so
+  the button needs NO extra role logic; "Review same for everyone who can open it" holds automatically.
+- The retired "Save as template" affordance: check the welcome tour / help copy that references it
+  (tour card 5 already flagged by Chris as over-promising).
+- Seam with `_upsertTemplate` identity rules: mint must land on an EXISTING same-supplier+type template
+  when one exists (reuse band) — never fragment (the tpl 11 class this proposal exists to prevent).
+- "Edit type" button fate: recommendation (2026-08-12) = REMOVE from Review; the whole-type editor
+  (every supplier's docs of the type — big blast radius) lives in Settings only. One button, one job,
+  no second scope in Review. Owner leaning same way; confirm at vet.
+
+**CHRIS DESIGN-STAGE REVIEW DONE (2026-08-12, 7 finding cards — owner vet queue). Verdict: direction
+right, every risk a copy/affordance fix, "would keep using after two weeks: yes". His conditions:**
+1. **Name prompt = editable pre-filled field, NEVER Yes/No** — a "No" with nowhere to fix the name is
+   a dead end and recreates the Reg-No-GB-903 incident on a click-through. His copy: "Check the
+   sender's name first / [editable name] / Scan Finder will use this name to recognise their documents
+   and to file them. You can change it later in Settings. / [That's right — continue] [Cancel]".
+   VERIFY before promising "change it later": rename safety post the 08-10 identity-not-cosmetic-name
+   fix — if rename isn't safe, drop the promise.
+2. **Button wording ranking:** "Change what's read from this sender's documents" (or with the real
+   name substituted — "Change what's read from Nordwind's documents") > "Adjust fields for this
+   sender" > "Edit this doc's fields" (WORST — narrates as one-doc value editing). One sender noun
+   across the whole flow.
+3. **Editor header must state exact scope** ("Nordwind Refrigeration Ltd — Delivery Notes" + "Other
+   document types from this sender aren't affected", only if true) — else hidden fields bleed across
+   types in the user's head = the support email.
+4. Empty-field affordance: small link on any empty field — "Never on these documents?" — opening the
+   same editor with that field ready to switch off (one door in the panel, one on the wound).
+5. **Save moment states what happens to docs already in the queue** ("Applies from now on — the ones
+   waiting stay as they are", or offer the re-run if cheap).
+6. Keep one quiet line where "Save as template" lived stating the app remembers senders (the removed
+   button was the only standing hint per-sender memory exists).
+7. **Hidden = switch set to off, not absence** — hidden fields stay listed greyed with "Show again";
+   undo lives where the do lived.
+Also: keep a "To change this for every sender, go to Settings → Document Types" line INSIDE the new
+editor (the rare whole-type case stays findable after the "✏ Edit type" removal). Decision budget:
+3 first time, 2 after, 0 added to routine filing.
+
+**OWNER APPROVED all 7 Chris cards 2026-08-12. eric mechanics pass DONE (in-Review modal;
+resolution-first mint via promote-to-template; write the EXISTING `template_hidden_fields` store,
+mig 54; live-update = `_resolveFieldVisibility()` on toggle; 2 new IPCs `get-sender-field-editor` +
+union-aware `set-sender-field-hidden`; widen `set-template-hidden-field` admin→admin+edit; build
+order = 5 slices — full report in session transcript). ORACLE: SIGN OFF WITH CONDITIONS ×5 — full
+entry in `docs/oracle_log.md` 2026-08-12. Headline: eric's two seam-3 mitigations are ONE gate
+(young-identity nested inside `TEMPLATE_IDENTITY_ON_PAGE`, `template_matcher.py:611` — both OFF on
+the owner's DB), so **C1: editor mint is IDENTITY-ONLY** (no frozen field rules from the unreviewed
+sample; pin zero non-issuer fixed_value rows); C2 owner told + recommend flipping
+`template_identity_on_page`; C3 un-hide write-set = display read-set ∪ matched template id, audited,
+containment residual pinned; C4 audit both hide IPCs + flip-checklist line; C5 first toggle after a
+typed-name mint must visibly affect the open doc. Chris's queue copy confirmed FALSE, eric's
+correction stands both flag states. **BUILT 2026-08-12 (owner go), ALL FIVE CONDITIONS APPLIED.**
+Gates: pins `test_editor_mint_identity_only.js` (C1) + `test_sender_field_hidden.js` (C3) PASS ·
+`test_build_template_fields` / `test_upsert_type_link` / `test_upsert_generic_skip` /
+search no-global-collisions ALL PASS · review index.html divs 128/128 · **realdoc A/B on a live-DB
+snapshot: feature vs stashed-base md5-IDENTICAL (142 docs, 0 silent wrong, 0 wrong-type
+auto-file)**. REMAINING: the owner UI smoke list (Oracle gate) — needs a FULL APP RESTART (new
+main-process IPCs): cancel = zero template rows · first-time-sender mint → toggle → visible hide on
+the open doc · "Show again" on a doc matched to a garble-named sibling (tpl 11 is the live case) ·
+Settings-side hide still live-updates Review · untyped-doc disabled state · generic-type friendly
+refusal. A/B GOTCHA recorded: electron.exe is GUI-subsystem — PowerShell `&` does not wait and
+`$LASTEXITCODE` is stale unless the call is PIPED; gate on printed output.
+
+**ADDED OWNER REQUIREMENT (2026-08-12, mid-eric-pass, relayed to him):** when a doc's field set
+changes, the CURRENTLY-IN-VIEW doc in Review must LIVE-UPDATE — today the operator must hit
+Reprocess to see the field list change. Design split: (a) visibility refresh = renderer re-render
+from existing extractions + new field defs, no Python; (b) a shown-again field with no stored
+extraction row shows its normal empty state (re-extraction only via the doc-level Reprocess, offered
+honestly). Chris card-5 save copy stays honest: in-view doc updates live, rest of queue does not.
+
+## 2026-08-12 — Learning Repair: exclude currency magnitude from the "might not belong" shape check (owner-requested)
+
+**Owner exhibit:** Pelican invoice, Total 479.04 flagged *"looks unusual for this type — the others
+usually look like '1,357.92'"*. Mechanism verified: Detector B1 structured shape-miss
+(`src/services/repairSuspects.js:182`) — `shapeSignature('1,357.92')` ≠ `shapeSignature('479.04')`
+because the thousands comma is part of the shape, and comma presence is pure MAGNITUDE. Owner ruling:
+some totals could be pence, some could be £100,000 — both correct on the doc; a money field has NO
+meaningful magnitude/shape prior.
+
+**Fix direction:** for currency-class fields (type `currency`, incl. the custom `total` key — check how
+it's typed, the 08-09 note says the real live key is a custom field named `total`), replace the B1
+dominant-shape comparison with a magnitude-invariant CURRENCY-FORMAT validity check: value must parse
+as valid money (optional thousands groups + exactly 2 decimals). `'479.04'` and `'1,357.92'` both pass;
+`'2.205.60'` (the real Nordwind 0015 garble class) still FAILS — so the true-positive catch is kept,
+only the magnitude false positive dies. **Keep B3 unchanged** (letters/control chars in currency —
+highest precision, still valuable). `number`-typed fields: decide at build whether same treatment
+(quantities have the same magnitude-variance argument).
+
+**Test:** pin both directions — 479.04-vs-1,357.92 mixed-magnitude pool produces NO suspect;
+'2.205.60' in the same pool still flags. Precision-first per the detector's own charter.
+
+## 2026-08-12 — RECONCILE FLAG MISATTRIBUTION: shadow subtotal flags the corroborated total (gary-designed, AWAITING ORACLE + owner decision)
+
+**Live exhibit (owner at screen):** Silverbeck sales_order 0016 — page prints Net £387.75 / VAT £77.55 /
+TOTAL DUE £465.30. `total` 465.30 read by TWO independent families (template_mapping 90 won + keyword 93,
+both matched "TOTAL DUE" — the STRONG geometry-vs-caption pair). Shadow `subtotal` (method
+`shadow_reconcile`, invisible, uneditable, un-learnable) misread 387.75 as **3875.75**; Stage-4 reconcile
+flagged the CORRECT total ("total is less than the subtotal"), capped 50. Same mechanism family as the
+vat_reg arc (poisoned invisible operand flags the correct total, oracle_log:1123) and the Python twin of
+`TRUST_SHADOW_ROW_SKIP`.
+
+**gary FACTS (verified at source):** reconcile admits ANY parseable subtotal — no method/corroboration
+check on operands (`validator.py:655-662`); attribution hard-coded to `total_key` (`:695-700`,
+`_RECONCILE_CAP=50` at `:641`); shadow rows minted by `_shadow_reconcile_components`
+(`engine.py:3129-3157`), bypass the candidate ledger so their corroboration is always
+`independent_agree:False`; the total's corroboration record ALREADY proves the doubly-witnessed side but
+is built AFTER Stage 4 (`:7967`). Confirming the doc is SAFE — format learning excludes the method at SQL
+(`learning.js:1288-1292`), confirm payload carries visible fields only.
+
+**Design (gary, ranked #1 — candidates (b) digit-slip gate and (c) blunt shadow exclusion REFUTED, see
+his report):** flag **`RECONCILE_SHADOW_ATTRIBUTION`** DEFAULT OFF + `_reconcileEnv` bridge + toggle.
+Inside the existing contradiction branch only; fires iff a note would be set AND total's corroboration
+says `independent_agree:True` AND **every valued operand** is `shadow_reconcile` (any real type-field
+operand ⇒ today's behaviour). When fired: KEEP a note (stays the auto-file block) but state EVIDENCE
+neutrally ("net/subtotal line read £3875.75; total £465.30 read identically by two independent methods"),
+SKIP the 50-cap, never touch values, emit `reconcile_attrib` trace. Plumbing: `validate_and_adjust`
+optional `corroboration=` kwarg; engine builds a pre-Stage-4 copy of `_build_corroboration_emit` only
+when armed; persisted emit untouched; NEVER re-tune `_crosscheck_witness_bucket`. **This is corroboration
+STEP 3's first consumer** (record→surface→decide honoured: no value moves, note retained, human
+checkpoint kept) — needs owner sign-off; stays OFF.
+
+**Seam / standing condition:** the cap-drop leaves the any-noted-field rule in trust.js as the ONLY
+auto-file barrier on this class — **never arm together with any future "corroboration clears notes"
+mechanism**. Verify before build: `_cmp_norm` strips currency ("£465.30" vs "465.30" must normalise
+equal, else guard inert); hint-learning payload scope.
+
+**Test plan (gary):** `test_reconcile_shadow_attribution.py` — 6 pins incl. trade-off pin (real visible
+operand ⇒ unchanged) + true-positive pin (wrong single-family total + correct shadow ⇒ flag+cap intact);
+JS seam pin extending `test_trust_shadow_row_skip.js` (new note text at 90 refused by docTrustGate);
+corpus gate OFF byte-identical + ARMED zero value changes + noted-total count identical; census
+instrument (vat_reg pattern) bucketing every contradiction by (total corroborated? × all-shadow?) = the
+flip evidence.
+
+## 2026-08-12 — `vat_tax` label starvation on `VAT @ 20%` captions (separate entry, do NOT bundle)
+
+Silverbeck 0016 trace shows `MISSING(tax)` while the page prints "VAT @ 20% £77.55". Shipped labels have
+`"VAT 20%"`/`"Tax (20%)"` but no `@`-form (`keyword_patterns.json:292-314`); ASSUMPTION (one probe
+settles: run `keyword.extract_fields` on the doc's OCR for `vat_tax`) that the `@` defeats the match. Not
+this flag's cause (3875.75+77.55 ≠ 465.30 regardless) but starves the reconcile + verified badge
+system-wide; already named in the net-misread arc (oracle_log:818-819). reggie pass on the label matcher,
+own flag, own rejected/accepted census over corpus OCR.
+
 ## 2026-08-11 LATE-NIGHT — NAME-BOX FLUSH-EDGE CLIP: (a)+(b) SHIPPED (Oracle SIGN-OFF-W/COND); C7 stored-box repair arm OPEN
 
 **(a) teach-side + (b) read-side BOTH BUILT** (see the overnight commit; oracle_log 2026-08-11

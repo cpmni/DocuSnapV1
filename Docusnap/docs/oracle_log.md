@@ -1348,3 +1348,50 @@ items, both discharged same-session:
 Gates at sign-off: OFF md5-identical pre/post-edit · armed +22 lane heals / 0 losses (issuer +9,
 customer +11, vat +2), all other lanes cell-identical · census 43 fires/200 docs (29 heal,
 14 silent decline) · 22 Python pins + 11/13 JS pins + wiring pin + adjacent batteries green.
+
+## 2026-08-12 — Review per-sender field editor (DESIGN-STAGE vet; owner + Chris + eric consensus)
+**Verdict: SIGN OFF WITH CONDITIONS (5 blocking). Nothing built yet — conditions bind the build.**
+- **Headline catch (seam 3):** eric's two named mitigations for mint-from-unconfirmed-doc are ONE
+  gate — the ca0bb49 young-identity corroboration is NESTED inside `TEMPLATE_IDENTITY_ON_PAGE`
+  (`template_matcher.py:611`); on flag-OFF installs (code default; the owner's own live DB) both
+  are off together. Exposure genuinely widened as drafted: `_buildTemplateFields` freezes every
+  schema-constant text field (vat_no/account_no/po_ref/serials) from a sample of ONE at
+  `template_fixed` @95, and the empty-field "Never on these documents?" link invites the mint on
+  doc #1 of an unseen sender, when allValues are raw machine reads (today's promote is clicked by
+  someone who just CURATED the values).
+- **C1 (ruling):** editor-path mint is IDENTITY-ONLY — `allValues = {supplier_name: <confirmed>}`
+  only, no field rules from the unreviewed sample. Residual then equals the ordinary first-confirm
+  birth, accepted honestly. PIN: editor mint writes zero non-issuer fixed_value rows.
+- **C2:** design letter corrects the mitigation claim; owner told plainly there is NO active guard
+  on the frozen issuer on flag-OFF installs + recommendation to flip `template_identity_on_page`
+  (already in PROVEN_ON_DEFAULTS) as part of the arc — not a ship-blocker once mint is identity-only.
+- **C3:** un-hide write-set = the SAME exported resolver as the display read ∪ `doc.template_id`
+  ∪ group siblings (the display union starts with the matched template OUTSIDE the resolver,
+  `review/handler.js:557` — resolver-only clear = visible no-op on the open doc); every deleted
+  row audit-logged; the containment cross-sender residual (`templates.js:733/763` vs the reuse
+  path's deliberate refusal `:786-789`) ACCEPTED + PINNED with a two-sender containment fixture.
+- **C4:** audit rows on BOTH the new `set-sender-field-hidden` AND the existing (currently
+  unaudited) `set-template-hidden-field`; seam-5×8 line (edit-role hides retroactively gain
+  extraction authority) added to the `template_hidden_field_drop` flip checklist.
+- **C5:** after a typed-corrected mint the first toggle must visibly affect the open doc —
+  `_resolveFieldVisibility` keys on the on-screen issuer (`renderer.js:2660`), so sync the issuer
+  field or push the template-id broadcast like the Settings path.
+- **Chris-copy ruling:** "the ones waiting stay as they are" is FALSE — `hidden_fields` computed
+  live at doc open (`review/handler.js:547-573`); eric's corrected copy TRUE in both
+  `template_hidden_field_drop` states; re-vet the copy if that flag ever flips (a doc reprocessed
+  while hidden renders Not-found after un-hide — fail-safe).
+- Also named: untyped-doc disabled state; cancel = zero writes; generic-type friendly refusal;
+  retiring Save-as-template loses the re-pin-sample admin path (Settings `set-template-sample`
+  remains — acceptable, stated).
+- **Gate:** existing pins green (`test_build_template_fields.js`, `test_upsert_type_link.js`,
+  `test_identity_on_page.py`, div-balance, no-global-collisions) · new pins C1/C3 · 185-doc
+  realdoc arm byte-identical with the feature merged (no extraction-layer drift) · UI smoke list
+  (cancel/mint-toggle-visible/garble-sibling Show-again/Settings-side live-update/untyped/generic).
+
+### 2026-08-12 addendum — sender-field editor BUILT, all five conditions applied, gates green
+C1 identity-only mint (pin `test_editor_mint_identity_only.js`) · C3 single-authority write-set
+`resolveVisibilityTemplateIds` ∪ matched id (pin `test_sender_field_hidden.js`, containment residual
+pinned) · C4 both hide IPCs audited, role admin+edit · C5 toggle repaints from the server-returned
+union. Existing pins ALL PASS; realdoc A/B (live-DB snapshot, feature vs stashed base):
+**md5-identical, 142 docs, 0 silent wrong, 0 wrong-type auto-file.** Outstanding: owner UI smoke
+list (app restart required — new main-process IPCs).

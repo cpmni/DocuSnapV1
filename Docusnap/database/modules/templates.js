@@ -751,6 +751,23 @@ function findForSupplierType(db, { supplier_name, document_type_slug, keyword_fi
 // only; fail-safe [] (⇒ show ALL fields) when nothing resolves or the table is absent.
 function getHiddenFieldsForSupplierType(db, { supplier_name, document_type_slug, keyword_fingerprint = null, mode = 1 } = {}) {
   if (!document_type_slug || !_thfTableExists(db)) return [];
+  const ids = resolveVisibilityTemplateIds(db, { supplier_name, document_type_slug, keyword_fingerprint, mode });
+  const out = new Set();
+  for (const id of ids) for (const k of getHiddenFields(db, id)) out.add(k);
+  return [...out].sort();
+}
+
+// The SINGLE scope authority for hidden-field visibility (Oracle C3, 2026-08-12): the set of template
+// ids whose hidden-field config applies to a (supplier NAME, type). Extracted VERBATIM from
+// getHiddenFieldsForSupplierType so the Review DISPLAY union and the sender-field-editor WRITE set can
+// never drift apart — an un-hide that clears fewer ids than the display unions would visibly no-op.
+// Callers that know the doc's MATCHED template must ADD doc.template_id themselves (the display path
+// seeds it outside this resolver — review/handler.js get-document-with-extractions).
+// ACCEPTED+PINNED residual (owner 2026-07-27, Oracle 2026-08-12): the name match is containment-based
+// ("Office Interiors" ⊂ "Pelican Office Interiors"), so nested real names share config — deliberate,
+// see test_sender_field_hidden.js before "fixing".
+function resolveVisibilityTemplateIds(db, { supplier_name, document_type_slug, keyword_fingerprint = null, mode = 1 } = {}) {
+  if (!document_type_slug) return new Set();
   const slug = document_type_slug;
   const ids = new Set();
   const q = _normNameForVis(supplier_name);
@@ -775,9 +792,7 @@ function getHiddenFieldsForSupplierType(db, { supplier_name, document_type_slug,
     const gid = safe(() => (db.prepare('SELECT group_id FROM templates WHERE id = ?').get(tid) || {}).group_id, null);
     if (gid != null) for (const s of safe(() => db.prepare('SELECT id FROM templates WHERE group_id = ?').all(gid), [])) ids.add(s.id);
   }
-  const out = new Set();
-  for (const id of ids) for (const k of getHiddenFields(db, id)) out.add(k);
-  return [...out].sort();
+  return ids;
 }
 
 // NAME-PRIMARY REUSE (TEMPLATE_REUSE_BY_NAME, Phillip/Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-27): the id
@@ -1525,7 +1540,7 @@ module.exports = {
   stabiliseFingerprint, chooseLogoPhash,
   getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
   recordMappingTest, setSampleDocument, reassignDocuments, mergeInto, setFieldFixedValue,
-  getHiddenFields, getHiddenFieldsForSupplierType, reuseByEstablishedName, isFieldHideable, setHiddenField, getTypeFieldsForHiding,
+  getHiddenFields, getHiddenFieldsForSupplierType, resolveVisibilityTemplateIds, reuseByEstablishedName, isFieldHideable, setHiddenField, getTypeFieldsForHiding,
   _normNameForVis,   // exported for the JS↔Python parity pin (vis_norm_vectors.json)
   setOcrAutoParams, setOcrAutoEnabled,
   getLandmarks, setLandmarks, clearLandmarks, hasManualLandmarks, hasCrossSampleLandmarks,

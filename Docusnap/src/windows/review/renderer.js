@@ -406,23 +406,14 @@ async function loadQueue() {
   // "+ New type" header launcher — admin only (the create IPC is admin-gated server-side).
   const _newTypeBtn = document.getElementById('btn-new-doctype');
   if (_newTypeBtn) { _newTypeBtn.style.display = isAdmin ? '' : 'none'; _newTypeBtn.onclick = openNewTypeModal; }
-  // "Save as template" (promote-to-template) is an ADVANCED admin tool — gate it like
-  // "+ New type" and the Template Wizard so it stops leaking to operators (it was the only
-  // advanced template control with no role gate). Learning is unaffected either way.
-  const _promoteBtn = document.getElementById('btn-add-template');
-  if (_promoteBtn) _promoteBtn.style.display = isAdmin ? '' : 'none';
-  // Admin-only "Edit type" shortcut: deep-links to Settings -> Document Types to edit the
-  // CURRENT type's fields/roles (fixes the dangling-role dead-end where Confirm is blocked
-  // and the field to fix isn't on screen). Deep-link only — no in-place editing here.
-  const _editTypeBtn = document.getElementById('btn-edit-doctype');
-  if (_editTypeBtn) {
-    _editTypeBtn.style.display = isAdmin ? '' : 'none';
-    // Open Settings → Document Types focused on the CURRENTLY-selected type (if one is), so the
-    // operator lands on the fields/roles they were looking at — not the first type in the list.
-    _editTypeBtn.onclick = () => window.docusnap.openSettingsWindowAtSection(
-      selectedTypeSlug ? { section: 'doctypes', docTypeSlug: selectedTypeSlug } : 'doctypes');
-  }
-  updateEditTypeBtn();
+  // Sender-field editor (2026-08-12, replaces "Save as template" + the "✏ Edit type" deep-link —
+  // Oracle SIGN-OFF-W/COND ×5, Chris cards 1-7 owner-approved). Review is admin/edit-only at the
+  // window opener (main.js), so admin+edit here means "everyone who can be in this window". The
+  // whole-type editor (every sender at once) lives in Settings → Document Types only — the editor
+  // modal carries a pointer line for the rare legit case.
+  const _senderBtn = document.getElementById('btn-sender-fields');
+  if (_senderBtn) { _senderBtn.style.display = canEdit ? '' : 'none'; _senderBtn.onclick = () => openSenderFieldEditor(); }
+  _updateSenderFieldsBtn();
   queue         = await window.docusnap.getReviewQueue();
   deferredQueue = await window.docusnap.getDeferredQueue();
   allDocTypes   = await window.docusnap.getAllDocTypes();
@@ -563,13 +554,25 @@ function populateTypeDropdown() {
   }
 }
 
-// The admin "Edit type" shortcut is only meaningful with a type selected — it opens
-// Settings -> Document Types to edit the current type's fields/roles (e.g. to fix a
-// dangling Reference/Date role that is blocking Confirm). Enabled state tracks the
-// dropdown selection.
-function updateEditTypeBtn() {
-  const b = document.getElementById('btn-edit-doctype');
-  if (b) b.disabled = !selectedTypeSlug;
+// Sender-field-editor button state + dynamic label ("Change what's read from Nordwind's documents"
+// when the sender is known and short enough — recognition beats a pronoun, Chris card 2). Enabled
+// only with a doc + a real (non-generic) type selected; General Documents have no per-sender fields.
+function _updateSenderFieldsBtn() {
+  const b = document.getElementById('btn-sender-fields');
+  if (!b) return;
+  b.style.display = canEdit ? '' : 'none';
+  const generic = selectedTypeSlug === 'general_document';
+  b.disabled = !currentDoc || !selectedTypeSlug || generic;
+  b.title = generic
+    ? 'General Documents are filed by their text — there are no per-sender fields to change'
+    : !selectedTypeSlug
+      ? 'Select a document type first'
+      : "Choose which fields Scan Finder looks for on this sender's documents — e.g. switch off a field their paperwork never carries";
+  const name = String((typeof _currentIssuerValue === 'function' && _currentIssuerValue()) || '').trim();
+  const lbl = document.getElementById('btn-sender-fields-lbl');
+  if (lbl) lbl.textContent = (name && name.length <= 26)
+    ? `Change what's read from ${name}'s documents`
+    : `Change what's read from this sender's documents`;
 }
 
 // Generic Document chip: one click = pick the General Document type via the normal
@@ -614,7 +617,7 @@ document.getElementById('doctype-select').addEventListener('change', (e) => {
   }
   const prevSlug = selectedTypeSlug;
   selectedTypeSlug = e.target.value || null;
-  updateEditTypeBtn();
+  _updateSenderFieldsBtn();
   // A type change invalidates any in-progress ⊕ teaching: each staged draw was captured
   // under the PREVIOUS type (and is keyed to it), so committing it under the new type
   // would leak boxes into the wrong layout. Discard staged teaching on a real type
@@ -1275,7 +1278,7 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
   selectedTypeSlug = doc.type_slug || null;
   const sel = document.getElementById('doctype-select');
   sel.value = selectedTypeSlug || '';
-  updateEditTypeBtn();
+  _updateSenderFieldsBtn();
   // Generic Document chip (docs/designs/GENERIC_DOCTYPE_2026-07-18.md §6): a one-click
   // "file it as General" affordance for docs that arrived with NO type — shown only when
   // the fallback feature is on and the General Document type exists (pre-enable backlog
@@ -2507,6 +2510,7 @@ function renderFields(doc) {
   validateConfirm();
   updateAcknowledgeButton();
   updateTotalsVerifiedBadge();
+  _updateSenderFieldsBtn();   // dynamic sender-name label + enabled state track every repaint
 }
 
 // ── Generic Document glance aids (docs/designs/GENERIC_DOCTYPE_2026-07-18.md §4/§6) ────
@@ -2669,6 +2673,203 @@ async function _resolveFieldVisibility() {
   renderFields(doc);
 }
 
+// ── Sender-field editor (2026-08-12, Oracle SIGN-OFF-W/COND ×5; Chris cards 1-7 owner-approved) ──
+// ONE door for "this sender's documents never carry field X". Resolution-first: if the display
+// resolver finds the sender's layout, the editor opens bound to it with NO prompt; only a genuinely
+// first-time sender gets the name-confirm prompt, and the mint is IDENTITY-ONLY (Oracle C1 — the
+// promote payload carries the confirmed issuer and NOTHING else, so no field rule is ever frozen
+// from an unreviewed sample; pinned in test_editor_mint_identity_only.js).
+let _senderEditorOpen = false;
+
+async function openSenderFieldEditor(focusKey) {
+  if (_senderEditorOpen || !canEdit || !currentDoc) return;
+  if (!selectedTypeSlug) { showToast('Select a document type first.', 'warn'); return; }
+  if (selectedTypeSlug === 'general_document') {
+    showToast('General Documents are filed by their text — there are no per-sender fields to change.', 'warn');
+    return;
+  }
+  const issuer = String(_currentIssuerValue() || '').trim();
+  let state;
+  try {
+    state = await window.docusnap.getSenderFieldEditor({
+      supplier_name: issuer, document_type_slug: selectedTypeSlug, doc_id: currentDoc.id });
+  } catch { showToast('Could not load the field list — try again.', 'err'); return; }
+  if (!state || !state.resolved) { _openSenderNamePrompt(issuer, focusKey); return; }
+  _openSenderEditorModal(state, focusKey);
+}
+
+// The first-time-sender name prompt (Chris card 1): an EDITABLE pre-filled name field, never a
+// Yes/No — a garbled read gets fixed with a pen right here, which is the whole defence against the
+// "Reg No GB 903" class (a garble becoming a layout identity on a click-through). Cancel = zero writes.
+function _openSenderNamePrompt(prefill, focusKey) {
+  if (_senderEditorOpen) return;
+  _senderEditorOpen = true;
+  const forDoc = currentDoc?.id;
+  const ov = document.createElement('div');
+  ov.setAttribute('data-help-ignore', '');
+  Object.assign(ov.style, { position: 'fixed', inset: '0', background: 'rgba(8,10,15,.72)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '99999', padding: '24px' });
+  const box = document.createElement('div');
+  Object.assign(box.style, { width: 'min(480px,94vw)', background: 'var(--surface)',
+    border: '1px solid var(--border2)', borderRadius: '12px', padding: '20px',
+    boxShadow: '0 18px 50px rgba(0,0,0,.5)', color: 'var(--text)' });
+  box.innerHTML = `
+    <div style="font-size:15px; font-weight:600; margin-bottom:10px;">Check the sender's name first</div>
+    <input type="text" id="sfe-name-input" class="field-input" style="width:100%; box-sizing:border-box; font-size:14px; padding:8px 10px;">
+    <div style="font-size:12px; color:var(--muted); margin-top:10px; line-height:1.5;">
+      Scan Finder will use this name to recognise their documents and to file them.
+      You can change it later in Settings.</div>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+      <button class="btn" id="sfe-name-cancel">Cancel</button>
+      <button class="btn confirm" id="sfe-name-go">That's right — continue</button>
+    </div>`;
+  ov.appendChild(box);
+  document.body.appendChild(ov);
+  const input = box.querySelector('#sfe-name-input');
+  input.value = prefill || '';
+  requestAnimationFrame(() => { try { input.focus(); input.select(); } catch {} });
+  let closed = false;
+  const close = () => { if (closed) return; closed = true; _senderEditorOpen = false;
+    document.removeEventListener('keydown', onKey, true); ov.remove(); };
+  const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  document.addEventListener('keydown', onKey, true);
+  box.querySelector('#sfe-name-cancel').onclick = close;
+  ov.addEventListener('mousedown', (e) => { if (e.target === ov) close(); });
+  box.querySelector('#sfe-name-go').onclick = async () => {
+    const name = String(input.value || '').trim();
+    if (!name) { try { input.focus(); } catch {} return; }
+    if (!currentDoc || currentDoc.id !== forDoc) { close(); return; }
+    const go = box.querySelector('#sfe-name-go'); go.disabled = true;
+    // IDENTITY-ONLY mint (Oracle C1): allValues carries the confirmed issuer and nothing else, so
+    // _buildTemplateFields can freeze no other field from this unreviewed sample. The promote path
+    // still runs the full birth machinery (reuse bands, sample pin, landmarks, fingerprint).
+    const result = await window.docusnap.promoteToTemplate({
+      document_id:        forDoc,
+      allValues:          { supplier_name: name },
+      document_type_slug: selectedTypeSlug,
+      supplier_name:      name,
+    });
+    if (!result?.success) {
+      go.disabled = false;
+      showToast(result?.error || 'Could not set this sender up — try again.', 'err');
+      return;
+    }
+    // Land the confirmed name in the on-screen issuer field through the ordinary typed-correction
+    // path (Oracle C5): _currentIssuerValue() then resolves the SAME scope the editor is bound to,
+    // so the first toggle visibly repaints the open doc.
+    const issuerInput = document.querySelector('.field-input[data-key="supplier_name"]');
+    if (issuerInput && issuerInput.value.trim() !== name) {
+      issuerInput.value = name;
+      issuerInput.dispatchEvent(new Event('input', { bubbles: true }));
+      issuerInput.dispatchEvent(new Event('blur'));
+    }
+    close();
+    let state;
+    try {
+      state = await window.docusnap.getSenderFieldEditor({
+        supplier_name: name, document_type_slug: selectedTypeSlug, doc_id: forDoc });
+    } catch { state = null; }
+    if (state && state.resolved) _openSenderEditorModal(state, focusKey);
+    else showToast('Sender saved — reopen the editor to change its fields.', 'warn');
+  };
+}
+
+function _openSenderEditorModal(state, focusKey) {
+  if (_senderEditorOpen) return;
+  _senderEditorOpen = true;
+  const forDoc = currentDoc?.id;
+  const typeName = (allDocTypes.find(t => t.slug === selectedTypeSlug) || {}).name
+    || String(selectedTypeSlug || '').replace(/_/g, ' ');
+  const ov = document.createElement('div');
+  ov.setAttribute('data-help-ignore', '');
+  Object.assign(ov.style, { position: 'fixed', inset: '0', background: 'rgba(8,10,15,.72)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '99999', padding: '24px' });
+  const box = document.createElement('div');
+  Object.assign(box.style, { width: 'min(520px,94vw)', maxHeight: '86vh', overflowY: 'auto',
+    background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: '12px',
+    padding: '20px', boxShadow: '0 18px 50px rgba(0,0,0,.5)', color: 'var(--text)' });
+  // Scope header names EXACTLY what this edits (Chris card 3) — sender + this one document type.
+  const rowsHtml = (state.fields || []).map(f => {
+    const lock = f.structural;
+    return `
+      <div class="sfe-row" data-key="${escHtml(f.key)}" style="display:flex; align-items:center; gap:10px; padding:7px 2px; border-bottom:1px solid var(--border); ${f.hidden ? 'opacity:.55;' : ''}">
+        <label style="display:flex; align-items:center; gap:10px; flex:1; cursor:${lock ? 'default' : 'pointer'};">
+          <input type="checkbox" class="sfe-toggle" data-key="${escHtml(f.key)}" ${f.hidden ? '' : 'checked'} ${lock ? 'disabled' : ''}>
+          <span style="flex:1;">${escHtml(f.label || f.key)}</span>
+        </label>
+        ${lock
+          ? '<span style="font-size:11px; color:var(--muted);" title="Needed for recognising and filing every document — it can\'t be switched off">🔒 always shown</span>'
+          : `<span class="sfe-state" style="font-size:11px; color:var(--muted);">${f.hidden ? 'hidden — tick to show again' : 'shown'}</span>`}
+      </div>`;
+  }).join('');
+  box.innerHTML = `
+    <div style="font-size:15px; font-weight:600;">${escHtml(state.senderName || 'This sender')} — ${escHtml(typeName)}</div>
+    <div style="font-size:12px; color:var(--muted); margin:4px 0 12px;">Other document types from this sender aren't affected.</div>
+    <div id="sfe-rows">${rowsHtml}</div>
+    <div style="font-size:12px; color:var(--muted); margin-top:12px; line-height:1.5;">
+      Applies to all of this sender's documents, including the ones waiting. Values already read
+      aren't changed — a field you switch back on shows whatever was last read; use Reprocess on a
+      document to read it again.</div>
+    <div style="font-size:11px; color:var(--muted); margin-top:8px;">
+      To change these fields for every sender, go to Settings → Document Types.</div>
+    <div style="display:flex; justify-content:flex-end; margin-top:14px;">
+      <button class="btn confirm" id="sfe-done">Done</button>
+    </div>`;
+  ov.appendChild(box);
+  document.body.appendChild(ov);
+  let closed = false;
+  const close = () => { if (closed) return; closed = true; _senderEditorOpen = false;
+    document.removeEventListener('keydown', onKey, true); ov.remove(); };
+  const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  document.addEventListener('keydown', onKey, true);
+  box.querySelector('#sfe-done').onclick = close;
+  ov.addEventListener('mousedown', (e) => { if (e.target === ov) close(); });
+  box.querySelectorAll('.sfe-toggle:not([disabled])').forEach(cb => {
+    cb.addEventListener('change', async () => {
+      const key = cb.dataset.key;
+      const wantHidden = !cb.checked;
+      cb.disabled = true;
+      let r;
+      try {
+        r = await window.docusnap.setSenderFieldHidden({
+          doc_id: forDoc, supplier_name: String(_currentIssuerValue() || '').trim(),
+          document_type_slug: selectedTypeSlug, field_key: key, hidden: wantHidden,
+          template_id: state.templateId });
+      } catch { r = null; }
+      cb.disabled = false;
+      if (!r || r.ok === false) {
+        cb.checked = !cb.checked;   // revert — nothing was written
+        showToast(r && r.reason === 'structural-role'
+          ? 'That field is always shown — it\'s needed for filing.'
+          : 'Could not change that field — try again.', 'err');
+        return;
+      }
+      const row = cb.closest('.sfe-row');
+      if (row) {
+        row.style.opacity = wantHidden ? '.55' : '';
+        const st = row.querySelector('.sfe-state');
+        if (st) st.textContent = wantHidden ? 'hidden — tick to show again' : 'shown';
+      }
+      // LIVE update of the doc on screen (owner requirement 2026-08-12 + Oracle C5): repaint from
+      // the union the server JUST computed over the bound scope — no dependence on the issuer-name
+      // re-resolution or the template-id-keyed broadcast.
+      if (Array.isArray(r.hidden) && _lastRenderedDoc && currentDoc
+          && currentDoc.id === forDoc && _lastRenderedDoc.id === forDoc) {
+        _lastRenderedDoc.hidden_fields = r.hidden;
+        renderFields(_lastRenderedDoc);
+      }
+    });
+  });
+  if (focusKey) {
+    const row = box.querySelector(`.sfe-row[data-key="${CSS.escape(focusKey)}"]`);
+    if (row) {
+      row.scrollIntoView({ block: 'center' });
+      row.style.background = 'var(--accent-bg)';
+      setTimeout(() => { try { row.style.background = ''; } catch {} }, 1600);
+    }
+  }
+}
+
 // Flip one field's dot live after a ⊕ teach stages or is C1-dropped (no full re-render).
 function _refreshTaughtDot(key) {
   const dot = document.querySelector(`.taught-dot[data-key="${key}"]`);
@@ -2787,6 +2988,19 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   const _dotSpan = (key === 'supplier_name')
     ? `<span class="taught-dot" style="visibility:hidden" aria-hidden="true"></span>`
     : `<span class="taught-dot ${_fieldIsTaught(key) ? 'on' : ''}" data-key="${key}" title="${escHtml(_taughtDotTitle(_fieldIsTaught(key)))}"></span>`;
+  // "Never on these documents?" (Chris card 4, 2026-08-12): the empty box is where the user actually
+  // looks when a field never applies to this sender — a small link there opens the sender-field
+  // editor with this field pre-focused. Client-side structural check is best-effort cosmetics only
+  // (the backend refuses structural hides regardless); shown only to edit-capable users on a
+  // real-typed doc with a blank value.
+  const _typeFields = (allDocTypes.find(t => t.slug === selectedTypeSlug) || {}).fields || [];
+  const _fDef = _typeFields.find(f => f.key === key);
+  const neverHtml = (canEdit && selectedTypeSlug && selectedTypeSlug !== 'general_document'
+      && !String(val ?? '').trim() && _fDef && !_fDef.is_structural)
+    ? `<div class="field-never-row"><button type="button" class="never-here-btn" data-key="${key}"
+         style="background:none; border:none; padding:0; font-size:11px; color:var(--muted); text-decoration:underline; cursor:pointer;"
+         title="If this sender's documents never carry this field, switch it off so it stops showing here">Never on these documents?</button></div>`
+    : '';
   row.innerHTML = `
     <div class="field-row-header">
       ${_dotSpan}
@@ -2799,8 +3013,9 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
              value="${escHtml(val)}" placeholder="Not found">
       <button class="pick-btn" data-key="${key}" title="Teach this field — only if it's showing the WRONG value. Draw a box round the correct value; Scan Finder pins that position and reads it on every future document from this supplier. A field already reading correctly doesn't need teaching.">&#8853;</button>
     </div>
-    ${noteHtml}${anchorHtml}${corrobHtml}
+    ${noteHtml}${anchorHtml}${corrobHtml}${neverHtml}
   `;
+  row.querySelector('.never-here-btn')?.addEventListener('click', () => openSenderFieldEditor(key));
 
   const input = row.querySelector('input');
   input.addEventListener('input', () => {
@@ -6072,54 +6287,10 @@ document.getElementById('btn-reprocess').addEventListener('click', async (e) => 
   }
 });
 
-// ── Add to Template Manager (explicit promotion) ──────────────────────────────
-// Templates are no longer auto-created/refreshed on every confirm — this is
-// the deliberate escalation path for a recurring layout that keeps
-// misdetecting. It snapshots the currently reviewed/edited field values
-// (same shape confirm-review sends) into a managed template, independent of
-// confirming this document. Automatic learning (anchors/hints/corrections)
-// is unaffected and keeps happening on every confirm regardless.
-document.getElementById('btn-add-template').addEventListener('click', async () => {
-  if (!currentDoc) return;
-  const btn = document.getElementById('btn-add-template');
-
-  const allValues = {};
-  document.querySelectorAll('#fields-scroll .field-input').forEach(input => {
-    allValues[input.dataset.key] = input.value;
-  });
-
-  const supplierInput = document.querySelector('.field-input[data-key="supplier_name"]');
-  const supplierName  = supplierInput?.value?.trim() || currentDoc?.supplier_name || null;
-  const docTypeSlug   = selectedTypeSlug || currentDoc?.type_slug || currentDoc?.document_type_slug || null;
-
-  // A template must be tied to a real document type, or it's created with a null
-  // type and the Template Manager shows no fields to map (the custom-type bug).
-  // Block until one is selected — the backend enforces this too.
-  if (!docTypeSlug) {
-    showToast('Select a document type before adding to Template Manager.', 'warn');
-    return;
-  }
-
-  btn.disabled = true;
-  const result = await window.docusnap.promoteToTemplate({
-    document_id:        currentDoc.id,
-    allValues,
-    document_type_slug: docTypeSlug,
-    supplier_name:      supplierName,
-  });
-  btn.disabled = false;
-
-  if (result?.success) {
-    const verb = result.created ? 'Created' : 'Updated';
-    showToast(`${verb} managed template "${result.name}" — opening editor…`, 'ok');
-    // Hand off to the template editor with this document already pinned as the
-    // sample (set server-side in promote-to-template), so its preview loads
-    // automatically — no second manual browse for the same document.
-    if (result.templateId) window.docusnap.openSettingsWindowAtTemplate(result.templateId);
-  } else {
-    showToast(result?.error || 'Could not save template', 'err');
-  }
-});
+// ── Add to Template Manager (RETIRED 2026-08-12) ─────────────────────────────
+// The "Save as template" button + this handler are replaced by the sender-field editor
+// (openSenderFieldEditor) — the admin's re-pin-sample path lives in Settings → Templates
+// (set-template-sample), and the teach wizard's commit still uses promote-to-template.
 
 // ── Reprocess All (with cooperative Stop) ─────────────────────────────────────
 let _batchActive  = false;

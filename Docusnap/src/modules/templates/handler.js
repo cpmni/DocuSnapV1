@@ -347,9 +347,13 @@ function register(ctx) {
 
   // Per-template field HIDING (migration 54): mark a field the type has but this layout lacks as
   // hidden, so Review stops flagging it missing. Backend REFUSES a structural role or a field not on
-  // the type (superset-lock) and returns {ok:false, reason}. Admin-only (whole viewer is admin).
+  // the type (superset-lock) and returns {ok:false, reason}. Admin+Edit since the Review sender-field
+  // editor (Oracle C4, 2026-08-12 — Review itself is admin/edit-gated at open-review-window, and the
+  // teach wizard, also Edit territory, already calls this and silently no-opped on the refusal). The
+  // structural/superset refusals stay server-side in templates.setHiddenField regardless of role.
+  // Audited (was the one hidden-field write with no audit row — rename/delete always had one).
   ipcMain.handle('set-template-hidden-field', (_e, templateId, fieldKey, hidden) => {
-    requireRole('admin');
+    requireRole('admin', 'edit');
     const db = getDb();
     const r  = templates.setHiddenField(db, templateId, fieldKey, !!hidden);
     // LIVE-UPDATE an open Review window: push the fresh hidden set for this template so a doc on
@@ -357,8 +361,101 @@ function register(ctx) {
     // no admin-gated re-fetch (a Review window can be an Edit user). No-op if Review isn't open.
     if (r && r.ok !== false) {
       try { ctx.notifyReview('review-visibility-changed', { templateId, hidden: templates.getHiddenFields(db, templateId) }); } catch {}
+      try {
+        logAudit(db, { action: hidden ? 'template_field_hidden' : 'template_field_shown',
+          action_category: 'templates', target_type: 'template', target_id: String(templateId),
+          outcome: 'success', metadata: { field_key: fieldKey } });
+      } catch {}
     }
     return r;
+  });
+
+  // ── Review sender-field editor (2026-08-12, Oracle SIGN-OFF-W/COND ×5) ─────────────────────────
+  // ONE door in Review for "this sender's documents never show field X". Resolution-first: report the
+  // canonical template for (supplier NAME, type) — the SAME resolver Review's display uses
+  // (findForSupplierType + resolveVisibilityTemplateIds) so editor-scope ≡ display-scope by
+  // construction. `resolved:false` ⇒ the renderer shows the name-confirm prompt and mints
+  // IDENTITY-ONLY via promote-to-template (Oracle C1 — no field rules from an unreviewed sample).
+  // The hidden list returned is the UNION across every sibling id ∪ the doc's own matched template
+  // (the display truth, review/handler.js get-document-with-extractions).
+  ipcMain.handle('get-sender-field-editor', (_e, p) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const supplier_name      = (p && typeof p.supplier_name === 'string') ? p.supplier_name.trim() : '';
+    const document_type_slug = (p && p.document_type_slug) || null;
+    const docId              = p && p.doc_id;
+    if (!document_type_slug) return { resolved: false, reason: 'no-type' };
+    const doc = docId ? (documents.getById(db, docId) || null) : null;
+    let fp = null; try { fp = JSON.parse((doc && doc.keyword_fingerprint) || 'null'); } catch {}
+    const canonical = templates.findForSupplierType(db, {
+      supplier_name, document_type_slug, keyword_fingerprint: Array.isArray(fp) ? fp : null,
+    }) || (doc && doc.template_id) || null;
+    if (!canonical) return { resolved: false, reason: 'no-template' };
+    const ids = templates.resolveVisibilityTemplateIds(db, {
+      supplier_name, document_type_slug, keyword_fingerprint: Array.isArray(fp) ? fp : null,
+    });
+    ids.add(canonical);
+    if (doc && doc.template_id) ids.add(doc.template_id);
+    const hiddenUnion = new Set();
+    for (const id of ids) for (const k of templates.getHiddenFields(db, id)) hiddenUnion.add(k);
+    const fields = templates.getTypeFieldsForHiding(db, canonical)
+      .map(f => ({ ...f, hidden: hiddenUnion.has(f.key) }));
+    const tmpl = templates.getById(db, canonical);
+    return { resolved: true, templateId: canonical, unionIds: [...ids],
+             senderName: (tmpl && tmpl.name) || supplier_name || null, fields,
+             hidden: [...hiddenUnion].sort() };
+  });
+
+  // Union-aware hide/un-hide (Oracle C3): HIDE writes the canonical template only (the display union
+  // surfaces it everywhere); UN-HIDE ("Show again") must clear the row from EVERY template in the
+  // resolved set ∪ the doc's matched template — the display union STARTS with doc.template_id outside
+  // the resolver, so a resolver-only clear leaves a garble-named matched sibling still hiding the
+  // field on exactly the doc the user is looking at. Every delete audited. Fail-safe both ways:
+  // un-hide only ever INCREASES visible fields.
+  ipcMain.handle('set-sender-field-hidden', (_e, p) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const supplier_name      = (p && typeof p.supplier_name === 'string') ? p.supplier_name.trim() : '';
+    const document_type_slug = (p && p.document_type_slug) || null;
+    const fieldKey           = p && p.field_key;
+    const hidden             = !!(p && p.hidden);
+    const templateId         = p && p.template_id;       // the editor's bound canonical
+    const docId              = p && p.doc_id;
+    if (!document_type_slug || !fieldKey || !templateId) return { ok: false, reason: 'missing-args' };
+    const doc = docId ? (documents.getById(db, docId) || null) : null;
+    let fp = null; try { fp = JSON.parse((doc && doc.keyword_fingerprint) || 'null'); } catch {}
+    const ids = templates.resolveVisibilityTemplateIds(db, {
+      supplier_name, document_type_slug, keyword_fingerprint: Array.isArray(fp) ? fp : null,
+    });
+    ids.add(templateId);
+    if (doc && doc.template_id) ids.add(doc.template_id);
+    let r;
+    const touched = [];
+    if (hidden) {
+      r = templates.setHiddenField(db, templateId, fieldKey, true);   // structural/superset refusal lives here
+      if (r && r.ok !== false) touched.push(templateId);
+    } else {
+      r = { ok: true };
+      for (const id of ids) {
+        const rr = templates.setHiddenField(db, id, fieldKey, false);
+        if (rr && rr.ok !== false) touched.push(id);
+      }
+    }
+    if (r && r.ok !== false) {
+      for (const id of touched) {
+        try {
+          logAudit(db, { action: hidden ? 'template_field_hidden' : 'template_field_shown',
+            action_category: 'templates', target_type: 'template', target_id: String(id),
+            outcome: 'success', metadata: { field_key: fieldKey, via: 'sender-field-editor', doc_id: docId || null } });
+        } catch {}
+      }
+      // Keep the Settings-path broadcast contract so ANOTHER open surface refreshes too; the editor
+      // itself repaints from the returned union (C5 — no dependence on the broadcast's template_id key).
+      try { ctx.notifyReview('review-visibility-changed', { templateId, hidden: templates.getHiddenFields(db, templateId) }); } catch {}
+    }
+    const hiddenUnion = new Set();
+    for (const id of ids) for (const k of templates.getHiddenFields(db, id)) hiddenUnion.add(k);
+    return { ...(r || { ok: false }), hidden: [...hiddenUnion].sort() };
   });
 
   // Admin-facing template management — name is purely cosmetic metadata

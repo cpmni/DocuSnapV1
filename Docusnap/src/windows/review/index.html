@@ -1051,7 +1051,6 @@
           <div class="fields-header-title">Extracted Fields</div>
           <button class="fh-train" id="btn-training" title="A step-by-step walkthrough of reviewing a document">★ Take a tour</button>
           <button class="btn fh-new-type" id="btn-new-doctype" data-help-key="new-doctype" style="display:none;" title="Create a new document type without leaving Review">+ New type</button>
-          <button class="btn fh-new-type" id="btn-edit-doctype" style="display:none;" title="Edit this document type's fields and roles in Settings (admin) — e.g. to set up a missing Reference/Date field">&#9998; Edit type</button>
         </div>
         <select id="doctype-select" data-help-key="doctype-select"><option value="">— Select document type —</option></select>
         <button id="generic-chip" style="display:none; margin-top:6px; font-size:11px; padding:4px 10px; border:1px solid var(--border2); border-radius:var(--r-pill); background:transparent; color:var(--accent2); cursor:pointer;"
@@ -1059,17 +1058,13 @@
         <div class="fields-detect-row">
           <div id="extraction-status"></div>
           <div class="fields-detect-spacer" aria-hidden="true"></div>
-          <button class="btn add-template-btn" id="btn-add-template" data-help-key="template-manager" title="Save the current reviewed values as a managed template for this layout — for recurring suppliers/layouts that keep misdetecting">
-            <svg class="add-template-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/>
-              <rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/>
-              <rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/>
-              <line x1="17.25" y1="14.5" x2="17.25" y2="20"/>
-              <line x1="14.5" y1="17.25" x2="20" y2="17.25"/>
-            </svg>
-            <span class="add-template-lbl">Save as template</span>
+          <button class="btn add-template-btn" id="btn-sender-fields" style="display:none;" title="Choose which fields Scan Finder looks for on this sender's documents — e.g. switch off a field their paperwork never carries">
+            <span id="btn-sender-fields-lbl">Change what's read from this sender's documents</span>
           </button>
         </div>
+        <!-- The quiet standing promise that per-sender memory exists (Chris card 6, 2026-08-12) —
+             replaces the retired "Save as template" button as the panel's only mention of it. -->
+        <div class="fields-memory-line" style="font-size:11px; color:var(--muted); padding:2px 0 0;">Scan Finder remembers where each sender keeps things — teach a field once and it applies to their future documents.</div>
         <div class="fields-header-sub"><strong>Teach a field — only if it's showing the wrong value.</strong> Click the <span class="repick-glyph">⊕</span> and draw a box round the <em>correct</em> value — Scan Finder <strong>pins that spot</strong> and reads whatever sits there on every future document from this supplier. A field already showing the right value doesn't need teaching. Saved when you confirm.</div>
       </div>
       <div id="review-reason" hidden></div>
