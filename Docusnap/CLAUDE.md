@@ -21,7 +21,40 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-12 DAY (owner present): **READ `HANDOVER_2026-08-12_DAY.md` FIRST (incl. its
+## ⏭ LATEST — 2026-08-12 NIGHT: **READ `HANDOVER_2026-08-12_NIGHT.md` FIRST — owner-set priority:
+THE IMPORT ARC.** Owner goal verbatim: import the 200-doc corpus, MAJORITY auto-files, they review
+the residue jointly. Today's measure: 70/200 filed, 130 queued = **93 eligible-but-parked (the
+import pre-gate `needs_review` shortcut, handler.js:4326-4329) + 15 shadow-row deadlocks
+(`trust_shadow_row_skip` unflipped) + 17 honest flags + 5 type-election mistypes**. THREE auto-file
+gates disagree (import pre-gate vs FAR's isFlagged — low-conf chip skips, proven "117 skipped/Filed
+0" — vs the authoritative `isAutoFileEligible`); the unification slice sits at pendingfeatures TOP
+(`fdd1d47`), build FIRST (trace the needs_review emit at source before coding). Consent bar
+`0177716` LIVE-PROVEN (owner filed ~118 via group-reprocess bars). New exhibit CJB-5054: taught-box
+'es we' vs 37×-confirmed literal → trace the CONFADOPT refusal + the corroboration-step-3 widening
+(Lid→Ltd arc). Priors below.
+
+### Prior — 2026-08-12 EVENING (owner present): **READ `HANDOVER_2026-08-12_EVENING.md`.**
+HEAD **`3852d7c`**, PUSHED, tree clean. **THE DAY BLOCK'S "reprocess NEVER auto-files" WAS WRONG** —
+the renderer's `autoCommitFullConfidence` (shipped 2026-06-29) swept the ENTIRE queue through
+auto-file after EVERY batch reprocess; the 08-11/12 graduation flips detonated it: a 14-doc group
+reprocess filed **101 docs across six suppliers as HUMAN confirms** (via NULL, owner's username,
+feeding the human graduation window + saveCorrections hint learning). **FIXED `0177716`**
+(eric→Oracle SIGN-OFF-W/COND): queue-wide sweep REMOVED no restore door; server-owned batch-scoped
+CONSENT BAR (consume-reprocess-completion gated+computes offer; payload-less
+`reprocess-autocommit-accept` files via INTERNAL `via='auto_reprocess'` — sentinel set now
+{scope_sweep, auto_reprocess}; excluded from the human window trust.js:538; skips template/hint
+learning; 'Auto-filed (reprocess)' username; in banner+search stat). Setting
+`reprocess_autocommit_offer` DEFAULT ON (Oracle-granted; consent-gated). 27 new pins + trust
+§23(c2) both-sides; all suites green; **UI UNSMOKED**. **Live remediation RUN** (owner `!`): 101
+docs stamped `auto_reprocess` (backup `docusnap_pre_sweepstamp_20260812.db`); re-measure:
+**Pelican/invoice + Veltrix/sales_order graduation REVOKED (recent-correction — the inflated
+windows were burying real corrections)**; owed censuses must treat the cohort as SUSPECT.
+Also: **graduation-freeze replay gate PASSED** (61 docs → template_fixed@95/98, zero cross-scope);
+**import-vs-reprocess type disparity TRACED to the TYPE ELECTION** (`'bill to'` heading-eligible +
+leftmost-segment-only heading test + config-order tie-break; design at pendingfeatures TOP, NOT
+built; plain reprocess can never self-heal — cached text pins the wrong election).
+
+### Prior — 2026-08-12 DAY (owner present): **READ `HANDOVER_2026-08-12_DAY.md` FIRST (incl. its
 POST-WRAP ADDENDUM).** HEAD **`3a751d0`**, PUSHED, tree clean. Post-wrap: **RAW-CROP WITNESS built**
 (`3a751d0` — the 08-11 recipe-ladder I→1 spec, C1-C6; flags OFF; heal-gate arms OWED before flip;
 C4: never flip the sep-guard alone), **backfill APPLY verified** (tpl 14/15 issuer frozen), and the
@@ -42,7 +75,8 @@ currency never magnitude-compared in Learning Repair · inert containment predic
 `6bd591f` **CONFIRMED_DOMINANT_ADOPT** (junk-flagged name yields to the scope's SINGLE ≥5×-confirmed
 literal; owner-ruled STRICT variability; B2 memory-family record blocks corroborated route; B3
 adopted rows never learn — dominance can't vote for itself; 2nd `_override_eligible` carve-out).
-**CORRECTED CLAIMS: auto-file fires at IMPORT ONLY — reprocess NEVER auto-files** (3 eligible docs
+**CORRECTED CLAIMS (⚠ ITSELF CORRECTED 08-12 EVENING: a renderer door DID auto-file after batch
+reprocess — see LATEST): auto-file fires at IMPORT ONLY — reprocess NEVER auto-files** (3 eligible docs
 sit in the queue for exactly this; exits = File All Ready + scope sweep, and `scope_sweep_enabled`
 is OFF in the live DB — the 08-02 "ON" record is STALE). Live data: 18 supplier pins cleared
 (backup `live_backup_20260812_pinclear.db`). OWED: backfill APPLY + replay · editor UI smoke ·
