@@ -488,8 +488,22 @@ function _scopeFormats(db, normSupplier, slug, cachedFormats) {
  * Is a (supplier, slug) scope graduated? Live-computed — never stored — so it self-revokes
  * the moment a correction lands. Returns {trusted, floor, reason, confirmedCount, ...}.
  */
+// ── Graduation-window override (owner dial, 2026-08-12) ─────────────────────────────────────────
+// TRUST_WINDOW becomes a per-install setting: settings.graduation_window (integer). Default stays
+// 10 — zero behaviour change until the owner sets it (the comment above always said "a conservative
+// install can raise W"; this also lets a fast-moving install lower it). Clamped 3..50: below 3 a
+// single File-All-Ready burst of poison could graduate a scope before any human looks twice (the
+// sandbox's 21-doc poison class). Clamp pinned in test_scope_trust.js.
+function _configuredWindow(db) {
+  try {
+    const v = parseInt(require('./learning').getSetting(db, 'graduation_window', ''), 10);
+    if (Number.isFinite(v)) return Math.min(50, Math.max(3, v));
+  } catch { /* fall through to the constant */ }
+  return TRUST_WINDOW;
+}
+
 function scopeTrust(db, supplier, slug, opts = {}) {
-  const W    = opts.window ?? TRUST_WINDOW;
+  const W    = opts.window ?? _configuredWindow(db);
   const MAXC = opts.maxCorrections ?? TRUST_MAX_CORRECTIONS;
   const sup  = _norm(supplier);
   const sl   = String(slug || '').toLowerCase().trim();
@@ -918,7 +932,7 @@ function listGraduatedScopes(db) {
     WHERE d.status = 'confirmed' AND TRIM(COALESCE(d.supplier_name, '')) <> ''
     GROUP BY LOWER(TRIM(d.supplier_name)), LOWER(dt.slug)
     HAVING n >= ?
-  `).all(TRUST_WINDOW);
+  `).all(_configuredWindow(db));   // roster prefilter follows the same dial; scopeTrust re-checks each hit
   const formats = require('./learning').getFieldFormats(db);
   const optOut = _optedOutScopes(db);
   const out = [];
@@ -953,7 +967,7 @@ function _currencyConsistentForField(db, supplier, slug, fieldKey, value) {
 }
 
 module.exports = {
-  TRUST_WINDOW, TRUST_MAX_CORRECTIONS, TRUSTED_FLOOR, UNTRUSTED_FLOOR, STRICT_TYPES,
+  TRUST_WINDOW, TRUST_MAX_CORRECTIONS, TRUSTED_FLOOR, UNTRUSTED_FLOOR, STRICT_TYPES, _configuredWindow,
   classifyLearnedShape, valueMatchesShape, fieldVerifiable,
   _dominantStructuredClass,        // exported for the contaminated-history pin (test_scope_trust.js §18b)
   _nonRoleLenientEnabled,          // single source of the default, so tests can't drift from it

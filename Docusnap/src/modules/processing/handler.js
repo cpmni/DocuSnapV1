@@ -138,6 +138,14 @@ function _reconcileEnv(db) {
     const learning = require('../../../database/modules/learning');
     const env = {};
     if (learning.getSetting(db, 'prefix_garble_adopt', 'false') === 'true') env.PREFIX_GARBLE_ADOPT = '1';
+    // Reconcile shadow-attribution (gary → Oracle W/COND ×5, 2026-08-12): a corroborated total is
+    // no longer capped when the ONLY disagreeing operands are invisible shadow reads.
+    if (learning.getSetting(db, 'reconcile_shadow_attribution', 'false') === 'true') env.RECONCILE_SHADOW_ATTRIBUTION = '1';
+    // VAT rate-annotation segment skip widening ('VAT @ 20% | £77.55' — reggie 2026-08-12).
+    if (learning.getSetting(db, 'vat_rate_at_skip', 'false') === 'true') env.VAT_RATE_AT_SKIP = '1';
+    // Self-discharging operator pins (gary → Oracle W/COND 2026-08-12): a pin whose value the
+    // pipeline now reads independently is released on reprocess — natural row kept, pin cleared.
+    if (learning.getSetting(db, 'supplier_pin_self_discharge', 'false') === 'true') env.SUPPLIER_PIN_SELF_DISCHARGE = '1';
     if (learning.getSetting(db, 'crosscheck_outlier_reconcile', 'false') === 'true') env.CROSSCHECK_OUTLIER_RECONCILE = '1';
     if (learning.getSetting(db, 'universal_verify_restore', 'false') === 'true') env.UNIVERSAL_VERIFY_RESTORE = '1';
     if (learning.getSetting(db, 'universal_verify_flag', 'false') === 'true') env.UNIVERSAL_VERIFY_FLAG = '1';
@@ -2284,6 +2292,28 @@ function register(ctx) {
       reprocDetectedName,
       docId
     );
+
+    // SELF-DISCHARGED PIN clear (SUPPLIER_PIN_SELF_DISCHARGE, Oracle W/COND 2026-08-12): the engine
+    // proved the natural read independently equals the pin and kept the natural row — release the
+    // batch-applied obligation here, AFTER the merge committed. Pure helper carries the race guard
+    // (exact match on the CURRENT stored pin — a mid-run re-resolve to a different name keeps the
+    // NEW pin). Audited. Absent signal (the dark default) ⇒ byte-identical.
+    try {
+      const { shouldClearSupplierPin } = require('../../../database/modules/supplier_pin_discharge');
+      const _pinRow = db.prepare('SELECT supplier_pin FROM documents WHERE id = ?').get(docId);
+      if (shouldClearSupplierPin(_pinRow && _pinRow.supplier_pin, result.supplier_pin_discharged)) {
+        db.prepare('UPDATE documents SET supplier_pin = NULL WHERE id = ?').run(docId);
+        try {
+          require('../auth/handler').logAudit(db, {
+            action: 'supplier_pin_discharged', action_category: 'learning', target_type: 'document',
+            target_id: String(docId), document_id: docId, outcome: 'success',
+            metadata: { pin: result.supplier_pin_discharged.pin,
+                        value: result.supplier_pin_discharged.value,
+                        method: result.supplier_pin_discharged.method } });
+        } catch {}
+        logger?.log?.(`  Pin discharged on doc ${docId}: natural read equals the pin — cleared`);
+      }
+    } catch { /* best-effort — a clear failure must never affect the reprocess result */ }
 
     const mergedMap = {};
     for (const r of mergedRows) mergedMap[r.field_key] = { value: r.display_value, confidence: r.confidence };

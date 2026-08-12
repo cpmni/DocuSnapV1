@@ -85,5 +85,50 @@ print("\nPinned trade-off (no-silent-auto-file): the operator_pin read ALWAYS ca
 r2, _ = run(PIN, {})   # even with NO rival read, the pin is noted
 check("pin with no competing read still noted (can't slip to auto-file)", bool(sup(r2).get('validation_note')) and sup(r2).get('value') == PIN)
 
+# ── SELF-DISCHARGE (SUPPLIER_PIN_SELF_DISCHARGE, gary → Oracle W/COND 2026-08-12) ────────────────
+# A natural read that independently EQUALS the pin discharges it: natural row kept (earned conf,
+# no operator_pin note), `_supplier_pin_discharged` metadata emitted. Disagree / empty / OFF /
+# excluded-method / subset-name ⇒ today's pin verbatim (each pinned below).
+def run_d(pinned, anchor_result, discharge='1'):
+    old = os.environ.get('SUPPLIER_PIN_SELF_DISCHARGE')
+    os.environ['SUPPLIER_PIN_SELF_DISCHARGE'] = discharge
+    try:
+        return run(pinned, anchor_result)
+    finally:
+        if old is None: os.environ.pop('SUPPLIER_PIN_SELF_DISCHARGE', None)
+        else: os.environ['SUPPLIER_PIN_SELF_DISCHARGE'] = old
+
+MATCH_ANCHOR = {'supplier_name': {'value': PIN, 'confidence': 88, 'method': 'anchor_crop', 'anchor': 'logo'}}
+MATCH_CASED  = {'supplier_name': {'value': ' marlowe  medical supplies ', 'confidence': 88, 'method': 'anchor_crop'}}
+MATCH_OVERRIDE = {'supplier_name': {'value': PIN, 'confidence': 88, 'method': 'keyword_override'}}
+SUBSET_ANCHOR  = {'supplier_name': {'value': 'Marlowe Medical', 'confidence': 88, 'method': 'anchor_crop'}}
+
+print("\nSELF-DISCHARGE — natural read equals the pin ⇒ pin released, natural row kept")
+rd, _ = run_d(PIN, MATCH_ANCHOR)
+check("discharged: natural method kept (not operator_pin)", sup(rd).get('method') == 'anchor_crop')
+check("discharged: earned confidence kept (88, not 75)", sup(rd).get('confidence') == 88)
+check("discharged: NO operator_pin note", not sup(rd).get('validation_note'))
+check("discharged: signal metadata emitted", isinstance(rd.get('_supplier_pin_discharged'), dict)
+      and rd['_supplier_pin_discharged'].get('pin') == PIN)
+rdc, _ = run_d(PIN, MATCH_CASED)
+check("case/whitespace differences still discharge (the comparator normalises)",
+      sup(rdc).get('method') == 'anchor_crop' and rdc.get('_supplier_pin_discharged'))
+
+print("\nSELF-DISCHARGE holds — every refusal is today's pin verbatim")
+rh, _ = run_d(PIN, RIVAL_ANCHOR)
+check("disagree: pin holds + note stays", sup(rh).get('method') == 'operator_pin' and bool(sup(rh).get('validation_note')))
+check("disagree: NO signal emitted", '_supplier_pin_discharged' not in rh)
+re_, _ = run_d(PIN, {})
+check("no natural witness: pin holds", sup(re_).get('method') == 'operator_pin')
+ro, _ = run_d(PIN, MATCH_OVERRIDE)
+check("keyword_override EXCLUDED (can consult the hint bank — memory echoing memory is not "
+      "corroboration): pin holds even on equality", sup(ro).get('method') == 'operator_pin')
+rs, _ = run_d(PIN, SUBSET_ANCHOR)
+check("subset name ('Marlowe Medical' ⊂ pin) does NOT discharge — anti-fuzzy pin",
+      sup(rs).get('method') == 'operator_pin')
+roff, _ = run_d(PIN, MATCH_ANCHOR, discharge='0')
+check("flag OFF: byte-identical (pin holds even on a perfect natural match)",
+      sup(roff).get('method') == 'operator_pin' and '_supplier_pin_discharged' not in roff)
+
 print(f"\n{'PASS' if not fails else 'FAIL'} — {fails} failure(s)")
 sys.exit(1 if fails else 0)

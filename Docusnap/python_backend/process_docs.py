@@ -985,6 +985,10 @@ def main():
             # Corroboration record (owner principle 2026-08-11): {field_key: {winner_family,
             # agree, disagree, independent_agree}} — record-only, woven per-field below.
             field_corrob      = raw_extractions.pop("_corroboration_emit", None) or {}
+            # Self-discharged operator pin (SUPPLIER_PIN_SELF_DISCHARGE, 2026-08-12): popped HERE,
+            # BEFORE sanitise_extractions — a leaked '_'-key is the old BUG-1 class (Oracle G9).
+            # Absent when dark ⇒ the file_done emit below is byte-identical.
+            pin_discharged    = raw_extractions.pop("_supplier_pin_discharged", None)
             raw_extractions.pop("_mode_used", None)
             raw_extractions.pop("_document_slug", None)
 
@@ -1064,6 +1068,8 @@ def main():
                 "logo_detail_hash":   logo_detail_hash,
                 "keyword_fingerprint": kw_fingerprint,
                 **({"identity_shadow": identity_shadow_v} if identity_shadow_v else {}),
+                # Self-discharged pin signal (absent when dark — byte-identical emit).
+                **({"supplier_pin_discharged": pin_discharged} if pin_discharged else {}),
                 "page_count":         len(page_images),
                 "mode_used":          "fast",
                 "ocr_text":           ocr_text[:50000],

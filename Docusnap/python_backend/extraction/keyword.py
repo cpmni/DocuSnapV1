@@ -1777,10 +1777,22 @@ def _search_for_label(lines: list[str], label: str,
             # (the AMOUNT is), so a discount/tax read grabbed it, failed currency validation, and
             # left reconciliation blind ("total < subtotal, no discount to explain it" false flag).
             # Tolerates wrapping parens and a trailing ":"/"." ("(10%):", "10%", "8.5 %").
+            # VAT_RATE_AT_SKIP (reggie 2026-08-12, DEFAULT OFF): '@'-decorated rate annotations —
+            # "VAT @ 20% | £77.55" columns as "@ 20%", which fails BOTH skip patterns, gets taken
+            # as the value, and dies at currency validation → MISSING(tax) (Silverbeck 0016).
+            # One char-class widening: the annotation may open with '(' OR '@'; '@' also joins the
+            # punctuation-residue class. Only ever consulted while a FOLLOWING segment exists, so
+            # the skip can never eat a last/only value column. Field-generic by design ("Discount
+            # @ 10% | £12.00" heals identically). Kill: settings 'vat_rate_at_skip' via
+            # _reconcileEnv. OFF ⇒ the shipped patterns verbatim.
+            _rate_at = os.environ.get('VAT_RATE_AT_SKIP', '0') != '0'
+            _resid_re = r'[.\-–:#|)*@]+' if _rate_at else r'[.\-–:#|)*]+'
+            _rate_re  = (r'[@(]?\s*\d+(?:\.\d+)?\s*%\s*\)?\s*[:.]?' if _rate_at
+                         else r'\(?\s*\d+(?:\.\d+)?\s*%\s*\)?\s*[:.]?')
             _si = 0
             while _si + 1 < len(_segs) and (
-                    re.fullmatch(r'[.\-–:#|)*]+', _segs[_si])
-                    or re.fullmatch(r'\(?\s*\d+(?:\.\d+)?\s*%\s*\)?\s*[:.]?', _segs[_si])):
+                    re.fullmatch(_resid_re, _segs[_si])
+                    or re.fullmatch(_rate_re, _segs[_si])):
                 _si += 1
             after = _segs[_si] if _segs else ''
             # A totals row often reads "Invoice Total | GBP | 118.83" — the column right after

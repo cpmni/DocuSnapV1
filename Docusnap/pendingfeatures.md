@@ -6,6 +6,70 @@
 
 ---
 
+## 2026-08-12 — AFTERNOON BATCH STATUS (owner mandate "do the fix and address everything"): FIVE slices BUILT DARK + two live tools
+All gates in `docs/oracle_log.md` (2026-08-12 afternoon entry). BUILT, flags DEFAULT OFF + toggles:
+`reconcile_shadow_attribution` · `vat_rate_at_skip` · `graduation_freeze_issuer` (flip WITH
+`template_identity_on_page` — checklist in the toggle copy) · `supplier_pin_self_discharge` ·
+plus `graduation_window` slider (default 10, owner wants 5) and the Learning-Repair currency fix +
+the INERT `substantial_containment` predicate (consumer slice = separate arc). Backfill census RUN:
+tpl 14+15 eligible (`scripts/backfill-graduation-issuer-freeze.js`, APPLY=1 app-closed, owner-timed).
+**OWED / owner-timed:** backfill APPLY + replay gate · pin-discharge census arm (18-pin backup copy,
+AFTER backfill) · realdoc dark+armed arms (running at wrap — see handover for the verdict) ·
+Template Manager right-column height cosmetic (owner-reported, unfixed) · label-above keyword design
+(unbuilt) · un-pin UI control + ripple copy (unbuilt, part of the pin arc).
+
+## 2026-08-12 — GRADUATION TEMPLATES ARE IDENTITY-MUTE: freeze the issuer at graduation birth (BUILT DARK 2026-08-12 — see AFTERNOON BATCH STATUS above)
+
+**Live exhibit (owner, post-reprocess):** Oakhaven delivery_note graduated (17 human confirms, 16
+clean) and minted tpl 14 at the 10th confirm (`onScopeGraduated` → graduationTemplate). Reprocess:
+all 3 queue docs BIND to tpl 14 — but `supplier_name` still reads `hint_text_match` @85 (hint cap =
+min(90, 60+5×usage)) / `logo` @72, overall 85/72 < the 95 graduated floor. **Auto-file structurally
+unreachable on any layout whose identity comes from hint/logo — graduation defeats its own purpose.**
+Verified at source: tpl 14 field rules ALL `is_variable:1, fixed_value:null` (graduationTemplate's
+`_variableOnlyFields` — correct anti-freeze caution for DATA fields, wrongly silencing the issuer);
+promote-born tpl 6 (Silverbeck) has `supplier_name fixed_value` set and seeds template grade 95.
+Harrowgate tpl 15 = same graduation birth, same defect pending.
+
+**Fix direction:** graduation birth freezes the ISSUER ONLY — `supplier_name` fixed_value = the
+graduated scope's ESTABLISHED identity (dominant confirmed issuer over ≥W human confirms — evidence
+FAR stronger than a promote's single curated doc). Exactly the Oracle-C1 identity-only shape the
+sender-field-editor mint ships with (2026-08-12) — after this, all three birth paths agree: teach
+promote (full curated payload), editor mint (identity-only), graduation (identity-only). Guards
+already in place: young-frozen-identity corroboration requires the name ON PAGE for young frozen
+strings (ca0bb49); identity-on-page veto governs claiming. Backfill arm for EXISTING graduation-born
+templates (tpl 14, 15 + census for others) — the sample-angle-backfill pattern (census → backup →
+apply → replay gate). **Interim owner route (no code): Template Manager → set the supplier_name
+fixed value manually on tpl 14/15, reprocess the groups.**
+
+## 2026-08-12 — SELF-DISCHARGING SUPPLIER PINS (BUILT DARK 2026-08-12, Oracle W/COND — see AFTERNOON BATCH STATUS above; census arm owner-timed)
+
+**The defect (owner, live):** the issuer RIPPLE ("apply 'Harrowgate Timber Supplies' to the other 19")
+writes an `operator_pin` per doc, and a pin is review-bound by design ("a pin can never silently
+auto-file", Oracle) with confirm as its ONLY discharge. Designed for ONE doc; the ripple applied it
+to a BATCH with one click, so a customer who accepts the app's own offer buys N mandatory manual
+confirms — on docs that would otherwise be auto-file-ready once the scope graduates. Live exhibit:
+Harrowgate sales_order graduated (12 confirms, 11 clean) while its 8 remaining docs sit pinned+noted.
+**Owner principle, PIN IT IN REVIEWS: a convenience that mints obligations is not a convenience —
+a feature that batch-APPLIES must batch-DISCHARGE, or state the price before applying.**
+
+**Agreed design — a pin releases when provably redundant.** At reprocess, the natural identity
+resolution already runs (the pin re-asserts at the end, `engine.py:5573` + `:6429`). New rule: if the
+natural read (template/logo/hint/keyword — everything the scope has since learned) normalise-equals
+the pin value, commit the NATURAL read (earned confidence, no note) and CLEAR `documents.supplier_pin`
+(JS-side, post-process). Disagree or read nothing ⇒ pin holds + note stays (the case pins exist for).
+Oracle's rule survives: the discharged doc auto-files on the MACHINE's independent read, never on the
+operator-supplied value. This is the corroboration direction applied to pins: human said X, system
+independently learned X, holding for the human to re-say X serves nobody. Flag DEFAULT OFF +
+`_reconcileEnv` bridge + toggle; owner flips.
+**Gates:** census over the 18 live pinned docs (10 Bramblewood + 8 Harrowgate) — discharge rate +
+zero discharges where natural ≠ pin; pin the disagree-holds case; realdoc byte-identical OFF.
+
+**Alongside (same arc):** (a) ripple prompt copy states the cost until this ships ("each filled
+document still needs one confirm"); (b) small un-pin control on the issuer note (reverse of Resolve —
+deletes the pin, doc reverts to natural reading on next reprocess), admin/edit, audited.
+
+**Interim relief (no build):** DB-side pin clear (backup first, app closed) + group reprocess — offered.
+
 ## 2026-08-12 — Containment witness for name corroboration (OWNER IDEA, design stage — reggie+gary+Oracle before build)
 
 **Exhibit:** Nordwind quote 0026-1 (doc 454, bound to the garbage tpl 11) — keyword read "Bramblewood
@@ -156,7 +220,7 @@ highest precision, still valuable). `number`-typed fields: decide at build wheth
 **Test:** pin both directions — 479.04-vs-1,357.92 mixed-magnitude pool produces NO suspect;
 '2.205.60' in the same pool still flags. Precision-first per the detector's own charter.
 
-## 2026-08-12 — RECONCILE FLAG MISATTRIBUTION: shadow subtotal flags the corroborated total (gary-designed, AWAITING ORACLE + owner decision)
+## 2026-08-12 — RECONCILE FLAG MISATTRIBUTION: shadow subtotal flags the corroborated total (BUILT DARK 2026-08-12, Oracle W/COND C1-C5 — flip needs the census evidence)
 
 **Live exhibit (owner at screen):** Silverbeck sales_order 0016 — page prints Net £387.75 / VAT £77.55 /
 TOTAL DUE £465.30. `total` 465.30 read by TWO independent families (template_mapping 90 won + keyword 93,

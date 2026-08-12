@@ -129,6 +129,10 @@ function detectOutlierDocs(rows) {
 const STRUCTURED_CLASSES = new Set(['date', 'currency', 'alphanumeric', 'number']);
 // The OCR replacement char (U+FFFD) or any C0 control char — a near-certain garble anywhere.
 const BAD_CHARS = new RegExp('[' + String.fromCharCode(0xFFFD) + '\\x00-\\x1F]');
+// Magnitude-invariant money format: optional sign/currency mark, digits with optional 3-digit
+// thousands groups, decimals exactly two when present. '479.04', '1,357.92', '10603.44', '£45'
+// all pass; '2.205.60' (double-dot OCR garble) fails. See B1-currency below.
+const MONEY_VALID = /^-?\s?[£$€]?\s?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{2})?$/;
 function detectAnomalousValues(vals) {
   // Group by field_key.
   const byField = new Map();
@@ -176,6 +180,21 @@ function detectAnomalousValues(vals) {
         out.push({ id: r.doc, kind: 'data', field, value: r.value,
           text: `The ${field.replace(/_/g, ' ')} “${r.value}” contains characters we don't usually see here — worth a look.`,
           severity: 4 });
+        continue;
+      }
+      // B1-currency (owner ruling 2026-08-12): a money field has NO magnitude prior — 479.04 and
+      // 1,357.92 are both correct on their own documents, and the thousands comma made magnitude
+      // part of the SHAPE, so any mixed-magnitude scope flagged its own smaller totals ("looks
+      // unusual — the others usually look like '1,357.92'"). Replace the shape comparison with a
+      // magnitude-invariant FORMAT check. The true-positive class survives: '2.205.60' (the
+      // Nordwind double-dot garble) fails the format and still flags; B3 above keeps the
+      // letters/control-chars arm. Money is NEVER shape-compared — `continue` skips B1/B2.
+      if (g.type === 'currency') {
+        if (singleton && !MONEY_VALID.test(r.value)) {
+          out.push({ id: r.doc, kind: 'data', field, value: r.value,
+            text: `The ${field.replace(/_/g, ' ')} “${r.value}” doesn't read like an amount — worth a look.`,
+            severity: 3 });
+        }
         continue;
       }
       // B1 — structured shape miss (single dominant shape ≥80%, off-shape singleton).
@@ -236,6 +255,16 @@ function explainOutlierFields(vals, outlierIds) {
     }
     for (const r of g.rows) {
       if (!idset.has(Number(r.doc))) continue;
+      // B1-currency parity (owner ruling 2026-08-12, see detectAnomalousValues): money is never
+      // shape-compared — magnitude drives the thousands comma, and any amount is correct on its
+      // own doc. Only a value that fails the money FORMAT is worth explaining.
+      if (g.type === 'currency') {
+        if (!MONEY_VALID.test(r.value)) {
+          out.push({ id: r.doc, kind: 'data', field, value: r.value,
+            text: `The ${label} “${r.value}” doesn’t read like an amount — this is part of why it looks out of place.` });
+        }
+        continue;
+      }
       if (structured && dominantShare >= 0.6 && shapeSignature(r.value) !== dominantShape) {
         out.push({ id: r.doc, kind: 'data', field, value: r.value, example,
           text: `The ${label} “${r.value}” doesn’t match this type’s usual format${example ? ` of “${example}”` : ''} — this is part of why it looks out of place.` });

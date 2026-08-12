@@ -754,6 +754,20 @@ function main() {
       check('opts seam: stored template_id NULL still blocks without the override', noTmpl.ok === false);
       const w5 = trust.scopeTrust(db, 'Anconia Corp', 'invoice', { window: 20 });
       check('opts seam: scopeTrust window override honoured', w5.trusted === false && w5.reason === 'volume');
+
+      // ── graduation_window SETTING (owner dial, 2026-08-12) ─────────────────────────
+      // The W constant reads settings.graduation_window; default stays 10; clamped 3..50.
+      // PIN the clamp: below 3 a single File-All-Ready poison burst could graduate a scope.
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('graduation_window', '5')").run();
+      check('graduation_window=5 is honoured', trust._configuredWindow(db) === 5);
+      db.prepare("UPDATE settings SET value='2' WHERE key='graduation_window'").run();
+      check('graduation_window=2 CLAMPS to 3 (poison-burst floor)', trust._configuredWindow(db) === 3);
+      db.prepare("UPDATE settings SET value='999' WHERE key='graduation_window'").run();
+      check('graduation_window=999 clamps to 50', trust._configuredWindow(db) === 50);
+      db.prepare("UPDATE settings SET value='garbage' WHERE key='graduation_window'").run();
+      check('non-numeric setting falls back to the default 10', trust._configuredWindow(db) === 10);
+      db.prepare("DELETE FROM settings WHERE key='graduation_window'").run();
+      check('unset ⇒ default 10 (no behaviour change shipped)', trust._configuredWindow(db) === 10);
     }
   }
 

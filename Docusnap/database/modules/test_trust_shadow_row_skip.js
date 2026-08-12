@@ -228,6 +228,38 @@ section('ROLE-SET DRIFT — the gate and the confirm-time drop share COMPANY_KEY
   check('COMPANY_KEYS restored after the drift pin', doctypes.COMPANY_KEYS.join() === before.join());
 }
 
+section('SHADOW-ATTRIBUTION SEAM (Oracle C2, 2026-08-12) — the reworded note is STILL the auto-file block');
+// RECONCILE_SHADOW_ATTRIBUTION skips the 50-cap on a corroborated total, so the any-noted-field
+// rule in isAutoFileEligible becomes the ONLY barrier on that class. Pin it at BOTH regimes:
+// conf 90 (docTrustGate runs) AND conf 100 (docTrustGate is deliberately lenient/skipped — the
+// note check must refuse BEFORE the confidence branch, or the class silently auto-files).
+{
+  const ATTRIB_NOTE = 'the total 465.30 was read the same way by two independent methods; ' +
+                      "the page's net/subtotal reading 3875.75 disagrees with it — please check";
+  const tryConf = (conf) => {
+    const { db, tid } = makeDb();
+    seedHistory(db, tid);
+    const id = db.prepare('INSERT INTO documents (supplier_name, document_type_id, status, template_id, overall_confidence) VALUES (?,?,?,?,?)')
+      .run('Anconia Corp', tid, 'needs_review', 1, conf).lastInsertRowid;
+    const vals = { supplier_name: 'Anconia Corp', invoice_date: '04-06-2026', invoice_number: 'INV-10099' };
+    for (const [k, v] of Object.entries(vals)) {
+      db.prepare('INSERT INTO extractions (document_id, field_key, display_value, confidence, extraction_method) VALUES (?,?,?,?,?)')
+        .run(id, k, v, conf, 'keyword');
+    }
+    db.prepare('INSERT INTO extractions (document_id, field_key, display_value, confidence, extraction_method, validation_note) VALUES (?,?,?,?,?,?)')
+      .run(id, 'total_amount', '465.30', conf, 'template_mapping', ATTRIB_NOTE);
+    const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
+    const r = trust.isAutoFileEligible(db, doc);
+    db.close();
+    return r;
+  };
+  const at90 = tryConf(90);
+  check(`attrib note at conf 90 refused (got ${at90.reason})`, at90.eligible === false);
+  const at100 = tryConf(100);
+  check(`attrib note at conf 100 refused — the note is the SOLE barrier there (got ${at100.reason})`,
+        at100.eligible === false);
+}
+
 console.log();
 if (fails) { console.log(`${fails} FAILED`); process.exit(1); }
 console.log('ALL PASS');

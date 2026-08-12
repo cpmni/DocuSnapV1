@@ -1395,3 +1395,47 @@ pinned) · C4 both hide IPCs audited, role admin+edit · C5 toggle repaints from
 union. Existing pins ALL PASS; realdoc A/B (live-DB snapshot, feature vs stashed base):
 **md5-identical, 142 docs, 0 silent wrong, 0 wrong-type auto-file.** Outstanding: owner UI smoke
 list (app restart required — new main-process IPCs).
+
+## 2026-08-12 — afternoon batch: THREE Oracle passes, five slices BUILT DARK (owner mandate "address everything, involve the agents")
+**(1) RECONCILE_SHADOW_ATTRIBUTION — SIGN OFF W/COND C1-C5, BUILT.** Corroborated total + all-shadow
+operands ⇒ note reworded to neutral evidence + 50-cap skipped; note NEVER cleared (the trust.js
+any-noted-field rule stays the sole barrier — pinned at conf 90 AND at conf 100 where docTrustGate
+is skipped). C1 kwarg-only-when-armed (2-arg stubs safe); pre-Stage-4 corroboration frame verified
+drift-free (Stage 4 never writes the candidate ledger); `_cmp_norm` currency normalisation VERIFIED
+(£-strip via _EDGE_RE). Census instrument RECONCILE_ATTRIB_CENSUS_DIR (buckets corroborated? ×
+all-shadow?) = the flip evidence. Pins: tests/test_reconcile_shadow_attribution.py (12) +
+test_trust_shadow_row_skip.js C2 pair + wiring row. Flag OFF + bridge + toggle.
+**(2) VAT_RATE_AT_SKIP (reggie) — SIGN OFF, BUILT.** reggie REFUTED the "@ defeats the label"
+assumption: bare "VAT" matches; the columned "@ 20%" segment fails the rate-annotation skip's
+fullmatch, is taken as the value, and dies at currency validation ⇒ MISSING(tax). Fix = one
+char-class ([@(]? + @ in the residue class), only ever consulted while a FOLLOWING segment exists.
+End-to-end pins (tests/test_vat_rate_at_skip.py, 9) incl. last-segment-never-eaten. Flag OFF +
+bridge + toggle.
+**(3) GRADUATION ISSUER FREEZE — SIGN OFF W/COND, BUILT (graduation_freeze_issuer OFF + toggle).**
+Oracle ACCEPTED the narrowing of his own C6 to issuer-only: the issuer is DEFINITIONALLY constant
+(the scope key scopeTrust graduated on, ≥W human confirms) and the codebase-wide freeze exception.
+Two-way pin shipped (can neither extend the freeze nor re-mute the issuer); frozen string = the
+scope string, never allValues. Born-mature seam VERIFIED PARTIAL: namePresence counts BINARY-equal
+supplier while scopeTrust counts LOWER(TRIM()) — a case-varied scope can land in the YOUNG fallback;
+direction SAFE (stricter). FLIP CHECKLIST (blocking at flip): record template_identity_on_page
+state — freeze + identity-on-page OFF re-opens the Quillstone class with stronger stamps; flip
+together (in the toggle copy). Backfill script scripts/backfill-graduation-issuer-freeze.js with
+ALL SIX census clauses (incl. ≥DISTINCTIVE_MIN + no-issuer-mapping exclusion); census RUN read-only:
+exactly tpl 14 (Oakhaven) + tpl 15 (Harrowgate) eligible, 2 of 2. APPLY + replay gate = owner-timed
+(app closed). Named residual: a scope graduating LATER against a pre-existing variable template
+links without freezing — recorded, not widened (C1 never-mutate-on-link outranks completeness).
+**(4) SUPPLIER_PIN_SELF_DISCHARGE — SIGN OFF W/COND, BUILT (flag OFF + bridge + toggle).** At the
+final re-assert: natural read (page/layout-evidence allowlist; keyword_override EXCLUDED pending a
+page-hit proof — memory echoing memory is not corroboration; doctype-'fixed' excluded) normalise-
+equals the pin ⇒ natural row kept (earned conf, own notes never stripped) + `_supplier_pin_
+discharged` signal → JS clears documents.supplier_pin AFTER the merge commits, audited, race-guarded
+(exact match on the CURRENT stored pin). First assert deliberately untouched (Oracle UPHELD — the
+pin re-scopes WHERE TO LOOK; all seven accepted_issuers consumers verified suppression-only).
+Comparator _accept_norm∘normalize_supplier_name EXACT — anti-fuzzy/subset pins shipped. What still
+holds a discharged doc: reprocess NEVER auto-files (_maybeAutoFile import-path only, verified) +
+natural-read notes + trust floors. Pins: test_supplier_pin.py +11 · test_supplier_pin_discharge.js
+(6) · wiring row. Census arm (18-pin backup copy, AFTER the backfill) = owner-timed.
+**Also built same afternoon, no Oracle needed:** graduation_window setting (clamp 3..50, default 10,
+5 pins) · Learning-Repair currency magnitude exclusion (both detectors, 4 pins) · containment
+predicate substantial_containment (INERT, reggie spec, 10 pins). Build order standing: freeze →
+backfill → discharge census.

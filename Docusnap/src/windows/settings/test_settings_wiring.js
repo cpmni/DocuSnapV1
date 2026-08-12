@@ -76,6 +76,9 @@ console.log(`  NOTE ${KEYS.length} toggle-written setting keys; ${unread.length}
 // Add a row here whenever a new extraction switch is bridged; a bridge that loses any leg is a
 // switch the owner can flip that changes nothing.
 const BRIDGES = [
+  ['shadow-attrib-toggle',      'reconcile_shadow_attribution', 'RECONCILE_SHADOW_ATTRIBUTION'],
+  ['vat-rate-at-toggle',        'vat_rate_at_skip',             'VAT_RATE_AT_SKIP'],
+  ['pin-discharge-toggle',      'supplier_pin_self_discharge',  'SUPPLIER_PIN_SELF_DISCHARGE'],
   ['inline-row-overlap-toggle', 'template_inline_row_overlap', 'TEMPLATE_INLINE_ROW_OVERLAP'],
   ['ref-role-digit-toggle',     'ref_role_digit_gate',         'REF_ROLE_DIGIT_GATE'],
   ['drift-row-pitch-toggle',    'template_drift_row_pitch',    'TEMPLATE_DRIFT_ROW_PITCH'],
@@ -125,6 +128,9 @@ for (const [id, key, env] of BRIDGES) {
 // consumer stops reading the key is the same dead-toggle failure, just one file over.
 const SETTING_SWITCHES = [
   ['shadow-row-skip-toggle', 'trust_shadow_row_skip', 'database/modules/trust.js'],
+  // Graduation issuer freeze: a JS-main-process BIRTH decision — graduationTemplate.js reads the
+  // key itself (the module's own _enabled precedent); no Python leg exists.
+  ['graduation-freeze-issuer-toggle', 'graduation_freeze_issuer', 'database/modules/graduationTemplate.js'],
   // Corroborated auto-file (Oracle-signed 2026-08-11): the gate is a settings read inside
   // trust.js (env CORROB_AUTOFILE wins both directions for harness arms — the C5 pattern).
   ['corrob-autofile-toggle', 'corroboration_autofile', 'database/modules/trust.js'],

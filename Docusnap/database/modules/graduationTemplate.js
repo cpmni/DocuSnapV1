@@ -94,6 +94,39 @@ function _enabled(db, opts) {
   return master && own;
 }
 
+// ── ISSUER FREEZE AT GRADUATION BIRTH (gary → Oracle SIGN-OFF-W/COND, 2026-08-12) ────────────────
+// C6 above is DELIBERATELY NARROWED to issuer-only: a graduation template born all-variable is
+// IDENTITY-MUTE — Stage 0 seeds no issuer, the read falls to the hint cap (min(90,60+5×usage)=85)
+// or logo (~72), both < TRUSTED_FLOOR 95, so graduation's own auto-file promise is structurally
+// unreachable on hint/logo-identity layouts (live exhibit: Oakhaven tpl 14, 17 confirms, stuck).
+// The issuer is NOT the coincidentally-constant class C6 exists for — it is DEFINITIONALLY constant
+// here: `supplier` is the scope key scopeTrust graduated on (≥W HUMAN confirms of exactly that
+// string), and the issuer is the codebase-wide freeze exception (freeze_guard.js "the issuer is
+// never governed"; _buildTemplateFields rules B/C/D exempt companyKeys; the 2026-08-12 editor mint
+// is identity-only by Oracle C1). Everything else stays variable — PINNED both directions in
+// test_graduation_template.js (a future dev can neither extend the freeze to data fields nor
+// re-mute the issuer). The frozen string is decide()'s scopeTrust-graduated `supplier`, NEVER a raw
+// allValues read (Oracle: only the scope string carries the W-confirm warrant).
+// HONESTY (Oracle, born-mature seam): the young-frozen corroboration counts confirmed docs whose
+// supplier BINARY-equals the frozen string (namePresence.js) while scopeTrust counts
+// LOWER(TRIM(...)) — a case-varied scope can graduate with frozen-exact count <3, landing the
+// template in the YOUNG page-presence fallback. That direction is SAFE (stricter, fails toward
+// review); do not "fix" namePresence's collation here — it feeds live vetoes.
+// FLIP CHECKLIST (Oracle, blocking at flip): record `template_identity_on_page` state — flipping
+// this freeze with identity-on-page OFF re-opens the Quillstone wrong-company class with stronger
+// stamps; flip them together.
+function _freezeIssuerEnabled(db, opts) {
+  if (opts && opts.freezeIssuer !== undefined) return !!opts.freezeIssuer;   // test override
+  return learning.getSetting(db, 'graduation_freeze_issuer', 'false') === 'true';
+}
+
+function _freezeIssuerRow(fields, supplier) {
+  const out = (fields || []).filter(f => f.field_key !== 'supplier_name');
+  out.push({ field_key: 'supplier_name', anchor_label: null, direction: 'right',
+             fixed_value: supplier, is_variable: false });
+  return out;
+}
+
 /**
  * Decide what (if anything) to do for a just-confirmed doc. READ-ONLY. Returns one of:
  *   { action: 'skip',   reason }
@@ -159,13 +192,15 @@ function decide(db, docId, info = {}, opts = {}) {
   const collides = doc.logo_phash ? seedLogoCollides(db, doc.logo_phash, slug) : false;
   const seedLogo = (doc.logo_phash && !collides) ? doc.logo_phash : null;
 
+  let seedFields = _variableOnlyFields(info.allValues, info.dtInfo);
+  if (_freezeIssuerEnabled(db, opts)) seedFields = _freezeIssuerRow(seedFields, supplier);
   return {
     action: 'create', reason: 'create',
     seed: {
       name: supplier, slug,
       logo_phash: seedLogo,
       keyword_fingerprint: kf,
-      fields: _variableOnlyFields(info.allValues, info.dtInfo),
+      fields: seedFields,
       keywordOnly: !seedLogo,
     },
   };
@@ -203,4 +238,5 @@ function apply(db, docId, decision) {
 module.exports = {
   decide, apply, distinctiveTokens, seedLogoCollides,
   BRANDING_STOPWORDS, DISTINCTIVE_MIN, COLLISION_DIST,
+  _freezeIssuerRow, _freezeIssuerEnabled,   // exported for test_graduation_template.js pins
 };

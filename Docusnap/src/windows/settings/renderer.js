@@ -528,6 +528,22 @@ document.getElementById('auto-file-threshold').addEventListener('change', async 
   enforceAutoFileInvariant(true);
 });
 
+// ── Graduation window (clean confirms before a sender is trusted; default 10) ───
+// Read by trust.js scopeTrust via settings.graduation_window (clamped 3..50 server-side).
+(async () => {
+  try {
+    const v = parseInt((await api.getSetting('graduation_window')) || '10', 10) || 10;
+    document.getElementById('graduation-window').value = v;
+    document.getElementById('graduation-window-val').textContent = String(v);
+  } catch {}
+})();
+document.getElementById('graduation-window').addEventListener('input', (e) => {
+  document.getElementById('graduation-window-val').textContent = e.target.value;
+});
+document.getElementById('graduation-window').addEventListener('change', async (e) => {
+  await api.setSetting('graduation_window', String(e.target.value));
+});
+
 // ── Read values that wrap onto the next line (default ON) ──────────────────────
 (async () => {
   try {
@@ -727,7 +743,19 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // auto-file gate is JS-side, so database/modules/trust.js reads this key
                          // itself, once per document. That also means it takes effect on the next
                          // filing decision rather than needing an app restart.
-                         ['shadow-row-skip-toggle', 'trust_shadow_row_skip']]) {
+                         ['shadow-row-skip-toggle', 'trust_shadow_row_skip'],
+                         // A corroborated total is no longer capped when the only disagreeing
+                         // operands are invisible shadow reads (Oracle W/COND ×5, 2026-08-12).
+                         ['shadow-attrib-toggle', 'reconcile_shadow_attribution'],
+                         // '@'-decorated rate annotations skipped to the amount column (2026-08-12).
+                         ['vat-rate-at-toggle', 'vat_rate_at_skip'],
+                         // Self-discharging operator pins (Oracle W/COND, 2026-08-12).
+                         ['pin-discharge-toggle', 'supplier_pin_self_discharge'],
+                         // Graduation issuer freeze (Oracle W/COND, 2026-08-12; C6 narrowed).
+                         // FLIP CHECKLIST: record template_identity_on_page state — flipping this
+                         // with identity-on-page OFF re-opens the wrong-company class with
+                         // stronger stamps; flip them together.
+                         ['graduation-freeze-issuer-toggle', 'graduation_freeze_issuer']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);
@@ -793,6 +821,8 @@ const DEV_SWITCH_IDS = [
   'type-title-owner-toggle', 'filing-sanity-flags-toggle', 'letterhead-issuer-toggle',
   'identity-on-page-toggle', 'format-fail-yield-toggle', 'customer-po-labels-toggle',
   'code-separator-guard-toggle', 'vat-eu-formats-toggle', 'shadow-row-skip-toggle',
+  'shadow-attrib-toggle', 'vat-rate-at-toggle', 'pin-discharge-toggle',
+  'graduation-freeze-issuer-toggle',
 ];
 function _applyDevSwitchVisibility(unlocked, revealGate){
   for (const id of DEV_SWITCH_IDS){

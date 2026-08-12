@@ -74,6 +74,29 @@ for (let i = 1; i <= 5; i++) b3.push({ document_id: i, field_key: 'total_amount'
 b3.push({ document_id: 6, field_key: 'total_amount', value: '$1OO.OO ABC', field_type: 'currency' });
 check('B3 flags letters in a currency field', R.detectAnomalousValues(b3).some(s => s.id === 6 && s.field === 'total_amount'));
 
+// B1-currency (owner ruling 2026-08-12): money is NEVER magnitude/shape-compared. A mixed-magnitude
+// pool ('1,357.92' recurring, '479.04' comma-less singleton) produces NO suspect — both are correct
+// on their own documents; the thousands comma is magnitude, not format. PIN: a future dev restoring
+// the shape comparison for currency breaks these.
+const bc = [];
+for (let i = 1; i <= 5; i++) bc.push({ document_id: i, field_key: 'total', value: `1,35${i}.92`, field_type: 'currency' });
+bc.push({ document_id: 6, field_key: 'total', value: '479.04', field_type: 'currency' });      // small, comma-less — CORRECT
+const fbc = R.detectAnomalousValues(bc);
+check('B1-currency: mixed-magnitude totals are NOT flagged (479.04 among 1,3xx.92)', !fbc.some(s => s.id === 6));
+// The true-positive class survives: a value that fails the money FORMAT still flags.
+const bg = bc.slice(0, 5).concat([{ document_id: 7, field_key: 'total', value: '2.205.60', field_type: 'currency' }]);
+check("B1-currency: the double-dot garble '2.205.60' STILL flags (format, not magnitude)",
+      R.detectAnomalousValues(bg).some(s => s.id === 7 && s.field === 'total'));
+// explainOutlierFields parity: outlier doc's small-but-valid total is not "part of why", garble is.
+const oc = [];
+for (let i = 1; i <= 5; i++) oc.push({ document_id: i, field_key: 'total', value: `1,35${i}.92`, field_type: 'currency' });
+oc.push({ document_id: 99, field_key: 'total', value: '479.04', field_type: 'currency' });
+check('explain: a valid small total on an outlier doc is NOT explained as anomalous',
+      !R.explainOutlierFields(oc, [99]).some(s => s.field === 'total'));
+const og = oc.slice(0, 5).concat([{ document_id: 99, field_key: 'total', value: '2.205.60', field_type: 'currency' }]);
+check('explain: a format-invalid total IS explained',
+      R.explainOutlierFields(og, [99]).some(s => s.id === 99 && s.field === 'total'));
+
 // Thin-evidence gate: a field with < 6 confirmed values → nothing flagged.
 const thin = b1.slice(0, 4);
 check('thin field (<6) → no flags', R.detectAnomalousValues(thin).length === 0);

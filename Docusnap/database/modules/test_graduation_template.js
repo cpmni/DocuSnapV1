@@ -278,6 +278,36 @@ function main() {
       d3.action === 'link' && d3.templateId === own3);
   }
 
+  section('ISSUER FREEZE AT BIRTH (graduation_freeze_issuer — Oracle W/COND 2026-08-12, C6 narrowed)');
+  {
+    const { db, tid } = makeDb();
+    const docId = seedScope(db, tid, { logo: P_A, kf: KF, ocr: OCR });
+    // OFF (default): byte-identical — every seeded field variable, issuer included.
+    const off = gt.decide(db, docId, info);
+    check('OFF: every seed field variable (C6 verbatim — the dark pin)',
+      off.action === 'create' && off.seed.fields.every(f => f.is_variable === true && f.fixed_value == null));
+    // ON: the issuer row — and ONLY the issuer row — freezes.
+    const on = gt.decide(db, docId, info, { freezeIssuer: true });
+    const sup = on.seed.fields.find(f => f.field_key === 'supplier_name');
+    check('ON: supplier_name frozen to the SCOPE string', !!sup && sup.is_variable === false
+      && sup.fixed_value === 'Cascade Water Systems');
+    check('ON: every NON-issuer field stays variable (two-way C6-narrowing pin — a future dev can '
+      + 'neither extend the freeze to data fields nor re-mute the issuer)',
+      on.seed.fields.filter(f => f.field_key !== 'supplier_name')
+        .every(f => f.is_variable === true && f.fixed_value == null));
+    // allValues missing supplier_name → the frozen row is APPENDED (the scope key is authoritative).
+    const noSup = { ...info, allValues: Object.fromEntries(
+      Object.entries(info.allValues || {}).filter(([k]) => k !== 'supplier_name')) };
+    const on2 = gt.decide(db, docId, noSup, { freezeIssuer: true });
+    const sup2 = on2.seed.fields.find(f => f.field_key === 'supplier_name');
+    check('ON + allValues lacks the issuer: frozen row APPENDED from the scope string',
+      !!sup2 && sup2.is_variable === false && sup2.fixed_value === 'Cascade Water Systems');
+    // Setting leg: the flag reads settings.graduation_freeze_issuer when no override is given.
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('graduation_freeze_issuer','true')").run();
+    check('setting leg: graduation_freeze_issuer=true arms without the opts override',
+      gt._freezeIssuerEnabled(db, {}) === true);
+  }
+
   console.log('\n' + (fails === 0 ? 'ALL PASS' : `${fails} FAILED`));
   process.exit(fails ? 1 : 0);
 }

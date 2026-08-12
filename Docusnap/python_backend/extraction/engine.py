@@ -833,6 +833,64 @@ def _cmp_norm(value) -> str:
 _CROSSCHECK_CORROB_CONF = 90
 
 
+def substantial_containment(clean, dirty) -> bool:
+    """CONTAINMENT WITNESS predicate (reggie spec 2026-08-12; owner-directed, SHIPS INERT — no
+    consumer yet; the consumer slice carries its own flag). True ⇔ the CLEAN reading is witnessed
+    INSIDE the DIRTY reading as "the same name plus junk" — the exhibit: keyword 'Bramblewood
+    Joinery Ltd' ⊂ relocate 'ne ay - Bramblewood Joinery Ltd' (a chopped-adjacent-line garble
+    prefix). Same-field, same-doc readings only — NEVER a cross-sender matcher.
+
+    Rules (each load-bearing, pinned in tests/test_substantial_containment.py):
+      · token-level, per-token edge-punct trim, alnum-bearing tokens only — never raw substring;
+      · a 1-token clean gets EQUALITY ONLY (kills "Ltd" ⊂ anything; consistent with the 08-11
+        single-token plausibility ruling — BP/IBM are valid VALUES but too small as WITNESSES);
+      · equality is refused here (that is _cmp_norm's claim — the caller tries equality first);
+      · the clean tokens must appear CONTIGUOUS and IN ORDER in the dirty list (bag-of-tokens
+        readmits recombination garbles; interleaved junk inside the span means the box did NOT
+        witness the name as printed);
+      · substantiality: the contained name is the MAJORITY of the dirty read's alnum mass;
+      · surplus-junk clause (the precision guard for nested REAL names): the uncontained
+        remainder must FAIL name-likeness (value_quality.name_quality < 0.5) — surplus 'ne ay'
+        is junk (fires), surplus 'Pelican' is a name (refuses: 'Office Interiors' ⊂ 'Pelican
+        Office Interiors' must never corroborate).
+    Direction is the SIGNATURE: True corroborates the FIRST argument and marks the container
+    read suspect; a winner that CONTAINS the other read gets no credit — its surplus tokens are
+    unwitnessed (the Pelican name+address-row box class). Pure; any error → False."""
+    try:
+        from extraction import value_quality
+        _edge = re.compile(r'^[^0-9A-Za-z]+|[^0-9A-Za-z]+$')
+        def _toks(v):
+            # CASED tokens (edge-punct trimmed, alnum-bearing only): the comparison below is
+            # casefolded, but the SURPLUS must keep its printed case — name_quality reads case
+            # as a wordness signal, and a lowercased 'pelican' would score as junk and wrongly
+            # corroborate the nested-real-name class.
+            out = []
+            for t in str(v or '').split():
+                t = _edge.sub('', t)
+                if t and any(c.isalnum() for c in t):
+                    out.append(t)
+            return out
+        C, D = _toks(clean), _toks(dirty)
+        Cf = [t.casefold() for t in C]
+        Df = [t.casefold() for t in D]
+        if len(C) < 2 or not D or Cf == Df:
+            return False
+        _mass = lambda toks: sum(sum(1 for c in t if c.isalnum()) for t in toks)
+        if _mass(C) * 2 <= _mass(D):
+            return False
+        for i in range(len(D) - len(C) + 1):
+            if Df[i:i + len(C)] == Cf:
+                surplus = ' '.join(D[:i] + D[i + len(C):])
+                try:
+                    q = value_quality.name_quality(surplus)
+                except Exception:
+                    return False
+                return q < 0.5
+        return False
+    except Exception:
+        return False
+
+
 def _values_normalise_equal(a, b, is_date) -> bool:
     """THE ONE value-agreement core shared by BOTH corroboration paths — E2's crosscheck clear
     and the KEYWORD_ANCHOR_CORROB lift (Oracle C1, 2026-07-23: a copy-pasted comparison is
@@ -5571,6 +5629,15 @@ class ExtractionEngine:
         # accepted_issuers so the branding cross-check doesn't re-flag the pinned name (Oracle C5).
         # Kill switch env SUPPLIER_PIN (default on); off -> ignored -> byte-identical.
         if pinned_supplier and os.environ.get('SUPPLIER_PIN', '1') != '0':
+            # SELF-DISCHARGE capture (SUPPLIER_PIN_SELF_DISCHARGE, gary → Oracle W/COND 2026-08-12):
+            # whatever Stage 0 seeded BEFORE the pin overwrites it (template_fixed/template_identity)
+            # is a natural witness the final re-assert may compare against. The first assert itself
+            # is DELIBERATELY untouched (Oracle upheld): the pin re-scopes WHERE TO LOOK; a
+            # pin-scoped anchor reading the pinned name off the PAPER is genuine corroboration, and
+            # discharging here would re-run the un-scoped extraction the operator already judged
+            # wrong. accepted_issuers (below) only SUPPRESSES flags — it mints no values (all seven
+            # consumers verified), so no echo path exists from the pin string to a "natural" read.
+            self._pre_pin_supplier = results.get("supplier_name")
             supplier_name = pinned_supplier
             results["supplier_name"] = {
                 "value":           pinned_supplier,
@@ -6427,12 +6494,62 @@ class ExtractionEngine:
         # issuer — re-assert the pin as the final identity (review-bound by the operator_pin note).
         # Kill switch SUPPLIER_PIN; off -> byte-identical.
         if pinned_supplier and os.environ.get('SUPPLIER_PIN', '1') != '0':
-            results["supplier_name"] = {
-                "value":           pinned_supplier,
-                "confidence":      75,
-                "method":          "operator_pin",
-                "validation_note": "Supplier set by you — confirm to file.",
-            }
+            # ── SELF-DISCHARGE (SUPPLIER_PIN_SELF_DISCHARGE, DEFAULT OFF; gary → Oracle
+            # SIGN-OFF-W/COND 2026-08-12). A pin whose value the pipeline now reads INDEPENDENTLY
+            # is redundant: the operator said X, the scope has since learned X, and holding the doc
+            # for a human to re-say X serves nobody (the batch-applied ripple obligation is
+            # batch-released). Discharge ⇒ keep the NATURAL row — earned confidence, natural
+            # method, its OWN notes never stripped — and signal JS to clear documents.supplier_pin.
+            # Disagree / no qualifying witness ⇒ today's overwrite verbatim (the case pins exist
+            # for). What still holds a discharged doc: reprocess NEVER auto-files (_maybeAutoFile
+            # is import-path only), natural-read notes survive, and every exit channel runs the
+            # full trust gates. Witness ALLOWLIST is page/layout-evidence method families;
+            # keyword_override is EXCLUDED pending a page-hit proof (it can consult the hint bank —
+            # memory echoing memory is not corroboration, the 08-11 corroborated-auto-file rule);
+            # 'fixed'/doctype-fixed is EXCLUDED (config, not page evidence) — both PINNED in
+            # tests/test_supplier_pin.py. logo/hint families are listed for the overwrite path but
+            # are structurally unreachable under a pin (their fill blocks gate on empty) — kept
+            # for honesty, do not "make them work". HONESTY (Oracle): the natural row's notes were
+            # computed with the pin already in accepted_issuers, so a branding-conflict note a
+            # pin-free run would carry can be absent — acceptable because discharge requires the
+            # natural read to EQUAL the operator-approved name. Comparator: _accept_norm ∘
+            # normalize_supplier_name both sides, EXACT — no fuzzy/subset tier ("Harrowgate
+            # Timber" must never discharge a "Harrowgate Timber Supplies Ltd" pin; pinned).
+            _discharged = False
+            if os.environ.get('SUPPLIER_PIN_SELF_DISCHARGE', '0') != '0':
+                _nat = results.get("supplier_name")
+                if isinstance(_nat, dict) and str(_nat.get("method") or "") == "operator_pin":
+                    _nat = getattr(self, '_pre_pin_supplier', None)
+                _ALLOW = ("template_fixed", "template_identity", "template", "logo",
+                          "keyword", "anchor", "letterhead", "hint_text_match")
+                _m = str((_nat or {}).get("method") or "") if isinstance(_nat, dict) else ""
+                _ok_m = (_m != "keyword_override"
+                         and any(_m == a or _m.startswith(a + "_") or
+                                 (a in ("template", "anchor", "letterhead") and _m.startswith(a))
+                                 for a in _ALLOW))
+                if isinstance(_nat, dict) and _nat.get("value") and _ok_m:
+                    try:
+                        _norm = lambda v: self._accept_norm(keyword.normalize_supplier_name(str(v)))
+                        if _norm(_nat["value"]) == _norm(pinned_supplier):
+                            results["supplier_name"] = dict(_nat)
+                            results["_supplier_pin_discharged"] = {
+                                "pin": pinned_supplier,
+                                "value": str(_nat.get("value")),
+                                "method": _m,
+                            }
+                            _discharged = True
+                            self.log(f"  Operator pin DISCHARGED: natural read '{_nat.get('value')}' "
+                                     f"({_m}) independently equals the pin — pin cleared, earned "
+                                     f"confidence kept")
+                    except Exception:
+                        _discharged = False
+            if not _discharged:
+                results["supplier_name"] = {
+                    "value":           pinned_supplier,
+                    "confidence":      75,
+                    "method":          "operator_pin",
+                    "validation_note": "Supplier set by you — confirm to file.",
+                }
 
         resolved_supplier = (results.get('supplier_name') or {}).get('value') or None
         if resolved_supplier and resolved_supplier != supplier_name:
@@ -6975,9 +7092,23 @@ class ExtractionEngine:
         self.log("  Stage 4: validating…")
         self._t('stage_start', stage='4_validate')
         _pre_val = self._snap(results)
+        # SHADOW-ATTRIBUTION feed (Oracle C1, 2026-08-12): the corroboration kwarg is passed ONLY
+        # when the flag (or its census instrument) is on — 2-arg harness stubs and the OFF path
+        # keep today's exact call. Frame note (Oracle Q1): Stage 4 never appends to
+        # _field_candidates (sole writer is _remember_candidates, last call pre-4.5), so this
+        # pre-Stage-4 snapshot reads the same ledger as the persisted post-validation emit;
+        # winners differ only by Stage-4's own rewrites — exactly the frame the reconcile judges.
+        _corrob_pre = None
+        if (os.environ.get('RECONCILE_SHADOW_ATTRIBUTION', '0') != '0'
+                or os.environ.get('RECONCILE_ATTRIB_CENSUS_DIR')):
+            try:
+                _corrob_pre = self._build_corroboration_emit(results)
+            except Exception:
+                _corrob_pre = None
         results = validator.validate_and_adjust(
             results, field_defs, trace=(self._t if self._trace else None),
-            credit_expected=credit_expected)
+            credit_expected=credit_expected,
+            **({'corroboration': _corrob_pre} if _corrob_pre is not None else {}))
 
         # ── Field cleanup rules (operator-taught, Review right-click toolkit) ──
         # Strip a learned leaked heading/column from a field's WINNER value

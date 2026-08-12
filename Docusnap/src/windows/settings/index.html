@@ -617,6 +617,16 @@
               </div>
               <label class="toggle"><input type="checkbox" id="corrob-autofile-toggle"><span class="toggle-slider"></span></label>
             </div>
+            <div class="threshold-row" id="graduation-window-row">
+              <div>
+                <div class="threshold-label">Clean confirmations before a sender is trusted</div>
+                <div class="threshold-sub">How many of a sender's documents you confirm (without corrections) before Scan Finder treats that sender as learned and lets its documents auto-file at 95%+. Ten is the cautious default; lower it if your senders settle in quickly, raise it if you want a longer proving period.</div>
+              </div>
+              <div class="conf-row">
+                <input type="range" class="conf-slider" id="graduation-window" min="3" max="20" value="10">
+                <span class="conf-val" id="graduation-window-val">10</span>
+              </div>
+            </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Read values that wrap onto the next line</div>
@@ -973,6 +983,34 @@
                 <div class="threshold-sub">To check that a document's totals add up, ScanFinder sometimes reads figures your document type has no field for — a subtotal or a VAT line on a form that only shows a grand total. Those working figures are never shown to you, never learned, and are thrown away the moment you confirm. Until now one of them could quietly stop a perfectly good document from filing itself, and because it isn't on your form there was nothing on screen to look at or clear. This lets those hidden figures out of the filing decision, while still holding back any document where one of them looks wrong. ON by default &mdash; you can turn it off here.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="shadow-row-skip-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Blame the right figure when totals don't add up</div>
+                <div class="threshold-sub">When the maths check fails but the total itself was read the same way by two independent methods, and the only disagreeing figures are hidden working reads your form has no field for, the note names the working figure instead of marking the total down. The document still waits for your check — nothing files silently. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="shadow-attrib-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Read amounts on "VAT @ 20%" style lines</div>
+                <div class="threshold-sub">Some documents print the tax rate with an @ sign between the label and the amount ("VAT @ 20%   £77.55"). This skips past the rate annotation to the amount, the same way "(20%)" is already skipped. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="vat-rate-at-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Let a trusted sender's name release your "set by you" holds</div>
+                <div class="threshold-sub">When you set a sender's name on a batch, each document waits for your confirm. With this on, reprocessing a held document releases the hold automatically IF Scan Finder now reads the same name on its own — the document then files (or not) on its own merits, exactly like any other. A document whose reading disagrees with your name keeps waiting. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="pin-discharge-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Remember a trusted sender's name in its layout</div>
+                <div class="threshold-sub">Once a sender is trusted (your clean confirmations above), the layout Scan Finder builds for them records the sender's name itself — so their documents identify at full strength instead of leaning on weaker memory, and can actually reach the auto-file bar. Off by default. Best flipped together with "the page must name its sender" (identity check) — without it, a rare wrong layout match would carry a stronger wrong name.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="graduation-freeze-issuer-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>

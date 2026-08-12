@@ -308,6 +308,11 @@ CURRENCY_RE = re.compile(
 # ── Credit-note sign coherence (2026-08-07) — see the call site in validate_and_adjust ──────────
 _CREDIT_SIGN_ON = os.environ.get('CREDIT_SIGN_COHERENCE', '0') != '0'
 
+# ── Reconcile shadow-attribution (2026-08-12; gary design → Oracle SIGN-OFF-W/COND C1-C5) ────────
+# See the reconcile block in validate_and_adjust. DEFAULT OFF; bridged via _reconcileEnv
+# ('reconcile_shadow_attribution'). RECONCILE_ATTRIB_CENSUS_DIR = the inert census instrument.
+_SHADOW_ATTRIB_ON = os.environ.get('RECONCILE_SHADOW_ATTRIBUTION', '0') != '0'
+
 # A NEGATIVE MARKER in the RAW text that the reader did not commit. Deliberately RAW-STRING based.
 # ORACLE C1 — DO NOT reimplement this via text_normalise.normalise_for_tokens / engine._cmp_norm /
 # the JS twin: `_EDGE_RE` strips edge non-alphanumerics, so `normalise_for_tokens('-160.32')` ==
@@ -450,7 +455,8 @@ def total_reconciles(total_value, results: dict):
 def validate_and_adjust(extractions: dict,
                         field_defs:  list[dict],
                         trace = None,
-                        credit_expected = None) -> dict:
+                        credit_expected = None,
+                        corroboration = None) -> dict:
     """
     Cross-validate extracted fields and adjust confidence scores.
     Returns the same dict with confidence scores modified.
@@ -653,11 +659,17 @@ def validate_and_adjust(extractions: dict,
                 return k, data
         return role, {}
     total_key, total_data = _role_field("total_amount")
+    # Keep the RESOLVED (key, data) pairs — the shadow-attribution guard below must judge the
+    # exact operands the maths used, aliases included (Oracle C4), not a re-resolution.
+    _sub_kd  = _role_field("subtotal")
+    _tax_kd  = _role_field("vat_tax")
+    _ship_kd = _role_field("shipping")
+    _disc_kd = _role_field("discount")
     total      = parse_amount(total_data.get("value"))
-    subtotal   = parse_amount(_role_field("subtotal")[1].get("value"))
-    tax        = parse_amount(_role_field("vat_tax")[1].get("value"))
-    shipping   = parse_amount(_role_field("shipping")[1].get("value"))
-    discount   = parse_amount(_role_field("discount")[1].get("value"))
+    subtotal   = parse_amount(_sub_kd[1].get("value"))
+    tax        = parse_amount(_tax_kd[1].get("value"))
+    shipping   = parse_amount(_ship_kd[1].get("value"))
+    discount   = parse_amount(_disc_kd[1].get("value"))
 
     if total and total > 0 and subtotal and subtotal > 0 and total_data.get("value"):
         tol        = max(total * 0.02, 0.05)   # 2% or 5 cents, absorbs rounding/OCR
@@ -693,11 +705,56 @@ def validate_and_adjust(extractions: dict,
                   computed=_computed, delta=round(abs(total - _computed), 2), tol=round(tol, 2),
                   reconciles=reconciles, verdict=(note or 'OK — reconciles / plausible'))
         if note:
-            results[total_key] = {
-                **total_data,
-                "confidence":      min(total_data.get("confidence", 0), _RECONCILE_CAP),
-                "validation_note": note,
-            }
+            # ── SHADOW-ATTRIBUTION (RECONCILE_SHADOW_ATTRIBUTION, DEFAULT OFF; gary → Oracle
+            # SIGN-OFF-W/COND C1-C5, 2026-08-12). The contradiction charge above lands on the
+            # total UNCONDITIONALLY, yet the total can be the DOUBLY-WITNESSED side (mapping +
+            # keyword families agreeing on the printed TOTAL DUE) while every operand is an
+            # invisible, ledger-less shadow_reconcile read (Silverbeck 0016: shadow subtotal
+            # 387.75 misread as 3875.75 → the CORRECT total capped to 50). When (a) the total's
+            # corroboration record says independent_agree AND (b) EVERY VALUED operand is a
+            # shadow read (any real type-field operand ⇒ today's behaviour — the operator can
+            # see and fix that field), KEEP a note (fail-toward-review: a noted field is refused
+            # by auto-file at every floor incl. 100 — the trust.js any-noted-field rule, which
+            # stays the sole barrier on this class) but state the EVIDENCE neutrally instead of
+            # asserting the corroborated total wrong, and SKIP the 50-cap (confidence stays
+            # earned). Values never touched. STANDING RULE: never arm alongside any future
+            # corroboration-clears-notes mechanism.
+            _valued_ops = [d for _, d in (_sub_kd, _tax_kd, _ship_kd, _disc_kd)
+                           if isinstance(d, dict) and d.get("value")]
+            _all_shadow = bool(_valued_ops) and all(
+                str(d.get("method") or "") == "shadow_reconcile" for d in _valued_ops)
+            _rec = (corroboration or {}).get(total_key) if isinstance(corroboration, dict) else None
+            _corroborated = bool(_rec and _rec.get("independent_agree"))
+            # Census instrument (inert unless RECONCILE_ATTRIB_CENSUS_DIR set): every
+            # contradiction bucketed by (corroborated? × all-shadow?) — the flip evidence.
+            _cdir = os.environ.get("RECONCILE_ATTRIB_CENSUS_DIR")
+            if _cdir:
+                try:
+                    import json as _json
+                    with open(os.path.join(_cdir, "reconcile_attrib_census.jsonl"), "a",
+                              encoding="utf-8") as _f:
+                        _f.write(_json.dumps({
+                            "total_key": total_key, "total": str(total_data.get("value")),
+                            "corroborated": _corroborated, "all_shadow": _all_shadow,
+                            "note": note,
+                            "would_fire": bool(_corroborated and _all_shadow)}) + "\n")
+                except Exception:
+                    pass
+            if _SHADOW_ATTRIB_ON and _corroborated and _all_shadow:
+                _sub_v = _sub_kd[1].get("value")
+                note2 = (f"the total {total_data.get('value')} was read the same way by two "
+                         f"independent methods; the page's net/subtotal reading "
+                         f"{_sub_v if _sub_v else '(none)'} disagrees with it — please check")
+                if trace:
+                    trace('reconcile_attrib', total_key=total_key,
+                          suspected=_sub_kd[0], suspected_value=str(_sub_v), note=note2)
+                results[total_key] = {**total_data, "validation_note": note2}
+            else:
+                results[total_key] = {
+                    **total_data,
+                    "confidence":      min(total_data.get("confidence", 0), _RECONCILE_CAP),
+                    "validation_note": note,
+                }
 
     # 2b. CREDIT-NOTE SIGN COHERENCE (2026-08-07; gary -> Oracle SIGN-OFF-W/COND C1/C2).
     # A credit note whose total is stored POSITIVE turns money OWED TO the customer into money
