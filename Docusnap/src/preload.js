@@ -200,7 +200,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   getFieldRules:               ()        => ipcRenderer.invoke('get-field-rules'),
   getRecentAutoFiled:          ()        => ipcRenderer.invoke('get-recent-auto-filed'),
   clearRecentAutoFiled:        ()        => ipcRenderer.invoke('clear-recent-auto-filed'),
-  getAutoFileEligible:         (ids)     => ipcRenderer.invoke('get-auto-file-eligible', ids),
+  reprocessAutocommitAccept:   ()        => ipcRenderer.invoke('reprocess-autocommit-accept'),
   getAutoFileReason:           (docId)   => ipcRenderer.invoke('get-auto-file-reason', docId),
   getGraduatedSuppliers:       ()        => ipcRenderer.invoke('get-graduated-suppliers'),
   setGraduationOptout:         (p)       => ipcRenderer.invoke('set-graduation-optout', p),

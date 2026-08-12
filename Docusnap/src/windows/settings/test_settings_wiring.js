@@ -137,6 +137,9 @@ const SETTING_SWITCHES = [
   // Corroborated auto-file (Oracle-signed 2026-08-11): the gate is a settings read inside
   // trust.js (env CORROB_AUTOFILE wins both directions for harness arms — the C5 pattern).
   ['corrob-autofile-toggle', 'corroboration_autofile', 'database/modules/trust.js'],
+  // Post-reprocess consent offer (Oracle 2026-08-12): the gate is a settings read in the
+  // consume-reprocess-completion handler; OFF = legacy counts-only return, nothing offered.
+  ['reprocess-autocommit-toggle', 'reprocess_autocommit_offer', 'src/modules/processing/handler.js'],
   // Taught label becomes the keyword (migrations 61+62): the gate is a settings read at the two
   // teach WRITE sites; the processing handler is the higher-traffic consumer to pin.
   ['teach-label-keyword-toggle', 'teach_label_becomes_keyword', 'src/modules/processing/handler.js'],

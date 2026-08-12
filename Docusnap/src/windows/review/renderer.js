@@ -435,7 +435,7 @@ async function loadQueue() {
     } else {
       const _c = await window.docusnap.consumeReprocessCompletion();
       if (_c) {
-        try { await autoCommitFullConfidence(); } catch { /* best-effort */ }
+        if (_c.offerIds) { try { showReprocessAutofileOffer(_c.offerIds); } catch {} }
         showToast(`Reprocess finished — ${_c.done} document${_c.done !== 1 ? 's' : ''} updated${_c.failed ? `, ${_c.failed} failed` : ''}`, _c.failed ? 'warn' : 'ok');
       }
     }
@@ -476,7 +476,7 @@ async function refreshAutoCommittedBar() {
   _autoFiledDocs = res.docs || [];
   if (_autoFiledDocs.length) {
     bar.innerHTML = `<span class="acb-dismiss" title="Dismiss this notice" aria-label="Dismiss">×</span>`
-      + `<b>✓ ${_autoFiledDocs.length}</b> document${_autoFiledDocs.length === 1 ? '' : 's'} filed automatically in the last run — `
+      + `<b>✓ ${_autoFiledDocs.length}</b> document${_autoFiledDocs.length === 1 ? '' : 's'} filed automatically — `
       + `<span class="acb-back">click to see the list — they stay filed; nothing is changed</span>`;
     bar.style.display = 'block';
   } else {
@@ -4909,62 +4909,52 @@ async function fileAllReady() {
 }
 document.getElementById('btn-file-all-review')?.addEventListener('click', fileAllReady);
 
-// After Reprocess All, auto-commit any document the SHARED server-side predicate deems
-// eligible (a trusted supplier's clean docs at the graduation floor, or a full-confidence doc)
-// — the SAME predicate the import-batch auto-file uses, so the two paths can't diverge.
-// Best-effort per doc (a failure just leaves it queued). Skips when the setting is off or a
-// manual File-All is already running.
-async function autoCommitFullConfidence() {
-  try {
-    if (bulkFiling) return;
-    if ((await window.docusnap.getSetting('auto_file_full_confidence')) === 'false') return;
-    // Eligibility is decided SERVER-SIDE by the shared predicate (scope graduation floor +
-    // structural safety gate), the SAME one the backend import path uses — so the two auto-file
-    // sites can't diverge. One IPC, getFieldFormats scanned once for the whole queue.
-    let eligibleIds = new Set();
-    try {
-      const res = await window.docusnap.getAutoFileEligible((queue || []).map(d => d.id));
-      eligibleIds = new Set((res && res.ids) || []);
-    } catch { return; }
-    const ready = (queue || []).filter(d => eligibleIds.has(d.id));
-    if (!ready.length) return;
-    bulkFiling = true;
-    let filed = 0;
-    try {
-      for (const doc of ready) {
-        if (!queue.some(d => d.id === doc.id)) continue;
-        try {
-          await selectDoc(doc, { fieldsOnly: true });
-          if (document.getElementById('btn-confirm').disabled) continue;   // not actually ready
-          const r = await confirmCurrentDoc({ bulk: true, expectId: doc.id });
-          if (r && r.filed) { filed++; document.querySelector(`.queue-item[data-id="${doc.id}"]`)?.remove(); }
-        } catch { /* leave it for manual review */ }
-        await new Promise(res => setTimeout(res, 0));   // keep the window responsive
-      }
-    } finally { bulkFiling = false; }
-    if (filed > 0) {
-      queue         = await window.docusnap.getReviewQueue();
-      deferredQueue = await window.docusnap.getDeferredQueue();
-      updateTabCounts();
-      renderQueueList();
-      showToast(`✓ Auto-filed ${filed} document${filed > 1 ? 's' : ''} — no review needed.`, 'ok');
-      // Skip straight to the next document that still needs a look (the top of the queue), so the
-      // operator isn't left on an auto-filed doc that's no longer in the list.
-      if (queue.length) {
-        // Some docs still need a look — jump to the top of the remaining queue if the doc
-        // we were on just got filed (otherwise stay put).
-        if (!currentDoc || !queue.some(d => d.id === currentDoc.id)) selectDoc(queue[0]);
-      } else if (currentDoc && !queue.some(d => d.id === currentDoc.id)) {
-        // Every queued doc auto-filed — the open document is now filed and gone from the
-        // queue. Close it so the viewer shows the "All documents reviewed ✓" placeholder
-        // instead of leaving the last filed doc on screen. (renderQueueList only clears the
-        // panel when NO doc is open, to preserve intentional "view a filed doc" navigation,
-        // so we must null currentDoc + clear here.)
-        currentDoc = null;
-        clearDocPanel();
-      }
+// Post-reprocess CONSENT BAR (Oracle-signed 2026-08-12; replaces the queue-wide
+// autoCommitFullConfidence sweep, which filed 101 docs across every supplier after a 14-doc
+// group reprocess — silently, attributed to the human). The offer is computed SERVER-SIDE from
+// the finished batch's OWN docs ∩ the shared auto-file predicate and arrives on the consumed
+// completion as `offerIds` (display only). Nothing files until the operator clicks File N; the
+// accept IPC takes NO payload — the server files its own recorded offer, so this window can
+// accept or ignore the offer but never widen it.
+function showReprocessAutofileOffer(offerIds) {
+  const bar = document.getElementById('reprocess-autofile-bar');
+  if (!bar || !Array.isArray(offerIds) || !offerIds.length) return;
+  const n = offerIds.length;
+  bar.innerHTML =
+    `<b>${n}</b> reprocessed document${n === 1 ? '' : 's'} read clean and ${n === 1 ? 'is' : 'are'} ready to file — `
+    + `<button class="btn" id="rab-file">✓ File ${n}</button> `
+    + `<button class="btn" id="rab-review">Review them</button> `
+    + `<button class="btn" id="rab-dismiss">Not now</button>`;
+  bar.style.display = 'block';
+  document.getElementById('rab-file')?.addEventListener('click', async () => {
+    bar.style.display = 'none';
+    let r = null;
+    try { r = await window.docusnap.reprocessAutocommitAccept(); } catch {}
+    if (r && r.ok) {
+      const dropped = (r.dropped || []).length;
+      showToast(`✓ Filed ${r.filed.length} document${r.filed.length === 1 ? '' : 's'} automatically`
+        + (dropped ? ` · ${dropped} left for review` : ''), r.filed.length ? 'ok' : 'warn');
+    } else {
+      showToast('Nothing was filed' + (r && r.reason ? ` (${r.reason})` : '') + ' — the documents stay in the queue.', 'warn');
     }
-  } catch (e) { console.warn('auto-commit 100% failed:', e.message); }
+    queue         = await window.docusnap.getReviewQueue();
+    deferredQueue = await window.docusnap.getDeferredQueue();
+    updateTabCounts();
+    renderQueueList();
+    refreshAutoCommittedBar();
+    if (currentDoc && !queue.some(d => d.id === currentDoc.id)) {
+      if (queue.length) selectDoc(queue[0]);
+      else { currentDoc = null; clearDocPanel(); }
+    }
+  }, { once: true });
+  document.getElementById('rab-review')?.addEventListener('click', () => {
+    bar.style.display = 'none';
+    _sweepFilterIds = new Set(offerIds);   // reuse the existing "Review them" queue filter
+    renderQueueList();
+  }, { once: true });
+  document.getElementById('rab-dismiss')?.addEventListener('click', () => {
+    bar.style.display = 'none';            // offer stays server-side; a new batch overwrites it
+  }, { once: true });
 }
 
 // ── Catch-up Filing slice 3 (design 2026-07-31, dark unless scope_sweep_enabled) ──────
@@ -6359,8 +6349,10 @@ async function reconnectRunningBatch(status) {
     if (btnOne) btnOne.disabled = false;
     btnStop.style.display = 'none';
     updateReprocessSupplierButton();
-    await autoCommitFullConfidence();
-    try { await window.docusnap.consumeReprocessCompletion(); } catch { /* this window ran the completion — clear the once-flag */ }
+    try {
+      const _c = await window.docusnap.consumeReprocessCompletion();   // this window runs the completion — consume the once-flag + take the offer
+      if (_c && _c.offerIds) showReprocessAutofileOffer(_c.offerIds);
+    } catch { /* best-effort */ }
     banner.classList.add('done');
     banner.textContent = _batchStopped ? `Stopped — ${done} reprocessed`
       : (failed ? `Completed — ${done} OK, ${failed} failed` : `Completed ${done} of ${total}`);
@@ -6471,11 +6463,12 @@ async function runReprocessBatch(docs, scopeLabel) {
     btnOne.disabled      = false;
     btnStop.style.display = 'none';
     updateReprocessSupplierButton();   // re-enable + relabel the per-sender button for the open doc
-    // Auto-commit any docs that reprocessed to 100% (setting-gated) + toast.
-    await autoCommitFullConfidence();
-    // This window ran the completion — clear the main-side once-flag so a later reopen doesn't re-fire
-    // a stale "reprocess finished" auto-commit + summary (the closed-till-done path consumes it there).
-    try { await window.docusnap.consumeReprocessCompletion(); } catch { /* best-effort */ }
+    // This window ran the completion — consume the main-side once-flag (so a later reopen doesn't
+    // re-fire a stale summary) and surface the batch-scoped consent offer, if any.
+    try {
+      const _c = await window.docusnap.consumeReprocessCompletion();
+      if (_c && _c.offerIds) showReprocessAutofileOffer(_c.offerIds);
+    } catch { /* best-effort */ }
   }
 
   const stopped = _batchStopped;

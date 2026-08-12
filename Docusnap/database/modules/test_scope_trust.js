@@ -734,6 +734,47 @@ function main() {
             t2.trusted === false && t2.reason === 'recent-correction');
     }
 
+    // (c2) 'auto_reprocess' (Oracle 2026-08-12, post-reprocess consent bar): the machine files it
+    // mints are excluded from the HUMAN window exactly like scope_sweep/auto_corroborated — a
+    // machine file must never advance the graduation window it was allowed to bypass (the 08-12
+    // incident: 101 NULL-via machine files counted as human confirms). BOTH sides pinned: the
+    // window side AND the span side (a correction on one still revokes — via-agnostic span).
+    {
+      const viaDoc = (db, tid, when, via, fields) => {
+        const id = db.prepare(
+          'INSERT INTO documents (supplier_name, document_type_id, status, confirmed_at, template_id, overall_confidence, confirmed_via) '
+          + "VALUES ('Anconia Corp',?, 'confirmed', ?, 1, 100, ?)"
+        ).run(tid, when, via).lastInsertRowid;
+        for (const [k, v] of Object.entries(fields || {})) {
+          db.prepare('INSERT INTO extractions (document_id, field_key, display_value, confidence, extraction_method) VALUES (?,?,?,?,?)')
+            .run(id, k, v, null, 'keyword');
+        }
+        return id;
+      };
+      const db = makeDb(); const tid = seedType(db); migrate(db);
+      seedCleanScope(db, tid, 5);                                  // 5 HUMAN confirms
+      for (let i = 0; i < 10; i++) {                               // + 10 auto_reprocess files (newer)
+        viaDoc(db, tid, `2026-06-02T10:00:${String(i).padStart(2, '0')}Z`, 'auto_reprocess',
+               { supplier_name: 'Anconia Corp', invoice_date: `0${(i % 9) + 1}/06/2026`,
+                 invoice_number: `870${i}-1354-${i % 10}`, total: `£${i}0.00`, item: 'Consulting' });
+      }
+      const t = trust.scopeTrust(db, 'Anconia Corp', 'invoice');
+      check("PIN: 5 human + 10 auto_reprocess files does NOT graduate (machine files never fill the window)",
+            t.trusted === false && t.reason === 'volume' && t.confirmedCount === 5);
+
+      const db2 = makeDb(); const tid2 = seedType(db2); migrate(db2);
+      seedCleanScope(db2, tid2, 10);                               // graduated human window
+      const arDoc = viaDoc(db2, tid2, '2026-06-03T10:00:00Z', 'auto_reprocess',
+               { supplier_name: 'Anconia Corp', invoice_date: '03/06/2026',
+                 invoice_number: '9002-1354-2', total: '£30.00', item: 'Consulting' });
+      check('control: graduated with an in-span auto_reprocess doc uncorrected',
+            trust.scopeTrust(db2, 'Anconia Corp', 'invoice').trusted === true);
+      seedCorrection(db2, arDoc, 'invoice_number', '9002-1354-2', '9002-1354-8');
+      const t3 = trust.scopeTrust(db2, 'Anconia Corp', 'invoice');
+      check('PIN: correction on an IN-SPAN auto_reprocess doc still REVOKES (span is via-agnostic)',
+            t3.trusted === false && t3.reason === 'recent-correction');
+    }
+
     // (d) opts-seam SUPPORT PIN (design condition): the evaluate-a-reprocessed-result overrides
     // (templateMatched / extractions / formats / dtRow) and scopeTrust's window/maxCorrections
     // opts stay supported — the Catch-up sweep predicate (slice 2) becomes their first

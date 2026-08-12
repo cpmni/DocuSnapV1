@@ -356,16 +356,12 @@ function register(ctx) {
     return { ok: true };
   });
 
-  // Batch auto-file eligibility for the renderer Reprocess-All path — the SAME predicate the
-  // backend import path uses (scope graduation floor + structural safety gate), decided
-  // server-side with getFieldFormats scanned ONCE. Keeps the two auto-file sites from drifting.
-  ipcMain.handle('get-auto-file-eligible', (_e, docIds) => {
-    requireRole('admin', 'edit');
-    const db = getDb();
-    const trust = require('../../../database/modules/trust');
-    const rows = (Array.isArray(docIds) ? docIds : []).map(id => documents.getById(db, id)).filter(Boolean);
-    return { ids: trust.autoFileEligibleIds(db, rows) };
-  });
+  // RETIRED 2026-08-12 (Oracle C5): 'get-auto-file-eligible' fed the renderer's queue-wide
+  // autoCommitFullConfidence sweep — a renderer-supplied id list was the defect surface (it filed
+  // 101 docs across every supplier after a 14-doc group reprocess). The post-reprocess offer is now
+  // computed SERVER-side from the batch's own recorded docIds in consume-reprocess-completion
+  // (processing/handler.js) and accepted via the payload-less reprocess-autocommit-accept.
+  // No restore door: queue-wide bulk filing belongs to File All Ready (human) + the scope sweep.
 
   // WHY is this one document not filing itself? Returns the SAME predicate's verdict verbatim, so
   // Review can state the real reason instead of re-deriving one from the confidence threshold.

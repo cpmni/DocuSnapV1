@@ -1119,7 +1119,7 @@ function learnTemplateOnCommit(db, document_id, { document_type_slug, supplier_n
   // operator-reviewed confirm is the trust anchor. Guarded read — pre-mig-57 fixtures lack the column.
   let _via = null;
   try { _via = (db.prepare('SELECT confirmed_via FROM documents WHERE id = ?').get(document_id) || {}).confirmed_via; } catch {}
-  if (_via === 'scope_sweep') return;
+  if (_via === 'scope_sweep' || _via === 'auto_reprocess') return;   // machine confirms never drive template learning (Oracle 2026-08-12 Q2: no human looked)
   let tid = doc && doc.template_id;
   if (!tid) {
     // ── R1: LINK-ON-CONFIRM (herald→Oracle SIGN-OFF-W/COND 2026-08-01; kill

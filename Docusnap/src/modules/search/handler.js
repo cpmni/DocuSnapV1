@@ -36,7 +36,9 @@ function register(ctx) {
     try {
       const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString();
       const total = db.prepare("SELECT COUNT(*) c FROM documents WHERE status='confirmed' AND confirmed_at >= ?").get(weekAgo).c;
-      const auto  = db.prepare("SELECT COUNT(*) c FROM documents WHERE status='confirmed' AND confirmed_at >= ? AND confirmed_by_username = 'Auto-filed (100%)'").get(weekAgo).c;
+      // LIKE, not exact: three machine usernames exist — 'Auto-filed (100%)', 'Auto-filed (corroborated)',
+      // 'Auto-filed (reprocess)' — the old exact match silently undercounted (Oracle 2026-08-12 Q5).
+      const auto  = db.prepare("SELECT COUNT(*) c FROM documents WHERE status='confirmed' AND confirmed_at >= ? AND confirmed_by_username LIKE 'Auto-filed%'").get(weekAgo).c;
       out.autoFiled = { auto, total, pct: total ? Math.round((auto / total) * 100) : null };
     } catch { /* leave undefined */ }
     // 2) Storage: output folder, free disk space, total filed documents.

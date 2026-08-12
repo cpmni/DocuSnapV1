@@ -59,11 +59,14 @@ function createReviewService(deps = {}) {
       corrections, allValues, supplier_name,
       document_type, document_type_slug, taught_fields, bulk,
     } = payload || {};
-    // Catch-up Filing (design 2026-07-31): 'scope_sweep' is set ONLY by the server-side sweep
-    // accept call site via the INTERNAL arg — never from the renderer/client payload (a
-    // compromised client must not be able to label its confirms as machine confirms or vice
-    // versa). Anything but the exact sentinel collapses to null (human/legacy).
-    const _via = internal && internal.via === 'scope_sweep' ? 'scope_sweep' : null;
+    // Machine-confirm sentinels, set ONLY by server-side call sites via the INTERNAL arg —
+    // never from the renderer/client payload (a compromised client must not be able to label
+    // its confirms as machine confirms or vice versa). Anything outside the exact set collapses
+    // to null (human/legacy). 'scope_sweep' = Catch-up Filing accept (design 2026-07-31);
+    // 'auto_reprocess' = the post-reprocess consent-bar accept (Oracle-signed 2026-08-12 —
+    // replaces the renderer queue-wide autoCommitFullConfidence sweep that filed as the human).
+    const _VIA_SENTINELS = ['scope_sweep', 'auto_reprocess'];
+    const _via = internal && _VIA_SENTINELS.includes(internal.via) ? internal.via : null;
     const actorName = (actor && actor.username) || null;
     const _t0 = Date.now();   // confirm return-latency probe (logged below when diag logging is on)
 
@@ -159,7 +162,12 @@ function createReviewService(deps = {}) {
     // CLAIM before filing (first-confirm only) so a lost race can't double-file. The loser
     // reads the winner's name off confirmed_by_username and reports it.
     if (!isRefile) {
-      const claim = documents.confirmIfReviewable(db, document_id, { confirmed_by_username: actorName, confirmed_via: _via });
+      // 'auto_reprocess' stamps a machine username so audit/search/banner can tell these files
+      // from hand confirms (today's incident forensics needed exactly this). scope_sweep keeps
+      // the human name byte-identical — it is a human-CONSENTED action, shipped and flipped ON.
+      const claim = documents.confirmIfReviewable(db, document_id, {
+        confirmed_by_username: _via === 'auto_reprocess' ? 'Auto-filed (reprocess)' : actorName,
+        confirmed_via: _via });
       if (!claim || claim.changes === 0) {
         const winner = documents.getById(db, document_id)?.confirmed_by_username || 'another user';
         return fail('ALREADY_FILED', `This document was already filed by ${winner}.`, { confirmedBy: winner });

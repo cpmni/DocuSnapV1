@@ -562,7 +562,11 @@ let _singleReprocessActive = false;  // a single reprocess-document is in flight
 // (the batch runs in this main process and survives the window). Read via get-reprocess-status.
 // pendingCompletion: a batch FINISHED and its window-side completion (auto-file the reprocessed-to-100
 // docs + summary) has not yet been run by any window — consumed once via consume-reprocess-completion.
-let _reprocessStatus = { running: false, total: 0, done: 0, failed: 0, pendingCompletion: false };
+let _reprocessStatus = { running: false, total: 0, done: 0, failed: 0, pendingCompletion: false, docIds: [] };
+// The post-reprocess consent OFFER: candidate doc ids computed at consume time from the finished
+// batch's own docIds ∩ the shared auto-file predicate. Server-authoritative — the accept IPC takes
+// NO payload; a renderer can accept or ignore the offer, never widen it (Oracle 2026-08-12 C1).
+let _reprocessOffer = null;
 // ANY OCR/extraction work is in flight — a batch (import / reprocess-all) OR a single reprocess.
 // Used to SERIALISE heavy work: starting a second reprocess while one is running oversubscribes
 // the CPU (every worker + the single proc OCR at once) and can race two merges into the same doc,
@@ -3153,7 +3157,13 @@ function register(ctx) {
     // uncapped 1-shard batch was the old single-vs-batch disparity in miniature).
     const threadCap = _reprocessThreadCap(db);
 
-    _reprocessStatus = { running: true, total: tmpNames.length, done: 0, failed: 0, pendingCompletion: false };
+    // docIds: the batch's own docs (post-lock-filter — nameToDoc holds only staged docs), recorded
+    // so the post-reprocess consent offer is SERVER-scoped (Oracle 2026-08-12 C1: no renderer-fed
+    // id list). A new batch starting overwrites any unconsumed prior offer — fail-safe: those docs
+    // simply stay queued (pinned in test_reprocess_autocommit.js).
+    _reprocessOffer = null;
+    _reprocessStatus = { running: true, total: tmpNames.length, done: 0, failed: 0, pendingCompletion: false,
+                         docIds: Object.values(nameToDoc).map(n => n.docId) };
     mirrorReprocess({ type: 'start', total: tmpNames.length });
     let done = 0, failed = 0;
     const shardFiles = [];
@@ -3233,14 +3243,106 @@ function register(ctx) {
   // that is still running in this process. Any signed-in principal may read it (display-only).
   ipcMain.handle('get-reprocess-status', () => ({ ..._reprocessStatus }));
 
-  // Consume-once: a batch's window-side completion (auto-file reprocessed-to-100 docs + summary).
-  // Returns the final counts the FIRST time it is called after a batch finishes, then null. Both the
-  // fresh-start window (which already ran its own completion) and a reopened window call it — so the
-  // completion runs exactly once, whether or not a window was open at the finish line.
+  // Consume-once: a batch's window-side completion (summary counts + the post-reprocess consent
+  // OFFER). Returns the final counts the FIRST time it is called after a batch finishes, then null.
+  // Both the fresh-start window (which already ran its own completion) and a reopened window call it
+  // — so the completion runs exactly once, whether or not a window was open at the finish line.
+  // GATED (Oracle 2026-08-12 C3): this used to be a benign read; it now computes a filing OFFER, so
+  // it requires admin/edit + a valid license — and the gates run BEFORE the once-flag flips, so a
+  // refused consume never swallows the completion (it stays pending for a permitted caller).
+  // The queue-wide autoCommitFullConfidence sweep this replaces filed 101 docs across every supplier
+  // after a 14-doc group reprocess (2026-08-12) — the offer is scoped to the batch's OWN docs and
+  // nothing files without the operator accepting the bar (reprocess-autocommit-accept below).
   ipcMain.handle('consume-reprocess-completion', () => {
+    requireRole('admin', 'edit');
     if (!_reprocessStatus.pendingCompletion) return null;
+    const db = getDb();
+    const licenseDenial = require('../licensing/handler').licenseDenied(db);
+    if (licenseDenial) return null;   // completion stays pending — no flip, no offer
+    // C2: flip synchronously before any other work; everything below is sync better-sqlite3.
     _reprocessStatus.pendingCompletion = false;
-    return { done: _reprocessStatus.done, failed: _reprocessStatus.failed, total: _reprocessStatus.total };
+    const out = { done: _reprocessStatus.done, failed: _reprocessStatus.failed, total: _reprocessStatus.total };
+    // Consent offer: batch docIds ∩ the shared predicate — the SAME trust.isAutoFileEligible the
+    // import auto-file uses, so the two sites can't diverge. Setting-gated; OFF ⇒ byte-identical
+    // to the legacy counts-only return.
+    try {
+      const learningMod = require('../../../database/modules/learning');
+      if (learningMod.getSetting(db, 'reprocess_autocommit_offer', 'true') === 'true') {
+        const trust = require('../../../database/modules/trust');
+        const documents = require('../../../database/modules/documents');
+        // Batch docs still queued + not workflow-locked, then the ONE shared batch predicate
+        // (getFieldFormats scanned once — same call the retired get-auto-file-eligible IPC made).
+        const rows = (_reprocessStatus.docIds || [])
+          .map(id => documents.getById(db, id))
+          .filter(d => d && d.status === 'needs_review'
+                    && !['pending', 'claimed'].includes(String(d.workflow_status || '')));
+        const candidates = trust.autoFileEligibleIds(db, rows);
+        if (candidates.length) {
+          _reprocessOffer = { docIds: candidates };
+          out.offerIds = candidates;   // display only — accept takes NO payload
+        }
+      }
+    } catch (e) { logger?.warn(`reprocess offer: ${e.message}`); }
+    return out;
+  });
+
+  // Post-reprocess consent-bar ACCEPT (Oracle 2026-08-12, SIGN-OFF-W/COND — the consent-bar ruling).
+  // Payload-less: files the server-recorded offer, re-checking status/workflow/eligibility per doc
+  // at accept time, through the ONE shared confirm with the INTERNAL via='auto_reprocess' (machine
+  // attribution: confirmed_via + 'Auto-filed (reprocess)' username; excluded from the human
+  // graduation window in trust.js; hint/template learning self-skip via the sentinel).
+  ipcMain.handle('reprocess-autocommit-accept', async () => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const licenseDenial = require('../licensing/handler').licenseDenied(db);
+    if (licenseDenial) return { ok: false, reason: 'license' };
+    if (_anyProcessingBusy()) return { ok: false, reason: 'busy' };
+    const offer = _reprocessOffer;
+    _reprocessOffer = null;   // consume-once — a second accept files nothing
+    if (!offer || !Array.isArray(offer.docIds) || !offer.docIds.length) return { ok: false, reason: 'no-offer' };
+    const trust = require('../../../database/modules/trust');
+    const documents = require('../../../database/modules/documents');
+    const reviewService = require('../review/handler').getReviewService();
+    if (!reviewService) return { ok: false, reason: 'not-ready' };
+    const actor = getCurrentUser() || {};
+    const filed = [], dropped = [];
+    for (const docId of offer.docIds) {
+      const doc = documents.getById(db, docId);
+      if (!doc || doc.status !== 'needs_review') { dropped.push({ docId, reason: 'not-queued' }); continue; }
+      if (['pending', 'claimed'].includes(String(doc.workflow_status || ''))) { dropped.push({ docId, reason: 'workflow-locked' }); continue; }
+      const rows = db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(docId);
+      const elig = trust.isAutoFileEligible(db, doc, { extractions: rows.map(r => ({ ...r, value: r.display_value })) });
+      if (!elig || !elig.eligible) { dropped.push({ docId, reason: (elig && elig.reason) || 'no-longer-eligible' }); continue; }
+      const allValues = {};
+      for (const r of rows) allValues[r.field_key] = r.display_value ?? r.raw_value;
+      const dtRow = doc.document_type_id
+        ? db.prepare('SELECT * FROM document_types WHERE id = ?').get(doc.document_type_id) : null;
+      let res;
+      try {
+        res = await reviewService.confirm(db, actor, {
+          document_id: docId,
+          allValues,
+          corrections: {},
+          taught_fields: [],
+          supplier_name: doc.supplier_name,
+          document_type: dtRow ? dtRow.name : null,
+          document_type_slug: dtRow ? dtRow.slug : null,
+          bulk: true,
+        }, { via: 'auto_reprocess' });
+      } catch (e) { res = { ok: false, code: 'ERROR', error: e && e.message }; }
+      if (res && res.ok) {
+        filed.push(docId);
+        try { _recordAutoFiled(db, docId); } catch {}   // the re-surface banner is a review checkpoint (Oracle C6)
+      } else {
+        dropped.push({ docId, reason: (res && res.code) || 'confirm-failed' });
+      }
+      await new Promise(r => setImmediate(r));   // main-process loop — keep the event loop breathing
+    }
+    try {
+      logAudit(db, { action: 'reprocess_autofiled', target_type: 'scope', outcome: 'success',
+        metadata: { filed_ids: filed.join(','), dropped: dropped.map(d => `${d.docId}:${d.reason}`).join(',') } });
+    } catch { /* audit is best-effort */ }
+    return { ok: true, filed, dropped };
   });
 
   // ── OCR region ──────────────────────────────────────────────────────────────

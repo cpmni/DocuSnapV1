@@ -65,6 +65,11 @@
       color: var(--muted); font-weight: 700; font-size: 15px; line-height: 1.2; padding: 0 4px;
       border-radius: 4px; }
     #auto-committed-bar .acb-dismiss:hover { color: var(--err); background: var(--surface2); }
+    /* Post-reprocess consent bar — auto-committed-bar family, consent-green accent. */
+    #reprocess-autofile-bar { padding: 8px 12px; font-size: 12px; line-height: 1.8;
+      background: var(--accent-bg); border-bottom: 1px solid var(--border); }
+    #reprocess-autofile-bar b { color: var(--ok); }
+    #reprocess-autofile-bar .btn { font-size: 12px; padding: 2px 10px; margin-left: 6px; }
     /* Catch-up Filing consent bar — auto-committed-bar family, consent-green accent. */
     #sweep-consent-bar { padding: 8px 12px; font-size: 12px; line-height: 1.5;
       background: color-mix(in srgb, var(--ok) 8%, var(--surface)); border-bottom: 1px solid var(--border); }
@@ -781,6 +786,9 @@
       </div>
       <!-- "N auto-committed — click to review" bar (recently auto-filed docs, re-surfaced for checking). -->
       <div id="auto-committed-bar" style="display:none;"></div>
+      <!-- Post-reprocess consent bar (Oracle 2026-08-12): batch-scoped auto-file OFFER — nothing
+           files until "File N" is clicked; the accept IPC is payload-less (server-owned ids). -->
+      <div id="reprocess-autofile-bar" style="display:none;"></div>
       <!-- Catch-up Filing consent bar (design 2026-07-31; dark unless scope_sweep_enabled):
            "N more from SENDER match what you've confirmed" — File N · Review them · Not now,
            with an expandable per-doc untick list. NON-modal, auto-committed-bar family. -->

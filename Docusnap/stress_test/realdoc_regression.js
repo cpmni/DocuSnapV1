@@ -318,6 +318,10 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
         fs.appendFileSync(process.env.RR_DUMP, JSON.stringify({
           id: g.id, wouldFile, sup: m.supplier_name || null,
           supNote: (supEx && typeof supEx === 'object' && supEx.validation_note) || null,
+          // method+confidence (2026-08-12 graduation-freeze replay): a value can be identical in
+          // both arms while its EVIDENCE moved (hint@85 -> template_fixed@95) — the dump must see it.
+          supConf: (supEx && typeof supEx === 'object' && supEx.confidence != null) ? supEx.confidence : null,
+          supMethod: (supEx && typeof supEx === 'object' && (supEx.method || supEx.extraction_method)) || null,
         }) + '\n');
       } catch {}
     }

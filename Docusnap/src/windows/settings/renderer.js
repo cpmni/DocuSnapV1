@@ -577,6 +577,19 @@ document.getElementById('corrob-autofile-toggle').addEventListener('change', asy
   await api.setSetting('corroboration_autofile', e.target.checked ? 'true' : 'false');
 });
 
+// ── Post-reprocess consent offer (reprocess_autocommit_offer, default ON — Oracle-granted
+// deviation 2026-08-12: the offer is consent-gated, hence fail-safe; the silent queue-wide
+// sweep it replaced is REMOVED, not flag-preserved) ──
+(async () => {
+  try {
+    const v = await api.getSetting('reprocess_autocommit_offer');
+    document.getElementById('reprocess-autocommit-toggle').checked = (v !== 'false');   // unset → ON
+  } catch { document.getElementById('reprocess-autocommit-toggle').checked = true; }
+})();
+document.getElementById('reprocess-autocommit-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('reprocess_autocommit_offer', e.target.checked ? 'true' : 'false');
+});
+
 // ── Recover long refs the crop cuts off (ANCHOR_VALUE_RIGHT_GROW, default OFF) ──
 (async () => {
   try {
