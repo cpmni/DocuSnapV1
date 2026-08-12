@@ -697,6 +697,9 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // Corroboration step 3, slice 3 (Oracle W/COND B1-B3 2026-08-13): name
                          // note demote — crop + keyword witnesses, guard-rejected dissenters.
                          ['name-demote-toggle', 'name_corrob_note_demote'],
+                         // Machine-feed arc slice 1 (Oracle W/COND C1-C6 2026-08-13): learning.js
+                         // + templates.js read the key directly (setting-only, no env bridge).
+                         ['machine-confirms-toggle', 'learning_exclude_machine_confirms'],
                          ['credit-sign-toggle', 'credit_sign_coherence'],
                          ['inline-row-overlap-toggle', 'template_inline_row_overlap'],
                          ['ref-role-digit-toggle', 'ref_role_digit_gate'],

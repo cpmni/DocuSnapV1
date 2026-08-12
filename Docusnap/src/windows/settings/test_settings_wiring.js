@@ -142,6 +142,9 @@ for (const [id, key, env] of BRIDGES) {
 // consumer stops reading the key is the same dead-toggle failure, just one file over.
 const SETTING_SWITCHES = [
   ['shadow-row-skip-toggle', 'trust_shadow_row_skip', 'database/modules/trust.js'],
+  // Machine-feed arc slice 1 (Oracle W/COND C1-C6, 2026-08-13): learning.js reads the key
+  // directly (the shadow-row-skip C5 pattern); templates.js reads it for the C1 template leg.
+  ['machine-confirms-toggle', 'learning_exclude_machine_confirms', 'database/modules/learning.js'],
   // Gate-unify slice (Oracle W/COND 2026-08-12 NIGHT): trust.js reads autofile_gate_unify (ONE
   // shared read for the import gate T1, the missing-required refusal T2 and the via stamps T3);
   // documents.js reads far_lowconf_valued_only (getReviewSplit twin; the Review renderer caches

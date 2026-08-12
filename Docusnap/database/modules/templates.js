@@ -1120,6 +1120,22 @@ function learnTemplateOnCommit(db, document_id, { document_type_slug, supplier_n
   let _via = null;
   try { _via = (db.prepare('SELECT confirmed_via FROM documents WHERE id = ?').get(document_id) || {}).confirmed_via; } catch {}
   if (_via === 'scope_sweep' || _via === 'auto_reprocess') return;   // machine confirms never drive template learning (Oracle 2026-08-12 Q2: no human looked)
+  // Machine-feed arc C1 (Oracle 2026-08-13): this list had DRIFTED — it filtered 2 of the 5
+  // machine vias while _autoFileDoc calls this function, so every auto_graduated/auto_threshold/
+  // auto_corroborated file was driving template learning (link-on-confirm, identity enrichment,
+  // the frozen-string confirm counts that key the young-identity guard — machine files
+  // manufacturing template maturity, the T3 class). The FULL sentinel set now applies when
+  // `learning_exclude_machine_confirms` is armed; the legacy two-value filter above stays
+  // unconditional (shipped behaviour). Shared constant so a sixth via can never drift again.
+  try {
+    const { MACHINE_VIAS_SET } = require('./machine_vias');
+    const learning = require('./learning');
+    const env = process.env.LEARNING_EXCLUDE_MACHINE_CONFIRMS;
+    const armed = env === '1' ? true
+                : env === '0' ? false
+                : learning.getSetting(db, 'learning_exclude_machine_confirms', 'false') === 'true';
+    if (armed && MACHINE_VIAS_SET.has(_via || '')) return;
+  } catch {}
   let tid = doc && doc.template_id;
   if (!tid) {
     // ── R1: LINK-ON-CONFIRM (herald→Oracle SIGN-OFF-W/COND 2026-08-01; kill

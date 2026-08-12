@@ -592,7 +592,7 @@ function scopeTrust(db, supplier, slug, opts = {}) {
     SELECT d.id, COALESCE(d.confirmed_at, '') AS ts FROM documents d
     JOIN document_types dt ON dt.id = d.document_type_id
     WHERE d.status = 'confirmed' AND LOWER(TRIM(d.supplier_name)) = ? AND LOWER(dt.slug) = ?
-      ${viaFilter ? "AND COALESCE(d.confirmed_via, '') NOT IN ('scope_sweep', 'auto_corroborated', 'auto_reprocess', 'auto_graduated', 'auto_threshold')" : ''}
+      ${viaFilter ? `AND COALESCE(d.confirmed_via, '') NOT IN (${require('./machine_vias').MACHINE_VIAS_SQL})` : ''}
     ORDER BY d.confirmed_at DESC, d.id DESC
   `;
   // NOTE (Oracle 2026-08-11, corroborated auto-file C2): 'auto_corroborated' machine files are

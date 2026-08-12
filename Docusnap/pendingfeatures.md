@@ -71,7 +71,31 @@ the owner which product they flip). Q4 unanimous-wrong printed name = accepted c
 **Non-blocking backport observation: slice 1 (dates) shares the F8 hole** — template_fixed buckets as a
 mapping witness for DATE demotes too (frozen dates rare; consider W1 exclusions backport).
 
-## 2026-08-13 — MACHINE-FEED ARC: gary design + Oracle SIGN-OFF-W/COND (C1-C6) — BUILD-READY, not built
+## 2026-08-13 — MACHINE-FEED ARC: ✅ SLICE 1 BUILT same session (DEFAULT OFF) — C1/C2/C6 in-build; C3+C4 DISCHARGED by census; flip gates remaining below
+**Built:** shared `database/modules/machine_vias.js` (MACHINE_VIAS ×5 + SQL fragment; trust.js:595 +
+learning.js + templates.js all reference it — the drift class is dead); learning.js getFieldFormats
+armed filter (setting `learning_exclude_machine_confirms` read inside learning.js, env
+`LEARNING_EXCLUDE_MACHINE_CONFIRMS` wins both ways — the shadow-row-skip C5 pattern; via-column
+presence-guarded; **C2 carve-out built**: a row with a human corrections.corrected_value stays counted)
++ additive `machine_value_counts` emit (armed-only, consumed by NOTHING — repo-scan pin);
+**C1 built**: templates.js learnTemplateOnCommit blocks ALL FIVE vias when the flag is armed (legacy
+2-value filter stays unconditional). Toggle + wiring pin (SETTING_SWITCHES). Battery
+`database/modules/test_machine_confirm_learning.js` 16/16 (off-byte-identical, falsifiable NULL-via
+control, C2 pin, env-both-ways, pre-mig-57 no-throw, sentinel-set + inert + template-leg pins);
+test_scope_trust ALL PASS. **C3 DISCHARGED = ZERO**: the only census hits are customer_name and the
+2.5d snap SKIPS name fields (engine.py:7569) — no code-field scope loses `known` immunity live; the
+snap also writes a note (not silent). **C4 DISCHARGED**: the one flip = Bramblewood|purchase_order|
+customer_name freetext→constant('Quillstone Print & Packaging') — direction FAVOURABLE (exclusion
+un-shields the garble class; the lost values are the 2 garbles + the 4 wrong-party Bramblewood rows
+already queued for owner ruling). Script: scratchpad machine_c3_c4_census.js.
+**REMAINING before flip:** C5 gate-unify round-trip pin owed (armed exclusion + unify-ON stamp);
+realdoc M=0/zero-drop on a POST-STAMP snapshot with the flag armed; Quillstone pre-remediation
+backup doc_freq gate (docusnap_pre_namerepair_20260812.db must cross 0.9 STRONG under exclusion);
+C6 CONFADOPT docstring fix (engine.py:2703) — rides the commit; C1 small census (post-stamp docs
+that drove template learning). Slice 2 (refusal-side unions from machine_value_counts) = own pass.
+Oracle ruling record below:
+
+## (ruling record) 2026-08-13 — MACHINE-FEED ARC: gary design + Oracle SIGN-OFF-W/COND (C1-C6)
 gary consumer map + Oracle pass both run 2026-08-13 (agents; census run same day). **Design (slice 1):**
 flag `learning_exclude_machine_confirms` DEFAULT OFF (+toggle + env winning both ways, the
 trust_shadow_row_skip C5 pattern, setting read INSIDE learning.js); when armed + via column exists, add

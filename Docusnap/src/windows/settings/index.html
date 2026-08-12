@@ -811,6 +811,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Learn only from documents a person confirmed</div>
+                <div class="threshold-sub">Documents ScanFinder filed automatically no longer count as evidence when it learns what a field usually looks like — only documents a person confirmed (or corrected) do. This stops an automatic filing of a misread value from teaching the misread back to the reader. Requires "Auto-file gate unification" to be on, so automatic filings are labelled. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="machine-confirms-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Check a credit note's total for a missing minus sign</div>
                 <div class="threshold-sub">A credit note's total is money going back to you, but the minus sign in front of it can be lost when the page is read — so a £160.32 credit is filed as a £160.32 charge. ScanFinder checks the total's sign against the document's type and flags it for a quick check instead of filing it silently. It never changes the amount itself — you type the minus. ON by default &mdash; you can turn it off here.</div>
               </div>

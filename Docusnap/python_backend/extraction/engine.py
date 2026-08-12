@@ -2715,10 +2715,16 @@ class ExtractionEngine:
         a Stage-0.5 winner" (see that docstring): when the COMMITTED name-like value is provably
         JUNK (re-fails the deterministic predicates that flagged it — so accepted_names /
         authoritative exemptions provably did not apply) and the scope's confirmed history holds
-        EXACTLY ONE distinct value at ≥5 human confirms (owner-ruled STRICT variability clause —
+        EXACTLY ONE distinct value at ≥5 confirms (owner-ruled STRICT variability clause —
         any second distinct key at ANY count refuses), adopt the on-page candidate that matches the
         confirmed literal. Both live exhibits: Ironclad 'Sramblewood Joinery Ltg' garble vs 20×
         'Bramblewood Joinery Ltd'; Meadowvale account-number-in-customer vs 38×.
+        ⚠ COUNT HONESTY (Oracle C6, machine-feed arc 2026-08-13): the counts index is built from
+        getFieldFormats value_counts, which counts ALL confirmed rows — "human confirms" was a
+        FALSE safety claim while machine auto-files feed the same substrate. The dom_count becomes
+        human-only exactly when `learning_exclude_machine_confirms` is armed (learning.js filter);
+        until that flip, a ≥5 count may be machine-inflated. The machine-observed second-key
+        refusal (variability seen only in machine rows) is the slice-2 refusal-side union.
 
         Semantics: the CANDIDATE'S OWN page-read string is adopted (the counts index stores no
         literals — memory LICENSES a this-page read, it never supplies a value); method gains

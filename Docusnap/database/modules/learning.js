@@ -1250,6 +1250,35 @@ function _looksDateish(v) {
   return false;
 }
 
+// LEARNING_EXCLUDE_MACHINE_CONFIRMS (machine-feed arc slice 1; gary → Oracle SIGN-OFF-W/COND
+// C1-C6, 2026-08-13; DEFAULT OFF). When armed, getFieldFormats stops counting MACHINE-confirmed
+// rows (confirmed_via in MACHINE_VIAS) into sample_values/value_counts/confirmed_count — the
+// substrate behind the Stage-4.5 name lexicon, dominance snap, CONFADOPT counts, shape classes
+// and the noise/prefix/length indices. The T3 principle one level down: a conf-100 machine file
+// of a garbled read must not manufacture the learning evidence the machine then consumes (the
+// Quillstone lexicon was diluted below the 0.9 STRONG bar by the machine's own confirms).
+// C2 carve-out (Oracle, RETAIN): a row with a HUMAN correction (corrections.corrected_value)
+// stays counted even on a machine-stamped doc — a correction row is a human act (machine
+// confirms never write one), and it is the remediation mechanism's own lever.
+// Flip mechanism = the trust_shadow_row_skip C5 pattern: a SETTING read here (not env-at-startup,
+// the stale-main-process class), env retained as the dev/harness escape winning BOTH directions.
+// SEAM (Oracle C5): the exclusion is BLIND when `autofile_gate_unify` is OFF — machine files then
+// stamp via NULL and read as human. Requires gate-unify ON (said in the toggle copy).
+function _excludeMachineConfirmsEnabled(db) {
+  const env = process.env.LEARNING_EXCLUDE_MACHINE_CONFIRMS;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try { return getSetting(db, 'learning_exclude_machine_confirms', 'false') === 'true'; }
+  catch { return false; }
+}
+
+function _hasConfirmedViaColumn(db) {
+  try {
+    return db.prepare("SELECT 1 FROM pragma_table_info('documents') WHERE name='confirmed_via'")
+             .get() != null;
+  } catch { return false; }
+}
+
 function getFieldFormats(db, opts) {
   // opts.includeProvisional (default FALSE — S2 leak fix, 2026-08-04 morning): the provisional
   // (sub-≥3-confirm) groups exist ONLY for the Python consent channel. Every OTHER consumer —
@@ -1257,6 +1286,10 @@ function getFieldFormats(db, opts) {
   // exact pre-provisional list, so the default EXCLUDES them; only the training-file build in
   // processing/handler.js opts in.
   const includeProvisional = !!(opts && opts.includeProvisional);
+  // Machine-confirm exclusion (slice 1): armed only when the flag is on AND the via column
+  // exists (pre-mig-57 fixture DBs keep the legacy behaviour, no throw).
+  const excludeMachine = _excludeMachineConfirmsEnabled(db) && _hasConfirmedViaColumn(db);
+  const machineVias = require('./machine_vias').MACHINE_VIAS_SET;
   // Collect final confirmed values (corrected value if the user edited, else the
   // extracted display value) for every confirmed document. Built into TWO kinds
   // of group:
@@ -1277,7 +1310,7 @@ function getFieldFormats(db, opts) {
       e.field_key,
       e.display_value,
       c.corrected_value,
-      fld.type       AS field_type
+      fld.type       AS field_type${excludeMachine ? ",\n      COALESCE(d.confirmed_via, '') AS confirmed_via" : ''}
     FROM extractions e
     JOIN  documents      d  ON d.id  = e.document_id
     LEFT JOIN document_types dt ON dt.id = d.document_type_id
@@ -1295,21 +1328,31 @@ function getFieldFormats(db, opts) {
       -- echoes would lock the literal in past a real-world change and permanently mask emerging
       -- variety (the strict variability clause could never see a genuine second value). A human
       -- EDIT of an adopted value changes the method via corrections and re-enters learning
-      -- normally. Unconditional (confirmed_via cannot separate graduated machine files from
-      -- humans — both stamp NULL).
+      -- normally. Unconditional. (The 2026-08-12 "via cannot separate machine files" clause is
+      -- SUPERSEDED — gate-unify T3 stamps + the remediation scripts made via separable; the
+      -- doc-level machine exclusion is the ARMED filter in the accumulation loop below, C6.)
       AND (e.extraction_method IS NULL OR e.extraction_method NOT LIKE '%+confirmed\\_adopt' ESCAPE '\\')
     ORDER BY d.confirmed_at DESC, d.id DESC
   `).all();
 
   const groups = {};
-  const addTo = (supplierKey, docType, fieldKey, value) => {
+  const addTo = (supplierKey, docType, fieldKey, value, isMachine) => {
     const key = `${supplierKey}|${docType}|${fieldKey}`;
     let g = groups[key];
     if (!g) {
       g = groups[key] = {
         supplier_name: supplierKey, document_type: docType, field_key: fieldKey,
         _values: new Set(), _valueCounts: new Map(), _count: 0,
+        _machineValueCounts: new Map(),
       };
+    }
+    if (isMachine) {
+      // ARMED path only: machine-confirmed evidence is recorded in a SEPARATE additive channel
+      // (machine_value_counts) consumed by NOTHING in slice 1 (pinned inert) — it exists so a
+      // slice-2 refusal-side union (CONFADOPT second-key variability, charset) can read it
+      // without re-touching this query. It never feeds sample_values/value_counts/confirmed_count.
+      g._machineValueCounts.set(value, (g._machineValueCounts.get(value) || 0) + 1);
+      return;
     }
     g._values.add(value);
     g._valueCounts.set(value, (g._valueCounts.get(value) || 0) + 1);
@@ -1319,6 +1362,11 @@ function getFieldFormats(db, opts) {
   for (const row of rows) {
     const finalValue = (row.corrected_value || row.display_value || '').trim();
     if (!finalValue) continue;
+    // Machine-confirm exclusion (armed only): a machine-stamped doc's row leaves the counted
+    // substrate UNLESS a human correction exists for it (C2 carve-out — a correction row is a
+    // human act; machine confirms never write one, verified at _autoFileDoc/reviewService).
+    const isMachine = excludeMachine && machineVias.has(row.confirmed_via || '')
+                      && row.corrected_value == null;
     // Guard: never LEARN a non-date into a date-typed field's format. A mis-aimed
     // anchor that once read (and got confirmed as) a reference number must not
     // pollute the date field's learned shape — that turns the date class into
@@ -1329,11 +1377,11 @@ function getFieldFormats(db, opts) {
     const supplier = (row.supplier_name || '').trim();
     // Supplier-scoped — only for a real, non-placeholder supplier (unchanged).
     if (supplier && supplier !== '__global__') {
-      addTo(supplier, docType, row.field_key, finalValue);
+      addTo(supplier, docType, row.field_key, finalValue, isMachine);
     }
     // Doc-type-scoped — always, across every supplier (incl. none).
     if (docType) {
-      addTo('', docType, row.field_key, finalValue);
+      addTo('', docType, row.field_key, finalValue, isMachine);
     }
   }
 
@@ -1354,7 +1402,7 @@ function getFieldFormats(db, opts) {
   return Object.values(groups)
     .map(g => ({ ...g, _ok: g._values.size >= 3 || g._count >= 3 }))
     .filter(g => g._ok || includeProvisional)
-    .map(({ _values, _valueCounts, _count, _ok, ...rest }) => ({
+    .map(({ _values, _valueCounts, _count, _ok, _machineValueCounts, ...rest }) => ({
       ...rest,
       ...(_ok ? {} : { provisional: true }),
       sample_values:   [..._values].slice(0, 20),
@@ -1364,6 +1412,11 @@ function getFieldFormats(db, opts) {
       // times, not just one unanimous shape — letting a field legitimately carry
       // more than one structure (e.g. a 4- and a 5-digit reference).
       value_counts:    Object.fromEntries([..._valueCounts].slice(0, 200)),
+      // ARMED ONLY (slice 1, pinned inert — no consumer reads it): the machine-confirmed
+      // counts the exclusion removed, kept visible for the slice-2 refusal-side union.
+      ...(excludeMachine
+        ? { machine_value_counts: Object.fromEntries([..._machineValueCounts].slice(0, 200)) }
+        : {}),
     }));
 }
 
