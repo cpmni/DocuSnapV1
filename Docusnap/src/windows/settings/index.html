@@ -783,6 +783,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Let the printed title decide the document's type</div>
+                <div class="threshold-sub">An address caption like “BILL TO” no longer counts as a document title (it says who the document is for, not what it is); a real title that shares its line with the letterhead still counts; and when two types score a dead heat, the one whose actual title is printed on the page wins. Fixes credit notes being typed as invoices. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="type-election-title-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Check a credit note's total for a missing minus sign</div>
                 <div class="threshold-sub">A credit note's total is money going back to you, but the minus sign in front of it can be lost when the page is read — so a £160.32 credit is filed as a £160.32 charge. ScanFinder checks the total's sign against the document's type and flags it for a quick check instead of filing it silently. It never changes the amount itself — you type the minus. ON by default &mdash; you can turn it off here.</div>
               </div>

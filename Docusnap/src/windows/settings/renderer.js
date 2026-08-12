@@ -687,6 +687,9 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          ['date-future-yield-toggle', 'template_date_future_yield'],
                          ['pad-window-read-toggle', 'template_pad_window_read'],
                          ['heading-absent-reread-toggle', 'heading_absent_reread'],
+                         // Type-election title-first (herald 2026-08-12): one switch → three
+                         // keyword.py env flags via _reconcileEnv (the heading_absent_reread pattern).
+                         ['type-election-title-toggle', 'type_election_title_first'],
                          ['credit-sign-toggle', 'credit_sign_coherence'],
                          ['inline-row-overlap-toggle', 'template_inline_row_overlap'],
                          ['ref-role-digit-toggle', 'ref_role_digit_gate'],

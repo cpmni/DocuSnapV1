@@ -1496,3 +1496,24 @@ feeding learning is what the sweep incident punished; scopes are post-graduation
 Gates: pin suite 33/33 (headline: armed + empty vat_no@0 FILES — parking cannot be silently
 restored); decision-layer A/B 74/74 identical dark-vs-armed, 0 armed-widenings; zero
 extraction-layer changes. Flags autofile_gate_unify + far_lowconf_valued_only, both OFF + toggles.
+
+## 2026-08-12 NIGHT (entry 2) — TYPE-ELECTION TITLE-FIRST (the Meadowvale credit-note-typed-Invoice defect): SIGN OFF W/COND, BUILT DARK same night
+herald design (fix 1 option (b) shipped-code `_ADDRESS_CAPTIONS` incl. 'order to' + 6 defensive
+analogues — Oracle verified none appears in ANY shipped bucket, all inert today; fix 1 must
+suppress the RELAXED :955 exposed-head path too, not just the strict test — the load-bearing
+subtlety, pinned; fix 2 any-segment strong-heading gated to the TOP BAND, operates on _work
+post-gap-collapse; fix 3 re-keyed onto a new STRICT strong_heads dict — never the relaxed
+`headings` dict, whose contract is the template-precedence gate only). Oracle DECLINED the
+DO-NOTHING option on fix 3 (an enumerative defence needs the general tie backstop; 6 lines,
+tie-only, title-ward). Bonus finding verified mechanically: with fix 1 ON the relaxed head for
+Credit Note is already True on cached text → plain reprocess self-heals via
+resolve_assigned_type_authority (ks_auth='machine') — the FINDINGS' "plain reprocess can NEVER
+self-heal" is false once fix 1 ships. Conditions: C1 stale test citation repointed + the
+column-break contract pin created (§0); C2 owner-watch = statement-heavy suppliers (the fix-2
+admit class, 0/926 today); C3 say at flip: human-confirmed mistypes don't self-heal; flip
+type-election BEFORE measuring gate-unify (removes the known-fixed class from its census); C4
+residuals recorded (despace/fuzzy + owner-precedence both still seg0-only); C5 the frozenset
+boundary is LOAD-BEARING — party-address captions only, never field captions. Gates: pins 19/19
+(exhibit end-to-end pin fails on both bug-absence and OFF-leak — a real gate); census 926 texts,
+9 heals (the exact live class incl. the 5 queued), 0 collateral, 0 regressions; all 9 existing
+heading suites green. Flags OFF + one toggle `type_election_title_first`.

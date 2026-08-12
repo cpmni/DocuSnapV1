@@ -41,7 +41,21 @@ census of queue docs eligible-but-parked before/after · zero new wrong-value au
 **Interim exits (no code):** File All Ready, or group-reprocess → the `0177716` consent bar offers
 them; or per-sender editor "Never on these documents?" on the empty field.
 
-## 2026-08-12 EVE — TYPE ELECTION: address caption 'bill to' outvotes the printed CREDIT NOTE title (traced, design ready, NOT built)
+## 2026-08-12 EVE — TYPE ELECTION — ✅ BUILT DARK same night (herald design → Oracle SIGN-OFF-W/COND; see docs/oracle_log.md 2026-08-12 NIGHT entry 2)
+**Shipped:** ONE toggle `type_election_title_first` (OFF) → three keyword.py kill switches
+`TYPE_CAPTION_MENTION_ONLY` (`_ADDRESS_CAPTIONS` frozenset — PARTY-address captions ONLY, Oracle C5
+boundary) · `TYPE_HEADING_ANY_SEGMENT` (top-band gated) · `TYPE_TIE_HEADING_PREF` (STRICT
+strong-head key). Pins `tests/test_type_election.py` 19/19; census
+`stress_test/type_election_census.py` over 926 stored texts: f1 and f2 EACH heal exactly the
+9-doc Meadowvale class, 0 flips elsewhere, 0 fix-2 admits, 0 regressions. Plain reprocess
+self-heals the queued 5 after the flip (machine-authority override — verified). **Oracle C3, say
+at flip: human-confirmed mistypes do NOT self-heal (Learning Repair / manual re-type); flip this
+BEFORE measuring gate-unify. C2 owner-watch: first statement-heavy supplier is the fix-2 admit
+exposure (0/926 today). C4 residuals: despace/fuzzy recovery still seg0-only (a letter-SPACED
+title in a non-left column still misses — same family, unhealed); TYPE_TITLE_OWNER_PRECEDENCE
+ownership test still seg0-only.** Original trace below:
+
+## (superseded original) 2026-08-12 EVE — TYPE ELECTION: address caption 'bill to' outvotes the printed CREDIT NOTE title (traced, design ready, NOT built)
 **Owner-reported disparity: import types Meadowvale `-2` credit-note pages as INVOICE; a straighten-reprocess flips them to credit_note.**
 Traced end-to-end (agent FINDINGS: scratchpad session 30ca4b35 `disparity\FINDINGS.md`; both premises REFUTED —
 title never dropped, heading flags played no role, threading identical). Mechanism, all FACT-labelled:

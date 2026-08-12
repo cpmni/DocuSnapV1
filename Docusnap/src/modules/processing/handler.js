@@ -239,6 +239,18 @@ function _reconcileEnv(db) {
       env.HEADING_TITLE_GAP_COLLAPSE = '1';
       env.REPROCESS_HEADING_GEOM = '1';
     }
+    // TYPE-ELECTION TITLE-FIRST (herald design 2026-08-12 NIGHT — the Meadowvale credit-note-typed-
+    // Invoice election defect). One owner switch, three keyword.py kill switches (independent
+    // ablation/revert axes): address captions ('bill to') mention-only · strong-heading test may
+    // match a top-band non-left column segment · exact-tie prefers the heading-backed candidate.
+    // The heading re-read rungs receive detect_document_type as a callable, so the recovered-band
+    // election obeys the same flags — one implementation, no split-brain. Default OFF,
+    // byte-identical off. App RESTART to load the bridge.
+    if (learning.getSetting(db, 'type_election_title_first', 'false') === 'true') {
+      env.TYPE_CAPTION_MENTION_ONLY = '1';
+      env.TYPE_HEADING_ANY_SEGMENT = '1';
+      env.TYPE_TIE_HEADING_PREF = '1';
+    }
     // CREDIT-NOTE SIGN COHERENCE (Oracle 2026-08-07, slice C — DETECTION only). The app has no
     // representation of a signed money value: the readers strip a leading '-' at BOTH sites
     // (anchor.py + keyword.py), so a -£160.32 CREDIT commits as a +£160.32 CHARGE and files silently.

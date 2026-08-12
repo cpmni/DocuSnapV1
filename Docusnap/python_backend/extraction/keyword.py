@@ -586,10 +586,31 @@ _HEADING_PUNCT   = frozenset({"#", "-", ":", "|"})
 _HEADING_CAPTION = frozenset({"no", "no.", "number", "num", "ref"})
 _HEADING_ADJ     = _HEADING_PUNCT | _HEADING_CAPTION
 
+# ADDRESS-BLOCK captions (TYPE_CAPTION_MENTION_ONLY, herald design 2026-08-12 NIGHT): a caption
+# that introduces a PARTY's address describes who the document is addressed to, never what the
+# document IS — it can score a MENTION but must never be heading-eligible (never the 2.0× weight,
+# never the exposed trusted-`head` signal). The Meadowvale exhibit: a standalone 'BILL TO' line on
+# a tilted scan passed the strict whole-line test, minted a trusted Invoice heading, and the wrong
+# trusted heading pre-gated every heading re-read rung AND made identify_template refuse the right
+# template. SHIPPED CODE, not config (an invariant a config edit must not be able to re-break):
+# 'bill to'/'billed to' sit in the shipped Invoice bucket and 'order to' in Purchase Order; the
+# rest are defensive analogues (harmless while absent from buckets, they close the door on future
+# config edits and user aliases of the same class). Membership is by phrase TEXT regardless of
+# origin — accepted residual: a custom type literally NAMED "Bill To" could never be
+# heading-backed (absurd case, documented here deliberately).
+# ⚠ BOUNDARY IS LOAD-BEARING (Oracle C5, 2026-08-12): PARTY-ADDRESS captions ONLY. Never widen
+# this set to FIELD captions ('invoice no', 'statement date', 'opening balance', …) — those
+# genuinely print as banners on real paper and demoting them would un-title legitimate documents.
+_ADDRESS_CAPTIONS = frozenset({
+    "bill to", "billed to", "order to",
+    "ship to", "sold to", "deliver to", "invoice to", "remit to", "send to",
+})
+
 # A run of COLUMN_BREAK_MIN (4) or more spaces = a COLUMN break (reconstruct_page_text / born_digital
 # emit exactly the 4-space COLUMN_BREAK for a wide intra-row x-gap; adjacent columns compound). Derived
 # from the single-source constant so a producer width change propagates here — pinned by
-# test_column_break_contract.py. Matches the four shipped ` {4,}` column guards below (:766/:846/:904/:1070).
+# tests/test_type_election.py §0 (an earlier comment cited a test_column_break_contract.py that never
+# existed — Oracle C1 2026-08-12). Matches the four shipped ` {4,}` column guards below.
 _COL_BREAK_RE = re.compile(r' {%d,}' % COLUMN_BREAK_MIN)
 
 
@@ -832,6 +853,19 @@ def detect_document_type(ocr_text: str, patterns: dict,
     # caption row 'CREDIT NOTE NO ...    CREDIT DATE ...' still splits). Byte-identical OFF, and ON it
     # only changes a line where a name/alias phrase carries a >=2-space internal gap.
     _gap_collapse = os.environ.get("HEADING_TITLE_GAP_COLLAPSE", "0") != "0"
+    # TYPE-ELECTION TITLE-FIRST (herald design → Oracle gate, 2026-08-12 NIGHT; three independent
+    # kill switches bridged from ONE Settings toggle `type_election_title_first`, the
+    # heading_absent_reread precedent). All three DEFAULT OFF = byte-identical.
+    #  1 TYPE_CAPTION_MENTION_ONLY — _ADDRESS_CAPTIONS phrases score mentions only (see the set).
+    #  2 TYPE_HEADING_ANY_SEGMENT — the strong-heading SCORE test may match a TOP-BAND non-left
+    #    column segment (a genuine banner sharing its OCR line with the letterhead), caption_ok
+    #    stays False; mid-body table cells stay excluded by the top-band gate.
+    #  3 TYPE_TIE_HEADING_PREF — an exact score tie prefers the candidate whose evidence includes
+    #    a STRICT scoring heading (the 2.0× kind, never the relaxed exposed signal); both/neither
+    #    heading-backed keeps insertion order (deterministic, byte-identical to today).
+    _caption_mention_only = os.environ.get("TYPE_CAPTION_MENTION_ONLY", "0") != "0"
+    _any_segment          = os.environ.get("TYPE_HEADING_ANY_SEGMENT", "0") != "0"
+    _tie_heading_pref     = os.environ.get("TYPE_TIE_HEADING_PREF", "0") != "0"
 
     type_keywords = {k: list(v) for k, v in patterns.get("document_type_keywords", {}).items()}
     aliases_by_name = type_aliases or {}
@@ -868,13 +902,21 @@ def detect_document_type(ocr_text: str, patterns: dict,
 
     scores: dict[str, float] = {}
     headings: dict[str, bool] = {}
+    strong_heads: dict[str, bool] = {}   # STRICT scoring headings only (the 2.0× kind) — fix-3 key
     for doc_type, keywords in type_keywords.items():
         score = 0.0
         head  = False
+        strong = False
         for kw in keywords:
             kw = kw.strip()
             if not kw:
                 continue
+            # Fix 1 (TYPE_CAPTION_MENTION_ONLY): an address-block caption is demoted to
+            # mention-only for THIS phrase — no despace/fuzzy recovery (a "recovered" address
+            # caption is nonsense), no strict/column-aware heading, and no relaxed exposed-head
+            # signal either (suppressing only the strict test would leave head=True alive via
+            # _line_is_heading_like caption_ok=True — the load-bearing subtlety, pinned).
+            _addr_kw = _caption_mention_only and kw.lower() in _ADDRESS_CAPTIONS
             pattern = _type_keyword_pattern(kw)
             if pattern is None:
                 continue
@@ -887,7 +929,8 @@ def detect_document_type(ocr_text: str, patterns: dict,
                     # only on the leftmost column segment with all spacing collapsed to EXACT equality
                     # (see _despaced_heading). ADDITIVE — a normal regex match never reaches here, so
                     # the no-fire path is byte-identical.
-                    if ((_letter_spacing or _fuzzy) and _col_aware and kw.lower() in name_alias_lc
+                    if ((_letter_spacing or _fuzzy) and _col_aware and not _addr_kw
+                            and kw.lower() in name_alias_lc
                             and (i <= _HEADING_TOP_BAND_LINES or i / total <= _HEADING_TOP_BAND_FRAC)):
                         _seg0 = _COL_BREAK_RE.split(line.strip().lower())[0].strip()
                         if _letter_spacing and _despaced_heading(_seg0, kw.lower()):
@@ -922,7 +965,9 @@ def detect_document_type(ocr_text: str, patterns: dict,
                 # Exposed-signal inputs (the :826 _line_is_heading_like call); overridden ONLY by the
                 # gap-collapse branch so the other paths + OFF stay byte-identical.
                 _hl_line, _hl_phrase = line, (m.group(0) if m is not None else "")
-                if _despaced:
+                if _addr_kw:
+                    is_heading = False                      # Fix 1 — an address caption is never a title
+                elif _despaced:
                     is_heading = True                       # Seam B (Oracle): a letter-spacing
                     # recovery MUST force BOTH the strong 2.0 SCORE and the exposed head signal below;
                     # the :483/:496 recompute uses m.group(0)=collapsed vs the spaced seg -> False,
@@ -940,11 +985,24 @@ def detect_document_type(ocr_text: str, patterns: dict,
                             _phrase = re.sub(r'\s+', ' ', _mm.group(0)).strip()
                             _work = _lo[:_mm.start()] + _phrase + _lo[_mm.end():]
                         _hl_line, _hl_phrase = _work, _phrase
-                    seg0 = _COL_BREAK_RE.split(_work)[0].strip()
-                    is_heading = _segment_is_heading(seg0, _phrase, caption_ok=False)
+                    # Fix 2 (TYPE_HEADING_ANY_SEGMENT): a genuine banner that shares its OCR
+                    # reading line with the letterhead is NOT the leftmost segment ("Meadowvale
+                    # Dairy Wholesale    CREDIT NOTE") — armed, segments 1..n may also earn the
+                    # strong weight, but ONLY on a TOP-BAND line (a mid-body table cell keeps
+                    # mention weight; the widening is strictly tighter than the relaxed exposed
+                    # signal below, which is any-depth caption_ok=True). Splits _work, never the
+                    # raw line — the gap-collapse above must stay fused (08-07 fix).
+                    _segs = _COL_BREAK_RE.split(_work)
+                    is_heading = _segment_is_heading(_segs[0].strip(), _phrase, caption_ok=False)
+                    if (not is_heading and _any_segment
+                            and (i <= _HEADING_TOP_BAND_LINES or i / total <= _HEADING_TOP_BAND_FRAC)):
+                        is_heading = any(_segment_is_heading(s.strip(), _phrase, caption_ok=False)
+                                         for s in _segs[1:])
                 else:
                     is_heading = line.strip().lower() == m.group(0).strip()
                 score += position_weight * (2.0 if is_heading else 1.0)
+                if is_heading:
+                    strong = True                           # fix-3 key: STRICT scoring heading only
                 # EXPOSED heading signal (`heading` in the result) — consumed ONLY by the
                 # template doc-type-precedence gate (a matched template must not override a
                 # doc whose own TITLE confidently declares a different type). It does NOT
@@ -952,17 +1010,28 @@ def detect_document_type(ocr_text: str, patterns: dict,
                 # vs the strict scoring `is_heading` so a real title carrying a number or
                 # punctuation ("WORKSHEET 38", "Purchase Order:", "Invoice No. 10023")
                 # still counts as a heading, while an in-prose mention does not.
-                if is_heading or (m is not None and _line_is_heading_like(_hl_line, _hl_phrase)):
+                if not _addr_kw and (is_heading or (m is not None and _line_is_heading_like(_hl_line, _hl_phrase))):
                     head = True                             # _despaced -> is_heading True -> head True (Seam B)
                 break  # first occurrence of this phrase is enough
         if score > 0:
             scores[doc_type] = round(score, 1)
             headings[doc_type] = head
+            strong_heads[doc_type] = strong
 
     if not scores:
         return None
 
-    best_type  = max(scores, key=scores.get)
+    # Fix 3 (TYPE_TIE_HEADING_PREF): an EXACT score tie prefers the candidate backed by a STRICT
+    # scoring heading (the 2.0× kind — never the relaxed `headings` dict, whose contract is the
+    # template-precedence gate only). max() is stable on equal keys, so a tie where BOTH or
+    # NEITHER candidate is heading-backed keeps config insertion order — byte-identical to today
+    # and pinned as the deterministic answer. Runs BEFORE the TYPE_TITLE_OWNER_PRECEDENCE block
+    # below (which re-assigns best_type later and deliberately keeps the last word — same
+    # direction, never a fight; ordering pinned in test_type_election.py).
+    if _tie_heading_pref:
+        best_type = max(scores, key=lambda t: (scores[t], 1 if strong_heads.get(t) else 0))
+    else:
+        best_type = max(scores, key=scores.get)
 
     # TYPE_TITLE_OWNER_PRECEDENCE (kill switch, DEFAULT OFF — gary design 2026-08-08).
     # THE DEFECT: type election is a BUCKET SUM, and an install-created type owns exactly ONE

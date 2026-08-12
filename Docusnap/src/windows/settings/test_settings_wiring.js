@@ -115,6 +115,11 @@ const BRIDGES = [
   ['credit-sign-toggle',        'credit_sign_coherence',       'CREDIT_SIGN_COHERENCE'],
   ['pad-window-read-toggle',    'template_pad_window_read',    'TEMPLATE_PAD_WINDOW_READ'],
   ['inline-offset-veto-toggle', 'anchor_inline_taught_offset_veto', 'ANCHOR_INLINE_TAUGHT_OFFSET_VETO'],
+  // Type-election title-first (herald 2026-08-12 NIGHT): ONE toggle bridges THREE keyword.py
+  // kill switches (the heading_absent_reread multi-flag pattern) — pin each env leg.
+  ['type-election-title-toggle', 'type_election_title_first', 'TYPE_CAPTION_MENTION_ONLY'],
+  ['type-election-title-toggle', 'type_election_title_first', 'TYPE_HEADING_ANY_SEGMENT'],
+  ['type-election-title-toggle', 'type_election_title_first', 'TYPE_TIE_HEADING_PREF'],
 ];
 const handler = (() => {
   try { return fs.readFileSync(path.join(root, 'src/modules/processing/handler.js'), 'utf8'); }
