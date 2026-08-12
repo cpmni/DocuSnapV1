@@ -51,14 +51,25 @@ for (const r of REPAIRS) {
 if (!APPLY) { console.log(`\nCensus only — ${total} rows (APPLY=1 to repair — close the app first).`); db.close(); process.exit(0); }
 
 const backup = DB_PATH.replace(/\.db$/, '_pre_namerepair_20260812.db');
-db.backup(backup).then(() => {
-  console.log('backup done:', backup, fs.statSync(backup).size, 'bytes');
+const doBackup = fs.existsSync(backup)
+  ? (console.log('backup already exists from the first pass:', backup), Promise.resolve())
+  : db.backup(backup).then(() => console.log('backup done:', backup, fs.statSync(backup).size, 'bytes'));
+doBackup.then(() => {
   let n = 0;
   const upd = db.prepare(`UPDATE extractions SET display_value = ?
     WHERE field_key = 'customer_name' AND display_value = ?
       AND document_id IN (SELECT id FROM documents WHERE status = 'confirmed')`);
   for (const r of REPAIRS) n += upd.run(r.good, r.bad).changes;
-  console.log(`repaired ${n} rows (display_value only; raw_value untouched).`);
+  console.log(`repaired ${n} extraction rows (display_value only; raw_value untouched).`);
+  // Second leg (found by the post-apply verify): corrections.corrected_value OVERRIDES the
+  // display in getFieldFormats — one human correction (2026-08-12 11:23, doc 532) corrected an
+  // address misread TO the garbled spelling. Repair the same literals there; original_value is
+  // the honest record and stays.
+  let nc = 0;
+  const updC = db.prepare(`UPDATE corrections SET corrected_value = ?
+    WHERE field_key = 'customer_name' AND corrected_value = ?`);
+  for (const r of REPAIRS) nc += updC.run(r.good, r.bad).changes;
+  console.log(`repaired ${nc} corrections rows (corrected_value; original_value untouched).`);
   console.log('Effect on next processing run: Quillstone lexicon 85/89 = 0.955 >= 0.9 STRONG;');
   console.log('Castellan customer bucket single-key -> CONFADOPT licence restored.');
   db.close();
