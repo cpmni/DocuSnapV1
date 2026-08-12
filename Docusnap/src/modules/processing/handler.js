@@ -266,6 +266,14 @@ function _reconcileEnv(db) {
     if (learning.getSetting(db, 'recon_total_note_demote', 'false') === 'true') {
       env.RECON_TOTAL_NOTE_DEMOTE = '1';
     }
+    // CORROBORATION STEP 3, slice 3 (gary → Oracle W/COND B1-B3, 2026-08-13): the Layer-A
+    // name-guard caption-disagreement note is released when a crop-side ledger witness AND a
+    // keyword-family read both corroborate the kept name, the dissenters were guard-REJECTED,
+    // and no surviving read disagrees. Non-identity name fields only (supplier_name never);
+    // no confidence minted. Default OFF, byte-identical off.
+    if (learning.getSetting(db, 'name_corrob_note_demote', 'false') === 'true') {
+      env.NAME_CORROB_NOTE_DEMOTE = '1';
+    }
     // CREDIT-NOTE SIGN COHERENCE (Oracle 2026-08-07, slice C — DETECTION only). The app has no
     // representation of a signed money value: the readers strip a leading '-' at BOTH sites
     // (anchor.py + keyword.py), so a -£160.32 CREDIT commits as a +£160.32 CHARGE and files silently.

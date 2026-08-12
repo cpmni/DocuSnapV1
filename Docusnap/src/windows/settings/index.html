@@ -804,6 +804,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Don't ask about a name disagreement other readings already settled</div>
+                <div class="threshold-sub">When the reading beside a document's own caption disagreed with the taught position for a name, but the disagreeing readings were rejected as junk and two independent readings agree with the name that was kept, the "please verify" warning is released — the disagreement is still recorded for the developer view. Never applies to the document issuer, and anything genuinely unresolved still asks. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="name-demote-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Check a credit note's total for a missing minus sign</div>
                 <div class="threshold-sub">A credit note's total is money going back to you, but the minus sign in front of it can be lost when the page is read — so a £160.32 credit is filed as a £160.32 charge. ScanFinder checks the total's sign against the document's type and flags it for a quick check instead of filing it silently. It never changes the amount itself — you type the minus. ON by default &mdash; you can turn it off here.</div>
               </div>

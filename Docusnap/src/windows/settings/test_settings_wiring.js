@@ -124,6 +124,8 @@ const BRIDGES = [
   ['xcheck-demote-toggle', 'xcheck_corrob_note_demote', 'XCHECK_CORROB_NOTE_DEMOTE'],
   // Corroboration step 3, slice 2 (Oracle W/COND 2026-08-13): adjusted-total note demote.
   ['recon-demote-toggle', 'recon_total_note_demote', 'RECON_TOTAL_NOTE_DEMOTE'],
+  // Corroboration step 3, slice 3 (Oracle W/COND B1-B3 2026-08-13): name note demote.
+  ['name-demote-toggle', 'name_corrob_note_demote', 'NAME_CORROB_NOTE_DEMOTE'],
 ];
 const handler = (() => {
   try { return fs.readFileSync(path.join(root, 'src/modules/processing/handler.js'), 'utf8'); }

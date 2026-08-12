@@ -988,6 +988,12 @@ def _name_guard_keyword_clears(data, existing, key) -> bool:
     # (anchor.py:638-659) flag a crop-vs-full-page single-digit ref disagreement even when the crop
     # read is sub-credible, so #259's ref is independently held. Until then: fail-toward-review — the
     # Saltmarsh/Halcyon phantom flag stays (a cosmetic needless review), never a silent wrong result.
+    # SLICE-3 INTERACTION (Oracle B3, 2026-08-13): _demote_name_guard_corroborated_note clears the
+    # SAME note at terminal time under a STRICTER bar (crop witness + keyword witness + recorded
+    # guard-rejection + ledger unanimity, NO minting — this door mints at :6462 and needs only a
+    # keyword incumbent). Both-ON is idempotent: this clear fires at the merge, so the demoter
+    # then sees no note and no-ops — but flipping THIS on silently makes the weaker bar the live
+    # one. The #259 precondition above governs BOTH doors. Pinned in test_name_corrob_demote.py.
     if os.environ.get("NAME_GUARD_KEYWORD_CLEAR", "0") != "1":
         return False
     if key == "supplier_name":
@@ -3079,6 +3085,138 @@ class ExtractionEngine:
                  f"{witness.get('method')} + arithmetic — adjustment note released "
                  f"(dissent recorded)")
         return True
+
+    def _demote_name_guard_corroborated_note(self, results, field_defs, corrob):
+        """NAME_CORROB_NOTE_DEMOTE (owner corroboration STEP 3, slice 3 — NAMES; gary design →
+        Oracle SIGN-OFF-W/COND B1-B3, 2026-08-13; DEFAULT OFF).
+
+        The exhibit (live Nordwind quote 0021-4 customer_name): mapping@90 + keyword_override@78
+        + anchor_crop@70 ALL read 'Bramblewood Joinery Ltd'; the two dissenting reads were
+        guard-REJECTED ('DELIVERY ADDRESS' → inline_off_taught_position, 'scone' →
+        name_guard_junk_candidate) — yet the Layer-A caption-disagreement note stands and caps
+        the field to 70. The shipped clear for this exact note (NAME_GUARD_KEYWORD_CLEAR, dark)
+        tests the instantaneous INCUMBENT — structurally blind to the ledger's triple agreement.
+
+        BOUNDARY (Oracle-ruled, deliberately STRICTER than slices 1/2 — names have no
+        calendar-parse/penny-exact content gate and the name-repair machinery itself rewrites
+        values): (1) eligibility = EXACT equality with anchor.NAME_GUARD_DISAGREE_NOTE; the five
+        OTHER relocate-guard texts warn about the KEPT value itself and are structurally
+        ineligible; name-like NON-IDENTITY fields only — supplier_name NEVER demotes (pinned;
+        the identity machinery — logo/hint/fusion/frozen-issuer — is memory-heavy and gets its
+        own slice or never); method == 'anchor_crop' exactly. (2) Equality is
+        _values_normalise_equal(..., False) — alnum-core EXACT, NO fuzzy tier: a flush-clipped
+        'Bramblewood Joinery Lt' never licenses the full value nor vice versa (pinned both
+        directions). (3) Witness = BOTH legs: W1 a crop-side ledger read (slice-1 bars: un-noted,
+        ≥80, mapping located-by-construction carve-out) that is NOT memory masquerading as
+        pixels — method startswith 'template_fixed' refused (F8: template* buckets as mapping;
+        a frozen name is the Quillstone poison channel), '+corrected'/'+confirmed_adopt' refused
+        (learned-corrector/adopt rewrites); the ledger being pre-Stage-4.5 (:7357 charter)
+        structurally excludes lexicon-repair/NAME_UNCLIP influence. AND W2 a keyword-family read
+        (keyword/keyword_override, un-noted, ≥70, equal) — the content-gate substitute, and the
+        leg that breaks the flush-clip crop↔crop common mode (two taught boxes can clip the same
+        right edge; the full-page text cannot — the committed value here is CROP-side, so
+        full-page agreement IS pixel-independent: the INVERSE of slice 1's Gate-C geometry).
+        (4) Dissent legs: D1 a rejection was RECORDED for this field (self._rejected_reads, the
+        always-on B1 recorder — positive evidence the dissent was DISQUALIFIED, not outvoted);
+        D2 ledger unanimity — NO un-noted ≥60 candidate of ANY family normalise-UNEQUAL to the
+        committed value. (5) NO confidence change at all (the money posture; the dark keyword
+        clear MINTS at its site — this is deliberately safer); the 70 stays visible and the
+        release may not un-park on its own. (6) note_demoted carries the full rejected_reads
+        list (census retro-audit — the unanimous-wrong-printed-name residual is census-only
+        observable); independent_agree never read or written (C4).
+
+        Census: XCHECK_DEMOTE_CENSUS_DIR own file name_demote_census.jsonl — records DECLINED
+        demotes with which leg refused (W1/W2/D1/D2), the silent-decline instrument. Returns
+        True when any field demoted (caller feeds the shared B1 recompute)."""
+        if os.environ.get("NAME_CORROB_NOTE_DEMOTE", "0") == "0":
+            return False
+        _types = {}
+        for f in (field_defs or []):
+            if f.get("key"):
+                _types[f["key"]] = str(f.get("type") or "").lower() or None
+        demoted = False
+        for key, data in results.items():
+            if str(key).startswith("_") or not isinstance(data, dict):
+                continue
+            if key == "supplier_name":
+                continue                                   # identity NEVER demotes (pinned)
+            if not value_quality.is_name_like_field(key):
+                continue
+            if _types.get(key, None) not in (None, "text", "multiline_text"):
+                continue                                   # free-text name fields only
+            if str(data.get("method") or "") != "anchor_crop":
+                continue                                   # the note's own cap site (:1432) exactly
+            if str(data.get("validation_note") or "") != anchor.NAME_GUARD_DISAGREE_NOTE:
+                continue                                   # exact equality ONLY
+            committed = str(data.get("value") or "")
+            if not committed or anchor._name_junk_shaped(committed, key):
+                continue                                   # re-assert Layer A's own guarantee
+            rejected = self._rejected_reads.get(key) or []
+            cands = self._field_candidates.get(key) or []
+            w1 = w2 = None
+            dissent = False
+            for c in cands:
+                cv = str(c.get("value") or "")
+                if not cv:
+                    continue
+                eq = _values_normalise_equal(cv, committed, False)
+                if (not eq and not c.get("noted")
+                        and int(c.get("confidence") or 0) >= 60):
+                    dissent = True                         # D2: a surviving disagreeing read
+                    break
+                if not eq or c.get("noted"):
+                    continue
+                m = str(c.get("method") or "")
+                fam = _crosscheck_witness_bucket(c.get("stage"), m)
+                if (w1 is None and fam and fam[1]
+                        and (fam[0] == "mapping" or c.get("located"))
+                        and not m.startswith("template_fixed")
+                        and "+corrected" not in m and "+confirmed_adopt" not in m
+                        and int(c.get("confidence") or 0) >= 80):
+                    w1 = c
+                if (w2 is None and m.startswith("keyword")
+                        and int(c.get("confidence") or 0) >= 70):
+                    w2 = c
+            ok = bool(w1 is not None and w2 is not None and rejected and not dissent)
+            _cdir = os.environ.get("XCHECK_DEMOTE_CENSUS_DIR")
+            if _cdir:
+                try:
+                    import json as _json
+                    with open(os.path.join(_cdir, "name_demote_census.jsonl"), "a",
+                              encoding="utf-8") as _f:
+                        _f.write(_json.dumps({
+                            "field": key, "committed": committed, "demoted": ok,
+                            "w1": (w1 or {}).get("method"), "w2": (w2 or {}).get("method"),
+                            "d1_rejections": len(rejected), "d2_dissent": dissent,
+                            "rejected": rejected}) + "\n")
+                except Exception:
+                    pass
+            if not ok:
+                continue
+            data.pop("validation_note", None)
+            data.pop("was_corrected", None)
+            data.pop("corrected_to", None)
+            # NO confidence change — pinned (test_name_corrob_demote.py); see the docstring.
+            data["method"] = str(data.get("method") or "") + "+corrob_clear"
+            rec = dict(corrob.get(key) or {})
+            rec["note_demoted"] = {
+                "note":           anchor.NAME_GUARD_DISAGREE_NOTE,
+                "witness_family": "crop+keyword",
+                "witness_method": w1.get("method"),
+                "witness_value":  w1.get("value"),
+                "keyword_method": w2.get("method"),
+                "rejected_reads": rejected,
+            }
+            corrob[key] = rec                              # additive; independent_agree untouched (C4)
+            if self._trace:
+                self._t("name_note_demote", field=key, value=committed,
+                        w1=str(w1.get("method")), w2=str(w2.get("method")),
+                        rejections=len(rejected))
+            self.log(f"  Name-guard note demoted: {key} '{committed}' corroborated by "
+                     f"{w1.get('method')} + {w2.get('method')} (dissenters guard-rejected; "
+                     f"dissent recorded)")
+            demoted = True
+        return demoted
 
     def _build_corroboration_emit(self, results):
         """OWNER PRINCIPLE (2026-08-11): "the rungs should CORROBORATE, not merely compete."
@@ -5622,6 +5760,8 @@ class ExtractionEngine:
                                       # Oracle C3 — without this reset, doc N's displaced value would
                                       # land in doc N+1's record and corrupt the only instrument that
                                       # can observe the balancing-garbage disaster class)
+        self._rejected_reads = {}     # per-run: field -> [{method, value, reason}] — the ALWAYS-ON
+                                      # anchor rejection recorder (slice-3 B1); D1 evidence + census
         self._list_field_keys = set()  # per-run; filled at Stage 1 when LIST_FIELD_SCAN is armed
         results      = {}
         field_keys   = [f["key"] for f in field_defs]
@@ -6508,12 +6648,19 @@ class ExtractionEngine:
                     else:
                         self.log(f"  Stage 2: registration fit failed "
                                  f"({len(_alm)} landmarks, too few/poor matches)")
-            # Dev-trace only: record what each crop rung READ and which gate
-            # dropped it, so a "field not pulled in" can be diagnosed (the winners-
-            # only candidate trace can't show a rejected read). No-op without --trace.
-            _on_reject = ((lambda fk, st, v, r, cap=None: self._t(
-                "anchor_reject", field=fk, method=st, value=v, reason=r, caption=cap))
-                if self._trace else None)
+            # ALWAYS-ON rejection recorder (slice-3 Oracle B1, 2026-08-13): production keeps the
+            # per-field rejected reads in self._rejected_reads — the name-note demoter's D1 leg
+            # (positive evidence the dissent was DISQUALIFIED, not outvoted) and the census
+            # retro-audit both read it. The trace EVENT still fires only under --trace (unchanged
+            # dev behaviour). Thread-safe under Stage-2b pooling: list.append is GIL-atomic and
+            # field-key groups are disjoint. The Stage-2b parallel predicate must NOT key on this
+            # closure being set — it takes force_serial below instead (anchor.py Stage 2b).
+            def _on_reject(fk, st, v, r, cap=None):
+                self._rejected_reads.setdefault(fk, []).append(
+                    {"method": st, "value": v, "reason": r})
+                if self._trace:
+                    self._t("anchor_reject", field=fk, method=st, value=v,
+                            reason=r, caption=cap)
             # Display labels of the IDENTITY fields ("Document Issuer") — an identity anchor whose
             # CAPTURED label IS one of these is a teaching artifact (the field's own display name,
             # never a printed caption), so it can only be a blind cross-supplier positional SWEEP,
@@ -6534,6 +6681,7 @@ class ExtractionEngine:
                 text_field_keys=text_field_keys,
                 multiline_lookup=self._make_multiline_lookup(supplier_name, document_slug),
                 identity_labels=_identity_labels,
+                force_serial=bool(self._trace),
             )
             _pre_s2 = self._snap(results)
             self._remember_candidates('2_anchor', anchor_results)
@@ -7186,9 +7334,14 @@ class ExtractionEngine:
                 _r_identity_labels = {(f.get('label') or '').strip().lower()
                                       for f in field_defs if f.get('key') in _IDENTITY_FIELD_KEYS}
                 _r_identity_labels.discard('')
-                _r_on_reject = ((lambda fk, st, v, r, cap=None: self._t(
-                    "anchor_reject", field=fk, method=st, value=v, reason=r, caption=cap))
-                    if self._trace else None)
+                # Same always-on recorder as the Stage-2 site (slice-3 B1) — the late-rescue
+                # twin must record too or a rescue-path rejection is invisible to D1.
+                def _r_on_reject(fk, st, v, r, cap=None):
+                    self._rejected_reads.setdefault(fk, []).append(
+                        {"method": st, "value": v, "reason": r})
+                    if self._trace:
+                        self._t("anchor_reject", field=fk, method=st, value=v,
+                                reason=r, caption=cap)
                 try:
                     rescue_results = anchor.extract_with_anchors(
                         ocr_text, rescue_set, supplier_name, document_slug,
@@ -7203,6 +7356,7 @@ class ExtractionEngine:
                         text_field_keys=text_field_keys,
                         multiline_lookup=self._make_multiline_lookup(supplier_name, document_slug),
                         identity_labels=_r_identity_labels,
+                        force_serial=bool(self._trace),
                     ) or {}
                 except Exception as e:
                     rescue_results = {}
@@ -8524,9 +8678,9 @@ class ExtractionEngine:
         # note-less + memory-family — inert here by ordering).
         _d1 = self._demote_xcheck_corroborated_note(results, field_defs, date_field_keys,
                                                     _xcheck_rejected, _corrob)
-        # Slice 2: evaluated UNCONDITIONALLY (inline `or` would short-circuit it), shared recompute.
         _d2 = self._demote_recon_total_corroborated_note(results, _corrob)
-        if _d1 or _d2:
+        _d3 = self._demote_name_guard_corroborated_note(results, field_defs, _corrob)
+        if _d1 or _d2 or _d3:   # all pre-evaluated; inline `or` would short-circuit
             # Oracle B1: overall/_needs_review were computed upstream — recompute or a demoted
             # doc parks with no visible reason. Same exclusion + format delta; needs_review
             # drops ONLY when the demoted note was the doc's LAST (the any-note guard keeps

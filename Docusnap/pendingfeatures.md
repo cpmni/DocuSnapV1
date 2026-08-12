@@ -16,20 +16,26 @@ wrote `independent_agree = True` — the exact bug it claims to prevent. The REA
 pin at :74-75 (`'independent_agree' not in corrob`). Repair (rewrite as a behavioural assertion or a
 correct AST/string scan) or delete; do NOT touch in the slice-2 commit (Oracle C2, 2026-08-13 slice-2 pass).
 
-## 2026-08-12 NIGHT — NOTE-DEMOTE SLICE 2: the ADJUSTED-TOTAL note (owner exhibit, boundary framework established — build under it)
-**Exhibit (live Nordwind quote 0021-4):** anchor_inline misread 3,864.72; the validator adjusted to
-3,564.72 — the value the TAUGHT MAPPING independently read (crop-side family, matched 'Total (inc
-VAT)' @90) AND the line arithmetic proves (2,970.60 + 594.12 = 3,564.72, reconciles, "mathematically
-verified" badge shown) — yet "adjusted to the total that balances against the line amounts — please
-verify" stands and blocks auto-file. **Build under the Oracle boundary ruled 2026-08-12 NIGHT
-(oracle_log entry 3):** (1) hoist the validator's adjusted-total note to a shared constant,
-write-site opt-in, EXACT-equality eligibility; (2) witnesses = the crop-side mapping ledger read
-(un-noted, >=80, the B3 bars) AND the reconcile's own arithmetic verdict — genuinely independent
-families; (3) conf never minted; dissent (the pre-adjustment misread) into note_demoted; B1
-recompute at the call site (reuse the shipped block). Money, not dates — so the B2 date-only ruling
-does NOT auto-extend: own gary+Oracle pass required (the money floors + graduated-scope exposure
-differ). Same flip bar: demoted-and-wrong = 0.
-**SLICE 3 (names) — gary design + Oracle SIGN-OFF-W/COND 2026-08-13, BUILD-READY under B1-B3:**
+## ✅ SHIPPED 2026-08-13 — NOTE-DEMOTE SLICE 2 (adjusted-total, money) — `df3f668`, DEFAULT OFF
+gary → Oracle SIGN-OFF-W/COND C1-C5, all applied. Flag `RECON_TOTAL_NOTE_DEMOTE` / toggle
+`recon_total_note_demote`. Pins test_recon_note_demote.py 34/34; slice-1 suite 26/26 untouched.
+Gates: OFF arm md5-identical; armed changes nothing (M=0); **the adjusted-total note does NOT
+re-form on harness replay** (recon census 0 rows over 73 Nordwind docs incl. needs_review — the
+anchor_inline misread is import-batch-specific) → class-exercised acceptance = the owner's live
+reprocess after flip (08-07 precedent: gates prove NO-REGRESSION, heals owner-watched). SAY AT
+FLIP: no confidence minting (a 78 stays 78 — release may not un-park under the floors); PASS-2
+docs stay held by the surviving subtotal note; the classic drift exhibit (no crop backing) is
+deliberately NOT demoted. Slice-1 owed gates CLOSED same session (full-902 base==armed;
+200-DPI arm 6 demotes fired, census 6/6 + live 5/5 correct). Original exhibit: Nordwind quote
+0021-4 total 3,864.72→3,564.72 (mapping @90 + arithmetic 2,970.60+594.12).
+**✅ SLICE 3 (names) SHIPPED 2026-08-13 (same session, DEFAULT OFF) — B1-B3 all applied in-build:**
+flag `NAME_CORROB_NOTE_DEMOTE` / toggle `name_corrob_note_demote`; pins test_name_corrob_demote.py
+39/39 (incl. B1 predicate-recorder-independence pin, W2-mandatory pin, template_fixed-masquerade pin,
+supplier_name pin, no-mint pin, B3 interaction pin); keyword-clear + name-lock suites green; OFF arm
+md5-identical; armed changes nothing; **the name note does NOT re-form on harness replay** (name
+census 0 rows over the nr-widened Nordwind arm) → live acceptance at owner flip, same 08-07 precedent
+as slice 2. B2 (armed #259-class replay + doc-level demoted-and-wrong) REMAINS OWED BEFORE FLIP —
+the flag must stay OFF until it runs. Design record below:
 Exhibit (owner, live Nordwind quote 0021-4 customer_name): mapping@90 + keyword_override@78 +
 anchor_crop@70 ALL read 'Bramblewood Joinery Ltd'; the two dissenters guard-REJECTED ('DELIVERY
 ADDRESS' inline_off_taught_position, 'scone' name_guard_junk_candidate); the caption-disagreement

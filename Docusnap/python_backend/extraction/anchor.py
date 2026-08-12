@@ -185,6 +185,15 @@ def _slipfix_to_shape(value, field_key, format_lookup, val_type, validation_patt
 XCHECK_DISAGREE_NOTE = ("The taught position and the full-page read disagreed — "
                         "using the full-page value; please verify.")
 
+# The Layer-A name-guard disagreement note — SINGLE-SOURCED (note-demote slice 3, Oracle W/COND
+# 2026-08-13): the write site in the relocate guard below and engine._demote_name_guard_
+# corroborated_note share this constant; eligibility is EXACT equality, so composed notes and the
+# five OTHER _relocate_guard_note texts (which warn about the KEPT value itself) are structurally
+# ineligible. The literal is ALSO pinned byte-for-byte in test_name_guard_keyword_clear.py — the
+# text must never drift from that pin.
+NAME_GUARD_DISAGREE_NOTE = ("The value found beside this document's own caption disagreed "
+                            "with the taught position — please verify.")
+
 _RECOVERABLE_TOKEN_TYPES = frozenset({"alphanumeric", "reference_code"})
 _MAX_DEBRIS_TOKEN_LEN = 2      # a clipped label tail / stray separator is 1-2 chars ("-R", ". =")
 _MAX_DEBRIS_CHARS     = 3      # total non-space debris chars tolerated
@@ -797,9 +806,7 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                             if on_reject:
                                 on_reject(field_key, "anchor_crop_relocated", _dv,
                                           "name_guard_junk_candidate")
-                            _relocate_guard_note = ("The value found beside this document's own "
-                                                    "caption disagreed with the taught position "
-                                                    "— please verify.")
+                            _relocate_guard_note = NAME_GUARD_DISAGREE_NOTE
                             _name_guard_junk_note = True   # kept value is an independently-clean name
                                                            # -> a Stage-1 keyword that AGREES clears it
                         else:
@@ -1692,7 +1699,8 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                          page_text_lines = None,
                          text_field_keys = None,
                          multiline_lookup = None,
-                         identity_labels = None) -> dict:
+                         identity_labels = None,
+                         force_serial = False) -> dict:
     """
     Attempt to extract field values using saved structural anchors.
 
@@ -1737,13 +1745,20 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
     _gvals = list(_groups.values())
     # Stage 2b — parallelise the independent field-key groups across cores (each _eval_field_group
     # OCRs its own crops via GIL-releasing tesseract.exe). Gated OFF by default; FORCED SEQUENTIAL
-    # under trace/inspector (on_reject/slice_capture set) so dev diagnostics stay in serial order,
+    # under trace/inspector (force_serial/slice_capture) so dev diagnostics stay in serial order,
     # and when there is <=1 group. Byte-identical: groups write DISJOINT field-keys; line_cache is
     # keyed per crop-box, so we warm any shared entry by running the FIRST group serially, then pool
     # the rest (Oracle cond 4). Each pooled task falls back to a SEQUENTIAL re-run on any abnormal
     # exception (cond 3), so an under-pressure degraded read is "slower", never a silent wrong value.
+    # ⚠ The predicate must NEVER key on `on_reject` (slice-3 Oracle B1, 2026-08-13): the rejection
+    # recorder is now ALWAYS ON in production (engine._rejected_reads), so an `on_reject is None`
+    # leg would silently force-serialise every run — and Tesseract is thread-count-nondeterministic
+    # on boundary glyphs, so that is a READ-DETERMINISM change, not a perf loss (the deskew→
+    # COMPOSE_SCAN interaction class). The engine passes force_serial=self._trace instead; the
+    # recorder itself is thread-safe (list.append is GIL-atomic; field-key groups are disjoint).
+    # Pinned in test_name_corrob_demote.py (predicate must not reference on_reject).
     _parallel = (os.environ.get('DS_OCR_PARALLEL_FIELDS', '0') != '0'
-                 and on_reject is None and slice_capture is None
+                 and not force_serial and slice_capture is None
                  and len(_gvals) > 1)
     if _parallel:
         os.environ['OMP_THREAD_LIMIT'] = '1'   # cap Tesseract OMP (1 = floor; LSTM is 1-core-bound)

@@ -219,7 +219,7 @@ check('displaced-value stash reset per doc beside the candidate ledger (Oracle C
 check('B1 recompute shared: slice-2 result feeds the same recompute block (no inline or — '
       'short-circuit would skip slice 2)',
       re.search(r"_d2 = self\._demote_recon_total_corroborated_note", eng_src)
-      and re.search(r"if _d1 or _d2:", eng_src))
+      and re.search(r"if _d1 or _d2\b", eng_src))
 check('sign agreement via validator._is_negative_value (raw-string based — never a normalised '
       'comparator, the 08-07 dead-guard lesson)',
       re.search(r"_demote_recon_total_corroborated_note[\s\S]{0,3000}_is_negative_value", eng_src))

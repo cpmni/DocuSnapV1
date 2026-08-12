@@ -694,6 +694,9 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // Corroboration step 3, slice 2 (Oracle W/COND 2026-08-13): adjusted-total
                          // note demote — crop witness (penny-exact + sign) AND arithmetic re-check.
                          ['recon-demote-toggle', 'recon_total_note_demote'],
+                         // Corroboration step 3, slice 3 (Oracle W/COND B1-B3 2026-08-13): name
+                         // note demote — crop + keyword witnesses, guard-rejected dissenters.
+                         ['name-demote-toggle', 'name_corrob_note_demote'],
                          ['credit-sign-toggle', 'credit_sign_coherence'],
                          ['inline-row-overlap-toggle', 'template_inline_row_overlap'],
                          ['ref-role-digit-toggle', 'ref_role_digit_gate'],
