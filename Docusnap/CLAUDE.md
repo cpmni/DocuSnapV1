@@ -21,17 +21,27 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-12 NIGHT: **READ `HANDOVER_2026-08-12_NIGHT.md` FIRST — owner-set priority:
-THE IMPORT ARC.** Owner goal verbatim: import the 200-doc corpus, MAJORITY auto-files, they review
-the residue jointly. Today's measure: 70/200 filed, 130 queued = **93 eligible-but-parked (the
-import pre-gate `needs_review` shortcut, handler.js:4326-4329) + 15 shadow-row deadlocks
-(`trust_shadow_row_skip` unflipped) + 17 honest flags + 5 type-election mistypes**. THREE auto-file
-gates disagree (import pre-gate vs FAR's isFlagged — low-conf chip skips, proven "117 skipped/Filed
-0" — vs the authoritative `isAutoFileEligible`); the unification slice sits at pendingfeatures TOP
-(`fdd1d47`), build FIRST (trace the needs_review emit at source before coding). Consent bar
-`0177716` LIVE-PROVEN (owner filed ~118 via group-reprocess bars). New exhibit CJB-5054: taught-box
-'es we' vs 37×-confirmed literal → trace the CONFADOPT refusal + the corroboration-step-3 widening
-(Lid→Ltd arc). Priors below.
+## ⏭ LATEST — 2026-08-12 NIGHT2: **READ `HANDOVER_2026-08-12_NIGHT2.md` FIRST.** The import arc
+EXECUTED: corpus auto-file **70/200 → ~184/200 (92%)**, all live-proven, HEAD **`fa1c0cb`** PUSHED,
+13 commits, zero SEND BACKs. FIVE new toggles, **ALL OWNER-FLIPPED ON**: `autofile_gate_unify`
+(pre-gate defers to the ONE predicate; `missing-required` refusal; `auto_graduated`/`auto_threshold`
+via-stamps — 165-file cohort stamped, backup beside live DB) · `far_lowconf_valued_only` (isFlagged
+two-tier, all five consumers) · `type_election_title_first` (address captions never headings;
+Meadowvale healed live) · `reprocess_shadow_stale_drop` (stale shadow rows die on reprocess) ·
+`xcheck_corrob_note_demote` (corroboration STEP 3 slice 1, DATES only — **live re-verify OWED
+after `775ad2c`**, first action). VAT-reg guard: 3 garble variants fixed (speckle/cc-floor-8/
+doubled-cc, reggie-vetted). Name-lexicon POISON remediated live (Quillstone 0.888→0.955 STRONG;
+Castellan single-key — CONFADOPT unblocked; `repair-poison-name-confirms-20260812.js` RUN).
+gary rulings that supersede filed designs: the CONFUSABLE-SNAP tier is WRONG LAYER (`_is_confusion`
+has no letter↔letter arm; the 4.5 STRONG repair owns the class — evidence supply was the failure);
+corroboration-clears-notes ALREADY SHIPS (E2). QUEUED (own Oracle passes): note-demote slice 2
+(adjusted-total, money) + slice 3 (names) + machine-files-feed-learning (getFieldFormats doesn't
+filter machine confirms). Trace console: every-step rows + top-left; SFDEV dialog focus fixed.
+Priors below.
+
+### Prior — 2026-08-12 NIGHT (early): **`HANDOVER_2026-08-12_NIGHT.md`** — the import-arc measure
+(70/200, the three-gate decomposition, CJB-5054 filed) that NIGHT2 executed. Read for the original
+gate trace + owner goal verbatim.
 
 ### Prior — 2026-08-12 EVENING (owner present): **READ `HANDOVER_2026-08-12_EVENING.md`.**
 HEAD **`3852d7c`**, PUSHED, tree clean. **THE DAY BLOCK'S "reprocess NEVER auto-files" WAS WRONG** —
