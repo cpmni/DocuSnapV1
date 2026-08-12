@@ -21,7 +21,31 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-12 OVERNIGHT (autonomous): **READ `HANDOVER_2026-08-12_OVERNIGHT.md` FIRST.**
+## ⏭ LATEST — 2026-08-12 DAY (owner present): **READ `HANDOVER_2026-08-12_DAY.md` FIRST.**
+HEAD **`6bd591f`**, PUSHED, tree clean. Heaviest feature day on record: SIX Oracle passes, zero
+SEND BACKs, THREE commits, ~90 new pins, four realdoc arms md5-identical. All flags DEFAULT OFF +
+toggles; **the OWNER flipped**: graduation_window=5 · graduation_freeze_issuer ·
+template_identity_on_page · supplier_pin_self_discharge. Shipped dark: **(1) per-sender field
+editor** (`5623102` — "Save as template"+"Edit type" RETIRED from Review; identity-only mint C1;
+`resolveVisibilityTemplateIds` = the ONE scope authority C3; un-hide clears matched-template too);
+**(2)** `e94f2f5`: reconcile SHADOW-ATTRIBUTION (corroborated total keeps earned conf, note
+reworded never cleared) · VAT `@ 20%` rate-skip (reggie REFUTED the label theory — it's the column
+SEGMENT) · **graduation ISSUER FREEZE** (graduation templates were IDENTITY-MUTE = auto-file
+unreachable on hint/logo scopes; C6 deliberately narrowed issuer-only; **flip WITH
+identity-on-page**; backfill census: tpl 14+15, APPLY OWED) · **self-discharging pins** (natural
+read == pin ⇒ released on reprocess; keyword_override excluded) · graduation-window dial ·
+currency never magnitude-compared in Learning Repair · inert containment predicate; **(3)**
+`6bd591f` **CONFIRMED_DOMINANT_ADOPT** (junk-flagged name yields to the scope's SINGLE ≥5×-confirmed
+literal; owner-ruled STRICT variability; B2 memory-family record blocks corroborated route; B3
+adopted rows never learn — dominance can't vote for itself; 2nd `_override_eligible` carve-out).
+**CORRECTED CLAIMS: auto-file fires at IMPORT ONLY — reprocess NEVER auto-files** (3 eligible docs
+sit in the queue for exactly this; exits = File All Ready + scope sweep, and `scope_sweep_enabled`
+is OFF in the live DB — the 08-02 "ON" record is STALE). Live data: 18 supplier pins cleared
+(backup `live_backup_20260812_pinclear.db`). OWED: backfill APPLY + replay · editor UI smoke ·
+3 censuses (discharge/adopt/attrib) before any flip · tpl 11 cleanup + Ironclad C7/re-teach.
+GOTCHA: PowerShell `&` does NOT wait for electron.exe unless PIPED — `$LASTEXITCODE` stale.
+
+### Prior — 2026-08-12 OVERNIGHT (autonomous): **READ `HANDOVER_2026-08-12_OVERNIGHT.md`.**
 HEAD **`afe8da0`** + docs commit, PUSHED. No flips, no live-DB writes. THREE things happened:
 **(1) "Pelican did autofile" VERIFIED FALSE at source** — every Pelican filing is a HUMAN
 `review_confirmed` (incl. a File-All-Ready burst); the only machine auto-file ever is 20
