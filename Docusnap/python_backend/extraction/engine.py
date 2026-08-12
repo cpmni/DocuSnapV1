@@ -2888,8 +2888,15 @@ class ExtractionEngine:
                 fam = _crosscheck_witness_bucket(c.get("stage"), c.get("method"))
                 if not fam or not fam[1]:
                     continue                               # crop-side family only
-                if not c.get("located") or c.get("noted"):
+                # A Stage-0.5 MAPPING candidate is located BY CONSTRUCTION (a drawn-box crop
+                # read — the bucket's own charter) but template_mapper never sets the ledger's
+                # `located` bit, so requiring the flag literally made this step INERT on its own
+                # founding exhibit (live Nordwind, 2026-08-12 — the first armed import). The
+                # anchor 'crop' family DOES set the bit and keeps the requirement.
+                if fam[0] != "mapping" and not c.get("located"):
                     continue
+                if c.get("noted"):
+                    continue                               # B3: a flagged read never licenses
                 if int(c.get("confidence") or 0) < 80:
                     continue
                 cv = str(c.get("value") or "")

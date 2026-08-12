@@ -35,7 +35,10 @@ def mk_results(key='quote_date', note=NOTE, value='23-04-2026', method='anchor_c
 
 
 def mk_witness(value='23-04-2026', method='template_mapping', stage='0.5_mapping',
-               located=True, noted=False, conf=90):
+               located=False, noted=False, conf=90):
+    # located=False DEFAULT deliberately: template_mapper never sets the ledger bit, so the
+    # DEFAULT witness shape here is the live Nordwind one — a mapping candidate WITHOUT the
+    # flag must license (the first armed import proved requiring it makes the step inert).
     return {'value': value, 'method': method, 'stage': stage,
             'located': located, 'noted': noted, 'confidence': conf, 'authoritative': True, 'box': None}
 
@@ -87,8 +90,9 @@ r = mk_results()
 fired, _ = run(r, [mk_witness(conf=79)])
 check('a sub-80 witness never licenses', fired is False)
 r = mk_results()
-fired, _ = run(r, [mk_witness(located=False)])
-check('an unlocated witness never licenses', fired is False)
+fired, _ = run(r, [mk_witness(method='anchor_crop', stage='2_anchor', located=False)])
+check('an unlocated CROP-family witness never licenses (mapping family is located by construction)',
+      fired is False)
 
 print('4. independence bars — keyword/hint NEVER license (the Pelican Gate-C lesson)')
 r = mk_results()
