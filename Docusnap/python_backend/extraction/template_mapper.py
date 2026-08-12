@@ -2389,6 +2389,19 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
                              mapping.get("anchor_text") or field_key,
                              ocr_conf=_abs_meta.get('conf'), val_type=val_type,
                              geom=_box_list(target_box) if slice_capture else None)
+        # RAW-CROP WITNESS surface (Oracle C2, 2026-08-12 — see anchor._raw_witness_read block).
+        # FLAG tier: the ladder kept today's value and stashed the one-glyph ambiguity in meta;
+        # attach the honest choice (note + corrected_to) and cap BELOW the 88 critical auto-file
+        # floor. One note per field — an existing note (edge-cut etc.) is never overwritten.
+        if _abs_meta.get('witness_adopted'):
+            _r["method"] += "_rawadopt"      # provenance for the trace/census; value already swapped
+        elif _abs_meta.get('witness_alt') and not _r.get("validation_note"):
+            _a, _b = _abs_meta.get('witness_pair') or ('?', '?')
+            _r["confidence"] = min(_r["confidence"], 84)
+            _r["corrected_to"] = _abs_meta['witness_alt']
+            _r["validation_note"] = (f"the raw scan reads this as '{_abs_meta['witness_alt']}' — "
+                                     f"one character differs ({_a}/{_b}); please check which is printed")
+            _r["method"] += "_rawwitness"
         if _edge_healed:
             _r["method"] += "_edgegrow"      # SFDEV every-step-trace visibility (Slice C heal)
         elif _edge_suspect:

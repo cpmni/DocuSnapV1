@@ -753,6 +753,10 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          ['pin-discharge-toggle', 'supplier_pin_self_discharge'],
                          // Confirmed-dominant adoption (Oracle B1-B5, 2026-08-12).
                          ['confirmed-adopt-toggle', 'confirmed_dominant_adopt'],
+                         // Raw-crop witness (Oracle C1-C6, 2026-08-12) — C4: flip WITH the
+                         // separator guard, sep-guard AFTER; never the guard alone.
+                         ['raw-witness-flag-toggle',  'raw_crop_witness_flag'],
+                         ['raw-witness-adopt-toggle', 'raw_crop_witness_adopt'],
                          // Graduation issuer freeze (Oracle W/COND, 2026-08-12; C6 narrowed).
                          // FLIP CHECKLIST: record template_identity_on_page state — flipping this
                          // with identity-on-page OFF re-opens the wrong-company class with
@@ -825,6 +829,7 @@ const DEV_SWITCH_IDS = [
   'code-separator-guard-toggle', 'vat-eu-formats-toggle', 'shadow-row-skip-toggle',
   'shadow-attrib-toggle', 'vat-rate-at-toggle', 'pin-discharge-toggle',
   'graduation-freeze-issuer-toggle', 'confirmed-adopt-toggle',
+  'raw-witness-flag-toggle', 'raw-witness-adopt-toggle',
 ];
 function _applyDevSwitchVisibility(unlocked, revealGate){
   for (const id of DEV_SWITCH_IDS){

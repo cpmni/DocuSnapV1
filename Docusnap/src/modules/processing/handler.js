@@ -149,6 +149,12 @@ function _reconcileEnv(db) {
     // Confirmed-dominant adoption (Oracle B1-B5, 2026-08-12): a junk-flagged name read is replaced
     // by the scope's single ≥5×-confirmed literal read on-page — no picker, no confirm demand.
     if (learning.getSetting(db, 'confirmed_dominant_adopt', 'false') === 'true') env.CONFIRMED_DOMINANT_ADOPT = '1';
+    // Raw-crop witness (Oracle C1-C6, built 2026-08-12): one untouched read of a code crop may
+    // flag (or, per census-evidenced pair, adopt) a one-glyph confusable difference — the serif
+    // I→1 / l→i / ACC-229] recipe-ladder class. NEVER flip CODE_SEPARATOR_STRUCTURE_GUARD alone;
+    // together, sep-guard AFTER the witness (Oracle C4).
+    if (learning.getSetting(db, 'raw_crop_witness_flag', 'false') === 'true') env.RAW_CROP_WITNESS_FLAG = '1';
+    if (learning.getSetting(db, 'raw_crop_witness_adopt', 'false') === 'true') env.RAW_CROP_WITNESS_ADOPT = '1';
     if (learning.getSetting(db, 'crosscheck_outlier_reconcile', 'false') === 'true') env.CROSSCHECK_OUTLIER_RECONCILE = '1';
     if (learning.getSetting(db, 'universal_verify_restore', 'false') === 'true') env.UNIVERSAL_VERIFY_RESTORE = '1';
     if (learning.getSetting(db, 'universal_verify_flag', 'false') === 'true') env.UNIVERSAL_VERIFY_FLAG = '1';

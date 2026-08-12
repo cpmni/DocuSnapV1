@@ -2888,6 +2888,63 @@ def _clean_text_fallback(value: str | None, val_type: str | None,
 
 _STRUCT_READ_TYPES = frozenset({"alphanumeric", "reference_code", "date"})   # job_reference (spaces) excluded
 
+# ── RAW-CROP WITNESS (gary design → Oracle SIGN-OFF-W/COND C1-C6 2026-08-11; BUILT 2026-08-12) ──
+# Tesseract's mean word confidence is NOT comparable across preprocessing recipes: sharpening
+# raises certainty while destroying the antialiasing grey that separates a serif I from 1 (and
+# ACC-229]'s bracket, and l from i) — so the ladder can prefer a confidently-WRONG prepped rung
+# over a quietly-RIGHT raw read (raw reads the Pelican exhibit 5/5 correct and was not a rung).
+# The witness: ONE read of the untouched crop. It is a WITNESS, never a candidate — it may only
+# act when it differs from what the ladder was about to return by EXACTLY one confusable-glyph
+# substitution at the SAME length (pairs from ocr_corrector._is_confusion, never a new table).
+# Two tiers (C2, UNIVERSAL_VERIFY precedent): RAW_CROP_WITNESS_FLAG keeps today's value and
+# surfaces the ambiguity (note + corrected_to + sub-88 cap, attached by the Stage-0.5 caller);
+# RAW_CROP_WITNESS_ADOPT swaps — and stays inert until RAW_WITNESS_ADOPT_PAIRS names the pairs
+# the census evidenced (C3: bidirectional per-pair census over corpus + born-digital arms;
+# O/0 etc. are NOT assumed raw-winnable). C1: comparison runs on the PRE-_repair_single_token
+# string at BOTH ladder exits (post-repair strings differ in LENGTH while the sep-guard is off,
+# so a post-repair comparison heals zero documents). An ADOPTED witness string commits VERBATIM —
+# re-repairing it would re-open the C1 seam; its printed separators survive by construction.
+# C4 (toggle copy + oracle_log): never flip CODE_SEPARATOR_STRUCTURE_GUARD alone — together,
+# sep-guard AFTER the witness. Census: RAWWITNESS_CENSUS_DIR. Pins: tests/test_raw_crop_witness.py.
+_RAW_WITNESS_TYPES = frozenset({"alphanumeric", "reference_code"})
+
+def _raw_witness_read(crop, psm=7):
+    """One untouched read of the crop — no prep, no resample. Separate fn so pins can script it."""
+    text, _conf, _mn, _lines = _read_lines_full(crop, psm)
+    return text
+
+def _one_confusion_diff(a, b):
+    """(ladder_ch, witness_ch) when `a` and `b` differ by EXACTLY one confusable substitution at
+    the same length, else None. Symmetric membership test (either direction confusable) — the
+    DIRECTION bound lives in the tiers, not here."""
+    if not a or not b or a == b or len(a) != len(b):
+        return None
+    try:
+        from extraction import ocr_corrector as _oc
+    except Exception:
+        return None
+    pair = None
+    for x, y in zip(a, b):
+        if x == y:
+            continue
+        if pair is not None:
+            return None                       # a second difference is outside the licence
+        if not (_oc._is_confusion(x, y) or _oc._is_confusion(y, x)):
+            return None
+        pair = (x, y)
+    return pair
+
+def _witness_census(row):
+    _cdir = os.environ.get("RAWWITNESS_CENSUS_DIR")
+    if not _cdir:
+        return
+    try:
+        import json as _json
+        with open(os.path.join(_cdir, "rawwitness_census.jsonl"), "a", encoding="utf-8") as _f:
+            _f.write(_json.dumps(row) + "\n")
+    except Exception:
+        pass
+
 
 def _struct_prep(crop):
     """STRUCT_CODE_READ (Oracle SIGN-OFF-WITH-CONDITIONS 2026-08-03, slice 1 — PREP ONLY): read a
@@ -3255,6 +3312,49 @@ def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None, page=None
     heavy = None
     struct = None
     best_seg, best_conf, best_min = None, -1.0, 0.0
+    best_pre = None   # PRE-repair string of the best sub-floor rung (raw-witness C1 frame)
+    # ── RAW-CROP WITNESS scope (see the block above _raw_witness_read) ──────────────────
+    # Gateless Stage-0.5 caller only; code types only; <300px wide (at/above, _light_prep IS
+    # raw so a witness pass would be a duplicate). Inactive ⇒ this function is byte-identical.
+    _wit_flag  = os.environ.get("RAW_CROP_WITNESS_FLAG", "0") != "0"
+    _wit_adopt = os.environ.get("RAW_CROP_WITNESS_ADOPT", "0") != "0"
+    _wit_active = ((_wit_flag or _wit_adopt or os.environ.get("RAWWITNESS_CENSUS_DIR"))
+                   and verify_fn is None
+                   and val_type in _RAW_WITNESS_TYPES
+                   and crop.width < 300)
+    _wit_seg = None
+    if _wit_active:
+        try:
+            _wit_seg = clean_crop_segment(_raw_witness_read(crop), val_type)
+        except Exception:
+            _wit_seg = None
+        if not _wit_seg:
+            _wit_active = False
+    _adopt_pairs = frozenset(
+        p.strip() for p in os.environ.get("RAW_WITNESS_ADOPT_PAIRS", "").split(",") if p.strip())
+
+    def _witness_exit(pre_seg, post_seg):
+        """Apply the witness at a ladder EXIT. `pre_seg` is the PRE-repair string (C1 frame);
+        `post_seg` is what today's ladder returns. FLAG: return today's value, stash the
+        ambiguity in meta (the Stage-0.5 caller attaches note + corrected_to + sub-88 cap).
+        ADOPT (per census-evidenced pair only): return the witness string VERBATIM."""
+        if not _wit_active or not pre_seg:
+            return post_seg
+        pair = _one_confusion_diff(pre_seg, _wit_seg)
+        _witness_census({"val_type": val_type, "ladder_pre": pre_seg, "ladder_post": post_seg,
+                         "witness": _wit_seg, "pair": list(pair) if pair else None,
+                         "adopt_armed": _wit_adopt})
+        if not pair:
+            return post_seg
+        pair_key = f"{pair[0]}:{pair[1]}"
+        if _wit_adopt and pair_key in _adopt_pairs:
+            if meta is not None:
+                meta['witness_adopted'] = {"from": post_seg, "pair": list(pair)}
+            return _wit_seg
+        if _wit_flag and meta is not None:
+            meta['witness_alt'] = _wit_seg
+            meta['witness_pair'] = list(pair)
+        return post_seg
     # STRUCT_CODE_READ (slice 1, default OFF → byte-identical): for structured code/date crops,
     # try a cleaner PREP (cap-height upscale + quiet-zone + no-sharpen) FIRST; a gate-passing struct
     # read returns early, a sub-floor one FALLS THROUGH to today's light/heavy rungs unchanged
@@ -3298,11 +3398,13 @@ def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None, page=None
                     return _lseg
             except Exception:
                 pass
-        rseg = clean_crop_segment(rtext, val_type)
+        rseg0 = clean_crop_segment(rtext, val_type)   # PRE-repair (raw-witness C1 frame)
+        rseg = rseg0
         if rseg:
             rseg = _repair_single_token(rimg, rseg, val_type)
         if rseg and rconf > best_conf:
             best_seg, best_conf, best_min = rseg, rconf, rmin
+            best_pre = rseg0
         if _gate(rseg, rconf):
             # NOISE-SMOOTHING RETRY: a free-text rung can PASS the gate with a garbled-but-
             # name-shaped read on a noisy high-DPI scan. When its substantial-word floor is
@@ -3316,7 +3418,7 @@ def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None, page=None
                     _set_meta(ds[1], ds[2])
                     return ds[0]
             _set_meta(rconf, rmin)
-            return rseg
+            return _witness_exit(rseg0, rseg) if _wit_active else rseg   # C1 exit 1: the GATE
 
     # No rung satisfied the gate. Degraded TEXT-LINE escalation (free-text
     # fields, verify_fn only) — denoise + adaptive threshold, accepted only if
@@ -3338,6 +3440,8 @@ def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None, page=None
         except Exception:
             pass
     _set_meta(best_conf if best_conf >= 0 else 0.0, best_min)
+    if _wit_active and best_seg:
+        return _witness_exit(best_pre, best_seg) or None   # C1 exit 2: the sub-floor best
     return best_seg or None
 
 

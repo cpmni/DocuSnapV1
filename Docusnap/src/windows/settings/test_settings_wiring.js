@@ -80,6 +80,8 @@ const BRIDGES = [
   ['vat-rate-at-toggle',        'vat_rate_at_skip',             'VAT_RATE_AT_SKIP'],
   ['pin-discharge-toggle',      'supplier_pin_self_discharge',  'SUPPLIER_PIN_SELF_DISCHARGE'],
   ['confirmed-adopt-toggle',    'confirmed_dominant_adopt',     'CONFIRMED_DOMINANT_ADOPT'],
+  ['raw-witness-flag-toggle',   'raw_crop_witness_flag',        'RAW_CROP_WITNESS_FLAG'],
+  ['raw-witness-adopt-toggle',  'raw_crop_witness_adopt',       'RAW_CROP_WITNESS_ADOPT'],
   ['inline-row-overlap-toggle', 'template_inline_row_overlap', 'TEMPLATE_INLINE_ROW_OVERLAP'],
   ['ref-role-digit-toggle',     'ref_role_digit_gate',         'REF_ROLE_DIGIT_GATE'],
   ['drift-row-pitch-toggle',    'template_drift_row_pitch',    'TEMPLATE_DRIFT_ROW_PITCH'],

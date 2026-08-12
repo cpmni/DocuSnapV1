@@ -6,6 +6,25 @@
 
 ---
 
+## 2026-08-12 — PLAUSIBLE-WORD NAME GARBLE vs DOMINANT LITERAL: why was the Lid→Ltd repair silent? (owner-reported, NEXT ARC — root-cause FIRST)
+
+**Exhibit (post-reprocess Meadowvale credit_note 0011):** customer = 'Bramblewood Joinery **Lid**'
+@95 High, UNFLAGGED — one confusable char (t→i-class) from the scope's 38×-confirmed single literal
+'Bramblewood Joinery Ltd'. CONFIRMED_DOMINANT_ADOPT correctly refuses (not junk-flagged — 'Lid' is
+a word; Oracle's named residual the same morning). Owner: fuzzy-match this class.
+**STEP 1 — ROOT CAUSE, not a feature: 'Lid'→'Ltd' is the LITERAL textbook example of the shipped
+Stage-4.5 token repair** (name_match.py canonical-token repair; the Review "auto-corrected" badge's
+own documented example). It did NOT fire on this doc. Find why before building anything: does it
+defer to taught-position (template_mapping) reads? is the supplier-scoped lexicon empty here? did it
+run suggestion-only and get dropped? One trace answers it.
+**STEP 2 (only if 4.5 structurally can't own taught reads): the confusable-snap tier** — value
+within ONE confusable substitution (same length, `_is_confusion`) of the scope's SINGLE dominant
+confirmed literal (count ≥5, owner's STRICT variability guard — any second distinct key refuses) ⇒
+snap or FLAG-first, WITHOUT the junk-flag prerequisite. Same licence structure as
+CONFIRMED_DOMINANT_ADOPT and the raw-crop witness; needs its own gary+Oracle pass (it rewrites an
+UNFLAGGED 95 read — stronger claim than anything shipped 2026-08-12). Record-first discipline
+applies: census the class size before any swap tier.
+
 ## 2026-08-12 — DOMINANT CONFIRMED LITERAL SHOULD OUTVOTE A FLAGGED READ (BUILT DARK same day — `confirmed_dominant_adopt` OFF + toggle; gary spec + Oracle SIGN-OFF-W/COND B1-B5, all applied; 22 py pins + 3 JS pins green; flip needs the CONFADOPT census + would-adopt-vs-GT 100%)
 
 **Owner rule (two live exhibits, same session):** when the committed value is FLAGGED as junk AND a
