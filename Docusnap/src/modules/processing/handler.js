@@ -251,6 +251,13 @@ function _reconcileEnv(db) {
       env.TYPE_HEADING_ANY_SEGMENT = '1';
       env.TYPE_TIE_HEADING_PREF = '1';
     }
+    // CORROBORATION STEP 3, slice 1 (gary → Oracle W/COND 2026-08-12 NIGHT): a crosscheck
+    // disagreement note on a DATE is released when a crop-side ledger witness corroborates the
+    // committed value (the "please verify" on a triple-verified date). Dates only; the dissent
+    // survives in the corroboration record. Default OFF, byte-identical off. App RESTART to load.
+    if (learning.getSetting(db, 'xcheck_corrob_note_demote', 'false') === 'true') {
+      env.XCHECK_CORROB_NOTE_DEMOTE = '1';
+    }
     // CREDIT-NOTE SIGN COHERENCE (Oracle 2026-08-07, slice C — DETECTION only). The app has no
     // representation of a signed money value: the readers strip a leading '-' at BOTH sites
     // (anchor.py + keyword.py), so a -£160.32 CREDIT commits as a +£160.32 CHARGE and files silently.

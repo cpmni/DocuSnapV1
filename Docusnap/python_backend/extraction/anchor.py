@@ -179,6 +179,12 @@ def _slipfix_to_shape(value, field_key, format_lookup, val_type, validation_patt
 # means OCR CLIP-DEBRIS (a clipped label tail / a hallucinated separator at the crop edge), never
 # part of the value. EXCLUDES types whose patterns embed \s (job_reference / vat_gb / postcode_uk),
 # date/currency (substring/salvage path, never coverage-gated), mac/ip (precise), and free text.
+# The anchor_crop_crosscheck disagreement note — SINGLE-SOURCED (Oracle C3, note-demote slice
+# 2026-08-12): the writer below and engine._demote_xcheck_corroborated_note share this constant;
+# eligibility is EXACT equality, so a composed multi-note string is automatically ineligible.
+XCHECK_DISAGREE_NOTE = ("The taught position and the full-page read disagreed — "
+                        "using the full-page value; please verify.")
+
 _RECOVERABLE_TOKEN_TYPES = frozenset({"alphanumeric", "reference_code"})
 _MAX_DEBRIS_TOKEN_LEN = 2      # a clipped label tail / stray separator is 1-2 chars ("-R", ". =")
 _MAX_DEBRIS_CHARS     = 3      # total non-space debris chars tolerated
@@ -1637,10 +1643,16 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                 # Recover-and-flag: the taught crop and the full-page read of the same label
                 # DISAGREED; we took the full-page value (native-DPI, generally the truer read)
                 # but never let a disagreement file silently — surface it for a human to confirm.
+                # The note text is the SHARED CONSTANT below (XCHECK_DISAGREE_NOTE): the terminal
+                # corroboration demote (engine._demote_xcheck_corroborated_note, Oracle-signed
+                # 2026-08-12) is eligibility-keyed on EXACT equality with it. Do NOT "unify" the
+                # deskew raw-witness note (engine.py ~:7062) into this constant — that note is a
+                # two-read consensus that the committed value is WRONG; demoting it would be
+                # perverse (Oracle C2).
                 results[field_key].update({
                     "was_corrected":   True,
                     "corrected_to":    value.strip(),
-                    "validation_note": "The taught position and the full-page read disagreed — using the full-page value; please verify.",
+                    "validation_note": XCHECK_DISAGREE_NOTE,
                 })
             if _xcheck_note and field_key in results:
                 # FLAG-ONLY (value-below-label cross-supplier false-locate): KEEP the rigid value (no

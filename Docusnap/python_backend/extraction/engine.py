@@ -2544,6 +2544,11 @@ class ExtractionEngine:
                 'authoritative': bool(data.get('authoritative')),
                 'located':       bool(data.get('located')),
                 'box':           data.get('box'),   # picker: value box (top-left norm) or None; inert to the ledger's consumers (Stage 4.6 + total reconciliation read named keys only)
+                # Oracle B3 (note-demote slice, 2026-08-12): a read that carried its own warning
+                # must never LICENSE a note demotion — the ledger strips notes, so without this
+                # bit a flag-only @70 read (the name edge-grow class) would qualify as a witness.
+                # Additive; every consumer reads named keys only.
+                'noted':         bool(str(data.get('validation_note') or '').strip()),
             })
 
     @staticmethod
@@ -2825,6 +2830,112 @@ class ExtractionEngine:
                             continue
             if refusal:
                 _census({"field": key, "committed": val, "adopted": False, "refusal": refusal})
+
+    def _demote_xcheck_corroborated_note(self, results, field_defs, date_field_keys,
+                                         rejected_reads, corrob):
+        """XCHECK_CORROB_NOTE_DEMOTE (owner corroboration STEP 3, slice 1; gary design → Oracle
+        SIGN-OFF-W/COND B1-B3 + C1-C5, 2026-08-12 NIGHT; DEFAULT OFF).
+
+        The exhibit: three reads agree on a date (taught mapping @90, keyword @85, full-page
+        crosscheck @70), the lone disagreeing taught-crop read was REJECTED — yet the field
+        carries the Stage-2 "please verify" note, which blocks auto-file at every floor and
+        costs the owner a click on a triple-verified value. The writer (anchor.py) runs at READ
+        time and structurally cannot see the later corroboration; E2 (:6302) clears only when
+        the instantaneous INCUMBENT was a keyword read. This step extends E2's licence to the
+        candidate LEDGER — the store the owner ordered built for exactly this (step 1, 08-11).
+
+        BOUNDARY (Oracle-ruled): (1) eligibility = EXACT equality with anchor.XCHECK_DISAGREE_
+        NOTE — a write-site-opted disagreement-uncertainty note; composed notes, the deskew
+        raw-witness note (a two-read consensus the value is WRONG — its own text, never unify),
+        charset/format/identity notes and the shadow-attribution note (its standing rule reads
+        SCOPED — structurally excluded here, pinned both directions) all stand. (2) The witness
+        must be pixel-independent of the full-page flip: CROP-SIDE family only (mapping/crop —
+        _crosscheck_witness_bucket is_crop), located, UN-NOTED, conf ≥80 (Oracle B3 — a
+        flag-only read never licenses); keyword/page-presence/hint NEVER license (the Pelican
+        Gate-C lesson: the full-page text carries the flip's own pixels). (3) B2: DATE FIELDS
+        ONLY — both sides must calendar-parse; refs inherit the recipe-ladder common-mode
+        (the serif I→1 class) and wait for that ladder fix before any widening. (4) Confidence
+        never minted above _CROSSCHECK_CORROB_CONF; the E2 posture exactly.
+
+        The dissent SURVIVES: the field's corroboration record gains an additive `note_demoted`
+        {note, witness_*, rejected_read} — the census's retro-audit key (Oracle C1) — and the
+        record's independent_agree is NEVER read or written here (C4: it feeds the corroborated
+        auto-file floor-lowering; writing it would be a floor back door).
+        Census: XCHECK_DEMOTE_CENSUS_DIR (inert unless set). Returns True when any field
+        demoted (the caller then recomputes overall/_needs_review — Oracle B1)."""
+        if os.environ.get("XCHECK_CORROB_NOTE_DEMOTE", "0") == "0":
+            return False
+        _date_keys = set(date_field_keys or ())
+        for f in (field_defs or []):
+            if str(f.get("type") or "").lower() == "date" and f.get("key"):
+                _date_keys.add(f.get("key"))
+        demoted = False
+        for key, data in results.items():
+            if str(key).startswith("_") or not isinstance(data, dict):
+                continue
+            if key not in _date_keys:
+                continue                                   # B2: date fields only
+            m = str(data.get("method") or "")
+            if not m.startswith("anchor_crop_crosscheck"):
+                continue
+            if str(data.get("validation_note") or "") != anchor.XCHECK_DISAGREE_NOTE:
+                continue                                   # exact equality ONLY (C3)
+            committed = str(data.get("value") or "")
+            if not committed or not validator.parse_date(committed):
+                continue
+            witness = None
+            for c in (self._field_candidates.get(key) or []):
+                fam = _crosscheck_witness_bucket(c.get("stage"), c.get("method"))
+                if not fam or not fam[1]:
+                    continue                               # crop-side family only
+                if not c.get("located") or c.get("noted"):
+                    continue
+                if int(c.get("confidence") or 0) < 80:
+                    continue
+                cv = str(c.get("value") or "")
+                if not cv or not validator.parse_date(cv):
+                    continue                               # calendar-parse BOTH sides
+                if not _values_normalise_equal(cv, committed, True):
+                    continue
+                witness = c
+                break
+            _cdir = os.environ.get("XCHECK_DEMOTE_CENSUS_DIR")
+            if _cdir:
+                try:
+                    import json as _json
+                    with open(os.path.join(_cdir, "xcheck_demote_census.jsonl"), "a",
+                              encoding="utf-8") as _f:
+                        _f.write(_json.dumps({
+                            "field": key, "committed": committed,
+                            "demoted": witness is not None,
+                            "witness": (witness or {}).get("method"),
+                            "rejected": str(rejected_reads.get(key) or "")}) + "\n")
+                except Exception:
+                    pass
+            if witness is None:
+                continue
+            data.pop("validation_note", None)
+            data.pop("was_corrected", None)
+            data.pop("corrected_to", None)
+            data["confidence"] = max(int(data.get("confidence") or 0), _CROSSCHECK_CORROB_CONF)
+            data["method"] = m + "+corrob_clear"
+            rec = dict(corrob.get(key) or {})
+            rec["note_demoted"] = {
+                "note":           anchor.XCHECK_DISAGREE_NOTE,
+                "witness_family": fam[0] if fam else None,
+                "witness_method": witness.get("method"),
+                "witness_value":  witness.get("value"),
+                "rejected_read":  rejected_reads.get(key),
+            }
+            corrob[key] = rec                              # additive; independent_agree untouched (C4)
+            if self._trace:
+                self._t("xcheck_note_demote", field=key, value=committed,
+                        witness=str(witness.get("method")),
+                        rejected=str(rejected_reads.get(key) or ""))
+            self.log(f"  Crosscheck note demoted: {key} '{committed}' corroborated by "
+                     f"{witness.get('method')} — disagreement note released (dissent recorded)")
+            demoted = True
+        return demoted
 
     def _build_corroboration_emit(self, results):
         """OWNER PRINCIPLE (2026-08-11): "the rungs should CORROBORATE, not merely compete."
@@ -8138,6 +8249,10 @@ class ExtractionEngine:
         # alternative, restores that alternative (re-base anchor_inline@90, drop the flag — mirrors E2).
         # ALWAYS pops the transient _crosscheck_original stash so it never persists. Kill switch OFF =
         # byte-identical (anchor.py never stashes the key; this whole block is skipped).
+        _xcheck_rejected = {}   # field -> the REJECTED taught-crop read (Oracle C1, note-demote slice):
+        # captured here because Slice-1 below unconditionally pops the transient; the demote's
+        # note_demoted audit record keeps it so the census can retro-audit "was any demoted
+        # dissent later proven right" — the only instrument that can observe the disaster class.
         if CROSSCHECK_OUTLIER_RECONCILE:
             for _xk, _xd in results.items():
                 if _xk.startswith("_") or not isinstance(_xd, dict):
@@ -8148,7 +8263,9 @@ class ExtractionEngine:
                 _xis_d = _xk in (date_field_keys or ())
                 _alt = _crosscheck_corroborated_alternative(
                     _xd, (self._field_candidates or {}).get(_xk) or [], ocr_text, _xis_d)
-                _xd.pop("_crosscheck_original", None)          # consumed — never persist the stash
+                _xorig = _xd.pop("_crosscheck_original", None)  # consumed — never persist the stash
+                if _xorig is not None:
+                    _xcheck_rejected[_xk] = _xorig
                 if not _alt:
                     continue
                 _restored = {**_xd,
@@ -8244,6 +8361,30 @@ class ExtractionEngine:
         # pre-adoption disagreement is captured — and BEFORE the final trace, so the inspector's
         # `final` row carries the adopted value, never the dead junk).
         self._adopt_confirmed_dominant(results, ocr_text, _corrob)
+
+        # XCHECK_CORROB_NOTE_DEMOTE (owner corroboration STEP 3, slice 1 — gary → Oracle
+        # SIGN-OFF-W/COND 2026-08-12 NIGHT; DEFAULT OFF). The three crosscheck mechanisms now
+        # partition cleanly: E2 (:6302) = flip corroborated by the keyword INCUMBENT · Slice-1
+        # (above) = flip REFUTED by the ledger · this step = flip corroborated by a CROP-SIDE
+        # ledger witness the incumbent test couldn't see. Runs AFTER CONFADOPT (adopted rows are
+        # note-less + memory-family — inert here by ordering).
+        if self._demote_xcheck_corroborated_note(results, field_defs, date_field_keys,
+                                                 _xcheck_rejected, _corrob):
+            # Oracle B1 (blocking): overall_conf (:7885) and _needs_review (:7905) were computed
+            # ~350 lines UPSTREAM — without this recompute a demoted doc parks with no visible
+            # reason (the mysterious-hold class). overall recomputed with the SAME exclusion +
+            # format delta; _needs_review downgraded ONLY when the demoted note was the doc's
+            # last one AND the validator agrees — the 13 direct _needs_review writers all cap
+            # confidence and write notes, so the any-note guard keeps their holds intact.
+            _oc2 = validator.overall_confidence(results, field_defs, exclude_keys=_hidden_excl)
+            if fc_delta:
+                _oc2 = max(0, min(100, _oc2 + fc_delta))
+            results["_overall_confidence"] = _oc2
+            _any_note = any(isinstance(v, dict) and str(v.get("validation_note") or "").strip()
+                            for k, v in results.items() if not str(k).startswith("_"))
+            if results.get("_needs_review") and not _any_note \
+                    and not (validator.needs_review(results, field_defs) or format_anomaly_flagged):
+                results["_needs_review"] = False
 
         # Final resolved value per field — the inspector marks any earlier
         # candidate whose value differs from this as a superseded intermediate.

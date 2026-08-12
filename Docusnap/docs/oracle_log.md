@@ -1517,3 +1517,33 @@ boundary is LOAD-BEARING — party-address captions only, never field captions. 
 (exhibit end-to-end pin fails on both bug-absence and OFF-leak — a real gate); census 926 texts,
 9 heals (the exact live class incl. the 5 queued), 0 collateral, 0 regressions; all 9 existing
 heading suites green. Flags OFF + one toggle `type_election_title_first`.
+
+## 2026-08-12 NIGHT (entry 3) — XCHECK_CORROB_NOTE_DEMOTE (corroboration STEP 3, slice 1): SIGN OFF W/COND, BUILT DARK same night
+Owner ordered it after the third same-day exhibit ("still seeing messages where there is
+corroboration" — the Nordwind date: mapping@90 + keyword@85 + full-page crosscheck@70 all agree,
+the lone taught-crop 2028 REJECTED, yet the Stage-2 "please verify" note held the doc). gary's
+load-bearing find: corroboration-clears-notes ALREADY SHIPS default ON (CROSSCHECK_KEYWORD_CLEAR
+E2 — the CONFADOPT "forbidden" phrasing was overbroad); E2 refused only because its predicate
+checks the instantaneous INCUMBENT, and the record can't express the case (the crosscheck winner
+is bucket-excluded → independent_agree False BY CONSTRUCTION) — the LEDGER is the only substrate.
+Oracle rulings: boundary sound with amendments — REJECTED the confusable-pair refusal (would make
+the slice inert on the ordering class); B1 BLOCKING: terminal placement lands after overall/_
+needs_review were computed → recompute at demote (narrow: overall always; needs_review downgraded
+only when the demoted note was the doc's LAST and the validator agrees — the 13 direct writers
+all cap+note, so their holds survive); B2 BLOCKING: DATE-FIELDS-ONLY (crop witnesses share the
+recipe LADDER — the serif I→1 class proves cross-recipe common-mode; the engine.py:975 dark-clear
+precedent un-masked a ref misread into a silent wrong file; refs wait for the ladder fix); B3
+BLOCKING: ledger gains additive `noted` bit — witness must be un-noted + located + conf ≥80.
+STANDING-RULE RULED SCOPED with proof gary missed: E2 was already ON when the shadow-attribution
+condition was signed, so the literal reading is incoherent with its own author; operative content
+= no mechanism may clear the SHADOW note class and no clear may key on the record's
+independent_agree — both structurally satisfied + pinned. C1 note_demoted carries the REJECTED
+crop read (re-threaded past Slice-1's pop — the census's retro-audit key, the only instrument
+that can observe the disaster class); C2 raw-witness note never unified into the constant
+(two-read consensus the value is WRONG); C3 structural exact-equality pin; C4 demoter never
+touches independent_agree (floor back door); C5 framing corrected (corrected_to also blocks; both
+popped). Partition comment shipped: E2 = flip-corroborated-by-incumbent · Slice-1 = flip-refuted ·
+this = flip-corroborated-by-crop-ledger. Pins tests/test_xcheck_corrob_demote.py 26/26; adjacent
+crosscheck/corrob/CONFADOPT/wiring suites green (test_anchor_crop_crosscheck 3 fails PRE-EXISTING,
+stash-verified). Flag OFF + toggle `xcheck_corrob_note_demote`. FLIP BAR: demote census
+(XCHECK_DEMOTE_CENSUS_DIR) — demoted-and-wrong = 0, one is a no-flip; realdoc M=0 owed at flip.
