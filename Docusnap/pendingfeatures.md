@@ -6,6 +6,30 @@
 
 ---
 
+## 2026-08-12 NIGHT — IMPORT AUTO-FILE PRE-GATE vs THE SHARED PREDICATE: the last two-gate disparity (owner-ordered slice, NOT built)
+**Symptom (live, owner-hit):** a fresh Castellan import left 20 docs @95 in the queue that
+`trust.isAutoFileEligible` judges ELIGIBLE (trusted scope, floor 95, zero flags, basis graduated) —
+they never auto-filed and nothing re-asks. **Verified mechanism:** `_maybeAutoFile`
+(`processing/handler.js:4326-4329`) pre-gates on the Python `file_done` message: sub-100 docs are
+refused whenever `msg.needs_review` is true — a BROADER signal than the predicate (it fires on an
+empty field / below-threshold field confidence, which the predicate correctly ignores for
+non-structural fields). The authoritative gate never gets asked; the doc parks forever. On the
+exhibits the only hole is an EMPTY `vat_no` (@0) — **probable trigger, NOT source-verified: before
+building, trace exactly what sets `needs_review` in the Python emit** (engine/process_docs) on one
+of docs 737-756.
+**Fix direction:** for graduated (sub-100-floor) candidates, let the import path defer to
+`trust.isAutoFileEligible` instead of bowing out on `msg.needs_review` — the predicate already
+carries the flag/structural/verifiability safety (same "two auto-file sites must not diverge"
+principle: Oracle 2026-08-12 consent-bar ruling, the retired get-auto-file-eligible comment, and
+`_autoFileDoc` itself). Keep the conf pre-filter (`< preFloor` bail) — it is cheap and consistent.
+NOTE the seam: `needs_review` ALSO carries per-field below-UI-threshold signals the predicate never
+sees — decide deliberately whether a below-threshold FIELD (not a flag) should hold a graduated
+doc, and pin the answer. Flag DEFAULT OFF + toggle + wiring pin; own advisor+Oracle pass.
+**Gates:** realdoc arm (dark md5-identical; armed = would-file delta only on the disparity class) ·
+census of queue docs eligible-but-parked before/after · zero new wrong-value auto-files (M=0).
+**Interim exits (no code):** File All Ready, or group-reprocess → the `0177716` consent bar offers
+them; or per-sender editor "Never on these documents?" on the empty field.
+
 ## 2026-08-12 EVE — TYPE ELECTION: address caption 'bill to' outvotes the printed CREDIT NOTE title (traced, design ready, NOT built)
 **Owner-reported disparity: import types Meadowvale `-2` credit-note pages as INVOICE; a straighten-reprocess flips them to credit_note.**
 Traced end-to-end (agent FINDINGS: scratchpad session 30ca4b35 `disparity\FINDINGS.md`; both premises REFUTED —
