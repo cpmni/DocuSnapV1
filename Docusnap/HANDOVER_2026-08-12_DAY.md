@@ -1,7 +1,23 @@
 # HANDOVER — 2026-08-12 DAY (owner present, heaviest feature day on record)
 
-**Branch:** `feat/teach-side-overnight` · **HEAD `6bd591f`, PUSHED, tree clean** (3 feature commits
-today: `5623102` → `e94f2f5` → `6bd591f`, over the overnight `b901e66`). No uncommitted batch.
+**Branch:** `feat/teach-side-overnight` · **HEAD `3a751d0`, PUSHED, tree clean** (4 feature commits
+today: `5623102` → `e94f2f5` → `6bd591f` → `3a751d0`, over the overnight `b901e66`).
+
+**POST-WRAP ADDENDUM (`3a751d0`) — RAW-CROP WITNESS built:** the 08-11 Oracle-signed recipe-ladder
+fix (serif I→1 / ACC-229] class), built cold per its spec, C1-C6 applied: witness compares the
+PRE-repair string at BOTH ladder exits (C1 pinned with a separator-stripping repair installed);
+FLAG tier (note+corrected_to+cap 84) at the absolute-rung surface; ADOPT tier census-gated per pair
+(`RAW_WITNESS_ADOPT_PAIRS`, default empty). Flags `raw_crop_witness_flag`/`_adopt` OFF + toggles +
+wiring pins; 18 pins ALL PASS driving the REAL ladder; realdoc dark arm md5-identical. **OWED before
+flip: the spec's heal gate** (ref lane 27/1→28/0 witness+sepguard TOGETHER + witness-only arm must
+also move + bidirectional per-pair census over corpus AND born-digital arms + C5 Gate-C amendment).
+**C4 standing: never flip `CODE_SEPARATOR_STRUCTURE_GUARD` alone — together, sep-guard AFTER.**
+**Also post-wrap:** backfill APPLY ran (owner, `!`) and VERIFIED — tpl 14/15 issuer frozen, backup
+`docusnap_pre_issuerfreeze_20260812.db`. And a NEW next-arc entry sits at pendingfeatures TOP:
+**"why was the Lid→Ltd repair silent?"** — post-reprocess Meadowvale reads customer 'Bramblewood
+Joinery Lid' @95 UNFLAGGED (one confusable char from the 38× literal); the shipped Stage-4.5
+token repair's own textbook example didn't fire — ROOT-CAUSE FIRST, the confusable-snap tier only
+if 4.5 structurally can't own taught reads. No uncommitted batch.
 **No installer built.** Owner's app was restarted several times and was CLOSED at wrap.
 Migration still 63. **Six Oracle passes today — zero SEND BACKs. NOTHING FLIPPED BY THE SESSION;
 the owner flipped several toggles themselves (list below).**

@@ -21,8 +21,12 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-12 DAY (owner present): **READ `HANDOVER_2026-08-12_DAY.md` FIRST.**
-HEAD **`6bd591f`**, PUSHED, tree clean. Heaviest feature day on record: SIX Oracle passes, zero
+## ⏭ LATEST — 2026-08-12 DAY (owner present): **READ `HANDOVER_2026-08-12_DAY.md` FIRST (incl. its
+POST-WRAP ADDENDUM).** HEAD **`3a751d0`**, PUSHED, tree clean. Post-wrap: **RAW-CROP WITNESS built**
+(`3a751d0` — the 08-11 recipe-ladder I→1 spec, C1-C6; flags OFF; heal-gate arms OWED before flip;
+C4: never flip the sep-guard alone), **backfill APPLY verified** (tpl 14/15 issuer frozen), and the
+NEXT ARC filed at pendingfeatures TOP: **"why was the Lid→Ltd Stage-4.5 repair silent?"** (root-cause
+FIRST; the confusable-snap tier only if 4.5 can't own taught reads). Heaviest feature day on record: SIX Oracle passes, zero
 SEND BACKs, THREE commits, ~90 new pins, four realdoc arms md5-identical. All flags DEFAULT OFF +
 toggles; **the OWNER flipped**: graduation_window=5 · graduation_freeze_issuer ·
 template_identity_on_page · supplier_pin_self_discharge. Shipped dark: **(1) per-sender field
