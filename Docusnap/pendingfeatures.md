@@ -6,6 +6,35 @@
 
 ---
 
+## 2026-08-13 — THE ARITHMETIC KNOWS THE TOTAL AND A 2% TOLERANCE THROWS IT AWAY (#464, traced, NOT built)
+**The only wrong-value MONEY auto-file in 1076 corpus documents, and the page's own numbers already
+prove it wrong.** Doc #464 `Nordwind-Refrigeration_quote_0023-1.pdf` prints **`Total (inc VAT)
+£2,363.76`**; the pipeline commits **`2,368.76`** (a single `3`→`8` substitution) via `anchor_inline`
+at 85, final **90**, note **null** ⇒ would auto-file. Verified by eye on the page and by
+`trace_one_doc.js 464 total` at the app's own env + `OCR_RENDER_DPI=200`.
+**The rail SAW it and released it** (trace `reconcile` event, seq 120):
+`subtotal 1969.80 + tax 393.96 = computed 2363.76`, `delta 5`, **`tol 47.38`** (2% of the total)
+⇒ `reconciles: true`, `verdict "OK — reconciles / plausible"`. The computed value is EXACTLY the
+printed total, to the penny, and a percentage tolerance sized for rounding swallows a digit
+substitution 500× larger than a penny.
+**Two more signals were present and unused on the same document:** the corroboration record says
+`independent_agree:false` with the `mapping` family disagreeing (`'co 222.72'` — the taught box is
+also junk on this layout, a separate teach-quality issue), and `net_misread_flag` skipped for its
+own unrelated reason.
+**Fix direction (NOT built, needs the advisor + Oracle gate):** when `subtotal + tax` computes a
+value that differs from the read total but reconciles ONLY through the percentage tolerance, and the
+read differs from the computed value by a SINGLE character substitution, that is not rounding — it is
+a misread with an arithmetic witness. v1 should **flag + hold below auto-file** (note naming both
+numbers), NOT silently adopt: `subtotal`/`tax` can themselves be misread, and a derived money read
+has no guard but geometry (2026-08-09). Adoption is a separate, later decision with its own census.
+Own flag, DEFAULT OFF; gate = corpus OFF-arm byte-identity + `auto-filed-and-wrong = 0` at document
+level through `isAutoFileEligible`. Related but distinct from `recon_total_note_demote` (`df3f668`),
+which RELEASES a note on penny-exact agreement — this is the same arithmetic used in the other
+direction.
+**Also recorded from the same trace:** #535 `Silverbeck-Cleaning_sales_order_0011.pdf` prints
+`SB-ORD42102`, the pipeline reads `SP-ORD42102` (a `B`→`P` substitution, the serif-confusable family)
+— but it IS flagged, so it cannot auto-file. Contained, no action beyond the record.
+
 ## 2026-08-13 — DEAD STRUCTURAL PIN in test_xcheck_corrob_demote.py (Oracle-found, repair-or-delete)
 `test_xcheck_corrob_demote.py:158-160` (the "no independent_agree write in the demoter window" structural
 check) is VACUOUS — an OR of two disjuncts where the second (`'independent_agree' not in window`) is
