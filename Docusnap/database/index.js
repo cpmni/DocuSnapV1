@@ -118,6 +118,42 @@ const PROVEN_ON_DEFAULTS = [
   // nothing - the exact dead-toggle failure test_settings_wiring.js exists to catch.
 ];
 
+// ── The SECOND promotion round (migration 67, 2026-08-13) ────────────────────────────────────
+// Migration 60 turned on the reading improvements. Everything measured SINCE then stayed dark, so
+// the owner's own install files ~92% of a batch while a NEW CUSTOMER'S install files a fraction of
+// it — Chris round 4 met exactly that ("188 need your review, 12 ready") and reported it as a
+// product regression. It is not a regression; it is a settings gap. Same ritual as migration 60:
+// settings ROWS (so the toggles render truthfully), INSERT OR IGNORE (so an existing choice is
+// never overwritten), and every entry annotated with WHAT IT BOUGHT and WHERE THAT WAS MEASURED.
+const PROVEN_ON_DEFAULTS_2 = [
+  // The import arc, live-proven on a real 200-document import (2026-08-12 NIGHT2): corpus auto-file
+  // 70/200 -> ~184/200. These five moved together there and are promoted together.
+  ['autofile_gate_unify',        'true'],   // ONE auto-file predicate; the import pre-gate defers to it
+  ['far_lowconf_valued_only',    'true'],   // an attempted-but-empty optional field no longer flags
+  ['type_election_title_first',  'true'],   // an address caption stops outvoting the printed title
+  ['reprocess_shadow_stale_drop','true'],   // stale shadow rows die on reprocess
+  ['xcheck_corrob_note_demote',  'true'],   // corroboration STEP 3, DATES only; live re-verify 5/5 correct
+  // Graduation window 10 -> 5 (owner-flipped live). MEASURED on this install by Census F
+  // (2026-08-13): 919/1076 -> 999/1076, 85.4% -> 92.8%, every added document via the `graduated`
+  // basis — i.e. scopes that had already proved themselves, waiting on an arbitrary count.
+  ['graduation_window',          '5'],
+  // Corroborated auto-file (Oracle-unlocked + owner-flipped 2026-08-11). STATED HONESTLY: Census F
+  // measures it INERT on this install (919 -> 919), because its arm requires a scope that is clean
+  // but short of VOLUME, and nearly every scope here has already graduated. Its population is a
+  // YOUNG install — exactly the customer this migration exists for — which is also why this
+  // install cannot measure it. Promoted on the Oracle sign-off + the owner running it live, not on
+  // a number, and that distinction is the point of writing it down.
+  ['corroboration_autofile',     'true'],
+  // NOT LISTED, each for a reason that must not be re-litigated by adding it back:
+  //   name_corrob_note_demote        B2 clause 1 is NOT met (the #259 shape is absent from the corpus)
+  //   recon_total_note_demote        evidence complete but the owner has not taken the flip decision
+  //   identity_scope_post_repair     no-regression proven, EFFICACY VACUOUS — its trigger is disabled
+  //                                  by the name-lexicon defect; it is a precondition, not a fix
+  //   teach_identity_near_match_keep owed: the round-4 teach replay in a fresh sandbox
+  //   template_identity_hold_siblings / template_buyer_issued_type_scope   built 2026-08-13, no arm yet
+  //   deskew_on_import               standing ruling; it silently disables teach_angle_compose_scan
+];
+
 function runJsMigrations(db, applied) {
   // ── Workflow 'paid' heal — MUST run BEFORE any stamped block (Workflow Slice 1, Oracle
   // condition 1). The half-wired 'paid' route state was removed for v1: it sat in neither
@@ -1502,6 +1538,26 @@ function runJsMigrations(db, applied) {
     }
     db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (66)').run();
     console.log('JS migration 66 applied: templates.buyer_issued (inert until armed)');
+  }
+
+  // ── Migration 67: the second promotion round (see PROVEN_ON_DEFAULTS_2 above) ────────────────
+  // Everything measured since migration 60 shipped dark, so a NEW customer's install behaves like
+  // a 2025 default while the measured configuration sits in one person's settings table.
+  // INSERT OR IGNORE: an existing install's own choice is NEVER overwritten — someone who
+  // deliberately turned one of these off keeps it off; only keys with no row at all are seeded.
+  if (!applied.has(67)) {
+    try {
+      const ins = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+      const seeded = [];
+      for (const [key, val] of PROVEN_ON_DEFAULTS_2) {
+        const r = ins.run(key, val);
+        if (r.changes) seeded.push(key);
+      }
+      console.log(`  migration 67: ${seeded.length} measured improvement(s) newly seeded`
+                  + (seeded.length ? ` (${seeded.join(', ')})` : '; existing choices untouched'));
+    } catch (e) { console.warn(`  migration 67 defaults: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (67)').run();
+    console.log('JS migration 67 applied: the import arc + graduation window default ON');
   }
 
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
