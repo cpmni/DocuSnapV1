@@ -813,7 +813,11 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // layout's other documents ask for one more confirmation before the new
                          // name is used at full confidence. Read in BOTH places — templates.js marks
                          // the template, and the Python stamp yields via TEMPLATE_IDENTITY_HOLD_SIBLINGS.
-                         ['identity-hold-siblings-toggle', 'template_identity_hold_siblings']]) {
+                         ['identity-hold-siblings-toggle', 'template_identity_hold_siblings'],
+                         // Buyer-issued type scope (2026-08-13): a layout taught on a purchase
+                         // order the business ISSUED stops claiming inbound documents whose own
+                         // printed title says they are something else.
+                         ['buyer-issued-scope-toggle', 'template_buyer_issued_type_scope']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);

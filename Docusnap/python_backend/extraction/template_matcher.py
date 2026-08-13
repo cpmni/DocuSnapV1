@@ -464,6 +464,10 @@ _IDENTITY_ON_PAGE_ON = os.environ.get('TEMPLATE_IDENTITY_ON_PAGE', '0') != '0'
 # unconfirmed` (migration 65) marks such a template until a second document agrees; see
 # extract_with_template. DEFAULT OFF; the column is inert without it.
 _HOLD_PENDING_IDENTITY = os.environ.get('TEMPLATE_IDENTITY_HOLD_SIBLINGS', '0') != '0'
+# BUYER-ISSUED TYPE SCOPE (slice 2 of the buyer-issued arc; slice 1 shipped as ca0bb49). A template
+# marked `buyer_issued` (migration 66) may not win a TEXT arm on a document whose own trusted title
+# declares a different type. DEFAULT OFF; see _match_by_keywords for the full reasoning.
+_BUYER_ISSUED_TYPE_SCOPE = os.environ.get('TEMPLATE_BUYER_ISSUED_TYPE_SCOPE', '0') != '0'
 # The identity field keys, mirroring database/modules/document_types.COMPANY_KEYS (migration 44:
 # customer_name was unlinked from identity, so this is deliberately ONE key).
 _COMPANY_KEYS = ('supplier_name',)
@@ -1479,6 +1483,23 @@ def _match_by_keywords(ocr_text: str, templates: list, detected_slug: str | None
     for t in templates:
         keywords = t.get('keyword_fingerprint') or []
         if not keywords:
+            continue
+        # BUYER-ISSUED TYPE SCOPE (TEMPLATE_BUYER_ISSUED_TYPE_SCOPE, DEFAULT OFF — Chris round 4
+        # card 1, and the same class he reported on 2026-08-11). A template taught on a PURCHASE
+        # ORDER the business ISSUED carries the OWNER's own company as its frozen identity, and the
+        # owner's name and address are printed on every document the business RECEIVES — as the
+        # recipient. So the identity-on-page guard is satisfied by construction, and the layout goes
+        # on to claim inbound delivery notes and quotes from other suppliers at 95, stamping the
+        # owner's own name and VAT number on them. That is 40 documents wrong at a new customer's
+        # first sight of their filing cabinet.
+        # THE REFUSAL IS AS NARROW AS THE EVIDENCE: a marked template may not win the TEXT arm on a
+        # document whose OWN printed title is a TRUSTED heading declaring a different type. It is
+        # not refused on its own type (a real PO still matches), not refused on an untrusted or
+        # absent title (absence is not evidence), and the logo arm is untouched — the mark says
+        # where the layout came from, not that the layout is wrong.
+        if (_BUYER_ISSUED_TYPE_SCOPE and t.get('buyer_issued')
+                and title_trusted and detected_slug
+                and (t.get('document_type_slug') or '') != detected_slug):
             continue
         # Word-boundary match — mirrors _label_pattern's single-word collision
         # guard (the proven Stage-1 fix). Plain substring containment let a

@@ -169,6 +169,12 @@ function _reconcileEnv(db) {
     // would mark templates nothing ever acted on — the dead-toggle failure test_settings_wiring.js
     // exists to catch.
     if (learning.getSetting(db, 'template_identity_hold_siblings', 'false') === 'true') env.TEMPLATE_IDENTITY_HOLD_SIBLINGS = '1';
+    // Buyer-issued type scope (slice 2, 2026-08-13): a template taught on a PO the business ISSUED
+    // carries the owner's own company, and the owner's name is printed on everything the business
+    // RECEIVES — so it claims inbound documents from other suppliers at 95. Marked in JS
+    // (templates.markBuyerIssued), refused here in the TEXT arm only, and only against a trusted
+    // title of a different type.
+    if (learning.getSetting(db, 'template_buyer_issued_type_scope', 'false') === 'true') env.TEMPLATE_BUYER_ISSUED_TYPE_SCOPE = '1';
     if (learning.getSetting(db, 'crosscheck_outlier_reconcile', 'false') === 'true') env.CROSSCHECK_OUTLIER_RECONCILE = '1';
     if (learning.getSetting(db, 'universal_verify_restore', 'false') === 'true') env.UNIVERSAL_VERIFY_RESTORE = '1';
     if (learning.getSetting(db, 'universal_verify_flag', 'false') === 'true') env.UNIVERSAL_VERIFY_FLAG = '1';

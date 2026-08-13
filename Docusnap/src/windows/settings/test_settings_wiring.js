@@ -83,6 +83,9 @@ const BRIDGES = [
   // identity was replaced by a genuinely different company; this bridge is what makes the Stage-0
   // stamp yield for it. Without the bridge the mark would be written and nothing would read it.
   ['identity-hold-siblings-toggle', 'template_identity_hold_siblings', 'TEMPLATE_IDENTITY_HOLD_SIBLINGS'],
+  // Buyer-issued type scope (slice 2, 2026-08-13): the mark is written in JS
+  // (templates.markBuyerIssued) and acted on in template_matcher's TEXT arm.
+  ['buyer-issued-scope-toggle', 'template_buyer_issued_type_scope', 'TEMPLATE_BUYER_ISSUED_TYPE_SCOPE'],
   ['shadow-attrib-toggle',      'reconcile_shadow_attribution', 'RECONCILE_SHADOW_ATTRIBUTION'],
   ['vat-rate-at-toggle',        'vat_rate_at_skip',             'VAT_RATE_AT_SKIP'],
   ['pin-discharge-toggle',      'supplier_pin_self_discharge',  'SUPPLIER_PIN_SELF_DISCHARGE'],

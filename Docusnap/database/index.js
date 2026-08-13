@@ -1486,6 +1486,24 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 65 applied: templates.identity_unconfirmed (hold-the-siblings, inert until armed)');
   }
 
+  // ── Migration 66: templates.buyer_issued — the layout the OWNER issues ───────────────────────
+  // Chris's round-4 card 1 and his 2026-08-11 report are the same class: a template taught on a
+  // PURCHASE ORDER the business ISSUED carries the owner's own company as its frozen identity, and
+  // the owner's name and address are printed on every document the business RECEIVES (as the
+  // recipient) — so `template_identity_on_page` is satisfied and the template claims 40 inbound
+  // delivery notes and quotes from two other suppliers, at 95, with the owner's VAT number.
+  // The mark records "this layout came from a PO-shaped document"; the refusal it enables is narrow
+  // (a marked template may not win a TEXT arm on a document whose own TRUSTED printed title says a
+  // different type) and lives behind TEMPLATE_BUYER_ISSUED_TYPE_SCOPE, DEFAULT OFF. Go-forward-only:
+  // existing templates stay 0 until a confirm re-derives them.
+  if (!applied.has(66)) {
+    if (tableExists(db, 'templates') && !hasColumn(db, 'templates', 'buyer_issued')) {
+      db.exec('ALTER TABLE templates ADD COLUMN buyer_issued INTEGER DEFAULT 0');
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (66)').run();
+    console.log('JS migration 66 applied: templates.buyer_issued (inert until armed)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

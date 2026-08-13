@@ -1348,6 +1348,12 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
     // garble / per-document tokens can't poison Stage 0 matching and strand the
     // learned anchors — see templates.stabiliseFingerprint / chooseLogoPhash.
     templates.update(db, templateId, { logo_phash, logo_detail_hash, keyword_fingerprint, fields });
+    // BUYER-ISSUED MARK (migration 66): record that this layout came from a PO-shaped document —
+    // the class behind Chris's "40 documents from two other companies under MY company's name".
+    // Recorded on every confirm, so a template that predates the column earns its mark the next
+    // time it is confirmed rather than needing a backfill. Recording is unconditional and free;
+    // ACTING on it is Python's, behind TEMPLATE_BUYER_ISSUED_TYPE_SCOPE (DEFAULT OFF).
+    try { templates.markBuyerIssued(db, templateId, dtInfo); } catch {}
     // Heal a junk/generic auto-name (WIDENED 2026-07-10): a template created at a supplier's
     // FIRST confirm inherits whatever sat in the issuer field — a COLD confirm births
     // "<Type> Template", and a WRONG first detection births a postcode ("BT23 1BE") or a bare
@@ -1391,6 +1397,8 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
       keyword_fingerprint,
       fields,
     });
+
+    try { templates.markBuyerIssued(db, newTemplateId, dtInfo); } catch {}   // migration 66, see above
 
     // Link document to its new template
     db.prepare('UPDATE documents SET template_id = ? WHERE id = ?').run(newTemplateId, document_id);

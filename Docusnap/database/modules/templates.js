@@ -1346,6 +1346,34 @@ function noteIdentitySupported(db, templateId, value) {
   } catch { return { changed: false }; }
 }
 
+// ── BUYER-ISSUED MARK (migration 66) ─────────────────────────────────────────────────────────
+// The JS twin of engine._buyer_issued's PRIMARY arm: a document type whose reference role is a PO
+// number is the shape a business ISSUES. (The engine's second arm — a trusted PURCHASE ORDER
+// heading — is a page signal Python owns and JS never sees at confirm time; the ref-role arm is
+// what the round-4 exhibit rode, so this twin is deliberately the smaller of the two rather than a
+// guess at the other.)
+//
+// Recording it is free and reversible; ACTING on it is the flagged part, and it happens in Python.
+// Called on create and on every confirm-time update, so an existing template earns its mark the
+// next time it is confirmed rather than needing a backfill.
+function markBuyerIssued(db, templateId, dtInfo) {
+  try {
+    if (!templateId || !dtInfo || !_hasBuyerIssued(db)) return;
+    const isBuyer = String(dtInfo.ref_field_key || '').toLowerCase() === 'po_number' ? 1 : 0;
+    if (!isBuyer) return;                       // never CLEARS — go-forward-only, like the column
+    db.prepare('UPDATE templates SET buyer_issued = 1 WHERE id = ? AND COALESCE(buyer_issued,0) = 0').run(templateId);
+  } catch { /* a record must never break the write it accompanies */ }
+}
+
+const _buyerCache = new WeakMap();
+function _hasBuyerIssued(db) {
+  if (_buyerCache.has(db)) return _buyerCache.get(db);
+  let ok = false;
+  try { db.prepare('SELECT buyer_issued FROM templates LIMIT 0'); ok = true; } catch { ok = false; }
+  _buyerCache.set(db, ok);
+  return ok;
+}
+
 const _holdCache = new WeakMap();
 function _hasIdentityHold(db) {
   if (_holdCache.has(db)) return _holdCache.get(db);
@@ -1716,7 +1744,7 @@ module.exports = {
   stabiliseFingerprint, chooseLogoPhash,
   getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
   recordMappingTest, setSampleDocument, reassignDocuments, mergeInto, setFieldFixedValue,
-  noteIdentitySupported,
+  noteIdentitySupported, markBuyerIssued,
   getHiddenFields, getHiddenFieldsForSupplierType, resolveVisibilityTemplateIds, reuseByEstablishedName, isFieldHideable, setHiddenField, getTypeFieldsForHiding,
   _normNameForVis,   // exported for the JS↔Python parity pin (vis_norm_vectors.json)
   setOcrAutoParams, setOcrAutoEnabled,

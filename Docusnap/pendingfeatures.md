@@ -6,6 +6,42 @@
 
 ---
 
+## 2026-08-13 — BUYER-ISSUED SLICE 3 (the stamp-contradiction rail): **MEASURED AND REFUSED — DO NOT BUILD AS DESIGNED**
+Slice 2 SHIPPED (migration 66 + `template_buyer_issued_type_scope`, DEFAULT OFF). Slice 3 was
+designed as: *a `template_fixed` stamp of a `_PRECISE_VAL_TYPES` field contradicted by a DIFFERENT
+well-formed same-type value on the page ⇒ note + hold below auto-file.* Its own design named the
+gate — *"`extractions.corroboration` already records this disagreement, so the rail can be MEASURED
+from recorded rows before it acts"* — and the measurement refuses it **twice, independently**.
+**CENSUS (read-only, snapshot of the live DB, 6514 rows carrying a corroboration record):**
+```
+field            stamped  agreed  contradicted
+supplier_name       1038    1037           192
+vat_no               120     120             0     <-- the field the rail was FOR
+customer_name          5       0             5
+account_no             2       0             0
+```
+**(1) INERT WHERE IT WAS AIMED.** `vat_no` is stamped 120 times and contradicted **ZERO** times.
+A rail keyed on VAT contradiction fires on nothing. **And `_PRECISE_VAL_TYPES` is literally
+`frozenset({"mac_address", "ip_address"})` (`anchor.py:2563`) — `vat_no` is not in it** — so the
+slice as written would have been inert for VAT *by construction*, before the data even spoke.
+**(2) NOISY WHERE IT WOULD ACTUALLY FIRE.** Restricted to page-reading families (crop/keyword),
+121 rows contradict: **116 `supplier_name` + 5 `customer_name`, and the "contradiction" is junk** —
+`keyword="DELIVER TO"` (a caption fragment, ×100+ on the owner's own POs) and
+`crop="Jordwind Refrigeration Ltd"` / `"lordwind…"` (an OCR garble of the SAME name that is
+stamped). Every listed exhibit is a document where the STAMP IS CORRECT. Building this would hold
+~121 correct documents for review and catch nothing — an unpaid-for tier, the exact thing Census C
+exists to kill.
+**THE HONEST FRAME (same as the VAT-EU C2 finding): this install holds the MECHANISM but not the
+TRIGGER.** Chris's exhibit is real — Oakhaven prints `GB 660 1173 45` while the stamp said
+`GB 512 8846 27` — but it only exists where a buyer-issued template claims another company's
+document, and the live install has no such template (B9 census: CLEAN). Slice 2 attacks that cause
+directly; slice 3 would have been a second guess at the symptom.
+**REVIVAL CONDITION, so this is not re-litigated from memory:** re-run
+`scratchpad/census_stamp_contradiction.js` (recreate from this entry) on an install that HAS a
+buyer-issued template claiming foreign documents. The rail is justified only if the contradicted
+population is dominated by rows where the STAMP is wrong — not by caption fragments and garbles of
+the stamped value itself. On today's data that number is 0 of 121.
+
 ## 2026-08-13 — THE ARITHMETIC KNOWS THE TOTAL AND A 2% TOLERANCE THROWS IT AWAY (#464, traced, NOT built)
 **The only wrong-value MONEY auto-file in 1076 corpus documents, and the page's own numbers already
 prove it wrong.** Doc #464 `Nordwind-Refrigeration_quote_0023-1.pdf` prints **`Total (inc VAT)
