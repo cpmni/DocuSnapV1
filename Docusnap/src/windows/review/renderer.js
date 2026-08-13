@@ -206,6 +206,34 @@ let currentPage      = 0;
 let pageImages       = [];
 let fieldDefs        = [];
 let corrections      = {};
+// Field keys emptied by _clearSuspectReadsForNewIssuer because the ISSUER changed — a
+// MACHINE-initiated clear, not an operator correction, and the distinction is load-bearing.
+//
+// This used to be recorded as `corrections[key] = {corrected_value:''}`, which made a machine
+// clear indistinguishable from an operator deleting a value by hand. saveCorrections then wrote
+// it straight through — `UPDATE extractions SET display_value='', was_corrected=1`
+// (database/modules/learning.js:325) — blanking a stored row and stamping it as human-corrected,
+// and writing a corrections audit row asserting an edit the operator never made. Where the panel
+// happened to re-render (via _resolveFieldVisibility) the operator saw the CORRECT values while
+// the stored row was emptied underneath them: screen and database diverged silently and search
+// then missed a document the operator could see was right.
+//
+// The backend cannot separate the two cases — both stage a byte-identical entry — and it cannot
+// be given a marker without a payload-suppliable field, which the internal-`via` convention
+// forbids. So the impersonation is fixed here, at its source: the clear is recorded as a RENDER
+// fact, never as a correction. Filing is unaffected because `allValues` is scraped from the live
+// DOM, and an operator's own clear still stages a real `corrections` entry and still behaves
+// exactly as before.
+//
+// ACCEPTED TRADE-OFF, pinned — do NOT "fix" this by restoring the corrections entry: the stored
+// extraction row keeps the previous supplier's value until the document is reprocessed. That is
+// the normal state of every field the operator did not touch, it is visible and correctable,
+// whereas a false corrections row and a blanked value are neither. The right home for "this
+// field has no value on this document for this sender" is the declared-absent / hidden-field
+// mechanism, not `corrections`.
+//
+// Doc-scoped: reset wherever `corrections` is reset.
+let clearedByIssuerChange = new Set();
 let anchorTaughtFields = new Set(); // field_keys taught via the ⊕ highlight/zone-OCR tool this cycle
 // field_keys with a SAVED learned anchor for the current supplier+doc-type scope (get-taught-field-keys),
 // for the per-field "position taught" dot. OR'd with pendingAnchors (this-session ⊕ teaches) at render.
@@ -1258,6 +1286,7 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
   currentDoc  = doc;
   currentPage = 0;
   corrections = {};
+  clearedByIssuerChange = new Set();   // doc-scoped, like corrections
   anchorTaughtFields = new Set();
   pendingAnchors = {};   // discard any un-confirmed ⊕ teach when the doc changes
   taughtFieldKeys = new Set();   // re-fetched for the new doc's scope before renderFields
@@ -2514,7 +2543,13 @@ function renderFields(doc) {
   const hiddenKeys = new Set(doc.hidden_fields || []);
   for (const key of reviewFields()) {
     const ext = extMap[key] || {};
-    const val = ext.display_value ?? ext.raw_value ?? '';
+    // A field emptied because the ISSUER changed stays empty across a repaint. renderFields
+    // rebuilds every row from doc.extractions, and _resolveFieldVisibility calls it mid-edit —
+    // so without this the previous supplier's value is resurrected into the input and the
+    // allValues DOM scrape then FILES it, which is the exact outcome the clear exists to
+    // prevent. Previously masked because the clear also blanked the stored row; now that it
+    // correctly leaves the row alone, the suppression has to live here.
+    const val = clearedByIssuerChange.has(key) ? '' : (ext.display_value ?? ext.raw_value ?? '');
     // Skip a hidden field WHEN it read empty (the layout lacks it — the noise the owner asked to
     // remove). A hidden field that unexpectedly HAS a value is still shown: hiding is a display
     // mask, never a way to lose real data. Inert when nothing is hidden (empty set).
@@ -2636,15 +2671,20 @@ function _clearSuspectReadsForNewIssuer() {
     if (key === 'supplier_name') return;                          // never the issuer being corrected
     if (!input.value.trim()) return;                              // already empty
     if (!_isSupplierScopedRead(input.dataset.method)) return;     // keyword / manual / logo -> keep
-    const o = input.dataset.original;
     input.value = '';
     input.classList.remove('corrected');
-    corrections[key] = { original_value: o, corrected_value: '' };   // persist the clear on Confirm
+    // Record as a RENDER fact, never as a correction — see clearedByIssuerChange. Staging a
+    // corrections entry here made a machine clear impersonate an operator edit and blanked the
+    // stored extraction row. Filing still sees the empty input via the allValues DOM scrape.
+    clearedByIssuerChange.add(key);
     const row = input.closest('.field-row');
     if (row) { try { dismissServerNote(row, key); } catch {} try { clearFieldWarning(row, input); } catch {} }
     cleared++;
   });
-  if (cleared) { validateConfirm(); try { showToast(cleared > 1 ? `Cleared ${cleared} fields that were read from the previous supplier — teach them for ${issuer}.` : `Cleared 1 field that was read from the previous supplier — teach it for ${issuer}.`, 'ok'); } catch {} }
+  // 'warn', not 'ok'. With no corrections entry and no database trace, this toast is now the ONLY
+  // record that N fields were emptied — announcing a destructive clear in the success tone, where
+  // any real warning fired in the same tick would replace it, is a fail-toward-silence.
+  if (cleared) { validateConfirm(); try { showToast(cleared > 1 ? `Cleared ${cleared} fields that were read from the previous supplier — teach them for ${issuer}.` : `Cleared 1 field that was read from the previous supplier — teach it for ${issuer}.`, 'warn'); } catch {} }
 }
 
 async function _refreshTaughtForType() {
@@ -3041,6 +3081,10 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     } else {
       delete corrections[key];
     }
+    // The operator has taken this field over, so the issuer-change suppression must let go —
+    // otherwise the next repaint would blank what they just typed. Their edit is now recorded
+    // in `corrections` in the ordinary way, including a deliberate clear back to empty.
+    clearedByIssuerChange.delete(key);
     // Eagerly CLEAR any standing warning the moment the user starts fixing the
     // value — only re-evaluate (and possibly re-flag) on blur, so the error never
     // flashes mid-type (e.g. an unfinished "12-05" looks invalid until complete).
@@ -6260,6 +6304,7 @@ document.getElementById('btn-reprocess').addEventListener('click', async (e) => 
     if (full) {
       currentDoc  = full;    // sync in-memory state to fresh DB record
       corrections = {};      // drop stale corrections; fields are now fresh
+      clearedByIssuerChange = new Set();   // the reprocessed reads are new — nothing is suppressed
       pendingAnchors = {};   // ...and any un-committed ⊕ teach (coords now stale)
       pendingFieldRules = {};
       syncDocTypeFromRecord(full); // auto-select the newly detected type
@@ -6350,7 +6395,7 @@ async function reconnectRunningBatch(status) {
       if (currentDoc) {
         const full = await window.docusnap.getDocumentWithExtractions(currentDoc.id);
         if (full && currentDoc && currentDoc.id === full.id) {
-          currentDoc = full; corrections = {}; pendingAnchors = {}; pendingFieldRules = {};
+          currentDoc = full; corrections = {}; clearedByIssuerChange = new Set(); pendingAnchors = {}; pendingFieldRules = {};
           syncDocTypeFromRecord(full); renderFields(full);
         }
       }
@@ -6461,6 +6506,7 @@ async function runReprocessBatch(docs, scopeLabel) {
         if (full && currentDoc && currentDoc.id === full.id) {
           currentDoc  = full;
           corrections = {};
+          clearedByIssuerChange = new Set();   // fresh reads — nothing is suppressed
           pendingAnchors = {};   // drop any un-committed ⊕ teach (coords now stale)
           pendingFieldRules = {};
           syncDocTypeFromRecord(full);
