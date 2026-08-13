@@ -144,6 +144,10 @@ for (const [id, key, env] of BRIDGES) {
 // and no env var to check — the consumer file is the third leg instead. A switch listed here whose
 // consumer stops reading the key is the same dead-toggle failure, just one file over.
 const SETTING_SWITCHES = [
+  // Identity-overwrite guard (2026-08-14, the Chris round-4 exhibit): a teach could replace a
+  // frozen company identity backed by 38 confirmations with one draw-box OCR read. The gate is a
+  // settings read inside templates.js, at the ONE upsert every writer passes through.
+  ['identity-near-match-keep-toggle', 'teach_identity_near_match_keep', 'database/modules/templates.js'],
   ['shadow-row-skip-toggle', 'trust_shadow_row_skip', 'database/modules/trust.js'],
   // Machine-feed arc slice 1 (Oracle W/COND C1-C6, 2026-08-13): learning.js reads the key
   // directly (the shadow-row-skip C5 pattern); templates.js reads it for the C1 template leg.

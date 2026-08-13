@@ -802,7 +802,12 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // so a healed name reaches the extraction row while the document files and
                          // learns under the unrepaired string. Flip needs the corpus arm — every
                          // moved document must move TOWARD the corroborated value, M=0.
-                         ['identity-scope-post-repair-toggle', 'identity_scope_post_repair']]) {
+                         ['identity-scope-post-repair-toggle', 'identity_scope_post_repair'],
+                         // Identity-overwrite guard (2026-08-14, the Chris round-4 exhibit): a
+                         // teach could replace a frozen company identity backed by 38 confirms
+                         // with one draw-box OCR read. Read inside templates.js at the one upsert
+                         // every writer passes through; a genuinely different company still wins.
+                         ['identity-near-match-keep-toggle', 'teach_identity_near_match_keep']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);

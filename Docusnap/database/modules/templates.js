@@ -1196,14 +1196,69 @@ function _upsertFields(db, templateId, fields) {
       is_variable  = CASE WHEN fixed_locked = 1 THEN is_variable ELSE excluded.is_variable END
   `);
   for (const f of fields) {
+    const eff = _identityOverwriteGuard(db, templateId, f);
     stmt.run(
       templateId,
-      f.field_key,
-      f.anchor_label  || null,
-      f.direction     || 'right',
-      f.fixed_value   || null,
-      f.is_variable !== false && f.is_variable !== 0 ? 1 : 0
+      eff.field_key,
+      eff.anchor_label  || null,
+      eff.direction     || 'right',
+      eff.fixed_value   || null,
+      eff.is_variable !== false && eff.is_variable !== 0 ? 1 : 0
     );
+  }
+}
+
+// ── IDENTITY-OVERWRITE GUARD (teach_identity_near_match_keep, DEFAULT OFF) ────────────────────
+// The write above had exactly ONE guard — `fixed_locked = 1` — and never compared WARRANTS. So a
+// company identity backed by 38 confirmations was replaced by one draw-box OCR read of one crop:
+// 'Bramblewood Joinery Ltd' -> 'B8ramblewood Joinery Ltd', which then stamped 20 sibling purchase
+// orders at 95 with an EMPTY validation_note and put 12 of them on disk under the misspelling.
+// One teach runs this overwrite TWICE (promote-to-template, then confirm-with-taught_fields).
+//
+// This asks the ONE question the writer never asked: may this value REPLACE a DIFFERENT existing
+// frozen identity? Deliberately NOT a widening of freeze_guard — that module answers "may this
+// value be frozen at all?" and excludes the issuer on purpose (freeze_guard.js:40-46), because
+// five shipped guards need a `template_fixed` seed to EXIST. Those guards need a seed to exist;
+// they do not need it to be whatever the last teach said. A decline here KEEPS the existing seed,
+// so all five stay armed and the blast radius is one column of one row.
+//
+// SCOPE, deliberately narrow:
+//   - identity fields only (COMPANY_KEYS), where the value is also the filing folder and the
+//     universal learning scope key;
+//   - REPLACEMENT only — a first freeze on a cold template is untouched, which is the whole
+//     point: only overwrites showed the defect;
+//   - NEAR matches only. A genuinely different company still displaces the stored value, or a
+//     wrong frozen name could never be corrected by re-teaching, which is its own trap.
+//
+// `fixed_locked` rows never reach here (the CASE above already preserves them) — an admin who
+// deliberately typed a literal in Template Manager keeps it, unchanged.
+function _identityOverwriteGuard(db, templateId, f) {
+  try {
+    // Required locally, as everywhere else in this file (see _upsertTemplate) — document_types
+    // and templates load each other, so a module-scope require would be a cycle.
+    const { COMPANY_KEYS } = require('./document_types');
+    if (!(COMPANY_KEYS || ['supplier_name']).includes(f.field_key)) return f;
+    const incoming = String(f.fixed_value == null ? '' : f.fixed_value).trim();
+    if (!incoming) return f;                                     // clearing / leaving variable
+    const learning = require('./learning');
+    if (learning.getSetting(db, 'teach_identity_near_match_keep', 'false') !== 'true') return f;
+    const row = db.prepare(
+      'SELECT fixed_value, is_variable, fixed_locked FROM template_fields '
+      + 'WHERE template_id = ? AND field_key = ?').get(templateId, f.field_key);
+    const existing = String((row && row.fixed_value) || '').trim();
+    if (!row || !existing || row.fixed_locked === 1) return f;   // no incumbent / admin-locked
+    const v = require('./name_proximity').nearMatchIdentity(incoming, existing);
+    if (!v.near) return f;                                       // identical, short, or different
+    // KEEP the incumbent. Silent by design and by the owner's ruling: a one-or-two character
+    // misread of a name the install already holds is not a decision worth interrupting an
+    // operator for. The reason is recorded so a silent refusal is never invisible in a trace.
+    try {
+      console.log(`  [identity-guard] tpl ${templateId} ${f.field_key}: kept ${JSON.stringify(existing)} `
+        + `over ${JSON.stringify(incoming)} (d=${v.distance}, sim=${v.similarity.toFixed(3)})`);
+    } catch {}
+    return { ...f, fixed_value: row.fixed_value, is_variable: row.is_variable };
+  } catch {
+    return f;            // a guard failure must never block a template write
   }
 }
 
