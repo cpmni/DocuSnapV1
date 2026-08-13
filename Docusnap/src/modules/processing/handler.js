@@ -175,6 +175,12 @@ function _reconcileEnv(db) {
     // (templates.markBuyerIssued), refused here in the TEXT arm only, and only against a trusted
     // title of a different type.
     if (learning.getSetting(db, 'template_buyer_issued_type_scope', 'false') === 'true') env.TEMPLATE_BUYER_ISSUED_TYPE_SCOPE = '1';
+    // Name lexicon from a LOW-DISTINCT scope (B5, 2026-08-13). format_anomaly_checker discarded
+    // every name scope whose confirmed history is one or two DISTINCT values — measured as 33 of
+    // 36 scopes on this install — so the shipped name repair was structurally inert exactly where
+    // the evidence is strongest. WEAK-ONLY by construction: such a lexicon can suggest and force a
+    // review, never silently rewrite.
+    if (learning.getSetting(db, 'name_lexicon_low_distinct', 'false') === 'true') env.NAME_LEXICON_LOW_DISTINCT = '1';
     if (learning.getSetting(db, 'crosscheck_outlier_reconcile', 'false') === 'true') env.CROSSCHECK_OUTLIER_RECONCILE = '1';
     if (learning.getSetting(db, 'universal_verify_restore', 'false') === 'true') env.UNIVERSAL_VERIFY_RESTORE = '1';
     if (learning.getSetting(db, 'universal_verify_flag', 'false') === 'true') env.UNIVERSAL_VERIFY_FLAG = '1';

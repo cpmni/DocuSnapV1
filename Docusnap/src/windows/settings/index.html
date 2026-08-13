@@ -1126,6 +1126,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Use a sender's confirmed name to spot a misread of it</div>
+                <div class="threshold-sub">When you have confirmed the same company name on several documents, Scan Finder can compare a new reading against it and point out a one-character misread — "Bramblewood Lid" against your confirmed "Bramblewood Ltd". Until now it only did this for senders whose name it had seen spelled several different ways, which is almost none of them. It only ever SUGGESTS the correction and asks you to look; it never changes a company name on its own. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="name-lex-low-distinct-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Read small reference/date print more clearly</div>
                 <div class="threshold-sub">Enlarges a tightly-cropped reference or date before reading it and drops an over-sharpen step, so small print (e.g. “PO-17039” misread as “»0-17039”) reads correctly. Only helps where it can, never changes a read it can't improve. Off by default.</div>
               </div>

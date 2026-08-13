@@ -86,6 +86,8 @@ const BRIDGES = [
   // Buyer-issued type scope (slice 2, 2026-08-13): the mark is written in JS
   // (templates.markBuyerIssued) and acted on in template_matcher's TEXT arm.
   ['buyer-issued-scope-toggle', 'template_buyer_issued_type_scope', 'TEMPLATE_BUYER_ISSUED_TYPE_SCOPE'],
+  // Name lexicon from a low-distinct scope (B5, 2026-08-13): weak-only by construction.
+  ['name-lex-low-distinct-toggle', 'name_lexicon_low_distinct', 'NAME_LEXICON_LOW_DISTINCT'],
   ['shadow-attrib-toggle',      'reconcile_shadow_attribution', 'RECONCILE_SHADOW_ATTRIBUTION'],
   ['vat-rate-at-toggle',        'vat_rate_at_skip',             'VAT_RATE_AT_SKIP'],
   ['pin-discharge-toggle',      'supplier_pin_self_discharge',  'SUPPLIER_PIN_SELF_DISCHARGE'],

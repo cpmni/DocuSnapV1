@@ -7918,6 +7918,16 @@ class ExtractionEngine:
                 if name_lex and key in text_field_keys:
                     from extraction import name_match
                     repaired, strong = name_match.repair_name_value(str(val), name_lex, details=True)
+                    # B5 (2026-08-13): a lexicon built from a LOW-DISTINCT scope may never reach the
+                    # STRONG auto-apply tier. In a scope whose confirmed history is one distinct
+                    # value, EVERY position has doc_freq == 1.0 by construction, so `_STRONG_FREQ`
+                    # is satisfied automatically and guards nothing — measured as the whole
+                    # population, not a corner: Census E, 33 of 36 name scopes (Oracle O2). All that
+                    # would then stand between a garble and a SILENT whole-value rewrite is
+                    # `_close`, and `Southgate` vs `Northgate` is 2 edits at ratio 0.778, which
+                    # `_close` accepts. So: suggestion + review, never a silent rewrite.
+                    if strong and fmt_entry.get('low_distinct'):
+                        strong = False
                     if repaired and repaired != str(val):
                         if strong:
                             results[key] = {
@@ -7926,6 +7936,22 @@ class ExtractionEngine:
                                 'display_value':   repaired,
                                 'was_corrected':   True,
                                 'corrected_to':    repaired,
+                                # B7, UNCONDITIONAL and deliberately not behind a flag: mark the
+                                # METHOD so this value can never count as evidence FOR the repair
+                                # that produced it. Without it the route manufactures the history
+                                # it consumes — confirm 20 auto-corrected documents and the
+                                # correction becomes its own proof. The method suffix is the
+                                # carrier because it SURVIVES CONFIRM: reviewService clears
+                                # validation_note and corrected_to on confirm, so a note-based
+                                # marker would be gone exactly when learning reads the row.
+                                # Same shape as the shipped '+confirmed_adopt' exclusion, for the
+                                # same reason (Oracle B3, 2026-08-12).
+                                # The key is `method`, NOT `extraction_method`: the JS side persists
+                                # `data.method` (processing/handler.js:2265, :4312), so a suffix put
+                                # on the wrong key would never reach the column that filters it.
+                                # `_method_family` matches by PREFIX, so the suffix cannot disturb
+                                # the corroboration families.
+                                'method': f"{data.get('method') or 'unknown'}+name_repair",
                                 # Note carries the ORIGINAL read so the UI can show what
                                 # was auto-fixed (the input already holds the correction).
                                 'validation_note': f"Auto-corrected to match learned data (was: {val})",

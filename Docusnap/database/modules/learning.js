@@ -1384,6 +1384,16 @@ function getFieldFormats(db, opts) {
       -- SUPERSEDED — gate-unify T3 stamps + the remediation scripts made via separable; the
       -- doc-level machine exclusion is the ARMED filter in the accumulation loop below, C6.)
       AND (e.extraction_method IS NULL OR e.extraction_method NOT LIKE '%+confirmed\\_adopt' ESCAPE '\\')
+      -- B7 (2026-08-13), UNCONDITIONAL and deliberately not behind a flag: a value produced by the
+      -- Stage-4.5 NAME REPAIR may never count as evidence FOR that repair. Otherwise the route
+      -- manufactures the history it consumes — confirm 20 auto-corrected documents and the
+      -- correction becomes its own proof, which is precisely how Chris's 20 poisoned documents
+      -- moved the canonical to 38/59 = 0.64 (Oracle O6). learning_exclude_machine_confirms does
+      -- NOT cover this: those documents were HUMAN-confirmed, so no machine via marks them.
+      -- (No backticks in this comment: it lives inside a JS template literal.)
+      -- The METHOD suffix is the carrier because it survives confirm, where validation_note and
+      -- corrected_to are both cleared. Same shape and same reason as the CONFADOPT clause above.
+      AND (e.extraction_method IS NULL OR e.extraction_method NOT LIKE '%+name\\_repair' ESCAPE '\\')
     ORDER BY d.confirmed_at DESC, d.id DESC
   `).all();
 

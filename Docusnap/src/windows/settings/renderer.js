@@ -817,7 +817,11 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // Buyer-issued type scope (2026-08-13): a layout taught on a purchase
                          // order the business ISSUED stops claiming inbound documents whose own
                          // printed title says they are something else.
-                         ['buyer-issued-scope-toggle', 'template_buyer_issued_type_scope']]) {
+                         ['buyer-issued-scope-toggle', 'template_buyer_issued_type_scope'],
+                         // Name lexicon from a low-distinct scope (B5, 2026-08-13): the shipped
+                         // name repair never saw the scopes with ONE dominant confirmed name.
+                         // Suggest-and-review only — it can never silently rewrite a company name.
+                         ['name-lex-low-distinct-toggle', 'name_lexicon_low_distinct']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);

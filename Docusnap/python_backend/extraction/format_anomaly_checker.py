@@ -17,11 +17,19 @@ on the JS side (getFieldFormats filters groups below that threshold), but
 also guarded here for belt-and-braces safety.
 """
 
+import os
 import re
 import sys
 import math
 from pathlib import Path
 from typing import Optional
+
+# NAME LEXICON FROM A LOW-DISTINCT SCOPE (B5 of the teach-poisoning arc, DEFAULT OFF). Admits a
+# name lexicon for a scope whose confirmed history is one or two DISTINCT values but >= 3 confirms
+# — the population learning.js already emits and this module has always discarded (see the block at
+# the `< 3` guard). WEAK-ONLY by construction: entries built this way carry `low_distinct` and
+# engine.py refuses the STRONG auto-apply tier for them.
+_LOW_DISTINCT_NAME_LEX = os.environ.get('NAME_LEXICON_LOW_DISTINCT', '0') != '0'
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from extraction.validator import parse_date, parse_amount
@@ -760,8 +768,40 @@ def build_format_class_index(formats_data: list) -> dict:
         # this is the explicit, pinned guarantee.
         if entry.get('provisional'):
             continue
-        if len(samples) < 3:
-            continue
+        # ── THE FOUR-LINE ROOT CAUSE, and the narrow admission that fixes it ────────────────────
+        # `samples` is the DISTINCT value set (learning.js:1408). Meanwhile learning.js goes out of
+        # its way to EMIT a group when `_values.size >= 3` **OR** `_count >= 3`, its comment naming
+        # constant fields explicitly — so this `< 3` discarded exactly the groups JavaScript was
+        # deliberately sending. A name scope whose confirmed history is ONE dominant literal —
+        # 38x 'Bramblewood Joinery Ltd', the strongest evidence this system can hold — got NO
+        # lexicon, in either the supplier-scoped or the doc-type fallback scope. That is why the
+        # 'Lid' -> 'Ltd' repair was silent, and MEASURED (Census E, 2026-08-13) it is not a corner
+        # case: 33 of 36 name-like scopes on the live install have exactly ONE distinct value.
+        #
+        # THE ADMISSION IS DELIBERATELY MINIMAL. A low-distinct group may contribute a NAME LEXICON
+        # and nothing else — no learned shape, no separator, no charset, no support boost. Those
+        # are the veto machinery the `< 3` bar exists to protect: a shape learned from one value
+        # would refuse every legitimate sibling variation pipeline-wide.
+        # AND IT CAN NEVER AUTO-APPLY. The entry is stamped `low_distinct`, and engine.py refuses
+        # the STRONG tier for such a lexicon — because in a single-distinct-value scope every
+        # position has doc_freq == 1.0 BY CONSTRUCTION, so `_STRONG_FREQ = 0.9` is satisfied
+        # automatically and would be guarding nothing (Oracle O2). What is left is `_close`, and
+        # `Southgate` vs `Northgate` is d=2 at ratio 0.778 — which `_close` accepts. Weak-only is
+        # therefore not caution, it is the only safe tier here.
+        _low_distinct = len(samples) < 3
+        if _low_distinct:
+            if not _LOW_DISTINCT_NAME_LEX:
+                continue
+            try:
+                from extraction import value_quality as _vq
+                if not _vq.is_name_like_field(field_key):
+                    continue
+            except Exception:
+                continue
+            # Still needs REAL weight behind it — the >= 3 CONFIRMS learning.js emitted on. One
+            # confirmed document is one operator glance, not a history.
+            if int(entry.get('confirmed_count') or 0) < 3:
+                continue
 
         fmt = classify_format(samples, vcounts)
 
@@ -792,6 +832,20 @@ def build_format_class_index(formats_data: list) -> dict:
 
         if fmt['class'] == FREETEXT and not name_lex:
             continue  # no usable constraint learned and no name lexicon
+
+        if _low_distinct:
+            # NAME LEXICON ONLY. Everything else classify_format derived from one or two values is
+            # dropped on the floor here — the shape, the separator, the charset, the support boost.
+            # Emitting them would hand the veto machinery a constraint learned from a single value,
+            # which is the failure the `< 3` bar was written to prevent and which is NOT what this
+            # admission is for.
+            if not name_lex:
+                continue
+            index[(supplier, doc_type, field_key)] = {
+                'class': FREETEXT, 'name_lexicon': name_lex, 'low_distinct': True,
+                **({'word_like': word_like} if word_like is not None else {}),
+            }
+            continue
 
         if name_lex:
             fmt = {**fmt, 'name_lexicon': name_lex}
