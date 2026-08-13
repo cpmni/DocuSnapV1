@@ -21,7 +21,114 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-13 NIGHT: **READ `HANDOVER_2026-08-13_NIGHT.md` FIRST.** HEAD **`53db7eb`**,
+## ⏭ LATEST — 2026-08-13 NIGHT2: **READ `HANDOVER_2026-08-13_NIGHT2.md` FIRST.** HEAD **`3327a22`**,
+PUSHED, tree clean. Owner ordered ONE plan to "completely integrate the features and fixes without
+touching currently working features in a negative fashion", weighing the customer's experience and
+"as little clicks as possible after teach". Plan approved with four owner decisions, executed in six
+phases: **11 commits, migrations 64/65/66/67, four new switches ALL DEFAULT OFF, and one migration
+that turns SEVEN previously-dark switches ON for NEW INSTALLS ONLY.**
+**(1) `332bf68` PHASE 0 — the safety net had gone red and nobody knew** (468/484, 16 red vs 15 on
+08-10). One was a PRODUCT bug: **`PRAGMA table_info` on a MISSING table returns `[]`, so migration 62
+threw `no such table` inside `runJsMigrations` and ABORTED APP STARTUP** on any DB stamped past 19
+without `field_label_overrides`. Third appearance of that class. A stale pin was repaired (it demanded
+the inline five-sentinel literal the machine-feed slice deliberately replaced with `machine_vias`) and
+three drifted fixtures fixed ⇒ **red is now 11, the documented genuine set**.
+**(2) `76e28b2` #464 + #535 EXAMINED — on BOTH the stored confirmed value is CORRECT and the PIPELINE
+is wrong** (the opposite of the other five baseline rows). #535 = B→P, flagged, contained. **#464
+prints £2,363.76, commits `2,368.76` at 90 with an EMPTY note ⇒ would auto-file — and the trace shows
+`subtotal+tax` computed the printed total EXACTLY while a 2%-of-total tolerance (47.38) released a
+delta of 5.** Filed at the top of `pendingfeatures.md`; fix must FLAG, never adopt.
+**(3) `7dfb580`+`7db3f21`+`6ba880e` PHASE 1 — THE APP SPEAKS (ships ON).** Teach read-back on every
+path incl. **the EMPTY and THROWN reads, which produced nothing at all** (all nested inside
+`if (text)`); message on the persistent `#anchor-readout`, not a toast; `showToast` sticky-**LEVEL**
+guard (an `ok` may not overwrite a live `warn` — deliberately NOT a queue); the wizard's `.catch(_ok)`
+failure-as-success removed; new `learning.findNearMatchIdentity` + `check-identity-near-match`
+(substrate = HUMAN confirms only, ≥3); confirm names the filed name + folder (the backend always
+returned them and the renderer discarded them); File All Ready gets a count from **the loop's own skip
+rule** + a persistent summary; the issuer clear names each field and offers a working Undo.
+**`_purgeOne` had TWO data defects, both red-proved: the filed PDF was never unlinked (resolveFilePath
+returns working_path FIRST) and, with no working copy, it targeted THE CUSTOMER'S OWN SOURCE SCAN.**
+Bin actions counted RENDERED ROWS (`if (!n) return` = the silent no-op); stamp default corner →
+bottom-right; not-taught dot no longer error-red.
+**(4) `097a5fb` PHASE 2 — mig 64 provenance (`template_fields.fixed_source`) + mig 65
+`template_identity_hold_siblings` (OFF).** **The writer enumeration is BETTER than the design assumed:
+`create`/`update`/`mergeInto` all funnel through the ONE `_upsertFields`** (pinned, incl. the call-site
+COUNT); graduation only ever CREATEs; `setFieldFixedValue` stays ungoverned ON PURPOSE — it is the only
+route by which a wrong frozen identity can be corrected. Hold: a different identity commits but
+siblings get **70 WITH A NOTE**, and **the NOTE is the hold, not the confidence** (`< 70` review
+threshold — the slice-3 B2 lesson).
+**(5) `c353518` PHASE 3 — mig 66 + `template_buyer_issued_type_scope` (OFF); SLICE 3 REFUSED BY ITS OWN
+CENSUS.** 6514 corroboration records: `vat_no` **120 stamped / 0 contradicted** (and `_PRECISE_VAL_TYPES`
+is `{mac_address, ip_address}`, so VAT was never in scope), while the 121 contradictions that DO exist
+are `keyword="DELIVER TO"` and `crop="Jordwind…"` — caption fragments and garbles OF THE STAMPED NAME.
+It would hold ~121 correct documents and catch nothing. **Do not rebuild without re-running the census.**
+**(6) `ca90294` PHASE 4 — CENSUS F, then migration 67.** 1076 live confirmed docs through the real
+`isAutoFileEligible`: shipped defaults **919/1076 (85.4%)** → `graduation_window=5` **999/1076 (92.8%)**;
+**`corroboration_autofile` measured INERT here (919→919)** and is promoted on the Oracle sign-off, not
+on a number — the annotation says so. Promotes the import-arc five + window=5 + corroborated route as
+ROWS with `INSERT OR IGNORE` (a hand-disabled switch stays disabled, pinned). **Census F scores a
+MATURE install and confirmed rows have their notes cleared, so it CANNOT model the import-time refusal
+that holds a new customer's documents** — that number is the recorded 70/200 → ~184/200 import arc.
+**(7) `02918b4` PHASE 5 — duplicate senders + the rename can finish.** Report-only detector in Learning
+Repair (live: 11 scopes, 0 pairs). **Its own pin made it STRICTER than the write guard:**
+`Northgate`/`Southgate` is d=2 at 0.889 and PASSES `name_proximity` — fine at the guard's seam, wrong
+on a screen that offers a merge. Now 1 edit, or 2 only with a **digit inside an alphabetic token**.
+`renameSupplier` now also moves `template_fields.fixed_value` — **the gap that made a rename quietly
+undo itself on the next import**.
+**(8) `1f2b386` PHASE 6 — the lexicon, WEAK-only (`name_lexicon_low_distinct`, OFF).** The four-line
+root cause: `format_anomaly_checker`'s `len(samples) < 3` is on the DISTINCT set while `learning.js`
+emits on distinct≥3 **OR** count≥3, so Python discarded exactly what JS sent (Census E: 33 of 36
+scopes). Admitted as a **name lexicon and nothing else**, marked `low_distinct`, and **the engine
+refuses STRONG for it** — the suite DEMONSTRATES why (`Southgate` vs a 3-doc `Northgate` lexicon IS
+rewritten and reports STRONG). **B7 unconditional:** the STRONG branch stamps `<method>+name_repair`
+and `getFieldFormats` excludes it — **the METHOD is the carrier because `validation_note` and
+`corrected_to` are both cleared on confirm**, and it is written on the `method` key because the JS
+persists `data.method`. **ORDERED DEPENDENCY: arm `identity_scope_post_repair` FIRST** or the panel
+says "auto-corrected" while the file lands in the wrong folder.
+**(9) `3327a22` CHRIS ROUND 5** (`docs/CHRIS_FULL_APP_REVIEW_2026-08-13.md`, round-5 section; sandbox
+left on **CDP 9223 PID 26060**). Verdict moved: round 4 *"the condition is back on"* → **"yes — and the
+condition is lighter, but it hasn't come off"**, held by the recycle bin, NOT the teach. **The graft
+drew the SAME template as round 4**, recorded this time, so his `188/12` repeating EXACTLY is a stable
+number, not seeding noise; **migration 67 fired on the fresh install and seeded all 7 keys.** FIXED:
+teach speaks + refuses a bad box · cleared fields named with a working Undo · red dots · stamp
+placement · Empty bin · credit-note typing · the Restore-all trap. **HIS WORST CARD IS NOT OURS AND IS
+UNSOLVED: a restored document with NO PAGE** — doc #40's `working_path` points at
+`userData\inbox\40.pdf`, the row is back in the queue, **the file is gone while 156 others remain**,
+and `Confirm & File` stays enabled (`sweepInboxOrphans` and `_purgeOne` both RULED OUT). **Card 3 is
+OURS: the near-match challenge never fired because its substrate is human confirms and a FRESH install
+has none** — the design's Tier B (`template_fields.fixed_value` may trigger ASK) was not wired.
+NOTHING from his round implemented.
+**OWED: no corpus arm ran this session** (OFF is byte-identical by construction, but that is not a
+measurement) · **no owner UI smoke** · `teach_identity_near_match_keep`'s sandbox replay.
+
+### Prior — 2026-08-13 AFTERNOON: **READ `HANDOVER_2026-08-13_AFTERNOON.md` FIRST**, then the
+arc's controlling design **`docs/designs/TEACH_POISONING_ARC_2026-08-13.md`** (Oracle's NINE blocking
+conditions + the ordering). HEAD **`dc4bf1d`**, **3 COMMITS UNPUSHED**, tree clean, migration still 63,
+**no live-DB write, nothing flipped**. Owner-directed attack on the class Chris has reported for four
+rounds: **a teach commits a garbled company silently, freezes it, stamps 20 siblings at 95, files 12.**
+Six agents; **Oracle SENT THE CONSENSUS BACK** (9 conditions) and found the root cause below all three
+advisors: **`templates.js:1195` — the writer NEVER COMPARED WARRANTS**, so 38 confirmations lost to one
+draw-box read. Shipped in Oracle's order: **(1) `98d4fbb`** a machine-initiated clear no longer
+impersonates an operator correction (LIVE data loss — it wrote `display_value=''` + `was_corrected=1`
+through `learning.js:325`; in the repaint branch the screen showed CORRECT values while the row was
+blanked). **Oracle's own backend guard was WITHDRAWN** — `getFieldFormats` reads
+`(corrected_value || display_value)` and `''` is falsy, so it would leave a DELIBERATELY deleted value
+feeding learning for ever; and **B2c was REFUTED at source** (`clearAnchors` is inside
+`if (corrected_value)`). **(2) `175d853`** `identity_scope_post_repair` (OFF) — `_supplier_name` (the
+FOLDER + learning scope key) was captured before Stage 4.5 could heal the issuer; ADDS a late
+re-derivation, moves nothing. **(3) `dc4bf1d`** `teach_identity_near_match_keep` (OFF) + new
+`database/modules/name_proximity.js` — a near-miss keeps the incumbent; **a genuinely different company
+still displaces it (pinned — else a wrong frozen name is uncorrectable)**. **MEASURED: Census E —
+33/36 (91.7%) of name-like scopes hold ONE distinct confirmed value**, so the lexicon slice's `>=0.9`
+STRONG bar is a TAUTOLOGY there ⇒ **WEAK-only is mandatory**. B9 census: **the live install is CLEAN**
+(0 near-matches, 0 split scopes) — Chris's poison was sandbox-only. B3 arm: 1076 docs byte-identical,
+but **0 re-derivations fired ⇒ VACUOUS as an efficacy test** (its trigger is disabled by the same
+lexicon defect). **OPEN: B8 "the teach speaks" (no migration, highest value) and 4b "hold the
+siblings".** GOTCHAS: **never edit pipeline Python while an arm runs** (workers import per shard — cost
+a full arm); **`git stash push -- Docusnap/<path>` silently no-ops** because git's toplevel is
+`C:\GIT Projects`, so a verification run after it proves nothing.
+
+### Prior — 2026-08-13 NIGHT: **READ `HANDOVER_2026-08-13_NIGHT.md` FIRST.** HEAD **`53db7eb`**,
 PUSHED. Owner ordered the slice-3 B2 gate, then slept; the Chris round ran autonomously. **No flag
 flipped, no live-DB write, no migration (63), NO production code changed.**
 **(1) THE SLICE-3 ORACLE B2 GATE IS BUILT AND RUN** (`1766c62`, new
@@ -1238,8 +1345,8 @@ docusnap2/
 │   │   ├── validator.py                 # Stage 4: cross-field validation
 │   │   ├── value_quality.py             # name/company/address quality (name_quality, is_name_like_field) — JS mirror in learning.js; is_name_like_field EXCLUDES technical addresses (mac/ip = CODES, not names) ➜AN
 │   │   ├── text_normalise.py            # deterministic compare-time normaliser (NFKC/dash/quote/lower/ws/edge); JS twin database/modules/text_normalise.js
-│   │   ├── name_match.py                # Stage 4.5 token-level canonical NAME repair (lexicon + positional repair); suggestion-only
-│   │   └── identity_fusion.py           # text-led SUPPLIER identity — DORMANT/SHADOW mode (changes nothing; rapidfuzz promotion pending, HANDOVER_2026-07-07.md) ➜AN
+│   │   ├── name_match.py                # Stage 4.5 token-level canonical NAME repair. ⚠ NOT "suggestion-only" (CORRECTED 2026-08-13): the STRONG tier (every changed token doc_freq>=0.9) AUTO-APPLIES at engine.py:7920-7932; only WEAK is suggestion-only. ⚠ Its lexicon is DEAD for 33 of 36 name scopes on this install — format_anomaly_checker.py:763 drops any group with <3 DISTINCT values BEFORE the build, and 91.7% of scopes hold exactly ONE (so doc_freq==1.0 makes the 0.9 STRONG bar a tautology there). JS twin of the deterministic legs = database/modules/name_proximity.js
+│   │   └── identity_fusion.py           # text-led SUPPLIER identity. ⚠ NOT DORMANT (CORRECTED 2026-08-13): rapidfuzz 3.14.5 IS vendored, licensed and BUILD-ENFORCED (scripts/check-vendor-python.js:35); `identity_conflict_flag` defaults ON and the conflict arm sets _needs_review (engine.py:8349-8369). The only name-vs-known-SET matcher, but its gazetteer is logo/hint/anchor rows ONLY and it never sees a teach. Stale "unbundled → no-op" comments remain at engine.py:27-29 and :8372 ➜AN
 │   ├── ocr/{tesseract.py,region.py,landmarks.py,text_enhance.py,born_digital.py}  # tesseract.py rebuilds page text from word GEOMETRY (visual rows — the scanned-totals two-column fix); region.py draw-tool zone-OCR, light-first ladder + multi-line PSM-6; landmarks (registration); text_enhance (degraded re-read); born_digital (PDF text layer, skips OCR) ➜AN
 │   ├── logo/fingerprint.py
 │   ├── ocr/orientation.py              # AUTO-ROTATE (90/180/270) via Tesseract OSD; rotation SIGN convention PROVEN in tests/test_orientation.py (PIL CCW vs pypdf CW — a wrong sign corrupts every doc); working-copy rotated once at import; auto_rotate_enabled default ON ➜AN
