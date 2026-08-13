@@ -155,11 +155,20 @@ function issuerReadLooksImplausible(value) {
 // module (`name_proximity`, the JS twin of Python's `name_match`), so the sentence on screen and
 // the decision in the database can never disagree.
 //
-// THE SUBSTRATE IS HUMAN CONFIRMS ONLY (design Tier A). `documents.supplier_name` on CONFIRMED
-// documents, excluding every machine `confirmed_via` — because the exhibit's own 20 poisoned
-// documents were machine-stamped at 95, and a machine cohort must never become the "name you
-// already use" that the app offers back. `minConfirms` defaults to 3 so a single earlier typo
-// cannot become the suggested target.
+// TWO SOURCES, TWO TIERS.
+//
+// TIER A — HUMAN CONFIRMS (`source: 'confirms'`). `documents.supplier_name` on CONFIRMED documents,
+// excluding every machine `confirmed_via` — because the exhibit's own 20 poisoned documents were
+// machine-stamped at 95, and a machine cohort must never become the "name you already use" that the
+// app offers back. `minConfirms` defaults to 3 so a single earlier typo cannot become the target.
+//
+// TIER B — FROZEN TEMPLATE IDENTITIES (`source: 'template'`, Chris round 5 card 3). A FRESH install
+// has ZERO confirmed documents, so Tier A is empty and the challenge never fired for the person
+// holding the pen — yet the correct spelling was sitting right there, frozen on the sender's own
+// taught layout (`template_fields.fixed_value`, the seeded/curated identity). Tier B surfaces it so
+// the ASK fires from document one. It is ASK-ONLY: Tier A OUTRANKS it (a frozen value can itself be
+// a prior garble), and the >= minConfirms human-confirm bar still governs everything that WRITES
+// (the write guard `teach_identity_near_match_keep` is unchanged).
 //
 // ADVISORY ONLY: returns a verdict, changes nothing, blocks nothing. The caller decides whether to
 // offer the incumbent; the operator decides whether to take it.
@@ -172,25 +181,41 @@ function findNearMatchIdentity(db, candidate, { minConfirms = 3 } = {}) {
   let hasVia = true;
   try { db.prepare('SELECT confirmed_via FROM documents LIMIT 0'); } catch { hasVia = false; }
   const { MACHINE_VIAS_SQL } = require('./machine_vias');
-  let rows = [];
+  let best = null;
+  const consider = (existing, n, source) => {
+    if (!existing) return;
+    const verdict = nearMatchIdentity(v, existing);
+    if (!verdict.near) return;
+    // Tier A always beats Tier B; within a tier, the closer match wins.
+    const beatsTier = best && best.source === 'template' && source === 'confirms';
+    const sameTierCloser = best && best.source === source && verdict.similarity > best.similarity;
+    if (!best || beatsTier || sameTierCloser) {
+      best = { near: true, existing, confirms: n, similarity: verdict.similarity, distance: verdict.distance, source };
+    }
+  };
+  // Tier A — human confirms.
   try {
-    rows = db.prepare(`
+    for (const r of db.prepare(`
       SELECT TRIM(supplier_name) AS v, COUNT(*) AS n
       FROM documents
       WHERE status = 'confirmed' AND supplier_name IS NOT NULL AND TRIM(supplier_name) <> ''
         ${hasVia ? `AND COALESCE(confirmed_via, '') NOT IN (${MACHINE_VIAS_SQL})` : ''}
       GROUP BY LOWER(TRIM(supplier_name))
-    `).all();
-  } catch { return { near: false, reason: 'unavailable' }; }
-  let best = null;
-  for (const r of rows) {
-    if (!r.v || r.n < minConfirms) continue;
-    const verdict = nearMatchIdentity(v, r.v);
-    if (!verdict.near) continue;
-    if (!best || verdict.similarity > best.similarity) {
-      best = { near: true, existing: r.v, confirms: r.n, similarity: verdict.similarity, distance: verdict.distance };
+    `).all()) {
+      if (r.v && r.n >= minConfirms) consider(r.v, r.n, 'confirms');
     }
-  }
+  } catch { /* fall through to Tier B rather than failing the whole challenge */ }
+  // Tier B — frozen template identities (ASK-only; the fresh-install source).
+  try {
+    for (const r of db.prepare(`
+      SELECT DISTINCT TRIM(fixed_value) AS v
+      FROM template_fields
+      WHERE field_key = 'supplier_name' AND is_variable = 0
+        AND fixed_value IS NOT NULL AND TRIM(fixed_value) <> ''
+    `).all()) {
+      consider(r.v, null, 'template');
+    }
+  } catch { /* older DBs without template_fields — any Tier A result still stands */ }
   return best || { near: false, reason: 'no-near-match' };
 }
 

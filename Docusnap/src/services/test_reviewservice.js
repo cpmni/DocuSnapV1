@@ -45,7 +45,7 @@ const deps = {
         ? { success: false, error: 'disk full' }
         : { success: true, filename: 'F.pdf', filePath: '/out/F.pdf', metadataPath: '/out/.metadata/F.xml', srcPath: '/in/scan.pdf' };
     } },
-  fs: { existsSync: () => false, unlinkSync: () => {} },
+  fs: { existsSync: () => true, unlinkSync: () => {} },   // the fixture's docs HAVE a filable page (card 1 no-page guard reads this)
   path: require('path'),
   logger: null,
   audit: (_db, e) => calls.audit.push(e),
@@ -142,6 +142,17 @@ const basePayload = (id, extra = {}) => ({
   check('  → doc rolled back to needs_review (not stranded confirmed)', get(db, d5).status === 'needs_review');
   check('  → confirmed_by cleared on rollback', get(db, d5).confirmed_by_username === null);
   filingMode = 'ok';
+
+  // ── NO-PAGE GUARD (Chris round 5, card 1): a doc whose scanned page is gone must be REFUSED
+  //    before the claim — never file an empty record, never present a working Confirm. Modelled by
+  //    an fs where the source does not exist. ──────────────────────────────────────────────────
+  const svcNoPage = createReviewService({ ...deps, fs: { existsSync: () => false, unlinkSync: () => {} } });
+  const dGone = newDoc(db);
+  const commitsBeforeGone = calls.commit;
+  const rGone = await svcNoPage.confirm(db, { username: 'sarah', role: 'admin' }, basePayload(dGone));
+  check('no-page doc → ok:false, code NO_SOURCE_FILE', rGone.ok === false && rGone.code === 'NO_SOURCE_FILE');
+  check('  → did NOT file (commit not called)', calls.commit === commitsBeforeGone);
+  check('  → NOT claimed — stays needs_review (no status churn)', get(db, dGone).status === 'needs_review');
 
   // ── defer / restore CAS ───────────────────────────────────────────────────────
   const d6 = newDoc(db);

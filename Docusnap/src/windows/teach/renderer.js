@@ -1304,9 +1304,13 @@ async function _warnOnIssuerValue(f, r){
   host.querySelector('.rb-idwarn')?.remove();
   let html = null, offer = null;
   if (nm && nm.near) {
+    // Tier B (a fresh install) knows the name only from the sender's own frozen layout, not a
+    // confirm count — word it accordingly so the sentence is never "on null documents" (card 3).
+    const known = nm.source === 'template'
+      ? `<span class="mono">${esc(nm.existing)}</span>, the name this sender's saved layout already uses`
+      : `<span class="mono">${esc(nm.existing)}</span>, which you already use on ${nm.confirms} document${nm.confirms === 1 ? '' : 's'}`;
     html = `&#9888; That is <strong>${nm.distance === 1 ? 'one character' : nm.distance + ' characters'}</strong> different from `
-         + `<span class="mono">${esc(nm.existing)}</span>, which you already use on ${nm.confirms} document`
-         + `${nm.confirms === 1 ? '' : 's'}. Two spellings file this sender into two folders.`;
+         + `${known}. Two spellings file this sender into two folders.`;
     offer = nm.existing;
   } else if (implausible) {
     html = `&#9888; That doesn't look like a company name. Redraw it, or type the name as printed below.`;

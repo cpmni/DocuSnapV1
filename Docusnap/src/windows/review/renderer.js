@@ -204,6 +204,7 @@ let currentDoc       = null;
 let _lastRenderedDoc = null;   // the FULL doc object renderFields last drew (≠ currentDoc, which is the queue stub) — the live field-visibility re-resolve mutates + re-renders THIS one
 let currentPage      = 0;
 let pageImages       = [];
+let _currentPageMissing = false;   // card 1: the interactive doc SHOULD have a page but none rendered (file gone) — gates Confirm
 let fieldDefs        = [];
 let corrections      = {};
 // Field keys emptied by _clearSuspectReadsForNewIssuer because the ISSUER changed — a
@@ -1338,6 +1339,7 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
   // only the field values, never the image).
   if (fieldsOnly) {
     pageImages = [];
+    _currentPageMissing = false;   // bulk never loads the preview — the SERVER no-page guard covers it
   } else {
     try {
       pageImages = (doc.folder_path && doc.original_filename)
@@ -1348,6 +1350,12 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
       pageImages = [];
     }
     if (currentDoc?.id !== doc.id) return;   // a newer doc was selected while pages loaded — don't clobber its preview (this same _selectDoc set currentDoc=doc at the top, so the latest selection always passes)
+    // card 1: a review-queue doc always has a backing file (working_path, or its original in
+    // folder_path). If none rendered, the page is genuinely GONE — flag it so Confirm is blocked
+    // and the placeholder says so (not just "No preview available"). doc.has_page, when the queue
+    // read provides it, avoids flagging a doc that legitimately never had an image.
+    const _shouldHavePage = !!(doc.working_path || (doc.folder_path && doc.original_filename));
+    _currentPageMissing = _shouldHavePage && pageImages.length === 0;
     renderPage();
   }
 
@@ -1448,7 +1456,9 @@ function renderPage() {
   if (!pageImages || pageImages.length === 0) {
     docImgWrap.style.display  = 'none';
     placeholder.style.display = '';
-    placeholder.textContent   = currentDoc ? 'No preview available' : 'Select a document from the queue';
+    placeholder.textContent   = !currentDoc ? 'Select a document from the queue'
+      : _currentPageMissing ? 'The scanned page for this document is no longer available. Its details are still here, but there is nothing to file.'
+      : 'No preview available';
     indicator.textContent     = '—';
     return;
   }
@@ -3493,6 +3503,22 @@ function resolveCandidatePick(key, cand, row, input) {
 function validateConfirm() {
   const btn = document.getElementById('btn-confirm');
 
+  // NO-PAGE gate (card 1): a document whose scanned page is gone cannot be filed — the server
+  // refuses it, so never present an enabled Confirm & File that will only fail. Trumps every other
+  // check below. Only the interactive view sets this; bulk relies on the server guard.
+  if (_currentPageMissing) {
+    const _n = document.getElementById('confirm-config-note');
+    if (_n) {
+      _n.textContent = 'The scanned page for this document is no longer available, so it can’t be filed. '
+        + 'Its details stay in Search — you can delete this entry from the queue.';
+      Object.assign(_n.style, { display: '', color: 'var(--warn)', fontSize: '12px',
+        lineHeight: '1.4', padding: '6px 14px' });
+    }
+    btn.disabled = true;
+    markRequiredMissing([]);
+    return;
+  }
+
   const _note0 = document.getElementById('confirm-config-note');
   // Need a doc type selected. SAY SO (Oracle C1, 2026-07-20): this used to disable Confirm and
   // write no note at all, so an untyped document showed a greyed-out button with nothing on
@@ -3784,6 +3810,7 @@ function drawAllTraceBoxes() {
 
 selCanvas.addEventListener('mousedown', (e) => {
   if (!activeField && !anchorDrawField) return;
+  hideAnchorReadout();   // card 7: a new draw starts — clear the previous box's read-back so the next message is unambiguous
   isDragging = true;
   const p    = canvasPoint(e, selCanvas);   // zoom/pan-compensated canvas-buffer px
   dragStart  = { x: p.x, y: p.y };
@@ -4519,9 +4546,14 @@ async function speakIssuerTeach(fieldKey, text) {
   try { nm = await window.docusnap.checkIdentityNearMatch(text); } catch {}
   const read = `I read <span class="ar-val">${escHtml(text)}</span> from your box.`;
   if (nm && nm.near) {
+    // Tier A names how many documents already use the name; Tier B (a fresh install, where the only
+    // record of the correct spelling is the sender's own frozen layout) names the layout instead.
+    const _known = nm.source === 'template'
+      ? `<span class="ar-val">${escHtml(nm.existing)}</span>, the name this sender's saved layout already uses`
+      : `<span class="ar-val">${escHtml(nm.existing)}</span>, which you already use on ${nm.confirms} document${nm.confirms === 1 ? '' : 's'}`;
     showTeachMessage(
       `&#9888; ${read} That is <strong>${nm.distance === 1 ? 'one character' : nm.distance + ' characters'}</strong> different from `
-      + `<span class="ar-val">${escHtml(nm.existing)}</span>, which you already use on ${nm.confirms} document${nm.confirms === 1 ? '' : 's'}. `
+      + `${_known}. `
       + `Two spellings would file this sender into two folders.`,
       { warn: true, actions: [
         { label: `Use "${nm.existing}"`, kind: 'primary', onClick: () => {
@@ -5056,7 +5088,8 @@ async function fileAllReady() {
   banner.classList.add('show');
   barFill.style.width = '0';
 
-  let filed = 0, skipped = 0, noType = 0, aborted = false;
+  let filed = 0, skipped = 0, noType = 0, missingReq = 0, aborted = false;
+  const missingReqFields = new Set();   // labels of required fields that held docs back (card 2 summary)
   const _fileAllScopes = new Map();   // JSON([supplier, slug]) -> filed count (catch-up trigger)
 
   try {
@@ -5079,7 +5112,17 @@ async function fileAllReady() {
         await selectDoc(doc, { fieldsOnly: true });    // loads fields (no preview render); runs validateConfirm()
         if (confirmBtn.disabled) {                     // not ready — leave for review
           skipped++;
-          if (!doc.type_slug) noType++;                // dominant reason: no document type detected
+          if (!doc.type_slug) {
+            noType++;                                   // dominant reason: no document type detected
+          } else {
+            // typed but held — a required field is empty (or a dangling role). Name the fields
+            // validateConfirm just marked, so the zero-filed summary can explain itself (card 2).
+            missingReq++;
+            document.querySelectorAll('.field-row-label.required-missing').forEach(el => {
+              const lab = (el.textContent || '').trim();
+              if (lab) missingReqFields.add(lab);
+            });
+          }
           continue;
         }
         const r = await confirmCurrentDoc({ bulk: true, expectId: doc.id });
@@ -5151,20 +5194,39 @@ async function fileAllReady() {
   // built from `_fileAllScopes`, which the run already collects for the catch-up sweep, and it sits
   // on the persistent bar until dismissed. Naming the companies is the point: a wrong one is
   // recognisable at a glance, which is exactly what nobody got the chance to do.
-  if (filed) {
-    const _byCo = [..._fileAllScopes.entries()]
-      .map(([k, n]) => { try { return { name: JSON.parse(k)[0], n }; } catch { return null; } })
-      .filter(Boolean).sort((a, b) => b.n - a.n);
-    const _list = _byCo.slice(0, 6).map(c => `<strong>${escHtml(c.name)}</strong> (${c.n})`).join(', ');
-    const _more = _byCo.length > 6 ? ` and ${_byCo.length - 6} more` : '';
-    try {
+  // ALWAYS fires (Chris round 5, card 2): "filed 0, said nothing" — the run that most needs an
+  // explanation is exactly a zero-filed run, so the summary must NOT be gated on `filed`.
+  try {
+    // Spell out the dominant HELD reason so "Filed 0 of 40" is never a silent dead end.
+    const _reasons = [];
+    if (missingReq) {
+      const _f = [...missingReqFields].slice(0, 3);
+      _reasons.push(`${missingReq} still ${missingReq === 1 ? 'needs' : 'need'} a required field`
+        + (_f.length ? ` (${_f.map(escHtml).join(', ')})` : ''));
+    }
+    if (noType) _reasons.push(`${noType} ${noType === 1 ? 'has' : 'have'} no document type detected`);
+    const _other = skipped - missingReq - noType;
+    if (_other > 0) _reasons.push(`${_other} not ready to file`);
+    const _heldNote = _reasons.length ? ` — ${_reasons.join('; ')}. They stay in the queue for you to check.` : '';
+
+    if (filed) {
+      const _byCo = [..._fileAllScopes.entries()]
+        .map(([k, n]) => { try { return { name: JSON.parse(k)[0], n }; } catch { return null; } })
+        .filter(Boolean).sort((a, b) => b.n - a.n);
+      const _list = _byCo.slice(0, 6).map(c => `<strong>${escHtml(c.name)}</strong> (${c.n})`).join(', ');
+      const _more = _byCo.length > 6 ? ` and ${_byCo.length - 6} more` : '';
       showTeachMessage(
         `&#10003; Filed ${filed} document${filed === 1 ? '' : 's'}`
         + (_list ? ` &mdash; ${_list}${_more}` : '')
-        + (skipped ? `. ${skipped} left in the queue for you to check.` : '.'),
+        + (skipped ? `.${_heldNote || ` ${skipped} left in the queue for you to check.`}` : '.'),
         { warn: !!skipped });
-    } catch { /* the summary must never affect the filing that already happened */ }
-  }
+    } else {
+      // ZERO filed — say so plainly, with the reason (card 2).
+      showTeachMessage(
+        `Filed 0 of ${_eligible} document${_eligible === 1 ? '' : 's'}${_heldNote || '.'}`,
+        { warn: true });
+    }
+  } catch { /* the summary must never affect the filing that already happened */ }
 }
 document.getElementById('btn-file-all-review')?.addEventListener('click', fileAllReady);
 

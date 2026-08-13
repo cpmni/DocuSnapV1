@@ -4093,11 +4093,19 @@ function ensureWorkingCopy(fs, path, inboxDir, srcPath, docId, originalFilename)
 // debris from a crash and is collected. Removes:
 //   • interrupted-copy debris  (*.part)
 //   • orphaned working copies  (no documents row for that id)
-//   • dead working copies      (the doc is already confirmed/deleted)
-// Keeps copies for live docs (needs_review/deferred/error/pending). A crash can
-// only ever leave EXTRA files (cleaned here) — never lose a document, because an
-// original is only removed after a verified copy. Pure: fs/path/db injected for
-// hermetic testing. Returns a summary of what it did.
+//   • dead working copies      (the doc is already CONFIRMED — its copy was
+//                               unlinked + working_path nulled at confirm time,
+//                               so any file left is crash debris)
+// Keeps copies for live docs (needs_review/deferred/error/pending) AND for
+// SOFT-DELETED docs. A deleted doc is RECOVERABLE — softDelete keeps the file and
+// its working_path pointer intact (its own promise: "the file(s) are KEPT"), so
+// culling it here left a restored row pointing at a file that startup had already
+// deleted (Chris round 5, card 1 — a restored document with no page, and
+// Confirm & File still offered). A deleted doc's copy is only removed once the bin
+// is EMPTIED (_purgeOne deletes the row too → next reconcile sees a true orphan).
+// A crash can only ever leave EXTRA files (cleaned here) — never lose a document,
+// because an original is only removed after a verified copy. Pure: fs/path/db
+// injected for hermetic testing. Returns a summary of what it did.
 function reconcileHolding(fs, path, db, inboxDir) {
   const summary = { scanned: 0, partsRemoved: 0, orphansRemoved: 0, deadRemoved: 0, kept: 0 };
   if (!fs.existsSync(inboxDir)) return summary;
@@ -4107,7 +4115,9 @@ function reconcileHolding(fs, path, db, inboxDir) {
   const statusById = new Map(
     db.prepare('SELECT id, status FROM documents').all().map(r => [r.id, r.status])
   );
-  const DEAD = new Set(['confirmed', 'deleted']);
+  // 'deleted' is DELIBERATELY NOT here: a soft-deleted doc is recoverable and its
+  // copy must survive a restart so Restore can bring back a readable page (card 1).
+  const DEAD = new Set(['confirmed']);
 
   for (const name of entries) {
     summary.scanned++;

@@ -613,7 +613,7 @@
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Auto-file earlier when two readings agree</div>
-                <div class="threshold-sub">For a supplier you've confirmed a few times cleanly (but fewer than the usual ten), file a 95%+ document automatically when two independent reading methods found the same issuer, reference and date on the page — every other safety check still applies. Off by default.</div>
+                <div class="threshold-sub">For a supplier you've confirmed a few times cleanly (but fewer than the full trust window above), file a 95%+ document automatically when two independent reading methods found the same issuer, reference and date on the page — every other safety check still applies. On by default.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="corrob-autofile-toggle"><span class="toggle-slider"></span></label>
             </div>
@@ -627,11 +627,11 @@
             <div class="threshold-row" id="graduation-window-row">
               <div>
                 <div class="threshold-label">Clean confirmations before a sender is trusted</div>
-                <div class="threshold-sub">How many of a sender's documents you confirm (without corrections) before Scan Finder treats that sender as learned and lets its documents auto-file at 95%+. Ten is the cautious default; lower it if your senders settle in quickly, raise it if you want a longer proving period.</div>
+                <div class="threshold-sub">How many of a sender's documents you confirm (without corrections) before Scan Finder treats that sender as learned and lets its documents auto-file at 95%+. Five is the default (measured to file more of a settled sender's documents without letting anything wrong through); raise it if you want a longer proving period, lower it if your senders settle in quickly.</div>
               </div>
               <div class="conf-row">
-                <input type="range" class="conf-slider" id="graduation-window" min="3" max="20" value="10">
-                <span class="conf-val" id="graduation-window-val">10</span>
+                <input type="range" class="conf-slider" id="graduation-window" min="3" max="20" value="5">
+                <span class="conf-val" id="graduation-window-val">5</span>
               </div>
             </div>
             <div class="threshold-row">
@@ -784,14 +784,14 @@
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Let the printed title decide the document's type</div>
-                <div class="threshold-sub">An address caption like “BILL TO” no longer counts as a document title (it says who the document is for, not what it is); a real title that shares its line with the letterhead still counts; and when two types score a dead heat, the one whose actual title is printed on the page wins. Fixes credit notes being typed as invoices. Off by default.</div>
+                <div class="threshold-sub">An address caption like “BILL TO” no longer counts as a document title (it says who the document is for, not what it is); a real title that shares its line with the letterhead still counts; and when two types score a dead heat, the one whose actual title is printed on the page wins. Fixes credit notes being typed as invoices. On by default.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="type-election-title-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Don't ask about a date disagreement other readings already settled</div>
-                <div class="threshold-sub">When the taught position and the full-page read of a date disagreed, but a second independent reading of the page agrees with the value that was kept, the "please verify" warning is released — the disagreement is still recorded for the developer view. Dates only; anything genuinely unresolved still asks. Off by default.</div>
+                <div class="threshold-sub">When the taught position and the full-page read of a date disagreed, but a second independent reading of the page agrees with the value that was kept, the "please verify" warning is released — the disagreement is still recorded for the developer view. Dates only; anything genuinely unresolved still asks. On by default.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="xcheck-demote-toggle"><span class="toggle-slider"></span></label>
             </div>
@@ -1029,21 +1029,21 @@
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Don't hold a ready document just because an optional field is blank</div>
-                <div class="threshold-sub">One filing decision, everywhere: a document a trusted sender's history says is safe to file no longer waits in Review because an optional field (like a VAT number the page doesn't print) read empty. A missing Reference or Date still holds the document, and any field with a real warning always holds it. Off by default.</div>
+                <div class="threshold-sub">One filing decision, everywhere: a document a trusted sender's history says is safe to file no longer waits in Review because an optional field (like a VAT number the page doesn't print) read empty. A missing Reference or Date still holds the document, and any field with a real warning always holds it. On by default.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="autofile-gate-unify-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Let a reprocess clear out stale hidden working figures</div>
-                <div class="threshold-sub">The maths check sometimes keeps an old hidden working figure (like a VAT amount misread from the letterhead's VAT registration number) even after a reprocess reads the page correctly — so a fixed document keeps failing its "adds up" check forever. On, a reprocess drops any hidden working figure the fresh read no longer produces. Values you corrected yourself are never touched. Off by default.</div>
+                <div class="threshold-sub">The maths check sometimes keeps an old hidden working figure (like a VAT amount misread from the letterhead's VAT registration number) even after a reprocess reads the page correctly — so a fixed document keeps failing its "adds up" check forever. On, a reprocess drops any hidden working figure the fresh read no longer produces. Values you corrected yourself are never touched. On by default.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="shadow-stale-drop-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">"File All Ready" files documents whose only note is a blank optional field</div>
-                <div class="threshold-sub">The orange "low confidence" check only counts fields that actually read a value. A document whose optional fields simply came back empty shows as ready and files with File All Ready; anything with a warning or a weak <em>valued</em> read still waits for you. Off by default.</div>
+                <div class="threshold-sub">The orange "low confidence" check only counts fields that actually read a value. A document whose optional fields simply came back empty shows as ready and files with File All Ready; anything with a warning or a weak <em>valued</em> read still waits for you. On by default.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="far-valued-only-toggle"><span class="toggle-slider"></span></label>
             </div>

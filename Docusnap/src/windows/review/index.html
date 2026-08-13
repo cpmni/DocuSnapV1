@@ -364,7 +364,9 @@
       padding: 5px 8px; color: var(--text); font-family: var(--sans); font-size: 11px; outline: none;
     }
     #wizard-panel select:focus, #wizard-panel input[type="text"]:focus { border-color: var(--accent); }
-    .anchor-readout { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 20;
+    /* top offset clears #doc-toolbar (the readout's offset parent is #doc-panel, which the toolbar
+       sits at the top of) so the read-back never covers the zoom/page/Straighten controls — card 7. */
+    .anchor-readout { position: absolute; top: 46px; left: 50%; transform: translateX(-50%); z-index: 20;
       max-width: 92%; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
       background: var(--surface); border: 1px solid var(--accent); border-left: 4px solid var(--accent);
       border-radius: 10px; padding: 9px 13px 9px 12px; box-shadow: 0 10px 30px rgba(0,0,0,.30);

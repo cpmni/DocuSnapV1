@@ -3,8 +3,9 @@
  * ------------------------------------------------
  * Unit test for reconcileHolding (Slice 4) — sweeping the inbox holding area
  * back into agreement with the DB (the source of truth) after a crash. Removes
- * .part debris, orphaned copies (no row), and dead copies (confirmed/deleted);
- * keeps live copies (needs_review/deferred/error/pending) and unmanaged files.
+ * .part debris, orphaned copies (no row), and dead copies (CONFIRMED only);
+ * keeps live copies (needs_review/deferred/error/pending), SOFT-DELETED copies
+ * (recoverable — card 1), and unmanaged files.
  * Pure fs/path/db injected — hermetic.
  *
  * Run with Electron-as-Node:
@@ -26,9 +27,13 @@ const check = (name, cond) => {
 const db = new Database(':memory:');
 db.exec('CREATE TABLE documents (id INTEGER PRIMARY KEY, status TEXT)');
 const ins = db.prepare('INSERT INTO documents (id, status) VALUES (?, ?)');
-ins.run(1, 'needs_review');   // live   → keep
-ins.run(2, 'confirmed');      // dead   → remove
-ins.run(3, 'error');          // live   → keep
+ins.run(1, 'needs_review');   // live      → keep
+ins.run(2, 'confirmed');      // dead      → remove (copy already unlinked at confirm; any file is debris)
+ins.run(3, 'error');          // live      → keep
+// A SOFT-DELETED doc keeps its copy across a restart — softDelete keeps the file and
+// its working_path pointer, so Restore must find a readable page (Chris round 5, card 1).
+// This is the pin that RED-PROVES the fix: with 'deleted' in DEAD (the bug), 4.pdf was culled.
+ins.run(4, 'deleted');        // recoverable → KEEP (only _purgeOne removes it, by deleting the row)
 
 const INBOX = 'C:/inbox';
 function makeFs(names) {
@@ -43,16 +48,17 @@ function makeFs(names) {
   };
 }
 
-const fs = makeFs(['1.pdf', '2.pdf', '3.pdf', '9.pdf', 'x.part', 'note.txt']);
+const fs = makeFs(['1.pdf', '2.pdf', '3.pdf', '4.pdf', '9.pdf', 'x.part', 'note.txt']);
 const s  = reconcileHolding(fs, path, db, INBOX);
 
-check('scanned all 6 entries',          s.scanned === 6);
+check('scanned all 7 entries',          s.scanned === 7);
 check('1 .part debris removed',         s.partsRemoved === 1);
 check('1 orphan (no row) removed',      s.orphansRemoved === 1);
-check('1 dead (confirmed) removed',     s.deadRemoved === 1);
-check('3 kept',                         s.kept === 3);
+check('1 dead (confirmed) removed',     s.deadRemoved === 1);   // NOT 2 — deleted is no longer dead
+check('4 kept',                         s.kept === 4);
 check('needs_review copy kept',         fs._set.has(path.join(INBOX, '1.pdf')));
 check('error copy kept',                fs._set.has(path.join(INBOX, '3.pdf')));
+check('DELETED copy KEPT (card 1)',     fs._set.has(path.join(INBOX, '4.pdf')));
 check('confirmed copy removed',         !fs._set.has(path.join(INBOX, '2.pdf')));
 check('orphan copy removed',            !fs._set.has(path.join(INBOX, '9.pdf')));
 check('.part removed',                  !fs._set.has(path.join(INBOX, 'x.part')));

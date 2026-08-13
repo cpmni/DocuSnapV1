@@ -101,6 +101,35 @@ console.log('1. findNearMatchIdentity — the substrate and the verdict');
         learning.findNearMatchIdentity(db, 'Anything Ltd').near === false);
   db.close();
 }
+{
+  // TIER B — frozen template identity (Chris round 5, card 3). A FRESH install has ZERO confirmed
+  // docs, so Tier A finds nothing; the correct spelling lives only on the sender's own taught
+  // layout. Tier B must surface it as an ASK-only source so the challenge fires from document one.
+  const db = freshDb();
+  db.exec(`CREATE TABLE templates (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, slug TEXT);
+           CREATE TABLE template_fields (id INTEGER PRIMARY KEY AUTOINCREMENT, template_id INTEGER,
+             field_key TEXT, fixed_value TEXT, is_variable INTEGER DEFAULT 1);`);
+  db.prepare("INSERT INTO templates (id, name, slug) VALUES (1, 'Bramblewood PO', 'bramblewood-po')").run();
+  db.prepare("INSERT INTO template_fields (template_id, field_key, fixed_value, is_variable) VALUES (1,'supplier_name','Bramblewood Joinery Ltd',0)").run();
+  const b = learning.findNearMatchIdentity(db, 'Drambiewood Joinery Ltd');
+  check('Tier B fires with NO confirmed docs (the fresh-install case that was silent)', b.near === true);
+  check('  → it names the frozen correct spelling', b.existing === 'Bramblewood Joinery Ltd');
+  check('  → it is labelled source:template so the sentence never says "on null documents"', b.source === 'template');
+  check('a genuinely different company still is not a near match under Tier B',
+        learning.findNearMatchIdentity(db, 'Zenith Logistics PLC').near === false);
+  check('re-teaching the exact frozen value raises no needless ASK',
+        learning.findNearMatchIdentity(db, 'Bramblewood Joinery Ltd').near === false);
+  // A VARIABLE (non-frozen) identity field is NOT a Tier-B source — only frozen identities are.
+  db.prepare("INSERT INTO template_fields (template_id, field_key, fixed_value, is_variable) VALUES (2,'supplier_name','Silverbeck Supplies Ltd',1)").run();
+  check('a NON-frozen (is_variable=1) identity is not a Tier-B source',
+        learning.findNearMatchIdentity(db, 'Silverbeck Suplies Ltd').near === false);
+  // Tier A OUTRANKS Tier B: 3 human confirms of a name win over any frozen value.
+  addDocs(db, 'Northgate Motors Ltd', 3);
+  const a = learning.findNearMatchIdentity(db, 'Northgate Motprs Ltd');
+  check('Tier A (human confirms) outranks Tier B and is labelled source:confirms',
+        a.near === true && a.source === 'confirms' && a.confirms === 3);
+  db.close();
+}
 
 // ── 2. no teach path is left silent ──────────────────────────────────────────────────────────
 console.log('\n2. every outcome of a draw says something (review/renderer.js)');

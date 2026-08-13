@@ -87,6 +87,23 @@ function createReviewService(deps = {}) {
     //     (deconfirmDocument KEEPS stored_path). In BOTH, passing it as existingFiledPath makes
     //     the re-confirm REPLACE the original copy IN PLACE instead of minting a -DUPLICATE.
     const oldStoredPath = (docRow && docRow.stored_path) ? docRow.stored_path : null;
+
+    // NO-PAGE GUARD (Chris round 5, card 1): never file a document whose scanned page is gone.
+    // The reconcileHolding fix stops NEW page loss, but a doc damaged by the old startup sweep —
+    // or by OneDrive dehydration, a manual file deletion, or a crash — can still reach here with a
+    // stale working_path and no file on disk. Filing would fail deep in commitDocument with a raw
+    // "Source file not found: <path>"; refuse EARLY (before the claim, so no status churn) with a
+    // message the operator can act on. Mirrors filing.commitDocument's copyFrom precedence exactly.
+    const _srcPath = (folder_path && original_filename) ? path.join(folder_path, original_filename) : null;
+    const _hasPage = (workingPath   && fs.existsSync(workingPath))
+                  || (oldStoredPath && fs.existsSync(oldStoredPath))
+                  || (_srcPath      && fs.existsSync(_srcPath));
+    if (!_hasPage) {
+      return fail('NO_SOURCE_FILE',
+        "The scanned page for this document is no longer available, so it can’t be filed. "
+        + "Its details are still in Search — you can delete this entry from the queue.");
+    }
+
     // isRefile = SKIP the atomic claim. Only an ALREADY-CONFIRMED doc with explicit caller intent
     // does so ("Edit in Review"; renderer: allowRefile = status==='confirmed'). A confirm from the
     // review QUEUE (needs_review — incl. a Learning-Repair send-back) must still CLAIM (so a lost
