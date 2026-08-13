@@ -206,6 +206,24 @@ function register(ctx) {
     }
   });
 
+  // ── "That name is one character off one you already use" (read-only, advisory) ─────────────
+  // The customer-facing half of the write guard in `dc4bf1d`. `templates._upsertFields` already
+  // KEEPS an incumbent frozen identity when a teach brings a near match; this lets the teach
+  // surfaces SAY so at the draw, in the operator's own moment, instead of the app appearing to
+  // ignore them. Chris round 4, card 2 — his own proposed sentence.
+  //
+  // Advisory only: no write, no block, no rewrite. A failure returns "not near", so a broken
+  // lookup can never stop a teach (the same posture as check-issuer-read).
+  ipcMain.handle('check-identity-near-match', (_e, value) => {
+    requireLogin();
+    try {
+      return learning.findNearMatchIdentity(getDb(), value);
+    } catch (e) {
+      logger?.warn?.(`check-identity-near-match: ${e.message}`);
+      return { near: false, reason: 'error' };
+    }
+  });
+
   // ── Built-in field label words (read-only, for the label-overrides UI) ───────
   // The shipped `field_patterns` own the canonical fields' detection words globally
   // (invoice_number, supplier_name, total_amount, …). The Settings → label-overrides

@@ -843,18 +843,13 @@ function finishIssuerField(f){
   // and the value went on to become two output folders — the app guards an EMPTY issuer and says
   // nothing about a gibberish one. Asked asynchronously so the wizard never waits on it, and
   // warning-only: the field is already marked done above and nothing here blocks or rewrites it.
-  const _v = r.value;
-  const _ok = () => toast(`Captured the ${f.label} position from this layout.`);
-  try {
-    Promise.resolve(window.docusnap.checkIssuerRead(_v))
-      .then(res => {
-        if (res && res.implausible) {
-          toast(`I read "${_v}" from that box \u2014 that doesn't look like a company name. `
-              + `Draw it again, or type the name in yourself.`, 7000);
-        } else { _ok(); }
-      })
-      .catch(_ok);
-  } catch { _ok(); }
+  // \u26a0 THE VERDICT MOVED EARLIER (2026-08-13). The check used to fire HERE \u2014 after the operator had
+  // pressed "Looks right \u2192", concurrently with advanceField() \u2014 so its answer landed as a toast
+  // over the NEXT field, and `.catch(_ok)` turned a FAILED check into "Captured the \u2026 position":
+  // failure rendered as success. Both questions (shape, and near-match to a company already in
+  // use) are now asked by _warnOnIssuerValue while the confirm panel is still on screen, BEFORE
+  // this irreversible step. What is left here is a truthful acknowledgement naming the value.
+  toast(`Captured "${r.value}" as the ${f.label} for this layout.`);
   advanceField();
 }
 
@@ -1289,6 +1284,53 @@ function _dateCoherenceWarn(f, value){
   return '';
 }
 
+// ── Is this company name believable, and is it one we already use? ───────────────────────────
+// Two questions, both answered while the confirm panel is still on screen:
+//   * SHAPE — `check-issuer-read` (the 2026-08-11 plausibility warn), which catches '@a eens Ee';
+//   * PROXIMITY — `check-identity-near-match`, which catches the one Chris actually paid for.
+//     `B8ramblewood Joinery Ltd` passes every shape test by construction; what is wrong with it is
+//     that the customer already files under `Bramblewood Joinery Ltd`.
+// Advisory: the panel's buttons stay live throughout, nothing is blocked, and a failed lookup adds
+// nothing rather than claiming success (the `.catch(_ok)` defect this replaces).
+async function _warnOnIssuerValue(f, r){
+  const v = String((r && r.value) || '').trim();
+  if (!v) return;
+  let implausible = false, nm = null;
+  try { const res = await D.checkIssuerRead(v); implausible = !!(res && res.implausible); } catch {}
+  try { if (D.checkIdentityNearMatch) nm = await D.checkIdentityNearMatch(v); } catch {}
+  // The operator may have moved on (redraw, typed a different value, next field) while we waited.
+  if (curField() !== f || String((state.results[f.key]||{}).value||'').trim() !== v) return;
+  const host = $('rg-confirm-top'); if (!host) return;
+  host.querySelector('.rb-idwarn')?.remove();
+  let html = null, offer = null;
+  if (nm && nm.near) {
+    html = `&#9888; That is <strong>${nm.distance === 1 ? 'one character' : nm.distance + ' characters'}</strong> different from `
+         + `<span class="mono">${esc(nm.existing)}</span>, which you already use on ${nm.confirms} document`
+         + `${nm.confirms === 1 ? '' : 's'}. Two spellings file this sender into two folders.`;
+    offer = nm.existing;
+  } else if (implausible) {
+    html = `&#9888; That doesn't look like a company name. Redraw it, or type the name as printed below.`;
+  }
+  if (!html) return;
+  const div = document.createElement('div');
+  div.className = 'rb-idwarn';
+  div.style.cssText = 'margin-top:6px;color:var(--warn);font-size:12.5px;font-weight:600';
+  div.innerHTML = html + (offer
+    ? ` <button type="button" class="btn ghost quiet" id="rb-use-known" style="margin-left:6px">Use "${esc(offer)}"</button>`
+    : '');
+  // Below the value line, above the actions — where the eye already is. (Explicit if/else, not
+  // `?.before(div) || appendChild(div)`: `before()` returns undefined, so the fallback would ALWAYS
+  // run and the warning would render twice.)
+  const _actions = host.querySelector('.rb-actions');
+  if (_actions) _actions.before(div); else host.appendChild(div);
+  if (offer) {
+    div.querySelector('#rb-use-known')?.addEventListener('click', () => {
+      r.value = offer; r.valueSource = 'known-name';
+      showValueConfirm(f, r);          // re-render with the adopted name (and no warning)
+    });
+  }
+}
+
 function showValueConfirm(f, r){
   const issuer = isIssuerField(f);
   hideStoredBoxes=false; drawnBox=null; redrawCanvas();
@@ -1378,6 +1420,12 @@ function showValueConfirm(f, r){
     r.status='done'; drawMode='value'; advanceField();
   };
   if (typeRow) _wireTypeRow(doTyped, /*focus*/false);
+  // THE VERDICT ARRIVES BEFORE THE COMMIT, not after it (Oracle, 2026-08-13). The plausibility
+  // check used to be fired inside finishIssuerField — i.e. AFTER "Looks right →", concurrently with
+  // advanceField() — so its answer landed as a toast over the NEXT field, and its `.catch(_ok)`
+  // mapped a FAILED check to the success message. Asked here instead, while the operator is still
+  // looking at the name, and patched into this panel when it comes back.
+  if (issuer) _warnOnIssuerValue(f, r);
   onConfirm('rb-yes', ()=>{
     if (issuer) return finishIssuerField(f);
     if (suspicious) r.anchor_text = null;   // junk never persists — position-only

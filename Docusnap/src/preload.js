@@ -187,6 +187,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   // Teach-time issuer plausibility (warning only; Chris round 2). Answered by the ONE shared
   // predicate in learning.js so the teach surfaces cannot grow their own copy of it.
   checkIssuerRead:     (value)      => ipcRenderer.invoke('check-issuer-read', value),
+  checkIdentityNearMatch: (value)   => ipcRenderer.invoke('check-identity-near-match', value),
   getFieldPatterns:      ()         => ipcRenderer.invoke('get-field-patterns'),
   getFieldSuggestions:   (docId, key) => ipcRenderer.invoke('get-field-suggestions', docId, key),
 

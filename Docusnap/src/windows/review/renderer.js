@@ -3905,36 +3905,42 @@ async function runZoneOcr(rect, fieldKey) {
             pendingAnchors[fieldKey].offset_dx_norm = null;
             pendingAnchors[fieldKey].offset_dy_norm = null;
           }
-          // PLAUSIBILITY, not just capture (Chris round 2, 2026-08-11). The old line congratulated
-          // the operator whatever came back — a teach that read '@a eens Ee' showed this exact
-          // green toast, flagged nothing, and the value went on to become two output folders.
-          // Every guard here was pointed at an EMPTY issuer; none at a gibberish one. Warning only:
-          // the teach is still staged, nothing is blocked, and a wrong judgement costs a sentence.
-          let _implausible = false;
-          try {
-            const _r = await window.docusnap.checkIssuerRead(text);
-            _implausible = !!(_r && _r.implausible);
-          } catch { /* the check must never break a teach */ }
-          try {
-            if (_implausible) {
-              showToast('I read “' + text + '” from that box — that doesn’t look like a company '
-                      + 'name. Draw it again, or type the name in yourself.', 'warn');
-            } else {
-              showToast('Captured the ' + (labelFor(fieldKey) || 'company name') + ' position from this layout.', 'ok');
-            }
-          } catch {}
+          // PLAUSIBILITY *and* PROXIMITY (Chris rounds 2 and 4). The old line congratulated the
+          // operator whatever came back — a teach that read '@a eens Ee' showed a green toast,
+          // flagged nothing, and became two output folders; round 4's `B8ramblewood Joinery Ltd`
+          // passes any shape check by construction and still cost twelve filed files. Both
+          // questions are now asked, and the answer goes on the PERSISTENT bar rather than a toast
+          // the next call destroys. Warning only: the teach stays staged and nothing is blocked.
+          await speakIssuerTeach(fieldKey, text);
         } else {
           showAnchorReadout(detected, text);   // show which anchor was picked + the Left/Above toggle
         }
+      } else {
+        // NO ANCHOR CONTEXT — previously silent. The value WAS read and staged, so say so; only the
+        // label capture came back empty, which is a weaker outcome, not a failure.
+        showTeachMessage(`&#10003; I read <span class="ar-val">${escHtml(text)}</span> from your box, and I'll `
+                       + `remember this exact spot on future documents from this sender.`);
       }
       _refreshTaughtDot(fieldKey);   // reflect the staged (or C1-dropped) teach on the field's dot
       // If the ISSUER was just taught, its value IS the resolved supplier for this doc — re-scope
       // EVERY field's taught dot to the new supplier (a new/untaught supplier -> the other fields'
       // dots go off). A DIRECT re-query, not the datalist-popping synthetic 'input' avoided above.
       if (fieldKey === 'supplier_name') { _refreshTaughtForType().catch(() => {}); _clearSuspectReadsForNewIssuer(); _resolveFieldVisibility(); }
+    } else {
+      // AN EMPTY READ USED TO PRODUCE NOTHING AT ALL (Chris rounds 3 + 4: "four draws, four
+      // silences"). Everything above is nested inside `if (text)`, so the one outcome where the
+      // operator most needs telling — I looked and found no text — was the one that said least.
+      // Nothing is staged in this branch, and the message says exactly that, so the operator is
+      // not left believing a teach was saved.
+      showTeachMessage(`&#9888; I couldn't read any text in that box, so nothing was saved for `
+                     + `<strong>${escHtml(labelFor(fieldKey) || fieldKey)}</strong>. Try drawing it a little wider, `
+                     + `or type the value into the field yourself.`, { warn: true });
     }
   } catch (err) {
     console.error('Zone OCR error:', err);
+    // A THROWN teach was silent too — the catch only logged to a console the customer never opens.
+    showTeachMessage(`&#9888; Something went wrong reading that box, so nothing was saved. Try again, `
+                   + `or type the value into the field yourself.`, { warn: true });
   }
 
   ocrOverlay.classList.remove('visible');
@@ -4400,6 +4406,97 @@ function hideAnchorReadout() {
 document.addEventListener('pointerdown', (e) => {
   if (e.target?.closest?.('.field-input')) hideAnchorReadout();
 }, true);
+// ── The teach speaks, on every path ──────────────────────────────────────────────────────────
+// Chris has reported the same thing four rounds running, and in round 4 it cost twelve filed
+// files: "four draws, four silences, including a near-perfect read." The practice run answers
+// every draw with `Read "INV-1042" from your box.` (tutorial/renderer.js) — the real teach had
+// never said it once.
+//
+// WHY THE BAR AND NOT A TOAST (Oracle, 2026-08-13): `#anchor-readout` is persistent, dismissible,
+// already renders a read value, and already hosts controls. A toast is destroyed by the next call
+// and cannot carry a button. The issuer branch was the one case that skipped this bar entirely and
+// used a toast — which is why the loudest failure had the weakest surface.
+//
+// `actions` are optional [{label, kind, onClick}] rendered after the message, so the near-match
+// challenge can offer the incumbent name as a one-click choice rather than an instruction.
+function showTeachMessage(html, { warn = false, actions = [] } = {}) {
+  const bar = document.getElementById('anchor-readout');
+  if (!bar) return null;
+  bar.className = 'anchor-readout' + (warn ? ' warn' : '');
+  bar.innerHTML = `<span class="ar-msg">${html}</span>`
+    + (actions.length
+        ? `<span class="ar-dir">${actions.map((a, i) =>
+             `<button class="ar-btn ${a.kind === 'primary' ? 'on' : ''}" data-teach-act="${i}">${escHtml(a.label)}</button>`).join('')}</span>`
+        : '')
+    + `<span class="ar-x" title="Dismiss">&times;</span>`;
+  bar.style.display = '';
+  actions.forEach((a, i) => {
+    bar.querySelector(`[data-teach-act="${i}"]`)?.addEventListener('click', () => { try { a.onClick(); } catch (e) { console.error(e); } });
+  });
+  bar.querySelector('.ar-x')?.addEventListener('click', hideAnchorReadout);
+  if (_anchorReadoutTimer) clearTimeout(_anchorReadoutTimer);
+  // A warning that needs a DECISION does not time out; a plain read-back matches the readout dwell.
+  if (!warn) _anchorReadoutTimer = setTimeout(hideAnchorReadout, 30000);
+  return bar;
+}
+
+// Put a value into a field the same way the ⊕ read does — value + correction + validation, with no
+// synthetic 'input' event (that pops the Chromium datalist; reggie, Oracle C5).
+function _applyTeachValue(fieldKey, value) {
+  const input = document.querySelector(`.field-input[data-key="${fieldKey}"]`);
+  if (!input) return false;
+  const orig = input.dataset.original;
+  input.value = value;
+  input.classList.add('corrected');
+  corrections[fieldKey] = { original_value: orig, corrected_value: value };
+  validateConfirm();
+  const row = input.closest('.field-row');
+  if (row) {
+    dismissServerNote(row, fieldKey);
+    const msg = fieldValidationError(fieldKey, input.value);
+    if (msg) setFieldWarning(row, input, msg); else clearFieldWarning(row, input);
+  }
+  if (lastTeachCtx && lastTeachCtx.fieldKey === fieldKey) lastTeachCtx.value = value;
+  return true;
+}
+
+// The issuer read-back: what was read, whether it looks like a company at all, and — the signal
+// that actually catches the round-4 exhibit — whether it is one or two characters off a company
+// this customer already files under. Shape can never catch `B8ramblewood Joinery Ltd`; proximity
+// to a known name can. Asked of the ONE shared comparison the write guard uses, so the sentence on
+// screen and the decision in the database cannot disagree.
+async function speakIssuerTeach(fieldKey, text) {
+  let implausible = false, nm = null;
+  try { const r = await window.docusnap.checkIssuerRead(text); implausible = !!(r && r.implausible); } catch {}
+  try { nm = await window.docusnap.checkIdentityNearMatch(text); } catch {}
+  const read = `I read <span class="ar-val">${escHtml(text)}</span> from your box.`;
+  if (nm && nm.near) {
+    showTeachMessage(
+      `&#9888; ${read} That is <strong>${nm.distance === 1 ? 'one character' : nm.distance + ' characters'}</strong> different from `
+      + `<span class="ar-val">${escHtml(nm.existing)}</span>, which you already use on ${nm.confirms} document${nm.confirms === 1 ? '' : 's'}. `
+      + `Two spellings would file this sender into two folders.`,
+      { warn: true, actions: [
+        { label: `Use "${nm.existing}"`, kind: 'primary', onClick: () => {
+            if (_applyTeachValue(fieldKey, nm.existing)) {
+              showTeachMessage(`&#10003; Using <span class="ar-val">${escHtml(nm.existing)}</span> &mdash; the name you already file under.`);
+              _refreshTaughtForType().catch(() => {});
+            }
+          } },
+        { label: 'Keep what I read', onClick: () => {
+            showTeachMessage(`${read} Kept as read &mdash; this sender will file separately from `
+              + `<span class="ar-val">${escHtml(nm.existing)}</span>.`, { warn: true });
+          } },
+      ] });
+    return;
+  }
+  if (implausible) {
+    showTeachMessage(`&#9888; ${read} That doesn't look like a company name. Draw it again, or type the name in the field yourself.`,
+                     { warn: true });
+    return;
+  }
+  showTeachMessage(`&#10003; ${read} Saved as this layout's company name when you confirm.`);
+}
+
 function showAnchorReadout(detected, value) {
   // Own the overlay exclusively: wipe any PRIOR anchor highlight first, so a stale box from an
   // earlier field/teach can't be mistaken for the anchor of THIS draw. Then show where THIS teach
@@ -6717,14 +6814,26 @@ function escHtml(str) {
 }
 
 let toastTimer = null;
+// STICKY LEVEL (Chris round 4 → Oracle, 2026-08-13): a warning must not be erased by a reassuring
+// message raised in the SAME TICK. That is how the teach came to say nothing useful — two calls,
+// last one wins, and the last one was the cheerful one. The fix is a level guard, deliberately NOT
+// a toast QUEUE: a queue would show the warning seconds later, after the operator has already
+// clicked on, and would serialise ~63 call sites into a backlog on a bulk run. An `ok` may not
+// overwrite a live `warn`/`err`; an equal-or-higher level always may, so nothing can be lost for
+// longer than the toast's own lifetime.
+let _toastLevel = null;
+const _TOAST_RANK = { ok: 0, warn: 1, err: 2 };
 function showToast(msg, level = 'ok') {
   const el = document.getElementById('toast');
   if (!el) return;
+  const live = el.style.display === 'block' && _toastLevel;
+  if (live && (_TOAST_RANK[level] ?? 0) < (_TOAST_RANK[_toastLevel] ?? 0)) return;
   el.textContent = msg;
   el.className   = level;
   el.style.display = 'block';
+  _toastLevel = level;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.style.display = 'none'; }, 4000);
+  toastTimer = setTimeout(() => { el.style.display = 'none'; _toastLevel = null; }, 4000);
 }
 
 // Keep both overlay canvases' pixel buffers exactly equal to the DISPLAYED image

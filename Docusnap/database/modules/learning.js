@@ -142,6 +142,58 @@ function issuerReadLooksImplausible(value) {
   return nameQuality(kept.join(' ')) < 0.5;
 }
 
+// ── "That is one character off a company you already use" ────────────────────────────────────
+// THE SIGNAL THE PLAUSIBILITY CHECK ABOVE CANNOT CARRY, and Chris named it himself in round 4:
+// `B8ramblewood Joinery Ltd` *looks* like a company name — it passes `issuerReadLooksImplausible`
+// by construction — so shape can never catch it. What is wrong with it is that the customer
+// already files 38 documents under `Bramblewood Joinery Ltd`. The catching signal is NEAR MATCH TO
+// A KNOWN COMPANY.
+//
+// This is the READ-BACK half of the write guard shipped in `dc4bf1d`: `templates._upsertFields`
+// now silently KEEPS the incumbent frozen identity when the incoming value is a near match, and a
+// refusal nobody can see is indistinguishable from the app ignoring the operator. Same comparison
+// module (`name_proximity`, the JS twin of Python's `name_match`), so the sentence on screen and
+// the decision in the database can never disagree.
+//
+// THE SUBSTRATE IS HUMAN CONFIRMS ONLY (design Tier A). `documents.supplier_name` on CONFIRMED
+// documents, excluding every machine `confirmed_via` — because the exhibit's own 20 poisoned
+// documents were machine-stamped at 95, and a machine cohort must never become the "name you
+// already use" that the app offers back. `minConfirms` defaults to 3 so a single earlier typo
+// cannot become the suggested target.
+//
+// ADVISORY ONLY: returns a verdict, changes nothing, blocks nothing. The caller decides whether to
+// offer the incumbent; the operator decides whether to take it.
+function findNearMatchIdentity(db, candidate, { minConfirms = 3 } = {}) {
+  const { nearMatchIdentity } = require('./name_proximity');
+  const v = String(candidate == null ? '' : candidate).trim();
+  if (!v) return { near: false, reason: 'empty' };
+  // Older DBs / fixtures predate confirmed_via (migration 57) — fall back to counting every
+  // confirmed row rather than failing the query, exactly as trust.js does.
+  let hasVia = true;
+  try { db.prepare('SELECT confirmed_via FROM documents LIMIT 0'); } catch { hasVia = false; }
+  const { MACHINE_VIAS_SQL } = require('./machine_vias');
+  let rows = [];
+  try {
+    rows = db.prepare(`
+      SELECT TRIM(supplier_name) AS v, COUNT(*) AS n
+      FROM documents
+      WHERE status = 'confirmed' AND supplier_name IS NOT NULL AND TRIM(supplier_name) <> ''
+        ${hasVia ? `AND COALESCE(confirmed_via, '') NOT IN (${MACHINE_VIAS_SQL})` : ''}
+      GROUP BY LOWER(TRIM(supplier_name))
+    `).all();
+  } catch { return { near: false, reason: 'unavailable' }; }
+  let best = null;
+  for (const r of rows) {
+    if (!r.v || r.n < minConfirms) continue;
+    const verdict = nearMatchIdentity(v, r.v);
+    if (!verdict.near) continue;
+    if (!best || verdict.similarity > best.similarity) {
+      best = { near: true, existing: r.v, confirms: r.n, similarity: verdict.similarity, distance: verdict.distance };
+    }
+  }
+  return best || { near: false, reason: 'no-near-match' };
+}
+
 function nameQuality(value) {
   if (!value) return 1.0;
   let good = 0, bad = 0;
@@ -1843,7 +1895,7 @@ module.exports = {
   insertExtractions, deleteExtractions,
   getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue, getPrefixModelForScope,
   getSupplierScopeCounts, renameSupplier,
-  saveCorrections, retractConfirmHints, replantConfirmHints, getHints, getAllHints, isPlausibleSupplierName, isPlausibleSupplierNameBase, isNameLikeField, nameQuality, issuerReadLooksImplausible, normalizeSupplierName,
+  saveCorrections, retractConfirmHints, replantConfirmHints, getHints, getAllHints, isPlausibleSupplierName, isPlausibleSupplierNameBase, isNameLikeField, nameQuality, issuerReadLooksImplausible, findNearMatchIdentity, normalizeSupplierName,
   saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors, getAnchorsForScope, getTaughtFieldKeys, deleteAnchor,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   detailCrossPlantCloser: _detailCrossPlantCloser,   // exported for the detail-backfill script's final anti-poison check (2026-07-23)
