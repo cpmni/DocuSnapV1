@@ -5159,7 +5159,9 @@ async function fileAllReady() {
   // (grouped view included), or clear to the "all reviewed" done-state when none remain, instead of
   // showing "All documents reviewed ✓" over a queue that still has skipped docs. (advanceAfterAction
   // re-renders the list itself, so the explicit renderQueueList above is folded in.)
-  advanceAfterAction(0, null);
+  // AWAITED (Chris round 6, card 2): selectDoc→renderPage calls hideAnchorReadout; awaiting it here
+  // means the persistent File-All summary below is painted AFTER that, so it is not wiped instantly.
+  await advanceAfterAction(0, null);
   if (filed) window.docusnap.notifyReviewComplete();
   // Catch-up: after a File-All run, offer the sweep for the run's dominant scope (the docs it
   // just filed are exactly the "you just confirmed" evidence the sweep re-checks against).
@@ -5680,8 +5682,11 @@ function advanceAfterAction(removedIdx = 0, preferSupplier = null) {
   const order = activeTab === 'deferred' ? (renderDeferredList(), deferredQueue)
                                          : (renderQueueList(), reviewDisplayOrder());
   const next = _pickNextDoc(order, at, preferSupplier);
-  if (next) selectDoc(next);
-  else { currentDoc = null; clearDocPanel(); }
+  // Return selectDoc's promise so a caller can AWAIT the doc-open before painting something on the
+  // #anchor-readout bar — selectDoc→renderPage calls hideAnchorReadout, which otherwise clobbers a
+  // File-All summary shown synchronously right after this call (Chris round 6, card 2).
+  if (next) return selectDoc(next);
+  currentDoc = null; clearDocPanel();
 }
 
 // Choose the doc to open after filing/removing one. When preferSupplier is given, FINISH that
