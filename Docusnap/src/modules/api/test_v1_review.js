@@ -75,7 +75,7 @@ async function main() {
     doctypes: require('../../../database/modules/document_types'),
     filing: { commitDocument: async (args) => { lastCommitArgs = args; return { success: true, filename: 'F.pdf', filePath: '/out/F.pdf', metadataPath: '/out/.metadata/F.xml', srcPath: '/in/scan.pdf' }; },
               removeSourceFile: async () => {} },
-    fs: { existsSync: () => false, unlinkSync: () => {} },
+    fs: { existsSync: () => true, unlinkSync: () => {} },  // the doc HAS a filable page (reviewService no-page guard, card 1),
     path: require('path'), logger: null,
     audit: () => {}, notifyCounts: () => {}, releaseDelayMs: 0,
   });

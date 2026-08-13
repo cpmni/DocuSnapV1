@@ -93,7 +93,7 @@ const HOSTILE = { file: 'C:\\Windows\\System32\\drivers\\etc\\hosts', dir: '\\\\
           return { success: true, filename: 'F.pdf', filePath: '/out/F.pdf', srcPath: path.join(folderPath || '', originalFilename || '') };
         },
       },
-      fs: { existsSync: () => false, unlinkSync: () => {} },
+      fs: { existsSync: () => true, unlinkSync: () => {} },   // the doc HAS a page at its ROW path (no-page guard, card 1)
       path, logger: null, audit: () => {},
       onScheduleSourceMove: ({ srcPath }) => { movedSrc = srcPath; },
       notifyCounts: () => {}, releaseDelayMs: 0,

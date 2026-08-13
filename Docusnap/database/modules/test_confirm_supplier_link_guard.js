@@ -69,7 +69,7 @@ const LOGO_NEAR = 'bc4cc3b3c7385c40';   // hamming 4 from LOGO — inside the st
       normaliseDate: (v) => v,
       commitDocument: async () => ({ success: true, filename: 'F.pdf', filePath: '/out/F.pdf', metadataPath: '/out/.m/F.xml', srcPath: '/in/v.pdf' }),
     },
-    fs: { existsSync: () => false, unlinkSync: () => {} },
+    fs: { existsSync: () => true, unlinkSync: () => {} },  // the doc HAS a filable page (reviewService no-page guard, card 1),
     path, logger: null, audit: () => {},
     captureSample: async () => { calls.captured++; },
     notifyCounts: () => {}, releaseDelayMs: 0,
