@@ -71,7 +71,14 @@ async function stampPdf(inputPath, outputPath, options = {}) {
   if (!outputPath) throw new Error('outputPath is required.');
   const {
     label = 'APPROVED', color = '#2E7D32', userName = '', date,
-    notes = '', page = 0, position = 'top-right', opacity = 0.85, rotate = 0,
+    // DEFAULT CORNER: bottom-right (changed 2026-08-13, Chris round 4 card 5). Top-right lands the
+    // stamp squarely on the letterhead and the document title — he reported "APPROVED" printed over
+    // "Harrowgate Timber Suppli‹es›" and "SALES ORDER", both partly hidden, on a copy he was about
+    // to email to his accountant. A business document's identifying block is top-left-to-top-right
+    // by convention and its bottom-right is nearly always clear, so the corner that hides least is
+    // the better default. Only the DEFAULT moves: an explicit `position`, and any per-install
+    // `stamp_placement` box, still win.
+    notes = '', page = 0, position = 'bottom-right', opacity = 0.85, rotate = 0,
     // PLACEMENT + SIZE (owner 2026-08-02: "choose where it goes and resize it to fit a blank
     // area"). `box` is NORMALISED {x, y, w} with the origin at the page's TOP-LEFT, matching every
     // other geometry in this app (field mappings, anchors, landmarks) — pdf-lib's own origin is

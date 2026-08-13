@@ -269,13 +269,19 @@
     .doc-nav-btn:hover { border-color: var(--accent); color: var(--accent); }
     .doc-nav-btn.active { border-color: var(--accent); color: var(--on-accent); background: var(--accent); }
 
-    /* Per-field "position taught" dot, scoped to this supplier + DOCUMENT TYPE: green = a learned
-       position is saved for this field on this type; red = not taught for this type yet (the
-       actionable state — e.g. a look-alike doc that's actually a different type you haven't taught). */
+    /* Per-field "position taught" dot, scoped to this supplier + DOCUMENT TYPE: filled green = a
+       learned position is saved for this field on this type; hollow/muted = not taught yet.
+       COLOUR CHANGED 2026-08-13 (Chris rounds 3 + 4, verify-list item 7, reported twice):
+       "red dot = not taught, green = taught; the tooltip copy is now excellent, the colour is
+       still the error red on 5 of 6 correct fields." Not-taught is not an ERROR — it is the
+       ordinary state of a field the app read correctly by keyword on a layout nobody has taught
+       yet, and painting it in the same red as a validation failure spends the customer's alarm on
+       nothing. It is now a quiet hollow dot: visibly different from taught, not alarming. The
+       tooltip (_taughtDotTitle) still carries the meaning and is unchanged. */
     .taught-dot {
       display: inline-block; width: 8px; height: 8px; border-radius: 50%;
       margin-right: 7px; vertical-align: middle; flex-shrink: 0; box-sizing: border-box;
-      background: var(--err); border: 1.5px solid var(--err);
+      background: transparent; border: 1.5px solid var(--border2);
     }
     .taught-dot.on { background: var(--ok); border-color: var(--ok); }
 

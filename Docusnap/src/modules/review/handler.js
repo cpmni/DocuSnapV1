@@ -882,10 +882,27 @@ function register(ctx) {
 
   // Permanent removal (irreversible) — admin only. Unlinks the filed file + the app's
   // working copy, then deletes the row. `purge-all-deleted` empties the whole bin.
+  // THE PROMISE WAS NOT KEPT, and the reason is two independent defects (Chris round 4, card 4:
+  // "Empty bin says it deletes the PDF files. It didn't." — verified at source 2026-08-13).
+  //   1. This loop's first entry was `documents.resolveFilePath(doc)`, which returns `working_path`
+  //      FIRST when one exists (documents.js:675). A binned doc that was previously filed has BOTH,
+  //      so both loop entries resolved to the same working copy and `stored_path` — the filed PDF
+  //      the dialog names — was never unlinked.
+  //   2. resolveFilePath's `stored_path` branch requires `status === 'confirmed'`, and a binned doc
+  //      is `'deleted'`. So even with no working copy it fell through to
+  //      `folder_path + original_filename` — the CUSTOMER'S OWN SOURCE SCAN, which no dialog
+  //      promises to delete and which the app does not own.
+  // Now the set is explicit and app-owned only: the working copy and the filed copy, never the
+  // source. Deleting the filed copy is the documented intent of purge (this function's own header,
+  // and the admin-only dialog that says "including their PDF files"), so the promise becomes true
+  // rather than the copy becoming weaker.
   function _purgeOne(db, docId) {
     const doc = documents.getById(db, docId);
     if (!doc) return;
-    for (const p of [documents.resolveFilePath(doc), doc.working_path]) {
+    const targets = new Set();
+    if (doc.working_path) targets.add(doc.working_path);   // the app-managed inbox copy
+    if (doc.stored_path)  targets.add(doc.stored_path);    // the filed copy in the output tree
+    for (const p of targets) {
       if (p && fs.existsSync(p)) { try { fs.unlinkSync(p); } catch (e) { console.warn('purge unlink:', p, e.message); } }
     }
     documents.deleteDoc(db, docId);
