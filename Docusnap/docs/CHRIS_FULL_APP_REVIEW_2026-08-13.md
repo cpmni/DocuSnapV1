@@ -595,3 +595,78 @@ The pattern has genuinely shifted. Last round I wrote *"the terrifying buttons a
 **Screenshots** (22, in `…\scratchpad\chris-sandbox\_r5_screens\`): `r5_01_signin` · `r5_02_recovery` · `r5_03_terms` · `r5_04_wizard1` · `r5_05_structure` · `r5_06_importready` · **`r5_07_importdone`** · `r5_08_reviewqueue` · **`r5_09_oakhaven`** · `r5_10_quillstone` · `r5_11_teach_good` · `r5_12_calbox` · `r5_13_rubberband` · `r5_14_state` · **`r5_15_nopreview`** · `r5_16_settings` · **`r5_17_teach_garble`** · **`r5_18_sibling_caught`** · `r5_19_workflow` · `r5_20_stamped` · `r5_21_stamp_position` · **`r5_22_stamp_full`**
 
 **Sandbox left running** on CDP 9223, PID 26060, with 218 documents in the queue, 39 of them carrying my misspelling, and one approved stamped copy on disk.
+
+---
+
+# ROUND 6 — 2026-08-14 (overnight), the acceptance test for the round-5 fixes
+
+**Conditions.** Fresh install at HEAD `0a73c87`, session-mortal sandbox (CDP 9223), the create-first-admin
+flow, and the taught state grafted from a read-only live snapshot: 8 doc types / 62 fields, 13 field
+anchors, 665 supplier hints, 18 logos, and **the SAME single layout as rounds 4–5** — template 1 =
+`Bramblewood Joinery Ltd` / `purchase_order`, `supplier_name` AND `vat_no` frozen. The SAME 200 scans.
+Migration-67 defaults all ON. So round 5 → round 6 is a like-for-like comparison.
+
+## AFTER-THE-FACT VERIFICATION (main session, read-only + code)
+
+**Card 2 ("File All Ready said nothing") — his verdict was RIGHT and it exposed a real defect in THIS
+session's own card-2 fix, now fixed (`e1c1848`).** The summary WAS being painted, then wiped
+milliseconds later: `fileAllReady` called `advanceAfterAction(0, null)` UN-awaited, which starts an
+async `selectDoc → renderPage → hideAnchorReadout` that resolves AFTER the summary was drawn on
+`#anchor-readout`. `advanceAfterAction` now returns `selectDoc`'s promise and `fileAllReady` awaits it
+before painting the summary. (His separate point — the "up to N" offered count doesn't match what
+actually files — is inherent to a count taken before each doc's fields load; the summary naming the
+real result is the answer to "said nothing".)
+
+**Card 1 / (A) near-miss at the draw — the fix fires on the ⊕ TEACH DRAW and the wizard; Chris hit a
+THIRD, still-unguarded surface: a TYPED issuer correction in Review.** My card-3 fix (Tier B: a frozen
+template identity is now an ASK-only near-match source, so the challenge fires on a fresh install) is
+unit-verified — `findNearMatchIdentity('Drambiewood Joinery Ltd')` returns `near:true` against the
+frozen `Bramblewood Joinery Ltd`, and both teach surfaces are wired + pinned. But Chris could not drive
+an OCR-misread-then-draw, so he tested by TYPING "Drambiewood" into the Document Issuer field and
+confirming — and that path (a typed field correction, not a ⊕ teach) does NOT run the near-match
+challenge. It silently filed to a new `Drambiewood-Joinery-Ltd` folder. **This is the top owner-vet
+item: extend the same challenge to the typed Document-Issuer correction on confirm/blur. NOT
+implemented — it queues per the sandbox contract.**
+
+**(C) settings copy and (D) read-back bar — CONFIRMED FIXED by Chris**, matching this session's changes.
+**(E) page-less restored doc — NOT REPRODUCED** (the sandbox app stayed open all session, so his
+round-5 delete→restart→restore path was unavailable; the reconcileHolding root cause is unit-pinned
+regardless).
+
+**Nothing from this round has been implemented** beyond fixing the card-2 defect above (which was this
+session's own broken delivery, not a new suggestion). His new cards queue for the owner.
+
+## Chris's report (verbatim)
+
+# Chris The Customer — ScanFinder Product Vet, ROUND 6
+**Date:** 2026-08-14 (overnight) · **Sandbox:** CDP 9223, PID 5744
+
+## Sandbox conditions
+Fresh install, first run: I created the admin account, walked Terms, the 7-step setup wizard, the 6-card tour and the practice run myself. The install carries the owner's grafted knowledge — 8 doc types, 665 supplier hints, 18 logos, and **one supplier layout: template "Bramblewood Joinery Ltd", a purchase order the business ISSUED, with the company name AND VAT number frozen** (same single layout as rounds 4–5). I set the Output folder to the sandbox, then imported the same **200 scans**. Shipped mig-67 defaults were live (auto-file threshold 100%, seven graduation switches on for new installs).
+
+**A driver honesty note up front (it changed my findings):** my automation was silently **cancelling every native "OK/Cancel" dialog**. My first File All Ready and delete results were therefore wrong (the confirms were being cancelled). I caught this, switched to answering the prompts as a real "OK" click, and **re-ran everything**. All results below are post-fix. Dialogs my driver swallowed before I noticed: **3** (2 File All Ready, 1 delete).
+
+## VERIFY LIST — prior findings & the five changes (A)–(E)
+- **(A) Near-miss warning at the draw** — **NEW-PROBLEM (still silent for a look-alike name).** The teach now speaks when the read is nonsense ("That doesn't look like a company name"). But a plausible misspelling of my own company ("Drambiewood Joinery Ltd") passed straight through: no "did you mean Bramblewood?". I confirmed it and it silently filed to a brand-new `Drambiewood-Joinery-Ltd` folder — my company is now two folders on disk. *Caveat:* I could only trigger this via a typed correction; I couldn't force the OCR to misread a clean page into a look-alike, so the pure draw-then-read variant is untested by me.
+- **(B) File All Ready when little/nothing files** — **BETTER-BUT / SAME.** The confirm carries a count. But it offered "up to 52", filed 10; run again offered "up to 40", filed 0 — and said nothing afterwards either time. The offered number doesn't match what files.
+- **(C) Settings copy** — **FIXED.** No ON switch says "Off by default"; the ones on say "On by default."
+- **(D) Teach read-back bar** — **FIXED.** Appears below the toolbar and resets on the next draw.
+- **(E) A restored document with no page** — **NOT REPRODUCED.** Delete → Restore round-tripped cleanly. I never landed on a page-less document (the app stays open, so I couldn't recreate round 5's delete→restart→restore path).
+
+Other prior findings: Teach speaks + refuses a bad box — FIXED. Cleared sibling fields named with a working Undo — FIXED. Delete/recycle bin, Delete All, Restore-all, Empty bin (actually purges PDFs) — all FIXED and truthful. Split PDF speaks — FIXED. Approval workflow end-to-end — WORKS (two-step approve, stamped copy on disk, permanent history). Buyer-issued/frozen-identity poisoning class — PERSISTS but CONTAINED (all held for review, nothing auto-filed).
+
+## NEW finding cards (ranked by harm)
+1. **A one-letter misspelling of my own company files silently into a brand-new folder** — typed "Drambiewood" as an issuer correction; filed to `Drambiewood-Joinery-Ltd/`; my records split across two company folders/Search identities. Class CONFUSION, HIGH. Proposed: when a taught/corrected issuer is within 1–2 chars of an already-known company, warn before filing. Caveat: injected by typing, not a genuine OCR misread.
+2. **Another supplier's delivery note is stamped with MY company name and MY VAT at 95%** — Oakhaven Goods Delivery Note shows Issuer "Bramblewood" 95% and VAT "GB 512 8846 27" while the letterhead reads Oakhaven; held for other reasons, but those two fields carry no flag. Class QUESTION, HIGH (contained). Proposed: flag those fields when a frozen template stamps an issuer/VAT contradicting the detected letterhead.
+3. **"File All Ready" offers a big number, files a small one, never tells me the difference** — offered 52, filed 10; offered 40, filed 0; no summary. Class CONFUSION, MEDIUM-HIGH. Proposed: match the offered count to what will file, and show a one-line result.
+4. **First import files nothing itself, yet the app keeps promising documents "file themselves"** — Home/tour sell 100% auto-file; after 200 imports 0 auto-filed. Class QUESTION, MEDIUM. Proposed: on a fresh install set the expectation that filing starts once a sender graduates.
+5. **My purchase orders file under my OWN company, not the supplier** — Quillstone POs filed under Bramblewood. Class QUESTION, MEDIUM (genuinely ambiguous buyer-issued case).
+6. **The Mailbox opens wearing the recycle bin's buttons** — "Restore all"/"Empty bin" show over the Mailbox. Class CONFUSION, LOW.
+7. **A sentence in the practice run I had to read twice** — "Documents Scan Finder is this sure about file themselves automatically". Class PREFERENCE, LOW.
+8. **My licence agreement shows me the lawyer's to-do notes** — Terms "WORKING DRAFT … NOT YET IN FORCE" + `[SOLICITOR: …]`. Class QUESTION, LOW (known pre-release).
+
+## Two-week verdict
+**Yes, I'd keep using it — the condition is still ON, held by the teach, not the filing.** After 200 imports and every scary button, nothing filed itself wrongly — the only wrong files on disk were ones I confirmed. But the near-miss still misfiles silently (via a typed correction), and my own identity still bleeds onto other suppliers' documents in the queue.
+
+## Humility / caveats
+Biggest: my driver initially cancelled every native OK/Cancel dialog, making my first File All Ready read "filed 0" and first delete look dead — both artifacts; I diagnosed it and re-ran (dialogs swallowed before I noticed: 3). I tested the near-miss (A) by TYPING a misspelling, not a genuine OCR misread, so the draw-then-read path is inferred. Teach boxes placed by coordinates (some garbled reads are my aim, not the app). Could not reproduce round 5's page-less restored doc (E). Single admin user, so workflow was send-to-self. All destructive testing stayed inside the sandbox.

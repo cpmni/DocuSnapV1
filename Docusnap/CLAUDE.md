@@ -21,7 +21,40 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-13 NIGHT2: **READ `HANDOVER_2026-08-13_NIGHT2.md` FIRST.** HEAD **`3327a22`**,
+## ⏭ LATEST — 2026-08-14 (overnight, autonomous): **READ `HANDOVER_2026-08-14.md` FIRST.** HEAD
+**`e1c1848`**, code PUSHED, docs push at wrap. Owner asleep; mandate = "does it work worse than last
+night, is auto-file < 180 — if so fix+test; then Chris's round-5 fixes; then Chris round 6."
+**(1) AUTO-FILE DID NOT GET WORSE — verified, not assumed.** The ~184/200 stands: live DB config is
+fully preserved (mig 67 is `INSERT OR IGNORE` against keys that ALL already exist; 64 additive, 65/66
+flag-gated OFF), and every code change since `fa1c0cb` is flag-gated-OFF, an identical refactor
+(`trust.js` machine_vias == old 5-list; anchor note→constant; `force_serial` OFF by default), or an
+append-only recorder (`_rejected_reads`). Whole suite confirms the pipeline unchanged.
+**(2) FIVE CHRIS ROUND-5 CARDS FIXED (`ef7a3a5`, `0a73c87`) + a round-6 defect (`e1c1848`).**
+**Card 1 = a real DATA-LOSS bug, root cause found:** `reconcileHolding` (handler.js) had
+`DEAD={'confirmed','deleted'}` and deleted a soft-deleted doc's inbox page at EVERY startup while
+`softDelete` kept the row + `working_path` — so Restore-after-restart returned a page-less record.
+Removed `'deleted'` from `DEAD` (a bin copy survives until Empty bin; `_purgeOne` then makes it a true
+orphan); pins RED-PROVE it (neither reconcile test had ever tested a deleted doc). PLUS a guard:
+`reviewService.confirm` refuses a page-less doc (friendly `NO_SOURCE_FILE`, covers desktop/File-All/v1)
++ the Review renderer disables Confirm and says the page is gone. **Card 2:** File All Ready now says
+"Filed N of M — <reason>" always (and `e1c1848` fixed it being wiped instantly by an un-awaited
+`advanceAfterAction → renderPage → hideAnchorReadout`). **Card 3:** near-match challenge now fires on a
+FRESH install via **Tier B = frozen template identities** (`findNearMatchIdentity`, ASK-only; Tier A
+human-confirms still outranks + governs writes); pinned `test_teach_speaks.js` 45→52. **Card 5:** the 7
+mig-67 switches read "On by default". **Card 7:** read-back bar moved below the toolbar + clears on new
+draw. **Blast radius caught:** 5 mock-confirm suites needed `existsSync:()=>true` (the no-page guard
+reads injected fs) — no production change.
+**(3) SUITE 481/492, 11 red = the documented genuine set, ZERO new reds.**
+**(4) CHRIS ROUND 6 RAN** (report appended to `docs/CHRIS_FULL_APP_REVIEW_2026-08-13.md`; sandbox left
+on CDP 9223 PID 5744): nothing auto-filed wrongly after 200 imports; (C)(D) + the recycle bin confirmed
+FIXED. **OWNER-VET QUEUE, TOP ITEM: the near-match challenge does NOT fire on a TYPED issuer correction**
+(my fix covers the ⊕ draw + wizard; Chris couldn't drive an OCR-misread-draw so he typed "Drambiewood"
+and it silently made a second company folder — recommend extending the same challenge to the typed
+issuer field, owner go needed). Then: flag the buyer-issued Oakhaven fields; File-All offered-count;
+day-one auto-file copy. **`teach_identity_near_match_keep` (write guard) stays OFF — owner flip + owed
+replay.** NOTHING from round 6 implemented beyond the card-2 defect (which was this session's own).
+
+### Prior — 2026-08-13 NIGHT2: **READ `HANDOVER_2026-08-13_NIGHT2.md` FIRST.** HEAD **`3327a22`**,
 PUSHED, tree clean. Owner ordered ONE plan to "completely integrate the features and fixes without
 touching currently working features in a negative fashion", weighing the customer's experience and
 "as little clicks as possible after teach". Plan approved with four owner decisions, executed in six
