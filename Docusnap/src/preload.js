@@ -411,6 +411,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   clearLearningFieldRules: (params) => ipcRenderer.invoke('clear-learning-field-rules', params),
   getSupplierScopeCounts: (name)    => ipcRenderer.invoke('get-supplier-scope-counts', name),
   renameSupplier:      (payload)  => ipcRenderer.invoke('rename-supplier', payload),
+  findDuplicateSuppliers: ()     => ipcRenderer.invoke('find-duplicate-suppliers'),
   // "Fix a document type" recovery (scope reset + document set-aside)
   recoveryOverview:    (scope)   => ipcRenderer.invoke('recovery-overview', scope),
   recoveryApply:       (payload) => ipcRenderer.invoke('recovery-apply', payload),

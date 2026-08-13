@@ -1886,15 +1886,100 @@ function renameSupplier(db, { oldName, newName } = {}) {
                  WHERE field_key = 'supplier_name' AND display_value = @from`).run({ to, from });
     db.prepare(`UPDATE corrections SET corrected_value = @to
                  WHERE field_key = 'supplier_name' AND corrected_value = @from`).run({ to, from });
+    // THE GAP THAT MADE THIS ROUTE UNABLE TO FINISH THE JOB (2026-08-13): a template's FROZEN
+    // identity was untouched, so a rename fixed six learning tables and left the one value that
+    // gets STAMPED onto every future document of that layout still saying the old name — the
+    // rename would appear to work and then quietly undo itself on the next import. Scoped to the
+    // identity field, and only where the stored value still IS the old name.
+    // `fixed_locked` rows are included deliberately: an admin who typed the wrong literal is
+    // exactly who is using this screen, and leaving their own typo untouched by their own rename
+    // would be the same silent half-fix.
+    try {
+      db.prepare(`UPDATE template_fields SET fixed_value = @to
+                   WHERE field_key = 'supplier_name' AND fixed_value = @from`).run({ to, from });
+    } catch { /* a schema without template_fields (fixture) must not fail the rename */ }
   });
   tx();
   return { renamed: 1, before, after: getSupplierScopeCounts(db, to) };
 }
 
+// ── "These two look like the same company" (the B9 census, as a product surface) ──────────────
+// Preventive fixes leave a customer whose filing tree is ALREADY split with nothing telling them
+// (Oracle O7). This is that missing surface: every pair of known sender scopes that are one or two
+// characters apart, with the weight behind each side so the operator can see which is the real one.
+//
+// REPORT-ONLY, and deliberately so. It never merges, never renames, never writes. It hands the
+// pair to the existing admin + audited rename route and lets a human decide which name survives —
+// the same posture as every other Learning Repair tool.
+//
+// Uses the SAME `name_proximity` comparison as the teach-time challenge and the write guard, so
+// all three agree about what "the same company, misread" means.
+// A DIGIT INSIDE AN ALPHABETIC TOKEN — the machine signature (`B8ramblewood`, `Ir0nclad`). Near-
+// zero in a real company name, and unlike the wordness model it is immune to both classes Oracle
+// named in O5: brand orthography (`Kwik-Fit`, `Xpress`) and Welsh/Irish names, neither of which
+// carries an interior digit. A token that is ALL digits, or starts with one (`3M`, `24/7`), is not
+// this signature and is excluded.
+function _digitInAlphaToken(name) {
+  for (const tok of String(name || '').split(/\s+/)) {
+    const t = tok.replace(/[^0-9A-Za-z]/g, '');
+    if (t.length < 3) continue;                       // too short to judge (3M, O2)
+    if (!/[0-9]/.test(t) || !/[A-Za-z]/.test(t)) continue;
+    if (/^[0-9]/.test(t)) continue;                   // '3M', '24hr' — a leading digit is ordinary
+    if (/[0-9]/.test(t.slice(1, -1))) return true;    // a digit INSIDE the word
+  }
+  return false;
+}
+
+function findDuplicateSupplierPairs(db, { minDocs = 1 } = {}) {
+  const { nearMatchIdentity } = require('./name_proximity');
+  let rows = [];
+  try {
+    rows = db.prepare(`
+      SELECT TRIM(supplier_name) AS name, COUNT(*) AS docs
+      FROM documents
+      WHERE supplier_name IS NOT NULL AND TRIM(supplier_name) <> '' AND status <> 'deleted'
+      GROUP BY LOWER(TRIM(supplier_name))
+      ORDER BY docs DESC
+    `).all();
+  } catch { return []; }
+  const names = rows.filter(r => r.docs >= minDocs);
+  const out = [];
+  for (let i = 0; i < names.length; i++) {
+    for (let j = i + 1; j < names.length; j++) {
+      const v = nearMatchIdentity(names[i].name, names[j].name);
+      if (!v.near) continue;
+      // STRICTER THAN THE WRITE GUARD, DELIBERATELY, and its own test proved why. The guard's
+      // budget is 2 edits, and at 2 edits REAL companies collide: `Northgate Motors Ltd` vs
+      // `Southgate Motors Ltd` is d=2 at similarity 0.889 and passes it. At the guard's seam that
+      // costs a declined overwrite; HERE it would put two real companies on screen under the words
+      // "look like duplicates" and invite the operator to merge them — the silent-merge harm this
+      // whole arc exists to prevent, dressed as a helpful suggestion (Oracle O2, measured).
+      // So: one edit, or two edits ONLY when one side carries the machine signature — a DIGIT
+      // inside an alphabetic token (`B8ramblewood`), which is near-zero in a real company name and
+      // is the round-4 exhibit's own shape (Oracle O5's preferred narrow arm).
+      // NAMED COST: a two-character garble with no digit (a doubled or dropped letter) is not
+      // reported. That is the safe direction — a missed pair leaves today's behaviour, a false pair
+      // merges two customers.
+      if (v.distance > 1 && !(_digitInAlphaToken(names[i].name) || _digitInAlphaToken(names[j].name))) continue;
+      // The heavier side is offered as the likely-correct one — it is the name the customer has
+      // actually been filing under. Offered, not chosen: a garble CAN be the heavier side (Chris's
+      // 20 poisoned documents outnumbered a fresh correct scope), so the operator still decides.
+      const [keep, other] = names[i].docs >= names[j].docs ? [names[i], names[j]] : [names[j], names[i]];
+      out.push({
+        likelyCorrect: keep.name, likelyCorrectDocs: keep.docs,
+        other: other.name,        otherDocs: other.docs,
+        distance: v.distance, similarity: v.similarity,
+        otherScope: getSupplierScopeCounts(db, other.name),
+      });
+    }
+  }
+  return out;
+}
+
 module.exports = {
   insertExtractions, deleteExtractions,
   getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue, getPrefixModelForScope,
-  getSupplierScopeCounts, renameSupplier,
+  getSupplierScopeCounts, renameSupplier, findDuplicateSupplierPairs,
   saveCorrections, retractConfirmHints, replantConfirmHints, getHints, getAllHints, isPlausibleSupplierName, isPlausibleSupplierNameBase, isNameLikeField, nameQuality, issuerReadLooksImplausible, findNearMatchIdentity, normalizeSupplierName,
   saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors, getAnchorsForScope, getTaughtFieldKeys, deleteAnchor,
   saveLogoFingerprint, getAllLogos, findLogoMatch,

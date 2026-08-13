@@ -305,10 +305,22 @@ function register(ctx) {
     return learning.getSupplierScopeCounts(getDb(), (name || '').trim());
   });
 
+  // "These two look like the same company" — report-only duplicate detection over the known sender
+  // scopes, using the SAME name_proximity comparison as the teach-time challenge and the write
+  // guard. Preventive fixes leave a customer whose filing tree is ALREADY split with nothing
+  // telling them (Oracle O7); this is that surface. It never merges or renames — it hands each pair
+  // to the audited rename route below and lets a human choose which name survives.
+  ipcMain.handle('find-duplicate-suppliers', () => {
+    requireRole('admin');
+    try { return learning.findDuplicateSupplierPairs(getDb()); }
+    catch (e) { logger?.warn?.(`find-duplicate-suppliers: ${e.message}`); return []; }
+  });
+
   // Rename a supplier IDENTITY across every learning-scope table (documents/hints/anchors/
-  // logos/corrections + the stored identity value) — the reusable fix for a wrong/merged
-  // supplier name that the per-field learning-history tools can't reach (they are scoped BY
-  // supplier). Admin-only + audited. Files are not moved (see learning.renameSupplier).
+  // logos/corrections + the stored identity value + a template's FROZEN identity) — the reusable
+  // fix for a wrong/merged supplier name that the per-field learning-history tools can't reach
+  // (they are scoped BY supplier). Admin-only + audited. Files already on disk are NOT moved: the
+  // filed copies keep their old folder, and that is stated in the UI rather than done silently.
   ipcMain.handle('rename-supplier', (_e, payload) => {
     requireRole('admin');
     const { oldName, newName } = payload || {};

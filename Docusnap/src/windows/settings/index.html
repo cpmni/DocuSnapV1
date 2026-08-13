@@ -1873,11 +1873,26 @@
           <button class="btn danger" id="lr-btn-clear-field-rules" data-help-key="lr-clear-rules">Clear field cleanup rules for this scope</button>
         </div>
 
+        <div class="section-title" style="margin-top:18px;">Senders that look like duplicates</div>
+        <div class="section-desc" style="margin-bottom:8px;">
+          One misread character can leave the same company in your filing cabinet twice, one letter
+          apart, with new documents going to whichever spelling was read that day. This lists any
+          pair of senders that differ by only a character or two, with how many documents sit under
+          each. Nothing is changed by looking: pick the correct spelling and it fills in the rename
+          below, which you still have to confirm.
+        </div>
+        <div class="row-flex" style="gap:8px; align-items:center;">
+          <button class="btn" id="lr-btn-find-duplicates" data-help-key="lr-find-duplicates">Check for duplicate senders</button>
+          <span id="lr-dupe-msg" class="muted" style="font-size:12px;"></span>
+        </div>
+        <div id="lr-dupe-list" style="margin-top:8px;"></div>
+
         <div class="section-title" style="margin-top:18px;">Rename / fix this supplier</div>
         <div class="section-desc" style="margin-bottom:8px;">
           Corrects a wrong or merged Document Issuer everywhere it is a learning key — the
-          documents, hints, anchors, logo and corrections for this supplier — in one move, so
-          it stops re-appearing on new scans. Filed documents keep their files.
+          documents, hints, anchors, logo and corrections for this supplier, and the permanent
+          sender stored on its layout — in one move, so it stops re-appearing on new scans.
+          Filed documents keep their files where they are.
         </div>
         <div class="row-flex" style="gap:8px; align-items:center;">
           <input type="text" id="lr-rename-new" class="path-input" placeholder="Corrected supplier name…" style="max-width:280px;" spellcheck="false">

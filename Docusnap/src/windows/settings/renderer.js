@@ -5017,6 +5017,51 @@ document.getElementById('lr-btn-clear-hints').addEventListener('click', async ()
   await runLearningSearch();
 });
 
+// ── Senders that look like duplicates (report-only) ──────────────────────────────────────────
+// The B9 census as a screen. Every preventive fix in the teach-poisoning arc leaves a customer
+// whose filing tree is ALREADY split with nothing telling them; this is what tells them. It never
+// merges — picking a row only PREFILLS the audited rename below, which still has to be confirmed
+// by typing the old name.
+document.getElementById('lr-btn-find-duplicates')?.addEventListener('click', async () => {
+  const msg  = document.getElementById('lr-dupe-msg');
+  const host = document.getElementById('lr-dupe-list');
+  msg.textContent = 'Checking…';
+  host.innerHTML  = '';
+  let pairs = [];
+  try { pairs = await api.findDuplicateSuppliers(); }
+  catch (e) { msg.textContent = 'Could not check: ' + e.message; return; }
+  if (!pairs.length) {
+    msg.textContent = 'No senders differ by only a character or two — nothing looks split.';
+    return;
+  }
+  msg.textContent = `${pairs.length} pair${pairs.length === 1 ? '' : 's'} to look at.`;
+  host.innerHTML = pairs.map((p, i) => {
+    const scope = p.otherScope || {};
+    const extra = [scope.supplier_hints ? `${scope.supplier_hints} hint(s)` : '',
+                   scope.field_anchors ? `${scope.field_anchors} taught spot(s)` : '']
+      .filter(Boolean).join(', ');
+    return `<div class="row-flex" style="gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--border)">
+      <div style="flex:1">
+        <div><strong>${escHtml(p.likelyCorrect)}</strong> <span class="muted">— ${p.likelyCorrectDocs} document(s)</span></div>
+        <div><strong>${escHtml(p.other)}</strong> <span class="muted">— ${p.otherDocs} document(s)${extra ? ', ' + escHtml(extra) : ''}</span></div>
+        <div class="muted" style="font-size:11.5px">${p.distance === 1 ? 'one character' : p.distance + ' characters'} different</div>
+      </div>
+      <button class="btn" data-dupe-fix="${i}">Use "${escHtml(p.likelyCorrect)}"</button>
+    </div>`;
+  }).join('');
+  host.querySelectorAll('[data-dupe-fix]').forEach(btn => btn.addEventListener('click', () => {
+    const p = pairs[Number(btn.dataset.dupeFix)];
+    // Prefill BOTH sides of the existing rename tool and hand the operator straight to it — the
+    // rename itself stays exactly as audited and still demands the typed confirmation.
+    document.getElementById('lr-supplier').value   = p.other;
+    document.getElementById('lr-rename-new').value = p.likelyCorrect;
+    document.getElementById('lr-btn-search')?.click();
+    document.getElementById('lr-rename-new').scrollIntoView({ block: 'center', behavior: 'smooth' });
+    document.getElementById('lr-dupe-msg').textContent =
+      `Ready: rename "${p.other}" to "${p.likelyCorrect}" below, if that is the right way round.`;
+  }));
+});
+
 document.getElementById('lr-btn-rename-supplier').addEventListener('click', async () => {
   const msg = document.getElementById('lr-msg');
   if (!lrCurrentScope || !lrCurrentScope.supplier_name) {
