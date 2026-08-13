@@ -1438,6 +1438,54 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 63 applied: extractions.corroboration (record-only)');
   }
 
+  // ── Migration 64: template_fields provenance — how did this frozen value get here? ───────────
+  // Chris round 4 took DB forensics to explain: a teach overwrote template 13's frozen identity
+  // with a garbled read, the template stamped 20 siblings at 95, and NOTHING in the schema said
+  // which write had done it or when. `template_fields` records what a value IS and has never
+  // recorded where it came from, so every diagnosis of this class starts by guessing.
+  // Two additive, nullable columns, written only when a fixed_value actually CHANGES:
+  //   fixed_source — 'teach' | 'admin' | 'graduation' | 'rebuild' | 'merge'
+  //   fixed_set_at — when
+  // Nullable and unread by any decision: this is a record, not a gate. Every existing row keeps
+  // NULL, which correctly means "written before provenance was kept".
+  if (!applied.has(64)) {
+    if (tableExists(db, 'template_fields')) {
+      if (!hasColumn(db, 'template_fields', 'fixed_source')) {
+        db.exec('ALTER TABLE template_fields ADD COLUMN fixed_source TEXT');
+      }
+      if (!hasColumn(db, 'template_fields', 'fixed_set_at')) {
+        db.exec('ALTER TABLE template_fields ADD COLUMN fixed_set_at TEXT');
+      }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (64)').run();
+    console.log('JS migration 64 applied: template_fields.fixed_source/fixed_set_at (record-only)');
+  }
+
+  // ── Migration 65: templates.identity_unconfirmed — hold the siblings ─────────────────────────
+  // Owner decision 4 of the teach-poisoning arc: a teach that replaces a template's frozen identity
+  // with a GENUINELY DIFFERENT company commits (it must — a wrong frozen name has to stay
+  // correctable), but it must not immediately stamp every sibling document with the new name at 95
+  // on the strength of one document. Round 4 is what that looks like when it does: 20 siblings
+  // stamped, 12 filed, from a single draw.
+  // A pending template is marked here; `identity_supported_count` counts the documents that have
+  // since agreed. Inert until `template_identity_hold_siblings` is armed, and inert on every
+  // template that never has its identity replaced.
+  if (!applied.has(65)) {
+    if (tableExists(db, 'templates')) {
+      if (!hasColumn(db, 'templates', 'identity_unconfirmed')) {
+        db.exec('ALTER TABLE templates ADD COLUMN identity_unconfirmed INTEGER DEFAULT 0');
+      }
+      if (!hasColumn(db, 'templates', 'identity_unconfirmed_at')) {
+        db.exec('ALTER TABLE templates ADD COLUMN identity_unconfirmed_at TEXT');
+      }
+      if (!hasColumn(db, 'templates', 'identity_supported_count')) {
+        db.exec('ALTER TABLE templates ADD COLUMN identity_supported_count INTEGER DEFAULT 0');
+      }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (65)').run();
+    console.log('JS migration 65 applied: templates.identity_unconfirmed (hold-the-siblings, inert until armed)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

@@ -566,7 +566,7 @@ function mergeInto(db, fromTemplateId, toTemplateId) {
     // 3. template_fields: same add-missing fold.
     const haveF = new Set(getFields(db, toId).map(f => f.field_key));
     const missingF = getFields(db, fromId).filter(f => !haveF.has(f.field_key));
-    if (missingF.length) { _upsertFields(db, toId, missingF); s.fieldsAdded = missingF.length; }
+    if (missingF.length) { _upsertFields(db, toId, missingF, { source: 'merge' }); s.fieldsAdded = missingF.length; }
 
     // 4. landmarks / sample / phash / fingerprint: adopt source's ONLY if target lacks.
     if (!getLandmarks(db, toId).length) {
@@ -882,7 +882,7 @@ function searchByName(db, query, document_type_slug) {
   `).all({ q, dt: document_type_slug || null });
 }
 
-function create(db, { name, document_type_slug, logo_phash, logo_detail_hash, keyword_fingerprint, fields }) {
+function create(db, { name, document_type_slug, logo_phash, logo_detail_hash, keyword_fingerprint, fields, source }) {
   const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'template';
   // templates.slug is UNIQUE, but the generated NAME is not: two documents of the
   // same type with no resolved supplier both yield "<Type> Template" -> the same
@@ -900,7 +900,7 @@ function create(db, { name, document_type_slug, logo_phash, logo_detail_hash, ke
          JSON.stringify(keyword_fingerprint || []));
   const id = info.lastInsertRowid;
   if (logo_phash) addLogoHash(db, id, logo_phash, logo_detail_hash);   // seed the set + its detail hash (migration 26 / 47)
-  if (fields && fields.length) _upsertFields(db, id, fields);
+  if (fields && fields.length) _upsertFields(db, id, fields, { source: source || 'create' });
   return id;
 }
 
@@ -1081,13 +1081,13 @@ function enrichIdentity(db, id, { logo_phash, logo_detail_hash, keyword_fingerpr
   }
 }
 
-function update(db, id, { logo_phash, logo_detail_hash, keyword_fingerprint, fields } = {}) {
+function update(db, id, { logo_phash, logo_detail_hash, keyword_fingerprint, fields, source } = {}) {
   // confirmed_count bump + timestamp stay here (identity convergence is delegated).
   db.prepare("UPDATE templates SET confirmed_count = confirmed_count + 1, updated_at = datetime('now') WHERE id = ?").run(id);
   // Taught-confirm identity convergence — NOT appendLogoOnly, so a first taught confirm
   // still seeds the primary logo exactly as before (byte-identical to the old inline body).
   enrichIdentity(db, id, { logo_phash, logo_detail_hash, keyword_fingerprint });
-  if (fields && fields.length) _upsertFields(db, id, fields);
+  if (fields && fields.length) _upsertFields(db, id, fields, { source: source || 'teach' });
 }
 
 // Slice 1 — LEARN-ON-COMMIT. Re-run identity convergence for a document's ALREADY-resolved
@@ -1180,32 +1180,65 @@ function learnTemplateOnCommit(db, document_id, { document_type_slug, supplier_n
   });
 }
 
-function _upsertFields(db, templateId, fields) {
+// EVERY confirmed-history template write funnels through here — create(), update(), mergeInto() —
+// which is what makes ONE guard enough for that whole family (see _identityOverwriteGuard, and the
+// enumeration pinned in test_identity_writers.js). The one door that does NOT come through here is
+// setFieldFixedValue: an admin literal typed in Template Manager or the wizard's fixed-value hatch,
+// deliberately ungoverned because it is the only route by which a WRONG frozen name can be
+// corrected. That exemption is pinned with its reason rather than left to be rediscovered.
+//
+// `source` records WHERE a frozen value came from (migration 64). Record-only.
+function _upsertFields(db, templateId, fields, opts = {}) {
+  const source = String(opts.source || 'rebuild');
   // A confirmed-history rebuild must NOT erase an admin-LOCKED fixed value
   // (fixed_locked = 1) — the CASE keeps the existing row's fixed_value/is_variable
   // when locked, else takes the recomputed values (unchanged behaviour for unlocked
   // rows). fixed_locked itself is never touched here, so a locked row stays locked.
+  //
+  // Provenance is stamped ONLY when the stored fixed_value actually changes (`IS NOT` is SQLite's
+  // null-safe compare), so an ordinary rebuild that recomputes the same literal does not rewrite
+  // the history of how it got there. Guarded on the columns existing, so a DB that has not yet run
+  // migration 64 (a fixture, a mid-upgrade start) keeps the previous statement exactly.
+  const hasProv = _hasFixedProvenance(db);
   const stmt = db.prepare(`
     INSERT INTO template_fields
-      (template_id, field_key, anchor_label, direction, fixed_value, is_variable)
-    VALUES (?, ?, ?, ?, ?, ?)
+      (template_id, field_key, anchor_label, direction, fixed_value, is_variable${hasProv ? ', fixed_source, fixed_set_at' : ''})
+    VALUES (?, ?, ?, ?, ?, ?${hasProv ? ", ?, datetime('now')" : ''})
     ON CONFLICT(template_id, field_key) DO UPDATE SET
       anchor_label = excluded.anchor_label,
       direction    = excluded.direction,
       fixed_value  = CASE WHEN fixed_locked = 1 THEN fixed_value ELSE excluded.fixed_value END,
       is_variable  = CASE WHEN fixed_locked = 1 THEN is_variable ELSE excluded.is_variable END
+      ${hasProv ? `,
+      fixed_source = CASE WHEN fixed_locked = 1 OR excluded.fixed_value IS fixed_value
+                          THEN fixed_source ELSE excluded.fixed_source END,
+      fixed_set_at = CASE WHEN fixed_locked = 1 OR excluded.fixed_value IS fixed_value
+                          THEN fixed_set_at ELSE datetime('now') END` : ''}
   `);
   for (const f of fields) {
     const eff = _identityOverwriteGuard(db, templateId, f);
-    stmt.run(
+    const args = [
       templateId,
       eff.field_key,
       eff.anchor_label  || null,
       eff.direction     || 'right',
       eff.fixed_value   || null,
-      eff.is_variable !== false && eff.is_variable !== 0 ? 1 : 0
-    );
+      eff.is_variable !== false && eff.is_variable !== 0 ? 1 : 0,
+    ];
+    if (hasProv) args.push(source);
+    stmt.run(...args);
   }
+}
+
+// Migration 64's columns, probed once per DB handle (the same pattern trust.js uses for
+// confirmed_via): a fixture or a pre-migration DB must keep the old statement, not throw.
+const _provCache = new WeakMap();
+function _hasFixedProvenance(db) {
+  if (_provCache.has(db)) return _provCache.get(db);
+  let ok = false;
+  try { db.prepare('SELECT fixed_source, fixed_set_at FROM template_fields LIMIT 0'); ok = true; } catch { ok = false; }
+  _provCache.set(db, ok);
+  return ok;
 }
 
 // ── IDENTITY-OVERWRITE GUARD (teach_identity_near_match_keep, DEFAULT OFF) ────────────────────
@@ -1248,7 +1281,15 @@ function _identityOverwriteGuard(db, templateId, f) {
     const existing = String((row && row.fixed_value) || '').trim();
     if (!row || !existing || row.fixed_locked === 1) return f;   // no incumbent / admin-locked
     const v = require('./name_proximity').nearMatchIdentity(incoming, existing);
-    if (!v.near) return f;                                       // identical, short, or different
+    if (!v.near) {
+      // A GENUINELY DIFFERENT company. It commits — that is the pinned invariant, and without it a
+      // wrong frozen name could never be corrected by re-teaching. But it commits on the evidence of
+      // ONE document, and the round-4 exhibit is what one document's evidence buys: 20 siblings
+      // stamped at 95 and 12 filed. So the replacement is marked PENDING (owner decision 4) and the
+      // Python side declines to stamp siblings at full confidence until a second document agrees.
+      _markIdentityPending(db, templateId, incoming, existing);
+      return f;
+    }
     // KEEP the incumbent. Silent by design and by the owner's ruling: a one-or-two character
     // misread of a name the install already holds is not a decision worth interrupting an
     // operator for. The reason is recorded so a silent refusal is never invisible in a trace.
@@ -1260,6 +1301,58 @@ function _identityOverwriteGuard(db, templateId, f) {
   } catch {
     return f;            // a guard failure must never block a template write
   }
+}
+
+// ── HOLD THE SIBLINGS (template_identity_hold_siblings, DEFAULT OFF) ─────────────────────────
+// Owner decision 4. A replacement identity is believed for the document in front of the operator
+// and NOT yet for the layout's other documents. While a template is pending, Stage 0 stamps the
+// identity at a review-forcing confidence with a note instead of 95 (template_matcher.py), so the
+// new name cannot silently sweep 20 siblings onto disk before anyone has seen a second example.
+//
+// Cleared by AGREEMENT, not by time: `noteIdentitySupported` is called on every confirm of a
+// document bound to the template, and one further agreeing document releases the hold. The teach
+// itself does not count — it is the evidence being tested.
+function _markIdentityPending(db, templateId, incoming, existing) {
+  try {
+    if (require('./learning').getSetting(db, 'template_identity_hold_siblings', 'false') !== 'true') return;
+    if (!_hasIdentityHold(db)) return;
+    db.prepare(`UPDATE templates SET identity_unconfirmed = 1, identity_unconfirmed_at = datetime('now'),
+                identity_supported_count = 0 WHERE id = ?`).run(templateId);
+    console.log(`  [identity-hold] tpl ${templateId}: ${JSON.stringify(existing)} -> ${JSON.stringify(incoming)} `
+              + `committed but siblings HELD until a second document agrees`);
+  } catch { /* a hold failure must never block the write it accompanies */ }
+}
+
+// One agreeing document releases the hold. `value` is the issuer the operator just CONFIRMED, so
+// agreement means the human said the same thing on a second document — the smallest honest
+// corroboration, and the one the arc's design named.
+function noteIdentitySupported(db, templateId, value) {
+  try {
+    if (!templateId || !_hasIdentityHold(db)) return { changed: false };
+    const t = db.prepare('SELECT identity_unconfirmed FROM templates WHERE id = ?').get(templateId);
+    if (!t || !t.identity_unconfirmed) return { changed: false };
+    const frozen = db.prepare(
+      "SELECT fixed_value FROM template_fields WHERE template_id = ? AND field_key = 'supplier_name'").get(templateId);
+    const a = String((frozen && frozen.fixed_value) || '').trim().toLowerCase();
+    const b = String(value == null ? '' : value).trim().toLowerCase();
+    if (!a || a !== b) return { changed: false };                // a different answer is not support
+    const n = db.prepare('UPDATE templates SET identity_supported_count = identity_supported_count + 1 WHERE id = ?')
+                .run(templateId) && db.prepare('SELECT identity_supported_count AS n FROM templates WHERE id = ?').get(templateId).n;
+    if (n >= 1) {
+      db.prepare('UPDATE templates SET identity_unconfirmed = 0, identity_unconfirmed_at = NULL WHERE id = ?').run(templateId);
+      return { changed: true, released: true, supports: n };
+    }
+    return { changed: true, released: false, supports: n };
+  } catch { return { changed: false }; }
+}
+
+const _holdCache = new WeakMap();
+function _hasIdentityHold(db) {
+  if (_holdCache.has(db)) return _holdCache.get(db);
+  let ok = false;
+  try { db.prepare('SELECT identity_unconfirmed, identity_supported_count FROM templates LIMIT 0'); ok = true; } catch { ok = false; }
+  _holdCache.set(db, ok);
+  return ok;
 }
 
 // Explicit admin-set fixed value for ONE template field (Template Manager /
@@ -1279,13 +1372,25 @@ function setFieldFixedValue(db, templateId, fieldKey, fixedValue) {
     : String(fixedValue).trim();
   const isVariable = val === null ? 1 : 0;
   const locked     = val === null ? 0 : 1;
+  // DELIBERATELY UNGOVERNED by _identityOverwriteGuard, and this is the reason, recorded so it is
+  // not "closed" as an oversight: this door is an explicit human literal — an admin typing the
+  // value in Template Manager, or the teach wizard's fixed-value hatch where the operator typed it
+  // themselves. It is therefore the ONLY route by which a wrong frozen identity can be CORRECTED.
+  // Guarding it would make a near-miss correction impossible ("Bramblewood" could never replace
+  // "B8ramblewood"), which is the trap the guard's own invariant exists to avoid. The teach
+  // surfaces warn on a near match BEFORE this is reached (review + wizard, 7dfb580), so the
+  // operator is told; the decision stays theirs. Pinned in test_identity_writers.js.
+  const hasProv = _hasFixedProvenance(db);
   db.prepare(`
-    INSERT INTO template_fields (template_id, field_key, fixed_value, is_variable, fixed_locked)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO template_fields (template_id, field_key, fixed_value, is_variable, fixed_locked${hasProv ? ', fixed_source, fixed_set_at' : ''})
+    VALUES (?, ?, ?, ?, ?${hasProv ? ", 'admin', datetime('now')" : ''})
     ON CONFLICT(template_id, field_key) DO UPDATE SET
       fixed_value  = excluded.fixed_value,
       is_variable  = excluded.is_variable,
       fixed_locked = excluded.fixed_locked
+      ${hasProv ? `,
+      fixed_source = 'admin',
+      fixed_set_at = datetime('now')` : ''}
   `).run(templateId, fieldKey, val, isVariable, locked);
   return getById(db, templateId);
 }
@@ -1611,6 +1716,7 @@ module.exports = {
   stabiliseFingerprint, chooseLogoPhash,
   getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
   recordMappingTest, setSampleDocument, reassignDocuments, mergeInto, setFieldFixedValue,
+  noteIdentitySupported,
   getHiddenFields, getHiddenFieldsForSupplierType, resolveVisibilityTemplateIds, reuseByEstablishedName, isFieldHideable, setHiddenField, getTypeFieldsForHiding,
   _normNameForVis,   // exported for the JS↔Python parity pin (vis_norm_vectors.json)
   setOcrAutoParams, setOcrAutoEnabled,

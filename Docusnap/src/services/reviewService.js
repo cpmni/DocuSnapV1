@@ -361,6 +361,22 @@ function createReviewService(deps = {}) {
       }).catch(() => {});
     }
 
+    // HOLD THE SIBLINGS — the release (owner decision 4, 2026-08-13). When a teach replaced a
+    // template's frozen identity with a genuinely DIFFERENT company, that template's other
+    // documents are held below full confidence until a SECOND document agrees. This is where
+    // agreement is observed: a human has just confirmed a document bound to the template, and the
+    // issuer they confirmed either matches the new frozen name or does not. One agreeing document
+    // releases the hold; the teach itself never counts, because it is the evidence being tested.
+    // Runs on BOTH bulk and single confirms (a filed doc is a filed doc, Oracle D2), inert unless
+    // the column exists AND the flag is armed, and can never affect the already-returned confirm.
+    try {
+      const _tid = (documents.getById(db, document_id) || {}).template_id;
+      if (_tid) {
+        require('../../database/modules/templates')
+          .noteIdentitySupported(db, _tid, (allValues && allValues.supplier_name) || supplier_name || '');
+      }
+    } catch (e) { logger?.warn?.('identity-hold release skipped: ' + (e && e.message)); }
+
     // Routing (SEAM A/A'): auto-create an approval route from the extracted total/type. Fires on BOTH
     // bulk and non-bulk confirms — a filed doc is a filed doc (Oracle D2); the !bulk guard above exists
     // only to throttle the Python-spawning landmark hooks, which routing is not. Detached + fail-open

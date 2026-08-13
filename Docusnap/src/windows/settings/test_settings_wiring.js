@@ -79,6 +79,10 @@ const BRIDGES = [
   // Filing-identity coherence (2026-08-14): the folder + learning scope key come from the
   // engine's `_supplier_name`, captured before Stage 4.5 can repair the issuer.
   ['identity-scope-post-repair-toggle', 'identity_scope_post_repair', 'IDENTITY_SCOPE_POST_REPAIR'],
+  // Hold the siblings (owner decision 4, 2026-08-13): templates.js MARKS a template whose frozen
+  // identity was replaced by a genuinely different company; this bridge is what makes the Stage-0
+  // stamp yield for it. Without the bridge the mark would be written and nothing would read it.
+  ['identity-hold-siblings-toggle', 'template_identity_hold_siblings', 'TEMPLATE_IDENTITY_HOLD_SIBLINGS'],
   ['shadow-attrib-toggle',      'reconcile_shadow_attribution', 'RECONCILE_SHADOW_ATTRIBUTION'],
   ['vat-rate-at-toggle',        'vat_rate_at_skip',             'VAT_RATE_AT_SKIP'],
   ['pin-discharge-toggle',      'supplier_pin_self_discharge',  'SUPPLIER_PIN_SELF_DISCHARGE'],
@@ -148,6 +152,10 @@ const SETTING_SWITCHES = [
   // frozen company identity backed by 38 confirmations with one draw-box OCR read. The gate is a
   // settings read inside templates.js, at the ONE upsert every writer passes through.
   ['identity-near-match-keep-toggle', 'teach_identity_near_match_keep', 'database/modules/templates.js'],
+  // Hold the siblings (owner decision 4, 2026-08-13). TWO consumers of one key by design: the JS
+  // side MARKS a template pending (templates.js) and the bridge below arms the Python stamp that
+  // acts on the mark. Listed here against the JS reader; the env bridge is pinned in BRIDGES.
+  ['identity-hold-siblings-toggle', 'template_identity_hold_siblings', 'database/modules/templates.js'],
   ['shadow-row-skip-toggle', 'trust_shadow_row_skip', 'database/modules/trust.js'],
   // Machine-feed arc slice 1 (Oracle W/COND C1-C6, 2026-08-13): learning.js reads the key
   // directly (the shadow-row-skip C5 pattern); templates.js reads it for the C1 template leg.

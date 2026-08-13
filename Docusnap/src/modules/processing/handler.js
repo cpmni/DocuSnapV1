@@ -163,6 +163,12 @@ function _reconcileEnv(db) {
     // of the pre-repair local is untouched. Flip needs the corpus arm (every moved document must
     // move TOWARD the corroborated value, M=0).
     if (learning.getSetting(db, 'identity_scope_post_repair', 'false') === 'true') env.IDENTITY_SCOPE_POST_REPAIR = '1';
+    // Hold the siblings (owner decision 4, 2026-08-13). ONE setting, read on BOTH sides: templates.js
+    // marks a template pending when a teach replaces its frozen identity with a genuinely different
+    // company, and this bridge is what makes the Python stamp yield for it. Bridging only one side
+    // would mark templates nothing ever acted on — the dead-toggle failure test_settings_wiring.js
+    // exists to catch.
+    if (learning.getSetting(db, 'template_identity_hold_siblings', 'false') === 'true') env.TEMPLATE_IDENTITY_HOLD_SIBLINGS = '1';
     if (learning.getSetting(db, 'crosscheck_outlier_reconcile', 'false') === 'true') env.CROSSCHECK_OUTLIER_RECONCILE = '1';
     if (learning.getSetting(db, 'universal_verify_restore', 'false') === 'true') env.UNIVERSAL_VERIFY_RESTORE = '1';
     if (learning.getSetting(db, 'universal_verify_flag', 'false') === 'true') env.UNIVERSAL_VERIFY_FLAG = '1';

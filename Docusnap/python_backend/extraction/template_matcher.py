@@ -458,6 +458,15 @@ def _type_heading_absent(best_t, ocr_lower):
 # whose letterhead sits in the page FOOTER, outside the 20-line harvest window. The page knows what
 # the fingerprint cannot.
 _IDENTITY_ON_PAGE_ON = os.environ.get('TEMPLATE_IDENTITY_ON_PAGE', '0') != '0'
+# HOLD THE SIBLINGS (owner decision 4, 2026-08-13). A teach that replaces a template's frozen
+# identity with a genuinely DIFFERENT company commits — a wrong frozen name must stay correctable —
+# but it must not stamp every sibling at 95 on one document's evidence. `templates.identity_
+# unconfirmed` (migration 65) marks such a template until a second document agrees; see
+# extract_with_template. DEFAULT OFF; the column is inert without it.
+_HOLD_PENDING_IDENTITY = os.environ.get('TEMPLATE_IDENTITY_HOLD_SIBLINGS', '0') != '0'
+# The identity field keys, mirroring database/modules/document_types.COMPANY_KEYS (migration 44:
+# customer_name was unlinked from identity, so this is deliberately ONE key).
+_COMPANY_KEYS = ('supplier_name',)
 try:
     _IDENTITY_PRINTS_RATIO = float(os.environ.get('TEMPLATE_IDENTITY_PRINTS_RATIO', '0.80'))
 except ValueError:
@@ -1067,6 +1076,29 @@ def extract_with_template(ocr_text: str, template: dict) -> dict:
         # OCR/keyword/anchor overrides; an auto-derived non-variable value stays the
         # overridable 'template_fixed'. Same confidence either way.
         if fixed_val and not is_var:
+            # HOLD THE SIBLINGS (TEMPLATE_IDENTITY_HOLD_SIBLINGS, DEFAULT OFF — owner decision 4).
+            # A teach that replaced this template's frozen identity with a GENUINELY DIFFERENT
+            # company is believed for the document the operator was looking at, and not yet for the
+            # layout's other documents. templates.js marks the template pending; until a second
+            # document agrees, the identity is stamped at a review-forcing confidence WITH a note
+            # rather than at 95. The note is what actually holds it: a bare 70 does not trip the
+            # review threshold (`< 70`, documents.js), so a confidence drop alone would still
+            # auto-file — the slice-3 B2 lesson.
+            # Scope: the identity field only, and only while pending. Everything else, including a
+            # frozen VAT number and an admin-LOCKED literal, is untouched.
+            if (_HOLD_PENDING_IDENTITY
+                    and key in _COMPANY_KEYS
+                    and not locked
+                    and template.get('identity_unconfirmed')):
+                results[key] = {
+                    'value':      fixed_val,
+                    'confidence': 70,
+                    'method':     'template_fixed',
+                    'validation_note': (
+                        f"the sender for this layout was changed to '{fixed_val}' on one document — "
+                        f"confirm it here too and it will be used automatically from then on"),
+                }
+                continue
             results[key] = {
                 'value':      fixed_val,
                 'confidence': 95,

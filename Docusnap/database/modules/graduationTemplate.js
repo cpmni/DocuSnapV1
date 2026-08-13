@@ -229,6 +229,7 @@ function apply(db, docId, decision) {
     logo_phash: s.logo_phash,              // may be null (keyword-only, Oracle C3)
     keyword_fingerprint: s.keyword_fingerprint,
     fields: s.fields,                      // variable-only (Oracle C6)
+    source: 'graduation',                  // provenance (migration 64): which write froze the issuer
   });
   db.prepare('UPDATE documents SET template_id = ? WHERE id = ? AND template_id IS NULL')
     .run(templateId, docId);

@@ -807,7 +807,13 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // teach could replace a frozen company identity backed by 38 confirms
                          // with one draw-box OCR read. Read inside templates.js at the one upsert
                          // every writer passes through; a genuinely different company still wins.
-                         ['identity-near-match-keep-toggle', 'teach_identity_near_match_keep']]) {
+                         ['identity-near-match-keep-toggle', 'teach_identity_near_match_keep'],
+                         // Hold the siblings (2026-08-13, owner decision 4): a teach that replaces a
+                         // frozen identity with a genuinely DIFFERENT company commits, but the
+                         // layout's other documents ask for one more confirmation before the new
+                         // name is used at full confidence. Read in BOTH places — templates.js marks
+                         // the template, and the Python stamp yields via TEMPLATE_IDENTITY_HOLD_SIBLINGS.
+                         ['identity-hold-siblings-toggle', 'template_identity_hold_siblings']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);
