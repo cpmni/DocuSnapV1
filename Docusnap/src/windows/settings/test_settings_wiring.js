@@ -76,6 +76,9 @@ console.log(`  NOTE ${KEYS.length} toggle-written setting keys; ${unread.length}
 // Add a row here whenever a new extraction switch is bridged; a bridge that loses any leg is a
 // switch the owner can flip that changes nothing.
 const BRIDGES = [
+  // Filing-identity coherence (2026-08-14): the folder + learning scope key come from the
+  // engine's `_supplier_name`, captured before Stage 4.5 can repair the issuer.
+  ['identity-scope-post-repair-toggle', 'identity_scope_post_repair', 'IDENTITY_SCOPE_POST_REPAIR'],
   ['shadow-attrib-toggle',      'reconcile_shadow_attribution', 'RECONCILE_SHADOW_ATTRIBUTION'],
   ['vat-rate-at-toggle',        'vat_rate_at_skip',             'VAT_RATE_AT_SKIP'],
   ['pin-discharge-toggle',      'supplier_pin_self_discharge',  'SUPPLIER_PIN_SELF_DISCHARGE'],

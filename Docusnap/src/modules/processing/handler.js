@@ -155,6 +155,14 @@ function _reconcileEnv(db) {
     // together, sep-guard AFTER the witness (Oracle C4).
     if (learning.getSetting(db, 'raw_crop_witness_flag', 'false') === 'true') env.RAW_CROP_WITNESS_FLAG = '1';
     if (learning.getSetting(db, 'raw_crop_witness_adopt', 'false') === 'true') env.RAW_CROP_WITNESS_ADOPT = '1';
+    // Filing-identity coherence (2026-08-14): `documents.supplier_name` — the FILING FOLDER and
+    // the universal LEARNING SCOPE KEY — is taken from engine `_supplier_name`, which is captured
+    // BEFORE Stage 4.5, `_adopt_identity_variant` and the late supplier writers can heal the
+    // issuer. So a repaired name reaches the extraction row while the document still files and
+    // learns under the unrepaired string. Adds a late re-derivation only; every existing consumer
+    // of the pre-repair local is untouched. Flip needs the corpus arm (every moved document must
+    // move TOWARD the corroborated value, M=0).
+    if (learning.getSetting(db, 'identity_scope_post_repair', 'false') === 'true') env.IDENTITY_SCOPE_POST_REPAIR = '1';
     if (learning.getSetting(db, 'crosscheck_outlier_reconcile', 'false') === 'true') env.CROSSCHECK_OUTLIER_RECONCILE = '1';
     if (learning.getSetting(db, 'universal_verify_restore', 'false') === 'true') env.UNIVERSAL_VERIFY_RESTORE = '1';
     if (learning.getSetting(db, 'universal_verify_flag', 'false') === 'true') env.UNIVERSAL_VERIFY_FLAG = '1';

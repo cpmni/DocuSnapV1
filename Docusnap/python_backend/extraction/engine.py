@@ -8718,7 +8718,71 @@ class ExtractionEngine:
         results["_field_candidate_emit"] = self._build_candidate_emit(results, ocr_text)
         results["_corroboration_emit"] = _corrob
 
+        # ── FILING-IDENTITY COHERENCE (IDENTITY_SCOPE_POST_REPAIR, DEFAULT OFF) ──────────────
+        # `_supplier_name` is not just telemetry: process_docs.py:956 pops it, emits it at
+        # :1065, and processing/handler.js writes it to `documents.supplier_name` — which is
+        # THE FILING FOLDER and THE UNIVERSAL LEARNING SCOPE KEY (learning.js:1803).
+        #
+        # It is assigned at :8332 from the LOCAL `supplier_name`, whose last write is :7220.
+        # Everything that can HEAL the issuer runs after that: Stage 4.5's name-lexicon repair
+        # (:7917+), `_adopt_identity_variant` (:8361), and the writers at :8411/:8441/:8500.
+        # So the engine can repair `results['supplier_name']` — the value the operator sees and
+        # that becomes the extraction row — while the document still files under, and learns
+        # under, the unrepaired string. The extraction row says one company and the folder says
+        # another. The staleness is already documented one guard over, at :8373-8375, where
+        # `_flag_branding_conflict` is SKIPPED precisely because `_adopt_identity_variant` may
+        # have moved the field while this local went stale; that fix was scoped to one caller.
+        #
+        # Placed LAST, deliberately: this ADDS a late re-derivation rather than moving the
+        # :8332 assignment, so every existing consumer of the local — `supported_keys`
+        # (:8318-8322) and `_flag_branding_conflict` (:8377) — sees exactly what it sees today
+        # and is byte-identical. Whether the branding cross-check should instead judge the
+        # POST-repair name is a separate, deliberately unmade decision (Oracle: do not decide
+        # it silently); this slice only stops the folder and the scope key disagreeing with the
+        # value.
+        #
+        # v1 is deliberately MINIMAL — adopt any non-empty final value that differs — because
+        # the flip gate is a corpus arm that counts which documents move and in which
+        # direction. Narrowing to "reliable" finals (note-free? confidence floor?) is exactly
+        # what that measurement is for, and `_adopt_identity_variant` sets a note WHILE
+        # correcting the value, so a note-based guard would exclude a case we want.
+        _moved = ExtractionEngine._rederive_filing_identity(results)
+        if _moved:
+            _was, _now, _meth = _moved
+            # Counted by the corpus arm; also the only operator-visible trace that the filing
+            # identity moved after the resolve.
+            self.log(f"  Filing identity re-derived after repair: {_was!r} -> {_now!r} (method={_meth})")
+            self._t("identity_scope_post_repair", field="supplier_name",
+                    value=_now, method=_meth, note=_was)
+
         return results
+
+    @staticmethod
+    def _rederive_filing_identity(results):
+        """Make the FILING/SCOPE identity agree with the final supplier field value.
+
+        Returns (was, now, method) when it moved the value, else None. Pure apart from the
+        env read and the mutation of `results['_supplier_name']` — pinned behaviourally in
+        tests/test_identity_scope_post_repair.py.
+
+        DEFAULT OFF: with the flag unset this returns None before touching anything, so the
+        whole slice is byte-identical.
+        """
+        if os.environ.get("IDENTITY_SCOPE_POST_REPAIR", "0") == "0":
+            return None
+        fld = results.get("supplier_name")
+        if not isinstance(fld, dict):
+            return None
+        final = str(fld.get("value") or "").strip()
+        stale = str(results.get("_supplier_name") or "").strip()
+        # An EMPTY final value never wins. `_supplier_name` can be resolved from a logo, a
+        # hint or a template when no supplier FIELD was read at all, and blanking it would
+        # send the document to "Unknown Company" and destroy its learning scope — strictly
+        # worse than a stale-but-real name.
+        if not final or final == stale:
+            return None
+        results["_supplier_name"] = final
+        return (stale, final, fld.get("method"))
 
     def _flag_type_ambiguity(self, results, ref_field_key, note=None):
         """Fix A: HOLD an ambiguous same-letterhead TYPE resolution for review. Lands a persisted

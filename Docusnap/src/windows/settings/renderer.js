@@ -796,7 +796,13 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // FLIP CHECKLIST: record template_identity_on_page state — flipping this
                          // with identity-on-page OFF re-opens the wrong-company class with
                          // stronger stamps; flip them together.
-                         ['graduation-freeze-issuer-toggle', 'graduation_freeze_issuer']]) {
+                         ['graduation-freeze-issuer-toggle', 'graduation_freeze_issuer'],
+                         // Filing-identity coherence (2026-08-14): the folder + learning scope key
+                         // are taken from a supplier value captured BEFORE Stage 4.5 can repair it,
+                         // so a healed name reaches the extraction row while the document files and
+                         // learns under the unrepaired string. Flip needs the corpus arm — every
+                         // moved document must move TOWARD the corroborated value, M=0.
+                         ['identity-scope-post-repair-toggle', 'identity_scope_post_repair']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);
