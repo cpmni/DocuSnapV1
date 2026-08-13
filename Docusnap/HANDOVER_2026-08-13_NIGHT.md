@@ -1,8 +1,11 @@
 # HANDOVER — 2026-08-13 NIGHT (slice-3 Oracle B2 gate built + run · Chris round 4)
 
-**Branch `feat/teach-side-overnight` · HEAD `1766c62`, PUSHED.** Owner present at the start
-(ordered the B2 gate), then asleep — the Chris round ran under the standing autonomous rules.
+**Branch `feat/teach-side-overnight` · HEAD `2a6093b`, PUSHED, tree clean.** Owner present at the
+start (ordered the B2 gate), then asleep — the Chris round ran under the standing autonomous rules.
 **No flag flipped, no live-DB write, no migration (still 63), no production code changed.**
+
+Three commits: `1766c62` the B2 gate + the realdoc env fix · `53db7eb` Chris round 4 + this
+handover · `2a6093b` the CLAUDE.md session block.
 
 ## TL;DR
 The owed slice-3 flip gate (Oracle B2) is BUILT and RUN over every replayable document on the
@@ -177,6 +180,20 @@ attached to my documents' safety."* Round 4 is **"Yes — but the condition is b
   `learning_exclude_machine_confirms`) — all still OFF.
 - The 4 `Bramblewood Joinery Ltd` wrong-party customer rows on confirmed Quillstone POs.
 - Chris's round-4 findings — vet queue, nothing implemented.
+
+## STATE AT WRAP
+- **Nothing is running that the next session must clean up except the sandbox.** Chris's instance is
+  still up on **CDP 9223, PID 16240**, with its own userData at
+  `…\ba2ca384-…\scratchpad\chris-sandbox\` (session-mortal; the 25 screenshots are in there — copy
+  anything worth keeping before it goes). The next `/christest` kills and rebuilds it.
+- The owner started their own app (`npm start`) at wrap. It runs against the LIVE DB — the sandbox's
+  `DOCUSNAP_USERDATA` was set only inside a separate PowerShell invocation and does not reach it.
+- No live-DB backup was taken tonight because nothing wrote to it. The read-only snapshot used to
+  seed Chris is `…\scratchpad\live_snapshot.db` (session-mortal).
+- Suites green at HEAD: `test_name_corrob_demote.py` 39/39 · `test_recon_note_demote.py` 34/34.
+  No production file was touched, so nothing else needed re-running.
+- Reports (gitignored, real values): `stress_test/out/b2_wide.md` · `b2_scope.md` ·
+  `b2_double_exhibit.md` · `b2_slice2_probe.md`.
 
 ## Key paths / gotchas
 Live DB `%APPDATA%\ScanFinder\docusnap.db` (mig 63, `ocr_dpi=200`). New harness
