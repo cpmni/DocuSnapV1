@@ -2665,12 +2665,13 @@ function _clearSuspectReadsForNewIssuer() {
   const issuer = _currentIssuerValue().trim();
   const orig   = (currentDoc?.supplier_name || '').trim();
   if (!issuer || issuer.toLowerCase() === orig.toLowerCase()) return;   // unchanged / same supplier
-  let cleared = 0;
+  const cleared = [];                                             // {key, label, value} — for the undo
   document.querySelectorAll('#fields-scroll .field-input[data-key]').forEach(input => {
     const key = input.dataset.key;
     if (key === 'supplier_name') return;                          // never the issuer being corrected
     if (!input.value.trim()) return;                              // already empty
     if (!_isSupplierScopedRead(input.dataset.method)) return;     // keyword / manual / logo -> keep
+    cleared.push({ key, label: labelFor(key) || key, value: input.value });
     input.value = '';
     input.classList.remove('corrected');
     // Record as a RENDER fact, never as a correction — see clearedByIssuerChange. Staging a
@@ -2679,12 +2680,32 @@ function _clearSuspectReadsForNewIssuer() {
     clearedByIssuerChange.add(key);
     const row = input.closest('.field-row');
     if (row) { try { dismissServerNote(row, key); } catch {} try { clearFieldWarning(row, input); } catch {} }
-    cleared++;
   });
-  // 'warn', not 'ok'. With no corrections entry and no database trace, this toast is now the ONLY
-  // record that N fields were emptied — announcing a destructive clear in the success tone, where
-  // any real warning fired in the same tick would replace it, is a fail-toward-silence.
-  if (cleared) { validateConfirm(); try { showToast(cleared > 1 ? `Cleared ${cleared} fields that were read from the previous supplier — teach them for ${issuer}.` : `Cleared 1 field that was read from the previous supplier — teach it for ${issuer}.`, 'warn'); } catch {} }
+  if (!cleared.length) return;
+  validateConfirm();
+  // NAME THE FIELDS AND OFFER THE WAY BACK (Chris round 4, card 3: "I fixed one field and two
+  // correct fields I never touched went blank, with no message"). A count alone does not tell the
+  // operator WHICH values left the screen, and this is a destructive edit with no database trace —
+  // 98d4fbb deliberately stopped it writing a corrections row, so this message is the only record.
+  // It goes on the PERSISTENT bar, appended rather than replacing, because on the ⊕ path the
+  // read-back for the name that CAUSED the clear is already on screen and both matter.
+  const names = cleared.map(c => `<strong>${escHtml(c.label)}</strong>`);
+  const list  = names.length === 1 ? names[0]
+              : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+  appendTeachMessage(
+    `&#9888; ${list} ${cleared.length === 1 ? 'was' : 'were'} read using the previous supplier's learned positions, `
+    + `so ${cleared.length === 1 ? 'it has' : 'they have'} been cleared. Check ${cleared.length === 1 ? 'it' : 'them'} before you confirm.`,
+    { actions: [{ label: 'Undo — put them back', onClick: () => {
+        for (const c of cleared) {
+          const input = document.querySelector(`.field-input[data-key="${c.key}"]`);
+          if (!input) continue;
+          input.value = c.value;
+          clearedByIssuerChange.delete(c.key);
+        }
+        validateConfirm();
+        appendTeachMessage(`&#10003; Put ${cleared.length === 1 ? 'that value' : 'those values'} back. `
+          + `They were read for <em>${escHtml(orig || 'the previous supplier')}</em> &mdash; check ${cleared.length === 1 ? 'it' : 'them'} against this page.`);
+      } }] });
 }
 
 async function _refreshTaughtForType() {
@@ -4440,6 +4461,33 @@ function showTeachMessage(html, { warn = false, actions = [] } = {}) {
   return bar;
 }
 
+// Add a SECOND line to the bar without destroying the first. The ⊕ path produces two things the
+// operator needs at once — "here is what I read from your box" and "here is what that changed" —
+// and a surface where the second erases the first is how the teach came to look silent.
+function appendTeachMessage(html, { actions = [] } = {}) {
+  const bar = document.getElementById('anchor-readout');
+  if (!bar || bar.style.display === 'none' || !bar.innerHTML) return showTeachMessage(html, { warn: true, actions });
+  const line = document.createElement('span');
+  line.className = 'ar-msg';
+  line.style.cssText = 'display:block;margin-top:6px';
+  line.innerHTML = html;
+  // Explicit if/else: `before()` returns undefined, so `?? appendChild` would ALWAYS also run.
+  const _x = bar.querySelector('.ar-x');
+  if (_x) _x.before(line); else bar.appendChild(line);
+  actions.forEach((a, i) => {
+    const b = document.createElement('button');
+    b.className = 'ar-btn';
+    b.textContent = a.label;
+    b.style.marginLeft = '8px';
+    b.addEventListener('click', () => { try { a.onClick(); } catch (e) { console.error(e); } });
+    line.appendChild(b);
+  });
+  // A bar carrying a decision must not vanish under the operator.
+  if (_anchorReadoutTimer) { clearTimeout(_anchorReadoutTimer); _anchorReadoutTimer = null; }
+  bar.classList.add('warn');
+  return bar;
+}
+
 // Put a value into a field the same way the ⊕ read does — value + correction + validation, with no
 // synthetic 'input' event (that pops the Chromium datalist; reggie, Oracle C5).
 function _applyTeachValue(fieldKey, value) {
@@ -4838,7 +4886,29 @@ async function confirmCurrentDoc({ bulk = false, expectId = null, acknowledgePre
 
   queue         = queue.filter(d => d.id !== currentDoc.id);
   deferredQueue = deferredQueue.filter(d => d.id !== currentDoc.id);
-  return { filed: true };
+  // SAY WHERE IT WENT (Chris rounds 3 + 4, verify-list item 6: "Confirming never says where the
+  // file went — queue ticked 200→199, silence"). The backend has always returned the filed name and
+  // path (reviewService spreads filingResult), and the renderer threw them away. The practice run
+  // names every destination and is the clearest thing in the product; this is the same sentence on
+  // the real path. Bulk stays silent — File All Ready reports once at the end instead of N times.
+  if (!bulk) {
+    try {
+      const _fn  = result.filename || '';
+      const _dir = _filedFolderLabel(result.filePath, _fn);
+      if (_fn) showToast(_dir ? `Filed as ${_fn} in ${_dir}.` : `Filed as ${_fn}.`, 'ok');
+    } catch { /* naming the destination must never affect the filing that already happened */ }
+  }
+  return { filed: true, filename: result.filename || null, filePath: result.filePath || null };
+}
+
+// The human-readable tail of a filed path: the folders the operator's own Output Structure made
+// ("Bramblewood Joinery Ltd / 2026 / June"), never the absolute path — Search and the detached
+// client are de-pathed by design and a toast is not the place to reintroduce one.
+function _filedFolderLabel(filePath, filename) {
+  if (!filePath) return '';
+  const parts = String(filePath).split(/[\\/]+/).filter(Boolean);
+  if (filename && parts[parts.length - 1] === filename) parts.pop();
+  return parts.slice(-3).join(' / ');
 }
 
 // Slice 1: render the prefix-outlier HOLD inline on the reference field — a plain-language note + a
@@ -4940,8 +5010,20 @@ async function fileAllReady() {
   if (bulkFiling) return;                             // a run is already in progress
   const docs = [...queue];                            // snapshot before it mutates
   if (docs.length === 0) return;
+  // SAY HOW MANY (Chris round 4: "File All Ready warned … no count", and it filed 19 — twelve of
+  // them under a misspelled company). The number uses the loop's OWN skip rule below
+  // (`isFlagged(doc) && !doc.review_acknowledged_at`), so the dialog cannot promise a different
+  // population from the one that runs. It is stated as "up to", honestly: a document can still be
+  // held back by a missing type or required field, which is only knowable once its fields load.
+  const _eligible = docs.filter(d => !isFlagged(d) || d.review_acknowledged_at).length;
+  const _held     = docs.length - _eligible;
+  if (!_eligible) {
+    showToast('Nothing is ready to file yet — every document in the queue is waiting on a check.', 'warn');
+    return;
+  }
   if (!confirm(
-        `File all ready documents in the Review queue?\n\n` +
+        `File up to ${_eligible} of ${docs.length} document${docs.length === 1 ? '' : 's'} in the Review queue?\n\n` +
+        (_held ? `${_held} flagged document${_held === 1 ? ' is' : 's are'} not included — they stay in the queue until you check them.\n\n` : '') +
         `Every document with its type and required fields filled in will be filed, ` +
         `exactly as if you confirmed it one by one. Documents still missing required ` +
         `details are left in the queue for you to review.`)) return;
@@ -5062,6 +5144,27 @@ async function fileAllReady() {
       ? `Filing stopped — a valid license is required. Filed ${filed} document${filed === 1 ? '' : 's'}.`
       : `Filed ${filed} document${filed === 1 ? '' : 's'}` + skipNote + stoppedNote,
     (aborted || !filed) ? 'warn' : 'ok');
+
+  // A SUMMARY THAT SURVIVES (Chris round 4: "File All Ready … no summary after"; it filed 19, and
+  // twelve went into a misspelled company folder he only found on disk). The banner auto-dismisses
+  // in 3.5s and the toast in 4 — neither is a record. This names WHICH senders received documents,
+  // built from `_fileAllScopes`, which the run already collects for the catch-up sweep, and it sits
+  // on the persistent bar until dismissed. Naming the companies is the point: a wrong one is
+  // recognisable at a glance, which is exactly what nobody got the chance to do.
+  if (filed) {
+    const _byCo = [..._fileAllScopes.entries()]
+      .map(([k, n]) => { try { return { name: JSON.parse(k)[0], n }; } catch { return null; } })
+      .filter(Boolean).sort((a, b) => b.n - a.n);
+    const _list = _byCo.slice(0, 6).map(c => `<strong>${escHtml(c.name)}</strong> (${c.n})`).join(', ');
+    const _more = _byCo.length > 6 ? ` and ${_byCo.length - 6} more` : '';
+    try {
+      showTeachMessage(
+        `&#10003; Filed ${filed} document${filed === 1 ? '' : 's'}`
+        + (_list ? ` &mdash; ${_list}${_more}` : '')
+        + (skipped ? `. ${skipped} left in the queue for you to check.` : '.'),
+        { warn: !!skipped });
+    } catch { /* the summary must never affect the filing that already happened */ }
+  }
 }
 document.getElementById('btn-file-all-review')?.addEventListener('click', fileAllReady);
 

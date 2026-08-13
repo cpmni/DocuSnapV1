@@ -69,6 +69,7 @@ function runClear({ issuer, storedSupplier, inputs }) {
   const corrections = {};
   let clearedByIssuerChange = new Set();
   const toasts = [];
+  const messages = [];                  // what the operator is TOLD about the clear (2026-08-13)
   const scope = {
     corrections,
     get clearedByIssuerChange() { return clearedByIssuerChange; },
@@ -77,6 +78,11 @@ function runClear({ issuer, storedSupplier, inputs }) {
     _currentIssuerValue: () => issuer,
     validateConfirm: () => {},
     showToast: (msg, level) => toasts.push({ msg, level }),
+    // The clear now NAMES the fields it emptied and offers an undo, so the slice needs the label
+    // lookup and the persistent-bar surface it calls (both live outside the sliced range).
+    labelFor: (k) => ({ vat_no: 'VAT Number', customer_name: 'Customer', total: 'Total' }[k] || k),
+    escHtml: (s) => String(s == null ? '' : s),
+    appendTeachMessage: (html, opts) => { messages.push({ html, actions: (opts && opts.actions) || [] }); },
     dismissServerNote: () => {},
     clearFieldWarning: () => {},
     document: { querySelectorAll: () => inputs },
@@ -89,7 +95,7 @@ function runClear({ issuer, storedSupplier, inputs }) {
     }
   `);
   fn(scope);
-  return { corrections, cleared: clearedByIssuerChange, toasts, inputs };
+  return { corrections, cleared: clearedByIssuerChange, toasts, messages, inputs };
 }
 
 console.log('\n— the machine clear must not impersonate an operator correction —');
@@ -111,8 +117,19 @@ check('NO corrections entry is staged for a machine-cleared field  ← the fix',
 check('the cleared keys are recorded as a render fact instead',
       r1.cleared.has('vat_no') && r1.cleared.has('customer_name'));
 check('a kept field is not recorded as cleared', !r1.cleared.has('total'));
-check('the destructive clear is announced as a WARNING, not a success  (B2d)',
-      r1.toasts.length === 1 && r1.toasts[0].level === 'warn');
+// B2d, 2026-08-13: the SURFACE moved and the intent is unchanged. B2d shipped a `warn` toast,
+// because with no corrections entry and no database trace that toast was the only record N fields
+// were emptied. A toast is a 4-second record that names nothing — Chris round 4 card 3 was exactly
+// this: "I fixed one field and two correct fields I never touched went blank, with no message."
+// The announcement now goes to the PERSISTENT bar, NAMES each field, and offers an undo. The pin
+// keeps B2d's real requirement (a destructive clear is announced, never in the success tone) and
+// adds the two properties that make it useful.
+check('the destructive clear is ANNOUNCED  (B2d)', r1.messages.length === 1);
+check('...naming each field it emptied, not just a count',
+      /VAT Number/.test(r1.messages[0].html) && /Customer/.test(r1.messages[0].html));
+check('...and offering the way back', r1.messages[0].actions.length === 1
+      && /undo/i.test(r1.messages[0].actions[0].label));
+check('...and never as a success-tone toast', r1.toasts.length === 0);
 
 // No-op cases — the clear must not fire at all.
 const untouched = makeInput('vat_no', 'GB 512 8846 27', 'template_fixed');

@@ -156,7 +156,36 @@ check('the wizard warning offers the known name too',
 check('a stale answer is dropped if the operator moved on',
       /if \(curField\(\) !== f \|\| String\(\(state\.results\[f\.key\]\|\|\{\}\)\.value\|\|''\)\.trim\(\) !== v\) return;/.test(teach));
 
-console.log('\n6. wiring');
+console.log('\n6. confirm and File All Ready say what happened');
+check('confirm names the filed document, and the folder it landed in',
+      /showToast\(_dir \? `Filed as \$\{_fn\} in \$\{_dir\}\.`/.test(rend));
+check('the destination is built from the returned filingResult, not re-derived',
+      /result\.filename \|\| ''/.test(rend) && /_filedFolderLabel\(result\.filePath, _fn\)/.test(rend));
+check('the folder label is the last few SEGMENTS, never the absolute path (de-pathing)',
+      /parts\.slice\(-3\)\.join\(' \/ '\)/.test(rend));
+check('bulk stays silent per-document (File All Ready reports once at the end)',
+      /if \(!bulk\) \{[\s\S]{0,400}Filed as/.test(rend));
+check('File All Ready puts a COUNT in its warning',
+      /File up to \$\{_eligible\} of \$\{docs\.length\} document/.test(rend));
+check('...computed with the loop\'s OWN skip rule, so the dialog cannot promise a different population',
+      /const _eligible = docs\.filter\(d => !isFlagged\(d\) \|\| d\.review_acknowledged_at\)\.length/.test(rend)
+      && /if \(isFlagged\(doc\) && !doc\.review_acknowledged_at\) \{ skipped\+\+; continue; \}/.test(rend));
+check('...and refuses early, with a reason, when nothing is eligible',
+      /Nothing is ready to file yet/.test(rend));
+check('the run leaves a summary that outlives the 4s toast, naming the senders',
+      /Filed \$\{filed\} document\$\{filed === 1 \? '' : 's'\}`[\s\S]{0,200}_list/.test(rend));
+
+console.log('\n7. the issuer clear names what it emptied and offers the way back');
+check('the clear collects the values it removes (so undo is possible)',
+      /cleared\.push\(\{ key, label: labelFor\(key\) \|\| key, value: input\.value \}\)/.test(rend));
+check('it names the fields rather than only counting them',
+      /const names = cleared\.map\(c => `<strong>\$\{escHtml\(c\.label\)\}<\/strong>`\)/.test(rend));
+check('it offers an undo that also releases the render suppression',
+      /Undo — put them back/.test(rend) && /clearedByIssuerChange\.delete\(c\.key\)/.test(rend));
+check('it APPENDS to the bar, so the read-back that caused it is not erased',
+      /appendTeachMessage\(/.test(rend) && /function appendTeachMessage\(/.test(rend));
+
+console.log('\n8. wiring');
 check('preload exposes the near-match check', /checkIdentityNearMatch:/.test(read('src/preload.js')));
 check('the IPC is registered and login-gated',
       /ipcMain\.handle\('check-identity-near-match'/.test(read('src/modules/review/handler.js')));
