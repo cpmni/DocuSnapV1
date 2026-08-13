@@ -38,8 +38,22 @@ check("machine username stamped for auto_reprocess only ('Auto-filed (reprocess)
       /_via === 'auto_reprocess' \? 'Auto-filed \(reprocess\)' : actorName/.test(service));
 
 console.log('2. trust: human window excludes the sentinel; span stays via-agnostic');
-check('window NOT-IN list carries all five machine sentinels (gate-unify added auto_graduated/auto_threshold)',
-      /NOT IN \('scope_sweep', 'auto_corroborated', 'auto_reprocess', 'auto_graduated', 'auto_threshold'\)/.test(trustSrc));
+// 2026-08-13: this used to pin the five sentinels as an INLINE literal. The machine-feed slice
+// (e752b95) replaced that literal with the shared `machine_vias` module precisely because three
+// modules carried their own copies and one had already DRIFTED to 2 of 5 (Oracle C1) — so the pin
+// went red against a change that made the thing it guards STRONGER. Pin the shared source instead,
+// and pin the set's contents at the module (not by re-spelling them here, which recreates the
+// duplicate this replaced). Behaviour re-verified at trust.js:595 before the pin was rewritten.
+check('window NOT-IN list is built from the SHARED machine_vias set, not an inline literal',
+      /NOT IN \(\$\{require\('\.\/machine_vias'\)\.MACHINE_VIAS_SQL\}\)/.test(trustSrc)
+      && !/NOT IN \('scope_sweep', 'auto_corroborated'/.test(trustSrc));
+check('the shared set still carries all five machine sentinels (gate-unify added auto_graduated/auto_threshold)',
+      (() => {
+        const { MACHINE_VIAS_SET } = require(path.join(REPO, 'database', 'modules', 'machine_vias'));
+        return MACHINE_VIAS_SET.size === 5
+          && ['scope_sweep', 'auto_corroborated', 'auto_reprocess', 'auto_graduated', 'auto_threshold']
+               .every(v => MACHINE_VIAS_SET.has(v));
+      })());
 check('corrections span still built via-agnostic (_confirmedSql(false) present)',
       /_confirmedSql\(false\)/.test(trustSrc));
 

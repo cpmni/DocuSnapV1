@@ -30,7 +30,10 @@ function freshDb() {
       id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, field_key TEXT,
       raw_value TEXT, display_value TEXT, confidence INTEGER,
       extraction_method TEXT, validation_note TEXT,
-      was_corrected INTEGER DEFAULT 0, corrected_to TEXT, anchor_label TEXT  -- migration 14
+      was_corrected INTEGER DEFAULT 0, corrected_to TEXT, anchor_label TEXT,  -- migration 14
+      -- learning.insertExtractions also writes these three; a fixture missing them fails at
+      -- INSERT, which is what made this suite red from 2026-08-11.
+      candidates TEXT, suggested_supplier TEXT, corroboration TEXT
     );
     CREATE TABLE corrections (
       id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, field_key TEXT,

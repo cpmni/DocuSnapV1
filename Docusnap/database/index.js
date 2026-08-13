@@ -1375,9 +1375,29 @@ function runJsMigrations(db, applied) {
     // state permanent (getForExtraction then throws on every processing run for ever). So: drop any
     // leftover `_new` from a previous failed attempt first, run the rebuild inside one transaction,
     // and let a genuine failure THROW rather than stamp.
-    const hasTpl = db.prepare('PRAGMA table_info(field_label_overrides)').all()
+    // ABSENT TABLE ≠ OLD SHAPE (2026-08-13). `PRAGMA table_info` on a MISSING table returns [], so
+    // `.some(...)` is false and the rebuild below ran its `INSERT … FROM field_label_overrides`
+    // against nothing — throwing `no such table` INSIDE runJsMigrations, which aborts open() and
+    // stops the app from starting at all. Migration 19 creates this table, so a normally-migrated
+    // install always has it; a DB stamped past 19 without it (restore, partial fixture, a hand-built
+    // pre-feature DB) hit the fatal path instead of being healed. Create it in the FINAL shape and
+    // skip the rebuild — the deliberate throw-rather-than-stamp below still governs a genuine
+    // rebuild failure, which is what Oracle C1 was about.
+    const _floExists = tableExists(db, 'field_label_overrides');
+    const hasTpl = _floExists && db.prepare('PRAGMA table_info(field_label_overrides)').all()
       .some(c => c.name === 'template_id');
-    if (!hasTpl) {
+    if (!_floExists) {
+      db.exec(`CREATE TABLE IF NOT EXISTS field_label_overrides (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        doc_type_slug TEXT NOT NULL,
+        field_key     TEXT NOT NULL,
+        label         TEXT NOT NULL,
+        created_at    TEXT DEFAULT (datetime('now')),
+        exclusive     INTEGER DEFAULT 0,
+        template_id   INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(doc_type_slug, field_key, label, template_id)
+      )`);
+    } else if (!hasTpl) {
       db.exec('DROP TABLE IF EXISTS field_label_overrides_new');
       db.transaction(() => {
         db.exec(`
