@@ -623,10 +623,11 @@ template identity is now an ASK-only near-match source, so the challenge fires o
 unit-verified — `findNearMatchIdentity('Drambiewood Joinery Ltd')` returns `near:true` against the
 frozen `Bramblewood Joinery Ltd`, and both teach surfaces are wired + pinned. But Chris could not drive
 an OCR-misread-then-draw, so he tested by TYPING "Drambiewood" into the Document Issuer field and
-confirming — and that path (a typed field correction, not a ⊕ teach) does NOT run the near-match
-challenge. It silently filed to a new `Drambiewood-Joinery-Ltd` folder. **This is the top owner-vet
-item: extend the same challenge to the typed Document-Issuer correction on confirm/blur. NOT
-implemented — it queues per the sandbox contract.**
+confirming — and that path (a typed field correction, not a ⊕ teach) did NOT run the near-match
+challenge. It silently filed to a new `Drambiewood-Joinery-Ltd` folder. **BUILT after the owner said
+"build it with toggles on" (`656c722`): `reviewService.confirm` now holds a near-miss issuer — typed OR
+drawn — at the last gate before filing, on every route, with a Use/Keep choice; `teach_identity_near_match_keep`
+is DEFAULT ON and migration 68 seeds both toggles. Unit-pinned; the renderer hold not yet live-smoked.**
 
 **(C) settings copy and (D) read-back bar — CONFIRMED FIXED by Chris**, matching this session's changes.
 **(E) page-less restored doc — NOT REPRODUCED** (the sandbox app stayed open all session, so his

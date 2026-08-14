@@ -22,8 +22,17 @@ touches that area — read the pointed-to doc BEFORE working in it:
   ➜AN there). Read the matching block before changing one of those files.
 
 ## ⏭ LATEST — 2026-08-14 (overnight, autonomous): **READ `HANDOVER_2026-08-14.md` FIRST.** HEAD
-**`e1c1848`**, code PUSHED, docs push at wrap. Owner asleep; mandate = "does it work worse than last
-night, is auto-file < 180 — if so fix+test; then Chris's round-5 fixes; then Chris round 6."
+**`656c722`** (through `3ac3cad` PUSHED; `656c722` push pending final-suite green). Owner asleep;
+mandate = "does it work worse than last night, is auto-file < 180 — if so fix+test; then Chris's
+round-5 fixes; then Chris round 6" + later "build it with toggles on".
+**(0) NEAR-MATCH ISSUER GATE BUILT, TOGGLES ON (`656c722`, owner-ordered after round 6).** A typed OR
+drawn Document Issuer one/two chars off a company you already use is HELD before filing with a Use/Keep
+choice — `reviewService.confirm` gate (mirrors prefix-outlier: pre-claim, fail-open, dual kill switch),
+covers desktop/File-All/v1. `teach_identity_near_match_keep` flipped DEFAULT ON; **migration 68** seeds
+both keys `true` (INSERT OR IGNORE) so the toggles render truthfully; new `issuer_near_match_confirm_guard`.
+Pins in `test_reviewservice.js`. Renderer hold NOT live-smoked (sandbox closed) — owner eyeball one
+typed near-miss. **This closes Chris round-6 card 1 (a typed "Drambiewood" had filed silently to a
+second folder).**
 **(1) AUTO-FILE DID NOT GET WORSE — verified, not assumed.** The ~184/200 stands: live DB config is
 fully preserved (mig 67 is `INSERT OR IGNORE` against keys that ALL already exist; 64 additive, 65/66
 flag-gated OFF), and every code change since `fa1c0cb` is flag-gated-OFF, an identical refactor
