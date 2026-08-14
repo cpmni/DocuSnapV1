@@ -1140,6 +1140,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Stop re-asking for a company you've confirmed many times on the same layout</div>
+                <div class="threshold-sub">When a layout you have confirmed many times always names the same company, Scan Finder fills that company on a new document from it — but if the scanned letterhead is smudged it still says "Company inferred from previously filed documents — please confirm before filing" on every one. With this on, once a layout is well established (confirmed enough times, always the same sender) and that sender's name is readable in the letterhead even a little garbled, the "please confirm" note is dropped and the document is treated normally. If the page's letterhead names a DIFFERENT company (for example a purchase order you issued), the note stays. Off by default — turn on after checking the reading report.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="identity-geom-fuzzy-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Read small reference/date print more clearly</div>
                 <div class="threshold-sub">Enlarges a tightly-cropped reference or date before reading it and drops an over-sharpen step, so small print (e.g. “PO-17039” misread as “»0-17039”) reads correctly. Only helps where it can, never changes a read it can't improve. Off by default.</div>
               </div>

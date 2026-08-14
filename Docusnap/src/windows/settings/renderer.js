@@ -826,7 +826,12 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // company name one/two chars off one you already use is held for a Use/Keep
                          // choice before filing. JS-side — reviewService.confirm reads the key. Seeded
                          // ON by migration 68 so the toggle renders truthfully.
-                         ['issuer-near-match-confirm-toggle', 'issuer_near_match_confirm_guard']]) {
+                         ['issuer-near-match-confirm-toggle', 'issuer_near_match_confirm_guard'],
+                         // Graduation-licensed fuzzy geometry shed (2026-08-14, the owner's Silverbeck
+                         // class): drop the "please confirm" note on a heavily-graduated layout when the
+                         // garbled letterhead still fuzzily names the graduated issuer. DEFAULT OFF —
+                         // needs the corpus arm + Oracle flip conditions before it goes on.
+                         ['identity-geom-fuzzy-toggle', 'template_identity_geom_fuzzy_graduate']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);

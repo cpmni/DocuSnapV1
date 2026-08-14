@@ -181,6 +181,17 @@ function _reconcileEnv(db) {
     // the evidence is strongest. WEAK-ONLY by construction: such a lexicon can suggest and force a
     // review, never silently rewrite.
     if (learning.getSetting(db, 'name_lexicon_low_distinct', 'false') === 'true') env.NAME_LEXICON_LOW_DISTINCT = '1';
+    // Graduation-licensed fuzzy geometry shed (gary → Oracle W/COND 2026-08-14). The owner's
+    // Silverbeck class: a layout confirmed 91×/91 to one issuer whose scanned letterhead reads
+    // garbled still carries "Company inferred… please confirm" on every sibling, because the strict
+    // geometry shed needs an exact letterhead match. Armed, the note sheds when the recipient-excluded
+    // geometry pick reads the graduated issuer FUZZILY (short tokens exact). GRADUATION_WINDOW is
+    // threaded ONLY when this is armed, so OFF stays byte-identical. Flip needs the corpus arm +
+    // Oracle's flip conditions (owner query on buyer-issued templates; a non-vacuous recipient census).
+    if (learning.getSetting(db, 'template_identity_geom_fuzzy_graduate', 'false') === 'true') {
+      env.TEMPLATE_IDENTITY_GEOM_FUZZY_GRADUATE = '1';
+      env.GRADUATION_WINDOW = String(parseInt(learning.getSetting(db, 'graduation_window', '10'), 10) || 10);
+    }
     if (learning.getSetting(db, 'crosscheck_outlier_reconcile', 'false') === 'true') env.CROSSCHECK_OUTLIER_RECONCILE = '1';
     if (learning.getSetting(db, 'universal_verify_restore', 'false') === 'true') env.UNIVERSAL_VERIFY_RESTORE = '1';
     if (learning.getSetting(db, 'universal_verify_flag', 'false') === 'true') env.UNIVERSAL_VERIFY_FLAG = '1';

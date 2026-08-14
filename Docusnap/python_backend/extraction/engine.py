@@ -1405,6 +1405,13 @@ def _template_identity_corroborated(value: str | None, ocr_text: str | None) -> 
     return template_matcher.identity_present_on_page(value, ocr_text)
 
 
+# Generic company-suffix stopwords, single-sourced so the strict shed predicate and the fuzzy
+# graduated shed below can never drift apart on what counts as a "distinctive" name token.
+_NAME_GENERIC_TOKENS = frozenset({
+    "ltd", "limited", "plc", "llp", "inc", "incorporated", "co", "company", "corp",
+    "group", "holdings", "services", "service", "the", "and"})
+
+
 def _identity_corroborated_strict(value: str | None, band: str | None) -> bool:
     """STRICTER local predicate for SHEDDING a template-identity review note (S1, Oracle C1
     2026-07-28) — distinct from `_template_identity_corroborated` (>=60%, used for the FILL).
@@ -1425,8 +1432,7 @@ def _identity_corroborated_strict(value: str | None, band: str | None) -> bool:
     # incidental word match can never shed the note.
     if _norm and (" " in _norm or len(_norm) >= 6) and _norm in _btext:
         return True
-    _GENERIC = {"ltd", "limited", "plc", "llp", "inc", "incorporated", "co", "company", "corp",
-                "group", "holdings", "services", "service", "the", "and"}
+    _GENERIC = _NAME_GENERIC_TOKENS
     toks = [t for t in _re.findall(r"[a-z0-9]+", str(value).lower())
             if len(t) >= 3 and t not in _GENERIC]
     if not toks:
@@ -1436,6 +1442,100 @@ def _identity_corroborated_strict(value: str | None, band: str | None) -> bool:
         return False
     present = sum(1 for t in toks if _re.search(r"\b" + _re.escape(t) + r"\b", _btext))
     return present == len(toks)
+
+
+def _bounded_edit_distance(a: str, b: str, budget: int) -> int:
+    """Levenshtein distance between a and b, early-exiting once it exceeds `budget` (returns
+    budget+1). Pure stdlib fallback for the fuzzy shed when rapidfuzz is absent (Oracle C4)."""
+    la, lb = len(a), len(b)
+    if abs(la - lb) > budget:
+        return budget + 1
+    prev = list(range(lb + 1))
+    for i in range(1, la + 1):
+        cur = [i] + [0] * lb
+        row_min = cur[0]
+        ca = a[i - 1]
+        for j in range(1, lb + 1):
+            cost = 0 if ca == b[j - 1] else 1
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost)
+            if cur[j] < row_min:
+                row_min = cur[j]
+        if row_min > budget:
+            return budget + 1
+        prev = cur
+    return prev[lb]
+
+
+def _token_within(a: str, b: str, budget: int) -> bool:
+    """True iff token a is within `budget` edits of token b. budget 0 ⇒ exact. Uses vendored
+    rapidfuzz when importable (lazily — the codebase has shipped WITHOUT it, test_branding_conflict
+    pins that path), else a bounded stdlib Levenshtein. Oracle C4."""
+    if budget <= 0:
+        return a == b
+    try:
+        from rapidfuzz.distance import Levenshtein as _Lev   # lazy: never bet the arm on availability
+        return _Lev.distance(a, b, score_cutoff=budget) <= budget
+    except Exception:
+        return _bounded_edit_distance(a, b, budget) <= budget
+
+
+def _identity_geom_fuzzy_match(value: str | None, geom_issuer_raw: str | None) -> bool:
+    """Garble-tolerant twin of `_identity_corroborated_strict`'s all-tokens arm, for a graduated
+    layout whose SCANNED letterhead is mangled. Every distinctive token of `value` (>=3 chars, minus
+    _NAME_GENERIC_TOKENS) must have a token in `geom_issuer_raw` within a bounded edit distance —
+    but SHORT tokens (<6 chars) stay EXACT (budget 0), fuzz (<= max(1, len//6)) applies ONLY to
+    >=6-char tokens (Oracle C2: a 3-5 char token at budget 1 collides 'Ace'->'Ale'). Requires >=2
+    distinctive tokens, or one >=6-char token (same floor as the strict arm). FAIL toward False on
+    any miss / empty / no available distance backend."""
+    if not value or not geom_issuer_raw:
+        return False
+    import re as _re
+    vtoks = [t for t in _re.findall(r"[a-z0-9]+", str(value).lower())
+             if len(t) >= 3 and t not in _NAME_GENERIC_TOKENS]
+    if not vtoks:
+        return False
+    if len(vtoks) < 2 and not (len(vtoks) == 1 and len(vtoks[0]) >= 6):
+        return False
+    gtoks = _re.findall(r"[a-z0-9]+", str(geom_issuer_raw).lower())
+    if not gtoks:
+        return False
+    for vt in vtoks:
+        budget = 0 if len(vt) < 6 else max(1, len(vt) // 6)
+        if not any(_token_within(vt, gt, budget) for gt in gtoks):
+            return False
+    return True
+
+
+def _should_shed_fill_note_geom_fuzzy(sn_cur, geom_issuer_raw, dom_count, dom_total,
+                                      window, env=None) -> bool:
+    """SHED the template-identity FILL review note on a HEAVILY-GRADUATED layout whose garbled
+    letterhead the STRICT geometry arm can't match exactly (gary → Oracle SIGN-OFF-W/COND
+    2026-08-14). Pure/static — the whole arm is unit-tested through this one function. True iff ALL:
+      1. TEMPLATE_IDENTITY_GEOM_FUZZY_GRADUATE armed (default '0' ⇒ False ⇒ OFF byte-identical);
+      2. `sn_cur` is a STILL-NOTED template_identity FILL with a value (idempotent: after a shed the
+         method is 'template_identity_corroborated', so no arm re-fires);
+      3. GRADUATION LICENSE — dom_count >= window AND share >= 0.9 (unanimous / strict-strong). A
+         thin (1/1, 2/2) or split (6/10) layout never earns fuzz tolerance;
+      4. the graduated issuer is FUZZILY present in the recipient-excluded geometry pick
+         (`_identity_geom_fuzzy_match`, short tokens exact).
+    FAIL toward keeping the note on any abstain."""
+    _env = env if env is not None else os.environ
+    if _env.get("TEMPLATE_IDENTITY_GEOM_FUZZY_GRADUATE", "0") == "0":
+        return False
+    if not (isinstance(sn_cur, dict) and sn_cur.get("method") == "template_identity"
+            and sn_cur.get("value")
+            and sn_cur.get("validation_note") in (_TEMPLATE_IDENTITY_FILL_NOTE_SINGLE,
+                                                  _TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY)):
+        return False
+    try:
+        c = int(dom_count or 0)
+        t = int(dom_total or 0)
+        w = max(1, int(window or 0))
+    except (TypeError, ValueError):
+        return False
+    if c < w or c * 10 < t * 9:          # >= window confirms AND share >= 0.9
+        return False
+    return _identity_geom_fuzzy_match(sn_cur.get("value"), geom_issuer_raw)
 
 
 # S-A date-in-ref belt regexes (module-level — compiled once). A guard value must be a
@@ -7298,6 +7398,52 @@ class ExtractionEngine:
                     }
                     self.log(f"  G: template-identity note shed — the letterhead geometry reads "
                              f"'{_sn_g['value']}' (confidence 85, no note)")
+
+        # ── G-FUZZY: graduation-licensed fuzzy geometry shed (gary → Oracle SIGN-OFF-W/COND
+        # 2026-08-14). The owner's Silverbeck class: a layout confirmed 91×/91 to ONE issuer whose
+        # SCANNED letterhead reads garbled ('siiverbeck Cleaning Supplie'), so the strict G arm above
+        # can't match it exactly and the "Company inferred… please confirm" note persists on every
+        # sibling. This sheds it when the SAME recipient-excluded geometry pick reads the graduated
+        # issuer FUZZILY — short tokens still exact (Oracle C2). INDEPENDENT of the strict switch:
+        # its OWN try-wrapped geometry pick (Oracle C1 — must never reference _gp_g, which is scoped
+        # inside the GEOM_WITNESS block above). Kill switch TEMPLATE_IDENTITY_GEOM_FUZZY_GRADUATE,
+        # default '0' = byte-identical. Recipient exclusion (the buyer-issued safety) is the SAME
+        # pick_issuer_geometry the strict arm already trusts — no new trust, only a fuzz budget
+        # licensed by >=window/>=0.9-share human graduation.
+        if os.environ.get("TEMPLATE_IDENTITY_GEOM_FUZZY_GRADUATE", "0") != "0":
+            _sn_f = results.get("supplier_name")
+            if (isinstance(_sn_f, dict) and _sn_f.get("method") == "template_identity"
+                    and _sn_f.get("value") and matched_tmpl
+                    and _sn_f.get("validation_note") in (_TEMPLATE_IDENTITY_FILL_NOTE_SINGLE,
+                                                         _TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY)):
+                _geom_issuer_raw_f = None
+                try:
+                    from extraction import letterhead as _lhf
+                    _geom_f = page0_geometry or _lhf.geometry_from_lines(page_text_lines)
+                    if _geom_f and _geom_f.get("rows"):
+                        _gp_f = _lhf.pick_issuer_geometry(
+                            ocr_text, _geom_f, detected_title=document_type,
+                            type_phrases=_letterhead_type_phrases(self.patterns))
+                        _geom_issuer_raw_f = _gp_f if _gp_f else None
+                except Exception:
+                    _geom_issuer_raw_f = None   # any witness failure → keep the note (fail-safe)
+                try:
+                    _grad_window = int(os.environ.get("GRADUATION_WINDOW") or 10)
+                except (TypeError, ValueError):
+                    _grad_window = 10
+                if _should_shed_fill_note_geom_fuzzy(
+                        _sn_f, _geom_issuer_raw_f,
+                        matched_tmpl.get("dominant_supplier_count"),
+                        matched_tmpl.get("dominant_supplier_total"),
+                        _grad_window):
+                    results["supplier_name"] = {
+                        "value":      _sn_f["value"],
+                        "confidence": 85,
+                        "method":     "template_identity_corroborated",
+                    }
+                    self.log(f"  G-fuzzy: template-identity note shed on a graduated layout "
+                             f"({matched_tmpl.get('dominant_supplier_count')}× confirmed) — the "
+                             f"letterhead geometry fuzzily reads '{_sn_f['value']}' (confidence 85, no note)")
 
         # ── Stage 2.6: LATE-ANCHOR RESCUE (2026-07-10) ───────────────────────────
         # On a doc whose supplier was UNKNOWN at Stage-2 time (no template/logo hit — exactly
