@@ -62,6 +62,23 @@ and it silently made a second company folder — recommend extending the same ch
 issuer field, owner go needed). Then: flag the buyer-issued Oakhaven fields; File-All offered-count;
 day-one auto-file copy. **`teach_identity_near_match_keep` (write guard) stays OFF — owner flip + owed
 replay.** NOTHING from round 6 implemented beyond the card-2 defect (which was this session's own).
+**(5) THE "COMPANY INFERRED… PLEASE CONFIRM" NOTE — gated (`56b3471`, gary→Oracle SIGN-OFF-W/COND,
+`template_identity_geom_fuzzy_graduate`, DEFAULT OFF).** Owner: after a teach, siblings nag
+"please confirm" even on a 91/91 layout. Root cause: template 6 (Silverbeck) is 91× confirmed to ONE
+issuer but NOT frozen, so each sibling takes the `template_identity` FILL @70 + note (`engine.py:6333`);
+the three existing sheds (`:7174/:7240/:7275`) all need a CLEAN letterhead read a garbled scan can't
+give. Fix: a graduation-LICENSED FUZZY geometry shed — when a still-noted FILL comes from a ≥window/
+≥0.9-share layout AND the recipient-excluded `pick_issuer_geometry` reads the graduated issuer FUZZILY
+(short tokens EXACT), drop the note (conf 85, `template_identity_corroborated`, value FIXED). Oracle
+C1-C4 built + unit-pinned 20/20 (own try-wrapped geom pick; rapidfuzz lazy+stdlib-fallback). **C5
+discharged CLEAN on the live DB: the only buyer-issued template (tpl13 Bramblewood/PO) is FROZEN →
+template_fixed, outside this FILL-scope shed; every FILL-path graduated template is a genuine supplier.**
+**C7 corpus arm RAN (realdoc, RR_APP_ENV=1, 1076 docs): ARMED == OFF exactly — auto-file 950/1076, 6
+pre-existing wrong-value unchanged, 0 wrong-type, supplier 100%. No regression, but VACUOUS** (the
+synthetic corpus reads letterheads cleanly ⇒ no FILL note to shed — Oracle's predicted caveat).
+Efficacy proven by the unit test + the live 8-doc exhibit. OWED before a NEW-INSTALL default flip: C6
+synthetic garbled-marker recipient census. `graduation_window` threaded to Python via `_reconcileEnv`
+(only when armed). **Owner flips one toggle to solve it on their DB.** Live auto-file now 950/1076 = 88.3%.
 
 ### Prior — 2026-08-13 NIGHT2: **READ `HANDOVER_2026-08-13_NIGHT2.md` FIRST.** HEAD **`3327a22`**,
 PUSHED, tree clean. Owner ordered ONE plan to "completely integrate the features and fixes without
