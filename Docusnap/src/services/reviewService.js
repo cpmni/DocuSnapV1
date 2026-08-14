@@ -176,6 +176,39 @@ function createReviewService(deps = {}) {
       }
     }
 
+    // ── ISSUER NEAR-MATCH confirm gate (Chris round 6; issuer_near_match_confirm_guard, default ON) ─
+    // A Document Issuer that is 1-2 characters off a company you ALREADY use would file this sender
+    // into a SECOND folder and split it across two Search identities. The teach-time challenge
+    // (findNearMatchIdentity, Tier A human confirms + Tier B frozen template identities) catches it
+    // at the ⊕ draw and the wizard, but NOT on a TYPED correction into the issuer field — the path
+    // a customer actually uses, and the one Chris drove into a `Drambiewood-Joinery-Ltd` folder.
+    // This is that check at the LAST gate before filing, so no route can misfile a near-miss silently.
+    // Unlike the prefix guard, a HUMAN-TYPED value is NOT exempt — a typo is exactly what this catches.
+    // PRE-CLAIM + advisory (a gate error fails OPEN). Exempt: a re-file, and an explicit acknowledge
+    // ("Keep what I typed"). Bulk callers pass no acknowledge, so a near-miss is HELD (left in the
+    // queue) rather than bulk-filed. Dual kill switch (env + setting).
+    if (!isRefile
+        && process.env.ISSUER_NEAR_MATCH_CONFIRM_GUARD !== '0'
+        && learning.getSetting(db, 'issuer_near_match_confirm_guard', 'true') !== 'false') {
+      try {
+        const issuerVal = (allValues && allValues.supplier_name != null) ? String(allValues.supplier_name).trim() : '';
+        const acked = !!(payload && payload.acknowledgeIssuerNearMatch === true);
+        if (issuerVal && !acked) {
+          const nm = learning.findNearMatchIdentity(db, issuerVal);
+          if (nm && nm.near && issuerVal.toLowerCase() !== String(nm.existing).toLowerCase()) {
+            audit(db, { action: 'confirm_held_issuer_near_match', target_type: 'document', target_id: document_id,
+              document_id, outcome: 'held', actor_username: actorName,
+              metadata: { typed: issuerVal, existing: nm.existing, distance: nm.distance, source: nm.source } });
+            return fail('ISSUER_NEAR_MATCH',
+              `"${issuerVal}" looks like "${nm.existing}", a company you already use — please check the issuer.`,
+              { nearMatch: { existing: nm.existing, distance: nm.distance, confirms: nm.confirms, source: nm.source } });
+          }
+        }
+      } catch (e) {
+        if (logger && logger.warn) logger.warn('issuer near-match confirm gate skipped: ' + (e && e.message));
+      }
+    }
+
     // CLAIM before filing (first-confirm only) so a lost race can't double-file. The loser
     // reads the winner's name off confirmed_by_username and reports it.
     if (!isRefile) {

@@ -1241,7 +1241,7 @@ function _hasFixedProvenance(db) {
   return ok;
 }
 
-// ── IDENTITY-OVERWRITE GUARD (teach_identity_near_match_keep, DEFAULT OFF) ────────────────────
+// ── IDENTITY-OVERWRITE GUARD (teach_identity_near_match_keep, DEFAULT ON since 2026-08-14) ────────
 // The write above had exactly ONE guard — `fixed_locked = 1` — and never compared WARRANTS. So a
 // company identity backed by 38 confirmations was replaced by one draw-box OCR read of one crop:
 // 'Bramblewood Joinery Ltd' -> 'B8ramblewood Joinery Ltd', which then stamped 20 sibling purchase
@@ -1274,7 +1274,11 @@ function _identityOverwriteGuard(db, templateId, f) {
     const incoming = String(f.fixed_value == null ? '' : f.fixed_value).trim();
     if (!incoming) return f;                                     // clearing / leaving variable
     const learning = require('./learning');
-    if (learning.getSetting(db, 'teach_identity_near_match_keep', 'false') !== 'true') return f;
+    // DEFAULT ON (owner flip 2026-08-14, "build it with toggles on"): a near-miss teach keeps the
+    // incumbent frozen identity; only an explicit 'false' disables it. A genuinely DIFFERENT company
+    // still displaces the incumbent below (pinned — else a wrong frozen name is uncorrectable), and
+    // setFieldFixedValue stays the ungoverned correction route.
+    if (learning.getSetting(db, 'teach_identity_near_match_keep', 'true') === 'false') return f;
     const row = db.prepare(
       'SELECT fixed_value, is_variable, fixed_locked FROM template_fields '
       + 'WHERE template_id = ? AND field_key = ?').get(templateId, f.field_key);

@@ -4774,7 +4774,7 @@ function extractLabel(text) { return window.AnchorLabel.extractLabel(text); }
 // blindly — and the on-screen-image steps (logo-fingerprint save + image-clear
 // animation) are skipped, since File All cycles documents itself. The file-by-
 // file behaviour is otherwise unchanged.
-async function confirmCurrentDoc({ bulk = false, expectId = null, acknowledgePrefixOutlier = null } = {}) {
+async function confirmCurrentDoc({ bulk = false, expectId = null, acknowledgePrefixOutlier = null, acknowledgeIssuerNearMatch = null } = {}) {
   if (!currentDoc) return { error: 'No document selected.' };
   // Bulk-race guard: the caller (File All Ready) captures the doc it intends to
   // file; if a delete / row-click reassigned the module-global `currentDoc` in an
@@ -4856,6 +4856,8 @@ async function confirmCurrentDoc({ bulk = false, expectId = null, acknowledgePre
     bulk,
     // Slice 1: ref field(s) the operator explicitly "Confirm anyway"-ed past the prefix-outlier hold.
     acknowledgePrefixOutlier,
+    // Chris round 6: "Keep what I typed" past the issuer near-match hold (a deliberate second company).
+    acknowledgeIssuerNearMatch,
   });
 
   if (!result?.success) {
@@ -4972,6 +4974,57 @@ function showPrefixOutlierHold(detail, idx, supplier) {
   });
 }
 
+// Chris round 6: the typed/read Document Issuer is a near-miss of a company already in use. Render an
+// inline hold on the issuer field with two honest choices — swap to the known spelling (which then
+// files under one folder), or keep what was typed as a genuinely separate company (acknowledged, so
+// the gate lets it through). Mirrors showPrefixOutlierHold; reuses the .field-note + .prefix-ack-btn
+// styling so it looks and dismisses like the reference hold.
+function showIssuerNearMatchHold(nm, idx, supplier) {
+  const row = document.querySelector('#fields-scroll .field-row[data-key="supplier_name"]');
+  const input = row?.querySelector('.field-input');
+  const cur = (input?.value || '').trim();
+  if (!row || !nm || !nm.existing) {
+    showToast(`This issuer looks like "${nm?.existing || 'a company you already use'}" — please check it.`, 'warn');
+    return;
+  }
+  row.querySelector('.field-note.issuer-nm-hold')?.remove();
+  const known = escHtml(nm.existing);
+  const diff  = nm.distance === 1 ? 'one character' : `${nm.distance} characters`;
+  const note = document.createElement('div');
+  note.className = 'field-note issuer-nm-hold';
+  note.innerHTML = `"${escHtml(cur)}" is <strong>${diff}</strong> off <strong>${known}</strong>, which you already use — `
+    + `two spellings would file this sender into two folders. `
+    + `<button type="button" class="prefix-ack-btn inm-use-btn">Use "${known}"</button> `
+    + `<button type="button" class="prefix-ack-btn inm-keep-btn">Keep "${escHtml(cur)}"</button>`;
+  row.appendChild(note);
+  if (input) { try { input.focus(); input.select?.(); } catch {} }
+  const finish = (r2) => {
+    if (r2.cancelled) return;
+    if (r2.error || r2.code) {
+      if (r2.code === 'ISSUER_NEAR_MATCH') { showIssuerNearMatchHold(r2.nearMatch, idx, supplier); return; }  // still a near-miss
+      showToast(r2.error || 'Confirm failed.', 'err'); return;
+    }
+    updateTabCounts();
+    advanceAfterAction(idx, supplier);
+    _scheduleScopeSweep(supplier, selectedTypeSlug || '');
+    try { window.docusnap.markFocusSuspect?.(); } catch {}
+    window.docusnap.notifyReviewComplete();
+  };
+  note.querySelector('.inm-use-btn')?.addEventListener('click', async () => {
+    // Swap the field to the known name (records the correction), then re-confirm — the value now
+    // EXACTLY matches the known company, so the gate passes without an acknowledge.
+    note.remove();
+    if (!_applyTeachValue('supplier_name', nm.existing) && input) {
+      input.value = nm.existing; input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    finish(await confirmCurrentDoc());
+  });
+  note.querySelector('.inm-keep-btn')?.addEventListener('click', async () => {
+    note.remove();
+    finish(await confirmCurrentDoc({ acknowledgeIssuerNearMatch: true }));
+  });
+}
+
 document.getElementById('btn-confirm').addEventListener('click', async () => {
   // Remember where the doc sits BEFORE confirmCurrentDoc removes it from the list,
   // so we can advance to the NEXT doc (the one that shifts into this slot) rather
@@ -4991,6 +5044,9 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
   // Slice 1: a suspicious-reference HOLD — surface the note + a "Confirm anyway" affordance on the
   // ref field instead of a transient error toast (editing the field also clears it and exempts it).
   if (r.code === 'PREFIX_OUTLIER') { showPrefixOutlierHold(r.prefixOutlier, idx, supplier); return; }
+  // Chris round 6: the typed issuer is one/two characters off a company already in use — offer the
+  // known spelling or an explicit "keep what I typed", inline on the issuer field, before filing.
+  if (r.code === 'ISSUER_NEAR_MATCH') { showIssuerNearMatchHold(r.nearMatch, idx, supplier); return; }
   if (r.error) { showToast(r.error, 'err'); return; }
   updateTabCounts();
   advanceAfterAction(idx, supplier);

@@ -821,7 +821,12 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // Name lexicon from a low-distinct scope (B5, 2026-08-13): the shipped
                          // name repair never saw the scopes with ONE dominant confirmed name.
                          // Suggest-and-review only — it can never silently rewrite a company name.
-                         ['name-lex-low-distinct-toggle', 'name_lexicon_low_distinct']]) {
+                         ['name-lex-low-distinct-toggle', 'name_lexicon_low_distinct'],
+                         // Issuer near-match confirm gate (2026-08-14, Chris round 6): a typed OR drawn
+                         // company name one/two chars off one you already use is held for a Use/Keep
+                         // choice before filing. JS-side — reviewService.confirm reads the key. Seeded
+                         // ON by migration 68 so the toggle renders truthfully.
+                         ['issuer-near-match-confirm-toggle', 'issuer_near_match_confirm_guard']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);

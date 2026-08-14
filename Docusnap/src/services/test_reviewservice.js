@@ -35,7 +35,13 @@ let filingMode = 'ok';   // 'ok' | 'fail'
 const calls = { audit: [], saveCorrections: 0, notifyCounts: 0, sourceMove: 0, taught: 0, captured: 0, commit: 0 };
 const deps = {
   documents,
-  learning: { getSetting: () => '/out', saveCorrections: (_db, _id, corr, _s, _slug, allValues) => { calls.saveCorrections++; calls.lastAllValues = allValues; calls.lastCorrections = corr; } },
+  learning: { getSetting: (d, key, def) => key === 'issuer_near_match_confirm_guard'
+                ? require('../../database/modules/learning').getSetting(d, key, def)   // honour the real DB row for the toggle-off test
+                : '/out',
+    saveCorrections: (_db, _id, corr, _s, _slug, allValues) => { calls.saveCorrections++; calls.lastAllValues = allValues; calls.lastCorrections = corr; },
+    // the issuer near-match gate (card, round 6) calls this — delegate to the real implementation so
+    // the stub doesn't make the gate fail open on every confirm.
+    findNearMatchIdentity: (d, v, o) => require('../../database/modules/learning').findNearMatchIdentity(d, v, o) },
   doctypes: { getWithFields: () => ({ id: 1, name: 'Invoice', ref_field_key: 'invoice_number', date_field_key: 'invoice_date' }) },
   filing: {
     normaliseDate: require('../modules/filing/handler').normaliseDate,   // the real canonical normaliser
@@ -153,6 +159,34 @@ const basePayload = (id, extra = {}) => ({
   check('no-page doc → ok:false, code NO_SOURCE_FILE', rGone.ok === false && rGone.code === 'NO_SOURCE_FILE');
   check('  → did NOT file (commit not called)', calls.commit === commitsBeforeGone);
   check('  → NOT claimed — stays needs_review (no status churn)', get(db, dGone).status === 'needs_review');
+
+  // ── ISSUER NEAR-MATCH gate (Chris round 6): a typed issuer one/two chars off a company you already
+  //    use is HELD before filing, with a Use/Keep choice; an acknowledge or the exact known name files.
+  //    Seeded ON by migration 68, so the fresh migrated DB has it live. ────────────────────────────
+  for (let i = 0; i < 3; i++) db.prepare(
+    "INSERT INTO documents (original_filename, folder_path, status, supplier_name, document_type_id) VALUES ('k.pdf','/in','confirmed','Bramblewood Joinery Ltd',1)").run();
+  const nmPayload = (id, extra = {}) => basePayload(id, {
+    supplier_name: 'Drambiewood Joinery Ltd',
+    allValues: { supplier_name: 'Drambiewood Joinery Ltd', invoice_number: 'INV-7', invoice_date: '01-01-2026' },
+    corrections: {}, ...extra });
+  const commitsBeforeNM = calls.commit;
+  const dNM = newDoc(db);
+  const rNM = await svc.confirm(db, { username: 'sarah', role: 'admin' }, nmPayload(dNM));
+  check('near-miss issuer → ok:false, code ISSUER_NEAR_MATCH', rNM.ok === false && rNM.code === 'ISSUER_NEAR_MATCH');
+  check('  → names the company you already use', rNM.nearMatch && rNM.nearMatch.existing === 'Bramblewood Joinery Ltd');
+  check('  → did NOT file (held pre-claim)', calls.commit === commitsBeforeNM && get(db, dNM).status === 'needs_review');
+  const rNMack = await svc.confirm(db, { username: 'sarah', role: 'admin' }, nmPayload(dNM, { acknowledgeIssuerNearMatch: true }));
+  check('  → "Keep what I typed" (acknowledge) files', rNMack.ok === true && calls.commit === commitsBeforeNM + 1);
+  const dExact = newDoc(db);
+  const rExact = await svc.confirm(db, { username: 'sarah', role: 'admin' }, basePayload(dExact, {
+    supplier_name: 'Bramblewood Joinery Ltd',
+    allValues: { supplier_name: 'Bramblewood Joinery Ltd', invoice_number: 'INV-8', invoice_date: '01-01-2026' } }));
+  check('the exact known name is NOT a near-match — it files straight through', rExact.ok === true);
+  const dfNM = newDoc(db);
+  db.prepare("INSERT OR REPLACE INTO settings (key,value) VALUES ('issuer_near_match_confirm_guard','false')").run();
+  const rOff = await svc.confirm(db, { username: 'sarah', role: 'admin' }, nmPayload(dfNM));
+  check('the toggle can be turned OFF (near-miss then files without a hold)', rOff.ok === true);
+  db.prepare("INSERT OR REPLACE INTO settings (key,value) VALUES ('issuer_near_match_confirm_guard','true')").run();
 
   // ── defer / restore CAS ───────────────────────────────────────────────────────
   const d6 = newDoc(db);

@@ -1560,6 +1560,28 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 67 applied: the import arc + graduation window default ON');
   }
 
+  // ── Migration 68: the near-match identity guards ship ON (owner flip 2026-08-14) ──────────────
+  // Chris found a one-letter misspelling of the owner's own company filed silently into a second
+  // folder. Two guards close it: teach_identity_near_match_keep (a near-miss teach keeps the
+  // incumbent frozen identity) and issuer_near_match_confirm_guard (any near-miss issuer — drawn OR
+  // typed — is held for a Use/Keep choice before filing). Both read a default of ON in code; this
+  // seeds the row so the Settings toggle reads TRUE and renders ON (a code-only default would leave
+  // the switch showing OFF while the guard runs — the exact "Off by default while on" contradiction
+  // Chris reported). INSERT OR IGNORE: a hand-disabled 'false' is preserved.
+  if (!applied.has(68)) {
+    try {
+      const ins = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+      const seeded = [];
+      for (const key of ['teach_identity_near_match_keep', 'issuer_near_match_confirm_guard']) {
+        if (ins.run(key, 'true').changes) seeded.push(key);
+      }
+      console.log(`  migration 68: ${seeded.length} near-match guard(s) newly seeded`
+                  + (seeded.length ? ` (${seeded.join(', ')})` : '; existing choices untouched'));
+    } catch (e) { console.warn(`  migration 68 defaults: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (68)').run();
+    console.log('JS migration 68 applied: near-match identity guards default ON');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the
