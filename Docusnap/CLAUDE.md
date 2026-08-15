@@ -21,71 +21,56 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-14 (overnight, autonomous): **READ `HANDOVER_2026-08-14.md` FIRST.** HEAD
-**`656c722`** (through `3ac3cad` PUSHED; `656c722` push pending final-suite green). Owner asleep;
-mandate = "does it work worse than last night, is auto-file < 180 — if so fix+test; then Chris's
-round-5 fixes; then Chris round 6" + later "build it with toggles on".
-**(0) NEAR-MATCH ISSUER GATE BUILT, TOGGLES ON (`656c722`, owner-ordered after round 6).** A typed OR
-drawn Document Issuer one/two chars off a company you already use is HELD before filing with a Use/Keep
-choice — `reviewService.confirm` gate (mirrors prefix-outlier: pre-claim, fail-open, dual kill switch),
-covers desktop/File-All/v1. `teach_identity_near_match_keep` flipped DEFAULT ON; **migration 68** seeds
-both keys `true` (INSERT OR IGNORE) so the toggles render truthfully; new `issuer_near_match_confirm_guard`.
-Pins in `test_reviewservice.js`. Renderer hold NOT live-smoked (sandbox closed) — owner eyeball one
-typed near-miss. **This closes Chris round-6 card 1 (a typed "Drambiewood" had filed silently to a
-second folder).**
-**(1) AUTO-FILE DID NOT GET WORSE — verified, not assumed.** The ~184/200 stands: live DB config is
-fully preserved (mig 67 is `INSERT OR IGNORE` against keys that ALL already exist; 64 additive, 65/66
-flag-gated OFF), and every code change since `fa1c0cb` is flag-gated-OFF, an identical refactor
-(`trust.js` machine_vias == old 5-list; anchor note→constant; `force_serial` OFF by default), or an
-append-only recorder (`_rejected_reads`). Whole suite confirms the pipeline unchanged.
-**(2) FIVE CHRIS ROUND-5 CARDS FIXED (`ef7a3a5`, `0a73c87`) + a round-6 defect (`e1c1848`).**
-**Card 1 = a real DATA-LOSS bug, root cause found:** `reconcileHolding` (handler.js) had
-`DEAD={'confirmed','deleted'}` and deleted a soft-deleted doc's inbox page at EVERY startup while
-`softDelete` kept the row + `working_path` — so Restore-after-restart returned a page-less record.
-Removed `'deleted'` from `DEAD` (a bin copy survives until Empty bin; `_purgeOne` then makes it a true
-orphan); pins RED-PROVE it (neither reconcile test had ever tested a deleted doc). PLUS a guard:
-`reviewService.confirm` refuses a page-less doc (friendly `NO_SOURCE_FILE`, covers desktop/File-All/v1)
-+ the Review renderer disables Confirm and says the page is gone. **Card 2:** File All Ready now says
-"Filed N of M — <reason>" always (and `e1c1848` fixed it being wiped instantly by an un-awaited
-`advanceAfterAction → renderPage → hideAnchorReadout`). **Card 3:** near-match challenge now fires on a
-FRESH install via **Tier B = frozen template identities** (`findNearMatchIdentity`, ASK-only; Tier A
-human-confirms still outranks + governs writes); pinned `test_teach_speaks.js` 45→52. **Card 5:** the 7
-mig-67 switches read "On by default". **Card 7:** read-back bar moved below the toolbar + clears on new
-draw. **Blast radius caught:** 5 mock-confirm suites needed `existsSync:()=>true` (the no-page guard
-reads injected fs) — no production change.
-**(3) SUITE 481/492, 11 red = the documented genuine set, ZERO new reds.**
-**(4) CHRIS ROUND 6 RAN** (report appended to `docs/CHRIS_FULL_APP_REVIEW_2026-08-13.md`; sandbox left
-on CDP 9223 PID 5744): nothing auto-filed wrongly after 200 imports; (C)(D) + the recycle bin confirmed
-FIXED. **OWNER-VET QUEUE, TOP ITEM: the near-match challenge does NOT fire on a TYPED issuer correction**
-(my fix covers the ⊕ draw + wizard; Chris couldn't drive an OCR-misread-draw so he typed "Drambiewood"
-and it silently made a second company folder — recommend extending the same challenge to the typed
-issuer field, owner go needed). Then: flag the buyer-issued Oakhaven fields; File-All offered-count;
-day-one auto-file copy. **`teach_identity_near_match_keep` (write guard) stays OFF — owner flip + owed
-replay.** NOTHING from round 6 implemented beyond the card-2 defect (which was this session's own).
-**(5) THE "COMPANY INFERRED… PLEASE CONFIRM" NOTE — gated (`56b3471`, gary→Oracle SIGN-OFF-W/COND,
-`template_identity_geom_fuzzy_graduate`, DEFAULT OFF).** Owner: after a teach, siblings nag
-"please confirm" even on a 91/91 layout. Root cause: template 6 (Silverbeck) is 91× confirmed to ONE
-issuer but NOT frozen, so each sibling takes the `template_identity` FILL @70 + note (`engine.py:6333`);
-the three existing sheds (`:7174/:7240/:7275`) all need a CLEAN letterhead read a garbled scan can't
-give. Fix: a graduation-LICENSED FUZZY geometry shed — when a still-noted FILL comes from a ≥window/
-≥0.9-share layout AND the recipient-excluded `pick_issuer_geometry` reads the graduated issuer FUZZILY
-(short tokens EXACT), drop the note (conf 85, `template_identity_corroborated`, value FIXED). Oracle
-C1-C4 built + unit-pinned 20/20 (own try-wrapped geom pick; rapidfuzz lazy+stdlib-fallback). **C5
-discharged CLEAN on the live DB: the only buyer-issued template (tpl13 Bramblewood/PO) is FROZEN →
-template_fixed, outside this FILL-scope shed; every FILL-path graduated template is a genuine supplier.**
-**C7 corpus arm RAN (realdoc, RR_APP_ENV=1, 1076 docs): ARMED == OFF exactly — auto-file 950/1076, 6
-pre-existing wrong-value unchanged, 0 wrong-type, supplier 100%. No regression, but VACUOUS** (the
-synthetic corpus reads letterheads cleanly ⇒ no FILL note to shed — Oracle's predicted caveat).
-Efficacy proven by the unit test + the live 8-doc exhibit. OWED before a NEW-INSTALL default flip: C6
-synthetic garbled-marker recipient census. `graduation_window` threaded to Python via `_reconcileEnv`
-(only when armed). **Owner flips one toggle to solve it on their DB.** Live auto-file now 950/1076 = 88.3%.
+## ⏭ LATEST — 2026-08-15: **READ `HANDOVER_2026-08-15.md` FIRST.** HEAD **`799927e`**, 3 arc
+commits LOCAL (NOT pushed — owner go pending), tree clean. Owner: "read the blocking notes on the queue —
+enough info in the DB to confirm the right values/suppliers; make these docs autofile; no regressions; then
+Chris tests + measures." **NOTHING flipped on live; every switch DEFAULT OFF; live-DB backup taken
+(`TESTING/_measure/live_backup_20260815_autofile_arc.db`).**
+**THE FINDING (owner's intuition, PROVEN): the DB already knows the answer.** `extractions.corroboration`
+records which independent method families read the same value; the confirmed corpus records the dominant
+value/prefix. But `trust.js isAutoFileEligible` refuses UNCONDITIONALLY on any note/`corrected_to` and on a
+ref/date <88. 20 held docs → 7 classes (A inferred-co · B I/1 invoice# · C corroborated-total · D `]`→1
+account · E name-suggestion · F ref-not-on-page · G ref<88), each DB-answerable except F.
+**BUILT (workflow `ws8i3wjq1`: 6-reader map → design → Oracle SIGN-OFF-W/COND; ALL DEFAULT OFF, migration 69):**
+ONE predicate — `_corrobLicensed` (≥2 independent PAGE families {mapping,crop,keyword}, memory+hint EXCLUDED as
+near-circular) AND value==dominant-confirmed. **Gate (`1d1cdab`, trust.js):** `critfield_corrob_floor_relax`
+(G — clears the 88 floor iff licensed + learned-shape match; Oracle seam: crop+mapping are common-mode, the
+shape match is the 2nd leg) · `vacuous_corrected_to_ignore` (B — a `corrected_to`==`display_value` no-op stops
+flagging, null-safe). **Engine (`cb69795`):** `_resolve_corroborated_notes` wired as `_d4` in the `_d1|_d2|_d3`
+recompute guard — THE KEY PLACEMENT: a cleared note there ALSO drops its `overall_confidence` penalty, so the
+doc clears the floor on reprocess (a stored-row clear can't — the penalty is baked at extraction). Arms
+A/B/C/D/E each gated + fail-toward-Review; `_corrob_licensed` mirrors trust.js (pinned cross-language).
+**Remediation (`scripts/remediate-corrob-queue-20260815.js`):** stored-row backlog delivery (dry-run default).
+**PROVEN on the REAL live data (`scratchpad/verify_heal.py`): ≥10/20 cleanly auto-file (up from 2)** — the
+7 Pelican B docs go 84→96; the 3 Quillstone names correctly DECLINE (customer share 0.88<0.9 poison-guard);
+F correctly HELD. CONSERVATIVE (the standalone recompute omits the engine's `fc_delta` boost — true count is
+higher, plus the G-gated Silverbeck docs). **30 new pins green; whole suite 483/494 = the 11 documented
+pre-existing reds, ZERO new** (2 source-inspection pins widened for the `_d4` insertion:
+`test_name_corrob_demote`, `test_xcheck_corrob_demote`). **OFF is inert by construction (guarded early return).**
+**OWED before any live default-ON flip (owner's gate): the OFF==ON md5 corpus arm + Oracle per-predicate
+ratify (B/D/E/G).** **To deliver the backlog on the owner's DB: flip the 7 Settings→Processing toggles + reprocess
+the 20 held docs (arms recompute overall_confidence clean; ~13–16 file, 3 Quillstone + 1 F stay for a manual
+confirm) — OR `node scripts/remediate-corrob-queue-20260815.js <db> --apply` on a COPY first.**
+**CHRIS ROUND 2026-08-15 ran** (`docs/CHRIS_FULL_APP_REVIEW_2026-08-15.md`; fresh sandbox CDP 9223, 7 switches
+ON, SINGLE+IMPORT+IMPORT2 per TEACH_ORDER). **A fresh install has NO confirmed history, so the corroboration
+arms are largely inert there** — his run measures the teach/import UX + base rate + detection issues. **Wave 1:
+0/200 auto-file** — `auto_file_threshold` unset → defaults to **100%** while taught reads land 87–95%, so every
+CORRECT read sits in Review (File-All-Ready then files 154/200 in one click). **Wave 2 (after that manual batch
+GRADUATED the suppliers): ~55% auto-file, correct folders.** **OWNER-VET QUEUE (nothing implemented):**
+**#1 the 100% default files nothing out of the box — default ~90 or prompt after the first batch (bigger than
+this arc, orthogonal to it).** #2 buyer-issued PO steers "Document Issuer" at the OWN letterhead (Quillstone PO
+= Bramblewood letterhead — the known buyer-issued class). #3 Pelican I→1 + ⊕ can't fix an OCR misread
+(re-reads same pixels) — CONFIRMS class B; the app already computes the "wider reading" it only warns about.
+#4 Oakhaven slash-drop flags 19/20 on a cosmetic "/" (the separator class). #5 stale recycle-bin view (recurs).
+Chris CONFIRMED the round-4/5 recycle-bin fixes (Empty bin deletes PDFs; restore returns page-intact).
 
-## Prior sessions — 2026-08-01 → 08-13 (collapsed 2026-08-15; full detail in each `HANDOVER_*.md`, the `docs/session-log.md` verbatim archive, and the `MEMORY.md` index)
+## Prior sessions — 2026-08-01 → 08-14 (collapsed 2026-08-15; full detail in each `HANDOVER_*.md`, the `docs/session-log.md` verbatim archive, and the `MEMORY.md` index)
 > These per-session state blocks were stacking up and bloating this file. Each is preserved IN FULL in
 > its named `HANDOVER_*.md` (repo root) and appended verbatim to `docs/session-log.md`; the durable
 > per-feature facts (commits, kill switches, gates, follow-ups) live in `MEMORY.md` + `memory/project_*.md`.
 > **Grep the matching `HANDOVER_*.md` (or `docs/session-log.md`) before re-touching anything a recent
 > session built.** Newest first:
+- **08-14 overnight** → `HANDOVER_2026-08-14.md` (HEAD `656c722`) — near-match issuer gate (typed OR drawn, toggles ON, mig 68); 5 Chris round-5 cards incl. a `reconcileHolding` startup data-loss bug (soft-deleted page culled); the inferred-identity fuzzy-geom shed (OFF); Chris round 6.
 - **08-13 NIGHT2** → `HANDOVER_2026-08-13_NIGHT2.md` (HEAD `3327a22`) — the home-run arc: 6 phases, 11 commits, migrations 64–67, 4 new flags DARK + mig 67 turns SEVEN switches ON for NEW INSTALLS only. Census F 85.4%→92.8%; buyer-issued slice 3 REFUSED by its own census; the lexicon `<3 distinct` root cause ⇒ WEAK-only.
 - **08-13 AFTERNOON** → `HANDOVER_2026-08-13_AFTERNOON.md` + `docs/designs/TEACH_POISONING_ARC_2026-08-13.md` (HEAD `dc4bf1d`) — teach-poisoning arc; Oracle SEND BACK (9 conditions); root cause = the unguarded WRITER `templates.js:1195` (never compared warrants). Census E: 33/36 name scopes hold ONE value ⇒ WEAK-only.
 - **08-13 NIGHT** → `HANDOVER_2026-08-13_NIGHT.md` (HEAD `53db7eb`) — slice-3 B2 gate built+run; `realdoc_regression.js` had NEVER run the app's flags (`RR_APP_ENV=1`, DEFAULT OFF); Chris round 4 (a teach overwrote a frozen identity → 20 siblings @95 → 12 filed).
