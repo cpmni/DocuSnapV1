@@ -419,11 +419,19 @@ function createReviewService(deps = {}) {
     // releases the hold; the teach itself never counts, because it is the evidence being tested.
     // Runs on BOTH bulk and single confirms (a filed doc is a filed doc, Oracle D2), inert unless
     // the column exists AND the flag is armed, and can never affect the already-returned confirm.
+    // A TAUGHT confirm is SKIPPED (Oracle blocking condition, 2026-08-16): the teach is the very
+    // evidence being tested, so its own confirm may not release the hold it is about to create.
+    // Before the identical-rewrite fix this was true only by ordering accident — the detached
+    // onTaughtConfirm re-write RE-marked the template after this release ran; with identical
+    // rewrites no longer marking, an unguarded release here would let a genuine-change teach
+    // self-release and the round-4 protection (20 siblings @95, 12 misfiled) would die silently.
     try {
-      const _tid = (documents.getById(db, document_id) || {}).template_id;
-      if (_tid) {
-        require('../../database/modules/templates')
-          .noteIdentitySupported(db, _tid, (allValues && allValues.supplier_name) || supplier_name || '');
+      if (!(Array.isArray(taught_fields) && taught_fields.length)) {
+        const _tid = (documents.getById(db, document_id) || {}).template_id;
+        if (_tid) {
+          require('../../database/modules/templates')
+            .noteIdentitySupported(db, _tid, (allValues && allValues.supplier_name) || supplier_name || '');
+        }
       }
     } catch (e) { logger?.warn?.('identity-hold release skipped: ' + (e && e.message)); }
 

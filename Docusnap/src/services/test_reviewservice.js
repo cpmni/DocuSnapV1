@@ -305,6 +305,47 @@ const basePayload = (id, extra = {}) => ({
   const gr8 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, gatePayload(gd8, { allowRefile: true }));
   check('isRefile (allowRefile) SKIPS the gate (re-files)', gr8.ok === true);
 
+  // ── HOLD-SIBLINGS release through the REAL confirm flow (Oracle blocking condition 2026-08-16) ──
+  // Ordering bug a source-regex cannot catch: the release check runs SYNCHRONOUSLY inside confirm,
+  // while the template re-write (onTaughtConfirm) is DETACHED — so before the taught-skip, a
+  // genuine-change TEACH's own confirm released the very hold its teach created. Pinned end to end:
+  // a taught confirm must NOT release; an ordinary agreeing sibling confirm must.
+  console.log('\nhold-siblings release through confirm (taught never counts; a sibling does)');
+  {
+    const templates = require('../../database/modules/templates');
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('template_identity_hold_siblings','true')").run();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('teach_identity_near_match_keep','true')").run();
+    const tplId = templates.create(db, { name: 'HoldT', document_type_slug: 'invoice',
+      fields: [{ field_key: 'supplier_name', anchor_label: null, direction: 'right',
+                 fixed_value: 'Old Company Ltd', is_variable: false }] });
+    // The teach's promote step replaces the frozen identity with a DIFFERENT company → pending.
+    templates.update(db, tplId, { fields: [{ field_key: 'supplier_name', anchor_label: null,
+      direction: 'right', fixed_value: 'Quillstone Print & Packaging', is_variable: false }] });
+    const pend = () => db.prepare('SELECT identity_unconfirmed AS u, identity_supported_count AS n FROM templates WHERE id = ?').get(tplId);
+    check('genuine-change teach write marks the template pending', pend().u === 1);
+
+    // The TEACH's own confirm (taught_fields non-empty, issuer = the new name) must NOT release.
+    const td = newDoc(db);
+    db.prepare('UPDATE documents SET template_id = ? WHERE id = ?').run(tplId, td);
+    await svc.confirm(db, { username: 'sarah', role: 'admin' }, basePayload(td, {
+      taught_fields: ['supplier_name'],
+      allValues: { supplier_name: 'Quillstone Print & Packaging', invoice_number: 'INV-9', invoice_date: '01-01-2026' },
+      supplier_name: 'Quillstone Print & Packaging' }));
+    await flush();
+    check('the TEACH\'s own confirm does NOT release the hold (the teach is the evidence being tested)',
+          pend().u === 1 && pend().n === 0);
+
+    // An ordinary (un-taught) sibling confirm naming the same issuer RELEASES it.
+    const sd = newDoc(db);
+    db.prepare('UPDATE documents SET template_id = ? WHERE id = ?').run(tplId, sd);
+    await svc.confirm(db, { username: 'sarah', role: 'admin' }, basePayload(sd, {
+      allValues: { supplier_name: 'Quillstone Print & Packaging', invoice_number: 'INV-10', invoice_date: '01-01-2026' },
+      supplier_name: 'Quillstone Print & Packaging' }));
+    await flush();
+    check('one agreeing SIBLING confirm releases the hold', pend().u === 0 && pend().n === 1);
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('template_identity_hold_siblings','false')").run();
+  }
+
   console.log(`\n${fails === 0 ? 'ALL PASS' : fails + ' FAILED'}`);
   process.exit(fails ? 1 : 0);
 })();

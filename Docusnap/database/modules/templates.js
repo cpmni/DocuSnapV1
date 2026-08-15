@@ -1265,34 +1265,72 @@ function _hasFixedProvenance(db) {
 //
 // `fixed_locked` rows never reach here (the CASE above already preserves them) — an admin who
 // deliberately typed a literal in Template Manager keeps it, unchanged.
+// EDGE-JUNK TIDY for an incoming identity value (Chris card 3, 2026-08-16, Oracle-ordered
+// placement). A drawn/OCR teach can freeze letterhead debris onto the identity — the live
+// exhibit is "Pelican Office Interiors -", whose trailing " -" then rode the template name,
+// every sibling's supplier_name, and the in-app folder display (the on-disk folder was already
+// sanitised clean by buildFilenameStem — this fixes the VALUE at its freeze seam). Strips
+// leading/trailing whitespace + dash-family + underscore + comma/semicolon/colon ONLY; periods
+// are deliberately KEPT ("Ltd." is a legitimate ending — the period class is handled elsewhere).
+// Stored values are NEVER rewritten here: supplier_name is the universal learning scope key, and
+// a clean-over-dirty rewrite would orphan every hint/anchor/correction keyed to the dirty
+// literal. A dirty incumbent stays until an admin fixes it via setFieldFixedValue.
+const _IDENTITY_EDGE_JUNK_RE = /^[\s\-–—_,;:]+|[\s\-–—_,;:]+$/g;
+function _tidyIdentityValue(v) {
+  return String(v == null ? '' : v).replace(_IDENTITY_EDGE_JUNK_RE, '');
+}
+
 function _identityOverwriteGuard(db, templateId, f) {
   try {
     // Required locally, as everywhere else in this file (see _upsertTemplate) — document_types
     // and templates load each other, so a module-scope require would be a cycle.
     const { COMPANY_KEYS } = require('./document_types');
     if (!(COMPANY_KEYS || ['supplier_name']).includes(f.field_key)) return f;
-    const incoming = String(f.fixed_value == null ? '' : f.fixed_value).trim();
-    if (!incoming) return f;                                     // clearing / leaving variable
+    const rawIncoming = String(f.fixed_value == null ? '' : f.fixed_value).trim();
+    if (!rawIncoming) return f;                                  // clearing / leaving variable
+    // Tidy ONCE at entry, before the near-match switch — the hygiene is ungated (Oracle order):
+    // a junk-edged value must never be frozen even when the keep-guard itself is disabled.
+    const incoming = _tidyIdentityValue(rawIncoming);
+    const row = db.prepare(
+      'SELECT fixed_value, is_variable, fixed_locked FROM template_fields '
+      + 'WHERE template_id = ? AND field_key = ?').get(templateId, f.field_key);
+    const existingRaw = String((row && row.fixed_value) || '').trim();
+    const existing = _tidyIdentityValue(existingRaw);
+    const keepIncumbent = () => ({ ...f, fixed_value: row.fixed_value, is_variable: row.is_variable });
+    if (!incoming) {
+      // Pure edge-junk ("- -"): keep a real incumbent; with none, freeze NOTHING rather than junk.
+      if (row && existingRaw && row.fixed_locked !== 1) return keepIncumbent();
+      return { ...f, fixed_value: null, is_variable: 1 };
+    }
     const learning = require('./learning');
     // DEFAULT ON (owner flip 2026-08-14, "build it with toggles on"): a near-miss teach keeps the
     // incumbent frozen identity; only an explicit 'false' disables it. A genuinely DIFFERENT company
     // still displaces the incumbent below (pinned — else a wrong frozen name is uncorrectable), and
     // setFieldFixedValue stays the ungoverned correction route.
-    if (learning.getSetting(db, 'teach_identity_near_match_keep', 'true') === 'false') return f;
-    const row = db.prepare(
-      'SELECT fixed_value, is_variable, fixed_locked FROM template_fields '
-      + 'WHERE template_id = ? AND field_key = ?').get(templateId, f.field_key);
-    const existing = String((row && row.fixed_value) || '').trim();
-    if (!row || !existing || row.fixed_locked === 1) return f;   // no incumbent / admin-locked
+    if (learning.getSetting(db, 'teach_identity_near_match_keep', 'true') === 'false')
+      return { ...f, fixed_value: incoming };
+    if (!row || !existing || row.fixed_locked === 1)
+      return { ...f, fixed_value: incoming };   // no incumbent (create freezes TIDIED) / admin-locked
+    // A REWRITE OF THE SAME NAME IS NOT A DISPLACEMENT (the 2026-08-15 Chris re-run regression:
+    // every teach writes the issuer TWICE — promote-to-template, then confirm-with-taught_fields —
+    // and every ordinary confirm re-writes it once more; nearMatchIdentity deliberately answers
+    // near:false/reason:'identical' for equal folds, so the !near branch below marked the template
+    // pending on a FIRST teach and all 200 sibling imports stamped @70 "the sender was changed",
+    // File-All-Ready offering 0). Comparator = noteIdentitySupported's release basis (trim+lower,
+    // over TIDIED both sides so a clean re-teach over a dirty incumbent is agreement, not a change)
+    // — anything that would RELEASE a hold can never CREATE one. Keeps the incumbent literal.
+    if (incoming.toLowerCase() === existing.toLowerCase()) return keepIncumbent();
     const v = require('./name_proximity').nearMatchIdentity(incoming, existing);
     if (!v.near) {
-      // A GENUINELY DIFFERENT company. It commits — that is the pinned invariant, and without it a
-      // wrong frozen name could never be corrected by re-teaching. But it commits on the evidence of
-      // ONE document, and the round-4 exhibit is what one document's evidence buys: 20 siblings
-      // stamped at 95 and 12 filed. So the replacement is marked PENDING (owner decision 4) and the
-      // Python side declines to stamp siblings at full confidence until a second document agrees.
+      // A GENUINELY DIFFERENT company (or an unjudgeable displacement: fold-empty garbage over a
+      // real name, or a short stored name — both fail toward the hold). It commits — that is the
+      // pinned invariant, and without it a wrong frozen name could never be corrected by
+      // re-teaching. But it commits on the evidence of ONE document, and the round-4 exhibit is
+      // what one document's evidence buys: 20 siblings stamped at 95 and 12 filed. So the
+      // replacement is marked PENDING (owner decision 4) and the Python side declines to stamp
+      // siblings at full confidence until a second document agrees.
       _markIdentityPending(db, templateId, incoming, existing);
-      return f;
+      return { ...f, fixed_value: incoming };
     }
     // KEEP the incumbent. Silent by design and by the owner's ruling: a one-or-two character
     // misread of a name the install already holds is not a decision worth interrupting an
@@ -1301,7 +1339,7 @@ function _identityOverwriteGuard(db, templateId, f) {
       console.log(`  [identity-guard] tpl ${templateId} ${f.field_key}: kept ${JSON.stringify(existing)} `
         + `over ${JSON.stringify(incoming)} (d=${v.distance}, sim=${v.similarity.toFixed(3)})`);
     } catch {}
-    return { ...f, fixed_value: row.fixed_value, is_variable: row.is_variable };
+    return keepIncumbent();
   } catch {
     return f;            // a guard failure must never block a template write
   }
