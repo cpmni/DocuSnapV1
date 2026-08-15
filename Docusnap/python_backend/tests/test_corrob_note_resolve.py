@@ -89,7 +89,12 @@ check('A decline: not-licensed (memory+hint only, not independent) keeps the not
 print('B. rawwitness 1/I ref note (dominant-prefix demote)')
 B_NOTE = "the raw scan reads this as 'PI/25/8496' — one character differs (1/I); please check which is printed"
 PIDX = {('pelican office interiors -', 'invoice', 'invoice_number'):
-        {'dominant': 'PI', 'counts': {'PI': 90, 'P1': 3}, 'total': 93, 'known': {'PI', 'P1'}}}
+        # REAL pipeline shape: 18 'PI' + 3 'P1/…' (the I→1 misread has NO extractable code_prefix, so it
+        # sits in `total` (21) but NOT in `counts` — it is the SAME prefix OCR-lost, not a competitor).
+        # Share is over EXTRACTABLE prefixes: 18/18 = 1.0 → demote. (`learning_exclude_machine_confirms`
+        # shrinks the human sample, so the old `dn/total` bar (18/21=0.857) wrongly declined — the bug
+        # Chris's mature reprocess surfaced.)
+        {'dominant': 'PI', 'counts': {'PI': 18}, 'total': 21, 'known': {'PI'}}}
 def mk_b(val='PI/25/8496', cto='PI/25/8496', idx=PIDX):
     return ({'_supplier_name': 'Pelican Office Interiors -', '_document_slug': 'invoice',
              'invoice_number': {'value': val, 'method': 'template_mapping_rawwitness+corrected',
@@ -106,18 +111,19 @@ check('B heal: note + vacuous corrected_to cleared, _rawwitness stripped, value 
 r, idx = mk_b()
 check('B OFF: untouched', not run(r, {}, None, None, {'prefix_index': idx}) and r['invoice_number'].get('validation_note') == B_NOTE)
 
-# poisoned scope: 'P1' would be dominant only at 0.60 share → below 0.90 → keep the note
+# a scope with a GENUINE competing EXTRACTABLE prefix 'PX' as dominant → a 'PI' commit ≠ dominant → keep
 POISON = {('pelican office interiors -', 'invoice', 'invoice_number'):
-          {'dominant': 'P1', 'counts': {'P1': 6, 'PI': 4}, 'total': 10, 'known': {'P1', 'PI'}}}
+          {'dominant': 'PX', 'counts': {'PX': 6, 'PI': 4}, 'total': 10, 'known': {'PX', 'PI'}}}
 r, _ = mk_b(val='PI/25/8496')
 check('B decline: committed prefix != dominant → keep the note',
       not run(r, {}, None, 'REF_DOMINANT_FORMAT_NOTE_DEMOTE', {'prefix_index': POISON})
       and r['invoice_number'].get('validation_note') == B_NOTE)
 
+# a GENUINE second extractable prefix 'PX' dilutes the dominant BELOW 0.90 among extractable prefixes → keep
 THIN = {('pelican office interiors -', 'invoice', 'invoice_number'):
-        {'dominant': 'PI', 'counts': {'PI': 5, 'P1': 4}, 'total': 9, 'known': {'PI', 'P1'}}}  # 5/9=0.56 < 0.90
+        {'dominant': 'PI', 'counts': {'PI': 5, 'PX': 4}, 'total': 9, 'known': {'PI', 'PX'}}}  # 5/9=0.56 < 0.90
 r, _ = mk_b()
-check('B decline: dominant share < 0.90 → keep the note',
+check('B decline: a real competing extractable prefix drops share < 0.90 → keep the note',
       not run(r, {}, None, 'REF_DOMINANT_FORMAT_NOTE_DEMOTE', {'prefix_index': THIN})
       and r['invoice_number'].get('validation_note') == B_NOTE)
 

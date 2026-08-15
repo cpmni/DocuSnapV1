@@ -3202,8 +3202,17 @@ class ExtractionEngine:
                 ok = False
                 if rec_p and rec_p.get("dominant"):
                     dom = rec_p.get("dominant"); counts = rec_p.get("counts") or {}
-                    tot = rec_p.get("total") or 0; dn = counts.get(dom, 0)
-                    ok = (tot and dn >= 5 and dn >= 0.90 * tot
+                    dn = counts.get(dom, 0)
+                    # Share is over the EXTRACTABLE prefixes (sum(counts)), NOT every confirmed value
+                    # (rec['total']). A value whose leading-alpha prefix can't be read (e.g. 'P1/26/…',
+                    # the I→1 misread of 'PI') has NO code_prefix, so it sits in `total` but not `counts`
+                    # — it is the SAME prefix OCR-lost, never a COMPETING prefix, and must not dilute the
+                    # dominance. A genuine second prefix DOES appear in `counts` and correctly lowers the
+                    # share. (Without this, `learning_exclude_machine_confirms` shrinking the human-confirmed
+                    # sample let 3 unreadable-prefix misreads drop 18/21 below the 0.90 bar — the Pelican
+                    # I/1 class never demoted on the owner's real substrate.)
+                    ext_total = sum(counts.values())
+                    ok = (ext_total >= 5 and dn >= 5 and dn >= 0.90 * ext_total
                           and ocr_corrector.code_prefix(val) == dom)
                 ct = str(data.get("corrected_to") or "")
                 vac_or_1conf = (not ct.strip()) or ct == val or _one_confusable_diff(ct, val)
