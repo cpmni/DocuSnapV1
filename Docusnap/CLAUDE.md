@@ -91,9 +91,10 @@ Chris CONFIRMED the round-4/5 recycle-bin fixes (Empty bin deletes PDFs; restore
 **CHRIS ROUND 2 (owner asked to re-run under REAL config): a SANITIZED COPY of the live DB (1258 confirmed,
 all 30 owner flags + 7 fix flags ON, paths repointed + leak-checked, users cleared). Reprocessed the 24 held
 docs → filed 7, ALL correct, ZERO misfiling.** Method fingerprints prove A/C/D/E fired on the real pipeline
-(`+corrob_clear`×22, `+snap_corrob`×2, `+name_corrob_adopt`×4, `template_identity_corroborated`×4). **B FOLLOW-UP
-(safe): the Pelican I/1 demote fires in the standalone verifier (7 held → 84→96) but NOT on the app's
-Reprocess-All — a `_rawwitness`-note-surviving-the-reprocess-merge interaction; trace `mergeReprocessRows`.**
+(`+corrob_clear`×22, `+snap_corrob`×2, `+name_corrob_adopt`×4, `template_identity_corroborated`×4). **B FOLLOW-UP — RESOLVED 2026-08-16 as a NON-BUG (code-vintage artifact):** the mature-sandbox batch
+reprocess ran 15:56; the B fix (`7141316`) was committed 19:00 — the batch simply ran the OLD leg.
+Env/args parity across all 3 spawn paths verified; `mergeReprocessRows` is INNOCENT (used_new stores
+the fresh row wholesale). The "trace mergeReprocessRows" lead was FALSE — do not chase it again.
 Verdict: never filed a wrong value/folder — tidy the note copy and it's an unconditional yes.
 
 ## Prior sessions — 2026-08-01 → 08-14 (collapsed 2026-08-15; full detail in each `HANDOVER_*.md`, the `docs/session-log.md` verbatim archive, and the `MEMORY.md` index)
