@@ -1597,6 +1597,67 @@ def _one_confusable_diff(a, b) -> bool:
     return diffs == 1
 
 
+# ── P adopt lane (REF_PREFIX_CONFUSABLE_ADOPT; reggie design → Oracle SIGN-OFF-W/COND 2026-08-16,
+# owner-directed: "if the data shows PI is a consistent value, then P1 is a likely misdetection").
+# The note tail is the SHARED CONSTANT between the prefix-outlier writer and the P lane's matcher —
+# hoisted so the two can never drift apart (Oracle condition).
+_PREFIX_OUTLIER_NOTE_TAIL = "— likely a one-character misread. Please check."
+
+# OCR-confusable equivalence classes for CODE-PREFIX positions, one class per printed-glyph family.
+# EXPLICIT (not derived) so the adopt surface is exactly what was reviewed — the pin test asserts
+# these sets verbatim AND that every _CONFUSE_TO_DIGIT pair is covered, so an ocr_corrector map edit
+# can't silently widen (or orphan) this arm. Documented decisions:
+#   • uppercase 'L' joins the 1-class for THIS ARM ONLY (the Pelican I→L flavour, owner re-run
+#     evidence 2026-08-15) — deliberately NOT added to the shared _CONFUSE_TO_DIGIT, which the
+#     Oracle-signed B/D arms consume;
+#   • B↔E is EXCLUDED (one SB→SE sighting, n=1; a pure letter↔letter pair with the highest real
+#     prefix-collision risk — admit only if the decline census shows it recurring);
+#   • the separators '/' and '\\' stay excluded (standing Oracle condition — a printed separator is
+#     structure, never a confusable).
+_PREFIX_CONFUSE_CLASSES = (
+    frozenset("1Iil|][L"),
+    frozenset("0OoQ"),
+    frozenset("5Ss$"),
+    frozenset("2Zz"),
+    frozenset("8B"),
+    frozenset("7T"),
+    frozenset("6Gb"),
+    frozenset("9gq"),
+    frozenset("E€£"),
+)
+
+
+def _prefix_confusable_class(a, b) -> bool:
+    return any(a in c and b in c for c in _PREFIX_CONFUSE_CLASSES)
+
+
+def _prefix_confusable_adopt(val, dom):
+    """The adopted value (dominant prefix + the read's own suffix), or None when the read's head is
+    not a single-confusable neighbour of the dominant. Rules (each a pinned refusal):
+      • the char AFTER the head must not be alpha (segmentation guard — a read whose own letter run
+        outruns the dominant, e.g. 'P1X/…' vs 'PI', is ambiguous, not confusable);
+      • pure case differences count zero; EXACTLY ONE confusable-class glyph substitution, in the
+        head only — the dominant licenses the head, history says nothing about the per-doc tail;
+      • zero substitutions (case-only) is NOT this arm — B owns the note there, value untouched."""
+    val = str(val or '')
+    dom = str(dom or '')
+    L = len(dom)
+    if not dom or len(val) < L:
+        return None
+    if len(val) > L and val[L].isalpha():
+        return None
+    subs = 0
+    for ca, cb in zip(val[:L], dom):
+        if ca == cb or ca.upper() == cb.upper():
+            continue
+        subs += 1
+        if subs > 1 or not _prefix_confusable_class(ca, cb):
+            return None
+    if subs != 1:
+        return None
+    return dom + val[L:]
+
+
 # S-A date-in-ref belt regexes (module-level — compiled once). A guard value must be a
 # FULL-STRING numeric 3-component date with the SAME separator repeated, or a month-name
 # date, AND parse via validator.parse_date — the pair keeps '20260731' / '21/07' /
@@ -3148,13 +3209,21 @@ class ExtractionEngine:
           E NAME_CORROB_SUGGESTION_ADOPT         — a Stage-4.5 name SUGGESTION on a NON-identity field:
                 ADOPT it iff it == the scope's dominant confirmed literal (share>=0.9, n>=5) AND the
                 page's OWN keyword-family read == the suggestion. supplier_name NEVER.
+          P REF_PREFIX_CONFUSABLE_ADOPT          — (2026-08-16, owner-directed PI/P1 class) a ref
+                whose head differs from the scope's >=0.90-dominant prefix by EXACTLY ONE
+                confusable-class glyph: ADOPT the dominant head (suffix untouched) iff a PAGE
+                witness independently carries the adopted form (W1 corrected_to byte-equal, or W2 a
+                keyword-family candidate) AND neither the read prefix nor the read head is itself an
+                established confirmed form AND the adopted value passes the learned shape. History
+                alone NEVER rewrites; NO confidence change (the 88 floor stays a live second gate).
         Returns True if any field changed (feeds the shared B1 recompute — never `or`ed inline)."""
         A_on = os.environ.get("TEMPLATE_IDENTITY_CORROB_NOTE_SHED", "0") != "0"
         B_on = os.environ.get("REF_DOMINANT_FORMAT_NOTE_DEMOTE", "0") != "0"
         C_on = os.environ.get("RECON_SHADOW_ATTRIB_NOTE_DEMOTE", "0") != "0"
         D_on = os.environ.get("SNAP_CONFUSABLE_CLEAN_AUTOFILE", "0") != "0"
         E_on = os.environ.get("NAME_CORROB_SUGGESTION_ADOPT", "0") != "0"
-        if not (A_on or B_on or C_on or D_on or E_on):
+        P_on = os.environ.get("REF_PREFIX_CONFUSABLE_ADOPT", "0") != "0"
+        if not (A_on or B_on or C_on or D_on or E_on or P_on):
             return False                                   # OFF ⇒ byte-identical
         from extraction import validator as _v
         try:
@@ -3197,10 +3266,12 @@ class ExtractionEngine:
                 continue
 
             # ── B: 1/I rawwitness ref note whose committed prefix == scope dominant ──
-            if B_on and "_rawwitness" in method and "one character differs" in note:
+            # (P shares this branch: a rawwitness field is CONSUMED here by the unconditional
+            # `continue`, so the P adopt lane must live inside it — each side keeps its own gate.)
+            if (B_on or P_on) and "_rawwitness" in method and "one character differs" in note:
                 rec_p = ocr_corrector.lookup_prefix(self.prefix_index, key, sup, slug)
                 ok = False
-                if rec_p and rec_p.get("dominant"):
+                if B_on and rec_p and rec_p.get("dominant"):
                     dom = rec_p.get("dominant"); counts = rec_p.get("counts") or {}
                     dn = counts.get(dom, 0)
                     # Share is over the EXTRACTABLE prefixes (sum(counts)), NOT every confirmed value
@@ -3226,6 +3297,21 @@ class ExtractionEngine:
                              f"'{rec_p.get('dominant')}' — 1/I note released")
                     if self._trace:
                         self._t("corrob_note_resolve", field=key, cls="B", value=val)
+                elif P_on:
+                    # P lane, rawwitness flavour (Oracle: MUST live before this branch's
+                    # unconditional `continue` — a later class never sees a rawwitness field).
+                    # A refused row keeps its note untouched (fail toward Review, pinned).
+                    if self._try_prefix_confusable_adopt(key, data, rec_p, rec, sup, slug):
+                        changed = True
+                continue
+
+            # ── P (outlier flavour): prefix-outlier note, page-witnessed confusable head ──
+            # The read's prefix IS extractable here (e.g. 'PL/26/…') so the rawwitness branch never
+            # saw it — the prefix-outlier guard capped it at 69 with the shared-tail note instead.
+            if P_on and note.endswith(_PREFIX_OUTLIER_NOTE_TAIL):
+                rec_p = ocr_corrector.lookup_prefix(self.prefix_index, key, sup, slug)
+                if self._try_prefix_confusable_adopt(key, data, rec_p, rec, sup, slug):
+                    changed = True
                 continue
 
             # ── C: doubly-corroborated total; VAT arithmetic confirms it ──
@@ -3310,6 +3396,93 @@ class ExtractionEngine:
                         self._t("corrob_note_resolve", field=key, cls="E", value=repaired)
                 continue
         return changed
+
+    def _try_prefix_confusable_adopt(self, key, data, rec_p, rec, sup, slug):
+        """The P adopt lane's licensing + apply (reggie design → Oracle SIGN-OFF-W/COND 2026-08-16).
+        Adopt the scope's dominant prefix over a single-confusable read head. Returns True iff the
+        value was adopted; EVERY refusal returns False with the row untouched (note survives — fail
+        toward Review, pinned). Licensing, ALL required:
+          • ref-role code field only; never the identity; never name-like; never a human-set method;
+          • dominance: counts[dom]>=5 AND >=0.90 of the EXTRACTABLE prefixes (B's own bars — the
+            prefixless-dilution lesson at the B lane applies here identically);
+          • the head is a single-confusable neighbour (see _prefix_confusable_adopt);
+          • BOTH-FORMS refusal: the read's own prefix confirmed in-scope (prefix_confirmed — an
+            established second convention is data, not a misread), or >= the same weight-aware bar
+            of confirmed values sharing the read's HEAD (non-extractable heads like 'P1' can never
+            appear in prefix counts — this is their twin; a poisoned-by-misconfirms scope stands
+            the arm DOWN, the remedy is Learning Repair, never a looser bar);
+          • REQUIRED page witness: W1 corrected_to == adopted byte-equal (the raw-crop wider
+            reading — the page's own second reading), or W2 a keyword-family candidate that
+            normalises to the adopted value. History alone NEVER rewrites (the 08-03 rule: a
+            poisoned corpus cannot invent a page reading);
+          • the adopted value passes the scope's learned shape (no shape entry -> refuse: a scope
+            that can't state its shape doesn't get rewrites).
+        NO confidence change — the ≤84/≤69 cap stays, so the 88 critical floor remains a live
+        second gate over the rewritten value (confidence restoration is a separate, census-
+        justified follow-up)."""
+        try:
+            if not rec_p or not rec_p.get("dominant"):
+                return False
+            from extraction.value_quality import is_name_like_field
+            val = str(data.get("value") or "")
+            method = str(data.get("method") or "")
+            if not val or key == "supplier_name" or not _is_ref_field(key) or is_name_like_field(key):
+                return False
+            if any(m in method for m in ("override", "manual", "template_fixed")):
+                return False
+            dom = str(rec_p.get("dominant"))
+            counts = rec_p.get("counts") or {}
+            dn = counts.get(dom, 0)
+            ext_total = sum(counts.values())
+            if not (ext_total >= 5 and dn >= 5 and dn >= 0.90 * ext_total):
+                return False
+            adopted = _prefix_confusable_adopt(val, dom)
+            if not adopted or adopted == val:
+                return False
+            # BOTH-FORMS refusal, prefix twin
+            read_p = ocr_corrector.code_prefix(val)
+            if read_p and read_p != dom and ocr_corrector.prefix_confirmed(read_p, rec_p):
+                return False
+            # BOTH-FORMS refusal, value-head twin (non-extractable heads never reach counts)
+            head_norm = _cmp_norm(val[:len(dom)])
+            bucket = self.confirmed_counts_index.get(
+                (sup.lower().strip(), slug.lower().strip(), key)) or {}
+            if head_norm and bucket:
+                bar = max(3, math.ceil(0.10 * sum(bucket.values())))
+                same_head = sum(n for v_norm, n in bucket.items()
+                                if str(v_norm)[:len(head_norm)] == head_norm)
+                if same_head >= bar:
+                    return False
+            # REQUIRED page witness
+            ct = str(data.get("corrected_to") or "")
+            w1 = bool(ct) and ct == adopted
+            w2 = any(str(c.get("method") or "").startswith("keyword")
+                     and _cmp_norm(c.get("value")) == _cmp_norm(adopted)
+                     for c in (self._field_candidates.get(key) or []))
+            if not (w1 or w2):
+                return False
+            # post-adopt learned shape (check_value: None == consistent, anomaly dict == violation)
+            fmt_entry = self.format_class_index.get(
+                (sup.lower().strip(), slug.lower().strip(), key)) if sup else None
+            if not fmt_entry or format_anomaly_checker.check_value(adopted, fmt_entry) is not None:
+                return False
+            # apply — value + provenance; note popped; confidence untouched
+            data["value"] = adopted
+            data["raw_value"] = adopted
+            data["corrected_to"] = adopted          # equal pair -> the calm applied badge
+            data.pop("validation_note", None)
+            data["was_corrected"] = True
+            data["method"] = method.replace("_rawwitness", "") + "+prefix_confusable_adopt"
+            if isinstance(rec, dict):               # additive provenance; independent_agree untouched
+                rec.setdefault("note_demoted", []).append(
+                    {"cls": "P", "adopted_from": val, "witness": "rawwitness" if w1 else "keyword"})
+            self.log(f"  Corrob adopt (P): ref '{val}' → '{adopted}' (dominant prefix '{dom}', "
+                     f"{'wider-read' if w1 else 'keyword'} witness agrees) — note cleared")
+            if self._trace:
+                self._t("corrob_note_resolve", field=key, cls="P", value=adopted)
+            return True
+        except Exception:
+            return False   # a lane failure must never break extraction (fail toward Review)
 
     def _demote_recon_total_corroborated_note(self, results, corrob):
         """RECON_TOTAL_NOTE_DEMOTE (owner corroboration STEP 3, slice 2 — MONEY; gary design →
@@ -4663,9 +4836,10 @@ class ExtractionEngine:
                     continue
                 data['confidence'] = min(int(data.get('confidence') or 0), 69)
                 if not str(data.get('validation_note') or '').strip():
+                    # The tail is the shared module constant — the P adopt lane matches on it.
                     data['validation_note'] = (
                         f"This {key.replace('_', ' ')} starts '{p}', but this sender's usually start "
-                        f"'{rec['dominant']}' — likely a one-character misread. Please check.")
+                        f"'{rec['dominant']}' {_PREFIX_OUTLIER_NOTE_TAIL}")
                 self.log(f"  Prefix-outlier guard: {key} read prefix '{p}' vs dominant "
                          f"'{rec['dominant']}' — flagged for review")
         except Exception:

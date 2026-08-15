@@ -28,7 +28,7 @@ def check(name, ok):
 
 ENVS = ['TEMPLATE_IDENTITY_CORROB_NOTE_SHED', 'REF_DOMINANT_FORMAT_NOTE_DEMOTE',
         'RECON_SHADOW_ATTRIB_NOTE_DEMOTE', 'SNAP_CONFUSABLE_CLEAN_AUTOFILE',
-        'NAME_CORROB_SUGGESTION_ADOPT']
+        'NAME_CORROB_SUGGESTION_ADOPT', 'REF_PREFIX_CONFUSABLE_ADOPT']
 MAJ = engine._TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY
 cn = engine._cmp_norm
 
@@ -44,6 +44,8 @@ def run(results, corrob, matched_tmpl, env, selfattrs):
         dominant_index=selfattrs.get('dominant_index', {}),
         confirmed_counts_index=selfattrs.get('confirmed_counts_index', {}),
         _field_candidates=selfattrs.get('_field_candidates', {}),
+        format_class_index=selfattrs.get('format_class_index', {}),
+        _try_prefix_confusable_adopt=lambda *a, **k: engine.ExtractionEngine._try_prefix_confusable_adopt(fake, *a, **k),
         _trace=False, _t=lambda *a, **k: None, log=lambda *a, **k: None)
     try:
         fired = engine.ExtractionEngine._resolve_corroborated_notes(
@@ -230,6 +232,153 @@ check('E decline: supplier_name (identity) is excluded — never adopted here',
       not run(r, {}, None, 'NAME_CORROB_SUGGESTION_ADOPT',
               {'confirmed_counts_index': cci, '_field_candidates': cands})
       and r['supplier_name']['value'] == 'Branblewood Joinery Utd')
+
+
+# ── P: prefix-confusable adopt (2026-08-16, owner-directed PI/P1 class; Oracle S-O-W/C) ─────────
+print('P. prefix-confusable adopt (P1/→PI/ with a page witness)')
+from extraction import format_anomaly_checker as _fac  # noqa: E402
+
+# A REAL learned-shape entry built by the real builder (alphanum + '/' separators), so the
+# post-adopt check_value leg runs against the true mechanism, not a hand-rolled dict.
+_P_FMT = _fac.build_format_class_index([{
+    'supplier_name': 'Pelican Office Interiors -', 'document_type': 'invoice',
+    'field_key': 'invoice_number',
+    'sample_values': ['PI/25/8496', 'PI/26/1001', 'PI/26/3130'],
+}])
+P_KEY = ('pelican office interiors -', 'invoice', 'invoice_number')
+assert P_KEY in _P_FMT, 'fixture: the real builder must index the Pelican shape'
+
+# The rawwitness ask-note (old copy — stored rows carry it forever; the matcher is the substring).
+P_NOTE = "the raw scan reads this as 'PI/26/3130' — one character differs (1/I); please check which is printed"
+P_OUTLIER_NOTE = ("This invoice number starts 'PL', but this sender's usually start 'PI' "
+                  + engine._PREFIX_OUTLIER_NOTE_TAIL)
+
+def mk_p(val='P1/26/3130', ct='PI/26/3130', method='template_mapping_rawwitness+corrected',
+         note=P_NOTE, idx=PIDX, cci=None, cands=None, fmt=_P_FMT):
+    return ({'_supplier_name': 'Pelican Office Interiors -', '_document_slug': 'invoice',
+             'invoice_number': {'value': val, 'method': method, 'confidence': 84,
+                                'validation_note': note, 'corrected_to': ct}},
+            {'prefix_index': idx, 'confirmed_counts_index': cci or {},
+             '_field_candidates': cands or {}, 'format_class_index': fmt})
+
+# HEAL 1 — rawwitness flavour, W1 (the wider reading IS the adopted form). The exhibit.
+r, attrs = mk_p()
+fired = run(r, {}, None, 'REF_PREFIX_CONFUSABLE_ADOPT', attrs)
+d = r['invoice_number']
+check('P heal (W1): P1/26/3130 → PI/26/3130, note cleared, +prefix_confusable_adopt',
+      fired and d['value'] == 'PI/26/3130' and d.get('validation_note') is None
+      and d['method'] == 'template_mapping+corrected+prefix_confusable_adopt'
+      and d.get('corrected_to') == 'PI/26/3130' and d.get('was_corrected') is True)
+check('P heal: confidence UNCHANGED (the 88 floor stays a live second gate)', d['confidence'] == 84)
+
+# HEAL 2 — outlier flavour, W2 (extractable-but-wrong head 'PL'; keyword candidate carries 'PI').
+r, attrs = mk_p(val='PL/26/3130', ct='', method='template_mapping', note=P_OUTLIER_NOTE,
+                cands={'invoice_number': [{'method': 'keyword', 'value': 'PI/26/3130'}]})
+fired = run(r, {}, None, 'REF_PREFIX_CONFUSABLE_ADOPT', attrs)
+check('P heal (W2, I→L flavour): PL/26/3130 → PI/26/3130 off the keyword witness',
+      fired and r['invoice_number']['value'] == 'PI/26/3130'
+      and r['invoice_number'].get('validation_note') is None)
+
+# OFF — byte-identical.
+r, attrs = mk_p()
+check('P OFF: untouched', not run(r, {}, None, None, attrs)
+      and r['invoice_number']['value'] == 'P1/26/3130'
+      and r['invoice_number'].get('validation_note') == P_NOTE)
+
+# REFUSALS (each keeps the note — fail toward Review; Oracle: a refused row's note SURVIVES).
+r, attrs = mk_p(val='PX/26/3130', ct='PI/26/3130')   # X↔I is NOT a confusable pair
+check('P refuse: non-confusable head diff → note kept',
+      not run(r, {}, None, 'REF_PREFIX_CONFUSABLE_ADOPT', attrs)
+      and r['invoice_number'].get('validation_note') == P_NOTE)
+
+# both-forms (prefix twin): 'PL' is itself an ESTABLISHED confirmed prefix (>= the ABS bar 8)
+EST = {P_KEY: {'dominant': 'PI', 'counts': {'PI': 80, 'PL': 8}, 'total': 88, 'known': {'PI', 'PL'}}}
+r, attrs = mk_p(val='PL/26/3130', ct='', method='template_mapping', note=P_OUTLIER_NOTE, idx=EST,
+                cands={'invoice_number': [{'method': 'keyword', 'value': 'PI/26/3130'}]})
+check('P refuse: the read prefix is itself established (a second convention is data, not a misread)',
+      not run(r, {}, None, 'REF_PREFIX_CONFUSABLE_ADOPT', attrs)
+      and r['invoice_number'].get('validation_note') == P_OUTLIER_NOTE)
+
+# both-forms (value-head twin): 3 confirmed 'P1…' literals in-scope — THE LIVE PELICAN SHAPE.
+# The arm stands DOWN (remedy: purge the mis-confirms via Learning Repair, never a looser bar).
+P1_CCI = {P_KEY: {cn('P1261792'): 2, cn('P1263711'): 1, cn('PI/25/8496'): 18}}
+r, attrs = mk_p(cci=P1_CCI)
+check('P refuse: confirmed values sharing the read head ≥ bar (the live-Pelican mis-confirm shape)',
+      not run(r, {}, None, 'REF_PREFIX_CONFUSABLE_ADOPT', attrs)
+      and r['invoice_number']['value'] == 'P1/26/3130')
+
+# witness tail mismatch: the wider reading differs in the SUFFIX → not a witness for this adopt
+r, attrs = mk_p(ct='PI/26/9999')
+check('P refuse: witness suffix mismatch (no W1, no W2) → note kept',
+      not run(r, {}, None, 'REF_PREFIX_CONFUSABLE_ADOPT', attrs)
+      and r['invoice_number']['value'] == 'P1/26/3130')
+
+# dominance below 0.90 among extractable prefixes (THIN reused)
+r, attrs = mk_p(idx=THIN)
+check('P refuse: dominant share < 0.90 → note kept',
+      not run(r, {}, None, 'REF_PREFIX_CONFUSABLE_ADOPT', attrs)
+      and r['invoice_number']['value'] == 'P1/26/3130')
+
+# human-set method never rewritten (outlier lane; manual method)
+r, attrs = mk_p(val='PL/26/3130', ct='', method='manual', note=P_OUTLIER_NOTE,
+                cands={'invoice_number': [{'method': 'keyword', 'value': 'PI/26/3130'}]})
+check('P refuse: a human-set method is never rewritten',
+      not run(r, {}, None, 'REF_PREFIX_CONFUSABLE_ADOPT', attrs)
+      and r['invoice_number']['value'] == 'PL/26/3130')
+
+# segmentation guard: the read's own letter run outruns the dominant
+r, attrs = mk_p(val='P1X/26/3130', ct='PIX/26/3130')
+check('P refuse: alpha continues past the dominant-length head → ambiguous, not confusable',
+      not run(r, {}, None, 'REF_PREFIX_CONFUSABLE_ADOPT', attrs)
+      and r['invoice_number']['value'] == 'P1X/26/3130')
+
+# no learned shape entry for the scope → refuse (a scope that can't state its shape gets no rewrites)
+r, attrs = mk_p(fmt={})
+check('P refuse: no learned-shape entry → note kept',
+      not run(r, {}, None, 'REF_PREFIX_CONFUSABLE_ADOPT', attrs)
+      and r['invoice_number']['value'] == 'P1/26/3130')
+
+# the confusable-class table is PINNED (Oracle: an ocr_corrector map edit must not silently widen this arm)
+check('P table: exact classes pinned (L documented in the 1-class; B↔E and separators excluded)',
+      engine._PREFIX_CONFUSE_CLASSES == (
+          frozenset("1Iil|][L"), frozenset("0OoQ"), frozenset("5Ss$"), frozenset("2Zz"),
+          frozenset("8B"), frozenset("7T"), frozenset("6Gb"), frozenset("9gq"), frozenset("E€£"))
+      and not engine._prefix_confusable_class('B', 'E')
+      and not engine._prefix_confusable_class('/', '\\')
+      and engine._prefix_confusable_class('L', 'I') and engine._prefix_confusable_class('$', 'S'))
+check('P table: every shared _CONFUSE_TO_DIGIT pair is covered (derivation can never drift narrower)',
+      all(engine._prefix_confusable_class(ch, d) for ch, d in engine._CONFUSE_TO_DIGIT.items()))
+
+# ── SEAM: the REAL prefix-index builder feeds B/P (18 'PI' + 3 prefixless must index {'PI':18}) ──
+# Pins the decision documented at the B lane: a value whose leading-alpha prefix can't be read
+# ('P1/26/…', the I→1 misread of 'PI') sits in `total` but NOT in `counts` — the SAME prefix
+# OCR-lost, never a competitor — so the 0.80 index-arming bar and B's 0.90 share both measure over
+# EXTRACTABLE prefixes. A future DOMINANT_MIN_SHARE bump upstream would break this pin, not
+# silently re-kill B/P on the owner's real substrate.
+print('SEAM. set_formats → build_prefix_index → demote')
+from extraction import ocr_corrector as _oc  # noqa: E402
+_seam_counts = {'PI/25/8496': 16, 'PI/26/1001': 2, 'P1261792': 2, 'P1263711': 1}
+_seam_idx = _oc.build_prefix_index([{
+    'supplier_name': 'Pelican Office Interiors -', 'document_type': 'invoice',
+    'field_key': 'invoice_number', 'value_counts': _seam_counts,
+    'sample_values': list(_seam_counts)}])
+_seam_rec = _seam_idx.get(P_KEY)
+check('seam: the real builder indexes {PI:18}/total 21 from 18 PI + 3 prefixless',
+      bool(_seam_rec) and _seam_rec.get('dominant') == 'PI'
+      and _seam_rec.get('counts', {}).get('PI') == 18 and int(_seam_rec.get('total') or 0) == 21)
+r, _ = mk_b()
+check('seam: B demotes off the REAL built index (share over extractable prefixes)',
+      run(r, {}, None, 'REF_DOMINANT_FORMAT_NOTE_DEMOTE', {'prefix_index': _seam_idx})
+      and r['invoice_number'].get('validation_note') is None)
+
+# B matcher still fires on the NEW _witness_note copy (2b keeps the marker substring verbatim)
+NEW_B_NOTE = ("this read needed a repair on one ambiguous character (1/I) — one character differs "
+              "between the possible readings; please check the printed value")
+r, _ = mk_b()
+r['invoice_number']['validation_note'] = NEW_B_NOTE
+check('seam: B matches the reworded (2b) note — the "one character differs" marker is load-bearing',
+      run(r, {}, None, 'REF_DOMINANT_FORMAT_NOTE_DEMOTE', {'prefix_index': _seam_idx})
+      and r['invoice_number'].get('validation_note') is None)
 
 
 # ── FC RECOMPUTE (the linchpin): a demoted note must release its format-consistency penalty ──
