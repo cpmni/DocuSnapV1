@@ -21,11 +21,23 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-15: **READ `HANDOVER_2026-08-15.md` FIRST.** HEAD **`799927e`**, 3 arc
-commits LOCAL (NOT pushed — owner go pending), tree clean. Owner: "read the blocking notes on the queue —
-enough info in the DB to confirm the right values/suppliers; make these docs autofile; no regressions; then
-Chris tests + measures." **NOTHING flipped on live; every switch DEFAULT OFF; live-DB backup taken
-(`TESTING/_measure/live_backup_20260815_autofile_arc.db`).**
+## ⏭ LATEST — 2026-08-15: **READ `HANDOVER_2026-08-15.md` FIRST.** HEAD **`717058b`**, 11 commits
+**PUSHED to origin**, tree clean. The corroboration arc shipped + validated; owner flipped all reading
+switches on their live DB and made it the new-install DEFAULT (mig 70); Chris re-ran on the new defaults.
+**⏭ TOP OF QUEUE (owner said "yes, build it"): the hold-siblings FIRST-BATCH REGRESSION.** Chris's re-run:
+`template_identity_hold_siblings` (now DEFAULT-ON via mig 70) fires on a FIRST teach, not just a genuine
+identity CHANGE — after teaching 10 fresh, ALL 200 imports carry "the sender for this layout was changed to
+'X' — confirm it here too" @70 (`template_fixed`), and **File All Ready offers 0** (first night filed 154 in
+one click). **FIX (approved, NOT built):** gate the hold-siblings mark on "a prior frozen identity existed AND
+differs", never a first teach (`template_identity_hold_siblings` read in `templates.js` + bridged
+`TEMPLATE_IDENTITY_HOLD_SIBLINGS`); + run a DRAWN-box teach control (Chris used typed-locate → freezes
+fixed_value from 1 confirm, the young-identity trigger; first night he drew boxes, no such note); and/or don't
+count the sender-confirm note as a File-All blocker. **MIG 70:** new installs default all reading switches ON
+except `deskew_on_import` (arc keys UPSERT-forced true; others INSERT OR IGNORE); the 8 corrob switches
+SFDEV-gated (`DEV_SWITCH_IDS`). **Chris re-run WINS vs first night:** Oakhaven slash-drop FIXED (20/20),
+false "net disagrees" gone, trailing-period + `]` fixed, Pelican I/1 better (~55% correct), **mature auto-file
+~55%→~93.5%.** Chris's buyer-issued mis-teach (Quillstone as issuer on a Bramblewood PO) → filed under
+Quillstone, NO bleed, containment held. Live-DB backup: `TESTING/_measure/live_backup_20260815_autofile_arc.db`.
 **THE FINDING (owner's intuition, PROVEN): the DB already knows the answer.** `extractions.corroboration`
 records which independent method families read the same value; the confirmed corpus records the dominant
 value/prefix. But `trust.js isAutoFileEligible` refuses UNCONDITIONALLY on any note/`corrected_to` and on a

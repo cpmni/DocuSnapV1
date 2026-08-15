@@ -153,3 +153,40 @@ No swallowed dialogs went unnoticed once a handler was registered.
 - **What genuinely worked:** the near-match name repair — quietly turned "Quilistone/Branblewood" back into the right company from history, cleared the flag, filed to the correct folder; page-missing docs correctly frozen with Confirm disabled. The fix earning its keep.
 - **Keep using after two weeks? Yes** — across 24 held docs and 7 auto-cleared filings it never once filed a wrong value or folder, and every scary button told the truth. Tidy cards 1 and 2 so I trust "Reprocess all" and stop second-guessing invoice numbers.
 - **Humility:** drove a sanitized copy at one moment; judged "correct value" by comparing on-screen read to the printed page in the same screenshots; filed only the 7 the app judged clean (all verified); OCR re-read variability (card 1) may differ on another run. Nothing implemented; all findings queued for the owner's vet.
+
+---
+
+# Chris The Customer — Re-run vs First Night (2026-08-15 LATE, NEW SHIPPED DEFAULTS)
+
+**Round conditions:** FRESH install with the migration-70 defaults — every reading switch ON out of the
+box EXCEPT straighten-on-import (verified: code_separator_structure_guard, recon_total_note_demote,
+teach_identity_near_match_keep, template_identity_geom_fuzzy_graduate all true; auto_file_threshold unset →
+100%; deskew off). Corpus SINGLE + IMPORT + IMPORT2. Chris compared to his first-night (round 1) run.
+NOTE (owner-observed): Chris taught the Quillstone PO with QUILLSTONE as the Document Issuer on a
+Bramblewood-issued layout — the buyer-issued trap. Outcome: filed under Quillstone (his teach), NO
+cross-supplier bleed, exactly 10 clean folders — containment held.
+
+## Comparison (first night → now)
+- Oakhaven slash-drop: **FIXED** (20/20 keep the "/").
+- False "net disagrees" total flags: **gone** (2 across 200).
+- Pelican trailing-period + account "]": **fixed**.
+- Pelican I/1: **better** (slashes kept, ~55% correct; ~45% still I→1/I→L).
+- **Mature auto-file: ~55% → ~93.5%** (wave 2; Oakhaven + Pelican now auto-file).
+- Nordwind 2 unidentified / Silverbeck SO-number-missing / Veltrix false SO flag: **SAME**.
+
+## THE NEW REGRESSION (Chris #1, HIGH) — File All Ready dead on the first batch
+After teaching 10 fresh, **all 200 imported docs carry "the sender for this layout was changed to 'X' —
+confirm it here too" @70 (method template_fixed)**, and **File All Ready offers 0** (first night: filed 154
+in one click). Main-session trace: the note is the **hold-siblings** note; `template_identity_hold_siblings`
+is now DEFAULT-ON (mig 70). It should fire only on a genuine identity CHANGE (a different company replacing
+an existing one — the Quillstone-poison defence), but on a FIRST teach it treats the freshly-frozen
+identity as a "change" and holds every sibling. Confound (Chris's flag): he taught via TYPED-LOCATE, which
+freezes the issuer as fixed_value from 1 confirm — the input the young-identity/hold-siblings path reacts to
+(first night he DREW boxes). So switch + method together. THE FIX (owner-approved, PENDING): make
+hold_siblings fire only on a real identity change, not a first teach; run a drawn-box teach to confirm the
+method's share.
+
+## Verdict — moved, net positive
+"Still yes — the reads earn more trust (Oakhaven perfect, no period/net-disagree noise, 93% mature
+auto-file). But the condition changed: from 'lower the auto-file bar' to 'fix the first-batch sender-confirm
+so File All Ready works out of the box again.'" Sandbox left on CDP 9223.
