@@ -63,6 +63,13 @@ this arc, orthogonal to it).** #2 buyer-issued PO steers "Document Issuer" at th
 (re-reads same pixels) — CONFIRMS class B; the app already computes the "wider reading" it only warns about.
 #4 Oakhaven slash-drop flags 19/20 on a cosmetic "/" (the separator class). #5 stale recycle-bin view (recurs).
 Chris CONFIRMED the round-4/5 recycle-bin fixes (Empty bin deletes PDFs; restore returns page-intact).
+**CHRIS ROUND 2 (owner asked to re-run under REAL config): a SANITIZED COPY of the live DB (1258 confirmed,
+all 30 owner flags + 7 fix flags ON, paths repointed + leak-checked, users cleared). Reprocessed the 24 held
+docs → filed 7, ALL correct, ZERO misfiling.** Method fingerprints prove A/C/D/E fired on the real pipeline
+(`+corrob_clear`×22, `+snap_corrob`×2, `+name_corrob_adopt`×4, `template_identity_corroborated`×4). **B FOLLOW-UP
+(safe): the Pelican I/1 demote fires in the standalone verifier (7 held → 84→96) but NOT on the app's
+Reprocess-All — a `_rawwitness`-note-surviving-the-reprocess-merge interaction; trace `mergeReprocessRows`.**
+Verdict: never filed a wrong value/folder — tidy the note copy and it's an unconditional yes.
 
 ## Prior sessions — 2026-08-01 → 08-14 (collapsed 2026-08-15; full detail in each `HANDOVER_*.md`, the `docs/session-log.md` verbatim archive, and the `MEMORY.md` index)
 > These per-session state blocks were stacking up and bloating this file. Each is preserved IN FULL in

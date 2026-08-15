@@ -90,3 +90,66 @@ I ran the complete teach → import → review loop as a non-technical owner. Ev
 **What I may be missing:** I drove the app via CDP with coordinate-based box-drawing, so my teach boxes may be marginally looser than a careful human's (I verified every read-back, but a few labels over-captured). The 100% default may be a deliberate safety choice for brand-new installs; graduation is *meant* to relax it — my wave-2 result supports that, but it only kicks in after a manual first batch. GT accuracy scoring is yours to run; I measured *observable* auto-file/hold behaviour and the on-screen reads, not per-field correctness against ground truth. Wave 2 was at 188/200 when I wrote this.
 
 **Sandbox state:** wave-1 = 154 filed via File All Ready + 46 restored-then-held; wave-2 ≈103 auto-filed + rest in Review. Windows left open (Main, Review, Search) on CDP 9223. Taught docs = the ten `_0011` files listed in §1.
+
+---
+
+# Chris The Customer — Round 2 (2026-08-15, MATURE-install fix validation)
+
+**Round conditions:** a SANITIZED COPY of the owner's MATURE live install (1258 confirmed docs, all 10
+suppliers graduated, ALL 30 of the owner's reading-improvement flags ON, PLUS the 7 new corroboration
+switches ON). Every file path repointed into the sandbox + leak-checked clean; users cleared (create-admin).
+24 docs held in Review. Chris reprocessed them through the real pipeline to test whether the fix clears them.
+
+**Main-session verification of Chris's run (method fingerprints in the reprocessed sandbox DB):** my arms
+DID fire on the real reprocess — `+corrob_clear` (C) ×22, `+snap_corrob` (D) ×2 (ACC-229]→ACC-2291),
+`+name_corrob_adopt` (E) ×4, `template_identity_corroborated` (A) ×4. **KNOWN FOLLOW-UP:** the B arm (Pelican
+I/1 rawwitness demote) fires in the standalone verifier on this exact DB (all 7 held → 84→96) but did NOT
+clear on the app's Reprocess-All path — a B-specific reprocess-merge interaction (the note surviving on an
+unchanged ref value). Safe (held, never misfiled); the B win currently lands on the import path, not reprocess-all.
+
+I created the admin (`chris`), landed in the mature dashboard (24 in Review · 6 suppliers auto-filing · 999+ filed), and ran the fix-validation end to end. **Bottom line: the fix works and I could not make it file a single wrong value.** The friction that remains is copy and a reprocess-reliability wobble, not safety.
+
+## THE HEADLINE — held docs, before → after Reprocess All
+
+**Before:** 24 held (22 "need a look" + 2 ready). Reasons by class: Pelican invoices ×9 (TOTAL "net disagrees" false flag — net £2,754.60 misread as "£2.754", the total 3,305.52 was right — + ACCOUNT NUMBER 70% "unexpected characters (`]`)"); Silverbeck sales orders 5 held / 2 ready (DOCUMENT ISSUER 70% "Company inferred… please confirm before filing"); Quillstone POs ×3 (CUSTOMER 70% near-match "Quilistone → Quillstone"); Nordwind quotes ×3 (scanned page missing); Castellan worksheet ×1 (CUSTOMER 70% near-match "Branblewood → Bramblewood"); Veltrix SO ×1 (page missing + "Bramblewood Joinery Lid → Ltd").
+
+**I clicked "Reprocess all in queue"** (truthful native confirm fired — first click had silently swallowed it, the round-5 lesson). It re-read 20 docs (correctly SKIPPING the 4 page-missing → "11 of 20"). "need a look" dropped **22 → 13**, and a consent bar appeared: **"7 reprocessed documents read clean and are ready to file — [File 7] [Review them] [Not now]."** I verified all 7 values first, then **[File 7] → 24 → 17**, toast "✓ Filed 7 documents automatically."
+
+## CORRECTNESS SPOT-CHECK — the most important result
+
+**Zero wrong-value / wrong-folder filings.** All 7 verified in Search, filed & Confirmed in the right folder:
+- Pelican **PI/25/7951** & **PI/25/4942** → "Pelican Office Interiors -" — account now reads **ACC-2291** (the `]` gone), net-disagree cleared.
+- Quillstone **PO-24784 / PO-95257 / PO-61061** → Bramblewood Joinery Ltd — CUSTOMER auto-corrected to **"Quillstone Print & Packaging"** (garble resolved from history).
+- Castellan **CJB-4218** → Castellan Security Systems — CUSTOMER auto-corrected to **"Bramblewood Joinery Ltd"**.
+- Silverbeck **SB-ORD39342** → Silverbeck Cleaning Supplies.
+
+The near-match name switches did exactly what they should: used mature history to fix a misread name, clear the flag, and file correctly.
+
+## Which classes cleared vs stayed (final 17 held)
+- **Cleared & filed (7):** Pelican account/total-clean ×2, Quillstone near-match ×3, Castellan near-match ×1, Silverbeck clean ×1.
+- **Scary flag cleared but held below the bar (4):** Silverbeck — "please confirm the company" note is **gone** (issuer 70% → 85%); now "Nothing was flagged — read at 77%, below the 100% you've set… lower the auto-file bar." Correct + helpful.
+- **Held for safe reasons (6+):** 7 Pelican on the invoice-number I/1 ambiguity ("please check which is printed") — a correct, safe hold; and 1 Silverbeck a re-read regressed (card 1).
+- **Can never file (4):** Nordwind ×3 + Veltrix ×1 — page missing; Confirm correctly disabled. The round-5 "no-page" card is FIXED.
+
+Nuance: on the REPROCESS path the switches don't silently empty the queue — they clear flags and offer a **consent bar**. Silent auto-file happens at **import** (the "✓ N documents filed automatically — click to see the list" bar, all re-checkable). Both paths behaved correct-value-wise.
+
+## Finding cards (ranked by harm)
+1. **"Reprocess all" downgraded a doc that was already ready to file** (CONFUSION/trust, medium). Silverbeck sales_order_0041 — before "Ready to file" (100%); after Reprocess All: SALES ORDER NUMBER 69% "'SE-ORD30191' doesn't appear on this page as written" (page prints SB-ORD30191; a B→E re-read). Reprocessing made it worse. Proposed: after a bulk reprocess, if the new read is lower-confidence than the pre-reprocess one, keep the better read (or say "1 document read less clearly and was left as it was"). May be inherent OCR non-determinism.
+2. **The invoice-number correction note contradicts itself** (CONFUSION, medium; all 7 Pelican). Verbatim: "✓ auto-corrected the raw scan reads this as 'PI/26/1282' — one character differs (1/I); please check which is printed" with the value showing PI/26/1282. Green ✓ "auto-corrected" says done, then shows the same value and asks me to check — I can't tell what changed. Proposed: "This could read PI/26/1282 or PI/26/I282 (1 vs I look alike). Showing PI/26/1282 — please confirm the character against the page." Drop the ✓/"auto-corrected".
+3. **Filed-supplier name carries a trailing " -"** so the folder is "Pelican Office Interiors -" (PREFERENCE, low). Trim trailing punctuation/space before it becomes a folder.
+4. **"Filed automatically" after I clicked "File 7"** (QUESTION, cosmetic). "✓ Filed 7 documents automatically" — but I consented. Proposed: "✓ Filed 7 documents you approved."
+5. **Recycle bin holds 492 documents** (QUESTION, housekeeping). Grows unbounded; a gentle age-based auto-clean option (not weakening the confirm).
+6. **Near-match name auto-changed silently before the consent bar** (QUESTION, low). "Quilistone"/"Branblewood" became correct and read "clean", then filed via File 7 — the correction wasn't surfaced at the moment of bulk filing (it's the customer/recipient field, never the folder; every value right). Proposed: consent bar "7 ready — 3 had a name auto-corrected; Review them to see."
+
+## Warnings truth-table
+- Reprocess all in queue → "Re-read all 24… may replace what's shown… confirmed/filed not touched." ✅
+- Delete All Review → "Delete ALL 17… recycle bin… Files on disk are kept. Confirmed and deferred NOT affected." ✅
+- File All Ready → "File up to 4 of 17… 13 flagged not included." ✅ (correctly excludes page-missing + flagged)
+- Empty bin → "Permanently delete all 492… including their PDF files? This cannot be undone." ✅ (round-4/5 issues appear fixed)
+No swallowed dialogs went unnoticed once a handler was registered.
+
+## Verdict
+- **Top friction:** the invoice-number "auto-corrected… please check" note (card 2) — hits the biggest supplier, reads like a contradiction.
+- **What genuinely worked:** the near-match name repair — quietly turned "Quilistone/Branblewood" back into the right company from history, cleared the flag, filed to the correct folder; page-missing docs correctly frozen with Confirm disabled. The fix earning its keep.
+- **Keep using after two weeks? Yes** — across 24 held docs and 7 auto-cleared filings it never once filed a wrong value or folder, and every scary button told the truth. Tidy cards 1 and 2 so I trust "Reprocess all" and stop second-guessing invoice numbers.
+- **Humility:** drove a sanitized copy at one moment; judged "correct value" by comparing on-screen read to the printed page in the same screenshots; filed only the 7 the app judged clean (all verified); OCR re-read variability (card 1) may differ on another run. Nothing implemented; all findings queued for the owner's vet.
