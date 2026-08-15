@@ -41,16 +41,19 @@ recompute guard — THE KEY PLACEMENT: a cleared note there ALSO drops its `over
 doc clears the floor on reprocess (a stored-row clear can't — the penalty is baked at extraction). Arms
 A/B/C/D/E each gated + fail-toward-Review; `_corrob_licensed` mirrors trust.js (pinned cross-language).
 **Remediation (`scripts/remediate-corrob-queue-20260815.js`):** stored-row backlog delivery (dry-run default).
-**PROVEN on the REAL live data (`scratchpad/verify_heal.py`): ≥10/20 cleanly auto-file (up from 2)** — the
-7 Pelican B docs go 84→96; the 3 Quillstone names correctly DECLINE (customer share 0.88<0.9 poison-guard);
-F correctly HELD. CONSERVATIVE (the standalone recompute omits the engine's `fc_delta` boost — true count is
-higher, plus the G-gated Silverbeck docs). **30 new pins green; whole suite 483/494 = the 11 documented
-pre-existing reds, ZERO new** (2 source-inspection pins widened for the `_d4` insertion:
-`test_name_corrob_demote`, `test_xcheck_corrob_demote`). **OFF is inert by construction (guarded early return).**
-**OWED before any live default-ON flip (owner's gate): the OFF==ON md5 corpus arm + Oracle per-predicate
-ratify (B/D/E/G).** **To deliver the backlog on the owner's DB: flip the 7 Settings→Processing toggles + reprocess
-the 20 held docs (arms recompute overall_confidence clean; ~13–16 file, 3 Quillstone + 1 F stay for a manual
-confirm) — OR `node scripts/remediate-corrob-queue-20260815.js <db> --apply` on a COPY first.**
+**VALIDATED on the REAL pipeline (Chris mature-reprocess, 7141316): the arms CLEAR NOTES + ADOPT VALUES
+correctly, ZERO misfiling** — Chris filed 7, all correct. **⚠ CORRECTION to an earlier over-claim: the
+`verify_heal.py` "≥10/20" was WRONG** — it omitted the engine's format-confidence penalty (`fc_delta`) AND
+assumed graduation. The HONEST measurement (real `isAutoFileEligible` over the mature sandbox, arms ON): of
+17 still-held docs, **only 3 are `flagged` (a note the arms can clear); 14 are `below-floor`** — a CONFIDENCE
+DEFICIT (overall 76–85 < floor; Pelican floor 100 = NOT graduated), NOT a note. **The arms clear notes/adopt
+values; they do NOT raise overall_confidence past the floor.** So the arc auto-files docs held ONLY by a note
+AT ≥floor confidence (a minority); the Pelican I/1 (oc 84) + most Silverbeck (oc 77) stay held by below-floor
+regardless of the note-clear. **The bigger backlog lever is SEPARATE from this arc: why a CORRECT Pelican
+invoice reads at overall 84 (the fc_delta format penalty), and Pelican not being graduated (floor 100).**
+**30 new pins green; whole suite 483/494 = the 11 documented pre-existing reds, ZERO new. OFF is inert by
+construction.** **The fix's real value: correctness (right value/folder, no spurious flag) — NOT a big
+backlog auto-file jump. OWED before any live default-ON flip: the OFF==ON md5 corpus arm + Oracle ratify.**
 **CHRIS ROUND 2026-08-15 ran** (`docs/CHRIS_FULL_APP_REVIEW_2026-08-15.md`; fresh sandbox CDP 9223, 7 switches
 ON, SINGLE+IMPORT+IMPORT2 per TEACH_ORDER). **A fresh install has NO confirmed history, so the corroboration
 arms are largely inert there** — his run measures the teach/import UX + base rate + detection issues. **Wave 1:
