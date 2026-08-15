@@ -51,9 +51,19 @@ values; they do NOT raise overall_confidence past the floor.** So the arc auto-f
 AT ≥floor confidence (a minority); the Pelican I/1 (oc 84) + most Silverbeck (oc 77) stay held by below-floor
 regardless of the note-clear. **The bigger backlog lever is SEPARATE from this arc: why a CORRECT Pelican
 invoice reads at overall 84 (the fc_delta format penalty), and Pelican not being graduated (floor 100).**
-**30 new pins green; whole suite 483/494 = the 11 documented pre-existing reds, ZERO new. OFF is inert by
+**33 new pins green; whole suite 483/494 = the 11 documented pre-existing reds, ZERO new. OFF is inert by
 construction.** **The fix's real value: correctness (right value/folder, no spurious flag) — NOT a big
 backlog auto-file jump. OWED before any live default-ON flip: the OFF==ON md5 corpus arm + Oracle ratify.**
+**THE "overall-84" PENALTY — DIAGNOSED + FIXED (`3f64c10`, `corrob_note_recompute_fc`, DEFAULT OFF):** a
+CORRECT Pelican invoice reads 84 because its `invoice_number` note is counted as a format MISMATCH by
+`format_consistency_delta` (−12). Clearing the note SHOULD lift it, but the demoter recompute guard REUSED
+the STALE `fc_delta` → **every note-demoter (these arms AND the shipped recon/name/xcheck slices) was
+COSMETIC** (note cleared, penalty stayed). The fix recomputes the delta off POST-demote results when armed
+(verified: 1716 84→96). **THE LINCHPIN — it is what makes note-demotes actually reduce the review pile.**
+**BUT Pelican still won't auto-file:** `scopeTrust`=`{floor:100, reason:'recent-correction', corrections:3}`
+— graduation is blocked by recent corrections (by-design safety), so 96<100→held. To auto-file the Pelican
+I/1 docs, BOTH must happen: (1) the fc flip (84→96) AND (2) the scope must GRADUATE (recent corrections age
+out). corroboration_autofile can't rescue it (Pelican invoice_number is single-method → `independent_agree:false`).
 **CHRIS ROUND 2026-08-15 ran** (`docs/CHRIS_FULL_APP_REVIEW_2026-08-15.md`; fresh sandbox CDP 9223, 7 switches
 ON, SINGLE+IMPORT+IMPORT2 per TEACH_ORDER). **A fresh install has NO confirmed history, so the corroboration
 arms are largely inert there** — his run measures the teach/import UX + base rate + detection issues. **Wave 1:
