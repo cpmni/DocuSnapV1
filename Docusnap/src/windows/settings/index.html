@@ -1204,6 +1204,20 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Fix a one-character misread at the start of a reference you always use</div>
+                <div class="threshold-sub">When a sender's references almost always start the same way (e.g. "PI/" on 90%+ of confirmed documents) and a scan turns one look-alike character ("P1/26/3130" — 1 for I), this restores the confirmed start — but only when the page itself also carries the corrected reading (a wider read or a second detector) and the rest of the number is untouched. A sender that genuinely uses both starts is left alone and asked about as usual. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="ref-prefix-confusable-adopt-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Skip the "check this character" question when both readings agree</div>
+                <div class="threshold-sub">Sometimes the app reads a value twice as a cross-check and both readings come out identical after an automatic repair. Asking you to compare the value with itself is a question with no answer — with this on, that case files normally instead of waiting for a check. A genuine disagreement between the two readings still asks. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="raw-witness-vacuous-suppress-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Read small reference/date print more clearly</div>
                 <div class="threshold-sub">Enlarges a tightly-cropped reference or date before reading it and drops an over-sharpen step, so small print (e.g. “PO-17039” misread as “»0-17039”) reads correctly. Only helps where it can, never changes a read it can't improve. Off by default.</div>
               </div>

@@ -1665,6 +1665,34 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 70 applied: new-install defaults = the owner\'s proven all-on-except-straighten config');
   }
 
+  // ── Migration 71: fresh-install auto-file bar 90 + the two 2026-08-16 switches (OFF) ─────────
+  // (1) `auto_file_threshold`: unset has always meant 100 — "only perfect docs auto-file" — which on
+  // a FRESH install files NOTHING out of the box (Chris 2026-08-15: taught reads land 87–95, so
+  // wave 1 auto-filed 0/200 while File-All-Ready then filed 154 in one click). Seed '90' ONLY when
+  // the DB has never processed a document (documents count 0 — the Oracle-ruled predicate: a DB
+  // with no documents has no filing behaviour to change). An ESTABLISHED install — including the
+  // owner's live DB, where the key is deliberately unset — gets NOTHING written: changing a live
+  // install's filing bar is the owner's slider decision, not a migration's. The 88 critical-field
+  // floor + the sub-100 structural docTrustGate + the flagged-field refusal all still gate every
+  // sub-100 auto-file (trust.js), so 90 is a bar change, not a safety change.
+  // (2)+(3) the P adopt lane + the vacuous-witness suppression ship OFF (Oracle: live default-ON
+  // only after the OFF==ON corpus arm + ratify; sandbox validation flips them per-instance).
+  if (!applied.has(71)) {
+    try {
+      const ins71 = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+      let _docCount = 0;
+      try {
+        _docCount = tableExists(db, 'documents')
+          ? db.prepare('SELECT COUNT(*) AS n FROM documents').get().n : 0;
+      } catch { _docCount = 0; }
+      if (_docCount === 0) ins71.run('auto_file_threshold', '90');
+      ins71.run('ref_prefix_confusable_adopt', 'false');
+      ins71.run('raw_witness_vacuous_suppress', 'false');
+    } catch (e) { console.warn(`  migration 71: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (71)').run();
+    console.log('JS migration 71 applied: fresh-install auto-file bar 90; P-adopt + vacuous-suppress switches seeded OFF');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

@@ -216,6 +216,14 @@ function _reconcileEnv(db) {
     if (learning.getSetting(db, 'recon_shadow_attrib_note_demote', 'false') === 'true') env.RECON_SHADOW_ATTRIB_NOTE_DEMOTE = '1';
     if (learning.getSetting(db, 'snap_confusable_clean_autofile', 'false') === 'true') env.SNAP_CONFUSABLE_CLEAN_AUTOFILE = '1';
     if (learning.getSetting(db, 'name_corrob_suggestion_adopt', 'false') === 'true') env.NAME_CORROB_SUGGESTION_ADOPT = '1';
+    //   P) ref_prefix_confusable_adopt — (2026-08-16, owner-directed PI/P1 class; Oracle S-O-W/C)
+    //      adopt the scope's ≥0.90-dominant ref prefix over a single-confusable read head, ONLY with
+    //      a page witness (wider read / keyword) + both-forms refusal + learned-shape pass.
+    if (learning.getSetting(db, 'ref_prefix_confusable_adopt', 'false') === 'true') env.REF_PREFIX_CONFUSABLE_ADOPT = '1';
+    //   vacuous-witness suppression (2026-08-16, Chris card 2 → Oracle: SWITCHED, seeded OFF):
+    //      a raw-witness "repair landed on the witness" pair no longer emits the unanswerable
+    //      self-compare flag when armed (template_mapper._witness_note).
+    if (learning.getSetting(db, 'raw_witness_vacuous_suppress', 'false') === 'true') env.RAW_WITNESS_VACUOUS_SUPPRESS = '1';
     // The linchpin (2026-08-15): a demoted note is no longer a format mismatch, so its -12
     // format-consistency penalty must be recomputed off the POST-demote results — else every
     // note-demoter (these arms AND the shipped recon/name/xcheck slices) is cosmetic: the note

@@ -858,7 +858,13 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          ['name-corrob-adopt-toggle', 'name_corrob_suggestion_adopt'],
                          // The linchpin: after a note is cleared/demoted, recompute the format-consistency
                          // penalty so the document's confidence actually rises (else the demote is cosmetic).
-                         ['corrob-recompute-fc-toggle', 'corrob_note_recompute_fc']]) {
+                         ['corrob-recompute-fc-toggle', 'corrob_note_recompute_fc'],
+                         // P (extraction, 2026-08-16): adopt the scope's ≥90%-dominant ref PREFIX over a
+                         // single-confusable read head (P1/→PI/) — page witness required, both-forms refusal.
+                         ['ref-prefix-confusable-adopt-toggle', 'ref_prefix_confusable_adopt'],
+                         // Vacuous raw-witness suppression (2026-08-16): when the repair lands ON the wider
+                         // reading, stop asking the operator to compare a value with itself.
+                         ['raw-witness-vacuous-suppress-toggle', 'raw_witness_vacuous_suppress']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);
@@ -932,6 +938,8 @@ const DEV_SWITCH_IDS = [
   'critfield-corrob-relax-toggle', 'vacuous-corrected-ignore-toggle', 'ref-dominant-format-demote-toggle',
   'identity-corrob-shed-toggle', 'shadow-attrib-demote-toggle', 'snap-confusable-adopt-toggle',
   'name-corrob-adopt-toggle', 'corrob-recompute-fc-toggle',
+  // 2026-08-16 additions (Oracle S-O-W/C): the P prefix-adopt lane + the vacuous-witness suppression.
+  'ref-prefix-confusable-adopt-toggle', 'raw-witness-vacuous-suppress-toggle',
 ];
 function _applyDevSwitchVisibility(unlocked, revealGate){
   for (const id of DEV_SWITCH_IDS){

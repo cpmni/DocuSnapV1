@@ -147,6 +147,10 @@ const BRIDGES = [
   ['name-corrob-adopt-toggle', 'name_corrob_suggestion_adopt', 'NAME_CORROB_SUGGESTION_ADOPT'],
   // The linchpin: recompute the format-consistency penalty after a note demote (else demotes are cosmetic).
   ['corrob-recompute-fc-toggle', 'corrob_note_recompute_fc', 'CORROB_NOTE_RECOMPUTE_FC'],
+  // 2026-08-16 (Oracle S-O-W/C, both seeded OFF by migration 71): the P prefix-adopt lane + the
+  // vacuous raw-witness suppression.
+  ['ref-prefix-confusable-adopt-toggle', 'ref_prefix_confusable_adopt', 'REF_PREFIX_CONFUSABLE_ADOPT'],
+  ['raw-witness-vacuous-suppress-toggle', 'raw_witness_vacuous_suppress', 'RAW_WITNESS_VACUOUS_SUPPRESS'],
 ];
 const handler = (() => {
   try { return fs.readFileSync(path.join(root, 'src/modules/processing/handler.js'), 'utf8'); }
