@@ -56,6 +56,9 @@ function _scheduleSourceMove(ctx, db, documents, { srcPath, originalFilename }) 
 function register(ctx) {
   const { ipcMain, getDb, pythonExe, pythonArgs, tesseractPath,
           notifyMainWindow, spawn, path, fs, logger } = ctx;
+  // Bin-changed signal (eric design + Oracle 2026-08-16): fired ONCE per bin-mutating op below —
+  // the Search window's recycle-bin view re-pulls on it. Optional in ctx (pure unit fixtures).
+  const notifyBinChanged = typeof ctx.notifyBinChanged === 'function' ? ctx.notifyBinChanged : () => {};
 
   const documents  = require('../../../database/modules/documents');
   const learning   = require('../../../database/modules/learning');
@@ -843,6 +846,7 @@ function register(ctx) {
       target_id: docId, document_id: docId, outcome: 'success', metadata: { soft: true } });
     notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
     notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+    notifyBinChanged();
     return true;
   });
 
@@ -863,6 +867,7 @@ function register(ctx) {
       target_id: docId, document_id: docId, outcome: 'success' });
     notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
     notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+    notifyBinChanged();
     return true;
   });
 
@@ -877,6 +882,7 @@ function register(ctx) {
       outcome: 'success', metadata: { count: ids.length } });
     notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
     notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+    notifyBinChanged();   // once for the whole bulk restore, never per-row
     return { restored: ids.length };
   });
 
@@ -913,6 +919,7 @@ function register(ctx) {
     _purgeOne(db, docId);
     logAudit(db, { action: 'document_purged', action_category: 'document', target_type: 'document',
       target_id: docId, document_id: docId, outcome: 'success' });
+    notifyBinChanged();   // purge previously broadcast NOTHING — the stale-bin exhibit
     return true;
   });
   ipcMain.handle('purge-all-deleted', () => {
@@ -922,6 +929,7 @@ function register(ctx) {
     for (const id of ids) _purgeOne(db, id);
     logAudit(db, { action: 'recycle_bin_emptied', action_category: 'document', target_type: 'document',
       outcome: 'success', metadata: { count: ids.length } });
+    notifyBinChanged();   // once for the whole empty-bin
     return { purged: ids.length };
   });
 
@@ -942,6 +950,7 @@ function register(ctx) {
     _closeRoutesForDeleted(db, rows.map(r => r.id), deletedByName);
     notifyMainWindow(countEvent, status === 'needs_review'
       ? documents.getReviewCount(db) : documents.getDeferredCount(db));
+    notifyBinChanged();   // once after the loop — a 45-doc Delete-All is ONE bin event
     return { success: true, deleted: n };
   }
 

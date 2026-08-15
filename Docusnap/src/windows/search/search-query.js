@@ -71,11 +71,35 @@ function initInputs() {
   });
   // A BIN LEFT OPEN GOES STALE, because it is filled from the REVIEW window, which never repaints
   // this one. Chris deleted 179 documents with the bin open and it still read "The recycle bin is
-  // empty." Re-read it whenever this window comes back to the front — the cheapest correct trigger
-  // for exactly that sequence, and no new broadcast plumbing.
+  // empty." Re-read it whenever this window comes back to the front — kept as belt-and-braces (a
+  // CDP-driven session never toggles OS focus, which is why the focus-only fix failed him twice).
   window.addEventListener('focus', () => {
     if (window.SearchState && window.SearchState.binMode) doSearch();
   });
+  // THE PUSH LEG (eric design + Oracle sign-off 2026-08-16): main broadcasts 'bin-changed' once per
+  // bin-mutating op anywhere in the app (Review deletes, Empty bin, repair/recovery set-asides,
+  // /v1 client mutations — purge previously broadcast NOTHING). No data rides the event; re-pull
+  // through the same role-gated query. Trailing debounce on its OWN timer (never `_timer`, which
+  // belongs to the input debounce) absorbs bursts: this window's own multi-select actions fire one
+  // IPC per id, so N events coalesce into one repaint.
+  if (window.docusnap && typeof window.docusnap.onBinChanged === 'function') {
+    let binTimer = null;
+    window.docusnap.onBinChanged(() => {
+      if (!(window.SearchState && window.SearchState.binMode)) return;
+      clearTimeout(binTimer);
+      binTimer = setTimeout(async () => {
+        await doSearch();   // re-render first, THEN judge the selection against the fresh rows
+        // A doc purged/restored elsewhere must not linger selected with a live Restore button.
+        const rowsGone = window.SearchState && window.SearchState.selectedDoc
+          && !document.querySelector(`#results-scroll [data-id="${window.SearchState.selectedDoc.id}"]`);
+        if (rowsGone) {
+          window.SearchState.selectedDoc = null;
+          const pe = document.getElementById('preview-empty'); if (pe) pe.style.display = '';
+          const pd = document.getElementById('preview-doc');  if (pd) pd.style.display = 'none';
+        }
+      }, 300);
+    });
+  }
   // Restore all (Chris r2 2026-08-11, finding 8): the undo counterpart beside Empty bin.
   // Available to edit-role too — single Restore already is; only PURGE is admin-only.
   const restoreAllBtn = document.getElementById('btn-restore-all');

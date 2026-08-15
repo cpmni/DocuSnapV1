@@ -628,6 +628,7 @@ function createRequestListener(ctx) {
                   outcome: 'success', document_id: id, metadata: { action: 'delete', via: 'client' } });
         }
         documents.softDelete(getDb(), id);
+        try { ctx.notifyBinChanged && ctx.notifyBinChanged(); } catch {}   // a remote client mutated the bin
         const closed = workflowService.closeOpenRoutesForDeletedDoc(getDb(),
           { documentId: id, deletedByName: session.username }).closed;
         if (closed.length) {
@@ -646,6 +647,7 @@ function createRequestListener(ctx) {
         if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
         const id = Number(restoreMatch[1]);
         documents.restoreDeleted(getDb(), id);
+        try { ctx.notifyBinChanged && ctx.notifyBinChanged(); } catch {}
         audit({ user_id: session.userId, action: 'document_restored', action_category: 'document',
                 outcome: 'success', document_id: id, metadata: { via: 'client' } });
         return sendJson(res, 200, { ok: true });
@@ -658,6 +660,7 @@ function createRequestListener(ctx) {
         const id = Number(purgeMatch[1]);
         _purgeDocFiles(getDb(), id);
         documents.deleteDoc(getDb(), id);
+        try { ctx.notifyBinChanged && ctx.notifyBinChanged(); } catch {}
         audit({ user_id: session.userId, action: 'document_purged', action_category: 'document',
                 outcome: 'success', document_id: id, metadata: { via: 'client' } });
         return sendJson(res, 200, { ok: true });
@@ -668,6 +671,7 @@ function createRequestListener(ctx) {
         if (session.role !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
         const ids = documents.getDeletedQueue(getDb()).map(d => d.id);
         for (const id of ids) { _purgeDocFiles(getDb(), id); documents.deleteDoc(getDb(), id); }
+        try { ctx.notifyBinChanged && ctx.notifyBinChanged(); } catch {}   // once for the whole empty-bin
         audit({ user_id: session.userId, action: 'recycle_bin_emptied', action_category: 'document',
                 outcome: 'success', metadata: { count: ids.length, via: 'client' } });
         return sendJson(res, 200, { purged: ids.length });

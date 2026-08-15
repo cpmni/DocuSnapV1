@@ -442,6 +442,9 @@ contextBridge.exposeInMainWorld('docusnap', {
   onDeferredCountChanged:(cb) => ipcRenderer.on('deferred-count-changed', (_e, n) => cb(n)),
   // Workflow invalidation ping (Slice 1) — carries NO data; listeners re-pull counts.
   onWorkflowCountsChanged:(cb) => ipcRenderer.on('workflow-counts-changed', () => cb()),
+  // Recycle-bin change signal (2026-08-16): no payload — the subscriber re-pulls its own
+  // role-gated get-deleted-queue. See main.js notifyBinChanged.
+  onBinChanged:           (cb) => ipcRenderer.on('bin-changed', () => cb()),
   onReprocessProgress:   (cb) => ipcRenderer.on('reprocess-progress',    (_e, m) => cb(m)),
   // Import/watch activity (broadcast to ALL windows) so Review can show WHY reprocess is paused.
   onProcessingActivity:  (cb) => ipcRenderer.on('processing-activity',   (_e, s) => cb(s)),

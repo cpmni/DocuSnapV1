@@ -1222,6 +1222,13 @@ app.whenReady().then(() => {
     resourcePath, pythonExe, pythonArgs, tesseractPath,
     backendScript, configPath, templatesDir,
     createWindow, getMainWindow, notifyMainWindow, notifyAllWindows, safeSend,
+    // RECYCLE-BIN change signal (Chris recurring card, eric design + Oracle sign-off 2026-08-16).
+    // Pull-model: the event carries NO data — the Search window re-runs its own role-gated
+    // get-deleted-queue query when its bin view is active. Fan-out via notifyAllWindows because
+    // the bin lives in SEARCH, which notifyMainWindow deliberately does not reach. Fired once per
+    // bin-mutating IPC op (soft-delete / restore / restore-all / purge / purge-all / delete-all /
+    // the repair+recovery and /v1 mutations) — never per-row in a bulk loop.
+    notifyBinChanged: () => notifyAllWindows('bin-changed'),
     // Slice 1: the ONE workflow-notification sink shared by the desktop + /v1 transports
     // (fan-out to ALL windows + debounced toast policy — see notifyWorkflowEvent above).
     notifyWorkflowEvent,

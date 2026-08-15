@@ -396,6 +396,7 @@ function register(ctx) {
       try { ctx.notifyWorkflowEvent && ctx.notifyWorkflowEvent({ event: 'auto_closed' }); } catch {}
     }
     if (res.ok) notifyAllWindows('review-count-changed', require('../../../database/modules/documents').getReviewCount(db));
+    if (res.ok) { try { ctx.notifyBinChanged && ctx.notifyBinChanged(); } catch {} }   // set-aside docs land in the bin
     return { ...res, backup };
   });
   // Undo: restore set-aside docs from the recycle bin.
@@ -415,6 +416,7 @@ function register(ctx) {
                             : documents.restoreDeleted(db, id).changes) || 0;
       } catch {}
     }
+    if (restored) { try { ctx.notifyBinChanged && ctx.notifyBinChanged(); } catch {} }   // once for the batch
     return { restored };
   });
 
@@ -511,6 +513,7 @@ function register(ctx) {
       } catch { /* best-effort — never blocks the delete */ }
       try { logAudit(db, { action: 'repair_delete', action_category: 'document', target_type: 'document', target_id: docId, outcome: 'success' }); } catch {}
       notifyAllWindows('review-count-changed', documents.getReviewCount(db));
+      try { ctx.notifyBinChanged && ctx.notifyBinChanged(); } catch {}   // repair-delete lands in the bin
     }
     return { ok: r.changes > 0 };
   });
