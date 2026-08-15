@@ -237,7 +237,7 @@ check('recorder reset per doc beside the candidate ledger',
       re.search(r"_recon_displaced = \{\}[\s\S]{0,900}_rejected_reads = \{\}", eng_src))
 check('B1 recompute shared: _d3 feeds the same block',
       re.search(r"_d3 = self\._demote_name_guard_corroborated_note", eng_src)
-      and re.search(r"if _d1 or _d2 or _d3:", eng_src))
+      and re.search(r"if _d1 or _d2 or _d3( or _d4)?:", eng_src))   # _d4 = 2026-08-15 corrob resolver, same block
 check('B3: the keyword-clear door names the slice-3 interaction (both doors governed by the '
       '#259 precondition)',
       re.search(r"_name_guard_keyword_clears[\s\S]{0,3000}SLICE-3 INTERACTION", eng_src))

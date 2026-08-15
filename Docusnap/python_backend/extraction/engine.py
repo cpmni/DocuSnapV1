@@ -1538,6 +1538,65 @@ def _should_shed_fill_note_geom_fuzzy(sn_cur, geom_issuer_raw, dom_count, dom_to
     return _identity_geom_fuzzy_match(sn_cur.get("value"), geom_issuer_raw)
 
 
+# ── Corroboration-driven note resolution primitives (2026-08-15 held-queue arc) ──────────────
+# The independence half of the shared predicate — mirrors database/modules/trust.js `_corrobLicensed`
+# EXACTLY (pinned cross-language in tests/test_corroboration_emit.py): a corroboration record LICENSES
+# a note-clear iff independent agreement is RECORDED, no independent family DISAGREES, and the
+# agreeing set has >=2 families INCLUDING one that read this page's pixels. memory+hint are EXCLUDED
+# (both descend from past confirms → near-circular; the Oracle-C7 Quillstone refusal). independent_agree
+# alone is INSUFFICIENT (the emit sets it True on ANY single-family agree) — the >=2-page-family rule is
+# the real bar. Malformed/missing record → not licensed (fail closed).
+_CORROB_PAGE_FAMILIES = frozenset({"mapping", "crop", "keyword"})
+
+def _corrob_licensed(record) -> bool:
+    rec = record
+    if isinstance(rec, str):
+        import json as _json
+        try:
+            rec = _json.loads(rec)
+        except Exception:
+            return False
+    if not isinstance(rec, dict):
+        return False
+    if rec.get("independent_agree") is not True:
+        return False
+    dis = rec.get("disagree")
+    if isinstance(dis, list) and dis:
+        return False
+    fams = set()
+    if rec.get("winner_family"):
+        fams.add(rec.get("winner_family"))
+    for f in (rec.get("agree") or []):
+        if f:
+            fams.add(f)
+    if len(fams) < 2:
+        return False
+    return any(f in _CORROB_PAGE_FAMILIES for f in fams)
+
+# Single-position glyph confusions of a digit (for the D snap-and-adopt + the B corrected_to check).
+# The CODE-STRUCTURAL separators '/' and '\\' are DELIBERATELY EXCLUDED (Oracle condition — treating a
+# printed separator as a confusable corrupts structured codes; the CODE_SEPARATOR / I->1 lesson). The
+# reverse mapping and case-fold are handled symmetrically in _one_confusable_diff.
+_CONFUSE_TO_DIGIT = {"]": "1", "[": "1", "|": "1", "l": "1", "I": "1", "i": "1",
+                     "O": "0", "o": "0", "S": "5", "B": "8", "Z": "2"}
+
+def _one_confusable_diff(a, b) -> bool:
+    """True iff `a` and `b` are the same length and differ in EXACTLY ONE position, and that one
+    difference is a known glyph confusion (symbol/letter <-> digit, or a pure case fold)."""
+    a = str(a); b = str(b)
+    if len(a) != len(b):
+        return False
+    diffs = 0
+    for ca, cb in zip(a, b):
+        if ca == cb:
+            continue
+        diffs += 1
+        if not (_CONFUSE_TO_DIGIT.get(ca) == cb or _CONFUSE_TO_DIGIT.get(cb) == ca
+                or ca.upper() == cb.upper()):
+            return False
+    return diffs == 1
+
+
 # S-A date-in-ref belt regexes (module-level — compiled once). A guard value must be a
 # FULL-STRING numeric 3-component date with the SAME separator repeated, or a month-name
 # date, AND parse via validator.parse_date — the pair keeps '20260731' / '21/07' /
@@ -3064,6 +3123,184 @@ class ExtractionEngine:
                      f"{witness.get('method')} — disagreement note released (dissent recorded)")
             demoted = True
         return demoted
+
+    def _resolve_corroborated_notes(self, results, field_defs, corrob, matched_tmpl):
+        """2026-08-15 held-queue arc (gary → Oracle SIGN-OFF-W/COND). Let the DB's own recorded
+        corroboration + scope dominance RESOLVE a note that holds a document whose value is already
+        known-good. Runs inside the _d1/_d2/_d3 recompute guard, so clearing a note here also drops
+        its overall-confidence penalty (the trust floor then clears on import/reprocess) — the
+        stored-row remediation cannot, which is why the LIVE 84/72-conf docs need a reprocess.
+
+        Five classes, EACH gated by its OWN default-OFF env (OFF ⇒ byte-identical), each failing
+        TOWARD Review on any weak leg:
+          A TEMPLATE_IDENTITY_CORROB_NOTE_SHED   — inferred-company FILL note, corroboration-fed
+                (geometry-free twin of the G-FUZZY shed): shed iff licensed record + graduated
+                dominant issuer + committed value == that issuer. Value FIXED, method→corroborated@85.
+          B REF_DOMINANT_FORMAT_NOTE_DEMOTE      — 1/I rawwitness ref note: drop iff the committed
+                prefix == the scope's >=0.90-dominant learned prefix; also clear a vacuous / single-
+                confusable corrected_to. Value already correct — the note held a RIGHT value.
+          C RECON_SHADOW_ATTRIB_NOTE_DEMOTE      — doubly-corroborated total's shadow-attribution
+                note: drop iff licensed total + a penny-exact standard-VAT tie to a separately-read,
+                sign-agreeing operand. Total value NEVER changed; no confidence change.
+          D SNAP_CONFUSABLE_CLEAN_AUTOFILE       — charset note on a code that is a single-confusable
+                of a single-canonical (one confirmed value) constant AND an independent supplier_hints
+                family carries that constant: adopt the constant, clear the note.
+          E NAME_CORROB_SUGGESTION_ADOPT         — a Stage-4.5 name SUGGESTION on a NON-identity field:
+                ADOPT it iff it == the scope's dominant confirmed literal (share>=0.9, n>=5) AND the
+                page's OWN keyword-family read == the suggestion. supplier_name NEVER.
+        Returns True if any field changed (feeds the shared B1 recompute — never `or`ed inline)."""
+        A_on = os.environ.get("TEMPLATE_IDENTITY_CORROB_NOTE_SHED", "0") != "0"
+        B_on = os.environ.get("REF_DOMINANT_FORMAT_NOTE_DEMOTE", "0") != "0"
+        C_on = os.environ.get("RECON_SHADOW_ATTRIB_NOTE_DEMOTE", "0") != "0"
+        D_on = os.environ.get("SNAP_CONFUSABLE_CLEAN_AUTOFILE", "0") != "0"
+        E_on = os.environ.get("NAME_CORROB_SUGGESTION_ADOPT", "0") != "0"
+        if not (A_on or B_on or C_on or D_on or E_on):
+            return False                                   # OFF ⇒ byte-identical
+        from extraction import validator as _v
+        try:
+            grad_window = int(os.environ.get("GRADUATION_WINDOW") or 10)
+        except (TypeError, ValueError):
+            grad_window = 10
+        sup  = str(results.get("_supplier_name") or "")
+        slug = str(results.get("_document_slug") or "")
+        changed = False
+        for key, data in list(results.items()):
+            if str(key).startswith("_") or not isinstance(data, dict):
+                continue
+            note   = str(data.get("validation_note") or "").strip()
+            if not note and not ("_rawwitness" in str(data.get("method") or "")):
+                continue
+            method = str(data.get("method") or "")
+            val    = str(data.get("value") or "")
+            rec    = corrob.get(key) if isinstance(corrob, dict) else None
+
+            # ── A: inferred-company FILL note (corroboration-fed) ──
+            if A_on and method == "template_identity" and val \
+                    and note in (_TEMPLATE_IDENTITY_FILL_NOTE_SINGLE, _TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY):
+                graduated = False
+                if isinstance(matched_tmpl, dict):
+                    try:
+                        c = int(matched_tmpl.get("dominant_supplier_count") or 0)
+                        t = int(matched_tmpl.get("dominant_supplier_total") or 0)
+                        graduated = c >= max(1, grad_window) and c * 10 >= t * 9
+                    except (TypeError, ValueError):
+                        graduated = False
+                val_is_issuer = bool(_cmp_norm(val)) and _cmp_norm(val) == _cmp_norm(sup)
+                if _corrob_licensed(rec) and graduated and val_is_issuer:
+                    results[key] = {"value": data.get("value"), "confidence": 85,
+                                    "method": "template_identity_corroborated"}
+                    changed = True
+                    self.log(f"  Corrob shed (A): '{val}' inferred-company note cleared — "
+                             f"graduated single-issuer layout + independent page reads agree (conf 85)")
+                    if self._trace:
+                        self._t("corrob_note_resolve", field=key, cls="A", value=val)
+                continue
+
+            # ── B: 1/I rawwitness ref note whose committed prefix == scope dominant ──
+            if B_on and "_rawwitness" in method and "one character differs" in note:
+                rec_p = ocr_corrector.lookup_prefix(self.prefix_index, key, sup, slug)
+                ok = False
+                if rec_p and rec_p.get("dominant"):
+                    dom = rec_p.get("dominant"); counts = rec_p.get("counts") or {}
+                    tot = rec_p.get("total") or 0; dn = counts.get(dom, 0)
+                    ok = (tot and dn >= 5 and dn >= 0.90 * tot
+                          and ocr_corrector.code_prefix(val) == dom)
+                ct = str(data.get("corrected_to") or "")
+                vac_or_1conf = (not ct.strip()) or ct == val or _one_confusable_diff(ct, val)
+                if ok and vac_or_1conf:
+                    data.pop("validation_note", None)
+                    data.pop("corrected_to", None)
+                    data.pop("was_corrected", None)
+                    data["method"] = method.replace("_rawwitness", "")
+                    changed = True
+                    self.log(f"  Corrob demote (B): ref '{val}' matches the {sup} dominant prefix "
+                             f"'{rec_p.get('dominant')}' — 1/I note released")
+                    if self._trace:
+                        self._t("corrob_note_resolve", field=key, cls="B", value=val)
+                continue
+
+            # ── C: doubly-corroborated total; VAT arithmetic confirms it ──
+            if C_on and "was read the same way by two independent methods" in note:
+                total = _v.parse_amount(val)
+                vat_ok = False; matched = None
+                if _corrob_licensed(rec) and total is not None:
+                    operands = []
+                    for ok_key in ("subtotal", "vat_tax", "net", "tax"):
+                        od = results.get(ok_key)
+                        if isinstance(od, dict):
+                            amt = _v.parse_amount(str(od.get("value") or ""))
+                            if amt is not None:
+                                operands.append((ok_key, amt))
+                    for r in (0.20, 0.05):
+                        net = round(total / (1 + r), 2); vat = round(total - net, 2)
+                        for ok_key, amt in operands:
+                            if round(amt * 100) == round(net * 100) or round(amt * 100) == round(vat * 100):
+                                if _v._is_negative_value(str(results[ok_key].get("value"))) == _v._is_negative_value(val):
+                                    vat_ok = True; matched = (r, ok_key); break
+                        if vat_ok:
+                            break
+                if vat_ok:
+                    data.pop("validation_note", None)
+                    data.pop("was_corrected", None)
+                    data.pop("corrected_to", None)
+                    data["method"] = method + "+corrob_clear"   # value FIXED, no confidence change
+                    changed = True
+                    self.log(f"  Corrob demote (C): total '{val}' VAT-reconciles @{int(matched[0]*100)}% "
+                             f"via {matched[1]} — attribution note released (total unchanged)")
+                    if self._trace:
+                        self._t("corrob_note_resolve", field=key, cls="C", value=val)
+                continue
+
+            # ── D: charset note on a single-confusable of a single-canonical constant ──
+            if D_on and note.startswith("unexpected characters"):
+                rec_d = ocr_corrector.lookup_dominant(self.dominant_index, key, sup, slug)
+                if rec_d and rec_d.get("dominant"):
+                    dom = str(rec_d.get("dominant")); known = rec_d.get("known") or set()
+                    indep_hint = isinstance(rec, dict) and any(
+                        d.get("family") == "hint" and _cmp_norm(d.get("value")) == _cmp_norm(dom)
+                        for d in (rec.get("disagree") or []))
+                    if len(known) == 1 and _one_confusable_diff(val, dom) and indep_hint:
+                        data["value"] = dom
+                        data["raw_value"] = dom
+                        data.pop("validation_note", None)
+                        data.pop("corrected_to", None)
+                        data["was_corrected"] = True
+                        data["method"] = method + "+snap_corrob"
+                        changed = True
+                        self.log(f"  Corrob adopt (D): '{val}' → '{dom}' "
+                                 f"(single-canonical constant, hint agrees) — note cleared")
+                        if self._trace:
+                            self._t("corrob_note_resolve", field=key, cls="D", value=dom)
+                continue
+
+            # ── E: Stage-4.5 name suggestion adopted when it is the dominant confirmed literal ──
+            if E_on and note.startswith("Suggested name correction:") and key != "supplier_name":
+                repaired = str(data.get("corrected_to") or "").strip()
+                bucket = self.confirmed_counts_index.get(
+                    (sup.lower().strip(), slug.lower().strip(), key)) if repaired else None
+                p1 = False
+                if bucket:
+                    tot = sum(bucket.values()) or 0
+                    dom_norm, dom_n = max(bucket.items(), key=lambda kv: kv[1])
+                    p1 = bool(tot) and dom_n >= 5 and dom_n >= 0.9 * tot and _cmp_norm(repaired) == dom_norm
+                p2 = any(str(c.get("method") or "").startswith("keyword")
+                         and _cmp_norm(c.get("value")) == _cmp_norm(repaired)
+                         for c in (self._field_candidates.get(key) or []))
+                p3 = bool(repaired) and _cmp_norm(repaired) != _cmp_norm(val)
+                if p1 and p2 and p3:
+                    data["value"] = repaired
+                    data["raw_value"] = repaired
+                    data.pop("validation_note", None)
+                    data.pop("corrected_to", None)
+                    data["was_corrected"] = True
+                    data["method"] = method + "+name_corrob_adopt"
+                    changed = True
+                    self.log(f"  Corrob adopt (E): name '{val}' → '{repaired}' "
+                             f"(dominant confirmed literal + keyword agrees) — note cleared")
+                    if self._trace:
+                        self._t("corrob_note_resolve", field=key, cls="E", value=repaired)
+                continue
+        return changed
 
     def _demote_recon_total_corroborated_note(self, results, corrob):
         """RECON_TOTAL_NOTE_DEMOTE (owner corroboration STEP 3, slice 2 — MONEY; gary design →
@@ -8858,7 +9095,11 @@ class ExtractionEngine:
                                                     _xcheck_rejected, _corrob)
         _d2 = self._demote_recon_total_corroborated_note(results, _corrob)
         _d3 = self._demote_name_guard_corroborated_note(results, field_defs, _corrob)
-        if _d1 or _d2 or _d3:   # all pre-evaluated; inline `or` would short-circuit
+        # 2026-08-15 held-queue arc: the corroboration-driven note resolver (A/B/C/D/E), each gated
+        # by its own default-OFF env. Placed in the SAME recompute guard so a cleared note also loses
+        # its confidence penalty and the doc clears the trust floor on import/reprocess.
+        _d4 = self._resolve_corroborated_notes(results, field_defs, _corrob, matched_tmpl)
+        if _d1 or _d2 or _d3 or _d4:   # all pre-evaluated; inline `or` would short-circuit
             # Oracle B1: overall/_needs_review were computed upstream — recompute or a demoted
             # doc parks with no visible reason. Same exclusion + format delta; needs_review
             # drops ONLY when the demoted note was the doc's LAST (the any-note guard keeps

@@ -23,6 +23,7 @@ WHAT THESE PINS DEFEND:
 """
 import os
 import sys
+import re
 
 try:
     sys.stdout.reconfigure(encoding='utf-8')
@@ -192,5 +193,31 @@ e = emit(res, {"f": [cand("0.5_mapping", "template_mapping", "V"),
                      cand("0.5_mapping", "template_mapping", "V")]})["f"]
 assert e["independent_agree"] is False and e["agree"] == [], e
 ok("a same-family echo can never set independent_agree (now load-bearing for auto-file)")
+
+# ── 13. CROSS-LANGUAGE: engine._corrob_licensed mirrors trust.js _corrobLicensed (2026-08-15) ──
+# The held-queue arc's note resolver reads the SAME licensed-record bet the JS auto-file gate uses.
+# A rename/relaxation on either side silently inerts one — pin the page-family SET (read from the JS
+# source) and the decision on the canonical cases against the Python mirror.
+from extraction import engine as _eng  # noqa: E402
+_trust_src = ""
+for _p in (os.path.join(os.path.dirname(__file__), "..", "..", "database", "modules", "trust.js"),
+           os.path.join(os.path.dirname(__file__), "..", "..", "Docusnap", "database", "modules", "trust.js")):
+    if os.path.exists(_p):
+        with open(_p, encoding="utf-8") as _f:
+            _trust_src = _f.read()
+        break
+_m = re.search(r"_CORROB_PAGE_FAMILIES\s*=\s*new Set\(\[([^\]]*)\]\)", _trust_src)
+_js_fams = set(re.findall(r"'([^']+)'", _m.group(1))) if _m else set()
+assert _js_fams == set(_eng._CORROB_PAGE_FAMILIES), \
+    f"page-family set drift: JS {_js_fams} != Python {set(_eng._CORROB_PAGE_FAMILIES)}"
+ok(f"page-family set matches trust.js: {sorted(_js_fams)}")
+_cl = _eng._corrob_licensed
+assert _cl({"independent_agree": True, "winner_family": "crop", "agree": ["mapping"], "disagree": []}) is True
+assert _cl({"independent_agree": True, "winner_family": "memory", "agree": ["hint"], "disagree": []}) is False
+assert _cl({"independent_agree": False, "winner_family": "crop", "agree": ["mapping"], "disagree": []}) is False
+assert _cl({"independent_agree": True, "winner_family": "crop", "agree": [], "disagree": [{"family": "keyword", "value": "x"}]}) is False
+assert _cl({"independent_agree": True, "winner_family": "crop", "agree": []}) is False
+assert _cl(None) is False
+ok("engine._corrob_licensed decision mirrors trust.js on the canonical cases")
 
 print(f"\n{passed} checks passed")
