@@ -6,6 +6,19 @@
 
 ---
 
+## 2026-08-15 — SEPARATOR SHEETS: one GENERIC split-sheet, not numbered (owner idea)
+Owner: *"on the separator sheets, we don't need them by number. 1 generic sheet should be enough for
+the app to know to split."* Today's split-PDF flow (✂ Split-PDF in Review, `split-pdf` IPC → pypdf,
+`every N` or explicit ranges) is manual. The idea: a customer inserts a **single generic separator
+page** (a printable marker sheet the app ships) between documents in a batch scan; on import the app
+DETECTS that marker page and splits the multi-page PDF into separate documents at each marker — no
+numbered/indexed sheets, no per-document configuration. Direction: (1) ship one printable marker sheet
+(a distinctive full-page mark / QR / barcode the OCR or a cheap image check recognises reliably); (2)
+on import, scan each page for the marker; a marker page is a CUT POINT (and is itself discarded, not
+filed); (3) each run of pages between markers becomes one document through the normal pipeline. Relates
+to the existing Split-PDF + the Filing-Slips design. NOT built — spec + advisor pass (oscar/007 on the
+marker-detection reliability under scan noise) before building.
+
 ## 2026-08-13 — BUYER-ISSUED SLICE 3 (the stamp-contradiction rail): **MEASURED AND REFUSED — DO NOT BUILD AS DESIGNED**
 Slice 2 SHIPPED (migration 66 + `template_buyer_issued_type_scope`, DEFAULT OFF). Slice 3 was
 designed as: *a `template_fixed` stamp of a `_PRECISE_VAL_TYPES` field contradicted by a DIFFERENT

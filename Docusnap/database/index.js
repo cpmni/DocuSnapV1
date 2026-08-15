@@ -1611,6 +1611,60 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 69 applied: corroboration-resolve switches seeded (all OFF)');
   }
 
+  // ── Migration 70: ship the owner's proven config as the NEW-INSTALL DEFAULT ────────────────────
+  // Owner decision 2026-08-15: after validating the app on a mature install (200 imports auto-filing),
+  // "I want the current settings that work well to be the default." Their live install runs every reading
+  // switch ON except straighten-on-import. This seeds that same set for a FRESH install so a new customer
+  // gets the tuned behaviour out of the box (the reading internals are hidden behind the SFDEV gate;
+  // DEFAULT ON just means they work silently). `deskew_on_import` is DELIBERATELY EXCLUDED (standing ruling
+  // — WRONG LAYER, and it silently disables teach_angle_compose_scan). INSERT OR IGNORE: an existing install
+  // (incl. the owner's, already all-on) and any hand-disabled switch are untouched — this only fills the gaps
+  // on a clean DB. The whole set stays reversible per-switch in Settings → Processing (+ the SFDEV pane).
+  if (!applied.has(70)) {
+    try {
+      const ins = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+      const ON_BY_DEFAULT = [
+        'template_code_frag_clean','template_clip_commit','template_abs_edge_guard','template_date_clip_gate',
+        'template_label_digit_exact','teach_angle_compose','template_edge_cut_relocate','template_clip_commit_edge_slack',
+        'template_date_invalid_yield','template_date_future_yield','template_pad_window_read','heading_absent_reread',
+        'type_election_title_first','xcheck_corrob_note_demote','recon_total_note_demote','name_corrob_note_demote',
+        'learning_exclude_machine_confirms','credit_sign_coherence','template_inline_row_overlap','ref_role_digit_gate',
+        'anchor_inline_taught_offset_veto','template_drift_row_pitch','template_currency_edge_grow','template_name_edge_grow',
+        'teach_angle_compose_scan','template_fixed_issuer_repair','template_reg_arbiter_anchor_evidence',
+        'template_issuer_region_presence','template_fixed_seed_agreement_keep','stage05_ref_code_gate',
+        'keyword_generic_caption_exclusive','type_title_owner_precedence','filing_value_sanity_flags','letterhead_issuer',
+        'template_identity_on_page','teach_label_becomes_keyword','list_field_scan','template_hidden_field_drop',
+        'template_format_fail_yield','customer_po_labels','code_separator_structure_guard','vat_eu_formats',
+        'trust_shadow_row_skip','autofile_gate_unify','far_lowconf_valued_only','reprocess_shadow_stale_drop',
+        'reconcile_shadow_attribution','vat_rate_at_skip','supplier_pin_self_discharge','confirmed_dominant_adopt',
+        'raw_crop_witness_flag','raw_crop_witness_adopt','graduation_freeze_issuer','identity_scope_post_repair',
+        'teach_identity_near_match_keep','template_identity_hold_siblings','template_buyer_issued_type_scope',
+        'name_lexicon_low_distinct','issuer_near_match_confirm_guard','template_identity_geom_fuzzy_graduate',
+        'critfield_corrob_floor_relax','vacuous_corrected_to_ignore','ref_dominant_format_note_demote',
+        'template_identity_corrob_note_shed','recon_shadow_attrib_note_demote','snap_confusable_clean_autofile',
+        'name_corrob_suggestion_adopt','corrob_note_recompute_fc',
+        // NOT included: deskew_on_import (standing ruling — stays OFF).
+      ];
+      // The 2026-08-15 corroboration arc's 8 switches were seeded OFF by migration 69 (for validation)
+      // in this SAME unreleased release — so INSERT OR IGNORE can't flip them. UPSERT those to true
+      // (no released install carries a user choice for them yet; the owner's already reads true). Every
+      // OTHER key uses INSERT OR IGNORE so a real prior user choice (e.g. a hand-disabled switch on an
+      // established install) is preserved.
+      const ARC_KEYS = new Set(['critfield_corrob_floor_relax','vacuous_corrected_to_ignore',
+        'ref_dominant_format_note_demote','template_identity_corrob_note_shed','recon_shadow_attrib_note_demote',
+        'snap_confusable_clean_autofile','name_corrob_suggestion_adopt','corrob_note_recompute_fc']);
+      const up = db.prepare("INSERT INTO settings (key, value) VALUES (?, 'true') ON CONFLICT(key) DO UPDATE SET value='true'");
+      let n = 0;
+      for (const key of ON_BY_DEFAULT) {
+        if (ARC_KEYS.has(key)) { up.run(key); n++; }
+        else if (ins.run(key, 'true').changes) n++;
+      }
+      console.log(`  migration 70: ${n} reading switch(es) defaulted ON (arc keys forced; other existing choices untouched)`);
+    } catch (e) { console.warn(`  migration 70 defaults: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (70)').run();
+    console.log('JS migration 70 applied: new-install defaults = the owner\'s proven all-on-except-straighten config');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

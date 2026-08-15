@@ -927,6 +927,11 @@ const DEV_SWITCH_IDS = [
   'shadow-attrib-toggle', 'vat-rate-at-toggle', 'pin-discharge-toggle',
   'graduation-freeze-issuer-toggle', 'confirmed-adopt-toggle',
   'raw-witness-flag-toggle', 'raw-witness-adopt-toggle',
+  // Corroboration-driven auto-file resolution (2026-08-15 arc) — technical reading internals, hidden
+  // from customers per the owner's decision; they ship ON (migration 70) and work silently.
+  'critfield-corrob-relax-toggle', 'vacuous-corrected-ignore-toggle', 'ref-dominant-format-demote-toggle',
+  'identity-corrob-shed-toggle', 'shadow-attrib-demote-toggle', 'snap-confusable-adopt-toggle',
+  'name-corrob-adopt-toggle', 'corrob-recompute-fc-toggle',
 ];
 function _applyDevSwitchVisibility(unlocked, revealGate){
   for (const id of DEV_SWITCH_IDS){
