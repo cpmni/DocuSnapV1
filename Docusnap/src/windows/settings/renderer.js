@@ -855,7 +855,10 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          ['snap-confusable-adopt-toggle', 'snap_confusable_clean_autofile'],
                          // E (extraction): ADOPT a Stage-4.5 name suggestion (non-identity fields only) when
                          // it equals the scope's dominant confirmed literal AND the page's own keyword read.
-                         ['name-corrob-adopt-toggle', 'name_corrob_suggestion_adopt']]) {
+                         ['name-corrob-adopt-toggle', 'name_corrob_suggestion_adopt'],
+                         // The linchpin: after a note is cleared/demoted, recompute the format-consistency
+                         // penalty so the document's confidence actually rises (else the demote is cosmetic).
+                         ['corrob-recompute-fc-toggle', 'corrob_note_recompute_fc']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);

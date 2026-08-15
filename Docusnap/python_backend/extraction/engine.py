@@ -9114,8 +9114,16 @@ class ExtractionEngine:
             # drops ONLY when the demoted note was the doc's LAST (the any-note guard keeps
             # every direct writer's hold — all 13 cap + note).
             _oc2 = validator.overall_confidence(results, field_defs, exclude_keys=_hidden_excl)
-            if fc_delta:
-                _oc2 = max(0, min(100, _oc2 + fc_delta))
+            # A demoted note is NO LONGER a format MISMATCH, so its -12 format-consistency penalty must
+            # be released — otherwise every note-demoter is cosmetic (the note clears but the penalty
+            # stays baked, so overall never rises above the floor and the doc keeps parking below-floor).
+            # CORROB_NOTE_RECOMPUTE_FC (2026-08-15, default OFF): recompute the delta from the POST-demote
+            # results instead of reusing the pre-demote `fc_delta`. OFF ⇒ reuse the stale delta,
+            # byte-identical. `supported_keys` is the same set the original delta used (computed at :8736).
+            _fc2 = (validator.format_consistency_delta(results, field_defs, supported_keys)
+                    if os.environ.get("CORROB_NOTE_RECOMPUTE_FC", "0") != "0" else fc_delta)
+            if _fc2:
+                _oc2 = max(0, min(100, _oc2 + _fc2))
             results["_overall_confidence"] = _oc2
             _any_note = any(isinstance(v, dict) and str(v.get("validation_note") or "").strip()
                             for k, v in results.items() if not str(k).startswith("_"))

@@ -216,6 +216,11 @@ function _reconcileEnv(db) {
     if (learning.getSetting(db, 'recon_shadow_attrib_note_demote', 'false') === 'true') env.RECON_SHADOW_ATTRIB_NOTE_DEMOTE = '1';
     if (learning.getSetting(db, 'snap_confusable_clean_autofile', 'false') === 'true') env.SNAP_CONFUSABLE_CLEAN_AUTOFILE = '1';
     if (learning.getSetting(db, 'name_corrob_suggestion_adopt', 'false') === 'true') env.NAME_CORROB_SUGGESTION_ADOPT = '1';
+    // The linchpin (2026-08-15): a demoted note is no longer a format mismatch, so its -12
+    // format-consistency penalty must be recomputed off the POST-demote results — else every
+    // note-demoter (these arms AND the shipped recon/name/xcheck slices) is cosmetic: the note
+    // clears but overall_confidence keeps the penalty and the doc parks below-floor. DEFAULT OFF.
+    if (learning.getSetting(db, 'corrob_note_recompute_fc', 'false') === 'true') env.CORROB_NOTE_RECOMPUTE_FC = '1';
     if (learning.getSetting(db, 'crosscheck_outlier_reconcile', 'false') === 'true') env.CROSSCHECK_OUTLIER_RECONCILE = '1';
     if (learning.getSetting(db, 'universal_verify_restore', 'false') === 'true') env.UNIVERSAL_VERIFY_RESTORE = '1';
     if (learning.getSetting(db, 'universal_verify_flag', 'false') === 'true') env.UNIVERSAL_VERIFY_FLAG = '1';

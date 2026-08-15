@@ -232,5 +232,27 @@ check('E decline: supplier_name (identity) is excluded — never adopted here',
       and r['supplier_name']['value'] == 'Branblewood Joinery Utd')
 
 
+# ── FC RECOMPUTE (the linchpin): a demoted note must release its format-consistency penalty ──
+# format_consistency_delta is the mechanism: a field with a value AND a validation_note is a MISMATCH
+# (-12 for the first). Clearing the note must drop it to 0 — otherwise the demote is cosmetic (the note
+# clears but overall_confidence keeps the -12 and the doc parks below-floor). The recompute guard
+# recomputes it off the POST-demote results ONLY when CORROB_NOTE_RECOMPUTE_FC is armed.
+print('FC. recompute the format penalty after a demote (the linchpin)')
+from extraction import validator as _vv  # noqa: E402
+_fdefs = [{'key': 'invoice_number', 'required': True}, {'key': 'invoice_date', 'required': True}]
+_noted = {'invoice_number': {'value': 'PI/26/1282', 'confidence': 95, 'validation_note': 'x'},
+          'invoice_date': {'value': '11-01-2026', 'confidence': 98}}
+_clean = {'invoice_number': {'value': 'PI/26/1282', 'confidence': 95},
+          'invoice_date': {'value': '11-01-2026', 'confidence': 98}}
+check('a field with a note is a format MISMATCH → -12 penalty',
+      _vv.format_consistency_delta(_noted, _fdefs, set()) == -12)
+check('the SAME field with the note cleared → 0 penalty (so a demote can lift confidence)',
+      _vv.format_consistency_delta(_clean, _fdefs, set()) == 0)
+_eng_src = open(os.path.join(os.path.dirname(__file__), '..', 'extraction', 'engine.py'), encoding='utf-8').read()
+import re as _re
+check('recompute guard recomputes fc off post-demote results, gated by CORROB_NOTE_RECOMPUTE_FC',
+      bool(_re.search(r'CORROB_NOTE_RECOMPUTE_FC[\s\S]{0,120}format_consistency_delta\(results', _eng_src))
+      or bool(_re.search(r'format_consistency_delta\(results[\s\S]{0,200}CORROB_NOTE_RECOMPUTE_FC', _eng_src)))
+
 print(f'\n{"ALL PASS" if failed == 0 else str(failed) + " FAILED"}  ({passed} ok)')
 sys.exit(0 if failed == 0 else 1)

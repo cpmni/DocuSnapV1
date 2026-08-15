@@ -145,6 +145,8 @@ const BRIDGES = [
   ['shadow-attrib-demote-toggle', 'recon_shadow_attrib_note_demote', 'RECON_SHADOW_ATTRIB_NOTE_DEMOTE'],
   ['snap-confusable-adopt-toggle', 'snap_confusable_clean_autofile', 'SNAP_CONFUSABLE_CLEAN_AUTOFILE'],
   ['name-corrob-adopt-toggle', 'name_corrob_suggestion_adopt', 'NAME_CORROB_SUGGESTION_ADOPT'],
+  // The linchpin: recompute the format-consistency penalty after a note demote (else demotes are cosmetic).
+  ['corrob-recompute-fc-toggle', 'corrob_note_recompute_fc', 'CORROB_NOTE_RECOMPUTE_FC'],
 ];
 const handler = (() => {
   try { return fs.readFileSync(path.join(root, 'src/modules/processing/handler.js'), 'utf8'); }

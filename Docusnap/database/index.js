@@ -1601,6 +1601,7 @@ function runJsMigrations(db, applied) {
         'recon_shadow_attrib_note_demote',   // C (extraction)
         'snap_confusable_clean_autofile',    // D (extraction)
         'name_corrob_suggestion_adopt',      // E (extraction)
+        'corrob_note_recompute_fc',          // the linchpin — recompute the format penalty post-demote
       ];
       let n = 0;
       for (const key of keys) if (ins.run(key, 'false').changes) n++;

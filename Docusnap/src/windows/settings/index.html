@@ -1197,6 +1197,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Let a resolved warning actually raise a document's confidence</div>
+                <div class="threshold-sub">When one of the settings above clears a warning on a document, that document should also stop being marked down for it. Until now the warning was cleared but the confidence penalty stayed, so the document still sat in Review just below the bar. With this on, a document's reading confidence is recalculated once its warnings are resolved — so a document whose only problem was a warning the app just cleared can file on its own. This is what makes the settings above actually reduce your review pile rather than only tidy the wording. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="corrob-recompute-fc-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Read small reference/date print more clearly</div>
                 <div class="threshold-sub">Enlarges a tightly-cropped reference or date before reading it and drops an over-sharpen step, so small print (e.g. “PO-17039” misread as “»0-17039”) reads correctly. Only helps where it can, never changes a read it can't improve. Off by default.</div>
               </div>
