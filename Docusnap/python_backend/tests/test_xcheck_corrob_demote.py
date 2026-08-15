@@ -154,7 +154,7 @@ check('shadow-attribution note can never equal the demote constant (scoped stand
       and 'was read the same way by two' not in NOTE)
 check('B1 recompute present at the call site (overall + needs_review refreshed after a demote)',
       '_demote_xcheck_corroborated_note(results' in eng_src
-      and re.search(r"_demote_xcheck_corroborated_note\(results[\s\S]{0,900}_overall_confidence", eng_src))
+      and re.search(r"_demote_xcheck_corroborated_note\(results[\s\S]{0,1800}_overall_confidence", eng_src))   # window widened for the _d4 corrob resolver (2026-08-15)
 check('demoter never reads/writes independent_agree (C4)',
       not re.search(r"_demote_xcheck_corroborated_note[\s\S]{0,4000}?independent_agree[\s\S]{0,2000}?def _build_corroboration_emit", eng_src)
       or 'independent_agree' not in eng_src[eng_src.index('def _demote_xcheck_corroborated_note'):eng_src.index('def _build_corroboration_emit')])
