@@ -437,6 +437,40 @@ function _corrobAutofileEnabled(db) {
   } catch { return false; }
 }
 
+// Critical-field floor relax by corroboration (2026-08-15, Oracle SIGN-OFF-W/COND). The 88 critical
+// per-field floor holds a ref/date read whose confidence is sub-floor even when TWO independent page
+// families read the SAME normalised string. This lets a LICENSED record (see _corrobLicensed) clear
+// the floor for that field — BUT ONLY when the value ALSO matches the scope's dominant learned SHAPE.
+// Oracle seam: crop+mapping are both box-crops (common-mode on a value that appears once), so the
+// licensed-record test alone is not enough — the learned-shape agreement is the load-bearing second
+// leg (a common-mode misread that produced a well-formed value is far rarer than either read alone,
+// and a malformed common-mode misread is caught by the shape gate). DEFAULT OFF ⇒ byte-identical.
+// Nested under the corroboration_autofile master so it can never outlive it.
+function _critFieldCorrobRelaxEnabled(db) {
+  const env = process.env.CRITFIELD_CORROB_FLOOR_RELAX;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try {
+    return require('./learning').getSetting(db, 'critfield_corrob_floor_relax', 'false') === 'true'
+        && _corrobAutofileEnabled(db);
+  } catch { return false; }
+}
+
+// Vacuous corrected_to ignore (2026-08-15, Oracle SIGN-OFF-W/COND). The `flagged` refusal counts a
+// non-empty corrected_to even when it EQUALS display_value — a no-op "correction" (the rawwitness
+// class stamps corrected_to == the committed value). Such a row carries no pending correction and
+// must not hold a doc. When ON, corrected_to is treated as flagging only when it DIFFERS from a
+// NON-EMPTY display_value (a NULL/empty display_value must NOT un-flag a real pending correction —
+// fail closed). DEFAULT OFF ⇒ byte-identical.
+function _vacuousCorrectedToIgnore(db) {
+  const env = process.env.VACUOUS_CORRECTED_TO_IGNORE;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try {
+    return require('./learning').getSetting(db, 'vacuous_corrected_to_ignore', 'false') === 'true';
+  } catch { return false; }
+}
+
 // Method families that READ THIS PAGE'S PIXELS (engine `_build_corroboration_emit` vocabulary —
 // pinned cross-language in python_backend/tests/test_corroboration_emit.py; a rename there must
 // break a test, because an unknown name here silently fails closed).
@@ -898,11 +932,27 @@ function isAutoFileEligible(db, doc, opts = {}) {
   // Flagged = a real validation note OR a pending Stage-4.5 correction candidate (corrected_to).
   // Unifying both auto-file sites on note-OR-corrected_to resolves the two-site divergence on the
   // SAFER side (the backend previously filed corrected_to docs that the renderer held).
+  // A corrected_to that EQUALS a non-empty display_value is a vacuous no-op correction (the
+  // rawwitness class); when the ignore switch is on it does NOT flag. A NULL/empty display_value
+  // keeps the corrected_to flagging (fail closed — a real pending correction must still hold).
+  const vacuousIgnore = (opts.vacuousCorrectedToIgnore !== undefined)
+    ? !!opts.vacuousCorrectedToIgnore : _vacuousCorrectedToIgnore(db);
+  const _ctFlags = (ct, dv) => {
+    const c = String(ct || '').trim();
+    if (!c) return false;
+    if (!vacuousIgnore) return true;
+    const d = String(dv ?? '').trim();
+    return !(d && c === d);                                    // ignore only a non-empty exact-equal corrected_to
+  };
   const flagged = opts.extractions
-    ? opts.extractions.filter(e => String(e.validation_note || '').trim() || String(e.corrected_to || '').trim()).length
-    : db.prepare(
-        "SELECT COUNT(*) c FROM extractions WHERE document_id = ? AND ((validation_note IS NOT NULL AND TRIM(validation_note) <> '') OR (corrected_to IS NOT NULL AND TRIM(corrected_to) <> ''))"
-      ).get(doc.id).c;
+    ? opts.extractions.filter(e => String(e.validation_note || '').trim() || _ctFlags(e.corrected_to, e.display_value)).length
+    : (vacuousIgnore
+        ? db.prepare(
+            "SELECT COUNT(*) c FROM extractions WHERE document_id = ? AND ((validation_note IS NOT NULL AND TRIM(validation_note) <> '') OR (corrected_to IS NOT NULL AND TRIM(corrected_to) <> '' AND NOT (display_value IS NOT NULL AND TRIM(display_value) <> '' AND TRIM(corrected_to) = TRIM(display_value))))"
+          ).get(doc.id).c
+        : db.prepare(
+            "SELECT COUNT(*) c FROM extractions WHERE document_id = ? AND ((validation_note IS NOT NULL AND TRIM(validation_note) <> '') OR (corrected_to IS NOT NULL AND TRIM(corrected_to) <> ''))"
+          ).get(doc.id).c);
   if (flagged) return { eligible: false, floor, trusted: t.trusted, reason: 'flagged' };
   // T2 (gate-unify slice): an EMPTY ref role / date role / required non-identity field refuses
   // with a reason instead of relying on the import pre-gate's blanket needs_review bail (which
@@ -925,11 +975,22 @@ function isAutoFileEligible(db, doc, opts = {}) {
   if (critFloor > 0 && dtRow) {
     const critKeys = [dtRow.ref_field_key, dtRow.date_field_key].filter(Boolean);
     if (critKeys.length) {
+      const critRelax = (opts.critFieldCorrobRelax !== undefined)
+        ? !!opts.critFieldCorrobRelax : _critFieldCorrobRelaxEnabled(db);
+      // Scope's learned shape per field — the load-bearing second leg of the relax (Oracle seam).
+      const scopeFmts = critRelax
+        ? _scopeFormats(db, _norm(doc.supplier_name), String(slug || '').toLowerCase().trim(), opts.formats)
+        : null;
       const byKey = new Map();
       if (opts.extractions) {
         for (const e of opts.extractions) if (e && e.field_key) byKey.set(e.field_key, e);
       } else {
-        for (const e of db.prepare('SELECT field_key, display_value, raw_value, confidence FROM extractions WHERE document_id = ?').all(doc.id))
+        // `corroboration` selected ONLY when the relax is armed — keeps the OFF path byte-identical
+        // and resilient to a minimal fixture / pre-mig-63 DB that has no such column.
+        const sql = critRelax
+          ? 'SELECT field_key, display_value, raw_value, confidence, corroboration FROM extractions WHERE document_id = ?'
+          : 'SELECT field_key, display_value, raw_value, confidence FROM extractions WHERE document_id = ?';
+        for (const e of db.prepare(sql).all(doc.id))
           byKey.set(e.field_key, e);
       }
       for (const k of critKeys) {
@@ -938,8 +999,17 @@ function isAutoFileEligible(db, doc, opts = {}) {
         const v = String(e.display_value ?? e.raw_value ?? '').trim();
         if (!v) continue;                                          // empty → handled by Review / other gates
         const c = (e.confidence == null || e.confidence === '') ? null : Number(e.confidence);
-        if (c != null && !Number.isNaN(c) && c < critFloor)
+        if (c != null && !Number.isNaN(c) && c < critFloor) {
+          // Corroboration relax: a licensed record (≥2 independent page families read the SAME
+          // string) AND the value matches the scope's dominant learned shape clears the floor for
+          // this field. opts.extractions rows without a `corroboration` field fail closed
+          // (_corrobLicensed(undefined) === false) — an un-threaded overlay never widens.
+          if (critRelax && _corrobLicensed(e.corroboration)) {
+            const fmt = scopeFmts && scopeFmts.get(k);
+            if (fmt && valueMatchesShape(v, fmt.cls, fmt.sampleValues)) continue;
+          }
           return { eligible: false, floor, trusted: t.trusted, reason: `weak-critical-field:${k}` };
+        }
       }
     }
   }
@@ -989,9 +1059,14 @@ function autoFileEligibleIds(db, docs, opts = {}) {
   // And for the gate-unify switch (T2 missing-required refusal) — one settings read per batch.
   const gateUnify = (opts.gateUnify !== undefined)
     ? !!opts.gateUnify : _gateUnifyEnabled(db);
+  // 2026-08-15 corroboration-resolve switches — one settings read per batch each.
+  const critFieldCorrobRelax = (opts.critFieldCorrobRelax !== undefined)
+    ? !!opts.critFieldCorrobRelax : _critFieldCorrobRelaxEnabled(db);
+  const vacuousCorrectedToIgnore = (opts.vacuousCorrectedToIgnore !== undefined)
+    ? !!opts.vacuousCorrectedToIgnore : _vacuousCorrectedToIgnore(db);
   const ids = [];
   for (const d of (docs || [])) {
-    if (isAutoFileEligible(db, d, { ...opts, formats, gradOn, optOut, shadowRowSkip, corrobAutoFile, gateUnify }).eligible) ids.push(d.id);
+    if (isAutoFileEligible(db, d, { ...opts, formats, gradOn, optOut, shadowRowSkip, corrobAutoFile, gateUnify, critFieldCorrobRelax, vacuousCorrectedToIgnore }).eligible) ids.push(d.id);
   }
   return ids;
 }
@@ -1051,6 +1126,7 @@ module.exports = {
   _gateUnifyEnabled,               // ditto for gate-unify — handler.js T1 and the T2 refusal share ONE read
   _missingRequiredKey,             // exported for the T2 pins (test_scope_trust.js)
   _corrobLicensed,                 // exported for the declined census + pins — decision logic stays HERE
+  _critFieldCorrobRelaxEnabled, _vacuousCorrectedToIgnore,   // exported so pins can't drift from the default
   validDate: _validDate, validIban: _validIban, validVatGb: _validVatGb,
   currencyDpConsistent: _currencyDpConsistent, currencyConsistentForField: _currencyConsistentForField, matchesTypePattern: _matchesTypePattern,
   scopeTrust, docTrustGate, isAutoFileEligible, autoFileEligibleIds,

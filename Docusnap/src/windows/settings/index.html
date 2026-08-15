@@ -1145,6 +1145,56 @@
               </div>
               <label class="toggle"><input type="checkbox" id="identity-geom-fuzzy-toggle"><span class="toggle-slider"></span></label>
             </div>
+            <!-- ── File more automatically when the answer is already proven (2026-08-15) ── -->
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">File a reference/date when two readings agree and it fits the sender's format</div>
+                <div class="threshold-sub">Sometimes a reference or date is read a little below the confidence needed to file on its own, yet two independent readings landed on exactly the same value and it matches the shape this sender always uses (e.g. "SB-ORD39342"). With this on, that agreement is allowed to stand in for the missing confidence so the document files instead of waiting for you. If the two readings disagree, or the value doesn't fit the sender's usual format, it still waits. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="critfield-corrob-relax-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't hold a document for a "correction" that changed nothing</div>
+                <div class="threshold-sub">When a reading is double-checked and the check agrees with what was already there, the document was still being held as if a correction were pending. With this on, a check that made no change no longer holds the document. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="vacuous-corrected-ignore-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Stop flagging a reference that already matches the sender's format</div>
+                <div class="threshold-sub">A scan can make the letter "I" and the digit "1" hard to tell apart, so a reference like "PI/26/9646" gets a "one character differs — please check" note even when it already matches the exact "PI/…" pattern this sender always uses. With this on, when the reference matches the sender's well-established format the note is dropped and the document files normally. If the reference does NOT match the sender's format, the note stays. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="ref-dominant-format-demote-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Trust a well-established sender's name without re-asking (from any reading)</div>
+                <div class="threshold-sub">A companion to the setting above: on a layout you have confirmed many times as one sender, this drops the "please confirm" note using the readings already recorded for the document, so it also works on documents already in your queue — not only freshly imported ones. The sender's name is never changed; the note is only dropped when several independent readings already agree on it. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="identity-corrob-shed-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't hold a total that two readings agree on and the VAT confirms</div>
+                <div class="threshold-sub">When a total is read the same way by two independent methods AND the net figure plus standard VAT comes to exactly that total, the total is sound even if a smaller figure elsewhere (like a mis-scanned subtotal) looks off. With this on, that "the net disagrees" note no longer holds the document. The total itself is never changed — only the note is dropped, and only when the VAT arithmetic matches to the penny. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="shadow-attrib-demote-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Fix an obvious one-character misread of a value you always use</div>
+                <div class="threshold-sub">When a value like an account number is the same on every document from a sender (e.g. "ACC-2291") and a scan turns one character into a stray symbol ("ACC-229]"), this restores the character you have confirmed many times — but only when a second, independent record also holds that same value. Anything less certain still asks you to check. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="snap-confusable-adopt-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Apply a suggested name correction when it's the name you always confirm</div>
+                <div class="threshold-sub">When a customer/recipient name is read with a small garble ("Quilistone Print &amp; Packaging") and Scan Finder's suggested correction matches both the name you have confirmed many times on this sender AND the page's own printed reading, the correction is applied so the document files under the right name instead of the garble. It never changes the sender/company a document is filed under, only recipient-style name fields, and only when the page itself agrees. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="name-corrob-adopt-toggle"><span class="toggle-slider"></span></label>
+            </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Read small reference/date print more clearly</div>

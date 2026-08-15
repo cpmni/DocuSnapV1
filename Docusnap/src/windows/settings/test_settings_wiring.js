@@ -138,6 +138,13 @@ const BRIDGES = [
   ['recon-demote-toggle', 'recon_total_note_demote', 'RECON_TOTAL_NOTE_DEMOTE'],
   // Corroboration step 3, slice 3 (Oracle W/COND B1-B3 2026-08-13): name note demote.
   ['name-demote-toggle', 'name_corrob_note_demote', 'NAME_CORROB_NOTE_DEMOTE'],
+  // ── Corroboration-driven auto-file resolution (2026-08-15 held-queue arc, mig 69). Five
+  //    extraction arms bridged through _reconcileEnv; each DEFAULT OFF. ──
+  ['ref-dominant-format-demote-toggle', 'ref_dominant_format_note_demote', 'REF_DOMINANT_FORMAT_NOTE_DEMOTE'],
+  ['identity-corrob-shed-toggle', 'template_identity_corrob_note_shed', 'TEMPLATE_IDENTITY_CORROB_NOTE_SHED'],
+  ['shadow-attrib-demote-toggle', 'recon_shadow_attrib_note_demote', 'RECON_SHADOW_ATTRIB_NOTE_DEMOTE'],
+  ['snap-confusable-adopt-toggle', 'snap_confusable_clean_autofile', 'SNAP_CONFUSABLE_CLEAN_AUTOFILE'],
+  ['name-corrob-adopt-toggle', 'name_corrob_suggestion_adopt', 'NAME_CORROB_SUGGESTION_ADOPT'],
 ];
 const handler = (() => {
   try { return fs.readFileSync(path.join(root, 'src/modules/processing/handler.js'), 'utf8'); }
@@ -187,6 +194,11 @@ const SETTING_SWITCHES = [
   // Straighten-on-import: read directly where the import worker is spawned (a CLI FLAG to the
   // extractor, not an env bridge), so the consumer to pin is the processing handler itself.
   ['deskew-import-toggle', 'deskew_on_import', 'src/modules/processing/handler.js'],
+  // Corroboration-driven auto-file resolution — the two GATE-side switches (2026-08-15 held-queue
+  // arc). Both are settings reads inside trust.js isAutoFileEligible (env wins both directions for
+  // harness arms); critfield_corrob_floor_relax is additionally nested under corroboration_autofile.
+  ['critfield-corrob-relax-toggle', 'critfield_corrob_floor_relax', 'database/modules/trust.js'],
+  ['vacuous-corrected-ignore-toggle', 'vacuous_corrected_to_ignore', 'database/modules/trust.js'],
 ];
 for (const [id, key, consumer] of SETTING_SWITCHES) {
   let src = '';

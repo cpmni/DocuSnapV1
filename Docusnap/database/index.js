@@ -1582,6 +1582,34 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 68 applied: near-match identity guards default ON');
   }
 
+  // ── Migration 69: corroboration-driven auto-file resolution — eight switches, ALL DEFAULT OFF ──
+  // The 2026-08-15 held-queue arc (gary → Oracle SIGN-OFF-W/COND). Each switch lets the DB's own
+  // recorded corroboration (the `extractions.corroboration` record + the scope's dominant confirmed
+  // value/format) resolve a note/floor that today holds a document whose value is already known-good.
+  // Seeded 'false' so every Settings → Processing toggle renders truthfully OFF and is greppable in
+  // one place; INSERT OR IGNORE preserves any hand-set choice. NOTHING changes behaviour until the
+  // owner flips a switch — OFF is byte-identical. Oracle owes a per-predicate ratification (B/D/E/G)
+  // before any of these defaults to ON.
+  if (!applied.has(69)) {
+    try {
+      const ins = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+      const keys = [
+        'critfield_corrob_floor_relax',      // G (gate)  — a licensed ref/date clears the 88 floor if it matches the learned shape
+        'vacuous_corrected_to_ignore',       // B (gate)  — a corrected_to == display_value no longer flags
+        'ref_dominant_format_note_demote',   // B (extraction)
+        'template_identity_corrob_note_shed',// A (extraction)
+        'recon_shadow_attrib_note_demote',   // C (extraction)
+        'snap_confusable_clean_autofile',    // D (extraction)
+        'name_corrob_suggestion_adopt',      // E (extraction)
+      ];
+      let n = 0;
+      for (const key of keys) if (ins.run(key, 'false').changes) n++;
+      console.log(`  migration 69: ${n} corroboration-resolve switch(es) newly seeded OFF`);
+    } catch (e) { console.warn(`  migration 69 defaults: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (69)').run();
+    console.log('JS migration 69 applied: corroboration-resolve switches seeded (all OFF)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

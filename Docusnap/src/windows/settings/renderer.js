@@ -831,7 +831,31 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // class): drop the "please confirm" note on a heavily-graduated layout when the
                          // garbled letterhead still fuzzily names the graduated issuer. DEFAULT OFF —
                          // needs the corpus arm + Oracle flip conditions before it goes on.
-                         ['identity-geom-fuzzy-toggle', 'template_identity_geom_fuzzy_graduate']]) {
+                         ['identity-geom-fuzzy-toggle', 'template_identity_geom_fuzzy_graduate'],
+                         // ── Corroboration-driven auto-file resolution (2026-08-15 held-queue arc, mig 69) ──
+                         // Each lets the DB's own recorded corroboration resolve a note/floor that today
+                         // holds a document whose value is already known-good. ALL DEFAULT OFF; Oracle
+                         // owes a per-predicate ratification (B/D/E/G) before any defaults to ON.
+                         // G (gate, JS): a licensed ref/date read clears the 88 critical-field floor when
+                         // it matches the scope's dominant learned shape. Nested under corroboration_autofile.
+                         ['critfield-corrob-relax-toggle', 'critfield_corrob_floor_relax'],
+                         // B (gate, JS): a corrected_to equal to the committed value no longer flags.
+                         ['vacuous-corrected-ignore-toggle', 'vacuous_corrected_to_ignore'],
+                         // B (extraction): drop the 1/I rawwitness note when the ref already matches the
+                         // scope's ≥90%-dominant learned prefix (the note was holding a correct value).
+                         ['ref-dominant-format-demote-toggle', 'ref_dominant_format_note_demote'],
+                         // A (extraction): shed "Company inferred… please confirm" from the persisted
+                         // corroboration (geometry-free) on a graduated single-issuer layout.
+                         ['identity-corrob-shed-toggle', 'template_identity_corrob_note_shed'],
+                         // C (extraction): drop a doubly-corroborated total's shadow-attribution note on a
+                         // penny-exact VAT re-verify — never changes the total value.
+                         ['shadow-attrib-demote-toggle', 'recon_shadow_attrib_note_demote'],
+                         // D (extraction): snap-and-adopt a symbol-misread of a single-canonical confirmed
+                         // constant (ACC-229] → ACC-2291) when an independent hint family corroborates.
+                         ['snap-confusable-adopt-toggle', 'snap_confusable_clean_autofile'],
+                         // E (extraction): ADOPT a Stage-4.5 name suggestion (non-identity fields only) when
+                         // it equals the scope's dominant confirmed literal AND the page's own keyword read.
+                         ['name-corrob-adopt-toggle', 'name_corrob_suggestion_adopt']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);

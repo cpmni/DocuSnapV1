@@ -192,6 +192,30 @@ function _reconcileEnv(db) {
       env.TEMPLATE_IDENTITY_GEOM_FUZZY_GRADUATE = '1';
       env.GRADUATION_WINDOW = String(parseInt(learning.getSetting(db, 'graduation_window', '10'), 10) || 10);
     }
+    // ── Corroboration-driven auto-file resolution (2026-08-15, gary → Oracle SIGN-OFF-W/COND) ──
+    // The owner's held-queue arc: the DB already carries the correct value (the persisted
+    // corroboration record + the scope's dominant confirmed value/format), yet a spurious note or a
+    // vacuous corrected_to holds the doc. Each arm reads the SAME licensed-corroboration primitive,
+    // is DEFAULT OFF (absent key → byte-identical spawn), and fails toward Review. Extraction-side:
+    //   B) ref_dominant_format_note_demote — a rawwitness 1/I note is dropped when the committed ref
+    //      already matches the scope's ≥0.90-dominant learned prefix (the note held a RIGHT value).
+    //   A) template_identity_corrob_note_shed — a "Company inferred… please confirm" FILL note sheds
+    //      from the PERSISTED corroboration (geometry-free, so a cached reprocess still heals) when a
+    //      licensed record + graduated dominant issuer agree. Needs GRADUATION_WINDOW threaded.
+    //   C) recon_shadow_attrib_note_demote — a doubly-corroborated total's shadow-attribution note is
+    //      dropped on a penny-exact VAT re-verify (never changes the total value).
+    //   D) snap_confusable_clean_autofile — a symbol-misread of a single-canonical confirmed constant
+    //      (']'→'1' → ACC-2291) is snapped-and-adopted when an independent hint family corroborates.
+    //   E) name_corrob_suggestion_adopt — a Stage-4.5 name SUGGESTION is ADOPTED (non-identity fields
+    //      only) when it equals the scope's dominant confirmed literal AND the page's own keyword read.
+    if (learning.getSetting(db, 'ref_dominant_format_note_demote', 'false') === 'true') env.REF_DOMINANT_FORMAT_NOTE_DEMOTE = '1';
+    if (learning.getSetting(db, 'template_identity_corrob_note_shed', 'false') === 'true') {
+      env.TEMPLATE_IDENTITY_CORROB_NOTE_SHED = '1';
+      if (!env.GRADUATION_WINDOW) env.GRADUATION_WINDOW = String(parseInt(learning.getSetting(db, 'graduation_window', '10'), 10) || 10);
+    }
+    if (learning.getSetting(db, 'recon_shadow_attrib_note_demote', 'false') === 'true') env.RECON_SHADOW_ATTRIB_NOTE_DEMOTE = '1';
+    if (learning.getSetting(db, 'snap_confusable_clean_autofile', 'false') === 'true') env.SNAP_CONFUSABLE_CLEAN_AUTOFILE = '1';
+    if (learning.getSetting(db, 'name_corrob_suggestion_adopt', 'false') === 'true') env.NAME_CORROB_SUGGESTION_ADOPT = '1';
     if (learning.getSetting(db, 'crosscheck_outlier_reconcile', 'false') === 'true') env.CROSSCHECK_OUTLIER_RECONCILE = '1';
     if (learning.getSetting(db, 'universal_verify_restore', 'false') === 'true') env.UNIVERSAL_VERIFY_RESTORE = '1';
     if (learning.getSetting(db, 'universal_verify_flag', 'false') === 'true') env.UNIVERSAL_VERIFY_FLAG = '1';

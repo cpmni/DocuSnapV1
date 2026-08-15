@@ -812,6 +812,55 @@ function main() {
     }
   }
 
+  // ── 24. Corroboration-driven auto-file resolution (2026-08-15 held-queue arc) ────
+  //   G: a licensed corroboration record + a value matching the scope's learned shape clears the
+  //      88 critical-field floor. B: a corrected_to equal to display_value no longer flags.
+  section('24. corroboration floor relax (G) + vacuous corrected_to (B)');
+  {
+    const db = makeDb(); const tid = seedType(db); seedCleanScope(db, tid, 10, 'Anconia Corp');
+    const doc = getDoc(db, seedDoc(db, tid, { supplier: 'Anconia Corp', when: '2026-06-11T10:00:00Z', status: 'needs_review', template: 7, conf: 98,
+      fields: { supplier_name: 'Anconia Corp', invoice_date: '05-06-2026', invoice_number: 'INV1000', total: '250.00' } }));
+    const d98 = { ...doc, overall_confidence: 98 };
+    const LIC     = '{"independent_agree":true,"winner_family":"crop","agree":["mapping"],"disagree":[]}';
+    const UNLIC   = '{"independent_agree":false,"winner_family":"crop","agree":[],"disagree":[]}';
+    const MEMONLY = '{"independent_agree":true,"winner_family":"memory","agree":["hint"],"disagree":[]}';
+    // ref field (invoice_number) read at 86 — below the 88 critical floor; everything else clean.
+    const exG = (num, corrob) => ([
+      { field_key: 'supplier_name',  display_value: 'Anconia Corp' },
+      { field_key: 'invoice_date',   display_value: '05-06-2026' },
+      { field_key: 'invoice_number', display_value: num, confidence: 86, corroboration: corrob },
+      { field_key: 'total',          display_value: '250.00' },
+    ]);
+    check("G OFF (default): ref@86 → weak-critical-field (held)",
+      trust.isAutoFileEligible(db, d98, { extractions: exG('INV1000', LIC), templateMatched: true }).eligible === false);
+    check("G ON + licensed + shape-match → eligible",
+      trust.isAutoFileEligible(db, d98, { extractions: exG('INV1000', LIC), templateMatched: true, critFieldCorrobRelax: true }).eligible === true);
+    check("G ON + licensed + shape MISMATCH ('Information') → still held",
+      trust.isAutoFileEligible(db, d98, { extractions: exG('Information', LIC), templateMatched: true, critFieldCorrobRelax: true }).eligible === false);
+    check("G ON + shape-match + UN-licensed record → still held",
+      trust.isAutoFileEligible(db, d98, { extractions: exG('INV1000', UNLIC), templateMatched: true, critFieldCorrobRelax: true }).eligible === false);
+    check("G ON + memory+hint only (near-circular) → still held",
+      trust.isAutoFileEligible(db, d98, { extractions: exG('INV1000', MEMONLY), templateMatched: true, critFieldCorrobRelax: true }).eligible === false);
+    check("G ON + missing corroboration on the row → still held (vacuous-green guard)",
+      trust.isAutoFileEligible(db, d98, { extractions: exG('INV1000', undefined), templateMatched: true, critFieldCorrobRelax: true }).eligible === false);
+
+    const exB = (num, cto) => ([
+      { field_key: 'supplier_name',  display_value: 'Anconia Corp' },
+      { field_key: 'invoice_date',   display_value: '05-06-2026' },
+      { field_key: 'invoice_number', display_value: num, corrected_to: cto },
+      { field_key: 'total',          display_value: '250.00' },
+    ]);
+    check("B OFF (default): corrected_to==display_value still flags (held)",
+      trust.isAutoFileEligible(db, d98, { extractions: exB('PI/26/9646', 'PI/26/9646'), templateMatched: true }).eligible === false);
+    check("B ON: vacuous corrected_to (==display_value) → not flagged → eligible",
+      trust.isAutoFileEligible(db, d98, { extractions: exB('PI/26/9646', 'PI/26/9646'), templateMatched: true, vacuousCorrectedToIgnore: true }).eligible === true);
+    check("B ON: a differing corrected_to still flags (held)",
+      trust.isAutoFileEligible(db, d98, { extractions: exB('PI/26/9646', 'PI/26/9647'), templateMatched: true, vacuousCorrectedToIgnore: true }).eligible === false);
+    const rBnull = trust.isAutoFileEligible(db, d98, { extractions: exB('', 'PI/26/9646'), templateMatched: true, vacuousCorrectedToIgnore: true });
+    check("B ON: empty display_value + corrected_to → still flags (null-safe)",
+      rBnull.eligible === false && rBnull.reason === 'flagged');
+  }
+
   console.log(`\n${fails === 0 ? 'ALL PASS' : fails + ' FAILED'}`);
   process.exit(fails === 0 ? 0 : 1);
 }
