@@ -2990,12 +2990,19 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   // the amber note + Accept button. The applied case is detected by value equality,
   // which the engine guarantees (value/display_value/corrected_to all set to the
   // repair on auto-apply).
-  const isApplied = !!correctedTo && val === correctedTo;
+  // …EXCEPT when the note still ASKS a question ("one character differs" — the raw-witness ask
+  // class): a green "auto-corrected" badge over a please-check note reads as a contradiction
+  // (Chris card 2, all 7 Pelican). Legacy stored rows carry corrected_to == value WITH that ask
+  // note forever, so the badge must key off the note text too, not equality alone.
+  const isApplied = !!correctedTo && val === correctedTo
+    && !/one character differs/i.test(String(note || ''));
   // Correction CANDIDATES get two value-labelled buttons (explicit consent — the operator
   // sees exactly what each click keeps; Chris, card 1): "Use <suggestion>" copies it into
   // the input; "Keep <current>" hides the note display-side. Neither confirms or persists.
+  // correctedTo !== val: a vacuous pair (legacy rows) must not offer "Use X" / "Keep X" with the
+  // SAME string on both buttons — it renders as a plain note instead.
   const _btnVal = (s) => { const t = String(s ?? ''); return escHtml(t.length > 18 ? t.slice(0, 17) + '…' : t); };
-  const acceptHtml = (correctedTo && !isApplied)
+  const acceptHtml = (correctedTo && correctedTo !== val && !isApplied)
     ? ` <button type="button" class="accept-btn" data-key="${key}" title="Replace the value with ${escHtml(correctedTo)} — saved when you confirm">Use “${_btnVal(correctedTo)}”</button>`
       + ` <button type="button" class="keep-btn" data-key="${key}" title="Keep the value as it is and hide this note">${String(val ?? '').trim() ? `Keep “${_btnVal(val)}”` : 'Leave as is'}</button>`
     : '';
@@ -5311,7 +5318,8 @@ function showReprocessAutofileOffer(offerIds) {
     try { r = await window.docusnap.reprocessAutocommitAccept(); } catch {}
     if (r && r.ok) {
       const dropped = (r.dropped || []).length;
-      showToast(`✓ Filed ${r.filed.length} document${r.filed.length === 1 ? '' : 's'} automatically`
+      // "you approved", not "automatically" — the operator just clicked "File N" (Chris card 4).
+      showToast(`✓ Filed ${r.filed.length} document${r.filed.length === 1 ? '' : 's'} you approved`
         + (dropped ? ` · ${dropped} left for review` : ''), r.filed.length ? 'ok' : 'warn');
     } else {
       showToast('Nothing was filed' + (r && r.reason ? ` (${r.reason})` : '') + ' — the documents stay in the queue.', 'warn');

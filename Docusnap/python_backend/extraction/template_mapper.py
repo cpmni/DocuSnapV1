@@ -297,6 +297,18 @@ _EXACTNESS_CENSUS_PATH = os.environ.get('TEMPLATE_EXACTNESS_CENSUS', '')
 # the fuller of the drawn-box read and the label-anchored inline read. =0: byte-identical.
 # Flipped ON after: delivery probe 5/10→10/10, realdoc OFF==ON (0 new), 11 unit/PIN, parity 10/10.
 _INLINE_CODE_RECONCILE_ON = os.environ.get('TEMPLATE_INLINE_CODE_RECONCILE', '1') != '0'
+# RAW_WITNESS_VACUOUS_SUPPRESS (2026-08-16, Chris card 2 → gary 2a → Oracle SIGN-OFF-W/COND,
+# DEFAULT OFF, migration-71 seed 'false'). When the ladder's repair lands EXACTLY on the raw-crop
+# witness, the FLAG tier used to emit corrected_to == value + an ask-note — a question the operator
+# cannot answer (it asks them to compare a string with itself) that still capped the field at 84 and
+# blocked auto-file. Armed, that vacuous pair emits NO flag at all (field commits at natural
+# confidence). OFF keeps the flag (with answerable copy — see _witness_note) because on a
+# history-less install this cap is the only checkpoint between an ambiguous-glyph read and a clean
+# commit; the live default-ON flip is owed the OFF==ON corpus arm + Oracle ratify.
+_RAW_WITNESS_VACUOUS_SUPPRESS = os.environ.get('RAW_WITNESS_VACUOUS_SUPPRESS', '0') != '0'
+# (_witness_note, the helper this flag gates, is defined below the module's flag block — a def
+# here would move the "module head ends at the first def" boundary that
+# tests/test_template_code_edge_clean.py slices on.)
 
 # Slice 2 — the same reconcile on the DRIFT/relocate path (`_geometric`), where a drifted taught
 # label re-seats the value at the SAME narrow drawn width → identical prefix-clip risk. Routes through
@@ -353,6 +365,34 @@ _LABEL_DIGIT_EXACT_ON = os.environ.get('TEMPLATE_LABEL_DIGIT_EXACT', '0') != '0'
 _CODE_EDGE_CLEAN_ON = os.environ.get('TEMPLATE_CODE_EDGE_CLEAN', '0') != '0'
 
 _CODE_EDGE_DEBRIS = re.compile(r'^[^A-Za-z0-9]+|[^A-Za-z0-9]+$')   # bounded, anchored — no nesting
+
+
+def _witness_note(val, alt, pair):
+    """The raw-witness ask-note for the FLAG tier, or None when no flag should be attached.
+
+    Three shapes (gary 2b + Oracle copy condition, 2026-08-16):
+      - no witness alt at all -> None (nothing to say);
+      - alt == committed value (the VACUOUS pair — the repair landed on the witness):
+          suppression armed (_RAW_WITNESS_VACUOUS_SUPPRESS) -> None (no flag, no cap — the
+          question was unanswerable: it asked the operator to compare a string with itself);
+          suppression off -> an ANSWERABLE ask that does not name the same string twice;
+      - alt != committed value -> name BOTH readings, committed value first.
+    The literal substring "one character differs" is LOAD-BEARING in every branch: the engine
+    B-arm (engine.py _resolve_corroborated_notes), the P adopt lane, and
+    scripts/remediate-corrob-queue-20260815.js all match on it — reword around it, never through
+    it (pinned in tests/test_raw_witness_note.py)."""
+    val = str(val or '').strip()
+    alt = str(alt or '').strip()
+    if not alt:
+        return None
+    a, b = (pair or ('?', '?'))
+    if alt == val:
+        if _RAW_WITNESS_VACUOUS_SUPPRESS:
+            return None
+        return (f"this read needed a repair on one ambiguous character ({a}/{b}) — one character "
+                f"differs between the possible readings; please check the printed value")
+    return (f"this could read '{val}' or '{alt}' ({a} and {b} look alike on a scan) — "
+            f"one character differs; showing '{val}' — please check which is printed")
 
 
 def _strip_code_edges(s):
@@ -2396,12 +2436,16 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
         if _abs_meta.get('witness_adopted'):
             _r["method"] += "_rawadopt"      # provenance for the trace/census; value already swapped
         elif _abs_meta.get('witness_alt') and not _r.get("validation_note"):
-            _a, _b = _abs_meta.get('witness_pair') or ('?', '?')
-            _r["confidence"] = min(_r["confidence"], 84)
-            _r["corrected_to"] = _abs_meta['witness_alt']
-            _r["validation_note"] = (f"the raw scan reads this as '{_abs_meta['witness_alt']}' — "
-                                     f"one character differs ({_a}/{_b}); please check which is printed")
-            _r["method"] += "_rawwitness"
+            # _witness_note decides the shape (both-readings ask / answerable vacuous ask / None).
+            # None ⇒ NO flag: no cap, no corrected_to, no _rawwitness — the field commits at its
+            # natural confidence (the armed vacuous-suppress path; see the module flag above).
+            _wnote = _witness_note(_r.get("value"), _abs_meta['witness_alt'],
+                                   _abs_meta.get('witness_pair'))
+            if _wnote:
+                _r["confidence"] = min(_r["confidence"], 84)
+                _r["corrected_to"] = _abs_meta['witness_alt']
+                _r["validation_note"] = _wnote
+                _r["method"] += "_rawwitness"
         if _edge_healed:
             _r["method"] += "_edgegrow"      # SFDEV every-step-trace visibility (Slice C heal)
         elif _edge_suspect:
