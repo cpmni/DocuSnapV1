@@ -609,8 +609,8 @@ _NAME_GROW_NOTE = ("The taught box's edge cuts through the last word of this nam
 # live. Default OFF (=1 arms); OFF = byte-identical. Pins: tests/test_template_pad_window_read.py.
 _PAD_WINDOW_READ_ON = os.environ.get('TEMPLATE_PAD_WINDOW_READ', '0') != '0'
 _PAD_DISAGREE_MARGIN = 15          # padded read's OCR conf must beat the TIGHT read's by this (Oracle ~15)
-_PAD_DATE_DISAGREE_NOTE = ("A wider reading of this date box shows '{}', which differs from the filed "
-                           "value — please verify.")
+_PAD_DATE_DISAGREE_NOTE = ("A wider reading of this date box shows '{}', which differs from the "
+                           "value shown here — please check which is printed.")
 
 # PAD-WINDOW CODE READ (Slice 1b — gary design -> Oracle SIGN-OFF-W/COND 2026-08-09). The date slice's
 # sibling for CODE/reference fields, aimed at the LABEL-LESS taught box class the containment ladder
@@ -635,8 +635,8 @@ _PAD_DATE_DISAGREE_NOTE = ("A wider reading of this date box shows '{}', which d
 # Pins: tests/test_template_pad_window_code.py.
 _PAD_WINDOW_CODE_ON = os.environ.get('TEMPLATE_PAD_WINDOW_CODE', '0') != '0'
 _PAD_CODE_MIN_SUFFIX = _CLIP_COMMIT_MIN_PREFIX   # >=4 tight-read chars must survive as the padded suffix
-_PAD_CODE_DISAGREE_NOTE = ("A wider reading of this box shows '{}', which differs from the filed "
-                           "value — please verify.")
+_PAD_CODE_DISAGREE_NOTE = ("A wider reading of this box shows '{}', which differs from the "
+                           "value shown here — please check which is printed.")
 
 # ── LABELLED sub-slice (2026-08-06 — gary design -> Oracle SIGN-OFF-W/COND C1..C7) ────────────────
 # The 2026-08-09 sign-off scoped the slice above to LABEL-LESS boxes on the stated ground that "a

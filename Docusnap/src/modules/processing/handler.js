@@ -3476,7 +3476,9 @@ function register(ctx) {
       } catch (e) { res = { ok: false, code: 'ERROR', error: e && e.message }; }
       if (res && res.ok) {
         filed.push(docId);
-        try { _recordAutoFiled(db, docId); } catch {}   // the re-surface banner is a review checkpoint (Oracle C6)
+        // the re-surface banner is a review checkpoint (Oracle C6); approved=true — the operator
+        // clicked File N, so the banner must not call this one "automatic" (Chris r7 card 2)
+        try { _recordAutoFiled(db, docId, true); } catch {}
       } else {
         dropped.push({ docId, reason: (res && res.code) || 'confirm-failed' });
       }
@@ -4655,12 +4657,24 @@ function getAutoFiledIds(db) {
     return o.ids;
   } catch { return []; }
 }
-function _recordAutoFiled(db, docId) {
+// `approved` marks a doc the OPERATOR consented to (the reprocess consent bar's File N) — it rides
+// the same rolling list so the re-surface checkpoint still covers it, but the Review banner counts
+// it separately: "filed with your approval" is the operator's decision on the record, not the
+// machine's (Chris round-7 card 2 — the counter called his 8 approved filings "automatic").
+function _recordAutoFiled(db, docId, approved = false) {
   const learning = require('../../../database/modules/learning');
   try {
     const ids = getAutoFiledIds(db);
     if (!ids.includes(docId)) ids.push(docId);
-    learning.setSetting(db, 'recent_auto_filed', JSON.stringify({ ids: ids.slice(-300), at: Date.now() }));
+    let appr = [];
+    try {
+      const o = JSON.parse(learning.getSetting(db, 'recent_auto_filed', '') || 'null');
+      if (o && Array.isArray(o.approved)) appr = o.approved;
+    } catch {}
+    if (approved && !appr.includes(docId)) appr.push(docId);
+    appr = appr.filter(id => ids.includes(id));
+    learning.setSetting(db, 'recent_auto_filed',
+      JSON.stringify({ ids: ids.slice(-300), approved: appr.slice(-300), at: Date.now() }));
   } catch {}
 }
 

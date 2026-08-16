@@ -504,8 +504,16 @@ async function refreshAutoCommittedBar() {
   try { res = (await window.docusnap.getRecentAutoFiled?.()) || res; } catch {}
   _autoFiledDocs = res.docs || [];
   if (_autoFiledDocs.length) {
+    // Approved (the consent bar's File N) counted SEPARATELY from automatic — the operator's
+    // decision must not be recorded on screen as the machine's (Chris r7 card 2).
+    const nAppr = Array.isArray(res.approvedIds)
+      ? _autoFiledDocs.filter(d => res.approvedIds.includes(d.id)).length : 0;
+    const nAuto = _autoFiledDocs.length - nAppr;
+    const parts = [];
+    if (nAuto) parts.push(`<b>✓ ${nAuto}</b> document${nAuto === 1 ? '' : 's'} filed automatically`);
+    if (nAppr) parts.push(`<b>${nAppr}</b> filed with your approval`);
     bar.innerHTML = `<span class="acb-dismiss" title="Dismiss this notice" aria-label="Dismiss">×</span>`
-      + `<b>✓ ${_autoFiledDocs.length}</b> document${_autoFiledDocs.length === 1 ? '' : 's'} filed automatically — `
+      + parts.join(' · ') + ` — `
       + `<span class="acb-back">click to see the list — they stay filed; nothing is changed</span>`;
     bar.style.display = 'block';
   } else {

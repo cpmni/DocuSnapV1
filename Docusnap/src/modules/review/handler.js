@@ -363,13 +363,18 @@ function register(ctx) {
   ipcMain.handle('get-recent-auto-filed', () => {
     requireRole('admin', 'edit');
     const db = getDb();
-    let ids = [];
+    let ids = [], approved = [];
     try {
       const o = JSON.parse(learning.getSetting(db, 'recent_auto_filed', '') || 'null');
-      if (o && Array.isArray(o.ids) && (!o.at || (Date.now() - o.at) <= 7 * 864e5)) ids = o.ids;
+      if (o && Array.isArray(o.ids) && (!o.at || (Date.now() - o.at) <= 7 * 864e5)) {
+        ids = o.ids;
+        // operator-approved subset (the consent bar's File N) — counted separately by the banner
+        // (Chris r7 card 2). An old record without the array = everything counted automatic.
+        if (Array.isArray(o.approved)) approved = o.approved.filter(id => ids.includes(id));
+      }
     } catch {}
     const docs = ids.length ? documents.getByIds(db, ids) : [];
-    return { count: docs.length, docs };
+    return { count: docs.length, docs, approvedIds: approved };
   });
   ipcMain.handle('clear-recent-auto-filed', () => {
     requireRole('admin', 'edit');
