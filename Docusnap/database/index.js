@@ -1693,6 +1693,23 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 71 applied: fresh-install auto-file bar 90; P-adopt + vacuous-suppress switches seeded OFF');
   }
 
+  // ── Migration 72: the Chris round-7 card-1/card-3 switches, seeded OFF ───────────────────────
+  // Gate-C page-match v2 (the false "doesn't appear on this page as written" on values the page
+  // DOES carry, as a confusable glyph or a split token), the vat-reg '$'-mid-run carve-out, and
+  // money sign capture. All three DEFAULT OFF (Oracle: live default-ON owes the OFF==ON corpus
+  // arm + ratify; they must also stay OUT of any future force-ON/UPSERT sweep until then —
+  // pinned in test_migration71_defaults.js).
+  if (!applied.has(72)) {
+    try {
+      const ins72 = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+      ins72.run('filing_sanity_page_match_v2', 'false');
+      ins72.run('vat_reg_symbol_confusable', 'false');
+      ins72.run('money_sign_capture', 'false');
+    } catch (e) { console.warn(`  migration 72: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (72)').run();
+    console.log('JS migration 72 applied: page-match v2 + vat-reg symfold + money-sign switches seeded OFF');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

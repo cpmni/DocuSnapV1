@@ -98,8 +98,9 @@ check('a new batch clears any unconsumed offer (fail-safe overwrite)',
   check('accept skips workflow-locked docs', /'pending', 'claimed'/.test(accept));
   check("accept files through the ONE shared confirm with the internal via",
         /reviewService\.confirm\(db, actor, \{[\s\S]*?\}, \{ via: 'auto_reprocess' \}\)/.test(accept));
-  check('accept records each file for the re-surface banner (_recordAutoFiled)',
-        /_recordAutoFiled\(db, docId\)/.test(accept));
+  check('accept records each file for the re-surface banner, marked APPROVED (Chris r7 card 2 — '
+        + 'the operator clicked File N, so the banner must not call it "automatic")',
+        /_recordAutoFiled\(db, docId, true\)/.test(accept));
   check('accept audits a summary row (reprocess_autofiled)', /action: 'reprocess_autofiled'/.test(accept));
 }
 

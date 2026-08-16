@@ -864,7 +864,12 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          ['ref-prefix-confusable-adopt-toggle', 'ref_prefix_confusable_adopt'],
                          // Vacuous raw-witness suppression (2026-08-16): when the repair lands ON the wider
                          // reading, stop asking the operator to compare a value with itself.
-                         ['raw-witness-vacuous-suppress-toggle', 'raw_witness_vacuous_suppress']]) {
+                         ['raw-witness-vacuous-suppress-toggle', 'raw_witness_vacuous_suppress'],
+                         // Round-7 card-1/card-3 switches (2026-08-16, mig 72, all OFF): Gate-C page-match
+                         // v2 · vat-reg '$'-mid-run fold · money sign capture at the mint.
+                         ['filing-sanity-page-match-v2-toggle', 'filing_sanity_page_match_v2'],
+                         ['vat-reg-symbol-confusable-toggle', 'vat_reg_symbol_confusable'],
+                         ['money-sign-capture-toggle', 'money_sign_capture']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);
@@ -940,6 +945,8 @@ const DEV_SWITCH_IDS = [
   'name-corrob-adopt-toggle', 'corrob-recompute-fc-toggle',
   // 2026-08-16 additions (Oracle S-O-W/C): the P prefix-adopt lane + the vacuous-witness suppression.
   'ref-prefix-confusable-adopt-toggle', 'raw-witness-vacuous-suppress-toggle',
+  // Round-7 card-1/card-3 switches (mig 72, all OFF).
+  'filing-sanity-page-match-v2-toggle', 'vat-reg-symbol-confusable-toggle', 'money-sign-capture-toggle',
 ];
 function _applyDevSwitchVisibility(unlocked, revealGate){
   for (const id of DEV_SWITCH_IDS){

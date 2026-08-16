@@ -50,6 +50,18 @@ console.log('2. an ESTABLISHED install (>=1 document ever) gets NO threshold wri
   db.close();
 }
 
+console.log('2b. migration 72: the round-7 switches seed OFF and STAY off after a full migration run');
+{
+  // Oracle cross-cutting guard: these keys must never ride a future force-ON/UPSERT sweep until
+  // the OFF==ON corpus arm is green — a full runMigrations over a fresh DB must leave all three
+  // 'false'. If a later migration force-flips them, this pin trips.
+  const db = new Database(':memory:');
+  runMigrations(db);
+  for (const k of ['filing_sanity_page_match_v2', 'vat_reg_symbol_confusable', 'money_sign_capture'])
+    check(`${k} seeded OFF and not force-flipped`, getSetting(db, k) === 'false');
+  db.close();
+}
+
 console.log('3. a user\'s explicit bar survives (INSERT OR IGNORE, both directions)');
 {
   const db = new Database(':memory:');

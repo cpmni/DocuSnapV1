@@ -224,6 +224,14 @@ function _reconcileEnv(db) {
     //      a raw-witness "repair landed on the witness" pair no longer emits the unanswerable
     //      self-compare flag when armed (template_mapper._witness_note).
     if (learning.getSetting(db, 'raw_witness_vacuous_suppress', 'false') === 'true') env.RAW_WITNESS_VACUOUS_SUPPRESS = '1';
+    // ── Chris round-7 card-1/card-3 switches (2026-08-16, gary → Oracle S-O-W/C; all seeded OFF
+    //    by migration 72). Page-match v2: Gate C re-tests "not on this page" against same-line
+    //    joins + a prefix-region backed-confusable form before flagging. Vat-reg symfold: a
+    //    '$'-mid-run witness (the reg's own misread '5') folds instead of disarming the guard.
+    //    Money sign capture: a '-' immediately before a matched amount is kept at the mint.
+    if (learning.getSetting(db, 'filing_sanity_page_match_v2', 'false') === 'true') env.FILING_SANITY_PAGE_MATCH_V2 = '1';
+    if (learning.getSetting(db, 'vat_reg_symbol_confusable', 'false') === 'true') env.VAT_REG_SYMBOL_CONFUSABLE = '1';
+    if (learning.getSetting(db, 'money_sign_capture', 'false') === 'true') env.MONEY_SIGN_CAPTURE = '1';
     // The linchpin (2026-08-15): a demoted note is no longer a format mismatch, so its -12
     // format-consistency penalty must be recomputed off the POST-demote results — else every
     // note-demoter (these arms AND the shipped recon/name/xcheck slices) is cosmetic: the note

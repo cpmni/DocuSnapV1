@@ -157,6 +157,29 @@ r, c = mk_c(corrob={'total': {'independent_agree': False, 'winner_family': 'mapp
 check('C decline: total not licensed (single family) → keep the note',
       not run(r, c, None, 'RECON_SHADOW_ATTRIB_NOTE_DEMOTE', {}) and r['total'].get('validation_note') == C_NOTE)
 
+# SIGNED credit-note pair (Oracle B1-1, 2026-08-16 — the pin that proves the tie is SIGN-AWARE
+# end-to-end; a magnitude-only tie would clear the sign-flipped control and this pin would fail):
+CN_NOTE = ("the total -514.30 was read the same way by two independent methods; the page's "
+           "net/subtotal reading -428.58 disagrees with it — please check")
+def mk_cn(total='-514.30', sub='-428.58'):
+    return ({'_supplier_name': 'Meadowvale Dairy Wholesale', '_document_slug': 'credit_note',
+             'total_amount': {'value': total, 'method': 'template_mapping', 'confidence': 90,
+                              'validation_note': CN_NOTE},
+             'subtotal': {'value': sub, 'method': 'shadow_reconcile'}},
+            {'total_amount': {'independent_agree': True, 'winner_family': 'mapping',
+                              'agree': ['keyword'], 'disagree': []}})
+
+r, c = mk_cn()   # both negative: -428.58 × 1.2 == -514.30 penny-exact, signs AGREE
+check('C heal (signed credit note): sign-agreeing penny tie demotes — the MONEY_SIGN_CAPTURE payoff',
+      run(r, c, None, 'RECON_SHADOW_ATTRIB_NOTE_DEMOTE', {})
+      and r['total_amount'].get('validation_note') is None
+      and r['total_amount']['value'] == '-514.30')
+
+r, c = mk_cn(total='514.30')   # magnitude-equal, SIGN-FLIPPED — must keep the note
+check('C decline (sign-flipped control): magnitude tie with contradictory signs keeps the note',
+      not run(r, c, None, 'RECON_SHADOW_ATTRIB_NOTE_DEMOTE', {})
+      and r['total_amount'].get('validation_note') == CN_NOTE)
+
 
 # ── D: charset note on a single-confusable of a single-canonical constant ────────
 print('D. account_no ] → 1 (snap to single-canonical constant)')

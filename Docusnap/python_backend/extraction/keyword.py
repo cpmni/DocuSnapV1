@@ -1573,6 +1573,19 @@ def _ref_caption_party_conflict(line: str, start: int) -> bool:
 # A money witness VETOES the guard outright and outranks every other leg: this can only ever
 # SUPPRESS a read (fail toward review, never a substituted value), and the veto is what bounds it.
 _VAT_MONEY_WITNESS = re.compile(r"[£$€¥]|\b(?:GBP|USD|EUR|JPY)\b|\d[\d,]*\.\d{2}(?!\d)", re.I)
+# SYMBOL-CONFUSABLE CARVE-OUT (VAT_REG_SYMBOL_CONFUSABLE, DEFAULT OFF, mig-72 seed; gary → Oracle
+# S-O-W/C 2026-08-16). The Meadowvale live exhibit: the letterhead's "VAT Reg No GB 118 5540 63"
+# OCR'd its own '5' as '$' — the corrupting glyph IS the money witness, so the absolute veto
+# disarmed the very guard built for this class and '$540' minted as a tax amount. When armed, the
+# witness is CLASSIFIED: a cents group or currency CODE stays a HARD veto always; £/€/¥ (no digit
+# confusable target) stay a hard veto; a '$'-ONLY witness where EVERY occurrence is digit-flanked
+# mid-run (preceded by digit+space/hyphen, followed by a digit — never tail-leading, which is the
+# money position protecting OCR-split money like '$1 234 567 89') is FOLDED '$'→'5' (the class
+# 5Ss$'s only digit target) and the EXISTING leg ladder + walk judge the folded tail; a verdict is
+# suffixed '+symfold' (Oracle C5 trace discipline). The guard still only ever SUPPRESSES a read.
+_VAT_HARD_WITNESS = re.compile(r"\b(?:GBP|USD|EUR|JPY)\b|\d[\d,]*\.\d{2}(?!\d)", re.I)
+_VAT_SYMBOL_WITNESS = re.compile(r"[£$€¥]")
+_VAT_SYMFOLD_MIDRUN = re.compile(r"(?<=\d[ \-])\$(?=\d)")
 # An optional registration lead-in between the caption and the number: "Reg", "Reg No.", "No:", "#".
 _VAT_ID_LEADIN = re.compile(r"^[\s:.|\-–]*(?:reg(?:d|istered|istration)?\b\.?\s*)?"
                             r"(?:(?:no|nr|num|number|id|ident)\b\.?\s*)?[:#]?\s*", re.I)
@@ -1617,8 +1630,27 @@ def _vat_identifier_tail(tail: str) -> str | None:
     Pure and side-effect free; input is the RAW line tail. Guarded by tests/test_vat_reg_not_amount.py."""
     if not tail:
         return None
-    if _VAT_MONEY_WITNESS.search(tail):
-        return None                                   # it is money — never fire
+    if _VAT_SYMBOL_WITNESS.search(tail) or _VAT_HARD_WITNESS.search(tail):
+        # Money witness. Absolute veto (today's shipped behaviour) — UNLESS the symbol-confusable
+        # carve-out is armed AND the witness is exactly the '$'-mid-run misread class (see the
+        # constants above). Hard witnesses (cents / currency codes) and £/€/¥ never fold.
+        if _VAT_HARD_WITNESS.search(tail):
+            return None                               # cents group / currency code — always money
+        if os.environ.get('VAT_REG_SYMBOL_CONFUSABLE', '0') == '0':
+            return None                               # it is money — never fire (shipped veto)
+        syms = _VAT_SYMBOL_WITNESS.findall(tail)
+        if any(s != '$' for s in syms):
+            return None                               # £/€/¥ have no digit target — hard veto
+        if len(_VAT_SYMFOLD_MIDRUN.findall(tail)) != tail.count('$'):
+            return None                               # any non-mid-run '$' = money position — veto
+        verdict = _vat_identifier_tail_body(tail.replace('$', '5'))
+        return (verdict + '+symfold') if verdict else None
+    return _vat_identifier_tail_body(tail)
+
+
+def _vat_identifier_tail_body(tail: str) -> str | None:
+    """The leg ladder + garble walk over an (already witness-cleared) tail — see
+    _vat_identifier_tail for the legs' documentation."""
     lead = _VAT_ID_LEADIN.match(tail)
     had_keyword = bool(lead.group(0).strip(" :.#|-–\t")) if lead else False
     m = _VAT_ID_RUN.match(tail[lead.end():] if lead else tail)
@@ -2206,7 +2238,25 @@ def _clean_value(value: str, val_type: str | None,
         for p in validation[val_type]:
             m = re.search(p, value, re.IGNORECASE)
             if m:
-                return m.group(0).strip()
+                out = m.group(0).strip()
+                # MONEY_SIGN_CAPTURE (DEFAULT OFF, mig-72 seed; gary → Oracle S-O-W/C 2026-08-16).
+                # No shipped currency pattern admits a leading '-', so "£-428.58" matched bare
+                # "428.58" and a credit-note operand lost its sign at the mint — the shadow
+                # subtotal then falsely "disagreed" with a CORRECT signed total. When armed, a
+                # SINGLE '-' sitting IMMEDIATELY before the matched substring (no dash-run, and
+                # preceded by start / whitespace / a currency symbol) is re-attached. Spaced
+                # dashes ("Total - 160.32") and dash runs stay unsigned — fail toward today, with
+                # credit_sign_note arm 2 still flagging the uncommitted markers and arm 3 the
+                # mirror guard (validator.py — built in anticipation of exactly this fix).
+                # parse_amount stays magnitude-only by design (signing it flips total>0 gates
+                # validator-wide — wrong layer; pinned).
+                if (val_type == "currency" and not out.startswith('-')
+                        and os.environ.get('MONEY_SIGN_CAPTURE', '0') != '0'):
+                    pre = value[:m.start()]
+                    if (pre.endswith('-') and not pre.endswith('--')
+                            and (len(pre) == 1 or pre[-2] in ' \t£$€¥')):
+                        return ('-' + out)
+                return out
     # Reference numbers with a fixed group shape (e.g. job_no "2603-0670-1"):
     # extract the four-four-one digit shape from the captured text and normalise
     # whatever OCR separator noise (".", spaces, "_", "/", mixed) to a single "-".

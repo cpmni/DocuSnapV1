@@ -1631,6 +1631,32 @@ def _prefix_confusable_class(a, b) -> bool:
     return any(a in c and b in c for c in _PREFIX_CONFUSE_CLASSES)
 
 
+# Casefolded twins of the classes, for comparisons made on casefolded projections (Gate-C v2 —
+# the page-match tolerance compares casefolded strings, where 'B'/'8' must still pair via 'b').
+_PREFIX_CONFUSE_CLASSES_CF = tuple(frozenset(ch.casefold() for ch in c) for c in _PREFIX_CONFUSE_CLASSES)
+# Class SYMBOLS (non-alphanumeric members: $ | ] [ € £) — the Oracle A1 correction: a projection
+# that strips every non-alnum char deletes the very glyph the confusable tolerance needs to see
+# ('VX$22033' would collapse to 'vx22033' and never same-length-compare against 'vxs22033').
+_PREFIX_CLASS_SYMBOLS = frozenset(ch for c in _PREFIX_CONFUSE_CLASSES_CF for ch in c if not ch.isalnum())
+
+
+def _prefix_confusable_class_cf(a, b) -> bool:
+    return any(a in c and b in c for c in _PREFIX_CONFUSE_CLASSES_CF)
+
+
+def _prefix_dominant_backed(rec_p) -> bool:
+    """The B/P dominance bars in ONE place (Oracle condition — a pin asserts this arithmetic is
+    identical to the B lane's): >=5 extractable prefixes, dominant count >=5, dominant share >=0.90
+    over the EXTRACTABLE prefixes (sum(counts), never rec['total'] — the prefixless-dilution
+    lesson: an OCR-lost prefix is the SAME prefix, not a competitor)."""
+    if not rec_p or not rec_p.get('dominant'):
+        return False
+    counts = rec_p.get('counts') or {}
+    dn = counts.get(rec_p.get('dominant'), 0)
+    ext_total = sum(counts.values())
+    return ext_total >= 5 and dn >= 5 and dn >= 0.90 * ext_total
+
+
 def _prefix_confusable_adopt(val, dom):
     """The adopted value (dominant prefix + the read's own suffix), or None when the read's head is
     not a single-confusable neighbour of the dominant. Rules (each a pinned refusal):
@@ -5327,6 +5353,81 @@ class ExtractionEngine:
         except Exception:
             pass   # advisory guard — must never break extraction
 
+    def _page_match_v2(self, page, rv, key, sup, slug):
+        """Gate-C membership v2 (FILING_SANITY_PAGE_MATCH_V2; gary → Oracle S-O-W/C 2026-08-16).
+        True when the page DOES carry the value once the page-pass's OWN error classes are allowed
+        for — called only after the v1 exact-token test said absent. Two legs, in order:
+
+        1. SEPLESS-JOIN membership (no backing needed): strip-all-non-alnum casefold equality of
+           the value against single page tokens AND joins of 2-3 CONSECUTIVE tokens ON THE SAME
+           PAGE LINE (a cross-line join is manufactured adjacency — refused; heals the
+           'SB-ORD7 4238' mid-token split and hyphen/slash retokenisation). EXACT equality only —
+           a clipped 'VXS986' vs printed 'VXS98624' still flags (the clip-catch Gate C ships for).
+           NOTE (Oracle A2): the visual-row rebuild can place separate COLUMNS on one line and no
+           word geometry reaches this site, so a cross-COLUMN join is a residual accepted risk —
+           every join-based suppression is trace-counted ('filing_sanity_v2', leg='join') so the
+           class stays observable.
+        2. BACKED-CONFUSABLE tolerance, PREFIX REGION ONLY: a same-length projection differing by
+           EXACTLY ONE in-class glyph (the casefolded class table; projection KEEPS class symbols
+           — Oracle A1: stripping '$' before the compare made the doc-204 heal impossible), where
+           the diff position sits INSIDE the dominant-prefix region and the SUFFIX region is
+           byte-equal, and the VALUE is independently backed (dominance bars + code_prefix ==
+           dominant). The dominance evidence licenses only the HEAD — a crop suffix misread
+           against a clean page must keep the flag (pinned trade-off). Un-backed values (the
+           PL-class true positives) always keep the flag."""
+        try:
+            _strip_all = lambda s: re.sub(r'[^0-9a-z]+', '', str(s).casefold())
+            _keep = lambda s: ''.join(ch for ch in str(s).casefold()
+                                      if ch.isalnum() or ch in _PREFIX_CLASS_SYMBOLS)
+            sv = _strip_all(rv)
+            if len(sv) < 4:
+                return False                        # too short to judge — keep the v1 verdict
+            kv = _keep(rv)
+            # collect per-line token windows once; both legs walk the same windows
+            windows = []                            # (joined_string, n_tokens)
+            for line in str(page).splitlines():
+                words = [w for w in line.split() if w]
+                for i in range(len(words)):
+                    for j in range(i + 1, min(i + 4, len(words) + 1)):
+                        windows.append((''.join(words[i:j]), j - i))
+            for joined, n in windows:
+                if _strip_all(joined) == sv:
+                    if self._trace:
+                        self._t('filing_sanity_v2', field=key, value=rv,
+                                leg=('join' if n > 1 else 'token'))
+                    self.log(f"  Filing sanity v2: '{rv}' found on the page as a "
+                             f"{'same-line join' if n > 1 else 'token'} — flag withheld")
+                    return True
+            # leg 2 — backed-confusable, prefix region only
+            rec_p = ocr_corrector.lookup_prefix(self.prefix_index, key, sup, slug)
+            if not _prefix_dominant_backed(rec_p):
+                return False
+            dom = str(rec_p.get('dominant'))
+            if ocr_corrector.code_prefix(rv) != dom:
+                return False
+            plen = len(_strip_all(dom))             # dominant is pure alpha — projections agree
+            for joined, n in windows:
+                kt = _keep(joined)
+                if len(kt) != len(kv) or kt == kv:
+                    continue
+                diffs = [(idx, a, b) for idx, (a, b) in enumerate(zip(kv, kt)) if a != b]
+                if len(diffs) != 1:
+                    continue
+                idx, a, b = diffs[0]
+                if idx >= plen:
+                    continue                        # suffix region must be byte-equal — pinned
+                if not _prefix_confusable_class_cf(a, b):
+                    continue
+                if self._trace:
+                    self._t('filing_sanity_v2', field=key, value=rv, leg='confusable',
+                            page_form=joined, dominant=dom)
+                self.log(f"  Filing sanity v2: page carries '{joined}' — a backed one-glyph "
+                         f"({a}/{b}) form of '{rv}' (dominant '{dom}') — flag withheld")
+                return True
+            return False
+        except Exception:
+            return False   # judgment failure keeps the v1 verdict — fail toward the flag
+
     def _flag_filing_value_sanity(self, results, ref_field_key, date_field_keys, ocr_text):
         """FILING_VALUE_SANITY_FLAGS (kill switch, DEFAULT OFF — Chris round 3, 2026-08-09).
 
@@ -5394,7 +5495,21 @@ class ExtractionEngine:
                 rv = str(results[ref_field_key].get('value') or '').strip()
                 if rv and len(rv) >= 4:
                     toks = {t.strip('.,;:()[]{}"\'').casefold() for t in re.split(r'\s+', page)}
-                    if rv.casefold() not in toks:
+                    _absent = rv.casefold() not in toks
+                    # PAGE-MATCH V2 (FILING_SANITY_PAGE_MATCH_V2, DEFAULT OFF, mig-72 seed; gary →
+                    # Oracle S-O-W/C 2026-08-16, blocking condition A1 applied). The v1 exact-token
+                    # test treats the full-page pass as ground truth, but the page pass carries its
+                    # OWN two error classes — a confusable glyph ('P1/26/9910' printed PI…,
+                    # 'VX$22033' printed VXS…) and a mid-token split ('SB-ORD7 4238') — so it
+                    # flagged the CORRECTED, history-backed crop value ~7 times in Chris round 7.
+                    # v2 re-tests absence with (1) sepless same-line joins and (2) a prefix-region
+                    # backed-confusable tolerance; see _page_match_v2. FLAG-ONLY either way.
+                    if _absent and os.environ.get('FILING_SANITY_PAGE_MATCH_V2', '0') != '0':
+                        _absent = not self._page_match_v2(
+                            page, rv, ref_field_key,
+                            str(results.get('_supplier_name') or ''),
+                            str(results.get('_document_slug') or ''))
+                    if _absent:
                         if _note(ref_field_key,
                                  f"'{rv}' doesn't appear on this page as written — please check the "
                                  f"reference before filing."):

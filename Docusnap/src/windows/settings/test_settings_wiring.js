@@ -151,6 +151,10 @@ const BRIDGES = [
   // vacuous raw-witness suppression.
   ['ref-prefix-confusable-adopt-toggle', 'ref_prefix_confusable_adopt', 'REF_PREFIX_CONFUSABLE_ADOPT'],
   ['raw-witness-vacuous-suppress-toggle', 'raw_witness_vacuous_suppress', 'RAW_WITNESS_VACUOUS_SUPPRESS'],
+  // Round-7 card-1/card-3 switches (mig 72, all seeded OFF).
+  ['filing-sanity-page-match-v2-toggle', 'filing_sanity_page_match_v2', 'FILING_SANITY_PAGE_MATCH_V2'],
+  ['vat-reg-symbol-confusable-toggle', 'vat_reg_symbol_confusable', 'VAT_REG_SYMBOL_CONFUSABLE'],
+  ['money-sign-capture-toggle', 'money_sign_capture', 'MONEY_SIGN_CAPTURE'],
 ];
 const handler = (() => {
   try { return fs.readFileSync(path.join(root, 'src/modules/processing/handler.js'), 'utf8'); }

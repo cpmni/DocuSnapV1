@@ -1218,6 +1218,27 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Double-check "not on this page" against how the page was actually read</div>
+                <div class="threshold-sub">Before warning that a reference "doesn't appear on this page as written", also accept the value when the page carries it split across a space ("SB-ORD7 4238"), joined differently, or with one look-alike character in a well-established start ("VX$22033" for VXS22033). A value the page genuinely doesn't carry still warns. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="filing-sanity-page-match-v2-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't let a misread "$" turn a VAT registration number into an amount</div>
+                <div class="threshold-sub">A letterhead line like "VAT Reg No GB 118 5540 63" can scan with the 5 misread as "$" — which used to switch off the very check that stops registration numbers being read as money, letting a "$540" appear in a tax field. With this on, that one misread character is seen through and the registration number is skipped as before. Real prices are untouched. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="vat-reg-symbol-confusable-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Keep the minus sign on credit-note amounts</div>
+                <div class="threshold-sub">A credit note printing "£-428.58" used to have the minus dropped by one of the readers, so the app's own cross-check then claimed the numbers disagreed on a document that was perfectly right. With this on, a minus printed directly against the number is kept. A dash used as a dot-leader or separator is still ignored. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="money-sign-capture-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Read small reference/date print more clearly</div>
                 <div class="threshold-sub">Enlarges a tightly-cropped reference or date before reading it and drops an over-sharpen step, so small print (e.g. “PO-17039” misread as “»0-17039”) reads correctly. Only helps where it can, never changes a read it can't improve. Off by default.</div>
               </div>
