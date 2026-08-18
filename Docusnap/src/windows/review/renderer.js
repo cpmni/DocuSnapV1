@@ -1184,7 +1184,7 @@ function buildQueueItem(doc) {
         </div>
         ${blockerLine}
       </div>
-      ${canEdit ? `<button class="qi-btn danger qi-delete" title="Delete document" aria-label="Delete document" style="flex-shrink:0; padding:2px 7px; font-size:13px;">&#215;</button>` : ''}
+      ${canEdit ? `<button class="qi-btn danger qi-delete" title="Delete this row's document" aria-label="Delete this row's document" style="flex-shrink:0; padding:2px 7px; font-size:13px;">&#215;</button>` : ''}
     </div>
   `;
   if (window.Thumbs) window.Thumbs.lazy(el.querySelector('.qi-thumb'), doc);
@@ -1232,7 +1232,7 @@ function renderDeferredList() {
         </div>
         <div style="display:flex; gap:3px; flex-shrink:0;" onclick="event.stopPropagation()">
           <button class="qi-btn qi-review-now" title="Move back to review queue" style="padding:2px 6px; font-size:10px;">Review</button>
-          <button class="qi-btn danger qi-delete" title="Delete" style="padding:2px 7px; font-size:13px;">&#215;</button>
+          <button class="qi-btn danger qi-delete" title="Delete this row's document" aria-label="Delete this row's document" style="padding:2px 7px; font-size:13px;">&#215;</button>
         </div>
       </div>
     `;
@@ -1252,7 +1252,12 @@ function renderDeferredList() {
     });
     el.querySelector('.qi-delete').addEventListener('click', async (e) => {
       e.stopPropagation();
-      if (!confirm(`Delete "${doc.original_filename}"?\n\nIt goes to the app's recycle bin — you can restore it from Search.`)) return;
+      // Same mismatch-aware copy as deleteFromQueue (Chris round-8 card 1) — a deferred row's ×
+      // deletes that row's doc, which need not be the one open on the right.
+      const _other = (currentDoc && currentDoc.id !== doc.id)
+        ? `\n\nNote: this is the document in the row you clicked — NOT "${currentDoc.original_filename}", the document open on the right.`
+        : '';
+      if (!confirm(`Delete "${doc.original_filename}"?${_other}\n\nIt goes to the app's recycle bin — you can restore it from Search.`)) return;
       const filePath = doc.folder_path ? `${doc.folder_path}\\${doc.original_filename}` : null;
       await window.docusnap.deleteDocument(doc.id, filePath);
       deferredQueue = deferredQueue.filter(d => d.id !== doc.id);
@@ -5733,7 +5738,15 @@ document.getElementById('btn-delete').addEventListener('click', async () => {
 // server-side). Reuses the same delete flow as the action-bar Delete button.
 async function deleteFromQueue(doc) {
   if (!doc) return;
-  if (!confirm(`Delete "${doc.original_filename}"?\n\nIt goes to the app's recycle bin — you can restore it from Search.`)) return;
+  // MISMATCH-AWARE dialog (Chris round-8 card 1). A row's × legitimately deletes THAT row's
+  // document — which need not be the one open on the right. All three delete surfaces used to
+  // share identical copy, so neither an operator nor a test driver could tell WHICH delete they
+  // had triggered, and a pattern-reading user one habit-click past the dialog bins the wrong
+  // file. When the row's doc differs from the open doc, the dialog now says so explicitly.
+  const _other = (currentDoc && currentDoc.id !== doc.id)
+    ? `\n\nNote: this is the document in the row you clicked — NOT "${currentDoc.original_filename}", the document open on the right.`
+    : '';
+  if (!confirm(`Delete "${doc.original_filename}"?${_other}\n\nIt goes to the app's recycle bin — you can restore it from Search.`)) return;
   const filePath = doc.folder_path ? `${doc.folder_path}\\${doc.original_filename}` : null;
   await window.docusnap.deleteDocument(doc.id, filePath);
   queue         = queue.filter(d => d.id !== doc.id);
