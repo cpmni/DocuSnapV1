@@ -452,6 +452,55 @@ function register(ctx) {
     return out;
   });
 
+  // ── PER-SENDER READINESS (owner design, 2026-08-18) ────────────────────────────────────────
+  // "These senders are nearly ready to file themselves — clear these and you're good to go."
+  // The unit of progress in this app is the SENDER, not the document: what gates a queued
+  // document is almost always how many documents from that sender have been confirmed (a learned
+  // format stays provisional, and invisible to the filing gate, below learning.FORMAT_SOLID_MIN),
+  // yet the queue only ever counted documents. This returns, for every (sender, type) scope with
+  // documents still queued, how many confirms it has and how many it needs — so Review can put a
+  // finish line on each sender instead of leaving the customer to infer one.
+  //
+  // Read-only and advisory: nothing here gates filing (trust.js remains the sole predicate) and
+  // no value is written. Deliberately reports FACTS about the app's own state, never a task list
+  // — a visible "you owe 3 more confirms" meter invites careless confirming to hit the number,
+  // which poisons the very learning the number describes (barry + Chris, independently).
+  ipcMain.handle('get-scope-readiness', () => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const trust = require('../../../database/modules/trust');
+    const need = require('../../../database/modules/learning').FORMAT_SOLID_MIN;
+    const rows = db.prepare(`
+      SELECT d.supplier_name AS supplier, dt.slug AS slug, dt.name AS typeName, COUNT(*) AS queued
+        FROM documents d JOIN document_types dt ON dt.id = d.document_type_id
+       WHERE d.status = 'needs_review' AND TRIM(COALESCE(d.supplier_name, '')) <> ''
+       GROUP BY 1, 2`).all();
+    // COUNT WHAT THE GATE COUNTS, not what looks obvious. A raw confirmed-DOCUMENT count is the
+    // wrong number and produced a header that lied on the owner's own install: his Meadowvale
+    // scope had 3 confirmed documents but only 2 of them carry an issuer value, because a TAUGHT
+    // document is committed with few or no extraction rows (measured 2026-08-18: 9 of 10 taught
+    // documents have no supplier_name row at all). The gate verifies against the learned FORMAT
+    // group, whose `confirmed_count` is built from documents that actually carry a value — so
+    // that is the number both the promise and the countdown must use.
+    const learning = require('../../../database/modules/learning');
+    const solid = new Set((learning.getFieldFormats(db) || [])
+      .filter(f => f.field_key === 'supplier_name' && String(f.supplier_name || '').trim())
+      .map(f => `${String(f.supplier_name).toLowerCase().trim()}|${String(f.document_type || '').toLowerCase().trim()}`));
+    const counts = new Map((learning.getFieldFormats(db, { includeProvisional: true }) || [])
+      .filter(f => f.field_key === 'supplier_name' && String(f.supplier_name || '').trim())
+      .map(f => [`${String(f.supplier_name).toLowerCase().trim()}|${String(f.document_type || '').toLowerCase().trim()}`,
+                 Number(f.confirmed_count) || 0]));
+    return rows.map(r => {
+      const key = `${String(r.supplier).toLowerCase().trim()}|${String(r.slug).toLowerCase().trim()}`;
+      let graduated = false;
+      try { graduated = !!(trust.scopeTrust(db, r.supplier, r.slug) || {}).trusted; } catch {}
+      const hasFormat = solid.has(key);
+      return { supplier: r.supplier, slug: r.slug, typeName: r.typeName, queued: r.queued,
+               confirms: counts.get(key) || 0, needed: need, graduated, hasFormat,
+               ready: graduated || hasFormat };
+    });
+  });
+
   // Graduation roster + per-supplier opt-out (Slice 5 UX — the "Suppliers handled automatically"
   // controls). Admin/edit gated like the rest of the review admin surface.
   ipcMain.handle('get-graduated-suppliers', () => {

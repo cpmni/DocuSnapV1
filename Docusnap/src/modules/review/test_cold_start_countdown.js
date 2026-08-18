@@ -100,5 +100,56 @@ console.log('5. the stale layout note is reported as its own class (owner-found 
         /server count is only the pre-load placeholder/.test(r));
 }
 
+console.log('6. the per-sender finish line counts what the GATE counts, not what looks obvious');
+{
+  // THE TRAP THIS PINS (measured on the owner's install, 2026-08-18): his Meadowvale scope had
+  // THREE confirmed documents but only TWO carrying an issuer value — because a TAUGHT document
+  // is committed with few or no extraction rows (9 of 10 taught docs had no supplier_name row).
+  // A header counting confirmed DOCUMENTS therefore announced "files by itself" while the gate
+  // still refused every one of the 18 queued. The readiness must be derived from the learned
+  // FORMAT group, whose confirmed_count only counts documents that actually carry a value.
+  const db = new Database(':memory:');
+  runMigrations(db);
+  db.prepare("INSERT INTO document_types (id, name, slug, built_in) VALUES (2,'Credit Note','credit_note',0)").run();
+  db.prepare("INSERT INTO fields (document_type_id, key, label, type, required, built_in) VALUES (2,'supplier_name','Document Issuer','text',1,1)").run();
+  const mk = (name, withIssuer) => {
+    const r = db.prepare(`INSERT INTO documents (document_type_id, original_filename, folder_path, status, supplier_name, overall_confidence)
+                          VALUES (2, ?, '/in', 'confirmed', 'Meadowvale Dairy Wholesale', 93)`).run(name);
+    if (withIssuer) db.prepare(`INSERT INTO extractions (document_id, field_key, raw_value, display_value, confidence, extraction_method)
+       VALUES (?, 'supplier_name', 'Meadowvale Dairy Wholesale', 'Meadowvale Dairy Wholesale', 95, 'template_fixed')`).run(r.lastInsertRowid);
+  };
+  mk('taught.pdf', false);          // the teach document — carries no issuer row
+  mk('a.pdf', true); mk('b.pdf', true);
+  const grp = (learning.getFieldFormats(db, { includeProvisional: true }) || [])
+    .find(f => f.field_key === 'supplier_name' && String(f.supplier_name || '').trim());
+  check('3 confirmed documents, but the format group counts only the 2 that carry a value',
+        db.prepare("SELECT COUNT(*) n FROM documents WHERE status='confirmed'").get().n === 3
+        && Number(grp && grp.confirmed_count) === 2);
+  check('...so the scope is NOT ready, exactly as the gate sees it',
+        !(learning.getFieldFormats(db) || []).some(f => f.field_key === 'supplier_name' && String(f.supplier_name || '').trim()));
+  db.close();
+
+  const h = fs.readFileSync(path.join(REPO, 'src', 'modules', 'review', 'handler.js'), 'utf8');
+  check('the IPC derives readiness from the learned format, never a raw document count',
+        /const solid = new Set\(\(learning\.getFieldFormats\(db\) \|\| \[\]\)/.test(h)
+        && /ready: graduated \|\| hasFormat/.test(h));
+  check('...and reports the format group\'s own confirmed_count as the progress number',
+        /confirms: counts\.get\(key\) \|\| 0/.test(h));
+  const r = fs.readFileSync(path.join(REPO, 'src', 'windows', 'review', 'renderer.js'), 'utf8');
+  // Inspect the RENDERED strings, not the comments (the design note deliberately quotes the
+  // banned phrasing as the thing to avoid, and tripped an earlier version of this pin).
+  {
+    const rendered = r.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+    check('the label states a fact about the app, never a quota owed by the operator',
+          /files by itself/.test(rendered) && !/you owe|must confirm \d/.test(rendered));
+  }
+  check('a sender queued under several types names the type instead of averaging them',
+        /mine\.length > 1 && r\.typeName/.test(r));
+  check('the finish line refreshes after every confirm (a static countdown reads as "nothing counted")',
+        /refreshScopeReadiness\(\)\.then\(\(\) => renderQueueList\(\)\)/.test(r));
+  check('renders NOTHING when the data is absent rather than guessing',
+        /if \(!Array\.isArray\(_scopeReadiness\)\) return '';/.test(r));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

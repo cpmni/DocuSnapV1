@@ -204,6 +204,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   reprocessAutocommitAccept:   ()        => ipcRenderer.invoke('reprocess-autocommit-accept'),
   getAutoFileReason:           (docId)   => ipcRenderer.invoke('get-auto-file-reason', docId),
   getGraduatedSuppliers:       ()        => ipcRenderer.invoke('get-graduated-suppliers'),
+  getScopeReadiness:           ()        => ipcRenderer.invoke('get-scope-readiness'),
   setGraduationOptout:         (p)       => ipcRenderer.invoke('set-graduation-optout', p),
   getFieldValueHistory:        (scope)   => ipcRenderer.invoke('get-field-value-history', scope),
   getDocumentsForFieldValue:   (scope)   => ipcRenderer.invoke('get-documents-for-field-value', scope),

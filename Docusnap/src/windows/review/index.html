@@ -119,6 +119,13 @@
     .queue-group-head .qgh-meta { font-size: 10px; color: var(--muted);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .queue-group-head .qgh-attn { color: var(--warn); font-weight: 600; }
+    /* Per-sender finish line (2026-08-18). Its own line UNDER the counts, quieter than the
+       attention count — it is a fact about the app's state, not a demand on the operator, and it
+       must never out-shout "N need a look". */
+    .queue-group-head .qgh-ready { display: block; font-size: 10px; margin-top: 1px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .queue-group-head .qgh-ready.done { color: var(--ok); }
+    .queue-group-head .qgh-ready.near { color: var(--muted); }
     #queue-scroll-rail {
       flex-shrink: 0; width: 42px; display: flex; flex-direction: column;
       align-items: center; justify-content: flex-start; gap: 10px;

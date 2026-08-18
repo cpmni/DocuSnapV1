@@ -451,6 +451,9 @@ async function loadQueue() {
   populateTypeDropdown();
   updateTabCounts();
   renderQueueList();
+  // Per-sender finish line: fetch once, then re-render the list so each sender header carries it.
+  // Deliberately AFTER the first paint — the queue must never wait on an advisory number.
+  refreshScopeReadiness().then(() => { if (Array.isArray(_scopeReadiness)) renderQueueList(); }).catch(() => {});
   refreshAutoCommittedBar();   // surface recently auto-filed docs for re-checking (independent of the selection below)
 
   // Reconnect to a "Reprocess All" that Review was closed during. If it's STILL running, show
@@ -1048,12 +1051,14 @@ function renderQueueList() {
       head.className = 'queue-group-head' + (open ? ' open' : '');
       const attn = g.need ? ` · <span class="qgh-attn">${g.need} need${g.need > 1 ? '' : 's'} a look</span>` : '';
       const title = groupTitle(g.supplier, groups.length);   // '—' pile → readable copy; the expand/nav KEY stays g.supplier
+      const ready = _senderReadinessLabel(g.supplier);       // the finish line for this sender (advisory)
       // Name ABOVE the counts (Chris finding 3): side by side, the counts never shrank and the
       // sender name collapsed to one character. See the .qgh-text block in index.html.
       head.innerHTML = `<span class="qgh-caret" aria-hidden="true"></span>`
                      + `<span class="qgh-text">`
                      +   `<span class="qgh-name" title="${escHtml(title)}">${escHtml(title)}</span>`
                      +   `<span class="qgh-meta">${g.docs.length} document${g.docs.length > 1 ? 's' : ''}${attn}</span>`
+                     +   ready
                      + `</span>`;
       head.setAttribute('role', 'button');
       head.setAttribute('aria-expanded', open ? 'true' : 'false');
@@ -1068,6 +1073,49 @@ function renderQueueList() {
   } else {
     for (const doc of _sweepVisibleQueue()) list.appendChild(buildQueueItem(doc));
   }
+}
+
+// ── PER-SENDER FINISH LINE (owner design, 2026-08-18) ────────────────────────────────────────
+// The queue counted documents; what actually gates them is the SENDER. A sender whose scope has
+// enough confirmed documents files the rest by itself — so say which senders are nearly there,
+// and which already are, on the group header where the customer is already looking.
+//
+// Rules of the copy, learned the hard way in this project:
+//   • report a FACT about the app ("files by itself from now on"), never assign homework
+//     ("you owe 3 more") — a visible quota invites careless confirming to hit the number, which
+//     poisons the learning it measures (barry + Chris, independently);
+//   • never claim a finish line we cannot keep: a sender queued under SEVERAL document types has
+//     one countdown per type, so we name the type when they disagree rather than average them;
+//   • advisory only — `trust.js` remains the sole filing predicate. If the data hasn't loaded, or
+//     anything is unclear, we render NOTHING rather than a guess.
+let _scopeReadiness = null;          // [{supplier, slug, typeName, confirms, needed, graduated, ready}]
+
+async function refreshScopeReadiness() {
+  try { _scopeReadiness = (await window.docusnap.getScopeReadiness?.()) || null; }
+  catch { _scopeReadiness = null; }
+}
+
+function _senderReadinessLabel(supplier) {
+  if (!Array.isArray(_scopeReadiness)) return '';
+  const norm = s => String(s || '').trim().toLowerCase();
+  const mine = _scopeReadiness.filter(r => norm(r.supplier) === norm(supplier));
+  if (!mine.length) return '';
+  const pending = mine.filter(r => !r.ready);
+  if (!pending.length) {
+    return `<span class="qgh-ready done" title="Documents from this sender that read cleanly can file themselves — you'll still see anything that needs a look.">`
+         + `✓ files by itself</span>`;
+  }
+  // One countdown per (sender, type). Name the type only when this sender has more than one
+  // pending — otherwise the sender's own name is context enough.
+  const bits = pending
+    .map(r => ({ ...r, left: Math.max(1, (r.needed || 0) - (r.confirms || 0)) }))
+    .sort((a, b) => a.left - b.left)
+    .map(r => (mine.length > 1 && r.typeName)
+      ? `${r.left} more ${escHtml(r.typeName).toLowerCase()}`
+      : `${r.left} more`);
+  const label = bits.length === 1 ? `${bits[0]} to file by itself` : `${bits.join(' · ')} to file by themselves`;
+  return `<span class="qgh-ready near" title="Once this sender has enough confirmed documents, the rest that read cleanly file themselves. Confirming these counts towards that.">`
+       + `${label}</span>`;
 }
 
 // Catch-up "Review them" filter: when armed, the queue list (grouped AND flat — both paths
@@ -5147,6 +5195,9 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
   if (r.error) { showToast(r.error, 'err'); return; }
   updateTabCounts();
   advanceAfterAction(idx, supplier);
+  // The finish line must MOVE as the operator works — a countdown that only updates on reopen is
+  // worse than none (it reads as "nothing I did counted"). One cheap read-only call per confirm.
+  refreshScopeReadiness().then(() => renderQueueList()).catch(() => {});
   _scheduleScopeSweep(_sweepSupplier, _sweepSlug);   // consent-gated catch-up offer (dark unless enabled)
   // FOCUS (eric, 2026-07-10): Confirm & File can desync the RenderWidget's keyboard
   // focus (post-confirm teardown/rebuild of the sidebar + fields pane, snappier since
