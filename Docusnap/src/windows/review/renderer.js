@@ -5518,28 +5518,73 @@ function _sweepReason(r) {
 }
 const _sweepScopeKey = (s, t) => `${String(s || '').trim().toLowerCase()}|${String(t || '').toLowerCase()}`;
 
-function _scheduleScopeSweep(supplier, typeSlug) {
-  const sup = String(supplier || '').trim(), slug = String(typeSlug || '').trim();
-  if (!sup || !slug) return;
-  if (_sweepDismissed.has(_sweepScopeKey(sup, slug))) return;
-  clearTimeout(_sweepTimer);
-  _sweepTimer = setTimeout(async () => {
-    if (bulkFiling || _batchActive) return;
-    let res = null;
-    try { res = await window.docusnap.sweepScopeCandidates?.(sup, slug); } catch { return; }
-    if (!res || !res.ok || !Array.isArray(res.candidates) || res.candidates.length < 2) return;
-    if (_sweepDismissed.has(_sweepScopeKey(sup, slug))) return;
-    const byId = new Map(queue.map(d => [d.id, d]));
-    _sweepState = {
-      phase: 'offer', supplier: sup, typeSlug: slug,
-      candidates: res.candidates.filter(c => byId.has(c.docId))
-        .map(c => ({ ...c, filename: byId.get(c.docId)?.original_filename || `#${c.docId}` })),
-      excluded: res.excluded || [], unticked: new Set(), listOpen: false,
-    };
-    if (_sweepState.candidates.length < 2) { _sweepState = null; return; }
-    renderSweepConsentBar();
-  }, 2500);
+// QUEUE-WIDE, TIER-1 ONLY (gary → Oracle, 2026-08-18). The per-scope sweep only ever looked at the
+// sender just confirmed, so on a ten-sender batch nine senders went unswept — and a confirm that
+// unlocked a DIFFERENT sender's documents (they share a learned corpus) went unnoticed until the
+// customer reached for Reprocess All. This asks the whole queue at once, on stored rows only.
+//
+// gary's three trigger defects, all fixed here:
+//   • ONE shared `_sweepTimer` was cleared on every schedule, so confirming two senders inside the
+//     debounce silently cancelled the first sweep — on a ten-sender queue that lost most triggers.
+//     A queue-wide pass has nothing to race: one timer is now correct rather than lossy.
+//   • `candidates.length < 2` discarded a single liftable document with no trace. One document
+//     ready to file is worth saying so.
+//   • `_sweepDismissed` was permanent for the session. Oracle: auto-resurrecting a dismissed bar is
+//     nagware, so the dismissal STANDS — but it is now re-summonable by hand (see the rail button),
+//     which also makes the whole feature discoverable instead of ambush-triggered.
+let _sweepQueueDismissed = false;           // "Not now" on the queue-wide offer (session)
+
+async function _runQueueSweep({ manual = false } = {}) {
+  if (bulkFiling || _batchActive) return false;
+  if (!manual && _sweepQueueDismissed) return false;
+  let res = null;
+  try { res = await window.docusnap.sweepQueueCandidates?.(); } catch { return false; }
+  if (!res || !res.ok || !Array.isArray(res.scopes) || !res.scopes.length) {
+    // SAY THE NEGATIVE RESULT OUT LOUD (Chris): silence after a confirm is ambiguous between
+    // "checked, nothing changed" and "didn't check" — and that ambiguity is exactly what sends
+    // people back to Reprocess All. Only on an explicit ask, so it never becomes chatter.
+    if (manual) showToast('Checked everything still waiting — nothing new is ready to file yet.', 'info');
+    return false;
+  }
+  const byId = new Map(queue.map(d => [d.id, d]));
+  // The offer is per-scope server-side (accept/undo are scope-keyed); present the LARGEST first.
+  const g = res.scopes.slice().sort((a, b) => b.candidates.length - a.candidates.length)[0];
+  const others = res.scopes.length - 1;
+  _sweepState = {
+    phase: 'offer', supplier: g.supplier, typeSlug: g.typeSlug,
+    candidates: g.candidates.filter(c => byId.has(c.docId))
+      .map(c => ({ ...c, filename: byId.get(c.docId)?.original_filename || `#${c.docId}` })),
+    excluded: [], unticked: new Set(), listOpen: false,
+    otherScopes: others > 0 ? others : 0,
+  };
+  if (!_sweepState.candidates.length) { _sweepState = null; return false; }
+  renderSweepConsentBar();
+  return true;
 }
+
+function _scheduleScopeSweep(supplier, typeSlug) {
+  // The scope arguments are now advisory — a confirm can unlock ANY sender, so the sweep asks the
+  // whole queue. Kept in the signature so every existing call site works unchanged.
+  clearTimeout(_sweepTimer);
+  _sweepTimer = setTimeout(() => { _runQueueSweep().catch(() => {}); }, 2500);
+}
+
+// The manual re-summon (Oracle C11). Shown only when the sweep is enabled — a button that always
+// answers "nothing to do" on an install where the feature is off would be a lie of omission.
+(async () => {
+  const btn = document.getElementById('btn-sweep-check');
+  if (!btn) return;
+  try {
+    const on = await window.docusnap.getSetting?.('scope_sweep_enabled');
+    if (String(on) !== 'true') return;                    // stays hidden while the feature is dark
+  } catch { return; }
+  btn.style.display = '';
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try { await _runQueueSweep({ manual: true }); }       // manual: says so even when the answer is "nothing"
+    finally { btn.disabled = false; }
+  });
+})();
 
 function renderSweepConsentBar() {
   const bar = document.getElementById('sweep-consent-bar');
@@ -5559,10 +5604,19 @@ function renderSweepConsentBar() {
     const rows = s.listOpen ? `<div class="scb-list">` + s.candidates.map(c =>
         `<div class="scb-row"><input type="checkbox" data-scb-doc="${c.docId}" ${s.unticked.has(c.docId) ? '' : 'checked'}>`
       + `<label title="${escHtml(c.filename)}">${escHtml(c.filename)}</label></div>`).join('') + `</div>` : '';
+    // HONEST REACH (Oracle C10). The old sentence — "match what you've confirmed" — was written when
+    // the sweep only ever looked at the sender just confirmed. Queue-wide it would be FALSE for a
+    // sender the operator never touched, and an untrue sentence on a bulk-filing button is the one
+    // thing that must never ship. Say what was actually checked, and name the other senders rather
+    // than implying this is all of them.
+    const otherLine = s.otherScopes
+      ? `<div class="scb-muted">${s.otherScopes} other sender${s.otherScopes === 1 ? ' is' : 's are'} also ready — `
+        + `file these first and the next offer follows.</div>`
+      : '';
     bar.innerHTML =
-        `<b>${n}</b> more <b>${escHtml(s.supplier)}</b> ${escHtml(typeName)} document${n === 1 ? '' : 's'} `
-      + `match what you've confirmed and pass the same checks.`
-      + heldLine + rows
+        `<b>${n}</b> <b>${escHtml(s.supplier)}</b> ${escHtml(typeName)} document${n === 1 ? '' : 's'} `
+      + `already read cleanly and now pass every check — nothing was re-read.`
+      + heldLine + otherLine + rows
       + `<div class="scb-actions">`
       + `<button class="scb-btn primary" data-scb="file" ${n === 0 || s.phase === 'filing' ? 'disabled' : ''}>`
       + (s.phase === 'filing' ? 'Filing…' : `✓ File ${n}`) + `</button>`
@@ -5599,7 +5653,10 @@ document.getElementById('sweep-consent-bar')?.addEventListener('click', async (e
   const act = e.target.closest('[data-scb]')?.dataset.scb;
   if (!act) return;
   if (act === 'toggle') { s.listOpen = !s.listOpen; renderSweepConsentBar(); return; }
-  if (act === 'later')  { _sweepDismissed.add(_sweepScopeKey(s.supplier, s.typeSlug)); _sweepState = null; renderSweepConsentBar(); return; }
+  // "Not now" STANDS for the session (Oracle C11: auto-resurrecting a dismissed bar is nagware) —
+  // the rail's "Check what's ready to file" button is the way back, which also makes the whole
+  // feature discoverable instead of only ever appearing unbidden.
+  if (act === 'later')  { _sweepQueueDismissed = true; _sweepDismissed.add(_sweepScopeKey(s.supplier, s.typeSlug)); _sweepState = null; renderSweepConsentBar(); return; }
   if (act === 'review') {
     _sweepFilterIds = _sweepFilterIds ? null : new Set(s.candidates.map(c => c.docId));
     renderQueueList();

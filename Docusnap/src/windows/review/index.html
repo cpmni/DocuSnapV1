@@ -838,6 +838,12 @@
           <div class="rail-divider rail-divider-clear"></div>
           <!-- Document tools (compact icon triggers; wide controls open as rail-anchored flyouts) -->
           <div class="rail-group rail-tools-group">
+            <!-- Ask the app to re-check what is already read (Oracle C11 — the way back after a
+                 "Not now", and what makes the free re-check discoverable rather than unbidden).
+                 It re-asks the filing gate against values already in the database: no page is
+                 re-read, which is what separates it from Reprocess. Hidden unless the sweep is on. -->
+            <button class="queue-tool-btn" id="btn-sweep-check" style="display:none;"
+                    title="Check what's ready to file — re-checks documents already read, without re-reading any pages">&#10227;</button>
             <button class="queue-tool-btn" id="btn-split-pdf" style="display:none;" title="Split PDF…" data-help-key="split">&#9986;</button>
             <button class="queue-tool-btn" id="btn-anchor-wizard" style="display:none;" title="Template Wizard — fine-tune a layout, pin fields precisely (admin)" data-help-key="anchor-wizard">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:17px;height:17px;">

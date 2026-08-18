@@ -2995,7 +2995,6 @@ function register(ctx) {
     const roleKeys = new Set(['supplier_name', dtRow.ref_field_key, dtRow.date_field_key].filter(Boolean));
 
     // Candidates: still-queued docs of the scope, no workflow lock, capped (~25 by design).
-    const SWEEP_CAP = 25;
     const docs = db.prepare(`
       SELECT d.* FROM documents d
        WHERE d.status = 'needs_review' AND d.document_type_id = ?
@@ -3017,9 +3016,13 @@ function register(ctx) {
     } finally {
       cleanupFiles(ctx.tempFiles);
     }
-    // Consent-trail (design audit): an OFFER only exists at the renderer's ≥2 threshold — log it
-    // here (server-side, same threshold) so the consent flow is reconstructable end-to-end.
-    if (candidates.length >= 2) {
+    // Consent-trail. Oracle C8/C9: RECORD the offer server-side (the accept may only file what is
+    // in it), and log it UNCONDITIONALLY — the old `>= 2` audit gate mirrored a renderer display
+    // threshold, so a single-document offer could be accepted with no `scope_sweep_offered` row to
+    // pair against the `scope_sweep_accepted` one. What the renderer chooses to DISPLAY is a
+    // display decision; what the server OFFERED is a fact, and the audit records facts.
+    _sweepOffers.set(_sweepOfferKey(sup, slug), new Set(candidates.map(c => c.docId)));
+    if (candidates.length) {
       try {
         logAudit(db, { action: 'scope_sweep_offered', target_type: 'scope', outcome: 'offered',
           metadata: { supplier: sup, type_slug: slug,
@@ -3031,9 +3034,101 @@ function register(ctx) {
              candidates, excluded, evaluated: candidates.length + excluded.length };
   });
 
+  // ── QUEUE-WIDE TIER-1 RE-ASK (gary design → Oracle SIGN-OFF-W/COND, 2026-08-18) ─────────────
+  // THE PROBLEM IT SOLVES, in the owner's words: "I don't see the point in having to Reprocess All
+  // when the taught document is already confirmed. If I confirm one or two, can we take the
+  // EXISTING reads from the other docs and check them against the database?" Proven live the same
+  // day: one further confirm made 17 already-correct documents eligible — and only a Reprocess All
+  // (three minutes of re-reading pages that produced identical answers) made the app NOTICE.
+  //
+  // Tier 1 IS that check, and it costs a sub-second database pass: `trust.autoFileEligibleIds` —
+  // the SAME primitive the DEFAULT-ON post-reprocess consent bar already uses — re-asks the one
+  // shared predicate against the STORED rows with live scope trust and live learned formats. No
+  // OCR, no page render, no re-extract, no new decision logic.
+  //
+  // THE DISTINCTION FROM THE 2026-08-12 SCAR, stated here because "queue-wide sweep REMOVED, no
+  // restore door" is on the record: what was banned is a silent queue-wide COMMIT attributed as a
+  // HUMAN confirm (the renderer's autoCommitFullConfidence filed 101 docs across six suppliers,
+  // inflating the graduation window). THIS is queue-wide EVALUATION: read-only, server-owned
+  // offer, per-doc untick, machine `confirmed_via` excluded from the human graduation window, and
+  // Undo-all live. Evaluation is not commit — but the accept below is the only writer, and it may
+  // only file what this offer recorded.
+  //
+  // Scope-grouped so the existing per-scope accept/undo work unchanged. Tier 1 ONLY: no spawn, so
+  // it is safe to run eagerly after a confirm; Tier 2 stays request-only and is held.
+  ipcMain.handle('sweep-queue-candidates', () => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    if (process.env.SCOPE_SWEEP === '0') return { ok: false, reason: 'disabled' };
+    const learning = require('../../../database/modules/learning');
+    if (!(process.env.SCOPE_SWEEP === '1'
+          || learning.getSetting(db, 'scope_sweep_enabled', 'false') === 'true')) return { ok: false, reason: 'disabled' };
+    const licenseDenial = require('../licensing/handler').licenseDenied(db);
+    if (licenseDenial) return { ok: false, reason: 'license' };
+    if (_anyProcessingBusy()) return { ok: false, reason: 'busy' };   // never mid-batch
+
+    const trust = require('../../../database/modules/trust');
+    const { extractionsFingerprint } = require('../../services/sweepPredicate');
+    const presence = require('../../services/presenceService').shared();
+    // A blank-supplier doc is excluded EXPLICITLY, not by luck: the per-scope SQL happened to omit
+    // it, and `scopeTrust` would refuse it anyway ('no-supplier') — but the queue-wide SELECT must
+    // not rely on a coincidence (Oracle).
+    const rows = db.prepare(`
+      SELECT d.* FROM documents d
+       WHERE d.status = 'needs_review'
+         AND TRIM(COALESCE(d.supplier_name, '')) <> ''
+         AND COALESCE(d.workflow_status, '') NOT IN ('pending', 'claimed')
+       ORDER BY d.id LIMIT 500`).all()
+      .filter(d => !presence.viewers(d.id).length);          // never sweep a doc someone has open
+    if (!rows.length) return { ok: true, scopes: [], evaluated: 0 };
+
+    const eligibleIds = new Set(trust.autoFileEligibleIds(db, rows) || []);   // ONE formats scan
+    const fpStmt = db.prepare('SELECT * FROM extractions WHERE document_id = ?');
+    const byScope = new Map();
+    for (const d of rows) {
+      if (!eligibleIds.has(d.id)) continue;
+      const dt = db.prepare('SELECT slug, name FROM document_types WHERE id = ?').get(d.document_type_id);
+      if (!dt || !dt.slug) continue;
+      const key = _sweepOfferKey(d.supplier_name, dt.slug);
+      if (!byScope.has(key)) {
+        byScope.set(key, { supplier: String(d.supplier_name).trim(), typeSlug: dt.slug,
+                           typeName: dt.name, candidates: [] });
+      }
+      const g = byScope.get(key);
+      if (g.candidates.length >= SWEEP_CAP) continue;        // the cap the accept enforces too
+      g.candidates.push({ docId: d.id, tier: 1, fingerprint: extractionsFingerprint(fpStmt.all(d.id)) });
+    }
+    const scopes = [...byScope.values()].filter(g => g.candidates.length);
+    for (const g of scopes) {
+      _sweepOffers.set(_sweepOfferKey(g.supplier, g.typeSlug), new Set(g.candidates.map(c => c.docId)));
+      try {
+        logAudit(db, { action: 'scope_sweep_offered', target_type: 'scope', outcome: 'offered',
+          metadata: { supplier: g.supplier, type_slug: g.typeSlug, queue_wide: true,
+                      doc_ids: g.candidates.map(c => c.docId).join(','),
+                      tiers: g.candidates.map(() => 1).join(',') } });
+      } catch { /* audit is best-effort */ }
+    }
+    return { ok: true, scopes, evaluated: rows.length };
+  });
+
   // One doc's sweep evaluation (candidates IPC + the accept path's server-side RE-CHECK share
   // this — the design's "accept re-runs the gate server-side" is literally the same code).
   // ctx carries hoisted trainingArgs/tempFiles across a loop; caller owns cleanupFiles.
+  // SERVER-REMEMBERED SWEEP OFFER (Oracle C8, BLOCKING, 2026-08-18). The shipped precedent for a
+  // machine-filing consent bar is `_reprocessOffer`: a PAYLOAD-LESS accept against an offer the
+  // SERVER recorded, so "a renderer can accept or ignore the offer, never widen it" (Oracle C1 of
+  // the 2026-08-12 sign-off). `sweep-scope-accept` instead took a renderer-supplied docId list.
+  // The per-doc re-check meant it could not file something INELIGIBLE — but it could file a
+  // document that was never OFFERED, producing an `scope_sweep_accepted` audit row with no
+  // matching `scope_sweep_offered`. Queue-wide, that gap is how "the machine filed something I
+  // never saw" becomes unprovable in either direction. Keyed by scope; replaced on each new offer.
+  const _sweepOffers = new Map();          // 'supplier|slug' -> Set(docId)
+  const _sweepOfferKey = (sup, slug) => `${String(sup || '').trim().toLowerCase()}|${String(slug || '').trim().toLowerCase()}`;
+  // ONE cap for the offer AND the accept (Oracle C10): they were separate literals, so a bar
+  // offering more than the accept can file would silently file a subset — "File 184" filing 25 is
+  // worse than no button. Pinned.
+  const SWEEP_CAP = 25;
+
   async function _evaluateSweepDoc(db, doc, roleKeys, ctx) {
     const trust = require('../../../database/modules/trust');
     const { evaluateSweepConsistency, extractionsFingerprint } = require('../../services/sweepPredicate');
@@ -3045,6 +3140,18 @@ function register(ctx) {
     // Tier 1 — stored rows pass the live gate as-is.
     const t1 = trust.isAutoFileEligible(db, doc);
     if (t1.eligible) return { candidate: { docId: doc.id, tier: 1, fingerprint } };
+
+    // TIER-1-ONLY (Oracle C7, BLOCKING, 2026-08-18). The queue-wide offer is Tier 1 by
+    // construction — it re-asks the SAME predicate on the SAME stored rows, which is why it
+    // satisfies the governing invariant: *the sweep may only file what the import path would
+    // itself have filed, had today's learning existed at import time*. Tier 2 does NOT satisfy it
+    // (it substitutes a fresh, imageless-degraded doc-level confidence, and is structurally
+    // near-inert on taught layouts because Stage 0.5 needs pixels), so it is deliberately HELD.
+    // Without this early return the ACCEPT path silently promoted a doc that passed Tier 1 at
+    // offer time and lost eligibility before accept (a correction landed, graduation revoked)
+    // into the very tier we are holding — and filed it. A "Tier 1 only" feature whose accept can
+    // spawn Tier 2 is mislabelled.
+    if (ctx && ctx.tier1Only) return { excluded: { docId: doc.id, reason: t1.reason || 'not-eligible' } };
 
     // Tier 2 — imageless re-extract consistency + the gate re-asked on the overlay.
     if (!ctx.trainingArgs) {
@@ -3107,15 +3214,22 @@ function register(ctx) {
     const roleKeys = new Set(['supplier_name', dtRow.ref_field_key, dtRow.date_field_key].filter(Boolean));
 
     const filed = [], dropped = [];
-    const ctx = { trainingArgs: null, tempFiles: [] };
+    const _offered = _sweepOffers.get(_sweepOfferKey(sup, slug));
+    // Tier-1-only at accept (Oracle C7): the queue-wide offer is Tier 1 by construction, so its
+    // re-check must be too — otherwise a doc that lost Tier-1 eligibility between offer and
+    // accept gets silently promoted into the held tier and filed.
+    const ctx = { trainingArgs: null, tempFiles: [], tier1Only: true };
     try {
-      for (const a of accepts.slice(0, 25)) {
+      for (const a of accepts.slice(0, SWEEP_CAP)) {
         const docId = Number(a && a.docId);
         const doc = docId ? documents.getById(db, docId) : null;
         if (!doc || doc.status !== 'needs_review') { dropped.push({ docId, reason: 'not-queued' }); continue; }
         if (['pending', 'claimed'].includes(String(doc.workflow_status || ''))) { dropped.push({ docId, reason: 'workflow-locked' }); continue; }
         if (String(doc.supplier_name || '').trim().toLowerCase() !== sup.toLowerCase()
             || Number(doc.document_type_id) !== Number(dtRow.id)) { dropped.push({ docId, reason: 'scope-mismatch' }); continue; }
+        // Oracle C8: it must have been OFFERED. The renderer may narrow the server's offer
+        // (unticking) but can never widen it.
+        if (!_offered || !_offered.has(docId)) { dropped.push({ docId, reason: 'not-offered' }); continue; }
         // SEAM 2 — candidacy→accept mutation: any extraction change since the consent list drops it.
         const rows = db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(docId);
         if (extractionsFingerprint(rows) !== String(a.fingerprint || '')) { dropped.push({ docId, reason: 'changed' }); continue; }

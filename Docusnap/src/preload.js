@@ -261,6 +261,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   reextractFieldsFast:         (docId)   => ipcRenderer.invoke('reextract-fields-fast', { docId }),
   // Catch-up Filing (consent-gated scope sweep) — candidates is READ-ONLY; accept is the only writer.
   sweepScopeCandidates: (supplier, typeSlug)                       => ipcRenderer.invoke('sweep-scope-candidates', { supplier, typeSlug }),
+  sweepQueueCandidates: ()                                         => ipcRenderer.invoke('sweep-queue-candidates'),
   sweepScopeAccept:     (supplier, typeSlug, accepts, untickedIds) => ipcRenderer.invoke('sweep-scope-accept', { supplier, typeSlug, accepts, untickedIds }),
   sweepScopeUndo:       (docIds)                                   => ipcRenderer.invoke('sweep-scope-undo', { docIds }),
   notifyReviewComplete:        ()        => ipcRenderer.send('notify-review-complete'),
