@@ -871,8 +871,11 @@ function _scopeKey(supplier, slug) { return `${_norm(supplier)}|${String(slug ||
  * `_autoFileDoc` now; the renderer queue annotation in Slice 4) so they can never drift (the
  * pre-existing divergence: backend counted only `validation_note`, renderer also blocked on
  * `corrected_to`; backend counted empty-string notes). Composes:
- *   • the EFFECTIVE FLOOR — graduation lowers a TRUSTED scope to 98; otherwise the user's
- *     `auto_file_threshold` (default 100). A trusted scope never files ABOVE the user's own bar.
+ *   • the EFFECTIVE FLOOR — graduation lowers a TRUSTED scope to TRUSTED_FLOOR (95 — the comment
+ *     said 98 until 2026-08-18; the constant has been 95 since the "98 sat just ABOVE where
+ *     graduated suppliers actually land" fix, so the stale number described a dead letter);
+ *     otherwise the user's `auto_file_threshold` (100 unless set; fresh installs seed 90 at
+ *     migration 71). A trusted scope never files ABOVE the user's own bar.
  *   • the flagged-field refusal (a non-empty `validation_note` → never).
  *   • for ANY sub-100 auto-file (graduation OR a manually-lowered slider) → the structural
  *     safety gate (`docTrustGate`: template match + every valued field verifiable). At floor
