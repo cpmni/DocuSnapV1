@@ -64,9 +64,18 @@ check('other ready senders are named rather than implied away', /other sender\$\
       || /s\.otherScopes \? /.test(rend));
 
 console.log('C11 — a dismissal stands, and there is a way back');
-check('"Not now" sets the session dismissal (no auto-resurrect — that would be nagware)',
-      /_sweepQueueDismissed = true;/.test(rend));
-check('the automatic pass honours it', /if \(!manual && _sweepQueueDismissed\) return false;/.test(rend));
+// REVISED after Chris round 9. Oracle asked that a dismissal STAND rather than auto-resurrect —
+// it does — but the first implementation made it session-WIDE, and that silenced the headline
+// feature after a single press: he pressed "Not now" twice, then made ~24 further confirms with
+// documents waiting behind every one of them, and never saw an offer again. A dismissal is an
+// answer about THOSE documents, not a request to stop working.
+check('"Not now" dismisses THAT scope only, never the session',
+      /if \(act === 'later'\)\s+\{ _sweepDismissed\.add\(_sweepScopeKey\(s\.supplier, s\.typeSlug\)\);/.test(rend)
+      && !/_sweepQueueDismissed = true/.test(rend));
+check('the automatic pass skips dismissed scopes but still offers the others',
+      /const live = res\.scopes\.filter\(x => !_sweepDismissed\.has\(_sweepScopeKey\(x\.supplier, x\.typeSlug\)\)\);/.test(rend));
+check('an explicit ↻ overrides a dismissal (the way back)',
+      /const pool = \(manual && !live\.length\) \? res\.scopes : live;/.test(rend));
 check('a manual re-summon exists in the tool rail', /id="btn-sweep-check"/.test(html));
 check('...shown only when the feature is enabled (a button that always says "nothing" would lie)',
       /scope_sweep_enabled'\);\s*\n\s*if \(String\(on\) !== 'true'\) return;/.test(rend));

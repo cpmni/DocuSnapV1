@@ -2232,7 +2232,7 @@ function renderCleanHoldReason(el, doc) {
     const _sender = String(doc.supplier_name || '').trim();
     const why = {
       'unverifiable-value': _left != null
-        ? `this is only the ${_have === 0 ? 'first' : _have === 1 ? 'second' : `${_have + 1}th`} document `
+        ? `this is only the ${['first', 'second', 'third', 'fourth', 'fifth'][_have] || `${_have + 1}th`} document `
           + `${_sender ? `from <strong>${escHtml(_sender)}</strong>` : 'from this sender'}, so there isn't `
           + `enough confirmed history yet to check <strong>${escHtml(fieldName || 'its details')}</strong> `
           + `on its own. Confirm ${_left === 1 ? 'this one' : `${_left} more`} and the rest from this sender `
@@ -2291,7 +2291,8 @@ function renderCleanHoldReason(el, doc) {
     const _issuerEmpty = !String(doc.supplier_name || '').trim();
     lead = _issuerEmpty
       ? `The Document Issuer box is still empty — an empty box pulls the overall score down. `
-        + `Read at ${conf}%, below the ${thr}% you've set for filing without a check, so it's waiting for you.`
+        // "you've set" blamed the operator for a DEFAULT they never chose (Chris round 9).
+        + `Read at ${conf}%, below the ${thr}% needed to file without a check, so it's waiting for you.`
       : `Nothing was flagged — this was read at ${conf}%, ${thr - conf <= 5 ? 'just below' : 'below'} the ${thr}% you've set for `
         + 'filing without a check, so it\'s waiting for you.';
     cue  = `Read at ${conf}% · your setting ${thr}%`;
@@ -5532,11 +5533,10 @@ const _sweepScopeKey = (s, t) => `${String(s || '').trim().toLowerCase()}|${Stri
 //   • `_sweepDismissed` was permanent for the session. Oracle: auto-resurrecting a dismissed bar is
 //     nagware, so the dismissal STANDS — but it is now re-summonable by hand (see the rail button),
 //     which also makes the whole feature discoverable instead of ambush-triggered.
-let _sweepQueueDismissed = false;           // "Not now" on the queue-wide offer (session)
+// (Dismissal is per-SCOPE — `_sweepDismissed` — never session-wide: see the 'later' handler.)
 
 async function _runQueueSweep({ manual = false } = {}) {
   if (bulkFiling || _batchActive) return false;
-  if (!manual && _sweepQueueDismissed) return false;
   let res = null;
   try { res = await window.docusnap.sweepQueueCandidates?.(); } catch { return false; }
   if (!res || !res.ok || !Array.isArray(res.scopes) || !res.scopes.length) {
@@ -5547,9 +5547,17 @@ async function _runQueueSweep({ manual = false } = {}) {
     return false;
   }
   const byId = new Map(queue.map(d => [d.id, d]));
-  // The offer is per-scope server-side (accept/undo are scope-keyed); present the LARGEST first.
-  const g = res.scopes.slice().sort((a, b) => b.candidates.length - a.candidates.length)[0];
-  const others = res.scopes.length - 1;
+  // The offer is per-scope server-side (accept/undo are scope-keyed); present the LARGEST scope the
+  // operator has NOT already dismissed this session — otherwise one "Not now" on the biggest sender
+  // would hide every other sender's ready documents behind it.
+  const live = res.scopes.filter(x => !_sweepDismissed.has(_sweepScopeKey(x.supplier, x.typeSlug)));
+  const pool = (manual && !live.length) ? res.scopes : live;   // an explicit ask overrides a dismissal
+  if (!pool.length) {
+    if (manual) showToast('Checked everything still waiting — nothing new is ready to file yet.', 'info');
+    return false;
+  }
+  const g = pool.slice().sort((a, b) => b.candidates.length - a.candidates.length)[0];
+  const others = pool.length - 1;
   _sweepState = {
     phase: 'offer', supplier: g.supplier, typeSlug: g.typeSlug,
     candidates: g.candidates.filter(c => byId.has(c.docId))
@@ -5632,7 +5640,13 @@ function renderSweepConsentBar() {
       `<div class="scb-row scb-muted">kept back — ${escHtml(_sweepReason(d.reason))} (${escHtml((s.candidates.find(c => c.docId === d.docId) || {}).filename || ('#' + d.docId))})</div>`).join('');
     bar.innerHTML =
         `<b>✓ Filed ${s.filed.length}</b> from <b>${escHtml(s.supplier)}</b> — checked against the documents you just confirmed. `
-      + `<span class="scb-undo" data-scb="undo">Undo all</span>`
+      // HONEST LABEL (Chris round 9, card 1 — his worst finding, and the code is RIGHT while the
+      // word was wrong). "Undo all" reads as "put everything back the way it was", but the filed
+      // PDFs deliberately STAY on disk: the working copy is deleted at confirm, so removing the
+      // filed copy would leave the document with no file at all (the "no page" class from round 5).
+      // A later re-confirm overwrites the same filename in place, so nothing duplicates. Say that,
+      // rather than letting the operator discover a copy still sitting in their filing cabinet.
+      + `<span class="scb-undo" data-scb="undo" title="Puts these documents back in Review. The copies already written to your filing folder stay there and are replaced when you file them again.">Put back in Review</span>`
       + (kept ? `<div class="scb-list">${kept}</div>` : '');
     bar.style.display = 'block';
     clearTimeout(s._doneTimer);
@@ -5656,7 +5670,12 @@ document.getElementById('sweep-consent-bar')?.addEventListener('click', async (e
   // "Not now" STANDS for the session (Oracle C11: auto-resurrecting a dismissed bar is nagware) —
   // the rail's "Check what's ready to file" button is the way back, which also makes the whole
   // feature discoverable instead of only ever appearing unbidden.
-  if (act === 'later')  { _sweepQueueDismissed = true; _sweepDismissed.add(_sweepScopeKey(s.supplier, s.typeSlug)); _sweepState = null; renderSweepConsentBar(); return; }
+  // "Not now" dismisses THIS offer (this sender + type), not the whole session. Oracle asked that a
+  // dismissal stand rather than auto-resurrect — it does, for that scope — but making it
+  // session-wide silenced the headline feature after a single press: Chris pressed it twice and
+  // then made ~24 further confirms, every one of which had documents waiting, and never saw an
+  // offer again. A dismissal is an answer about THESE documents, not a request to stop working.
+  if (act === 'later')  { _sweepDismissed.add(_sweepScopeKey(s.supplier, s.typeSlug)); _sweepState = null; renderSweepConsentBar(); return; }
   if (act === 'review') {
     _sweepFilterIds = _sweepFilterIds ? null : new Set(s.candidates.map(c => c.docId));
     renderQueueList();
