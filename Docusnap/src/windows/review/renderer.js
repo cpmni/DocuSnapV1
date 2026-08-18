@@ -2195,6 +2195,13 @@ function renderCleanHoldReason(el, doc) {
       'flagged': fieldName
         ? `<strong>${escHtml(fieldName)}</strong> was flagged by a formatting check.`
         : 'a value was flagged by a formatting check.',
+      // The note is OBSOLETE and the app knows it (Review already hides it) — but the stored row
+      // still holds the document, so say so plainly and point at the one-document re-read that
+      // clears it. Never at "Reprocess all": re-reading 200 pages to clear one stale note is the
+      // loop the owner asked us to kill.
+      'stale-layout-note': 'it was read before this sender\'s layout was taught, and that old note '
+        + 'is still attached to it. The note is out of date — <strong>Reprocess</strong> just this '
+        + 'document (the button below) to clear it, or confirm it and it files anyway.',
       'no-template': 'this layout hasn\'t been matched to a template yet.',
       'no-type': 'it has no document type yet.',
       'generic-type': 'General Documents are always checked by a person before filing.',
@@ -2349,6 +2356,12 @@ function renderReviewReason(doc) {
   // fall back to the server review_flag_count only before they arrive.
   const _typeKeys = new Set(reviewFields());
   const _relevant = (doc.extractions || []).filter(e => _typeKeys.has(e.field_key));
+  // The server's review_flag_count still counts a note this window has DECIDED is stale and
+  // stripped from the display (the layout-match class, renderer ~1406) — which is how a document
+  // came to say "1 field was flagged" with no flag visible anywhere on it (owner, 2026-08-18).
+  // When the detailed extractions are loaded they are the post-strip truth, so prefer them; the
+  // server count is only the pre-load placeholder. Fall back to 0 rather than a count we know can
+  // be phantom once the strip has run.
   const flagN = (doc.extractions && doc.extractions.length)
     ? _relevant.filter(e => e.validation_note || e.corrected_to).length
     : (doc.review_flag_count || 0);

@@ -85,5 +85,20 @@ console.log('4. the copy states the cause and what clears it');
         /it counts towards this sender filing on its own/.test(r));
 }
 
+console.log('5. the stale layout note is reported as its own class (owner-found 2026-08-18)');
+{
+  const h = fs.readFileSync(path.join(REPO, 'src', 'modules', 'review', 'handler.js'), 'utf8');
+  check('the IPC recognises the stale-layout class', /out\.kind = 'stale-layout-note'/.test(h));
+  check('...only when EVERY note on the doc is that class (one real flag still reports flagged)',
+        /stale\.length && stale\.length === noted\.length/.test(h));
+  check('...and only once the sender HAS a confirmed doc of that type — what makes it stale',
+        /if \(n > 0\) \{ out\.kind = 'stale-layout-note'/.test(h));
+  const r = fs.readFileSync(path.join(REPO, 'src', 'windows', 'review', 'renderer.js'), 'utf8');
+  check('the copy calls the note out of date and points at the ONE-document re-read',
+        /is still attached to it\. The note is out of date/.test(r));
+  check('the summary prefers the post-strip extractions over the server flag count',
+        /server count is only the pre-load placeholder/.test(r));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

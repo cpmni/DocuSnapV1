@@ -415,6 +415,28 @@ function register(ctx) {
     // documents were exactly this, every one from a sender sitting on 2 confirms. Attach the two
     // numbers so Review can state the real reason AND what clears it, instead of inviting another
     // pointless Reprocess All. Advisory only — no gate reads this.
+    // STALE LAYOUT NOTE (owner-found 2026-08-18). The engine's "Couldn't match this document to
+    // the supplier's saved <Type> layout" note goes obsolete the moment the operator confirms one
+    // document of that type for that sender — and Review already strips it from the DISPLAY on
+    // exactly that condition (renderer.js ~1406). But the strip is cosmetic: the row keeps the
+    // note, so the summary still counts a flag the user cannot see, and the gate still refuses the
+    // document for good. Report the class distinctly so Review can say the truthful thing and
+    // point at the ONE-document re-read that actually clears it, instead of a mystery flag that
+    // sends the customer to Reprocess All. Read-only: the row is not touched here.
+    if (kind === 'flagged') {
+      try {
+        const STALE = /doesn't match this supplier's saved layout|match this document to (?:the supplier's|a) saved/i;
+        const noted = db.prepare(`SELECT field_key, validation_note FROM extractions
+                                   WHERE document_id = ? AND TRIM(COALESCE(validation_note,'')) <> ''`).all(doc.id);
+        const stale = noted.filter(e => STALE.test(e.validation_note));
+        if (stale.length && stale.length === noted.length && String(doc.supplier_name || '').trim()) {
+          const n = db.prepare(`SELECT COUNT(*) AS n FROM documents
+             WHERE status = 'confirmed' AND document_type_id = ?
+               AND LOWER(TRIM(supplier_name)) = LOWER(TRIM(?))`).get(doc.document_type_id, doc.supplier_name).n;
+          if (n > 0) { out.kind = 'stale-layout-note'; out.field = stale[0].field_key; out.scopeConfirms = n; }
+        }
+      } catch { /* advisory — never break the reason panel */ }
+    }
     if (kind === 'unverifiable-value' && field) {
       try {
         const dt = db.prepare('SELECT id FROM document_types WHERE id = ?').get(doc.document_type_id);
