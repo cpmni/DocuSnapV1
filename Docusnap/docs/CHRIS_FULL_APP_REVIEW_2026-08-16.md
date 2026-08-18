@@ -138,3 +138,104 @@ Report below VERBATIM from Chris.
 - Card 2 → implemented same night (approved-vs-automatic split in `recent_auto_filed` + banner copy).
 - Cards 5+6 → implemented same night (pad-window note copy; teach done-screen copy).
 - Cards 4+7 → owner vet queue (2/400 residue investigation; Processed-folder asymmetry ruling).
+
+---
+
+# Chris The Customer — Round 8 (2026-08-18, verifying the round-2 arc on the round-7 protocol)
+
+**Conditions:** fresh install (mig-72 defaults), TYPED-issuer wizard teach ×10 per TEACH_ORDER; wave 1
+= IMPORT (200) switches OFF; the FIVE experimental switches flipped ON (SFDEV pane); wave 2 = IMPORT2
+(200). Session interrupted once by a network drop (same userData; state persisted). Report verbatim
+below; main-session triage at the end.
+
+## Comparison vs round 7
+
+| Measure | Round 7 | Round 8 |
+|---|---|---|
+| Sender-confirm notes | 0 | **0 in both waves** |
+| Wave-1 File All Ready | 184/200 | **184/200** (same 16 exclusions) |
+| Wave-2 filed without per-doc review | 188/200 (94%) | **190/200 (95%)** |
+| False "doesn't appear on this page" | ~7 docs | **3** (Veltrix 0022, Silverbeck 0040, Pelican 0038) |
+| Meadowvale 0050 | held on false disagree + "$540" VAT | **auto-filed at 100, total -514.30, no $540 anywhere** |
+| Wrong value / wrong folder | 0 | **0** |
+
+Named card-1 docs: Silverbeck **0037 filed**, **0044 filed**, **0023 healed on reprocess and filed**
+(SB-ORD74238, page-true); Veltrix **0025 healed and filed**; **0040, 0038 (Pelican), 0022 (Veltrix)
+still flagged** — triaged below. PL-class held docs verified deserved. Wave-1's six P1-prefix
+Pelicans all healed to correct PI refs on the armed reprocess and filed (0029/0016 page-verified).
+
+## New cards (ranked by harm)
+
+**CARD 1 — Delete aims at a stale document (CONFUSION, trust-eroded).** Toolbar showed
+`Veltrix-Automotive_sales_order_0022.pdf`; the delete dialog said `Delete
+"Pelican-Office_invoice_0047.pdf"?`. Reproduced 4× (click + keyboard selection, 5-second settles);
+the stuck target was the doc earlier restored from the bin; it actually binned the wrong doc once
+(restored intact). Reprocess/preview/toolbar/fields all follow the selection — only Delete lagged.
+Protective factors credited: the dialog names its target; deletion is soft (bin).
+
+**CARD 2 — BETTER-BUT: three false "doesn't appear on this page as written" flags survive** (class
+shrank 7→3; every survivor holds a CORRECT value — fails safe; two of the three are the switch
+description's own worked examples).
+
+**CARD 3 — Empty required field with no explanation (4 docs, all held).** Silverbeck 0038/0039/0051
+held with Reference simply blank though the page prints it cleanly; Nordwind 0046 no ref + no total
+and no note at all. NOT caused by the new switches (A/B verified identical with them OFF; same
+class existed in round 7's holds by count arithmetic). Proposed: one line on-screen when a required
+field comes back empty ("the reading spot for this field found nothing on this page").
+
+**CARD 4 — QUESTION: 190 documents filed between sessions and Home doesn't mention it.** The split
+banner lives only in Review; the first screen should carry the "while you were away" sentence.
+(Confound: the docs filed in a startup catch-up sweep because the session crashed mid-round — an
+uninterrupted run files them during import.)
+
+**CARD 5 — PREFERENCE: twin switch names two words apart** ("Fix an obvious one-character misread
+of a value you always use" vs "Fix a one-character misread at the start of a reference you always
+use") — rename the new one to lead with its distinctive part.
+
+## Prior-item verifies
+- Sender-confirm nag: **FIXED — 0 across 400.** · Teach done screen: **FIXED ("Teaching saved…").**
+- Consent banner split: **FIXED — "190 documents filed automatically · 10 filed with your approval"
+  captured verbatim.** · Wider-reading note copy: **FIXED ("…differs from the value shown here").**
+- Recycle bin self-repaint: **HOLDS (0.5s).** · Restore page-intact: **HOLDS.** · Oakhaven slash:
+  **HOLDS (40/40 clean, slash kept in the record).** · Meadowvale 0050: **FIXED** (see table; A/B:
+  switches OFF resurrected $540 + unsigned 428.58 + false note on the same file; ON → -85.72 /
+  -428.58 / no note, filed at 100). · Buyer-issued Quillstone: **containment holds.**
+
+## Warnings truth-table (queue of 17 at close)
+- "doesn't appear on this page as written" ×7: 4 earned (PL/P1L misreads genuinely absent) · 3 cried
+  wolf (triaged below). · "wider reading" ×2: earned. · "Never seen this sender" ×2: earned, well
+  worded. · silent holds ×4: the card-3 cluster. · sender-confirm nag: 0.
+
+## Verdict
+374 of 400 filed with zero per-document decisions and zero wrong outcomes found; the review pile is
+small and mostly honest. Two-week verdict: **Yes** — with the Delete fix landing first.
+
+## Humility block (abridged)
+Zero-wrong-value gate: **PASSED** (13 wave-2 renders across all 10 suppliers, 2 adopted-prefix
+Pelicans page-verified, Meadowvale record, 10 wave-1 approval filings, full-population scan of all
+190 wave-2 filed docs: 0 "$" values, 0 unsigned credit money, 0 empty stored values). New-empty-
+required-field count: **0 new** (the 4 empty-ref holds reproduce with the switches OFF). Per-switch
+fired/inert: S1 FIRED (6 wave-1 Pelicans adopted PI, page-verified ×2) · S2 FIRED (self-compare
+question-notes cleared) · S3 FIRED PARTIALLY (healed 0023/0037/0044/0025; inert on 0022/0040/0038)
+· S4 FIRED (A/B $540 → -85.72) · S5 FIRED (A/B 428.58 → -428.58). Driver caveats: CDP-driven; the
+Delete repro may be an automation artifact; round-7 held-list not available for exact diffing.
+
+---
+
+## Main-session triage (2026-08-18, same day)
+- **CARD 1 resolved at source — NOT a stale-selection bug** (`47b247d`): `#doc-name` is written only
+  by `_selectDoc` (same doc assigned synchronously to `currentDoc` before any await), so the
+  action-bar Delete cannot name a different doc than the toolbar. The driver's title-based selector
+  hit a ROW-level × (queue ×s shared the action-bar's `title="Delete document"`; the hidden deferred
+  tab's ×s are in the DOM), whose dialog honestly named that row's doc. Real gaps fixed: row-level
+  dialogs now carry a mismatch clause naming BOTH docs when the row ≠ the open doc; row ×s retitled
+  "Delete this row's document" (selector/screen-reader distinct); 6 pins.
+- **CARD 2 survivors — all three explained, NO v2 defect:** doc 205 (Veltrix 0022) is a WAVE-1 row —
+  flag minted with v2 OFF, never reprocessed (audit: opens only); one reprocess heals (its page form
+  `VX$22033` is the pinned heal). Doc 339 (Pelican 0038) WAS reprocessed but the stored row survived
+  byte-identical — the kept_existing signature (fresh re-read came back EMPTY for the field, merge
+  kept the old row, stale note included; by-design carry-over). Doc 382 (Silverbeck 0040) page
+  prints `SB-ORDS9173` — a SUFFIX-region garble (`SB` is the dominant prefix), the Oracle-pinned
+  trade-off refusing suffix diffs by design; correct fail-toward-review residual.
+- CARD 3 (silent empty holds) + CARD 4 (Home catch-up line) + CARD 5 (switch naming) → owner vet
+  queue.
