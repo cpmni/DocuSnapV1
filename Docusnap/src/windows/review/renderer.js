@@ -2172,10 +2172,26 @@ function renderCleanHoldReason(el, doc) {
   const v = _holdVerdict;
   if (v && !v.eligible && v.kind && v.kind !== 'below-floor') {
     const fieldName = _holdFieldLabel(v.field);
+    // COLD-START COUNTDOWN (2026-08-18): when the honest reason is "I have not confirmed enough
+    // documents from this sender yet", say THAT and say what clears it. "Couldn't be checked
+    // automatically" is true but useless — it reads as a defect, and the customer's only visible
+    // lever becomes Reprocess All, which re-reads 200 pages and changes nothing (measured: the
+    // same answer ~92% of the time). Nothing here is a gate; the counts come from the same
+    // predicate's advisory payload.
+    const _need = Number.isFinite(v.confirmsNeeded) ? v.confirmsNeeded : null;
+    const _have = Number.isFinite(v.scopeConfirms)  ? v.scopeConfirms  : null;
+    const _left = (_need != null && _have != null) ? Math.max(1, _need - _have) : null;
+    const _sender = String(doc.supplier_name || '').trim();
     const why = {
-      'unverifiable-value': fieldName
-        ? `<strong>${escHtml(fieldName)}</strong> couldn't be checked automatically, so this one is waiting for your eye.`
-        : 'one of the values couldn\'t be checked automatically, so this one is waiting for your eye.',
+      'unverifiable-value': _left != null
+        ? `this is only the ${_have === 0 ? 'first' : _have === 1 ? 'second' : `${_have + 1}th`} document `
+          + `${_sender ? `from <strong>${escHtml(_sender)}</strong>` : 'from this sender'}, so there isn't `
+          + `enough confirmed history yet to check <strong>${escHtml(fieldName || 'its details')}</strong> `
+          + `on its own. Confirm ${_left === 1 ? 'this one' : `${_left} more`} and the rest from this sender `
+          + `can start filing themselves.`
+        : fieldName
+          ? `<strong>${escHtml(fieldName)}</strong> couldn't be checked automatically, so this one is waiting for your eye.`
+          : 'one of the values couldn\'t be checked automatically, so this one is waiting for your eye.',
       'flagged': fieldName
         ? `<strong>${escHtml(fieldName)}</strong> was flagged by a formatting check.`
         : 'a value was flagged by a formatting check.',
@@ -2193,10 +2209,18 @@ function renderCleanHoldReason(el, doc) {
         : "a filing field wasn't read certainly enough for automatic filing.",
     }[v.kind] || 'an automatic check didn\'t pass.';
     el.classList.add('rr-calm');
+    // On the cold-start countdown the closing hint would otherwise contradict the lead: the lead
+    // explains that confirming a couple more unlocks the sender, so the cue reports PROGRESS
+    // rather than repeating "waiting for your check".
+    const _cue = (_left != null && _need)
+      ? `${_have} of ${_need} confirmed from this sender`
+      : (Number.isFinite(conf) ? `Overall ${conf}% · waiting for your check` : 'Waiting for your check');
+    const _tail = (_left != null)
+      ? `Confirm it and it files — and it counts towards this sender filing on its own.`
+      : `Confirm it and it files. This isn't the confidence setting — changing that won't file this one.`;
     el.innerHTML = `<div class="rr-lead">Nothing looks wrong — ${why}</div>`
-                 + `<div class="rr-cues"><span class="rr-cue info">${Number.isFinite(conf) ? `Overall ${conf}% · waiting for your check` : 'Waiting for your check'}</span></div>`
-                 + `<div class="rr-hint">Confirm it and it files. This isn't the confidence setting — `
-                 + `changing that won't file this one.</div>`;
+                 + `<div class="rr-cues"><span class="rr-cue info">${_cue}</span></div>`
+                 + `<div class="rr-hint">${_tail}</div>`;
     el.hidden = false;
     return;
   }

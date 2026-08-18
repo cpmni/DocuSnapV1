@@ -405,8 +405,29 @@ function register(ctx) {
     // reason is 'kind:field_key' (e.g. unverifiable-value:customer_name) — split so the renderer
     // never has to parse it, and can name the field in plain English.
     const [kind, field] = String(r.reason || '').split(':');
-    return { eligible: !!r.eligible, kind: kind || null, field: field || null,
-             floor: r.floor ?? null, trusted: !!r.trusted };
+    const out = { eligible: !!r.eligible, kind: kind || null, field: field || null,
+                  floor: r.floor ?? null, trusted: !!r.trusted };
+    // COLD-START COUNTDOWN (2026-08-18, Oracle C2 + Chris "say the negative result out loud").
+    // `unverifiable-value` reads as a mystery — "couldn't be checked automatically" — when its
+    // commonest cause on a young install is simply that this sender has not been confirmed enough
+    // times yet for its learned format to leave the provisional channel the gate deliberately
+    // cannot see (learning.FORMAT_SOLID_MIN). Measured on the owner's own install: 34 of 53 held
+    // documents were exactly this, every one from a sender sitting on 2 confirms. Attach the two
+    // numbers so Review can state the real reason AND what clears it, instead of inviting another
+    // pointless Reprocess All. Advisory only — no gate reads this.
+    if (kind === 'unverifiable-value' && field) {
+      try {
+        const dt = db.prepare('SELECT id FROM document_types WHERE id = ?').get(doc.document_type_id);
+        if (dt && String(doc.supplier_name || '').trim()) {
+          const n = db.prepare(`SELECT COUNT(*) AS n FROM documents
+             WHERE status = 'confirmed' AND document_type_id = ?
+               AND LOWER(TRIM(supplier_name)) = LOWER(TRIM(?))`).get(dt.id, doc.supplier_name).n;
+          const need = require('../../../database/modules/learning').FORMAT_SOLID_MIN;
+          if (n < need) { out.scopeConfirms = n; out.confirmsNeeded = need; }
+        }
+      } catch { /* advisory — never break the reason panel */ }
+    }
+    return out;
   });
 
   // Graduation roster + per-supplier opt-out (Slice 5 UX — the "Suppliers handled automatically"

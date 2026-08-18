@@ -642,6 +642,15 @@ function clearAnchors(db, { supplier_name, document_type, field_key }) {
 // when the stored box has zero/near-zero recorded dimensions.
 const ANCHOR_MIN_TOLERANCE = 0.015;
 
+// How many confirmed documents a (supplier, type, field) group needs before its learned format is
+// SOLID rather than provisional — and therefore before `trust.docTrustGate` will verify a value
+// against it at all (the gate reads the non-provisional list by design). Named and exported
+// 2026-08-18 because it is the number a customer actually experiences: below it, a correctly-read
+// document from a new sender cannot auto-file at any confidence under 100, and until today nothing
+// on screen said so (Chris: "a hold with no visible cause is the worst state in the app").
+// Mirrors ocr_corrector.MIN_CONFIRMED_FOR_SINGLE_SHAPE.
+const FORMAT_SOLID_MIN = 3;
+
 function _centerDistance(ax, ay, bx, by) {
   const dx = ax - bx;
   const dy = ay - by;
@@ -1487,7 +1496,7 @@ function getFieldFormats(db, opts) {
   // sibling #1 of a freshly-taught template corroborate against the TAUGHT value's
   // skeleton instead of a cold "usual format".
   return Object.values(groups)
-    .map(g => ({ ...g, _ok: g._values.size >= 3 || g._count >= 3 }))
+    .map(g => ({ ...g, _ok: g._values.size >= FORMAT_SOLID_MIN || g._count >= FORMAT_SOLID_MIN }))
     .filter(g => g._ok || includeProvisional)
     .map(({ _values, _valueCounts, _count, _ok, _machineValueCounts, ...rest }) => ({
       ...rest,
@@ -2012,6 +2021,7 @@ function findDuplicateSupplierPairs(db, { minDocs = 1 } = {}) {
 }
 
 module.exports = {
+  FORMAT_SOLID_MIN,
   insertExtractions, deleteExtractions,
   getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue, getPrefixModelForScope,
   getSupplierScopeCounts, renameSupplier, findDuplicateSupplierPairs,
