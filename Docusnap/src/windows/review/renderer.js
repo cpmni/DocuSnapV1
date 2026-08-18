@@ -3208,12 +3208,41 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     // Force-close the native popup. Removing `list` alone does NOT dismiss an already-
     // open Chromium datalist — only blur does — so blur, then refocus (with `list` gone)
     // to keep the cursor in the field without the popup reopening.
-    const closeSuggest = () => {
+    // TYPING MUST NEVER FIGHT THE POPUP (owner-found 2026-08-18, on the Document Issuer field:
+    // caret visible, Backspace worked, typed characters vanished — long mistaken for the
+    // "third focus failure mode" OS desync). Two hostile behaviours lived here: the datalist was
+    // re-attached on EVERY keystroke, so the operator typed with a native popup open and
+    // competing for the keyboard (the same Windows popup class that caused the documented
+    // <select> regression); and closeSuggest BLURRED the very input being typed into, so any
+    // character landing in the blur→rAF-refocus gap was lost while deletions — which never take
+    // the replacement path — sailed through. Now:
+    //   • the list attaches only after typing PAUSES (idle debounce), never mid-keystroke;
+    //   • a printable keydown detaches it first, so a character is never typed into an open popup;
+    //   • closeSuggest blurs ONLY for a genuine pick while the field still holds focus (that
+    //     blur is the sole way to dismiss Chromium's popup — keep it, but never mid-typing).
+    let lastArrowAt = 0;
+    let suggestTimer = null;
+    const detachList = () => {
+      if (suggestTimer) { clearTimeout(suggestTimer); suggestTimer = null; }
       input.removeAttribute('list');
+    };
+    const armList = () => {
+      if (suggestTimer) clearTimeout(suggestTimer);
+      suggestTimer = setTimeout(() => {
+        suggestTimer = null;
+        if (document.activeElement !== input) return;      // moved on — do not pop up behind them
+        if (input.value.trim().length < 3) return;
+        ensureLoaded();
+        input.setAttribute('list', dlId);
+      }, 400);
+    };
+    const closeSuggest = () => {
+      const wasFocused = document.activeElement === input;
+      detachList();
+      if (!wasFocused) return;
       input.blur();
       requestAnimationFrame(() => input.focus());
     };
-    let lastArrowAt = 0;
     input.addEventListener('input', (e) => {
       if (e && e.inputType === 'insertReplacementText') {
         // A datalist value was inserted. Arrow NAVIGATION fires this right after an
@@ -3222,12 +3251,17 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
         if (Date.now() - lastArrowAt > 150) setTimeout(closeSuggest, 0);
         return;
       }
-      if (input.value.trim().length >= 3) { ensureLoaded(); input.setAttribute('list', dlId); }
-      else input.removeAttribute('list');
+      if (input.value.trim().length >= 3) armList();
+      else detachList();
     });
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') lastArrowAt = Date.now();
-      else if (e.key === 'Enter' && input.hasAttribute('list')) setTimeout(closeSuggest, 0);
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { lastArrowAt = Date.now(); return; }
+      if (e.key === 'Enter' && input.hasAttribute('list')) { setTimeout(closeSuggest, 0); return; }
+      // A printable keystroke belongs to the FIELD — never to an open suggestion popup.
+      if (e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) detachList();
+    });
+    input.addEventListener('blur', () => {
+      if (suggestTimer) { clearTimeout(suggestTimer); suggestTimer = null; }
     });
   }
 
@@ -5004,7 +5038,13 @@ function showIssuerNearMatchHold(nm, idx, supplier) {
   const input = row?.querySelector('.field-input');
   const cur = (input?.value || '').trim();
   if (!row || !nm || !nm.existing) {
-    showToast(`This issuer looks like "${nm?.existing || 'a company you already use'}" — please check it.`, 'warn');
+    // NEVER a dead end (owner-found 2026-08-18): the inline note carries the only two ways past
+    // this hold, so when it cannot be rendered the toast must say what to DO — the old copy
+    // printed the placeholder as if it were the company's name and offered nothing.
+    showToast(nm && nm.existing
+      ? `This issuer is close to "${nm.existing}", a company you already use — open the Document Issuer field and correct it, or confirm again to keep what you typed.`
+      : 'This issuer looks like a company you already use under a slightly different spelling — check the Document Issuer field before filing.',
+      'warn');
     return;
   }
   row.querySelector('.field-note.issuer-nm-hold')?.remove();

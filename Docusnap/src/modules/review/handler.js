@@ -988,7 +988,14 @@ function register(ctx) {
       return { success: false, error: r.error,
                ...(r.code ? { code: r.code } : {}),
                ...(r.confirmedBy ? { confirmedBy: r.confirmedBy } : {}),
-               ...(r.code === 'PREFIX_OUTLIER' ? { prefixOutlier: { field: r.field, dominant: r.dominant, prefix: r.prefix } } : {}) };
+               ...(r.code === 'PREFIX_OUTLIER' ? { prefixOutlier: { field: r.field, dominant: r.dominant, prefix: r.prefix } } : {}),
+               // ISSUER_NEAR_MATCH's payload MUST ride along too (owner-found 2026-08-18): this
+               // whitelist dropped it, so the renderer's showIssuerNearMatchHold got `undefined`,
+               // skipped the inline note entirely and fell back to a toast reading the literal
+               // placeholder 'a company you already use'. That fallback carries NO buttons — so the
+               // hold became a DEAD END: the operator could neither adopt the known spelling nor
+               // keep their own, and a correct document could not be filed at all.
+               ...(r.code === 'ISSUER_NEAR_MATCH' ? { nearMatch: r.nearMatch } : {}) };
     }
     return r;   // { ok:true, success:true, ...filingResult }
   });
