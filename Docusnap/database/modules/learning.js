@@ -642,6 +642,61 @@ function clearAnchors(db, { supplier_name, document_type, field_key }) {
 // when the stored box has zero/near-zero recorded dimensions.
 const ANCHOR_MIN_TOLERANCE = 0.015;
 
+// ── CONFIRM PERSISTS APPROVED VALUES (gary design → Oracle SIGN-OFF-W/COND C1-C5, 2026-08-18) ──
+// A TAUGHT document contributed NOTHING to learning. The confirm-upsert
+// (`insertManualExtraction`) fires only from the CORRECTIONS loop, and the teach wizard sends
+// `corrections: []` by design — it has nothing to "correct", the operator pointed at values and
+// approved them. Every taught value therefore travelled the allValues path, which plants hints
+// only, and `getFieldFormats` reads FROM extractions — so the most deliberate act in the product
+// was invisible to the evidence that decides whether a sender can file itself. Measured on the
+// owner's install: 9 of 10 taught documents had no supplier_name row; several had none at all.
+//
+// This mints a row for an approved value that has NO row yet. INSERT-ONLY-WHEN-ABSENT is
+// load-bearing: an existing row may carry `+confirmed_adopt` / `+name_repair` provenance whose
+// unconditional exclusions (see getFieldFormats) depend on that row surviving untouched.
+// NEVER add an UPDATE or backfill arm — pinned in test_confirmed_value_rows.js.
+// C5 read pattern (env wins both directions, setting is the product truth) — the same shape
+// trust.js uses for its arms, so a harness can force either state without a DB write.
+// SCOPE, stated because silence is how a fix creeps (Oracle C4): this de-duplicates the
+// corrections join in getFieldFormats ONLY. The identical fan-out in getFieldValueHistory's
+// COUNT(*) and getPrefixModelForScope is OUT of scope for this slice and left untouched —
+// neither feeds the filing gate; logged in pendingfeatures.
+function _dedupeCorrections(db) {
+  const env = process.env.FORMAT_CORRECTIONS_DEDUPE;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try { return getSetting(db, 'format_corrections_dedupe', 'false') === 'true'; } catch { return false; }
+}
+
+function persistConfirmedValues(db, document_id, allValues) {
+  if (!document_id || !allValues || typeof allValues !== 'object') return 0;
+  const has = db.prepare('SELECT 1 FROM extractions WHERE document_id = ? AND field_key = ? LIMIT 1');
+  const ins = db.prepare(`
+    INSERT INTO extractions
+      (document_id, field_key, raw_value, display_value, confidence,
+       extraction_method, was_corrected, validation_note, corrected_to, anchor_label)
+    VALUES
+      (@document_id, @field_key, NULL, @display_value, NULL,
+       'operator_confirmed', 0, NULL, NULL, NULL)`);
+  let n = 0;
+  db.transaction(() => {
+    for (const [field_key, raw] of Object.entries(allValues)) {
+      const val = String(raw == null ? '' : raw).trim();
+      if (!val) continue;
+      // Oracle C2: the SAME refusal the hint plant makes (this file, the allValues loop) and that
+      // the retract/replant pair mirrors — a passthrough implausible issuer ("IN"/"INV" from a
+      // garbled title) must never become reusable identity memory. An extraction row is a WIDER
+      // channel than a hint (it feeds the format corpus, value history and the dominant readers),
+      // so the guard matters more here, not less.
+      if (field_key === 'supplier_name' && !isPlausibleSupplierName(val)) continue;
+      if (has.get(document_id, field_key)) continue;      // never touch an existing row
+      ins.run({ document_id, field_key, display_value: val });
+      n++;
+    }
+  })();
+  return n;
+}
+
 // How many confirmed documents a (supplier, type, field) group needs before its learned format is
 // SOLID rather than provisional — and therefore before `trust.docTrustGate` will verify a value
 // against it at all (the gate reads the non-provisional list by design). Named and exported
@@ -1403,7 +1458,20 @@ function getFieldFormats(db, opts) {
     LEFT JOIN fields        fld ON fld.document_type_id = d.document_type_id
                                AND fld.key = e.field_key
     LEFT JOIN corrections   c  ON c.document_id = e.document_id
-                               AND c.field_key  = e.field_key
+                               AND c.field_key  = e.field_key${_dedupeCorrections(db) ? `
+                               -- FAN-OUT FIX (Oracle C4, 2026-08-18; format_corrections_dedupe).
+                               -- insertCorr appends on EVERY confirm while the extraction row is
+                               -- written once, so a document corrected three times produced THREE
+                               -- result rows and reached the >=3 solid-format bar on its own —
+                               -- i.e. \`confirmed_count\` was not counting documents at all. Keep
+                               -- the LATEST correction per (document, field), the same
+                               -- "last confirm wins" rule retractConfirmHints already uses.
+                               -- Shipped WITH persistConfirmedValues deliberately: minting rows
+                               -- into a miscounting counter would green its promise for the
+                               -- wrong reason, and de-duplication alone can DE-graduate a scope.
+                               AND c.id = (SELECT MAX(c2.id) FROM corrections c2
+                                            WHERE c2.document_id = e.document_id
+                                              AND c2.field_key  = e.field_key)` : ''}
     WHERE d.status          = 'confirmed'
       AND (e.display_value IS NOT NULL OR c.corrected_value IS NOT NULL)
       -- Never learn from SHADOW reconciliation reads: they back the "verified" total check
@@ -2021,7 +2089,7 @@ function findDuplicateSupplierPairs(db, { minDocs = 1 } = {}) {
 }
 
 module.exports = {
-  FORMAT_SOLID_MIN,
+  FORMAT_SOLID_MIN, persistConfirmedValues,
   insertExtractions, deleteExtractions,
   getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue, getPrefixModelForScope,
   getSupplierScopeCounts, renameSupplier, findDuplicateSupplierPairs,

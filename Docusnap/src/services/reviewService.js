@@ -308,6 +308,33 @@ function createReviewService(deps = {}) {
     // Shares _buildTemplateFields' keep-predicate (foreignFields.js) so the two can't drift.
     if (dtInfo) { try { foreignFields.dropForeignExtractions(db, document_id, dtInfo); } catch (e) { logger?.warn?.('foreign-field drop skipped: ' + (e && e.message)); } }
 
+    // ── PERSIST THE OPERATOR'S APPROVED VALUES (gary → Oracle SIGN-OFF-W/COND, 2026-08-18) ──────
+    // A value the operator APPROVED without editing never became an extraction row: the
+    // confirm-upsert fires only from the corrections loop, and a teach sends `corrections: []` by
+    // design. Since `getFieldFormats` reads FROM extractions, a taught document was invisible to
+    // the evidence that decides whether its sender can file itself (measured: 9/10 taught docs had
+    // no issuer row). Mint a row for any approved value that has none.
+    //
+    // ORDERING IS LOAD-BEARING — this must stay STRICTLY LAST of the learning writes:
+    //   claim → commitDocument → filterLearningInput → saveCorrections → note clear (:303)
+    //   → dropForeignExtractions (:309) → persistConfirmedValues (here)
+    // so (1) every filing/auto-file decision on THIS document was already made — a minted row can
+    // never open its own gate; (2) it cannot resurrect what the drop just removed (it writes only
+    // `_learn.allValues`, filtered by the SAME ownFieldPredicate, and runs after the drop).
+    //
+    // Oracle C1: an EXPLICIT `!_via` guard — the one at :279 closes at :281, so relying on it here
+    // would be a machine hole waiting for a refactor. Machine confirms (scope_sweep,
+    // auto_reprocess) must never mint evidence for their own future trust.
+    // Oracle C3: `dtInfo` mirrored from the drop above — with no field metadata, filterLearningInput
+    // is a passthrough and the drop is a no-op, so minting would write rows nothing would ever
+    // clean up. A metadata-gap document mints nothing.
+    if (!_via && dtInfo && process.env.CONFIRM_PERSIST_VALUES !== '0'
+        && (process.env.CONFIRM_PERSIST_VALUES === '1'
+            || learning.getSetting(db, 'confirm_persist_values', 'false') === 'true')) {
+      try { learning.persistConfirmedValues(db, document_id, _learn.allValues); }
+      catch (e) { logger?.warn?.('confirmed-value persist skipped: ' + (e && e.message)); }
+    }
+
     // The working copy has served its purpose — remove it + clear the pointer.
     if (workingPath) {
       try { if (fs.existsSync(workingPath)) fs.unlinkSync(workingPath); } catch {}

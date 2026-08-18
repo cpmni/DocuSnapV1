@@ -1710,6 +1710,26 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 72 applied: page-match v2 + vat-reg symfold + money-sign switches seeded OFF');
   }
 
+  // ── Migration 73: the confirmed-value pair (gary → Oracle SIGN-OFF-W/COND, 2026-08-18) ───────
+  // `confirm_persist_values` — a value the operator APPROVED but did not edit finally becomes an
+  // extraction row, so a TAUGHT document stops being invisible to the learned-format corpus that
+  // decides whether its sender can file itself (measured: 9/10 taught docs carried no issuer row).
+  // `format_corrections_dedupe` — getFieldFormats' corrections join fanned out, so ONE document
+  // corrected three times reached the >=3 solid-format bar by itself; keep the latest correction
+  // per (document, field). Oracle's ruling: these two ship and FLIP TOGETHER — minting rows into a
+  // counter that miscounts would green the promise for the wrong reason, and de-duplicating alone
+  // can DE-graduate a scope. Both seeded OFF; default-ON owes the four-arm sandbox measurement
+  // (base / mint-only / defan-only / both) reporting newly-graduated and newly-de-graduated scopes.
+  if (!applied.has(73)) {
+    try {
+      const ins73 = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+      ins73.run('confirm_persist_values', 'false');
+      ins73.run('format_corrections_dedupe', 'false');
+    } catch (e) { console.warn(`  migration 73: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (73)').run();
+    console.log('JS migration 73 applied: confirm-persist-values + corrections-dedupe seeded OFF');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the
