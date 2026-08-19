@@ -1089,7 +1089,47 @@ function register(ctx) {
                // keep their own, and a correct document could not be filed at all.
                ...(r.code === 'ISSUER_NEAR_MATCH' ? { nearMatch: r.nearMatch } : {}) };
     }
-    return r;   // { ok:true, success:true, ...filingResult }
+    return r;   // { ok:true, success:true, ...filingResult, classFix? }
+  });
+
+  // ── The human-licensed class correction: undo, and the one-time ask ─────────
+  // Both are ordinary write paths and carry the same Admin/Edit gate as a confirm — the undo
+  // rewrites extraction values, and answering the ask APPLIES a batch. Neither may be reached by
+  // a read-only account just because the bar happens to be on screen.
+  ipcMain.handle('class-fix-undo', (_e, batchId) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    return require('../../services/classFixService')
+      .undoBatch(db, String(batchId || ''), {
+        audit: (d, entry) => logAudit(d, entry),
+        actorName: getCurrentUser()?.username || null, logger });
+  });
+
+  ipcMain.handle('class-fix-resolve-ask', (_e, payload) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const p = payload || {};
+    // Re-derive against LIVE rows rather than trusting the renderer's list: between the ask and
+    // the answer a sibling may have been filed, edited or opened by someone else. The renderer
+    // supplies only WHICH document was confirmed and WHAT was answered — never the target list.
+    const doc = db.prepare(
+      'SELECT d.id, d.supplier_name, t.slug FROM documents d '
+      + 'LEFT JOIN document_types t ON t.id = d.document_type_id WHERE d.id = ?').get(p.documentId);
+    if (!doc) return { ok: false, reason: 'gone' };
+    const corr = db.prepare(
+      'SELECT field_key, original_value, corrected_value FROM corrections '
+      + 'WHERE document_id = ? ORDER BY id DESC').all(doc.id);
+    const dtInfo = doc.slug ? doctypes.getWithFields(db, doc.slug) : null;
+    const refKey = dtInfo && dtInfo.ref_field_key;
+    const edit = refKey ? corr.find(c => c.field_key === refKey) : null;
+    if (!edit) return { ok: false, reason: 'gone' };
+    return require('../../services/classFixService').resolveAsk(db, {
+      askKey: p.askKey, yes: !!p.yes,
+      documentId: doc.id, corrections: { [refKey]: edit },
+      supplierName: doc.supplier_name, typeSlug: doc.slug, dtInfo,
+      actorName: getCurrentUser()?.username || null, learning,
+      audit: (d, entry) => logAudit(d, entry), presence, logger,
+    }) || { ok: true, applied: 0 };
   });
 
   // ── Lightweight current-template recheck ────────────────────────────────────

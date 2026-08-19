@@ -488,7 +488,33 @@ function createReviewService(deps = {}) {
         .catch(() => {});
     }
 
-    return { ok: true, success: true, ...filingResult };
+    // ── THE HUMAN-LICENSED CLASS CORRECTION (gary + reggie → Oracle S-O-W/COND, 2026-08-19) ──────
+    // The operator corrected one reference by a single confusable glyph inside its prefix ('P1/' →
+    // 'PI/'). Apply that same byte-exact substitution to the other QUEUED documents of this sender
+    // and tell them afterwards, with an undo. Owner's ask: no dialog beforehand, and NO second
+    // dialog after — "if the user has already told us it is correct, there is no need".
+    //
+    // PLACEMENT (Oracle C7): LAST, after every effect of THIS confirm has landed, as its own
+    // transaction — never nested inside another. Its own explicit `!_via` check rather than
+    // borrowing the one at :279 (that guard closes at :281; leaning on it from here is the machine
+    // hole a refactor opens, the same ruling as persistConfirmedValues). `!bulk` because File-All
+    // iterates confirms, and a propagation firing mid-loop would rewrite siblings the loop has
+    // already read into memory. Fail-open: this can never fail an already-completed confirm.
+    let _classFix = null;
+    if (!_via && !bulk && dtInfo) {
+      try {
+        _classFix = require('./classFixService').applyForConfirm(db, {
+          documentId: document_id, corrections: corrections || {},
+          supplierName: (allValues && allValues.supplier_name) || supplier_name || null,
+          typeSlug: document_type_slug || (dtInfo && dtInfo.slug) || null,
+          dtInfo, actorName, learning, audit,
+          presence: (() => { try { return require('./presenceService').shared(); } catch { return null; } })(),
+          logger,
+        });
+      } catch (e) { logger?.warn?.('class fix skipped: ' + (e && e.message)); }
+    }
+
+    return { ok: true, success: true, ...filingResult, ...(_classFix ? { classFix: _classFix } : {}) };
   }
 
   // ── Defer / restore (status-guarded) ──────────────────────────────────────────

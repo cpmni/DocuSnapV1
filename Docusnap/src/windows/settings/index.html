@@ -1239,6 +1239,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Apply a reference correction to the sender's other waiting documents</div>
+                <div class="threshold-sub">When you correct a reference by a single easily-confused character in its code — "P1/26/3130" to "PI/26/3130" — the same correction is applied to the other documents from that sender still waiting in Review, and you are told afterwards with an Undo. Only that exact substitution travels: correcting a "P1" never changes a "PL". Nothing is filed — the corrected documents stay in Review for you to confirm as usual. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="ref-class-fix-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Read small reference/date print more clearly</div>
                 <div class="threshold-sub">Enlarges a tightly-cropped reference or date before reading it and drops an over-sharpen step, so small print (e.g. “PO-17039” misread as “»0-17039”) reads correctly. Only helps where it can, never changes a read it can't improve. Off by default.</div>
               </div>

@@ -1730,6 +1730,23 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 73 applied: confirm-persist-values + corrections-dedupe seeded OFF');
   }
 
+  // ── Migration 74: the human-licensed class correction (reggie + gary → Oracle S-O-W/C) ───────
+  // `ref_class_fix_enabled` — the operator corrects ONE reference by a single confusable glyph
+  // inside its prefix ('P1/' → 'PI/'), and the same byte-exact substitution is applied to the
+  // other QUEUED documents of that sender, reported afterwards with an undo. The owner's ask
+  // verbatim: no dialog beforehand, and no second dialog after. Nothing is filed; every touched
+  // document stays in Review, badged, for the same human to confirm.
+  // Seeded OFF. Default-ON owes the confirm-path integration harness and the OFF==ON identity run
+  // — the realdoc corpus arm is VACUOUS for this one, because it writes at CONFIRM, not extraction.
+  if (!applied.has(74)) {
+    try {
+      db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)')
+        .run('ref_class_fix_enabled', 'false');
+    } catch (e) { console.warn(`  migration 74: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (74)').run();
+    console.log('JS migration 74 applied: ref-class-fix seeded OFF');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

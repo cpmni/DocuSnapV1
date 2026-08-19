@@ -869,7 +869,10 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // v2 · vat-reg '$'-mid-run fold · money sign capture at the mint.
                          ['filing-sanity-page-match-v2-toggle', 'filing_sanity_page_match_v2'],
                          ['vat-reg-symbol-confusable-toggle', 'vat_reg_symbol_confusable'],
-                         ['money-sign-capture-toggle', 'money_sign_capture']]) {
+                         ['money-sign-capture-toggle', 'money_sign_capture'],
+                         // The human-licensed class correction (2026-08-19, mig 74): one corrected
+                         // reference propagates its exact substitution to the sender's queued siblings.
+                         ['ref-class-fix-toggle', 'ref_class_fix_enabled']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);
@@ -947,6 +950,8 @@ const DEV_SWITCH_IDS = [
   'ref-prefix-confusable-adopt-toggle', 'raw-witness-vacuous-suppress-toggle',
   // Round-7 card-1/card-3 switches (mig 72, all OFF).
   'filing-sanity-page-match-v2-toggle', 'vat-reg-symbol-confusable-toggle', 'money-sign-capture-toggle',
+  // The class correction (mig 74, OFF) — dev-gated until the confirm-path harness has run.
+  'ref-class-fix-toggle',
 ];
 function _applyDevSwitchVisibility(unlocked, revealGate){
   for (const id of DEV_SWITCH_IDS){

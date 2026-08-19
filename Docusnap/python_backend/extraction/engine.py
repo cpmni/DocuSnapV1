@@ -3531,16 +3531,14 @@ class ExtractionEngine:
             read_p = ocr_corrector.code_prefix(val)
             if read_p and read_p != dom and ocr_corrector.prefix_confirmed(read_p, rec_p):
                 return False
-            # BOTH-FORMS refusal, value-head twin (non-extractable heads never reach counts)
-            head_norm = _cmp_norm(val[:len(dom)])
+            # BOTH-FORMS refusal, value-head twin (non-extractable heads never reach counts).
+            # The arithmetic moved into the SHARED predicate `ocr_corrector.both_forms_established`
+            # (Oracle 2026-08-19) so this lane and the confirm-path class fix can never diverge on
+            # what "established" means — they are the same question asked by two callers.
             bucket = self.confirmed_counts_index.get(
                 (sup.lower().strip(), slug.lower().strip(), key)) or {}
-            if head_norm and bucket:
-                bar = max(3, math.ceil(0.10 * sum(bucket.values())))
-                same_head = sum(n for v_norm, n in bucket.items()
-                                if str(v_norm)[:len(head_norm)] == head_norm)
-                if same_head >= bar:
-                    return False
+            if bucket and ocr_corrector.both_forms_established(bucket, val[:len(dom)]):
+                return False
             # REQUIRED page witness
             ct = str(data.get("corrected_to") or "")
             w1 = bool(ct) and ct == adopted

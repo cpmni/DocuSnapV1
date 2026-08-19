@@ -972,6 +972,28 @@ function mergeReprocessRows(existing, newRows, flip = null, onTrace = null, hidd
         corroboration: ex.corroboration || null,
       };
     }
+    // CLASS-FIX SURVIVAL (Oracle C3, blocking, 2026-08-19). This line takes the fresh row WHOLESALE
+    // whenever it has a value. The operator-grade protection above lives only in the annotated-empty
+    // branch, so without a guard here a Reprocess All silently reverts every value the human-licensed
+    // class fix propagated — and, because the marker goes with it, the undo's "still carries the
+    // marker" integrity check then refuses too: the feature unwinds AND becomes un-undoable, with
+    // nothing said. A row carrying the marker is operator-grade — the human licensed that
+    // substitution on a document they were looking at — so re-apply it over an unchanged fresh read.
+    //   • fresh read == the original wrong value  → the page still reads the same way, the human's
+    //     answer still applies: keep the fix, keep the marker.
+    //   • fresh read == anything else             → the page now says something new, which OUTRANKS
+    //     a propagated guess: take it, DROP the marker (so learning re-admits the row and the undo
+    //     correctly refuses), and trace it so the class stays observable.
+    // The realdoc harness runs FRESH extraction and is structurally blind to this merge — the unit
+    // battery is the gate (the REPROCESS_ANNOTATED_EMPTY_WINS precedent).
+    if (ex.display_value && String(ex.extraction_method || '').endsWith('+prefix_class_fix')) {
+      if (String(row.display_value || '') === String(ex.raw_value || '')) {
+        trace(row.field_key, 'kept_class_fix', ex.display_value, row.display_value);
+        return { ...row, display_value: ex.display_value, extraction_method: ex.extraction_method };
+      }
+      trace(row.field_key, 'class_fix_dropped', ex.display_value, row.display_value);
+      return row;
+    }
     if (ex.display_value) trace(row.field_key, 'used_new', ex.display_value, row.display_value);
     return row;
   });

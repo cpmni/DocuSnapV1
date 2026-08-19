@@ -480,6 +480,56 @@ def code_prefix(value):
     m = _LEAD_ALPHA_RE.match(v)
     return m.group(0).upper() if m else None
 
+def _cmp_norm_local(value):
+    """Compare-time normalisation — the same two steps as engine `_cmp_norm` (shared token
+    normaliser, then collapse all whitespace). Duplicated here rather than imported so this module
+    stays free of an engine import; the golden corpus pins both against text_normalise."""
+    try:
+        from extraction import text_normalise
+        return "".join(text_normalise.normalise_for_tokens(value).split())
+    except Exception:
+        return "".join(str(value or "").strip().lower().split())
+
+
+def both_forms_established(value_counts, head):
+    """BOTH FORMS ESTABLISHED — the one shared refusal, over the one shared evidence set.
+
+    True when the scope's confirmed history already holds `head`'s form often enough to be a second
+    CONVENTION rather than a misread. Two callers, two consequences, one predicate:
+      • the engine's P adopt lane — a HARD VETO (an established second form is data, and the remedy
+        for a scope poisoned by mis-confirms is Learning Repair, never a looser bar);
+      • the confirm-path class fix — the trigger for a single ask, because there a human is
+        present to settle it.
+
+    ORACLE PREMISE CORRECTION (2026-08-19). The engine hands this an ALREADY `_cmp_norm`-collapsed
+    bucket (`confirmed_counts_index`); the JS twin is handed RAW `value_counts` keys. Written over
+    raw keys with a case-sensitive compare these are NOT the same predicate, and a shared fixture
+    would green anyway unless it carries mixed-case and separator-variant rows. So both sides
+    normalise here, inside the predicate (`_cmp_norm_local` is idempotent, so a pre-normalised
+    bucket is safe), and the shared fixture carries exactly those two awkward rows.
+
+    JS twin: src/services/refClassFix.js `bothFormsEstablished`. Pinned across the languages by
+    python_backend/tests/both_forms_corpus.json, read by BOTH suites."""
+    head_norm = _cmp_norm_local(head)
+    if not head_norm:
+        return False
+    total = 0
+    same = 0
+    for v, n in (value_counts or {}).items():
+        try:
+            c = int(n or 0)
+        except (TypeError, ValueError):
+            continue
+        if c <= 0:
+            continue
+        total += c
+        if _cmp_norm_local(v)[:len(head_norm)] == head_norm:
+            same += c
+    if not total:
+        return False
+    return same >= max(3, math.ceil(0.10 * total))
+
+
 def build_prefix_index(formats_data):
     """Per (supplier, doctype, field): the DOMINANT leading-alpha code prefix + the SET of all
     confirmed prefixes. Share is over ALL confirmed values (so a mostly-numeric or genuinely mixed

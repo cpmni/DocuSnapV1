@@ -70,22 +70,25 @@
       background: var(--accent-bg); border-bottom: 1px solid var(--border); }
     #reprocess-autofile-bar b { color: var(--ok); }
     #reprocess-autofile-bar .btn { font-size: 12px; padding: 2px 10px; margin-left: 6px; }
-    /* Catch-up Filing consent bar — auto-committed-bar family, consent-green accent. */
-    #sweep-consent-bar { padding: 8px 12px; font-size: 12px; line-height: 1.5;
+    /* Catch-up Filing consent bar — auto-committed-bar family, consent-green accent.
+       The class-fix bar (2026-08-19) shares every one of these rules: it is the same
+       kind of object — an after-the-fact statement of something the app did, with a way
+       back — so it must not look like a different feature. */
+    #sweep-consent-bar, #class-fix-bar { padding: 8px 12px; font-size: 12px; line-height: 1.5;
       background: color-mix(in srgb, var(--ok) 8%, var(--surface)); border-bottom: 1px solid var(--border); }
-    #sweep-consent-bar b { color: var(--ok); }
-    #sweep-consent-bar .scb-actions { margin-top: 6px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    #sweep-consent-bar .scb-btn { border: 1px solid var(--border2); border-radius: var(--r-pill);
+    #sweep-consent-bar b, #class-fix-bar b { color: var(--ok); }
+    #sweep-consent-bar .scb-actions, #class-fix-bar .scb-actions { margin-top: 6px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    #sweep-consent-bar .scb-btn, #class-fix-bar .scb-btn { border: 1px solid var(--border2); border-radius: var(--r-pill);
       padding: 3px 12px; cursor: pointer; background: var(--surface); color: var(--text); font-size: 12px; }
-    #sweep-consent-bar .scb-btn.primary { background: var(--ok); border-color: var(--ok); color: #fff; font-weight: 600; }
-    #sweep-consent-bar .scb-btn:hover { filter: brightness(1.08); }
-    #sweep-consent-bar .scb-btn:disabled { opacity: .55; cursor: default; }
-    #sweep-consent-bar .scb-toggle { color: var(--accent2); cursor: pointer; font-weight: 600; }
-    #sweep-consent-bar .scb-list { margin: 6px 0 0; max-height: 140px; overflow-y: auto; }
-    #sweep-consent-bar .scb-row { display: flex; gap: 6px; align-items: center; padding: 2px 0; }
-    #sweep-consent-bar .scb-row label { cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    #sweep-consent-bar .scb-muted { color: var(--muted); }
-    #sweep-consent-bar .scb-undo { color: var(--accent2); cursor: pointer; font-weight: 600; }
+    #sweep-consent-bar .scb-btn.primary, #class-fix-bar .scb-btn.primary { background: var(--ok); border-color: var(--ok); color: #fff; font-weight: 600; }
+    #sweep-consent-bar .scb-btn:hover, #class-fix-bar .scb-btn:hover { filter: brightness(1.08); }
+    #sweep-consent-bar .scb-btn:disabled, #class-fix-bar .scb-btn:disabled { opacity: .55; cursor: default; }
+    #sweep-consent-bar .scb-toggle, #class-fix-bar .scb-toggle { color: var(--accent2); cursor: pointer; font-weight: 600; }
+    #sweep-consent-bar .scb-list, #class-fix-bar .scb-list { margin: 6px 0 0; max-height: 140px; overflow-y: auto; }
+    #sweep-consent-bar .scb-row, #class-fix-bar .scb-row { display: flex; gap: 6px; align-items: center; padding: 2px 0; }
+    #sweep-consent-bar .scb-row label, #class-fix-bar .scb-row label { cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #sweep-consent-bar .scb-muted, #class-fix-bar .scb-muted { color: var(--muted); }
+    #sweep-consent-bar .scb-undo, #class-fix-bar .scb-undo { color: var(--accent2); cursor: pointer; font-weight: 600; }
     /* Sender-grouping toggle bar + group headers (review queue) */
     #queue-view-bar { padding: 6px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
     .qview-toggle { display: flex; align-items: center; gap: 6px; width: 100%;
@@ -808,6 +811,7 @@
            "N more from SENDER match what you've confirmed" — File N · Review them · Not now,
            with an expandable per-doc untick list. NON-modal, auto-committed-bar family. -->
       <div id="sweep-consent-bar" style="display:none;"></div>
+      <div id="class-fix-bar" style="display:none;"></div>
       <!-- Review-queue view toggle: group the list by sender (default) or show newest-first. -->
       <div id="queue-view-bar" style="display:none;">
         <button id="btn-group-toggle" class="qview-toggle"

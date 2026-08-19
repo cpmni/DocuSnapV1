@@ -1,0 +1,84 @@
+{
+  "_readme": [
+    "SHARED FIXTURE for the both-forms-established predicate. Read by BOTH sides:",
+    "  python_backend/tests/test_both_forms_parity.py  (ocr_corrector.both_forms_established)",
+    "  src/services/test_ref_class_fix.js              (refClassFix.bothFormsEstablished)",
+    "Oracle 2026-08-19: a fixture of plain uppercase rows CANNOT expose the divergence this pin",
+    "exists for. The engine's bucket keys are already _cmp_norm-collapsed; the JS value_counts",
+    "keys are raw. So the cases that matter are MIXED CASE and SEPARATOR/WHITESPACE VARIANTS —",
+    "'mixed_case_head' and 'separator_variant' below. Delete those two and the pin greens on a",
+    "real divergence. Every case states the answer AND why."
+  ],
+  "cases": [
+    {
+      "name": "clean single series — the round-9 Pelican corpus, nothing else confirmed",
+      "head": "P1",
+      "counts": { "PI/25/8496": 18, "PI/26/1001": 6, "PI/26/3130": 3 },
+      "expected": false,
+      "why": "no confirmed value starts P1; the misread form is not a convention"
+    },
+    {
+      "name": "the live mature install — three confirmed P1 mis-confirms at n=30",
+      "head": "P1",
+      "counts": { "PI/25/8496": 18, "PI/26/1001": 6, "P1261792": 2, "P1263711": 1 },
+      "expected": true,
+      "why": "bar = max(3, ceil(0.10*27)) = 3; same-head = 3 -> established, so the engine vetoes and the confirm path asks once"
+    },
+    {
+      "name": "just below the floor",
+      "head": "P1",
+      "counts": { "PI/25/8496": 18, "P1261792": 2 },
+      "expected": false,
+      "why": "same-head = 2 < the absolute floor of 3 (the 10% leg would allow 2 at n=20 — the floor is what stops it)"
+    },
+    {
+      "name": "the 10% leg binds on a large scope — 21 sightings still is not a convention",
+      "head": "AB",
+      "counts": { "AC/1": 200, "AB/1": 15, "AB/2": 6 },
+      "expected": false,
+      "why": "bar = max(3, ceil(0.10*221)) = 23; same-head = 21 < 23. Above the absolute floor of 3 the SHARE leg is what binds, so a big scope needs proportionally more evidence before a second form counts as established"
+    },
+    {
+      "name": "...and the same scope one sighting over the line",
+      "head": "AB",
+      "counts": { "AC/1": 200, "AB/1": 15, "AB/2": 8 },
+      "expected": true,
+      "why": "total 223, bar 23, same-head 23 -> established. The pair above/below pins WHERE the line sits, which a single case cannot"
+    },
+    {
+      "name": "mixed_case_head — THE PIN. Raw keys vs collapsed keys diverge here",
+      "head": "pi",
+      "counts": { "PI/25/8496": 4, "pi/26/1001": 3, "XX/1": 1 },
+      "expected": true,
+      "why": "both keys normalise to the same head; a case-sensitive raw-key compare would count 3 and answer false"
+    },
+    {
+      "name": "separator_variant — THE OTHER PIN. Whitespace inside the value",
+      "head": "SB",
+      "counts": { "SB ORD 7 4238": 2, "SB-ORD74239": 1, "SBORD74240": 1, "QQ/9": 40 },
+      "expected": false,
+      "why": "all three SB rows collapse to the same head so same-head = 4, but bar = max(3, ceil(0.10*44)) = 5 -> not established. A raw-key compare would ALSO answer false, for the wrong reason (it would see only 2) — the count is asserted separately in the suites"
+    },
+    {
+      "name": "empty head",
+      "head": "",
+      "counts": { "PI/1": 9 },
+      "expected": false,
+      "why": "no head to test — never established"
+    },
+    {
+      "name": "empty corpus",
+      "head": "P1",
+      "counts": {},
+      "expected": false,
+      "why": "a fresh install has no history; both sides must answer false rather than divide by zero"
+    },
+    {
+      "name": "zero and negative counts are ignored, not summed",
+      "head": "P1",
+      "counts": { "PI/1": 9, "P1/1": 0, "P1/2": -4 },
+      "expected": false,
+      "why": "a non-positive count is not evidence; it must not inflate the total either"
+    }
+  ]
+}

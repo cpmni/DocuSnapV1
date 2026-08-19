@@ -2663,7 +2663,7 @@ function renderFields(doc) {
     // remove). A hidden field that unexpectedly HAS a value is still shown: hiding is a display
     // mask, never a way to lose real data. Inert when nothing is hidden (empty set).
     if (hiddenKeys.has(key) && String(val).trim() === '') continue;
-    appendFieldRow(scroll, key, val, ext.confidence ?? null, ext.validation_note || null, ext.corrected_to || null, ext.anchor_label || null, ext.extraction_method || null, ext.candidates || null, ext.suggested_supplier || null, ext.corroboration || null);
+    appendFieldRow(scroll, key, val, ext.confidence ?? null, ext.validation_note || null, ext.corrected_to || null, ext.anchor_label || null, ext.extraction_method || null, ext.candidates || null, ext.suggested_supplier || null, ext.corroboration || null, ext.raw_value || null);
   }
   _prefillGenericScanDate(doc, scroll);
   validateConfirm();
@@ -3064,7 +3064,7 @@ function _refreshTaughtDot(key) {
   dot.title = _taughtDotTitle(taught);
 }
 
-function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, method, candidates, suggestedSupplier, corroboration) {
+function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, method, candidates, suggestedSupplier, corroboration, rawValue) {
   const low      = conf !== null && conf < 70;
   const confClass = conf === null ? '' : conf >= 70 ? 'high' : conf >= 40 ? 'mid' : 'low';
   // Pair the % with a plain word so non-technical users read it at a glance.
@@ -3142,6 +3142,18 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   const resolveHtml = resolvable
     ? ` <button type="button" class="resolve-btn" data-key="${key}" title="See the readings the app found and click the correct one"><svg class="resolve-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h5M9 12l9-6M18 6h-4M18 6v4M9 12l9 6M18 18h-4M18 18v-4"/></svg>Resolve</button>`
     : '';
+  // CLASS FIX (2026-08-19) — a value this document did NOT get from its own page: it was corrected
+  // because the operator made the same one-character correction on another document from this
+  // sender. The badge is keyed on the METHOD MARKER, not on corrected_to: the marker is durable
+  // (it survives confirm, where corrected_to is nulled) and it touches no gate, where corrected_to
+  // is read by both the auto-file predicate and the flag summary (Oracle C1). Naming the previous
+  // reading matters — nobody should have to guess what changed on a document they never opened.
+  const isClassFix = String(method || '').endsWith('+prefix_class_fix');
+  const classFixHtml = isClassFix
+    ? `<div class="field-note corrected"><span class="corrected-badge" title="You corrected this same misreading on another document from this sender, so it was applied here too. Nothing has been filed — check it and confirm as usual.">✓ corrected by an earlier fix</span>`
+      + (rawValue && String(rawValue) !== String(val ?? '') ? ` was “${escHtml(rawValue)}”` : '')
+      + `</div>`
+    : '';
   const noteHtml = isApplied
     ? `<div class="field-note corrected"><span class="corrected-badge" title="An OCR misread was auto-corrected to the spelling that recurs in your confirmed data">✓ auto-corrected</span> ${escHtml(note || '')}</div>`
     : (note || correctedTo)
@@ -3205,7 +3217,7 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
              value="${escHtml(val)}" placeholder="Not found">
       <button class="pick-btn" data-key="${key}" title="Teach this field — only if it's showing the WRONG value. Draw a box round the correct value; Scan Finder pins that position and reads it on every future document from this supplier. A field already reading correctly doesn't need teaching.">&#8853;</button>
     </div>
-    ${noteHtml}${anchorHtml}${corrobHtml}${neverHtml}
+    ${classFixHtml}${noteHtml}${anchorHtml}${corrobHtml}${neverHtml}
   `;
   row.querySelector('.never-here-btn')?.addEventListener('click', () => openSenderFieldEditor(key));
 
@@ -5071,6 +5083,16 @@ async function confirmCurrentDoc({ bulk = false, expectId = null, acknowledgePre
       const _dir = _filedFolderLabel(result.filePath, _fn);
       if (_fn) showToast(_dir ? `Filed as ${_fn} in ${_dir}.` : `Filed as ${_fn}.`, 'ok');
     } catch { /* naming the destination must never affect the filing that already happened */ }
+    // The class fix reports itself here — AFTER the filing message, because what happened to the
+    // document in front of them comes first. A bar rather than a toast: it carries the undo, and a
+    // 4-second toast is not long enough to decide whether you meant it.
+    try {
+      if (result.classFix) {
+        _classFixState = { ...result.classFix, documentId: currentDoc.id,
+                           phase: result.classFix.ask ? 'ask' : 'applied', listOpen: false };
+        renderClassFixBar();
+      }
+    } catch { /* the report must never affect the filing that already happened */ }
   }
   return { filed: true, filename: result.filename || null, filePath: result.filePath || null };
 }
@@ -5593,6 +5615,96 @@ function _scheduleScopeSweep(supplier, typeSlug) {
     finally { btn.disabled = false; }
   });
 })();
+
+// ── THE CLASS-FIX BAR ───────────────────────────────────────────────────────────────────────────
+// Two states, and only ever one of them at a time.
+//  • APPLIED — the fix already happened. Say what was done, to how many, and offer a way back.
+//    This is the owner's instruction taken literally: act, then tell, no dialog beforehand and no
+//    second dialog after. The undo is what makes acting-first honest.
+//  • ASK — the sender's confirmed history holds BOTH forms, so this may be a second convention
+//    rather than a misread and the app genuinely does not know. Ask ONCE, name the documents, and
+//    remember the answer for that class so the next correction of it is silent (Oracle C6). Asking
+//    every time is the thing the owner banned.
+let _classFixState = null;
+
+function renderClassFixBar() {
+  const bar = document.getElementById('class-fix-bar');
+  if (!bar) return;
+  const s = _classFixState;
+  if (!s) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+
+  const list = (rows, valueOf) => `<div class="scb-list">` + rows.map(r =>
+      `<div class="scb-row"><span class="scb-muted">•</span>`
+      + `<label title="${escHtml(r.filename || '')}">${escHtml(r.filename || `Document ${r.id}`)}`
+      + ` — <b>${escHtml(valueOf(r))}</b></label></div>`).join('') + `</div>`;
+
+  if (s.phase === 'ask') {
+    const n = s.candidates.length;
+    bar.innerHTML =
+      `<div>You corrected <b>${escHtml(s.from)}</b> to <b>${escHtml(s.to)}</b>. `
+      + `${n} other document${n === 1 ? '' : 's'} waiting from this sender read <b>${escHtml(s.from)}</b> too — `
+      + `but this sender has confirmed <b>${escHtml(s.from)}</b> in the past, so it may be a genuine second series. `
+      + `Fix ${n === 1 ? 'it' : 'them'} as well?</div>`
+      + (s.listOpen ? list(s.candidates, r => `${r.was} → ${r.now}`) : '')
+      + `<div class="scb-actions">`
+      + `<button class="scb-btn primary" data-cf="yes">Yes, fix ${n === 1 ? 'it' : `all ${n}`}</button>`
+      + `<button class="scb-btn" data-cf="no">No, leave them</button>`
+      + `<span class="scb-toggle" data-cf="list">${s.listOpen ? 'Hide' : 'Show'} the documents</span>`
+      + `</div><div class="scb-muted">Asked once for this correction — whichever you choose is `
+      + `remembered, so you will not be asked about ${escHtml(s.from)} again.</div>`;
+    bar.style.display = '';
+    return;
+  }
+
+  const n = s.docs.length;
+  const cleared = s.docs.filter(d => d.noteCleared).length;
+  const held = n - cleared;
+  bar.innerHTML =
+    `<div>Also corrected <b>${escHtml(s.from)}</b> to <b>${escHtml(s.to)}</b> on `
+    + `<b>${n}</b> other document${n === 1 ? '' : 's'} waiting from this sender.</div>`
+    + (held
+        ? `<div class="scb-muted">${cleared ? `${cleared} now read cleanly. ` : ''}`
+          + `${held} still need${held === 1 ? 's' : ''} a look — their pages could not be re-checked, `
+          + `so they stay in Review.</div>`
+        : `<div class="scb-muted">Nothing has been filed — they are still in Review for you to confirm.</div>`)
+    + (s.remaining ? `<div class="scb-muted">${s.remaining} more matched but were left alone (25 at a time).</div>` : '')
+    + (s.listOpen ? list(s.docs, r => `${r.was} → ${r.now}`) : '')
+    + `<div class="scb-actions">`
+    + `<span class="scb-toggle" data-cf="list">${s.listOpen ? 'Hide' : 'Show'} what changed</span>`
+    + `<span class="scb-undo" data-cf="undo">Undo</span>`
+    + `</div>`;
+  bar.style.display = '';
+}
+
+document.getElementById('class-fix-bar')?.addEventListener('click', async (e) => {
+  const act = e.target?.dataset?.cf;
+  if (!act || !_classFixState) return;
+  if (act === 'list') { _classFixState.listOpen = !_classFixState.listOpen; renderClassFixBar(); return; }
+  if (act === 'undo') {
+    const id = _classFixState.batchId;
+    _classFixState = null; renderClassFixBar();
+    try {
+      const r = await window.docusnap.classFixUndo(id);
+      showToast(r?.ok
+        ? (r.skipped ? `Put back ${r.restored}. ${r.skipped} had changed since and were left alone.`
+                     : `Put back ${r.restored} document${r.restored === 1 ? '' : 's'}.`)
+        : 'That change can no longer be undone.', r?.ok ? 'ok' : 'warn');
+      await loadQueue();
+    } catch { showToast('Undo failed.', 'err'); }
+    return;
+  }
+  if (act === 'yes' || act === 'no') {
+    const s = _classFixState;
+    _classFixState = null; renderClassFixBar();
+    try {
+      const r = await window.docusnap.classFixResolveAsk({ askKey: s.askKey, yes: act === 'yes',
+                                                           documentId: s.documentId });
+      if (act === 'yes' && r && r.batchId) { _classFixState = { ...r, phase: 'applied', listOpen: false }; renderClassFixBar(); }
+      else if (act === 'yes') showToast('Nothing left to correct — those documents have changed since.', 'warn');
+      await loadQueue();
+    } catch { showToast('Could not apply that correction.', 'err'); }
+  }
+});
 
 function renderSweepConsentBar() {
   const bar = document.getElementById('sweep-consent-bar');

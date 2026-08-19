@@ -1496,6 +1496,22 @@ function getFieldFormats(db, opts) {
       -- The METHOD suffix is the carrier because it survives confirm, where validation_note and
       -- corrected_to are both cleared. Same shape and same reason as the CONFADOPT clause above.
       AND (e.extraction_method IS NULL OR e.extraction_method NOT LIKE '%+name\\_repair' ESCAPE '\\')
+      -- CLASS FIX (2026-08-19), UNCONDITIONAL, same family and same reason as the two clauses
+      -- above: a value the CLASS FIX wrote may not count as evidence for that class fix. One
+      -- correction propagates to up to 25 documents; confirm them and the single human decision
+      -- has manufactured 25 votes for its own premise, which then licenses the engine's automatic
+      -- arm to do it unasked. That is the B7 loop verbatim.
+      --
+      -- THE CARVE-OUT IS NOT OPTIONAL (Oracle C2). updateExtractionValue sets display_value and
+      -- was_corrected but NEVER extraction_method, so a row the operator later corrects by hand
+      -- keeps this marker forever and would be excluded for the life of the install — actively
+      -- fighting persistConfirmedValues, which exists because the corpus was missing exactly such
+      -- human-approved values. A corrections row re-admits the document. (The identical claim in
+      -- the CONFADOPT comment above is STALE for the same reason and is filed for repair; do not
+      -- copy it, and do not "fix" it here — that clause has its own history.)
+      AND (e.extraction_method IS NULL
+           OR e.extraction_method NOT LIKE '%+prefix\\_class\\_fix' ESCAPE '\\'
+           OR c.corrected_value IS NOT NULL)
     ORDER BY d.confirmed_at DESC, d.id DESC
   `).all();
 
