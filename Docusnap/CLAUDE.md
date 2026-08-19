@@ -21,7 +21,29 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-15: **READ `HANDOVER_2026-08-15.md` FIRST.** HEAD **`717058b`**, 11 commits
+## ⏭ LATEST — 2026-08-20: **READ `HANDOVER_2026-08-20.md` FIRST** (then `_2026-08-19.md`, then
+`_2026-08-18.md`; the long block below is the 08-15 state and is now historical).
+**Two things a new session must not re-derive:**
+1. **THE MACHINE-CONFIRM STARVATION (measured).** `learning_exclude_machine_confirms` removes every
+   `auto_threshold`/`scope_sweep`/`auto_graduated` confirm from the substrate `getFieldFormats`
+   COUNTS. Round-9 DB: Pelican `invoice_number` has **27 confirmed `PI/` values but the learned
+   corpus counts 4**; whole install **38 human vs 331 machine = 89.7% invisible**. So the dominance
+   bars (≥5 extractable prefixes, ≥5 dominant, ≥0.90 share) licensing the P adopt lane, the
+   dominant-value snap and the prefix guard **cannot arm on a scope the app files well** — the better
+   the auto-filing, the blinder the reading. **Do NOT just flip the switch:** the exclusion stops a
+   machine echo voting for itself (the B7 loop), but an `auto_threshold` confirm passed the full
+   trust gate, which is not an echo — that distinction is the design question. gary + Oracle first.
+   **Always measure what learning KNOWS through `getFieldFormats`, never off raw `extractions`** (it
+   also drops any group with <3 contributing documents — a count of 0 can mean "no group").
+2. **The P1/PI class correction shipped DARK** (`ref_class_fix_enabled`, migration 74, +
+   `REF_PREFIX_CONFUSABLE_ADOPT` widened): correct one reference by a single confusable glyph inside
+   its code prefix and the sender's other QUEUED documents follow, reported after with an Undo.
+   Traps recorded in `memory/project_ref_class_fix_20260819.md` — `corrected_to` is a TRAP as a badge
+   carrier (trust.js counts it as flagged behind a user-visible toggle); `updateExtractionValue`
+   never rewrites `extraction_method`; `mergeReprocessRows` (`handler.js:975`) takes the fresh row
+   wholesale and silently reverts propagated values.
+
+## (historical) 2026-08-15: **READ `HANDOVER_2026-08-15.md` FIRST.** HEAD **`717058b`**, 11 commits
 **PUSHED to origin**, tree clean. The corroboration arc shipped + validated; owner flipped all reading
 switches on their live DB and made it the new-install DEFAULT (mig 70); Chris re-ran on the new defaults.
 **⏭ TOP OF QUEUE (owner said "yes, build it"): the hold-siblings FIRST-BATCH REGRESSION.** Chris's re-run:
