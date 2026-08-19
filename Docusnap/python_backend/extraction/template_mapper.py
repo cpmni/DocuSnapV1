@@ -635,7 +635,11 @@ _PAD_DATE_DISAGREE_NOTE = ("A wider reading of this date box shows '{}', which d
 # Pins: tests/test_template_pad_window_code.py.
 _PAD_WINDOW_CODE_ON = os.environ.get('TEMPLATE_PAD_WINDOW_CODE', '0') != '0'
 _PAD_CODE_MIN_SUFFIX = _CLIP_COMMIT_MIN_PREFIX   # >=4 tight-read chars must survive as the padded suffix
-_PAD_CODE_DISAGREE_NOTE = ("A wider reading of this box shows '{}', which differs from the "
+# The note is composed from a hoisted MARK so a reader elsewhere can recognise the class without
+# re-typing the prose (engine's P adopt lane reads this constant, 2026-08-19). Reword the tail
+# freely; reword the MARK and the reader goes INERT rather than silently matching the wrong class.
+_PAD_CODE_DISAGREE_MARK = "A wider reading of this box shows"
+_PAD_CODE_DISAGREE_NOTE = (_PAD_CODE_DISAGREE_MARK + " '{}', which differs from the "
                            "value shown here — please check which is printed.")
 
 # ── LABELLED sub-slice (2026-08-06 — gary design -> Oracle SIGN-OFF-W/COND C1..C7) ────────────────

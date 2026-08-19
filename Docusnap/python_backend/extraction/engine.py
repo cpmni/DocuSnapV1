@@ -1603,6 +1603,14 @@ def _one_confusable_diff(a, b) -> bool:
 # hoisted so the two can never drift apart (Oracle condition).
 _PREFIX_OUTLIER_NOTE_TAIL = "— likely a one-character misread. Please check."
 
+# The other two note classes the P lane reads (2026-08-19 widening). Each is composed from a
+# hoisted MARK shared with its WRITE site, for the same reason as the tail above: reword the prose
+# and the matcher goes INERT rather than quietly matching a class it was never reviewed against.
+# (The third, `_PAD_CODE_DISAGREE_MARK`, is owned by template_mapper and read from there.)
+_FILING_SANITY_ABSENT_MARK = "doesn't appear on this page as written"
+_FILING_SANITY_ABSENT_NOTE = ("'{}' " + _FILING_SANITY_ABSENT_MARK
+                              + " — please check the reference before filing.")
+
 # OCR-confusable equivalence classes for CODE-PREFIX positions, one class per printed-glyph family.
 # EXPLICIT (not derived) so the adopt surface is exactly what was reviewed — the pin test asserts
 # these sets verbatim AND that every _CONFUSE_TO_DIGIT pair is covered, so an ocr_corrector map edit
@@ -1642,6 +1650,39 @@ _PREFIX_CLASS_SYMBOLS = frozenset(ch for c in _PREFIX_CONFUSE_CLASSES_CF for ch 
 
 def _prefix_confusable_class_cf(a, b) -> bool:
     return any(a in c and b in c for c in _PREFIX_CONFUSE_CLASSES_CF)
+
+
+def _strip_all_alnum(s) -> str:
+    """Casefold and delete every non-alphanumeric character — the 'sepless' projection."""
+    return re.sub(r'[^0-9a-z]+', '', str(s).casefold())
+
+
+def _sepless_line_windows(page):
+    """Every 1-3 consecutive token join, SAME LINE ONLY. A cross-line join is manufactured
+    adjacency and is refused (the standing Gate-C v2 condition)."""
+    windows = []
+    for line in str(page).splitlines():
+        words = [w for w in line.split() if w]
+        for i in range(len(words)):
+            for j in range(i + 1, min(i + 4, len(words) + 1)):
+                windows.append((''.join(words[i:j]), j - i))
+    return windows
+
+
+def _page_carries_sepless(page, value) -> bool:
+    """W3 — 'is this exact string printed on the page?', allowing only for retokenisation.
+    PURE: no trace, no log (Oracle C5) — a caller emits its own events, so borrowing this witness
+    cannot pollute the Gate-C v2 census that would justify page-match v2 on its own merits.
+
+    ⚠ LEG 1 ONLY, and that restriction is load-bearing. `_page_match_v2`'s leg 2 is a BACKED-
+    CONFUSABLE tolerance: it answers True when the page carries a one-glyph in-class variant of
+    the value. As a witness for a candidate that is ITSELF a one-glyph variant of the read, leg 2
+    would be CIRCULAR — the misread that raised the note would witness its own correction. Never
+    widen this helper (pinned: a page carrying only 'P1/26/3152' must NOT witness 'PI/26/3152')."""
+    sv = _strip_all_alnum(value)
+    if len(sv) < 4:
+        return False                       # too short to judge — same bar as Gate-C v2
+    return any(_strip_all_alnum(joined) == sv for joined, _n in _sepless_line_windows(page))
 
 
 def _prefix_dominant_backed(rec_p) -> bool:
@@ -3211,7 +3252,7 @@ class ExtractionEngine:
             demoted = True
         return demoted
 
-    def _resolve_corroborated_notes(self, results, field_defs, corrob, matched_tmpl):
+    def _resolve_corroborated_notes(self, results, field_defs, corrob, matched_tmpl, page=""):
         """2026-08-15 held-queue arc (gary → Oracle SIGN-OFF-W/COND). Let the DB's own recorded
         corroboration + scope dominance RESOLVE a note that holds a document whose value is already
         known-good. Runs inside the _d1/_d2/_d3 recompute guard, so clearing a note here also drops
@@ -3327,7 +3368,7 @@ class ExtractionEngine:
                     # P lane, rawwitness flavour (Oracle: MUST live before this branch's
                     # unconditional `continue` — a later class never sees a rawwitness field).
                     # A refused row keeps its note untouched (fail toward Review, pinned).
-                    if self._try_prefix_confusable_adopt(key, data, rec_p, rec, sup, slug):
+                    if self._try_prefix_confusable_adopt(key, data, rec_p, rec, sup, slug, page):
                         changed = True
                 continue
 
@@ -3336,7 +3377,26 @@ class ExtractionEngine:
             # saw it — the prefix-outlier guard capped it at 69 with the shared-tail note instead.
             if P_on and note.endswith(_PREFIX_OUTLIER_NOTE_TAIL):
                 rec_p = ocr_corrector.lookup_prefix(self.prefix_index, key, sup, slug)
-                if self._try_prefix_confusable_adopt(key, data, rec_p, rec, sup, slug):
+                if self._try_prefix_confusable_adopt(key, data, rec_p, rec, sup, slug, page):
+                    changed = True
+                continue
+
+            # ── P (wider-reading + page-absent flavours) — the 2026-08-19 widening ────────────
+            # MEASURED GAP: of six sampled Pelican I→1 misreads only THREE were the rawwitness
+            # class the lane originally inspected. The other three carried the mapper's
+            # wider-reading note or Gate C's "not printed here" note, and the right value was
+            # already in the database on every one of them. Same licensing, same bars, same
+            # fail-toward-Review refusal — this only widens WHICH note the lane will look at.
+            #
+            # Gate C is the interesting one, and it is answered on its own terms rather than
+            # bypassed: the note asserts "this value is not printed on the page", and the lane may
+            # only clear it by producing a DIFFERENT string that W3 finds printed there. The clip
+            # class Gate C exists for ('VXS986' where the page prints 'VXS98624') stays refused —
+            # a clip is not a one-glyph substitution, so it never yields a candidate at all.
+            if P_on and (template_mapper._PAD_CODE_DISAGREE_MARK in note
+                         or _FILING_SANITY_ABSENT_MARK in note):
+                rec_p = ocr_corrector.lookup_prefix(self.prefix_index, key, sup, slug)
+                if self._try_prefix_confusable_adopt(key, data, rec_p, rec, sup, slug, page):
                     changed = True
                 continue
 
@@ -3423,7 +3483,7 @@ class ExtractionEngine:
                 continue
         return changed
 
-    def _try_prefix_confusable_adopt(self, key, data, rec_p, rec, sup, slug):
+    def _try_prefix_confusable_adopt(self, key, data, rec_p, rec, sup, slug, page=""):
         """The P adopt lane's licensing + apply (reggie design → Oracle SIGN-OFF-W/COND 2026-08-16).
         Adopt the scope's dominant prefix over a single-confusable read head. Returns True iff the
         value was adopted; EVERY refusal returns False with the row untouched (note survives — fail
@@ -3439,8 +3499,10 @@ class ExtractionEngine:
             the arm DOWN, the remedy is Learning Repair, never a looser bar);
           • REQUIRED page witness: W1 corrected_to == adopted byte-equal (the raw-crop wider
             reading — the page's own second reading), or W2 a keyword-family candidate that
-            normalises to the adopted value. History alone NEVER rewrites (the 08-03 rule: a
-            poisoned corpus cannot invent a page reading);
+            normalises to the adopted value, or W3 the adopted string is PRINTED on the page
+            (`_page_carries_sepless`, leg 1 only — see that docstring for why leg 2 would be
+            circular here). History alone NEVER rewrites (the 08-03 rule: a poisoned corpus
+            cannot invent a page reading);
           • the adopted value passes the scope's learned shape (no shape entry -> refuse: a scope
             that can't state its shape doesn't get rewrites).
         NO confidence change — the ≤84/≤69 cap stays, so the 88 critical floor remains a live
@@ -3485,7 +3547,13 @@ class ExtractionEngine:
             w2 = any(str(c.get("method") or "").startswith("keyword")
                      and _cmp_norm(c.get("value")) == _cmp_norm(adopted)
                      for c in (self._field_candidates.get(key) or []))
-            if not (w1 or w2):
+            # W3 (2026-08-19 widening): the FULL-PAGE pass carries the adopted string. This is a
+            # genuinely independent witness and arguably the strongest of the three — W1 is a wider
+            # re-read of the SAME crop pixels, where W3 is a different segmentation over the whole
+            # frame. It is what makes the two new note classes answerable at all: the Gate-C class
+            # says "this value isn't printed here", and W3 answers with the value that IS.
+            w3 = bool(page) and _page_carries_sepless(page, adopted)
+            if not (w1 or w2 or w3):
                 return False
             # post-adopt learned shape (check_value: None == consistent, anomaly dict == violation)
             fmt_entry = self.format_class_index.get(
@@ -3499,13 +3567,14 @@ class ExtractionEngine:
             data.pop("validation_note", None)
             data["was_corrected"] = True
             data["method"] = method.replace("_rawwitness", "") + "+prefix_confusable_adopt"
+            _wit = "wider-read" if w1 else ("keyword" if w2 else "page")
             if isinstance(rec, dict):               # additive provenance; independent_agree untouched
                 rec.setdefault("note_demoted", []).append(
-                    {"cls": "P", "adopted_from": val, "witness": "rawwitness" if w1 else "keyword"})
+                    {"cls": "P", "adopted_from": val, "witness": _wit})
             self.log(f"  Corrob adopt (P): ref '{val}' → '{adopted}' (dominant prefix '{dom}', "
-                     f"{'wider-read' if w1 else 'keyword'} witness agrees) — note cleared")
+                     f"{_wit} witness agrees) — note cleared")
             if self._trace:
-                self._t("corrob_note_resolve", field=key, cls="P", value=adopted)
+                self._t("corrob_note_resolve", field=key, cls="P", value=adopted, witness=_wit)
             return True
         except Exception:
             return False   # a lane failure must never break extraction (fail toward Review)
@@ -5376,20 +5445,17 @@ class ExtractionEngine:
            against a clean page must keep the flag (pinned trade-off). Un-backed values (the
            PL-class true positives) always keep the flag."""
         try:
-            _strip_all = lambda s: re.sub(r'[^0-9a-z]+', '', str(s).casefold())
+            _strip_all = _strip_all_alnum
             _keep = lambda s: ''.join(ch for ch in str(s).casefold()
                                       if ch.isalnum() or ch in _PREFIX_CLASS_SYMBOLS)
             sv = _strip_all(rv)
             if len(sv) < 4:
                 return False                        # too short to judge — keep the v1 verdict
             kv = _keep(rv)
-            # collect per-line token windows once; both legs walk the same windows
-            windows = []                            # (joined_string, n_tokens)
-            for line in str(page).splitlines():
-                words = [w for w in line.split() if w]
-                for i in range(len(words)):
-                    for j in range(i + 1, min(i + 4, len(words) + 1)):
-                        windows.append((''.join(words[i:j]), j - i))
+            # Per-line token windows, built ONCE and walked by both legs. Shared with the pure
+            # `_page_carries_sepless` (W3) so leg 1 and that witness can never drift apart —
+            # W3 must keep answering exactly the question this leg answers, and no more.
+            windows = _sepless_line_windows(page)   # (joined_string, n_tokens)
             for joined, n in windows:
                 if _strip_all(joined) == sv:
                     if self._trace:
@@ -5510,9 +5576,7 @@ class ExtractionEngine:
                             str(results.get('_supplier_name') or ''),
                             str(results.get('_document_slug') or ''))
                     if _absent:
-                        if _note(ref_field_key,
-                                 f"'{rv}' doesn't appear on this page as written — please check the "
-                                 f"reference before filing."):
+                        if _note(ref_field_key, _FILING_SANITY_ABSENT_NOTE.format(rv)):
                             self._t('filing_sanity_ref_absent', field=ref_field_key, value=rv)
                             self.log(f"  Filing sanity: {ref_field_key} '{rv}' not printed on the "
                                      f"page as a whole token — flagged for review")
@@ -9396,7 +9460,9 @@ class ExtractionEngine:
         # 2026-08-15 held-queue arc: the corroboration-driven note resolver (A/B/C/D/E), each gated
         # by its own default-OFF env. Placed in the SAME recompute guard so a cleared note also loses
         # its confidence penalty and the doc clears the trust floor on import/reprocess.
-        _d4 = self._resolve_corroborated_notes(results, field_defs, _corrob, matched_tmpl)
+        # `ocr_text` reaches the resolver for the P lane's W3 witness only (is the adopted string
+        # printed on the page?). Defaulted in the signature so a direct unit call stays valid.
+        _d4 = self._resolve_corroborated_notes(results, field_defs, _corrob, matched_tmpl, ocr_text)
         if _d1 or _d2 or _d3 or _d4:   # all pre-evaluated; inline `or` would short-circuit
             # Oracle B1: overall/_needs_review were computed upstream — recompute or a demoted
             # doc parks with no visible reason. Same exclusion + format delta; needs_review

@@ -152,9 +152,21 @@ check('eligibility is EXACT equality in the demoter (a startswith/in refactor go
 check('shadow-attribution note can never equal the demote constant (scoped standing rule)',
       'was read the same way by two' in val_src
       and 'was read the same way by two' not in NOTE)
+# B1 recompute present at the call site. This asserted a CHARACTER DISTANCE (<=1800) between the
+# demoter call and the recompute, which is a proxy for the thing that matters and breaks on comment
+# edits alone — it went red twice for added prose while the mechanism was untouched (2026-08-15,
+# 2026-08-19). Assert the STRUCTURE instead: every demoter feeds the one shared guard, and the
+# recompute lives inside it. Deleting the recompute, or dropping a demoter out of the guard,
+# still goes red — which is the whole point of the pin.
+_dem = eng_src.find('_demote_xcheck_corroborated_note(results')
+_guard = eng_src.find('if _d1 or _d2 or _d3 or _d4:', _dem)
 check('B1 recompute present at the call site (overall + needs_review refreshed after a demote)',
-      '_demote_xcheck_corroborated_note(results' in eng_src
-      and re.search(r"_demote_xcheck_corroborated_note\(results[\s\S]{0,1800}_overall_confidence", eng_src))   # window widened for the _d4 corrob resolver (2026-08-15)
+      _dem > 0 and _guard > _dem
+      and '_overall_confidence' in eng_src[_guard:_guard + 2000])
+check('every note demoter is pre-evaluated into the ONE shared recompute guard (no inline `or`, '
+      'which would short-circuit and skip a later demoter entirely)',
+      all(re.search(rf"\n\s+{d} = self\._(demote|resolve)\w+\(", eng_src)
+          for d in ('_d1', '_d2', '_d3', '_d4')))
 check('demoter never reads/writes independent_agree (C4)',
       not re.search(r"_demote_xcheck_corroborated_note[\s\S]{0,4000}?independent_agree[\s\S]{0,2000}?def _build_corroboration_emit", eng_src)
       or 'independent_agree' not in eng_src[eng_src.index('def _demote_xcheck_corroborated_note'):eng_src.index('def _build_corroboration_emit')])

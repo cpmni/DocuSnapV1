@@ -33,7 +33,7 @@ MAJ = engine._TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY
 cn = engine._cmp_norm
 
 
-def run(results, corrob, matched_tmpl, env, selfattrs):
+def run(results, corrob, matched_tmpl, env, selfattrs, page=""):
     for e in ENVS:
         os.environ.pop(e, None)
     if env:
@@ -49,7 +49,7 @@ def run(results, corrob, matched_tmpl, env, selfattrs):
         _trace=False, _t=lambda *a, **k: None, log=lambda *a, **k: None)
     try:
         fired = engine.ExtractionEngine._resolve_corroborated_notes(
-            fake, results, {}, corrob, matched_tmpl)
+            fake, results, {}, corrob, matched_tmpl, page)
     finally:
         for e in ENVS:
             os.environ.pop(e, None)
@@ -360,6 +360,90 @@ r, attrs = mk_p(fmt={})
 check('P refuse: no learned-shape entry → note kept',
       not run(r, {}, None, 'REF_PREFIX_CONFUSABLE_ADOPT', attrs)
       and r['invoice_number']['value'] == 'P1/26/3130')
+
+# ── THE 2026-08-19 WIDENING: two more note classes + the W3 page witness ────────────────────────
+# Measured gap: of six sampled Pelican misreads only THREE were the rawwitness class this lane
+# originally inspected. The other three carried the mapper's wider-reading note or Gate C's
+# "not printed here" note. Same licensing, same bars — only the note class widens.
+print('P widening. wider-reading + page-absent classes, W3 page witness')
+from extraction import template_mapper as _tm  # noqa: E402
+
+# A realistic full-page pass: the reference is printed as 'PI/26/3130', split across two tokens on
+# one line (the retokenisation W3 must see through), plus noise the matcher must ignore.
+P_PAGE = "PELICAN OFFICE INTERIORS\nInvoice No: PI/26 /3130\nDate 04/06/2026\nTotal 1,204.55\n"
+
+# HEAL 3 — the WIDER-READING class (template_mapper's pad-window note), witnessed by the page.
+_PAD_NOTE = _tm._PAD_CODE_DISAGREE_NOTE.format('PI/26/3130')
+r, attrs = mk_p(val='P1/26/3130', ct='', method='template_mapping_padcodeflag', note=_PAD_NOTE)
+fired = run(r, {}, None, 'REF_PREFIX_CONFUSABLE_ADOPT', attrs, page=P_PAGE)
+check('P heal (W3, wider-reading class): the mapper note is now read, page witnesses the adopt',
+      fired and r['invoice_number']['value'] == 'PI/26/3130'
+      and r['invoice_number'].get('validation_note') is None)
+
+# HEAL 4 — GATE C, answered on its own terms. The note asserts the value is not printed here; the
+# lane may only clear it by producing a DIFFERENT string that the page DOES carry.
+_ABSENT_NOTE = engine._FILING_SANITY_ABSENT_NOTE.format('P1/26/3130')
+r, attrs = mk_p(val='P1/26/3130', ct='', method='template_mapping', note=_ABSENT_NOTE)
+fired = run(r, {}, None, 'REF_PREFIX_CONFUSABLE_ADOPT', attrs, page=P_PAGE)
+check('P heal (W3, Gate-C class): "not printed here" cleared by the value that IS printed here',
+      fired and r['invoice_number']['value'] == 'PI/26/3130'
+      and r['invoice_number'].get('validation_note') is None)
+
+# NO PAGE → no W3. The same row with no page text has no witness at all and must keep its note.
+r, attrs = mk_p(val='P1/26/3130', ct='', method='template_mapping', note=_ABSENT_NOTE)
+check('P refuse: Gate-C class with no page text → no witness, note kept',
+      not run(r, {}, None, 'REF_PREFIX_CONFUSABLE_ADOPT', attrs)
+      and r['invoice_number'].get('validation_note') == _ABSENT_NOTE)
+
+# ORACLE C5 — THE CIRCULARITY PIN. W3 is leg 1 of page-match v2 and must never become leg 2.
+# Leg 2 is a BACKED-CONFUSABLE tolerance: it answers True when the page carries a one-glyph
+# in-class variant. Used as a witness for a candidate that is itself a one-glyph variant, it would
+# let the misread witness its own correction. A page carrying ONLY the misread must witness nothing.
+_MISREAD_PAGE = "PELICAN OFFICE INTERIORS\nInvoice No: P1/26/3130\nTotal 1,204.55\n"
+check('W3 is leg 1 ONLY: a page carrying only P1/26/3130 does NOT witness PI/26/3130',
+      not engine._page_carries_sepless(_MISREAD_PAGE, 'PI/26/3130')
+      and engine._page_carries_sepless(_MISREAD_PAGE, 'P1/26/3130'))
+r, attrs = mk_p(val='P1/26/3130', ct='', method='template_mapping', note=_ABSENT_NOTE)
+check('...so the Gate-C lane REFUSES against a page that only carries the misread',
+      not run(r, {}, None, 'REF_PREFIX_CONFUSABLE_ADOPT', attrs, page=_MISREAD_PAGE)
+      and r['invoice_number']['value'] == 'P1/26/3130')
+
+# ORACLE — THE CLIP CLASS STAYS REFUSED. This is the true positive Gate C exists for: a crop that
+# lost trailing characters. It is not a substitution, so it never yields a candidate at all.
+_CLIP_FMT = _fac.build_format_class_index([{
+    'supplier_name': 'Vexley Supplies', 'document_type': 'invoice', 'field_key': 'invoice_number',
+    'sample_values': ['VXS98624', 'VXS98701', 'VXS99013'],
+}])
+_CLIP_IDX = {('vexley supplies', 'invoice', 'invoice_number'):
+             {'dominant': 'VXS', 'counts': {'VXS': 40}, 'total': 40, 'known': {'VXS'}}}
+r = {'_supplier_name': 'Vexley Supplies', '_document_slug': 'invoice',
+     'invoice_number': {'value': 'VXS986', 'method': 'template_mapping', 'confidence': 84,
+                        'validation_note': engine._FILING_SANITY_ABSENT_NOTE.format('VXS986')}}
+check('P refuse: the CLIP class (VXS986 vs printed VXS98624) — Gate C keeps its true positive',
+      not run(r, {}, None, 'REF_PREFIX_CONFUSABLE_ADOPT',
+              {'prefix_index': _CLIP_IDX, 'format_class_index': _CLIP_FMT},
+              page="VEXLEY SUPPLIES\nInvoice VXS98624\n")
+      and r['invoice_number']['value'] == 'VXS986')
+
+# ORACLE — THE TWO-CHARACTER CORRUPTION. 'P1L/26/3152' is the negative control from the round-9
+# corpus: two glyphs wrong, so no single-substitution rule may ever touch it, on any note class.
+r, attrs = mk_p(val='P1L/26/3152', ct='', method='template_mapping', note=_ABSENT_NOTE)
+check('P refuse: the TWO-character corruption P1L/ is never adopted (the negative control)',
+      not run(r, {}, None, 'REF_PREFIX_CONFUSABLE_ADOPT', attrs,
+              page="PELICAN OFFICE INTERIORS\nInvoice No: PI/26/3152\n")
+      and r['invoice_number']['value'] == 'P1L/26/3152')
+
+# The note MARKS are shared with their write sites, so a reword makes the lane INERT rather than
+# matching a class nobody reviewed (reggie's condition). Assert the composition, not the prose.
+check('note MARKS are composed into the notes they match (reword ⇒ inert, never mis-matched)',
+      engine._FILING_SANITY_ABSENT_MARK in engine._FILING_SANITY_ABSENT_NOTE
+      and _tm._PAD_CODE_DISAGREE_MARK in _tm._PAD_CODE_DISAGREE_NOTE
+      and engine._FILING_SANITY_ABSENT_NOTE.format('X').startswith("'X' "))
+
+# W3 shares leg 1's window builder with _page_match_v2 — they cannot drift apart.
+check('W3 sees a same-line 2-token join but never a CROSS-LINE one (manufactured adjacency)',
+      engine._page_carries_sepless("ref PI/26 /3130 end", 'PI/26/3130')
+      and not engine._page_carries_sepless("ref PI/26\n/3130 end", 'PI/26/3130'))
 
 # the confusable-class table is PINNED (Oracle: an ocr_corrector map edit must not silently widen this arm)
 check('P table: exact classes pinned (L documented in the 1-class; B↔E and separators excluded)',
