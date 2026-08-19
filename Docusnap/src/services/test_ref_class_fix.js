@@ -339,6 +339,29 @@ const plain = _mergeReprocessRows([{ field_key: 'invoice_number', raw_value: 'A'
                                   [{ field_key: 'invoice_number', display_value: 'B', extraction_method: 'template_mapping' }]);
 check('an ordinary row is unaffected — OFF is byte-identical here too', plain[0].display_value === 'B');
 
+// CHRIS ROUND 10, CARD 6. The fresh note is computed against the read we discard, so it can NAME
+// that read. He found "'PL/26/6000' doesn't appear on this page as written" on a row displaying
+// PI/26/6000 — a sentence that quotes a value the operator cannot see and judges a value that is no
+// longer there. The note must follow the value, and the hold must survive.
+const noted = _mergeReprocessRows(
+  [{ field_key: 'invoice_number', raw_value: 'PL/26/6000', display_value: 'PI/26/6000',
+     extraction_method: 'template_mapping+prefix_class_fix' }],
+  [{ field_key: 'invoice_number', display_value: 'PL/26/6000', extraction_method: 'template_mapping',
+     validation_note: "'PL/26/6000' doesn't appear on this page as written — please check the reference before filing." }]);
+check('a fresh note naming the DISCARDED read is re-pointed at the value actually kept',
+      noted[0].display_value === 'PI/26/6000'
+      && !noted[0].validation_note.includes('PL/26/6000')
+      && noted[0].validation_note.includes('PI/26/6000'));
+check('...and the HOLD survives — nothing re-verified this page, so the document still waits',
+      !!String(noted[0].validation_note || '').trim());
+const other = _mergeReprocessRows(
+  [{ field_key: 'invoice_number', raw_value: 'PL/26/6000', display_value: 'PI/26/6000',
+     extraction_method: 'template_mapping+prefix_class_fix' }],
+  [{ field_key: 'invoice_number', display_value: 'PL/26/6000', extraction_method: 'template_mapping',
+     validation_note: 'This value looks unlike the shape this sender usually uses.' }]);
+check('a note about ANYTHING ELSE is left exactly as the engine wrote it',
+      other[0].validation_note === 'This value looks unlike the shape this sender usually uses.');
+
 // ── 6. placement + guards (source inspection) ───────────────────────────────────────────────────
 console.log('\nC7 — placement and the guards that must not be borrowed from elsewhere');
 const rsSrc = fs.readFileSync(path.join(REPO, 'src', 'services', 'reviewService.js'), 'utf8');

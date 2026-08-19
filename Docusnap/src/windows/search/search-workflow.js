@@ -261,13 +261,24 @@ function _decisionBar(route) {
       info.className = 'wf-info';
       info.textContent = 'Press the button again to confirm — an approval is permanent and stamped with your name.';
       wrap.appendChild(info);
+      // THE DISARM MUST SPEAK (Chris rounds 2, 5 and 10 — the SAME card four times, each time
+      // reported as "Approve does nothing"). The two-step arm is right and stays; the SILENT
+      // auto-revert is what reads as a dead button. He pressed Approve four times in round 10, each
+      // press spaced by a screenshot, so every click armed and every timer disarmed before the
+      // next — leaving no trace on screen that anything had happened at all.
+      // Nobody approved "revert without telling the user": that was an implementation detail, and
+      // it is the whole defect. So the window is long enough to actually read the sentence, and
+      // when it does lapse it SAYS SO instead of quietly putting the button back.
       setTimeout(() => {
         if (approveBtn.isConnected && approveBtn.dataset.armed) {
           delete approveBtn.dataset.armed; approveBtn.textContent = 'Approve';
           approveBtn.classList.remove('wf-armed');
-          if (info.isConnected) info.remove();
+          if (info.isConnected) {
+            info.textContent = 'Approval not confirmed — the second press timed out. '
+              + 'Press Approve again when you are ready.';
+          }
         }
-      }, 8000);
+      }, 30000);
     });
     acts.appendChild(approveBtn);
     acts.appendChild(_wfBtn('Reject', false, () => decide('reject')));

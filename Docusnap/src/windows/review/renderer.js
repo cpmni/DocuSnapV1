@@ -5733,13 +5733,22 @@ function renderSweepConsentBar() {
       ? `<div class="scb-muted">${s.otherScopes} other sender${s.otherScopes === 1 ? ' is' : 's are'} also ready — `
         + `file these first and the next offer follows.</div>`
       : '';
+    // "UP TO", and the hedge is load-bearing (Chris round 10, card 5). The offer is a snapshot: the
+    // documents behind it can be filed by anything else — File All Ready, another sweep, a plain
+    // confirm — while the bar sits on screen waiting to be read. He came back to "File 18", pressed
+    // it, and got 0. The DELIVERY was faultless: it re-checked every document, filed the ones still
+    // eligible, and named each one it kept back. Only the PROMISE was out of date, and after being
+    // told 18 twice and getting 0 he stopped believing the counts.
+    // Re-counting on every queue change is the expensive fix; hedging is the honest one, and it is
+    // the wording of the File All Ready dialog he explicitly DID trust — because it said "up to
+    // 146 of 195" and then filed exactly 146. Say no more than you can guarantee.
     bar.innerHTML =
         `<b>${n}</b> <b>${escHtml(s.supplier)}</b> ${escHtml(typeName)} document${n === 1 ? '' : 's'} `
       + `already read cleanly and now pass every check — nothing was re-read.`
       + heldLine + otherLine + rows
       + `<div class="scb-actions">`
       + `<button class="scb-btn primary" data-scb="file" ${n === 0 || s.phase === 'filing' ? 'disabled' : ''}>`
-      + (s.phase === 'filing' ? 'Filing…' : `✓ File ${n}`) + `</button>`
+      + (s.phase === 'filing' ? 'Filing…' : `✓ File up to ${n}`) + `</button>`
       + `<button class="scb-btn" data-scb="review" ${s.phase === 'filing' ? 'disabled' : ''}>Review them</button>`
       + `<button class="scb-btn" data-scb="later" ${s.phase === 'filing' ? 'disabled' : ''}>Not now</button>`
       + `<span class="scb-toggle" data-scb="toggle">${s.listOpen ? 'Hide list' : 'Choose which…'}</span>`

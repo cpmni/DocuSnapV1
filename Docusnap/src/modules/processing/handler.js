@@ -988,8 +988,22 @@ function mergeReprocessRows(existing, newRows, flip = null, onTrace = null, hidd
     // battery is the gate (the REPROCESS_ANNOTATED_EMPTY_WINS precedent).
     if (ex.display_value && String(ex.extraction_method || '').endsWith('+prefix_class_fix')) {
       if (String(row.display_value || '') === String(ex.raw_value || '')) {
+        // THE NOTE MUST FOLLOW THE VALUE (Chris round 10, card 6). The fresh row's note was
+        // computed against the read we are about to discard, so it can NAME that read — he found
+        // "'PL/26/6000' doesn't appear on this page as written" sitting on a row that now displays
+        // PI/26/6000. The sentence is then false twice over: it quotes a value the operator cannot
+        // see, and it judges a value that is no longer there. Re-point it at what was actually
+        // kept, and KEEP THE HOLD — nothing re-verified this page, so the document still waits.
+        // A note about anything else (a shape warning, a relocation flag) is left alone.
+        let _note = row.validation_note || null;
+        const _gone = String(row.display_value || '');
+        if (_note && _gone && _note.includes(_gone) && !_note.includes(String(ex.display_value))) {
+          _note = require('../../services/classFixService').APPLIED_HOLD_NOTE
+            .replace('{}', String(ex.display_value));
+        }
         trace(row.field_key, 'kept_class_fix', ex.display_value, row.display_value);
-        return { ...row, display_value: ex.display_value, extraction_method: ex.extraction_method };
+        return { ...row, display_value: ex.display_value, extraction_method: ex.extraction_method,
+                 validation_note: _note };
       }
       trace(row.field_key, 'class_fix_dropped', ex.display_value, row.display_value);
       return row;
