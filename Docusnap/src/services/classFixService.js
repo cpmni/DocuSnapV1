@@ -159,7 +159,27 @@ function applyForConfirm(db, opts) {
         String(g.supplier_name || '').trim().toLowerCase() === scope.sup.toLowerCase()
         && String(g.document_type || '').trim().toLowerCase() === scope.slug.toLowerCase()
         && g.field_key === refKey);
-      if (grp) established = refClassFix.bothFormsEstablished(grp.value_counts || {}, rule.fromHead);
+      if (grp) {
+        // MACHINE EVIDENCE COUNTS ON THE REFUSAL SIDE (Oracle S1-C3, 2026-08-19).
+        // `learning_exclude_machine_confirms` (ON by default) hides every auto-filed and swept
+        // document from `value_counts`, and on a real corpus that is most of it — measured 89.9%
+        // on the round-9 database, where a sender with 27 confirmed values presents 4.
+        //
+        // That starvation is a SAFETY loss here, not a reward loss. Asking is the conservative
+        // branch: with the read's own form hidden, `established` comes back false, no question is
+        // asked, and up to 25 references are rewritten class-wide on evidence the app actually
+        // holds and cannot see. C6 of this feature's own sign-off is defeated by the exclusion.
+        //
+        // So union the machine channel in — UNFILTERED and REFUSAL-ONLY. This can only ever make
+        // the app ASK; it can never license a rewrite, widen a gate, or reach anything that
+        // decides filing. The mirrored rule: a refusal test may use the fullest evidence there is;
+        // a licensing test may use human-attested evidence only.
+        const bucket = { ...(grp.value_counts || {}) };
+        for (const [v, n] of Object.entries(grp.machine_value_counts || {})) {
+          bucket[v] = (bucket[v] || 0) + n;
+        }
+        established = refClassFix.bothFormsEstablished(bucket, rule.fromHead);
+      }
     } catch (e) { logger?.warn?.('class fix: both-forms check failed: ' + (e && e.message)); }
     if (established) {
       return {

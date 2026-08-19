@@ -274,6 +274,52 @@ check('...and is also remembered, so the next one applies without asking again',
                const r2 = cfs.applyForConfirm(db, args());
                return !!r2 && !r2.ask && valOf(4) === 'PI/26/9500'; })());
 
+// ── 4b. S1-C3 — machine evidence must count on the REFUSAL side ─────────────────────────────────
+// Oracle 2026-08-19, and this one is a SAFETY hole rather than a missed reward. The default-ON
+// `learning_exclude_machine_confirms` hides every auto-filed and swept document from `value_counts`
+// — 89.9% of the corpus on the round-9 database. Starved of it, `bothFormsEstablished` answers
+// false, the one-time ask never fires, and up to 25 references are rewritten class-wide on evidence
+// the app is holding and cannot see. Asking is the conservative branch, so the refusal side must
+// see everything. WAS RED before the union was added.
+console.log('\nS1-C3 — the ask must see MACHINE-confirmed history too (asking is the safe branch)');
+{
+  cfs._reset();
+  const d = mkCorpus();
+  // Five human PI confirms, and THREE P1 confirms that were auto-filed — the mature-install shape.
+  for (const [i, v] of [[60, 'PI/25/8496'], [61, 'PI/26/1001'], [62, 'PI/26/1002'],
+                        [63, 'PI/26/1003'], [64, 'PI/26/1004']]) {
+    d.prepare(`INSERT INTO documents (id, document_type_id, original_filename, folder_path, status,
+                supplier_name, overall_confidence) VALUES (?,1,?,'/in','confirmed',?,92)`).run(i, `c${i}.pdf`, SUP);
+    d.prepare(`INSERT INTO extractions (document_id, field_key, raw_value, display_value, confidence,
+                extraction_method) VALUES (?,'invoice_number',?,?,92,'template_mapping')`).run(i, v, v);
+  }
+  for (const [i, v] of [[70, 'P1261792'], [71, 'P1263711'], [72, 'P1264000']]) {
+    d.prepare(`INSERT INTO documents (id, document_type_id, original_filename, folder_path, status,
+                supplier_name, overall_confidence, confirmed_via)
+                VALUES (?,1,?,'/in','confirmed',?,92,'auto_threshold')`).run(i, `m${i}.pdf`, SUP);
+    d.prepare(`INSERT INTO extractions (document_id, field_key, raw_value, display_value, confidence,
+                extraction_method) VALUES (?,'invoice_number',?,?,92,'template_mapping')`).run(i, v, v);
+  }
+  d.prepare("INSERT INTO settings (key,value) VALUES ('learning_exclude_machine_confirms','true') "
+            + 'ON CONFLICT(key) DO UPDATE SET value=excluded.value').run();
+  const g = (learning.getFieldFormats(d) || []).find(x => x.field_key === 'invoice_number'
+    && String(x.supplier_name).toLowerCase().includes('pelican'));
+  check('precondition: the exclusion really does hide the machine P1 rows from value_counts',
+        !!g && Object.keys(g.value_counts).every(v => v.startsWith('PI'))
+        && Object.keys(g.machine_value_counts || {}).length === 3);
+  check('...and the starved view alone would answer "not established" — i.e. would NOT ask',
+        rcf.bothFormsEstablished(g.value_counts, 'P1') === false);
+  process.env.REF_CLASS_FIX = '1';
+  const r = cfs.applyForConfirm(d, {
+    documentId: 1, supplierName: SUP, typeSlug: 'invoice', dtInfo, actorName: 'tester',
+    learning, audit: () => {},
+    corrections: { invoice_number: { original_value: 'P1/26/801', corrected_value: 'PI/26/801' } },
+  });
+  check('WITH the machine channel unioned in, the app ASKS instead of silently rewriting',
+        !!r && r.ask === true);
+  d.close();
+}
+
 // ── 5. C3 — the reprocess guard, at the line that actually reverts ──────────────────────────────
 console.log('\nC3 — a reprocess must not silently revert the fix (WAS RED)');
 const { _mergeReprocessRows } = require(path.join(REPO, 'src', 'modules', 'processing', 'handler.js'));

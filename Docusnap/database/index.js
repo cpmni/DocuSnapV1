@@ -1747,6 +1747,30 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 74 applied: ref-class-fix seeded OFF');
   }
 
+  // ── Migration 75: a value a REWRITE created may not be evidence for that rewrite ──────────────
+  // (gary → Oracle SIGN-OFF-WITH-CONDITIONS, 2026-08-19.) The engine writes SIX corpus-derived
+  // rewrite markers; the learned-format query excluded THREE. `+snapped` — the Stage-2.5d dominant
+  // snap, which rewrites a value to the confirmed dominant with NO page witness — plus
+  // `+snap_corrob`, `+name_corrob_adopt` and `+prefix_confusable_adopt` had no clause at all, so a
+  // value the corpus produced voted for the belief that produced it. That loop was ALREADY OPEN on
+  // the HUMAN channel: confirming a snapped document without editing it writes no corrections row,
+  // so the row counted, marker and all. The machine-confirm exclusion masked it rather than
+  // preventing it. Applied to BOTH readers (Oracle S0-C1) — `getFieldFormats` and
+  // `getPrefixModelForScope`, the latter being where the confirm-time prefix guard was grading its
+  // own homework. Seeded OFF: unlike the three unconditional clauses this one SHRINKS live corpora
+  // (`+snapped` rows date from July), which can make a field unverifiable and de-graduate a scope.
+  // The shrink direction is fail-safe — a vanished group means the sub-100 gate refuses, i.e. MORE
+  // review, never a wrong file — so the code ships now and the flip waits on the de-graduation
+  // census (`TESTING/_measure/census_machine_pointer.js`).
+  if (!applied.has(75)) {
+    try {
+      db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)')
+        .run('learning_exclude_rewrite_markers', 'false');
+    } catch (e) { console.warn(`  migration 75: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (75)').run();
+    console.log('JS migration 75 applied: rewrite-marker learning exclusion seeded OFF');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

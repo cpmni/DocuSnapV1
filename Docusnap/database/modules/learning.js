@@ -668,6 +668,17 @@ function _dedupeCorrections(db) {
   try { return getSetting(db, 'format_corrections_dedupe', 'false') === 'true'; } catch { return false; }
 }
 
+// Slice 0 (Oracle SIGN-OFF-W/COND 2026-08-19): exclude values that a REWRITE created from the two
+// corpora that judge rewrites. DEFAULT OFF — unlike the three unconditional marker clauses, this one
+// shrinks a live corpus (`+snapped` rows have existed since July), which can de-graduate a scope.
+// The shrink direction is fail-safe, so the code ships ahead of the census that licenses the flip.
+function _excludeRewriteMarkers(db) {
+  const env = process.env.LEARNING_EXCLUDE_REWRITE_MARKERS;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try { return getSetting(db, 'learning_exclude_rewrite_markers', 'false') === 'true'; } catch { return false; }
+}
+
 function persistConfirmedValues(db, document_id, allValues) {
   if (!document_id || !allValues || typeof allValues !== 'object') return 0;
   const has = db.prepare('SELECT 1 FROM extractions WHERE document_id = ? AND field_key = ? LIMIT 1');
@@ -1512,6 +1523,31 @@ function getFieldFormats(db, opts) {
       AND (e.extraction_method IS NULL
            OR e.extraction_method NOT LIKE '%+prefix\\_class\\_fix' ESCAPE '\\'
            OR c.corrected_value IS NOT NULL)
+      ${_excludeRewriteMarkers(db) ? `
+      -- SLICE 0 (gary → Oracle SIGN-OFF-W/COND, 2026-08-19; \`learning_exclude_rewrite_markers\`).
+      -- THE HOLE: the engine writes SIX corpus-derived rewrite markers and this query excluded
+      -- THREE. \`+snapped\` (the Stage-2.5d dominant snap, which rewrites to the confirmed dominant
+      -- with NO page witness), \`+snap_corrob\`, \`+name_corrob_adopt\` and \`+prefix_confusable_adopt\`
+      -- had no clause at all — so a value the corpus itself produced votes for the belief that
+      -- produced it. That is the B7 loop, and it was ALREADY OPEN on the HUMAN channel: a human who
+      -- confirms a snapped document without editing it writes no corrections row, so the row counts,
+      -- marker and all. The machine-confirm exclusion was masking it, not preventing it.
+      -- ORACLE S0-C1: the twin clause lives in getPrefixModelForScope — the confirm-time guard was
+      -- grading its own homework over the same rewritten rows. The two readers keep DIFFERENT
+      -- snapshots (this one provenance-filtered and deduped, that one live and machine-inclusive by
+      -- design) but must share ONE provenance policy.
+      -- FLAG-GATED, unlike the three clauses above, and deliberately: those shipped unconditional
+      -- because no historic row carried them. \`+snapped\` has shipped since July, so rows DO exist
+      -- and this clause SHRINKS live corpora — which can make a field unverifiable and de-graduate
+      -- a scope. The shrink direction is fail-safe (a vanished group ⇒ the sub-100 gate refuses ⇒
+      -- MORE review, never a wrong file), so the code ships now and the flip waits on the census.
+      -- Patterns are UNANCHORED (Oracle): the shipped '%+marker' form is end-anchored, so a stacked
+      -- suffix like 'anchor_crop+name_repair+snapped' escaped every one of them.
+      AND (e.extraction_method IS NULL OR c.corrected_value IS NOT NULL OR (
+               e.extraction_method NOT LIKE '%+snapped%'
+           AND e.extraction_method NOT LIKE '%+snap\\_corrob%' ESCAPE '\\'
+           AND e.extraction_method NOT LIKE '%+name\\_corrob\\_adopt%' ESCAPE '\\'
+           AND e.extraction_method NOT LIKE '%+prefix\\_confusable\\_adopt%' ESCAPE '\\'))` : ''}
     ORDER BY d.confirmed_at DESC, d.id DESC
   `).all();
 
@@ -1880,6 +1916,20 @@ function getPrefixModelForScope(db, supplier_name, document_type_slug, field_key
     WHERE d.status = 'confirmed' AND e.field_key = ?
       AND COALESCE(d.supplier_name, '') = COALESCE(?, '')
       AND COALESCE(dt.slug, '')         = COALESCE(?, '')
+      ${_excludeRewriteMarkers(db) ? `
+      -- ORACLE S0-C1 (2026-08-19), the twin of the clause in getFieldFormats. This model is the
+      -- evidence for the CONFIRM-TIME prefix-outlier guard (reviewService.confirm). It applies no
+      -- via filter — correctly, since its whole purpose is to read the live corpus, machine files
+      -- included. But reading rows that a REWRITE created means the guard grades its own homework:
+      -- the snap writes the dominant prefix onto a value, the document files, and the guard then
+      -- counts that value as proof the prefix is established. Same four markers, same carve-out,
+      -- same flag — one provenance policy over two different snapshots.
+      AND (e.extraction_method IS NULL OR c.corrected_value IS NOT NULL OR (
+               e.extraction_method NOT LIKE '%+snapped%'
+           AND e.extraction_method NOT LIKE '%+snap\\_corrob%' ESCAPE '\\'
+           AND e.extraction_method NOT LIKE '%+name\\_corrob\\_adopt%' ESCAPE '\\'
+           AND e.extraction_method NOT LIKE '%+prefix\\_confusable\\_adopt%' ESCAPE '\\'
+           AND e.extraction_method NOT LIKE '%+prefix\\_class\\_fix%' ESCAPE '\\'))` : ''}
     GROUP BY value
     HAVING value IS NOT NULL AND TRIM(value) <> ''
   `).all(field_key, supplier_name || '', document_type_slug || '');

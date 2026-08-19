@@ -160,8 +160,19 @@ console.log('7. structural pins — the shared sentinel set (three consumers, on
         + 'two-value filter stays unconditional)',
         templates.includes("require('./machine_vias')")
         && templates.includes("'scope_sweep' || _via === 'auto_reprocess'"));
-  check('machine_value_counts consumed by NOTHING in slice 1 (inert pin: no other repo module '
-        + 'references the key — the slice-2 refusal union must consciously delete this)',
+  // CONSCIOUSLY UPDATED 2026-08-19, exactly as this pin's own note demanded. The channel is no
+  // longer inert: `classFixService` unions it into the bucket it hands `bothFormsEstablished`
+  // (Oracle S1-C3). That is the REFUSAL side, and the distinction is the whole invariant —
+  //   • a REFUSAL test may use the fullest evidence available (human + all machine);
+  //   • a LICENSING or rewrite-permission test may use human-attested evidence only.
+  // Starving the refusal side was a SAFETY loss: with the read's own form hidden, the class fix
+  // asked no question and rewrote up to 25 references on evidence the app was holding.
+  // The count is pinned at TWO — the emit plus that one consumer — so a third reference has to be
+  // justified here, and in particular so nobody quietly wires this into a licensing index. The
+  // 2026-08-19 Oracle ruling SENT BACK exactly that (see test_prefix_amplification_invariant.py:
+  // amplifying `prefix_index` silences the outlier guard on the prefix it exists to catch).
+  check('machine_value_counts is consumed ONLY by the refusal side (emit + classFixService); a '
+        + 'third consumer must be justified, and must never be a licensing index',
         (() => {
           const roots = ['database/modules', 'src', 'python_backend/extraction'];
           const repo = path.join(__dirname, '..', '..');
@@ -170,12 +181,15 @@ console.log('7. structural pins — the shared sentinel set (three consumers, on
             for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
               const p = path.join(dir, f.name);
               if (f.isDirectory()) { if (!/node_modules|__pycache__/.test(f.name)) scan(p); }
-              else if (/\.(js|py)$/.test(f.name) && !/test_machine_confirm_learning/.test(f.name)
+              // Count PRODUCTION consumers only. The scan used to exclude just this file by name,
+              // which meant any new suite asserting the behaviour tripped the pin it was written
+              // to support — a test is not a consumer.
+              else if (/\.(js|py)$/.test(f.name) && !/(^|[\\/])test_/.test(f.name)
                        && fs.readFileSync(p, 'utf8').includes('machine_value_counts')) hits++;
             }
           };
           for (const r of roots) scan(path.join(repo, r));
-          return hits === 1;   // learning.js's emit — the only mention
+          return hits === 2;   // learning.js's emit + classFixService's refusal-side union
         })());
 }
 
