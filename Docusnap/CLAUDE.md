@@ -21,8 +21,20 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-20: **READ `HANDOVER_2026-08-20.md` FIRST** (then `_2026-08-19.md`, then
-`_2026-08-18.md`; the long block below is the 08-15 state and is now historical).
+## ⏭ LATEST — 2026-08-20 EVENING: **READ `HANDOVER_2026-08-20_EVENING.md` FIRST** (then
+`_2026-08-20.md`, then `_2026-08-19.md`; the long block below is the 08-15 state, historical).
+**Chris ROUND 10 ran (all nine switches ON): the class fix WORKS end to end** — 15 typed
+corrections down to an honest 4; 410 docs, 356 filed, ZERO wrong folder/value; one correction fixed
+six siblings, Undo put all six back, the `P1L/` control was refused; first round Chris says yes
+with no "but". 3 of 7 new cards fixed same night (`815631c`: Approve's SILENT 8s two-step revert —
+reported four rounds; sweep offer now "File up to N"; the class-fix reprocess guard kept a stale
+note against the discarded read — note now follows the value). **OPEN cards: #3 "Company inferred"
+note held 52/90 remaining docs (cost 39 wave-2 auto-files — the biggest UX lever); #2 "never seen
+this sender" on the 40th doc (cause UNVERIFIED); #4 £-less money freeze; #7 notice stack/counters.**
+Card 6b is NOT a bug: Gate C truthfully flags an OCR misread of a correct value; the rescue leg
+declined because dominance is STARVED on a fresh install — the starvation's customer face.
+HEAD `815631c`, ALL PUSHED. Mig 75 (`learning_exclude_rewrite_markers`, DARK) shipped + both
+censuses green (zero de-graduations both DBs — flip precondition MET, owner decision pending).
 **Two things a new session must not re-derive:**
 1. **THE MACHINE-CONFIRM STARVATION (measured).** `learning_exclude_machine_confirms` removes every
    `auto_threshold`/`scope_sweep`/`auto_graduated` confirm from the substrate `getFieldFormats`
@@ -30,9 +42,12 @@ touches that area — read the pointed-to doc BEFORE working in it:
    corpus counts 4**; whole install **38 human vs 331 machine = 89.7% invisible**. So the dominance
    bars (≥5 extractable prefixes, ≥5 dominant, ≥0.90 share) licensing the P adopt lane, the
    dominant-value snap and the prefix guard **cannot arm on a scope the app files well** — the better
-   the auto-filing, the blinder the reading. **Do NOT just flip the switch:** the exclusion stops a
-   machine echo voting for itself (the B7 loop), but an `auto_threshold` confirm passed the full
-   trust gate, which is not an echo — that distinction is the design question. gary + Oracle first.
+   the auto-filing, the blinder the reading. **RULED (Oracle SPLIT, 08-20): slice 0 SHIPPED** (mig 75
+   `learning_exclude_rewrite_markers` DARK — a value a REWRITE created may not be evidence for that
+   rewrite; classFixService now unions machine history REFUSAL-ONLY, unconditional); **slice 1
+   (un-starving the readers) SENT BACK — NOT built**, its killing pin is in the repo. The invariant:
+   refusal tests may see all evidence; licensing tests human-attested only; neither may see
+   rewrite-created rows; split the input, never amplify a shared index.
    **Always measure what learning KNOWS through `getFieldFormats`, never off raw `extractions`** (it
    also drops any group with <3 contributing documents — a count of 0 can mean "no group").
 2. **The P1/PI class correction shipped DARK** (`ref_class_fix_enabled`, migration 74, +
