@@ -21,8 +21,22 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-20 EVENING: **READ `HANDOVER_2026-08-20_EVENING.md` FIRST** (then
-`_2026-08-20.md`, then `_2026-08-19.md`; the long block below is the 08-15 state, historical).
+## ⏭ LATEST — 2026-08-22 OVERNIGHT: **READ `HANDOVER_2026-08-22.md` FIRST** (the "teach 1 → import N
+→ it files itself" arc), then `HANDOVER_2026-08-20_EVENING.md`, `_2026-08-20.md`, `_2026-08-19.md`.
+**Built DARK, mig 79 seeds all five switches OFF** (each is its own revert): `scope_sweep_auto_accept`
+(Slice 1, scope-local auto-accept of the post-confirm sweep + receipt/Put back) · `letterhead_fragment_abstain`
+(Slice 0: no more "Cleaning"/"Security" as a company; census 34 abstained all wrong, 0 correct lost) ·
+`quiet_reread_enabled` (Slice 3: `quietLane.js` — after a TAUGHT confirm or a graduation MINT the sender's
+template-less held docs are re-read on a below-normal lane, invisible to `_anyProcessingBusy`, killed at
+every foreground door, merge-gated via `applyReprocessResult(opts.expect)`) · `role_field_dominant_class`
+(a ROLE field judged by its dominant shape when one confirmed outlier collapsed the strict class — the
+Veltrix `VX$22033` brick) · plus the shipped `scope_sweep_enabled`. **Slice 2 (Tier-1.5 recompute) is
+DEAD by measurement** (`TESTING/_measure/s2_histogram.js`: 0/22, 0/378, ceiling 0.5%). Chris rounds 13/13b in
+`docs/CHRIS_FULL_APP_REVIEW_2026-08-22.md`. Traps: `applyReprocessResult` returns the result object on
+success and `{dropped}` only with `opts.expect`; `_stageReprocessDocs`/`_runReprocessShard` are the ONE
+staging+spawn for foreground + lane (thread-cap identity lives there); `getById` is `SELECT *` (no
+`type_slug`); a 5th confirm via File-All graduates without minting a template (`onScopeGraduated` is
+non-bulk only — NEXT fix). The 08-20 block below is historical.
 **Chris ROUND 10 ran (all nine switches ON): the class fix WORKS end to end** — 15 typed
 corrections down to an honest 4; 410 docs, 356 filed, ZERO wrong folder/value; one correction fixed
 six siblings, Undo put all six back, the `P1L/` control was refused; first round Chris says yes
