@@ -1799,6 +1799,25 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 76 applied: Chris round-11 validated fixes defaulted ON (ref-class-fix, hint-band-ws, geom-fragment-shed, date-invalid-yield)');
   }
 
+  // ── Migration 77: cold-start letterhead PREFILL defaults ON (owner decision, 2026-08-21) ────────
+  // `letterhead_prefill` — when the cold-start reader (letterhead_issuer, on) reads a company off a
+  // fresh install's letterhead, LAND it in the Document Issuer box (conf 69 + a note) instead of
+  // leaving it blank behind a "Use 'X'" button, so a first batch is one Confirm per doc, not a click
+  // then a Confirm (Chris r11 card #4 — the single biggest first-day grind). It is held in Review two
+  // ways (confidence 69 < the 70 threshold AND the note), plants NO learning (needs_review rows are
+  // invisible to every confirmed-gated reader), and can never auto-file. Its gary→Oracle
+  // SIGN-OFF-WITH-CONDITIONS gate passed: the executable cold pass (test_letterhead_prefill.py) shows
+  // OFF==today, ON fills @69 + note with no button, the reader abstains on two companies (no-fill-
+  // ambiguous), and a single-company/recipient page is FILLED-BUT-HELD (the known misfile class fails
+  // toward review). UPSERT-forced like the mig-76 set; requires letterhead_issuer ON (mig 70).
+  if (!applied.has(77)) {
+    try {
+      db.prepare("INSERT INTO settings (key, value) VALUES ('letterhead_prefill', 'true') ON CONFLICT(key) DO UPDATE SET value='true'").run();
+    } catch (e) { console.warn(`  migration 77: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (77)').run();
+    console.log('JS migration 77 applied: cold-start letterhead prefill defaulted ON');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

@@ -958,6 +958,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Fill the company in for you when the letterhead clearly reads one</div>
+                <div class="threshold-sub">Builds on the setting above. Instead of leaving the box blank behind a &ldquo;Use this&rdquo; button, Scan Finder puts the name it read straight into the Document Issuer box &mdash; so on a first batch you press Confirm once per document instead of clicking the name in first. It is still held for you to check: the document stays in Review with the same &ldquo;is this the sender, not the customer?&rdquo; note, and it can never file itself on this guess. Nothing is learned until you confirm. Turn it off to go back to the &ldquo;Use this&rdquo; button.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="letterhead-prefill-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Only use a learned layout on documents that actually name that company</div>
                 <div class="threshold-sub">When Scan Finder learns a layout, it remembers a handful of words from the top of the page to recognise it again. On a document you send out yourself &mdash; a purchase order &mdash; the top of the page is <em>your own</em> name and address, and that same block is printed on nearly every document you receive, as the delivery address. So a layout learned from one of your own orders can recognise itself in everybody else&rsquo;s paperwork, and stamp the wrong company on it with high confidence. With this on, a layout is only used on a document that mentions that company somewhere on the page. Anything else goes to you instead. On the test set this removed 17 documents labelled with the wrong sender, and recovered 17 reference numbers and dates that had been read off the wrong layout. ON by default &mdash; you can turn it off here.</div>
               </div>

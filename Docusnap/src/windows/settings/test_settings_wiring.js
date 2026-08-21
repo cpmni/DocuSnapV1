@@ -113,6 +113,7 @@ const BRIDGES = [
   ['type-title-owner-toggle',   'type_title_owner_precedence', 'TYPE_TITLE_OWNER_PRECEDENCE'],
   ['filing-sanity-flags-toggle','filing_value_sanity_flags',   'FILING_VALUE_SANITY_FLAGS'],
   ['letterhead-issuer-toggle',  'letterhead_issuer',           'LETTERHEAD_ISSUER'],
+  ['letterhead-prefill-toggle', 'letterhead_prefill',          'LETTERHEAD_PREFILL'],
   ['identity-on-page-toggle',   'template_identity_on_page',   'TEMPLATE_IDENTITY_ON_PAGE'],
   // Bridged 2026-08-10. Both were built and measured on 08-09 and recorded as awaiting a flip,
   // but had NO bridge — env-only, and `npm start` injects no env, so they were unreachable in the

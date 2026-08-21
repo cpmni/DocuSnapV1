@@ -740,6 +740,9 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // Cold start: read the sender off the letterhead on document #1 and
                          // OFFER it (never fill it in - a wrong assert plants a bad scope).
                          ['letterhead-issuer-toggle', 'letterhead_issuer'],
+                         // Fill the read letterhead name INTO the box (not just offer it) so one
+                         // Confirm files it — held two ways (conf 69 + note), plants no learning.
+                         ['letterhead-prefill-toggle', 'letterhead_prefill'],
                          // A learned layout may only claim a document that names its company -
                          // the wrong-company misfile (2026-08-10).
                          ['identity-on-page-toggle', 'template_identity_on_page'],
