@@ -46,6 +46,10 @@ function createReviewService(deps = {}) {
   const captureRouteContext  = deps.captureRouteContext  || (() => null);   // Slice 3: total trust ctx captured pre-note-clear
   const startDefaultRoute    = deps.startDefaultRoute    || (() => {});     // Slice 3: amount-threshold auto-route (detached)
   const releaseDelayMs       = deps.releaseDelayMs != null ? deps.releaseDelayMs : 0;
+  // Slice 1 (2026-08-21): after a HUMAN confirm lands, tell the scope-local auto-accept scheduler
+  // (processing/handler). Fired for every human confirm — desktop, File-All, /v1 — which is why it
+  // lives here and not on a renderer timer. Fire-and-forget; can never affect the returned confirm.
+  const onAfterConfirm       = deps.onAfterConfirm       || (() => {});
 
   // ── Queue reads (Admin/Edit; the caller gates) ────────────────────────────────
   const queue    = (db) => documents.getReviewQueue(db);
@@ -512,6 +516,17 @@ function createReviewService(deps = {}) {
           logger,
         });
       } catch (e) { logger?.warn?.('class fix skipped: ' + (e && e.message)); }
+    }
+
+    // Slice 1 trigger (S1-C3): HUMAN confirms only — its own explicit `!_via` (same ruling as the
+    // two guards above: never lean on a closed guard). A machine-filed doc (scope_sweep / auto_*)
+    // never re-triggers, so the auto-accept cannot chain. `bulk` confirms DO trigger — File-All is
+    // the moment a sender crosses the line — and the scheduler debounces the burst into one pass.
+    if (!_via) {
+      try {
+        onAfterConfirm(db, { document_id, supplier_name: (allValues && allValues.supplier_name) || supplier_name || null,
+                             typeSlug: document_type_slug || (dtInfo && dtInfo.slug) || null, bulk: !!bulk, via: null });
+      } catch (e) { logger?.warn?.('onAfterConfirm skipped: ' + (e && e.message)); }
     }
 
     return { ok: true, success: true, ...filingResult, ...(_classFix ? { classFix: _classFix } : {}) };

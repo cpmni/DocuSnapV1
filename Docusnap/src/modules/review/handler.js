@@ -95,6 +95,14 @@ function register(ctx) {
     // Slice 1 (learn-on-commit) — keep a matched/graduated template's identity converging on
     // EVERY confirm, not only a taught one (kill switch template_learn_on_confirm, DEFAULT OFF).
     learnTemplateOnCommit: (db, docId, info) => templates.learnTemplateOnCommit(db, docId, info),
+    // Slice 1 (2026-08-21, scope-local auto-accept, DARK behind scope_sweep_auto_accept): a human
+    // confirm on (supplier, type) schedules the server-side pass for THAT scope. Lazy require —
+    // processing/handler requires this module for getReviewService, so a top-level require would
+    // be circular. A no-op while dark; never throws into the confirm.
+    onAfterConfirm: (db, info) => {
+      try { require('../processing/handler').scheduleScopeAutoAccept(db, { supplier: info.supplier_name, typeSlug: info.typeSlug, via: info.via }); }
+      catch (e) { logger?.warn?.('auto-accept schedule failed: ' + (e && e.message)); }
+    },
     captureSample: async (tId, docId) => {
       if (ctx.captureSampleWords) {
         await ctx.captureSampleWords(tId, docId);

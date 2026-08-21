@@ -1618,3 +1618,100 @@ scopeTrust invariant clean, G3 empty-issuer-block = 0 (Refinement B did not bite
 carry a populated issuer row). G2 realdoc (RR_APP_ENV=1, both flags, minted copy + dedupe): 0
 regressions, M=0, zero per-field accuracy drop, +3 more CORRECT auto-files. Pin test_confirmed_value_rows.js
 updated (§7: both default ON, pair moves together); high-risk confirm-path suites green.
+
+## 2026-08-21 — "teach 1 → import N → it files itself" arc (4 slices; barry UX + gary mechanics + eric quiet lane) — PER-SLICE VERDICTS
+Owner direction: teach 1, import 100 → fragmented/misdetected senders + "remember to press Reprocess this
+supplier" → scared user quits; any background re-read must never hang or disable Review buttons. Two vet
+attempts lost (API error; session closed mid-trace); third produced this. Premise re-checked at source:
+the shipped sweep bar (`sweep-queue-candidates` handler.js:3117) is Tier 1 (stored rows) — a sibling imported
+before the 3rd confirm carries `overall_confidence` baked with `supported_keys=∅` (engine.py:9182-9189 →
+validator.py:926-928 +0) so it sits 87-95 and `below-floor` (trust.js:933) holds it even after formats exist.
+**Flipping `scope_sweep_enabled` alone does NOT fix the owner's scenario. Slice 2 is the unlock; Slice 1 the
+click removal; Slice 3 the tail.**
+**Slice 2 (Tier 1.5 fc recompute) — SIGN OFF WITH CONDITIONS, BUILD FIRST.** A JS re-derivation is acceptable
+ONLY if there remains ONE number: do NOT overlay into `isAutoFileEligible` (the accept re-check `_evaluateSweepDoc`
+:3199 reads the STORED row → every lifted doc drops `below-floor` at accept — drift by construction, the forbidden
+two-predicate class). PERSIST `documents.overall_confidence = overall_base + fc(today)`, `overall_base` immutable
+provenance, stamp `overall_fc_recomputed_at`. S2-C1 clamp recompute ≤99 (the at-100 gate-free arm trust.js:1029-1037
+skips `docTrustGate` — only a real read may claim 100; pin). S2-C2 run JS `valueMatchesShape` + prefix-outlier on
+CURRENT rows before any lift; a would-flag field = mismatch (fail toward review). S2-C3 `applyReprocessResult`
+(:2491) must also write `overall_base` (pin `base+fc==overall` on merged row). S2-C4 formula twin: validator
+`key_fields = required OR all-if-none-required` (gary's "required enabled" drops the fallback), value truthiness vs
+`display_value`, no `enabled` filter in Python — ONE shared JSON fixture `(signals[])→delta` for pytest+mocha AND a
+realdoc per-doc invariant `_overall_base + JS_twin(rows,formats) == _overall_confidence`. S2-C5 emit `_overall_base`
+at the FINAL overall site as `final − final_fc_delta` (the `corrob_note_recompute_fc` linchpin recomputes after
+demoters), never the 9174 intermediate. "Never more lenient than a re-read" NOT sound as stated (at-100 arm; re-read
+can ADD shape/prefix notes). GATE: reason histogram over the r12 held scope FIRST (<20% lift → DO NOTHING, say so);
+S2-C4 invariant green; pristine-DB `taught_autofile_counterfactual.js` teach1→importN→confirm3: auto-filed up,
+wrong-folder=0, no doc lifts to 100; realdoc M=0 (valid for the base emit).
+**Slice 1 (auto-accept the existing offer) — SIGN OFF WITH CONDITIONS.** The glance is NOT load-bearing for safety
+(accept files only what `isAutoFileEligible` passes on stored rows — the SAME predicate the import path files with
+no click; Chris filed 154 in one click, glance unexercised). It IS load-bearing against the 08-12 SHAPE: the sweep
+is queue-wide (:3134-3139) so auto-accept after one Pelican confirm would file Oakhaven too. S1-C1 SCOPE-LOCAL:
+auto-accept ONLY the `(supplier, slug)` of the triggering human confirm (`onAfterConfirm` carries scope); every
+other scope stays a bar; pin confirm-on-A files zero B. S1-C2 preconditions checked server-side AT ACCEPT:
+`scope_sweep_enabled` AND `learning_exclude_machine_confirms` AND `autofile_gate_unify` (VERIFIED hole: handler.js
+:4730-4732 stamps `via:null` when unify OFF → counted HUMAN by the window + the exclusion; unify defaults 'true'
+index.js:131). S1-C3 no chain: trigger on `!_via` only, accept confirms carry `via:'scope_sweep'`; pin with a
+positive control. S1-C4 receipt not toast: `_recordAutoFiled(db,id,false)`, server-stored bar surviving reopen,
+"Put back all" writes NO corrections row (pin scopeTrust corrections unchanged). S1-C5 refuse accept while a quiet
+read is in flight for that scope (`_quietLaneActiveScopes` — the lane is invisible to `_anyProcessingBusy()`).
+S1-C6 25/pass, ≤8 passes, `setImmediate` yield, skip when busy. Starvation: the exclusion is NECESSARY and with
+unify SUFFICIENT; its reader-blindness cost is the 08-20 split-the-input problem — do NOT relax this precondition
+to fix it. GATE: pristine-DB Chris round — after the 3rd confirm on X, X's siblings file themselves, other bars
+remain, wrong-folder=0, receipt lists exactly the filed ids, put-back restores all; audit C8 pairing.
+**Slice 0 (letterhead fragment abstain) — SIGN OFF WITH CONDITIONS.** Traced letterhead.py:140-209: segments scored
+by their OWN words' height → a letter-spaced heading degrades to 1-word segments; superset rule (:202-206) rescues
+only when the full name recurs. Abstain is the right shape; re-join in the assert path still REFUSED. PREMISE HALF
+RIGHT: trust.js:686-689 counts empty-vs-typed as a correction and `TRUST_MAX_CORRECTIONS=0` (:35) — an abstain that
+ends EMPTY and is typed is STILL a `recent-correction`; "empty beats a guess" holds for misfile risk, NOT for
+graduation unless the text arm then reads the name. S0-C1 MEASURE per abstaining doc: text arm correct / wrong /
+None — ship only if correct dominates. S0-C2 blast radius: every doc's issuer → realdoc M=0 NOT vacuous here; zero
+per-field drop on Document Issuer; pins r12 #2 positive, `Superstore    INVOICE` picks, `Acme    Widgets Ltd → None`.
+S0-C3 adjacent same-row segment must be letterhead-sized by its own words (≥`_GEOM_MIN_RATIO`) — a body-sized
+recipient column must not trigger. NAMED, NOT BUNDLED: whether empty→fill should count as a correction at all
+(affects every cold-start scope).
+**Slice 3 (quiet background re-read lane) — SIGN OFF ON DESIGN, NO-GO ON BUILD (yet).** (a) 08-02 re-ruled: lifted
+for this lane ONLY if untouched-only candidate set + presence-skip at START and MERGE (presence heartbeat ~25s vs
+TTL 60s review/handler.js:736-760 is a reliable staged-edits proxy) + merge-time status/fingerprint gate + renderer
+refreshes LIST only. (b) `applyReprocessResult` defence in depth REQUIRED: no precondition, unconditional
+`needs_review` (:2492), `review_acknowledged_at=NULL` (:2501), and the `UPDATE documents` runs OUTSIDE the
+delete+insert transaction (:2483-2486 vs :2489) — S3-C1 `opts.expect={status,fingerprint}` verified INSIDE one
+transaction that now also holds the UPDATE (else return `dropped`); foreground passes nothing → byte-identical.
+S3-C2 `opts.preserveAck`. (c) One consent idiom AGREED: eligible docs ONLY via sweep offer/accept with a DISTINCT
+machine via `auto_quiet` in `MACHINE_VIAS_SQL` (undo/audit must tell them apart); never `_reprocessOffer`; pin no
+`reprocess_autofiled` audit row from the lane. (d) quietness shape RIGHT (`os.setPriority(pid,10)` + Python ctypes
+`BELOW_NORMAL` self-demotion beats the `py.exe` PID race; not `PROCESS_MODE_BACKGROUND_BEGIN`; kill at every
+foreground door). S3-C3 measure before flip: Review click→response p95 <100ms with lane running; foreground import
+per-doc time == baseline with kill completing BEFORE the batch spawns; kill ≤1.5s + tree reap; lane CPU ≤
+`_reprocessThreadCap`. S3-C4 assert the cap equals the import's cap else boundary-glyph flips manufacture phantom
+"read differently" holds. S3-C5 changed-read compares ALL required valued fields (a PL→PI snap is a CHANGE, held).
+S3-C6 stdout handler re-checks presence+status+fingerprint and applies in ONE synchronous block, no await between.
+NO-GO until Slice 2's histogram shows the residual held by a demotable note is ≥15% of the pile.
+**Cross-slice seams:** (1) S2 lifts → S1 files with no glance — only with S2-C1+C2; (2) null via → S1 loop re-opens
+— S1-C2; (3) lane invisible to busy → accept/merge interleave — S1-C5+S3-C6; (4) reprocess drops `overall_base`
+— S2-C3; (5) abstain→empty→typed→recent-correction — S0-C1 decides.
+**BUILD ORDER:** Slice 2 (histogram → build → gate, may ship DARK alone) → Slice 1 scope-local (DARK; 1+2 flip
+together in ONE Chris round — one user-visible behaviour) → Slice 0 in parallel, own corpus gate, flip with
+`TEMPLATE_IDENTITY_GEOM_FRAGMENT_SHED` only if S0-C1 justifies → Slice 3 gated on the histogram, NEVER in the same
+Chris round as 1+2 (misfile attribution). barry's copy items (teach card count gated by `canPromise` wording not
+number; "File N ready" from `autoFileEligibleIds`) need no Oracle gate. **DO-NOTHING check:** flips + copy alone
+(`scope_sweep_enabled` + variant-A wording + the shed flip) remove "go find Reprocess" but NOT the fc deficit — few
+docs offered in the owner's scenario. **Smallest step that actually removes "remember to reprocess": Slice 2
+persisted recompute + `scope_sweep_enabled` ON with the bar reworded as payoff; then Slice 1 removes the last
+click.** (Fresh-install threshold already 90 via mig 71 — verified.)
+**GATE (a) RESULT, same night — Slice 2 = DO NOTHING.** `TESTING/_measure/s2_histogram.js` (real
+`isAutoFileEligible` before/after a persisted `min(99, base + fc(today))`, `supported` from the REAL
+`build_format_class_index` via `s2_supported.py`) + `s2_ceiling.js` (assume every required key supported,
+the post-3-confirm state): r12 sandbox 0/22 lifted, ceiling 0; 08-20 night sandbox (410 docs, 13 human
+confirms on Veltrix) 0/378 lifted, ceiling 2 (0.5%: two Veltrix docs at base 89 with supplier_name@72).
+Base re-derivation reproduced the stored overall with supported=∅ on 222/224 typed docs (twin verified).
+The premise is not observed: taught-template siblings carry base ≥95 (template_mapping 95-98 +
+template_fixed 95) so they clear bar 90 WITHOUT the boost; what holds them is `unverifiable-value`
+until the 3rd confirm (the 08-18 wall), which the shipped Tier-1 sweep already re-gates on stored rows.
+The held pile is untyped 164 + no-supplier 190 of 378 = docs imported BEFORE their sender was taught —
+a RE-READ class (pre-teach reads carry no template), not a recompute class. Consequence for the order:
+Slice 1 flips with `scope_sweep_enabled` alone; Slice 3's "earn its place" number is the pre-teach
+residual (94% of the night pile; Chris r12: blank → 94/90 via template_mapping only after reprocess),
+not the demotable-note residual (~2%) — its candidate predicate must be "held docs of the taught
+sender's scope that carry no template read", trigger = a teach/anchor commit.

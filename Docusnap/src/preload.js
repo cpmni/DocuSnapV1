@@ -466,6 +466,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   onProcessProgress:   (cb) => ipcRenderer.on('process-progress', (_e, m) => cb(m)),
   onWatchProgress:     (cb) => ipcRenderer.on('watch-progress',   (_e, m) => cb(m)),
   onDocAutoFiled:      (cb) => ipcRenderer.on('doc-auto-filed',   (_e, info) => cb(info)),
+  onScopeAutoFiled:    (cb) => ipcRenderer.on('scope-auto-filed', (_e, info) => cb(info)),   // Slice 1: a sender's ready docs filed by itself
   onStuckCountChanged: (cb) => ipcRenderer.on('stuck-count-changed', (_e, n) => cb(n)),
   onProcessTrace:      (cb) => ipcRenderer.on('process-trace',    (_e, m) => cb(m)),
   devGetSessionDocs:   ()        => ipcRenderer.invoke('dev-get-session-docs'),

@@ -886,7 +886,14 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // inferred" note when a wide letter-spaced letterhead prints the confirmed
                          // issuer as a column-broken name the strict geometry pick can't reassemble.
                          // DEFAULT OFF — default-ON flip needs a recipient-collision fixture (Oracle).
-                         ['identity-geom-fragment-toggle', 'template_identity_geom_fragment_shed']]) {
+                         ['identity-geom-fragment-toggle', 'template_identity_geom_fragment_shed'],
+                         // The "teach 1 → import N → it files itself" arc (2026-08-21, mig 79, ALL OFF):
+                         // the post-confirm sweep bar · Slice 1 scope-local auto-accept · Slice 0
+                         // letterhead fragment abstain · Slice 3 quiet background re-read.
+                         ['scope-sweep-toggle', 'scope_sweep_enabled'],
+                         ['scope-sweep-auto-accept-toggle', 'scope_sweep_auto_accept'],
+                         ['letterhead-fragment-abstain-toggle', 'letterhead_fragment_abstain'],
+                         ['quiet-reread-toggle', 'quiet_reread_enabled']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);
@@ -970,6 +977,8 @@ const DEV_SWITCH_IDS = [
   'hint-band-ws-normalize-toggle',
   // Lever D (2026-08-20, OFF) — reading internal: shed the inferred-company note on a column-broken letterhead.
   'identity-geom-fragment-toggle',
+  // The teach→file arc (2026-08-21, mig 79, OFF) — dev-gated until the owner decides what surfaces.
+  'scope-sweep-toggle', 'scope-sweep-auto-accept-toggle', 'letterhead-fragment-abstain-toggle', 'quiet-reread-toggle',
 ];
 function _applyDevSwitchVisibility(unlocked, revealGate){
   for (const id of DEV_SWITCH_IDS){

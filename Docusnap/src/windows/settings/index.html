@@ -1260,6 +1260,34 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">After you confirm a document, check whether others from the same sender are now ready</div>
+                <div class="threshold-sub">Each time you confirm a document, Scan Finder re-checks the documents still waiting in Review against what it has just learned — without re-reading any pages — and offers to file the ones that now pass every check. You see a bar listing them and choose File or Not now. Nothing is filed without that choice. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="scope-sweep-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">…and file that sender's ready documents by itself</div>
+                <div class="threshold-sub">Goes one step further than the check above: once you've confirmed enough documents from a sender for its documents to pass every check, the rest of THAT sender's waiting documents are filed for you — only that sender, never the whole queue — and a notice in Review lists what was filed with a Put back button. Other senders still get the bar. Needs the check above on. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="scope-sweep-auto-accept-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't pre-fill a single word from a widely-spaced letterhead</div>
+                <div class="threshold-sub">When a company name is printed with wide gaps ("Silverbeck   Cleaning   Supplies"), the letterhead reader could pick out one word ("Cleaning") as the company. With this on, it leaves the Document Issuer for the text reader or for you instead of filling a fragment. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="letterhead-fragment-abstain-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">After teaching a sender, quietly re-read its waiting documents in the background</div>
+                <div class="threshold-sub">When you teach Scan Finder a sender's layout, the documents from that sender already waiting in Review were read before it knew the layout. With this on they are re-read quietly in the background at low priority — Review stays fully usable, nothing is greyed out, and any import or reprocess you start takes over immediately. A document whose values change in the re-read is held and shown "was X, now Y". Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="quiet-reread-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Recognise a confirmed company even when its letterhead is column-spaced</div>
                 <div class="threshold-sub">Some letterheads print the company name with big gaps between the words. Scan Finder can read the gaps as separate columns and fail to match the name to a company you've confirmed, so those documents keep the "please confirm before filing" note. With this on, the spaced-out name is reassembled and, when it matches a company you've confirmed on this layout, the note is cleared. Only the company you confirmed is matched — a name on the page addressed TO you is never treated as the sender. Off by default.</div>
               </div>

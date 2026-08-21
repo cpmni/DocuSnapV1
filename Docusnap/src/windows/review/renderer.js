@@ -511,13 +511,26 @@ async function refreshAutoCommittedBar() {
     // decision must not be recorded on screen as the machine's (Chris r7 card 2).
     const nAppr = Array.isArray(res.approvedIds)
       ? _autoFiledDocs.filter(d => res.approvedIds.includes(d.id)).length : 0;
-    const nAuto = _autoFiledDocs.length - nAppr;
+    // Slice 1 (scope-local auto-accept): documents the app filed BY ITSELF after the operator
+    // confirmed a few from that sender carry via='scope_sweep'. Counted separately — the receipt
+    // must say what happened in the operator's words — and they get a one-click Put back (Oracle
+    // S1-C4: the bar is the surprise control the consent glance used to be).
+    const selfDocs = _autoFiledDocs.filter(d => d.confirmed_via === 'scope_sweep'
+                                              && !(Array.isArray(res.approvedIds) && res.approvedIds.includes(d.id)));
+    const nSelf = selfDocs.length;
+    const nAuto = _autoFiledDocs.length - nAppr - nSelf;
     const parts = [];
     if (nAuto) parts.push(`<b>✓ ${nAuto}</b> document${nAuto === 1 ? '' : 's'} filed automatically`);
+    if (nSelf) {
+      const senders = [...new Set(selfDocs.map(d => String(d.supplier_name || '').trim()).filter(Boolean))];
+      const who = senders.length === 1 ? ` from ${escHtml(senders[0])}` : (senders.length ? ` from ${senders.length} senders you've confirmed` : '');
+      parts.push(`<b>✓ ${nSelf}</b> document${nSelf === 1 ? '' : 's'}${who} filed by itself after your confirms`);
+    }
     if (nAppr) parts.push(`<b>${nAppr}</b> filed with your approval`);
     bar.innerHTML = `<span class="acb-dismiss" title="Dismiss this notice" aria-label="Dismiss">×</span>`
       + parts.join(' · ') + ` — `
-      + `<span class="acb-back">click to see the list — they stay filed; nothing is changed</span>`;
+      + `<span class="acb-back">click to see the list — they stay filed; nothing is changed</span>`
+      + (nSelf ? ` · <span class="acb-putback" title="Return these to the Review queue — nothing is lost; the filed copies stay on disk until you re-file">Put back</span>` : '');
     bar.style.display = 'block';
   } else {
     bar.style.display = 'none';
@@ -533,6 +546,23 @@ document.getElementById('auto-committed-bar')?.addEventListener('click', async (
     _autoFiledDocs = [];
     const bar = document.getElementById('auto-committed-bar');
     if (bar) bar.style.display = 'none';
+    return;
+  }
+  // Put back (Slice 1): return the self-filed documents of THIS receipt to the queue. Server-verified
+  // — sweep-scope-undo refuses anything not confirmed_via='scope_sweep', so a human confirm can
+  // never be mass-reverted from here. deconfirm keeps rows + stored_path (re-confirm replaces in place).
+  if (e.target.closest('.acb-putback')) {
+    e.stopPropagation();
+    const ids = _autoFiledDocs.filter(d => d.confirmed_via === 'scope_sweep').map(d => d.id);
+    if (!ids.length) return;
+    let r = null;
+    try { r = await window.docusnap.sweepScopeUndo?.(ids); } catch {}
+    const n = (r && Array.isArray(r.undone)) ? r.undone.length : 0;
+    showToast(n ? `Put ${n} document${n === 1 ? '' : 's'} back in the Review queue.` : 'Nothing to put back.', n ? 'info' : 'warn');
+    try { await window.docusnap.clearRecentAutoFiled?.(); } catch {}
+    _autoFiledDocs = [];
+    await _refreshQueueFromBroadcast();
+    refreshAutoCommittedBar();
     return;
   }
   if (_viewingAutoFiled) { await exitAutoFiledView(); return; }
@@ -5651,6 +5681,12 @@ async function _runQueueSweep({ manual = false } = {}) {
   if (bulkFiling || _batchActive) return false;
   let res = null;
   try { res = await window.docusnap.sweepQueueCandidates?.(); } catch { return false; }
+  if (res && res.ok === false && res.reason === 'auto-accept-running') {
+    // Slice 1: the server is filing a sender's ready documents right now; it will broadcast
+    // scope-auto-filed when done and this sweep re-runs then. Never show a bar over those docs.
+    if (manual) showToast('Filing a sender’s ready documents now — check again in a moment.', 'info');
+    return false;
+  }
   if (!res || !res.ok || !Array.isArray(res.scopes) || !res.scopes.length) {
     // SAY THE NEGATIVE RESULT OUT LOUD (Chris): silence after a confirm is ambiguous between
     // "checked, nothing changed" and "didn't check" — and that ambiguity is exactly what sends
@@ -7637,6 +7673,16 @@ async function _refreshQueueFromBroadcast() {
   refreshAutoCommittedBar();   // tick the auto-committed tally up after the burst (fetches fresh)
   if (!prevId && queue.length > 0 && activeTab === 'review') selectDoc(queue[0]);
 }
+// Slice 1: the server filed a sender's ready documents by itself after a human confirm. Refresh the
+// LIST + receipt bar (never the open document — the pass skipped anything being viewed), then re-ask
+// the queue sweep so OTHER senders' offers still surface as a bar (the pass answered
+// 'auto-accept-running' to any sweep that landed mid-filing).
+window.docusnap.onScopeAutoFiled?.(async () => {
+  if (bulkFiling || _batchActive) return;
+  try { await _refreshQueueFromBroadcast(); } catch {}
+  try { await refreshAutoCommittedBar(); } catch {}
+  try { await _runQueueSweep(); } catch {}
+});
 window.docusnap.onReviewCountChanged(() => {
   // Ignore File All Ready's interim per-doc broadcasts — its own clean refresh follows the run.
   if (bulkFiling) return;

@@ -1843,6 +1843,33 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 78 applied: confirm-persist-values + corrections-dedupe defaulted ON (paired)');
   }
 
+  // ── Migration 79: the "teach 1 → import N → it files itself" arc (2026-08-21; barry+gary+eric →
+  // Oracle per-slice SIGN-OFF-WITH-CONDITIONS, docs/oracle_log.md) — every switch seeded OFF ──
+  // Settings ROWS only (so the toggles render truthfully), INSERT OR IGNORE (an existing choice is
+  // never overwritten). Each is its own kill switch; flipping any one back to 'false' restores the
+  // pre-arc behaviour byte-for-byte:
+  //   scope_sweep_enabled       — the shipped (dark) post-confirm Tier-1 sweep + consent bar.
+  //   scope_sweep_auto_accept   — Slice 1: after a HUMAN confirm, the server files THAT sender's
+  //                               ready documents itself (scope-local; receipt + Put back). Requires
+  //                               scope_sweep_enabled + learning_exclude_machine_confirms +
+  //                               autofile_gate_unify, re-checked server-side at every pass.
+  //   letterhead_fragment_abstain — Slice 0: the geometry letterhead pick abstains instead of
+  //                               returning a lone word ("Cleaning") beside a name-shaped segment.
+  //   quiet_reread_enabled      — Slice 3: after a teach, the taught sender's template-less held
+  //                               siblings are re-read on a below-normal background lane (never
+  //                               greys Review; killed at every foreground door; merge-gated).
+  if (!applied.has(79)) {
+    try {
+      const ins79 = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+      ins79.run('scope_sweep_enabled',         'false');
+      ins79.run('scope_sweep_auto_accept',     'false');
+      ins79.run('letterhead_fragment_abstain', 'false');
+      ins79.run('quiet_reread_enabled',        'false');
+    } catch (e) { console.warn(`  migration 79: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (79)').run();
+    console.log('JS migration 79 applied: teach→file arc switches seeded OFF (sweep, auto-accept, fragment-abstain, quiet re-read)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

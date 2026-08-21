@@ -713,6 +713,15 @@ let _reprocessOffer = null;
 // already defers on this signal.
 function _anyProcessingBusy() { return _currentBatchProcs.length > 0 || _singleReprocessActive; }
 
+// Scopes ('supplier|slug') with a QUIET-LANE re-read in flight (Slice 3, quietLane.js). The lane is
+// deliberately invisible to _anyProcessingBusy() — the foreground must never be refused or greyed
+// by it — so the sweep offer/accept carries its own per-scope check (Oracle 2026-08-21 S1-C5).
+const _quietLaneActiveScopes = new Set();
+// Slice 1 (scope-local auto-accept) entry points, bound inside register() where the IPC closures
+// live; module-level so reviewService's onAfterConfirm hook can reach them by a lazy require.
+let _scheduleScopeAutoAcceptImpl = null;
+let _autoAcceptInflightProbe = () => false;
+
 // ── Processing-activity signal for OTHER windows (esp. Review) ─────────────────────────
 // A single-doc reprocess is REFUSED while an import/watch batch is running (heavy work is
 // serialised). Broadcast a lightweight activity state to ALL windows so the Review window can
@@ -3124,6 +3133,10 @@ function register(ctx) {
     const licenseDenial = require('../licensing/handler').licenseDenied(db);
     if (licenseDenial) return { ok: false, reason: 'license' };
     if (_anyProcessingBusy()) return { ok: false, reason: 'busy' };   // never mid-batch
+    // A scope-local auto-accept pass is filing right now: an offer computed mid-pass would show the
+    // renderer docs the server is about to file (a bar whose File button drops every row as
+    // 'not-queued'). The renderer re-asks when the pass's scope-auto-filed broadcast lands.
+    if (_autoAcceptInflightProbe()) return { ok: false, reason: 'auto-accept-running' };
 
     const trust = require('../../../database/modules/trust');
     const { extractionsFingerprint } = require('../../services/sweepPredicate');
@@ -3261,12 +3274,20 @@ function register(ctx) {
     const sup = String(supplier || '').trim();
     const slug = String(typeSlug || '').toLowerCase().trim();
     if (!sup || !slug || !Array.isArray(accepts) || !accepts.length) return { ok: false, reason: 'bad-args' };
+    // S1-C5 (Oracle 2026-08-21): a scope with a quiet re-read in flight is not accepted — the lane is
+    // invisible to _anyProcessingBusy() by design, so the sweep carries its own check.
+    if (_quietLaneActiveScopes.has(_sweepOfferKey(sup, slug))) return { ok: false, reason: 'quiet-lane-active' };
+    return _sweepAcceptCore(db, { sup, slug, accepts, untickedIds, actor: getCurrentUser() || {} });
+  });
 
+  // The accept loop proper — shared by the consent-bar IPC above and the scope-local AUTO-ACCEPT
+  // below (Slice 1, Oracle 2026-08-21). ONE writer: every path that files a sweep candidate runs
+  // this exact loop (server-recorded offer, fingerprint, Tier-1-only re-check, machine via).
+  async function _sweepAcceptCore(db, { sup, slug, accepts, untickedIds, actor, auto = false }) {
     const documents = require('../../../database/modules/documents');
     const { extractionsFingerprint } = require('../../services/sweepPredicate');
     const reviewService = require('../review/handler').getReviewService();
     if (!reviewService) return { ok: false, reason: 'not-ready' };
-    const actor = getCurrentUser() || {};
     const dtRow = db.prepare('SELECT * FROM document_types WHERE LOWER(slug) = ?').get(slug);
     if (!dtRow) return { ok: false, reason: 'unknown-type' };
     const roleKeys = new Set(['supplier_name', dtRow.ref_field_key, dtRow.date_field_key].filter(Boolean));
@@ -3320,10 +3341,140 @@ function register(ctx) {
       logAudit(db, { action: 'scope_sweep_accepted', target_type: 'scope', outcome: 'success',
         metadata: { supplier: sup, type_slug: slug, filed_ids: filed.join(','),
                     dropped: dropped.map(d => `${d.docId}:${d.reason}`).join(','),
-                    unticked_ids: (Array.isArray(untickedIds) ? untickedIds : []).join(',') } });
+                    unticked_ids: (Array.isArray(untickedIds) ? untickedIds : []).join(','),
+                    ...(auto ? { auto_accept: true } : {}) } });
     } catch { /* audit is best-effort */ }
     return { ok: true, filed, dropped };
-  });
+  }
+
+  // ── Slice 1 (2026-08-21, Oracle SIGN-OFF-W/COND S1-C1..C6): SCOPE-LOCAL AUTO-ACCEPT ───────
+  // The owner's "confirm a couple more and that sender files itself" — without the remembered
+  // ritual. After a HUMAN confirm on (supplier, type), the server computes the sweep offer for
+  // THAT SCOPE ONLY and runs the same accept loop on it; every other sender's offer stays a bar.
+  // Why scope-local (S1-C1): the queue-wide offer after one Pelican confirm would also file
+  // Oakhaven — the 08-12 incident's SHAPE with better plumbing. Why no glance is lost (Oracle):
+  // the accept files only what `isAutoFileEligible` passes on STORED rows — the SAME predicate the
+  // import path files with no click — so the bar added surprise control, not safety; the receipt
+  // bar + Put back (S1-C4) keep the surprise control. DARK: `scope_sweep_auto_accept` (default
+  // off) and, checked AT ACCEPT TIME server-side (S1-C2), `scope_sweep_enabled` +
+  // `learning_exclude_machine_confirms` + `autofile_gate_unify` — the last because a gate-unify-OFF
+  // import stamps via NULL (:4730), which the graduation window and the exclusion count as HUMAN,
+  // re-opening the self-licensing loop this feature must never close by itself.
+  const _autoAcceptTimers = new Map();          // scopeKey -> timeout (server debounce, 1.5 s)
+  let _autoAcceptInflight = false;              // single-flight: one pass at a time, app-wide
+  const AUTO_ACCEPT_MAX_PASSES = 8;             // S1-C6: ≤8 × SWEEP_CAP per trigger
+  function _autoAcceptPreconditions(db) {
+    if (process.env.SCOPE_SWEEP_AUTO_ACCEPT === '0') return 'disabled';
+    const learning = require('../../../database/modules/learning');
+    const trust = require('../../../database/modules/trust');
+    const on = process.env.SCOPE_SWEEP_AUTO_ACCEPT === '1'
+      || learning.getSetting(db, 'scope_sweep_auto_accept', 'false') === 'true';
+    if (!on) return 'disabled';
+    if (process.env.SCOPE_SWEEP === '0') return 'sweep-disabled';
+    if (!(process.env.SCOPE_SWEEP === '1' || learning.getSetting(db, 'scope_sweep_enabled', 'false') === 'true')) return 'sweep-disabled';
+    if (learning.getSetting(db, 'learning_exclude_machine_confirms', 'false') !== 'true') return 'machine-confirms-not-excluded';
+    if (!trust._gateUnifyEnabled(db)) return 'gate-unify-off';
+    try { if (require('../licensing/handler').licenseDenied(db)) return 'license'; } catch { return 'license'; }
+    return null;
+  }
+  // Scope-local offer: the queue-wide SELECT narrowed to one (supplier, type). Same exclusions
+  // (blank supplier impossible here, workflow-locked, being viewed), same ONE formats scan, same
+  // cap, same server-recorded offer + audit row (C8/C9 hold for the automatic path too).
+  function _sweepOfferForScope(db, sup, dtRow) {
+    const trust = require('../../../database/modules/trust');
+    const { extractionsFingerprint } = require('../../services/sweepPredicate');
+    const presence = require('../../services/presenceService').shared();
+    const rows = db.prepare(`
+      SELECT d.* FROM documents d
+       WHERE d.status = 'needs_review'
+         AND LOWER(TRIM(COALESCE(d.supplier_name, ''))) = ?
+         AND d.document_type_id = ?
+         AND COALESCE(d.workflow_status, '') NOT IN ('pending', 'claimed')
+       ORDER BY d.id LIMIT 500`).all(sup.toLowerCase(), dtRow.id)
+      .filter(d => !presence.viewers(d.id).length);
+    if (!rows.length) return [];
+    const eligibleIds = new Set(trust.autoFileEligibleIds(db, rows) || []);
+    const fpStmt = db.prepare('SELECT * FROM extractions WHERE document_id = ?');
+    const candidates = [];
+    for (const d of rows) {
+      if (!eligibleIds.has(d.id)) continue;
+      if (candidates.length >= SWEEP_CAP) break;
+      candidates.push({ docId: d.id, tier: 1, fingerprint: extractionsFingerprint(fpStmt.all(d.id)) });
+    }
+    if (candidates.length) {
+      _sweepOffers.set(_sweepOfferKey(sup, dtRow.slug), new Set(candidates.map(c => c.docId)));
+      try {
+        logAudit(db, { action: 'scope_sweep_offered', target_type: 'scope', outcome: 'offered',
+          metadata: { supplier: sup, type_slug: dtRow.slug, scope_local: true, auto_accept: true,
+                      doc_ids: candidates.map(c => c.docId).join(','),
+                      tiers: candidates.map(() => 1).join(',') } });
+      } catch { /* audit is best-effort */ }
+    }
+    return candidates;
+  }
+  async function _autoAcceptScope(db, supplier, typeSlug, actor) {
+    const sup = String(supplier || '').trim();
+    const slug = String(typeSlug || '').toLowerCase().trim();
+    if (!sup || !slug) return { ok: false, reason: 'bad-scope' };
+    const pre = _autoAcceptPreconditions(db);
+    if (pre) return { ok: false, reason: pre };
+    if (_anyProcessingBusy()) return { ok: false, reason: 'busy' };                       // never mid-batch
+    if (_quietLaneActiveScopes.has(_sweepOfferKey(sup, slug))) return { ok: false, reason: 'quiet-lane-active' };
+    const dtRow = db.prepare('SELECT * FROM document_types WHERE LOWER(slug) = ?').get(slug);
+    if (!dtRow) return { ok: false, reason: 'unknown-type' };
+    const filedAll = [], droppedAll = [];
+    let passes = 0;
+    while (passes < AUTO_ACCEPT_MAX_PASSES) {
+      if (_anyProcessingBusy()) break;                                                  // a batch started: yield
+      const candidates = _sweepOfferForScope(db, sup, dtRow);
+      if (!candidates.length) break;
+      passes++;
+      const r = await _sweepAcceptCore(db, { sup, slug, accepts: candidates, untickedIds: [], actor, auto: true });
+      if (!r || !r.ok) break;
+      filedAll.push(...r.filed); droppedAll.push(...r.dropped);
+      for (const id of r.filed) { try { _recordAutoFiled(db, id, false); } catch {} }   // S1-C4: the receipt
+      if (r.filed.length < SWEEP_CAP) break;                                            // the scope is drained
+      await new Promise(res => setImmediate(res));                                       // S1-C6: yield between passes
+    }
+    if (filedAll.length) {
+      try {
+        logAudit(db, { action: 'scope_sweep_auto_accepted', target_type: 'scope', outcome: 'success',
+          metadata: { supplier: sup, type_slug: slug, filed_ids: filedAll.join(','), passes,
+                      dropped: droppedAll.map(d => `${d.docId}:${d.reason}`).join(',') } });
+      } catch { /* audit is best-effort */ }
+      try {
+        const documents = require('../../../database/modules/documents');
+        notifyMainWindow('doc-auto-filed', { docId: filedAll[filedAll.length - 1], count: getAutoFiledIds(db).length });
+        notifyMainWindow('scope-auto-filed', { supplier: sup, typeSlug: slug, filed: filedAll.slice() });
+        notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
+        notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+      } catch { /* broadcast is best-effort */ }
+    }
+    return { ok: true, filed: filedAll, dropped: droppedAll, passes };
+  }
+  // The trigger: reviewService fires this for HUMAN confirms only (S1-C3 — the accept's own
+  // confirms carry via='scope_sweep' and never re-enter). Debounced per scope so File-All's burst
+  // of confirms on one sender becomes one pass after the burst; single-flight so two senders'
+  // passes never interleave with each other (or with a consent-bar accept).
+  function scheduleScopeAutoAccept(db, { supplier, typeSlug, via } = {}) {
+    if (via) return false;                                                            // machine confirm: never a trigger
+    const sup = String(supplier || '').trim(), slug = String(typeSlug || '').toLowerCase().trim();
+    if (!sup || !slug) return false;
+    if (_autoAcceptPreconditions(db)) return false;                                   // cheap early exit while dark
+    const key = _sweepOfferKey(sup, slug);
+    clearTimeout(_autoAcceptTimers.get(key));
+    _autoAcceptTimers.set(key, setTimeout(() => {
+      _autoAcceptTimers.delete(key);
+      if (_autoAcceptInflight) { scheduleScopeAutoAccept(db, { supplier: sup, typeSlug: slug }); return; }   // re-queue behind the running pass
+      _autoAcceptInflight = true;
+      _autoAcceptScope(getDb(), sup, slug, getCurrentUser() || {})
+        .catch(e => { try { logger?.warn?.(`[auto-accept] ${sup}|${slug}: ${e && e.message}`); } catch {} })
+        .finally(() => { _autoAcceptInflight = false; });
+    }, 1500));
+    return true;
+  }
+  _scheduleScopeAutoAcceptImpl = scheduleScopeAutoAccept;
+  _autoAcceptInflightProbe = () => _autoAcceptInflight;
 
   // ── Catch-up Filing slice 3: Undo all (clean by construction) ───────────────────────
   // Only docs whose row says confirmed_via='scope_sweep' can be undone here (server-verified —
@@ -4885,6 +5036,10 @@ module.exports = {
   cleanupTempFiles: cleanupFiles,
   handleFileMessage: _handleFileMessage,
   flushPendingDrains: _flushPendingDrains,
+  // Slice 1 (2026-08-21): the human-confirm trigger for the scope-local auto-accept. A no-op until
+  // register() has bound it (and while `scope_sweep_auto_accept` is dark).
+  scheduleScopeAutoAccept: (db, info) => (_scheduleScopeAutoAcceptImpl ? _scheduleScopeAutoAcceptImpl(db, info) : false),
+  _quietLaneActiveScopes,    // Slice 3 marks a scope here while its quiet re-read is in flight (S1-C5)
   _withinAnyRoot,            // SEC-17 reparse-point containment pins (test_path_containment.js)
   _realCanonical,            // ditto — exported so the pin asserts the shipped predicate, not a copy
   _genericFallbackId,        // Generic Document fallback pins (test_generic_fallback_mapping.js)
