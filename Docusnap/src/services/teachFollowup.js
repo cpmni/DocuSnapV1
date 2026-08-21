@@ -73,9 +73,22 @@ function computeTeachFollowup(db, docId) {
   const canPromise = !ready && needed > 0 && siblingCount >= needed
     && (!doc.refKey || distinctRefs >= needed);
 
+  // Chris r12 #4 ("it will start filing itself" over-promised for docs ALREADY queued): whether the
+  // queued siblings will file BY THEMSELVES after the confirms (Slice 1 scope-local auto-accept ON)
+  // or merely become one-click ready (the consent bar), so the card's promise matches the install.
+  let autoAccept = false;
+  try {
+    autoAccept = learning.getSetting(db, 'scope_sweep_auto_accept', 'false') === 'true'
+              && learning.getSetting(db, 'scope_sweep_enabled', 'false') === 'true';
+  } catch { /* advisory */ }
+  // Chris r12 #3: the siblings' reference values are often still BLANK here (imported before the
+  // teach, not yet re-read), which is why canPromise stays false while the number is real. Say so.
+  const siblingsUnread = siblingCount > 0 && distinctRefs === 0 && !!doc.refKey;
+
   return {
     ok: true, supplier: doc.supplier, typeName: doc.typeName, needed, ready, graduated,
     siblingCount, canPromise, firstSibling: sibs.length ? sibs[0].id : null,
+    autoAccept, siblingsUnread,
   };
 }
 

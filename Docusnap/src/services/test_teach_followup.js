@@ -78,6 +78,29 @@ const eTaught = addDoc(E, 'needs_review');
 const fe = computeTeachFollowup(db, eTaught);
 check('E: needed = 3 but canPromise FALSE with no queued siblings (home-user no-nag)', fe.needed === 3 && fe.canPromise === false);
 
+// ── F — Chris r12 #3: siblings queued but read BEFORE the teach (blank references) ───────────
+// canPromise is rightly false (no distinct refs to promise on) — but the COUNT is real and the card
+// must show it + the Review link; the wording is what canPromise gates (barry → Oracle 2026-08-21).
+const F = 'Foxtrot Ltd';
+const fTaught = addDoc(F, 'needs_review');
+for (let i = 0; i < 8; i++) sibling(F, null);                // 8 siblings, no ref rows at all
+const ff = computeTeachFollowup(db, fTaught);
+check('F: needed = 3, siblingCount = 8, canPromise FALSE (blank refs)', ff.needed === 3 && ff.siblingCount === 8 && ff.canPromise === false);
+check('F: siblingsUnread says WHY (read before the layout existed)', ff.siblingsUnread === true);
+check('F: the count + first sibling are still returned for the card', ff.firstSibling != null);
+check('A: siblingsUnread FALSE when siblings carry references', fa.siblingsUnread === false);
+// ── G — Chris r12 #4: the promise wording follows the install (auto-accept on/off) ────────────
+const learning = require('../../database/modules/learning');
+check('G: autoAccept FALSE by default (mig 79 seeds OFF)', computeTeachFollowup(db, fTaught).autoAccept === false);
+learning.setSetting(db, 'scope_sweep_enabled', 'true'); learning.setSetting(db, 'scope_sweep_auto_accept', 'true');
+check('G: autoAccept TRUE only with BOTH switches on', computeTeachFollowup(db, fTaught).autoAccept === true);
+learning.setSetting(db, 'scope_sweep_enabled', 'false');
+check('G: …the sweep off alone turns it back off', computeTeachFollowup(db, fTaught).autoAccept === false);
+// ── H — the renderer contract: count + Review link no longer hidden behind canPromise ──────────
+const rend = require('fs').readFileSync(require('path').join(__dirname, '..', 'windows', 'teach', 'renderer.js'), 'utf8');
+check('H: the card shows the number + "Check them in Review" whenever siblings are queued', /if \(f\.siblingCount > 0 && f\.needed > 0\)\{[\s\S]{0,900}(fu-review|reviewBtn)/.test(rend));
+check('H: the over-promise is gone — queued docs "become ready to file in one click" unless auto-accept is on', /become ready to file in one click/.test(rend) && /f\.autoAccept\s*\?/.test(rend));
+
 // ── guard — a bad/absent docId degrades safely ────────────────────────────────────────────────
 check('missing docId → {ok:false}', computeTeachFollowup(db, null).ok === false);
 

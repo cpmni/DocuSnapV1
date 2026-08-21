@@ -1925,19 +1925,43 @@ async function renderTeachFollowup(){
     el.innerHTML = `<div style="color:var(--ok)">✓ <b>${sender}</b> now files itself — its ${type} go straight to their folder from now on.</div>`;
     return;
   }
+  // What happens to the QUEUED siblings once the sender crosses the line (Chris r12 #4: "it will
+  // start filing itself" over-promised for documents already in the queue). With the scope-local
+  // auto-accept on they file by themselves after the confirms; otherwise they become one-click
+  // ready and only FUTURE imports file with no click.
+  const rest = f.autoAccept
+    ? `the rest of their ${type} in the queue will file themselves`
+    : `the rest of their ${type} become ready to file in one click — and future ones file themselves`;
+  const reviewBtn = `<div style="margin-top:10px"><button class="btn primary" id="fu-review">Check them in Review</button></div>`;
+  const wireBtn = () => { const btn=$('fu-review'); if(btn) btn.onclick=()=>{ try{ f.firstSibling ? D.openReviewWindowAt(f.firstSibling) : D.openReviewWindow(); }catch{} D.windowClose(); }; };
   if (f.canPromise){
     el.style.cssText = box;
     el.innerHTML =
         `<div style="font-weight:600;margin-bottom:4px"><b>${sender}</b> is learned, and this document is filed.</div>`
-      + `<div class="muted">Confirm <b>${f.needed}</b> more ${sender} ${type} and it will start filing itself — `
+      + `<div class="muted">Confirm <b>${f.needed}</b> more ${sender} ${type} and ${rest} — `
       + `${f.siblingCount} are waiting that look just like this one. You still check every value; nothing files on a guess.</div>`
-      + `<div style="margin-top:10px"><button class="btn primary" id="fu-review">Check them in Review</button></div>`;
-    const btn=$('fu-review');
-    if(btn) btn.onclick=()=>{ try{ f.firstSibling ? D.openReviewWindowAt(f.firstSibling) : D.openReviewWindow(); }catch{} D.windowClose(); };
+      + reviewBtn;
+    wireBtn();
     return;
   }
-  // Not ready, but we can't truthfully promise a specific unlock (too few queued siblings, or their
-  // references are too alike to clear the bar). Give the honest reward — never a number we can't keep.
+  // Chris r12 #3: the number and the road back to Review were hidden whenever canPromise was false —
+  // and it is false on a first teach precisely because the queued siblings were read BEFORE the
+  // layout existed (blank references), not because the count is wrong. Show the real count and the
+  // Review link whenever siblings exist; gate only the WORDING of the promise (barry/Oracle).
+  if (f.siblingCount > 0 && f.needed > 0){
+    el.style.cssText = box;
+    const unread = f.siblingsUnread
+      ? ` They were read before this layout existed, so their details fill in when they're re-read.`
+      : ` Their details still need checking, so I can't promise the exact moment.`;
+    el.innerHTML =
+        `<div style="font-weight:600;margin-bottom:4px"><b>${sender}</b> is filed and its layout is saved.</div>`
+      + `<div class="muted">Confirm <b>${f.needed}</b> more ${sender} ${type} and ${rest}. `
+      + `<b>${f.siblingCount}</b> from ${sender} ${f.siblingCount === 1 ? 'is' : 'are'} waiting in Review.${unread}</div>`
+      + reviewBtn;
+    wireBtn();
+    return;
+  }
+  // Nothing of theirs is queued: the honest reward, with no number we can't keep.
   el.style.cssText = box;
   el.innerHTML =
       `<div style="font-weight:600;margin-bottom:4px"><b>${sender}</b> is filed and its layout is saved.</div>`
