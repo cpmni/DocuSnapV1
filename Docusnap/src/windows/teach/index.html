@@ -468,6 +468,10 @@
         <div class="b"><div class="t">Soon</div><div class="d">mostly hands-off</div></div>
       </div>
       <div id="done-warn" class="warn"></div>
+      <!-- POST-TEACH FOLLOW-UP CARD (2026-08-21): shows how close this sender is to filing itself and,
+           when confirming a few queued siblings would get it there, a one-click route to Review. Filled
+           by renderTeachFollowup(); empty (hidden) until then. Advisory + navigation only. -->
+      <div id="teach-followup" class="followup-card" style="display:none"></div>
       <!-- TEACH ANOTHER (owner 2026-08-08). Someone setting up a new supplier set teaches several
            documents in a row; closing the wizard and reopening it from the menu between each one is
            pure friction. This RELOADS the window rather than hand-resetting state: every drawn box,

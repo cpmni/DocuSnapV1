@@ -501,6 +501,23 @@ function register(ctx) {
     });
   });
 
+  // ── POST-TEACH FOLLOW-UP (the "check a few more and this sender files itself" card) ──────────
+  // After a teach, tell the operator the TRUTH about how close the taught sender is to auto-filing
+  // and whether confirming a few queued siblings now will get it there. Read-only + advisory; NOTHING
+  // here confirms or files — the card only ever navigates to Review, where every confirm passes the
+  // full guard set. gary+barry → Oracle SIGN-OFF-WITH-CONDITIONS 2026-08-21.
+  //   C1: `needed` is the MAX over the scope's role fields (issuer/ref/date) of (FORMAT_SOLID_MIN −
+  //       the format group's confirmed_count) — the number the GATE reads (getFieldFormats), never a
+  //       raw confirmed-document count (a taught doc carries few/no rows).
+  //   C2: we only PROMISE "and it files itself" when enough same-scope siblings are queued AND they
+  //       bring at least `needed` DISTINCT reference values — else the ref group stays 'constant' and
+  //       a genuinely-new invoice number would still be refused (the constant-ref lie). Conservative:
+  //       when in doubt we drop the promise to a plain reward, never over-promise.
+  ipcMain.handle('get-teach-followup', (_e, p) => {
+    requireRole('admin', 'edit');
+    return require('../../services/teachFollowup').computeTeachFollowup(getDb(), p && p.docId);
+  });
+
   // Graduation roster + per-supplier opt-out (Slice 5 UX — the "Suppliers handled automatically"
   // controls). Admin/edit gated like the rest of the review admin surface.
   ipcMain.handle('get-graduated-suppliers', () => {

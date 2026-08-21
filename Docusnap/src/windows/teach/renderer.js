@@ -1893,6 +1893,7 @@ async function doCommit(){
     $('done-warn').textContent = warnLandmarks
       ? 'Heads-up: this page didn\'t have many distinct printed words, so extraction may be less tolerant of crooked or rescaled scans. A cleaner/straighter example helps.' : '';
     setStep(5);
+    renderTeachFollowup();   // "check a few more and this sender files itself" — advisory, navigation only
   }catch(e){
     $('commit-err').textContent=e.message||'Something went wrong while saving.';
     next.disabled=false; next.textContent='Save teaching & file';
@@ -1902,6 +1903,46 @@ async function doCommit(){
 // ── Step 5: done ─────────────────────────────────────────────────────────────
 // (footer Next = "Done" → close)
 function finishDone(){ D.windowClose(); }
+
+// POST-TEACH FOLLOW-UP CARD (gary+barry → Oracle SIGN-OFF-W/COND 2026-08-21). After a teach, tell the
+// operator the TRUTH about how close this sender is to filing itself, and — when confirming a few
+// queued siblings would get it there — offer a one-click route to Review. It NEVER confirms or files
+// anything (all confirming stays in the guarded Review surface, C5); the number comes from the backend,
+// which reads the learned format groups the gate reads (C1) and only promises when the queued siblings
+// can actually reach the bar (C2). Reward-framed, never a naked "you owe N" quota. Fail-quiet: any
+// error, or nothing to say, renders nothing.
+async function renderTeachFollowup(){
+  const el = $('teach-followup'); if(!el) return;
+  el.style.display='none'; el.innerHTML='';
+  const docId = state.doc && state.doc.id; if(!docId) return;
+  let f=null; try{ f = await D.getTeachFollowup(docId); }catch{ f=null; }
+  if(!f || f.ok===false || !f.supplier) return;
+  const sender = esc(f.supplier), type = esc(f.typeName || 'documents');
+  const box = 'display:block;margin:14px 0;padding:14px 16px;border:1px solid var(--border2);'
+            + 'border-radius:var(--r);background:var(--surface2);line-height:1.5';
+  if (f.ready){
+    el.style.cssText = box;
+    el.innerHTML = `<div style="color:var(--ok)">✓ <b>${sender}</b> now files itself — its ${type} go straight to their folder from now on.</div>`;
+    return;
+  }
+  if (f.canPromise){
+    el.style.cssText = box;
+    el.innerHTML =
+        `<div style="font-weight:600;margin-bottom:4px"><b>${sender}</b> is learned, and this document is filed.</div>`
+      + `<div class="muted">Confirm <b>${f.needed}</b> more ${sender} ${type} and it will start filing itself — `
+      + `${f.siblingCount} are waiting that look just like this one. You still check every value; nothing files on a guess.</div>`
+      + `<div style="margin-top:10px"><button class="btn primary" id="fu-review">Check them in Review</button></div>`;
+    const btn=$('fu-review');
+    if(btn) btn.onclick=()=>{ try{ f.firstSibling ? D.openReviewWindowAt(f.firstSibling) : D.openReviewWindow(); }catch{} D.windowClose(); };
+    return;
+  }
+  // Not ready, but we can't truthfully promise a specific unlock (too few queued siblings, or their
+  // references are too alike to clear the bar). Give the honest reward — never a number we can't keep.
+  el.style.cssText = box;
+  el.innerHTML =
+      `<div style="font-weight:600;margin-bottom:4px"><b>${sender}</b> is filed and its layout is saved.</div>`
+    + `<div class="muted">I'll recognise ${sender} from now on. As you confirm a few more of their ${type} in the review queue, it will start filing itself.</div>`;
+}
 
 // TEACH ANOTHER — reload rather than reset. state carries ~20 keys (drawn boxes, per-field results,
 // pendingAnchors, page cache, deskew renders, the chosen type); hand-clearing them would leave one
