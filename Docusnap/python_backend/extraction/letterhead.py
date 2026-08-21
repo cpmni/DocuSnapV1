@@ -68,9 +68,11 @@ the 14 documents someone happened to look at, and it is what the stop rule below
 "SuperStore" is the LARGEST TEXT on its page by a wide margin — word HEIGHT identifies it
 instantly and text position never will. The fix is the geometry slice, not a threshold.
 
-Pure + deterministic: no I/O, no env reads, no DB. Mirrors title_pick.py's contract.
+Pure + deterministic: no I/O, no DB. Mirrors title_pick.py's contract. (ONE env read — the Slice-0
+LETTERHEAD_FRAGMENT_ABSTAIN kill switch, bridged from settings by processing/handler.js.)
 """
 
+import os
 import re
 
 from extraction import chrome_band
@@ -160,13 +162,37 @@ def _row_segments(line_text, row_words):
     return out
 
 
-def _pick_by_height(band_lines, geometry, is_candidate):
+def _fragment_abstain_enabled():
+    """Slice 0 of the teach→file arc (2026-08-21, gary → Oracle SIGN-OFF-W/COND S0-C1..C3; DARK).
+    Env LETTERHEAD_FRAGMENT_ABSTAIN is bridged from the `letterhead_fragment_abstain` setting by
+    processing/handler.js. Unset/0 ⇒ byte-identical to the pre-slice pick."""
+    return os.environ.get("LETTERHEAD_FRAGMENT_ABSTAIN", "0") == "1"
+
+
+def _pick_by_height(band_lines, geometry, is_candidate, neighbour_name_shaped=None):
     """The geometry verdict, or None (→ the text arm runs). Candidates are the band lines' COLUMN
     SEGMENTS (see _row_segments), each gated by `is_candidate` and scored by its own words'
     upper-median height as a RATIO to med_h. None whenever the pairing cannot be trusted
     (missing/mismatched rows), the top survivor is not letterhead-sized (< _GEOM_MIN_RATIO), or
     two survivors are comparably sized (< _GEOM_MIN_LEAD) — every uncertain path falls back,
-    never guesses."""
+    never guesses.
+
+    `neighbour_name_shaped(seg)` (optional; Slice 0 FRAGMENT ABSTAIN, 2026-08-21): a looser gate
+    than `is_candidate` — name-SHAPED and not an excluded type phrase, but NOT required to carry a
+    distinctive core. Used only to ask whether the top pick's same-row NEIGHBOUR looks like the
+    rest of a company name. MEASURED on the round-12 exhibit through the real OCR path: the
+    letter-spaced heading 'Silverbeck    Cleaning    Supplies' reconstructs as three column
+    segments at h=1.76 / 2.24 / 2.24; 'Supplies' fails the distinctive-core gate (generic), so
+    'Cleaning' out-ranks 'Silverbeck' on height alone and was PRE-FILLED as the company (Chris r12
+    #2; same class 'Security' for 'Castellan Security Systems'). A single-token winner flanked by
+    a letterhead-SIZED, name-shaped, non-excluded segment on its own row is a FRAGMENT of a wider
+    name, and the module's rule applies: empty beats a guess — abstain, the text arm runs. What
+    this deliberately does NOT do (Oracle, twice): re-join the segments in this assert path — a
+    marker-less recipient column could then confirm itself as the issuer. The VERIFY-side re-join
+    (fragmented_issuer_confirms, fixed-target) is the only place a joined span is trusted.
+    Pinned trade-off: a genuine two-column 'Acme    Widgets Ltd' (both letterhead-sized) also
+    abstains. SuperStore ('Superstore    INVOICE') still picks — 'INVOICE' is an excluded type
+    phrase, so it is not name-shaped for this test."""
     med_h = geometry.get("med_h") or 0
     rows = geometry.get("rows") or []
     glines = geometry.get("lines") or []
@@ -178,18 +204,24 @@ def _pick_by_height(band_lines, geometry, is_candidate):
         if key and key not in by_text:      # first occurrence wins — the band IS the top of page 0
             by_text[key] = gi
     scored = []
+    row_segs = {}                           # gi → [(seg, ratio_or_None)] in left-to-right order
     for bl in band_lines:
         gi = by_text.get(bl.strip())
         if gi is None:
             continue                        # e.g. a truncated marker-line head — text arm's problem
+        segs = []
         for seg, seg_words in _row_segments(glines[gi].strip(), rows[gi]):
-            if len(seg_words) != len(seg.split()):
+            paired = len(seg_words) == len(seg.split())
+            h = _row_height(seg_words) if paired else 0
+            ratio = (h / med_h) if h > 0 else None
+            segs.append((seg, ratio))
+            if not paired:
                 continue                    # pairing drifted — never score words that aren't the segment's
             if not is_candidate(seg):
                 continue
-            h = _row_height(seg_words)
-            if h > 0:
-                scored.append((h / med_h, seg))
+            if ratio is not None:
+                scored.append((ratio, seg, gi, len(segs) - 1))
+        row_segs[gi] = segs
     if not scored:
         return None
     scored.sort(key=lambda t: -t[0])
@@ -200,12 +232,25 @@ def _pick_by_height(band_lines, geometry, is_candidate):
     # ('Cloud VPS' at 1.7× in the address block). The fragment must never beat its own superset —
     # prefer the highest-ranked surviving candidate whose tokens CONTAIN the top pick's.
     top_toks = {t.lower() for t in scored[0][1].split()}
-    for ratio, cand in scored[1:]:
+    for ratio, cand, _gi, _si in scored[1:]:
         c_toks = {t.lower() for t in cand.split()}
         if top_toks < c_toks:
             return cand
     if len(scored) > 1 and scored[0][0] < scored[1][0] * _GEOM_MIN_LEAD:
         return None
+    # Slice 0 — FRAGMENT ABSTAIN (see the docstring). Adjacent-only, same row (S0-C3): the
+    # neighbour must be letterhead-SIZED by ITS OWN words, so a body-sized recipient column beside
+    # a wordmark never triggers this.
+    if (_fragment_abstain_enabled() and neighbour_name_shaped is not None
+            and len(scored[0][1].split()) == 1):
+        _r, _seg, gi, si = scored[0]
+        segs = row_segs.get(gi) or []
+        for ni in (si - 1, si + 1):
+            if 0 <= ni < len(segs):
+                n_seg, n_ratio = segs[ni]
+                if (n_ratio is not None and n_ratio >= _GEOM_MIN_RATIO
+                        and neighbour_name_shaped(n_seg)):
+                    return None             # a fragment of a wider name — empty beats a guess
     return scored[0][1]
 
 
@@ -360,6 +405,17 @@ def _is_geom_candidate(seg, excluded):
     return _distinctive_core(s)
 
 
+def _is_name_shaped_neighbour(seg, excluded):
+    """Slice 0's NEIGHBOUR gate — `_is_geom_candidate` WITHOUT the distinctive-core and plausible-
+    supplier gates. 'Supplies' / 'Systems' / 'Ltd' are exactly the generic tail tokens the core gate
+    drops, and they are exactly what identifies the winner beside them as a FRAGMENT. Still refuses
+    an excluded/type phrase (so 'Superstore    INVOICE' keeps picking) and the disqualified shapes."""
+    s = seg.strip()
+    if not s or s.lower() in excluded or _contains_type_phrase(s, excluded) or _disqualified(s):
+        return False
+    return bool(_LETTERHEAD_NAME_RE.match(s))
+
+
 def _excluded_set(detected_title, type_phrases):
     """The lower-cased title + type-phrase exclusion set shared by the geom pick and the fragment shed."""
     excluded = {str(detected_title or "").strip().lower()}
@@ -381,7 +437,8 @@ def pick_issuer_geometry(ocr_text, geometry, detected_title=None, type_phrases=N
     if not lines:
         return None
     excluded = _excluded_set(detected_title, type_phrases)
-    return _pick_by_height(lines, geometry, lambda seg: _is_geom_candidate(seg, excluded))
+    return _pick_by_height(lines, geometry, lambda seg: _is_geom_candidate(seg, excluded),
+                           neighbour_name_shaped=lambda seg: _is_name_shaped_neighbour(seg, excluded))
 
 
 def fragmented_issuer_confirms(ocr_text, geometry, target, norm, detected_title=None, type_phrases=None):
