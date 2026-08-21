@@ -170,13 +170,20 @@ console.log('6. THE PROMISE — three taught confirms make a sender verifiable (
   db.close();
 }
 
-console.log('7. migration 73 seeds both OFF and does not disturb the mig-72 pins');
+console.log('7. migration 78 defaults BOTH flags ON, PAIRED, and does not disturb the mig-72 pins');
 {
   const db = new Database(':memory:');
   runMigrations(db);
   const get = k => (db.prepare('SELECT value FROM settings WHERE key = ?').get(k) || {}).value;
-  check('confirm_persist_values seeded OFF', get('confirm_persist_values') === 'false');
-  check('format_corrections_dedupe seeded OFF', get('format_corrections_dedupe') === 'false');
+  // mig 73 seeds both OFF (for validation); mig 78 UPSERT-forces both ON once the four-arm census +
+  // realdoc gate passed (2026-08-21). They MUST move together — persist minting into a fan-out-
+  // miscounting corrections counter would green graduations for the wrong reason; de-dup alone can
+  // DE-graduate. So the two are asserted equal AND both true — a future edit that flips one without
+  // the other trips this pin (Oracle: the pair moves as a unit).
+  check('confirm_persist_values defaulted ON', get('confirm_persist_values') === 'true');
+  check('format_corrections_dedupe defaulted ON', get('format_corrections_dedupe') === 'true');
+  check('the pair moves TOGETHER (never one without the other)',
+        get('confirm_persist_values') === get('format_corrections_dedupe'));
   check('the migration-72 switches are still OFF', get('filing_sanity_page_match_v2') === 'false'
         && get('vat_reg_symbol_confusable') === 'false' && get('money_sign_capture') === 'false');
   db.close();

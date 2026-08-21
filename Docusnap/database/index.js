@@ -1818,6 +1818,31 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 77 applied: cold-start letterhead prefill defaulted ON');
   }
 
+  // ── Migration 78: the taught document COUNTS — confirm_persist_values + format_corrections_dedupe
+  // default ON, PAIRED (owner decision, 2026-08-21; gary+barry → Oracle SIGN-OFF-WITH-CONDITIONS) ──
+  // These two MUST move together (mig 73 seeded both OFF for validation, warning at index.js:1719):
+  // `confirm_persist_values` mints an approved-but-unedited value as an extraction row so a TAUGHT
+  // document finally contributes to the 3-confirmed-doc format wall (the post-teach card then reads
+  // "2 more", not "3"); `format_corrections_dedupe` collapses the corrections fan-out so one document
+  // corrected N times can't self-reach the bar — minting into a miscounting counter would green
+  // graduations for the wrong reason, and de-dup alone can DE-graduate a scope. Their owed gate PASSED:
+  //   G1 four-arm census (census_confirm_persist_flip.js) on the live-backup + young DBs — M-neutral
+  //     (the only wrong-flags are buyer-issued POs correctly filed under the issuer, a GT artifact
+  //     present in base), +16 correct newly-eligible on the young corpus, ZERO de-graduations,
+  //     scopeTrust invariant clean, and G3 empty-issuer-block = 0 (Refinement B did not bite).
+  //   G2 realdoc_regression (RR_APP_ENV=1, both flags): 0 regressions, M=0, zero per-field accuracy
+  //     drop, +3 more CORRECT auto-files through the real Python pipeline.
+  // UPSERT-forced past the mig-73 OFF seed. Go-forward-only in effect (persist mints at confirm).
+  if (!applied.has(78)) {
+    try {
+      const up78 = db.prepare("INSERT INTO settings (key, value) VALUES (?, 'true') ON CONFLICT(key) DO UPDATE SET value='true'");
+      up78.run('confirm_persist_values');
+      up78.run('format_corrections_dedupe');
+    } catch (e) { console.warn(`  migration 78: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (78)').run();
+    console.log('JS migration 78 applied: confirm-persist-values + corrections-dedupe defaulted ON (paired)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

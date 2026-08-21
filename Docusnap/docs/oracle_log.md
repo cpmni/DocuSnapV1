@@ -1594,3 +1594,27 @@ on confirm→false); deferred fixture; SUPPLIER_RIPPLE=0 inert; realdoc M=0 nega
 renderer/wiring only; the unit+fixture tests are the real gate). Pins: test_issuer_ripple_pins.js (fixture-DB,
 green), test_issuer_ripple_contract.js (static contract, green). SHIPPED (no new flag — the ripple is already
 gated by SUPPLIER_RIPPLE).
+
+## 2026-08-21 — post-teach follow-up card (Phase 1) + the confirm_persist_values/dedupe flip (Phase 2) — SIGN OFF WITH CONDITIONS → GATE PASSED, FLIPPED
+barry (UX) + gary (mechanism) → Oracle. Chris r11 cards #3/#5: teaching gives recognition but not
+auto-file. Unlock verified at source: a (supplier, doc-type) scope needs 3 CONFIRMED docs whose role
+fields carry valued rows so getFieldFormats emits solid groups and docTrustGate stops refusing
+`unverifiable-value` — the first-firing wall on a fresh install (graduation W=5 and corroboration are
+inert at bar 90). The teach commit doesn't count today (`confirm_persist_values` OFF).
+**Phase 1 (shipped):** a done-screen card computing the honest `needed` from getFieldFormats (C1 =
+max over role fields), promising only when queued siblings bring `needed` DISTINCT refs (C2, the
+constant-ref lie), navigation-only so the anti-bulk-confirm C5 is moot by construction. Pin
+test_teach_followup.js.
+**Phase 2 (flipped, mig 78):** `confirm_persist_values` + `format_corrections_dedupe` default-ON PAIRED
+(persist mints the taught doc's values so it counts → the card reads "2 more"; dedupe stops one doc's
+correction fan-out from self-reaching the bar — they MUST move together). Oracle census methodology
+vetted (SIGN-OFF-W/COND: judge on the BOTH arm, real gate not format-solid proxy, mint over NON-machine
+confirms under per-type role keys, M-check supplier AND type, scopeTrust invariant = confirmedCount/
+corrections fixed + reason moves only ok↔unverifiable-required-field, dedupe de-grad must be <3-distinct
+fan-out). **GATE PASSED:** G1 `census_confirm_persist_flip.js` on live-backup (1668 conf) + young (93)
+DBs — M-neutral (the only wrong-flags are buyer-issued POs correctly filed under the issuer Bramblewood,
+a GT artifact present in base), +16 correct newly-eligible on the young corpus, ZERO de-graduations,
+scopeTrust invariant clean, G3 empty-issuer-block = 0 (Refinement B did not bite — 255/263 docs already
+carry a populated issuer row). G2 realdoc (RR_APP_ENV=1, both flags, minted copy + dedupe): 0
+regressions, M=0, zero per-field accuracy drop, +3 more CORRECT auto-files. Pin test_confirmed_value_rows.js
+updated (§7: both default ON, pair moves together); high-risk confirm-path suites green.
