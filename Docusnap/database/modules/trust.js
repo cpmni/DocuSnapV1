@@ -299,9 +299,17 @@ function classifyLearnedShape(sampleValues) {
  * Requires ≥5 non-empty samples and ≥75% agreement, so it can only ever FIRE on real evidence;
  * below that it returns null and the caller falls back to its own (stricter) handling.
  *
- * DELIBERATELY SEPARATE from classifyLearnedShape, which must NOT change: that feeds
- * scopeTrust's required-field verifiability check, and reclassifying a contaminated required
- * field as 'code' there would silently widen GRADUATION itself — the seam inside the fix.
+ * DELIBERATELY SEPARATE from classifyLearnedShape, which must NOT change (it stays byte-identical).
+ * 2026-07-20 ruled that reclassifying a contaminated REQUIRED field here would SILENTLY widen
+ * graduation, because the role branch of docTrustGate would still refuse 'freetext' — a widening
+ * with no verification leg. SUPERSEDED 2026-08-22 for ONE PAIRED change only (Oracle, Chris round
+ * 13, `role_field_dominant_class`): `_effectiveClass` applies this SAME dominant rule to ROLE fields
+ * at BOTH halves in one commit — scopeTrust's required-field check (graduation) AND docTrustGate's
+ * role branch (verification) AND the corroboration probe — so a scope un-bricked by one confirmed
+ * outlier ('VX$22033' among eleven 'VXS…' codes) graduates WITH its values still verified against
+ * the dominant shape. Bounded by construction: only a ≥75%-structured required field can widen; a
+ * wobbling issuer (3+ distinct names → freetext, names are never _codeish) still blocks graduation,
+ * so the graduation-licensed issuer freeze and the fuzzy-geom shed are not reachable through it.
  */
 /**
  * Is the non-role shape leniency ON? DEFAULT ON since 2026-07-20; `TRUST_NONROLE_SHAPE_LENIENT=0`
@@ -364,6 +372,29 @@ function _shadowRowSkipEnabled(db) {
   try {
     return require('./learning').getSetting(db, 'trust_shadow_row_skip', 'false') === 'true';
   } catch { return false; }
+}
+
+// ROLE-FIELD DOMINANT CLASS (2026-08-22, Chris round 13 → Oracle SIGN-OFF-W/COND C1.1–C1.4; DARK).
+// Setting `role_field_dominant_class`, env ROLE_FIELD_DOMINANT_CLASS wins in both directions; hoisted
+// to ONE read per call and threadable via `opts.roleDominant` (the _shadowRowSkipEnabled idiom).
+function _roleDominantEnabled(db) {
+  const env = process.env.ROLE_FIELD_DOMINANT_CLASS;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try {
+    return require('./learning').getSetting(db, 'role_field_dominant_class', 'false') === 'true';
+  } catch { return false; }
+}
+// The ONE class a required/role field is judged by, at all three sites (scopeTrust's required-field
+// loop, its corroboration probe, docTrustGate's role branch — C1.1). Strict class when it is
+// structured; when the strict classifier gave up ('freetext' — one confirmed outlier among many
+// codes), the DOMINANT structured class (≥5 DISTINCT samples, ≥75% agreement) if there is one;
+// else the strict answer stands. OFF ⇒ the strict class, byte-identical.
+function _effectiveClass(f, on) {
+  const cls = (f && f.cls) || 'none';
+  if (!on || cls !== 'freetext') return cls;
+  const dom = _dominantStructuredClass(f && f.sampleValues);
+  return dom || cls;
 }
 
 // ── Auto-file gate unification (2026-08-12 NIGHT slice; gary+eric → Oracle SIGN-OFF-W/COND) ──
@@ -594,6 +625,7 @@ function _configuredWindow(db) {
 }
 
 function scopeTrust(db, supplier, slug, opts = {}) {
+  const _roleDomOn = (opts.roleDominant !== undefined) ? !!opts.roleDominant : _roleDominantEnabled(db);
   const W    = opts.window ?? _configuredWindow(db);
   const MAXC = opts.maxCorrections ?? TRUST_MAX_CORRECTIONS;
   const sup  = _norm(supplier);
@@ -662,7 +694,7 @@ function scopeTrust(db, supplier, slug, opts = {}) {
         if (corr === 0) {
           const fmts0 = _scopeFormats(db, sup, sl, opts.formats);
           for (const rf of reqFields) {
-            const cls = (fmts0.get(rf.key) || {}).cls || 'none';
+            const cls = _effectiveClass(fmts0.get(rf.key), _roleDomOn);   // C1.1: same class as the main loop
             if (!fieldVerifiable(rf.type, cls)) { verifiable = false; break; }
           }
         }
@@ -690,7 +722,7 @@ function scopeTrust(db, supplier, slug, opts = {}) {
 
   const fmts = _scopeFormats(db, sup, sl, opts.formats);
   for (const rf of reqFields) {
-    const cls = (fmts.get(rf.key) || {}).cls || 'none';
+    const cls = _effectiveClass(fmts.get(rf.key), _roleDomOn);   // C1.1: dominant class when strict gave up
     if (!fieldVerifiable(rf.type, cls)) {
       return no('unverifiable-required-field', { confirmedCount, field: rf.key, cls });
     }
@@ -763,6 +795,7 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
   const _nonRoleLenientOn = _nonRoleLenientEnabled() && _rolesComplete;
   // ONE read per document, not one per row (Oracle C4) — mirrors how formats/gradOn/optOut are
   // hoisted through opts by autoFileEligibleIds so a whole queue costs one lookup, not N×rows.
+  const _roleDomOn = (opts.roleDominant !== undefined) ? !!opts.roleDominant : _roleDominantEnabled(db);
   const _shadowSkipOn = (opts.shadowRowSkip !== undefined)
     ? !!opts.shadowRowSkip : _shadowRowSkipEnabled(db);
 
@@ -849,8 +882,15 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
         : _dominantStructuredClass(f.sampleValues);    // …else does the history still vote?
       if (dom && !valueMatchesShape(v, dom, f.sampleValues))
         return { ok: false, reason: `unverifiable-value:${e.field_key}` };
-    } else if (!valueMatchesShape(v, f.cls, f.sampleValues)) {
-      return { ok: false, reason: `unverifiable-value:${e.field_key}` };
+    } else {
+      // ROLE field (or a non-role field on a dangling-role doc, which keeps strict refusal — C1.2):
+      // verify against the effective class. With the switch on, a role field whose strict class
+      // collapsed to 'freetext' under ONE confirmed outlier is judged by its DOMINANT structured
+      // class instead of refused forever — verification, never exemption (the outlier itself fails).
+      const _cls = (_roleDomOn && _rolesComplete && roleKeys.has(e.field_key)) ? _effectiveClass(f, true) : f.cls;
+      if (!valueMatchesShape(v, _cls, f.sampleValues)) {
+        return { ok: false, reason: `unverifiable-value:${e.field_key}` };
+      }
     }
   }
   return { ok: true };
@@ -1067,9 +1107,11 @@ function autoFileEligibleIds(db, docs, opts = {}) {
     ? !!opts.critFieldCorrobRelax : _critFieldCorrobRelaxEnabled(db);
   const vacuousCorrectedToIgnore = (opts.vacuousCorrectedToIgnore !== undefined)
     ? !!opts.vacuousCorrectedToIgnore : _vacuousCorrectedToIgnore(db);
+  // 2026-08-22 role-field dominant class (C1.3) — one settings read per batch.
+  const roleDominant = (opts.roleDominant !== undefined) ? !!opts.roleDominant : _roleDominantEnabled(db);
   const ids = [];
   for (const d of (docs || [])) {
-    if (isAutoFileEligible(db, d, { ...opts, formats, gradOn, optOut, shadowRowSkip, corrobAutoFile, gateUnify, critFieldCorrobRelax, vacuousCorrectedToIgnore }).eligible) ids.push(d.id);
+    if (isAutoFileEligible(db, d, { ...opts, formats, gradOn, optOut, shadowRowSkip, corrobAutoFile, gateUnify, critFieldCorrobRelax, vacuousCorrectedToIgnore, roleDominant }).eligible) ids.push(d.id);
   }
   return ids;
 }
@@ -1124,6 +1166,7 @@ module.exports = {
   TRUST_WINDOW, TRUST_MAX_CORRECTIONS, TRUSTED_FLOOR, UNTRUSTED_FLOOR, STRICT_TYPES, _configuredWindow,
   classifyLearnedShape, valueMatchesShape, fieldVerifiable,
   _dominantStructuredClass,        // exported for the contaminated-history pin (test_scope_trust.js §18b)
+  _effectiveClass, _roleDominantEnabled,   // role-field dominant class (2026-08-22) — pinned in test_role_dominant_class.js
   _nonRoleLenientEnabled,          // single source of the default, so tests can't drift from it
   _shadowRowSkipEnabled,           // ditto for the shadow-row skip (TRUST_SHADOW_ROW_SKIP)
   _gateUnifyEnabled,               // ditto for gate-unify — handler.js T1 and the T2 refusal share ONE read

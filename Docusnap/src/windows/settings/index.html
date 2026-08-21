@@ -1288,6 +1288,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Don't let one odd confirmed value stop a sender filing itself</div>
+                <div class="threshold-sub">If you once confirmed a mis-read reference (say "VX$22033" where every other one reads "VXS…"), Scan Finder's learned pattern for that sender breaks and none of its documents can file themselves again. With this on, when at least five different confirmed values agree on a shape and three-quarters or more of them match, a new document is checked against that usual shape — the odd one out is still refused, and a sender whose references genuinely vary stays held. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="role-dominant-class-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Recognise a confirmed company even when its letterhead is column-spaced</div>
                 <div class="threshold-sub">Some letterheads print the company name with big gaps between the words. Scan Finder can read the gaps as separate columns and fail to match the name to a company you've confirmed, so those documents keep the "please confirm before filing" note. With this on, the spaced-out name is reassembled and, when it matches a company you've confirmed on this layout, the note is cleared. Only the company you confirmed is matched — a name on the page addressed TO you is never treated as the sender. Off by default.</div>
               </div>

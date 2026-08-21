@@ -1135,6 +1135,12 @@ function _senderReadinessLabel(supplier) {
     return `<span class="qgh-ready done" title="Documents from this sender that read cleanly can file themselves — you'll still see anything that needs a look.">`
          + `✓ files by itself</span>`;
   }
+  // Oracle F3 (2026-08-22): learned, but no taught/graduation layout exists yet — a distinct state,
+  // never "files by itself" and never a confirm countdown (more confirms won't make a layout).
+  if (pending.every(r => r.needsTemplate)) {
+    return `<span class="qgh-ready" title="This sender is learned, but no layout has been saved for it yet — teach one of its documents (or wait for the next confirm to re-read them) and they can file themselves.">`
+         + `learned · needs a layout</span>`;
+  }
   // One countdown per (sender, type). Name the type only when this sender has more than one
   // pending — otherwise the sender's own name is context enough.
   const bits = pending
@@ -2091,9 +2097,16 @@ function renderTeachCta(doc) {
   const likeWrap = document.getElementById('teach-cta-like');
   const likeSel  = document.getElementById('teach-cta-like-select');
   const likeGo   = document.getElementById('teach-cta-like-go');
+  // Chris r13 card 5: the first-ever teach raised "Teach this as a NEW document? … Template Manager"
+  // because `known` only means "the page has a fingerprint". The duplicate guard is about a sender
+  // you have ALREADY taught — so remember whether any template carries this sender's name, and ask
+  // only then, in plain words.
+  let _senderHasTemplate = false;
+  const _docSupplierNorm = String(doc.supplier_name || '').trim().toLowerCase();
   if (likeSel && likeGo) {
     window.docusnap.getTemplates?.().then(list => {
       const tmpls = Array.isArray(list) ? list : (list && list.templates) || [];
+      _senderHasTemplate = !!_docSupplierNorm && tmpls.some(t => String(t.supplier_name || '').trim().toLowerCase() === _docSupplierNorm);
       if (!tmpls.length) return;                       // nothing to link to yet
       const slug = selectedTypeSlug || currentDoc?.type_slug || currentDoc?.document_type_slug || null;
       tmpls.sort((a, b) =>
@@ -2113,11 +2126,10 @@ function renderTeachCta(doc) {
     if (!id) return;
     // Tier C guardrail: the recheck is best-effort, so on a recognised sender confirm once
     // before teaching, in case a badly-drifted template slipped past it. Tier D = no nag.
-    if (known && !confirm(
-      'Teach this as a NEW document?\n\n' +
-      'We don\'t have a template for this layout. If you have taught a similar document ' +
-      'before, click Cancel and update that one in Template Manager instead, so we don\'t ' +
-      'create a duplicate.')) return;
+    if (known && _senderHasTemplate && !confirm(
+      `You've taught ${String(doc.supplier_name || 'this sender').trim()} before.\n\n` +
+      'Teach this as ANOTHER layout from them? If it is really the same layout, press Cancel ' +
+      'and check Settings → Templates instead, so a duplicate isn\'t created.')) return;
     window.docusnap.openTeachWindowAt(id);
   });
 }
@@ -2326,9 +2338,14 @@ function renderCleanHoldReason(el, doc) {
       : `Nothing was flagged — this was read at ${conf}%, ${thr - conf <= 5 ? 'just below' : 'below'} the ${thr}% you've set for `
         + 'filing without a check, so it\'s waiting for you.';
     cue  = `Read at ${conf}% · your setting ${thr}%`;
+    // Chris r13 card 6: a doc with an EMPTY required field (date/reference) can't be filed by
+    // any bar — pointing at the threshold sends the user to a setting that cannot help.
+    const _missingReq = (doc.missing_required_labels || '').split(',').map(x => x.trim()).filter(Boolean);
     hint = _issuerEmpty
       ? 'Filling it in usually fixes this — type the company name, or use ⊕ to teach where it sits.'
-      : `If documents like this are consistently right, lower the auto-file bar in Settings → Processing.`;
+      : (_missingReq.length
+          ? `Fill in ${_missingReq.join(' and ')} — a document can't file until its required details are in, whatever the bar.`
+          : `If documents like this are consistently right, lower the auto-file bar in Settings → Processing.`);
   } else {
     lead = 'Nothing was flagged on this document — check the values and confirm to file it.';
     cue  = 'Ready to file';
@@ -3396,6 +3413,14 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
       }
     }
   });
+
+  // Chris r13 card 3: Enter in the Document Issuer box settles it exactly like clicking away —
+  // validation + the correction-ripple doorway — instead of doing nothing.
+  if (key === 'supplier_name') {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); input.blur(); }
+    });
+  }
 
   // Right-click → field cleanup-rule toolkit (strip a leaked heading/column). Gated
   // to admin/edit (the save is also role-checked server-side). Read-only users get
@@ -7307,7 +7332,9 @@ async function runReprocessBatch(docs, scopeLabel, opts = {}) {
   if (!opts.preConfirmed
       && !confirm(`Re-read all ${docs.length} document${docs.length === 1 ? '' : 's'} (${scopeLabel}) from their pages? `
              + `Values the documents re-read may replace what's shown now, and this can take a while. `
-             + `Documents you've already confirmed and filed are not touched.`)) return;
+             + `Documents you've already confirmed and filed are not touched.\n\n`
+             + `Re-reading updates the details; it doesn't file anything by itself — documents that come out ready `
+             + `still file through Confirm, File All Ready, or the sender's own auto-file once it's learned.`)) return;
   // The open document's unsaved edits/type choice are re-rendered away too (QA audit #3).
   if (!opts.preConfirmed && hasPendingReviewEdits() && !confirm(REPROCESS_DISCARD_WARNING)) return;
 
@@ -7696,6 +7723,15 @@ async function _refreshQueueFromBroadcast() {
   if (activeTab === 'deferred') renderDeferredList();
   refreshAutoCommittedBar();   // tick the auto-committed tally up after the burst (fetches fresh)
   if (!prevId && queue.length > 0 && activeTab === 'review') selectDoc(queue[0]);
+  // Chris r13 card 4: the open document was filed ELSEWHERE (the teach wizard's own confirm, a
+  // sweep, another window) — it is no longer in the queue but the pane still shows it with a live
+  // "Confirm & File". Move on, exactly as after Review's own Confirm — but ONLY when nothing the
+  // operator typed here would be lost (pending edits keep the pane; a wizard-filed doc has none).
+  else if (prevId && activeTab === 'review' && !queue.some(d => d.id === prevId)
+           && !deferredQueue.some(d => d.id === prevId) && !hasPendingReviewEdits() && !_batchActive) {
+    currentDoc = null; clearDocPanel();
+    if (queue.length) selectDoc(queue[0]);
+  }
 }
 // Slice 1: the server filed a sender's ready documents by itself after a human confirm. Refresh the
 // LIST + receipt bar (never the open document — the pass skipped anything being viewed), then re-ask

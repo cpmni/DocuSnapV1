@@ -1865,6 +1865,7 @@ function runJsMigrations(db, applied) {
       ins79.run('scope_sweep_auto_accept',     'false');
       ins79.run('letterhead_fragment_abstain', 'false');
       ins79.run('quiet_reread_enabled',        'false');
+      ins79.run('role_field_dominant_class',   'false');   // 08-22 fix-run: a role field judged by its dominant shape when one confirmed outlier collapsed the strict class
     } catch (e) { console.warn(`  migration 79: ${e.message}`); }
     db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (79)').run();
     console.log('JS migration 79 applied: teach→file arc switches seeded OFF (sweep, auto-accept, fragment-abstain, quiet re-read)');

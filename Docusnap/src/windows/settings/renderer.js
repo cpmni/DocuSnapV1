@@ -893,7 +893,8 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          ['scope-sweep-toggle', 'scope_sweep_enabled'],
                          ['scope-sweep-auto-accept-toggle', 'scope_sweep_auto_accept'],
                          ['letterhead-fragment-abstain-toggle', 'letterhead_fragment_abstain'],
-                         ['quiet-reread-toggle', 'quiet_reread_enabled']]) {
+                         ['quiet-reread-toggle', 'quiet_reread_enabled'],
+                         ['role-dominant-class-toggle', 'role_field_dominant_class']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);
@@ -979,6 +980,7 @@ const DEV_SWITCH_IDS = [
   'identity-geom-fragment-toggle',
   // The teach→file arc (2026-08-21, mig 79, OFF) — dev-gated until the owner decides what surfaces.
   'scope-sweep-toggle', 'scope-sweep-auto-accept-toggle', 'letterhead-fragment-abstain-toggle', 'quiet-reread-toggle',
+  'role-dominant-class-toggle',
 ];
 function _applyDevSwitchVisibility(unlocked, revealGate){
   for (const id of DEV_SWITCH_IDS){

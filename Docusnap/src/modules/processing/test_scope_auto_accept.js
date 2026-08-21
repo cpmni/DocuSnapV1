@@ -97,7 +97,7 @@ handler.register({
   notifyMainWindow: (ch, payload) => broadcasts.push({ ch, payload }), notifyAllWindows: () => {}, safeSend: () => {},
   notifyDevInspector: () => {}, notifyReview: () => {}, notifyWorkflowEvent: () => {},
   reviewTraceActive: false, devSliceDir: path.join(os.tmpdir(), 'ds-devslices-test'),
-  windows: {}, app: null, fs, logger: { log: () => {}, warn: () => {}, err: () => {} },
+  windows: {}, app: null, fs, logger: { log: () => {}, warn: (m) => console.log('    [warn]', m), err: (m) => console.log('    [err]', m) },
   spawn: () => { throw new Error('spawn must not run in this test'); }, path,
 });
 const humanConfirm = (id, supplier) => svc.confirm(db, { username: 'sarah', role: 'admin' }, {
@@ -181,6 +181,24 @@ const humanConfirm = (id, supplier) => svc.confirm(db, { username: 'sarah', role
   check('put-back writes NO corrections row (scopeTrust\'s correction count is unchanged)', db.prepare("SELECT COUNT(*) c FROM corrections").get().c === corrBefore);
   check('rows survive the put-back (a later re-confirm replaces in place)', db.prepare('SELECT COUNT(*) c FROM extractions WHERE document_id = ?').get(a1).c === 3);
 
+  // ── §7 F2b (Oracle C2b.1–C2b.3, 2026-08-22): ONE consent door after a sender reprocess ───────
+  console.log('§7 after a foreground reprocess the scope-local pass runs INSIDE the completion, the bar offers the remainder');
+  const r1 = mkDoc('Rex'), r2 = mkDoc('Rex'), r3 = mkDoc('Rex');
+  handler._setReprocessStatusForTest({ running: false, pendingCompletion: true, docIds: [r1, r2, r3], done: 3, failed: 0, total: 3 });
+  const c1 = await H['consume-reprocess-completion']();
+  check('the completion filed the batch\'s eligible docs by itself (receipt path, machine via)',
+        c1 && c1.autoFiled === 3 && [r1, r2, r3].every(id => status(id).status === 'confirmed' && status(id).confirmed_via === 'scope_sweep'));
+  check('…and the consent offer is EMPTY (no bar over docs already filed)', !c1.offerIds && handler._reprocessOfferForTest() == null);
+  const acc = await H['reprocess-autocommit-accept']();
+  check('…so a stale accept files nothing twice (no-offer)', acc && acc.ok === false && acc.reason === 'no-offer');
+  learning.setSetting(db, 'scope_sweep_auto_accept', 'false');
+  const x4 = mkDoc('Rex'), x5 = mkDoc('Rex');
+  handler._setReprocessStatusForTest({ running: false, pendingCompletion: true, docIds: [x4, x5], done: 2, failed: 0, total: 2 });
+  const c2 = await H['consume-reprocess-completion']();
+  check('auto-accept OFF: nothing files, the consent bar gets its offer exactly as before (byte-identical door)',
+        !c2.autoFiled && Array.isArray(c2.offerIds) && c2.offerIds.length === 2 && status(x4).status === 'needs_review');
+  learning.setSetting(db, 'scope_sweep_auto_accept', 'true');
+
   // ── §6 static contract: the renderer-facing seams ────────────────────────────────────────
   console.log('§6 contract pins');
   const src  = fs.readFileSync(path.join(ROOT, 'src', 'modules', 'processing', 'handler.js'), 'utf8');
@@ -192,6 +210,15 @@ const humanConfirm = (id, supplier) => svc.confirm(db, { username: 'sarah', role
   check('one cap, one writer: the automatic path calls the SAME _sweepAcceptCore as the consent bar', (src.match(/_sweepAcceptCore\(db, \{/g) || []).length === 3);   // the definition + the two callers
   check('the receipt bar says what happened in the operator\'s words and offers Put back', /filed by itself after your confirms/.test(rend) && /acb-putback/.test(rend));
   check('Review refreshes the LIST on scope-auto-filed, never the open document', /onScopeAutoFiled\?\.\(async \(\) => \{[\s\S]{0,200}_refreshQueueFromBroadcast\(\)/.test(rend));
+  // F2a (Oracle C2a.1/C2a.2): the quiet lane is scheduled on a graduation MINT only — after the
+  // `!res.templateId` early return (a skip never reaches it) and after the enrichment block.
+  const revh = fs.readFileSync(path.join(ROOT, 'src', 'modules', 'review', 'handler.js'), 'utf8');
+  const gStart = revh.indexOf('async function _maybeGraduationTemplate');
+  const gBody = revh.slice(gStart, revh.indexOf('function _writeTemplateFile'));
+  check('F2a: the graduation hook schedules the quiet re-read with reason graduated + the confirmed doc as seed',
+        /scheduleQuietReread\(db, \{[\s\S]{0,200}reason: 'graduated', seedDocId: document_id \}\)/.test(gBody));
+  check('F2a: …AFTER the `!res.templateId` return (skip never schedules) and AFTER enrichment',
+        gBody.indexOf('if (!res || !res.templateId) return;') < gBody.indexOf('generateSampleAngle') && gBody.indexOf('generateSampleAngle') < gBody.indexOf('scheduleQuietReread'));
 
   console.log(fails ? `\n${fails} FAILED` : '\nall green');
   process.exit(fails ? 1 : 0);

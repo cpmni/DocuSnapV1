@@ -731,6 +731,9 @@ const _quietLaneActiveScopes = new Set();
 let _scheduleScopeAutoAcceptImpl = null;
 let _autoAcceptInflightProbe = () => false;
 let _quietLaneImpl = null;                 // Slice 3: the quiet re-read lane (bound in register())
+let _setReprocessStatusForTestImpl = null; // test seam: drive consume-reprocess-completion without a spawn
+let _reprocessOfferProbe = () => null;
+let _debugAutoAcceptPreImpl = null;
 let _applyReprocessResultImpl = null;      // test seam for the applyReprocessResult(expect) guard (S3-C1 pins)
 
 // ── Processing-activity signal for OTHER windows (esp. Review) ─────────────────────────
@@ -3522,6 +3525,9 @@ function register(ctx) {
   }
   _scheduleScopeAutoAcceptImpl = scheduleScopeAutoAccept;
   _autoAcceptInflightProbe = () => _autoAcceptInflight;
+  _setReprocessStatusForTestImpl = (st) => { _reprocessStatus = { ..._reprocessStatus, ...st }; };
+  _debugAutoAcceptPreImpl = (d) => ({ pre: _autoAcceptPreconditions(d), busy: _anyProcessingBusy(), inflight: _autoAcceptInflight });
+  _reprocessOfferProbe = () => _reprocessOffer;
 
   // ── Slice 3 (2026-08-21, eric+gary → Oracle S3-C1..C6): the QUIET BACKGROUND RE-READ LANE ─────
   // See quietLane.js for the design. Everything the lane touches is injected here, and every piece
@@ -3864,15 +3870,44 @@ function register(ctx) {
   // The queue-wide autoCommitFullConfidence sweep this replaces filed 101 docs across every supplier
   // after a 14-doc group reprocess (2026-08-12) — the offer is scoped to the batch's OWN docs and
   // nothing files without the operator accepting the bar (reprocess-autocommit-accept below).
-  ipcMain.handle('consume-reprocess-completion', () => {
+  ipcMain.handle('consume-reprocess-completion', async () => {
     requireRole('admin', 'edit');
     if (!_reprocessStatus.pendingCompletion) return null;
     const db = getDb();
     const licenseDenial = require('../licensing/handler').licenseDenied(db);
     if (licenseDenial) return null;   // completion stays pending — no flip, no offer
-    // C2: flip synchronously before any other work; everything below is sync better-sqlite3.
+    // C2: flip synchronously before any other work; the offer computation below is sync better-sqlite3.
     _reprocessStatus.pendingCompletion = false;
     const out = { done: _reprocessStatus.done, failed: _reprocessStatus.failed, total: _reprocessStatus.total };
+    // F2b (Chris r13 card 1 → Oracle C2b.1, 2026-08-22): with the scope-local auto-accept ON, a
+    // human-initiated "Reprocess N from <sender>" is itself the trigger — run the SAME scope-local
+    // pass for every scope the batch touched (scopes read from the POST-merge rows, C2b.2) BEFORE the
+    // consent offer is built, so the bar below can only ever offer the REMAINDER. Two doors from one
+    // trigger was refused: a bar that offers already-filed documents is the silent-revert UX class
+    // ("File 14" → filed 0). Preconditions + receipt + Put back are the pass's own. Fail-quiet.
+    try {
+      if (!_autoAcceptPreconditions(db) && !_anyProcessingBusy() && !_autoAcceptInflight) {
+        const scopes = new Map();
+        const scopeStmt = db.prepare(`SELECT d.status, d.supplier_name, dt.slug AS type_slug FROM documents d
+                                        LEFT JOIN document_types dt ON dt.id = d.document_type_id WHERE d.id = ?`);
+        for (const id of (_reprocessStatus.docIds || [])) {
+          const d = scopeStmt.get(id);
+          if (!d || d.status !== 'needs_review' || !String(d.supplier_name || '').trim() || !d.type_slug) continue;
+          const key = _sweepOfferKey(d.supplier_name, d.type_slug);
+          if (!scopes.has(key)) scopes.set(key, { supplier: String(d.supplier_name).trim(), slug: d.type_slug });
+        }
+        if (scopes.size) {
+          _autoAcceptInflight = true;
+          try {
+            const actor = getCurrentUser() || {};
+            for (const sc of scopes.values()) {
+              const r = await _autoAcceptScope(db, sc.supplier, sc.slug, actor);
+              if (r && r.filed && r.filed.length) out.autoFiled = (out.autoFiled || 0) + r.filed.length;
+            }
+          } finally { _autoAcceptInflight = false; }
+        }
+      }
+    } catch (e) { logger?.warn(`reprocess auto-accept: ${e && e.message}`); }
     // Consent offer: batch docIds ∩ the shared predicate — the SAME trust.isAutoFileEligible the
     // import auto-file uses, so the two sites can't diverge. Setting-gated; OFF ⇒ byte-identical
     // to the legacy counts-only return.
@@ -5180,6 +5215,9 @@ module.exports = {
   scheduleQuietReread: (db, info) => (_quietLaneImpl ? _quietLaneImpl.schedule(db, info) : false),   // Slice 3 trigger (a taught confirm)
   quietLane: () => _quietLaneImpl,
   _applyReprocessResultForTest: (...a) => (_applyReprocessResultImpl ? _applyReprocessResultImpl(...a) : null),
+  _setReprocessStatusForTest: (st) => (_setReprocessStatusForTestImpl ? _setReprocessStatusForTestImpl(st) : null),
+  _reprocessOfferForTest: () => _reprocessOfferProbe(),
+  _debugAutoAcceptPre: (d) => (_debugAutoAcceptPreImpl ? _debugAutoAcceptPreImpl(d) : null),
   _withinAnyRoot,            // SEC-17 reparse-point containment pins (test_path_containment.js)
   _realCanonical,            // ditto — exported so the pin asserts the shipped predicate, not a copy
   _genericFallbackId,        // Generic Document fallback pins (test_generic_fallback_mapping.js)

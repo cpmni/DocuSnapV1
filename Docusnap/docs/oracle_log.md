@@ -1715,3 +1715,94 @@ Slice 1 flips with `scope_sweep_enabled` alone; Slice 3's "earn its place" numbe
 residual (94% of the night pile; Chris r12: blank → 94/90 via template_mapping only after reprocess),
 not the demotable-note residual (~2%) — its candidate predicate must be "held docs of the taught
 sender's scope that carry no template read", trigger = a teach/anchor commit.
+**BUILD + GATES, same night (owner: "continue on auto with the recommended settings and complete all of the
+slices", 2026-08-21 23:0x) — all DARK, mig 79 seeds the four switches OFF:**
+- **Slice 1 BUILT `72f9c7f`** (`scope_sweep_auto_accept`): reviewService `onAfterConfirm` (!_via only) →
+  per-scope 1.5 s debounce, single-flight → scope-local offer (`_sweepOfferForScope`, server-recorded +
+  audited) → the SAME `_sweepAcceptCore` the consent bar runs (extracted, ONE writer) → `_recordAutoFiled`
+  receipt + `scope-auto-filed` broadcast; S1-C2 preconditions re-checked at every pass (sweep + exclusion +
+  gate-unify); S1-C5 `_quietLaneActiveScopes`; `sweep-queue-candidates` yields 'auto-accept-running'
+  mid-pass. Pins `test_scope_auto_accept.js` (31, fixture DB through the real handler + reviewService:
+  scope-local · no chain with positive control · each precondition · lane seam · put-back writes no
+  correction). Review receipt bar: "N from X filed by itself after your confirms · Put back".
+- **Slice 0 BUILT `fbae2e9`** (`letterhead_fragment_abstain`, env `LETTERHEAD_FRAGMENT_ABSTAIN`):
+  `_pick_by_height(neighbour_name_shaped)` abstains on a single-token winner beside a letterhead-sized,
+  name-shaped, non-excluded same-row segment; never a re-join. S0-C1/C2 CENSUS (`s0_census.py`, 200 IMPORT
+  fixtures, real OCR 200 DPI, the engine's own type phrases): 115 correct unchanged · 34 abstained, EVERY
+  one a wrong fragment ('Security'×18, 'Cleaning'×16) → text arm None · **0 correct lost · 0 new wrong**;
+  the residual 24 "wrong" are buyer-issued Quillstone POs correctly reading Bramblewood. The Oracle's
+  graduation caveat stands (empty→typed is still a correction) but the alternative was a WRONG prefill
+  that also needed typing — strictly better on misfile risk and trust, neutral on graduation. Pins
+  `test_letterhead_fragment_abstain.py` (15).
+- **Slice 3 BUILT `7819858`** (`quiet_reread_enabled`, `quietLane.js`): trigger = a TAUGHT confirm;
+  candidates = the sender's held template-less docs by name ∪ `supplierSiblings.findSiblings` by page
+  text seeded from the taught doc (pre-teach siblings usually carry no sender); chunk 40; one worker,
+  same `_reprocessThreadCap` (S3-C4); BELOW_NORMAL via `os.setPriority` + Python ctypes self-demotion;
+  kill at the three foreground doors + 1.5 s poll, defer + resume (S3-C3 semantics); merge gate in one
+  synchronous block (S3-C6) + `applyReprocessResult(opts.expect)` verified INSIDE the rows+document
+  transaction (S3-C1 — the UPDATE used to run outside it) + `preserveAck` (S3-C2); changed reads held
+  with "was X, now Y" (S3-C5); the only filing door is the sweep/auto-accept (S3-(c)); own channel
+  `quiet-reprocess`. `reprocess-batch` staging + shard spawn extracted into `_stageReprocessDocs` /
+  `_runReprocessShard` (shared, statement-for-statement). Pins `test_quiet_lane.js` (50: pure lane +
+  wired handler with a fake Python). DEVIATION noted for the owner: Chris round 13 runs Slices 0+1+3 in
+  ONE round (the Oracle asked for 3 apart from 1+2); Slice 2 is dead, and every filing the lane enables
+  carries audit rows (`quiet_reprocess_job` done_ids + `scope_sweep_auto_accepted` filed_ids) so a
+  misfile is attributable — the owner's one free fix-run covers the risk.
+- barry's copy items shipped `8de69d5` + in `7819858`: teach card count + Review link (wording gated by
+  canPromise/autoAccept), typed-correction ripple doorway, honest "File N ready" dialog.
+- Suites: JS 181 green / 1 pre-existing red; Python 307 pytest green / 1 pre-existing + 6 pre-existing
+  script-style reds (all verified red at `6c24ab6` in a worktree).
+
+## 2026-08-22 — Chris round 13 fix-run (F1 role-field dominant class · F2a lane on graduation · F2b auto-accept after sender reprocess · F3 honest badge) — ORACLE — Chris round 13 fix-run (F1 · F2a · F2b · F3)
+
+**VERDICT (per fix):**
+- **F1 role-field dominant class — SIGN OFF WITH CONDITIONS.** Ruling on the fork: it does NOT re-open the item="Information" inversion; it is the same verification rule (not an exemption) extended to role fields. But it DOES do the thing the 07-20 comment at `trust.js:302-304` forbade (widen graduation through scopeTrust) — that prohibition is superseded for this PAIRED change only, and the comment must be rewritten.
+- **F2a lane on graduation — SIGN OFF WITH CONDITIONS.** A graduation MINT (create or link returned from `_maybeGraduationTemplate`) is a legitimate lane trigger under the 08-21 list: it is a template-creation event, same class as a teach. A bare confirm that yields `skip` remains NOT a trigger.
+- **F2b auto-accept after foreground reprocess — SIGN OFF WITH CONDITIONS (one hard one).** Human-initiated + scope-local + same predicate = acceptable trigger, but as proposed it manufactures a lying consent bar. The two doors must be sequenced into one.
+- **F3 honest badge — SEND BACK (one-line fix).** `ready = graduated || (hasFormat && hasTemplate)` still lies for the most common customer path. Must be `(graduated || hasFormat) && hasTemplate`.
+
+### Premise check
+- Harrowgate mechanism confirmed at source: `docTrustGate` `trust.js:724` refuses `no-template` for any sub-100 doc regardless of graduation; `graduation.apply` (`graduationTemplate.js:220,234`) links ONLY the confirmed doc; nothing re-reads siblings. Premise holds.
+- Veltrix mechanism confirmed: `classifyLearnedShape` `trust.js:268-278` all-or-nothing → `'freetext'`; role branch `trust.js:852` → `valueMatchesShape(v,'freetext')` is `false` by design (`:551`). `_codeish` (`:166-169`) rejects `$`, so `VX$22033` is the outlier and is itself refused under F1. Premise holds.
+- **Premise GAP the brief missed:** `onScopeGraduated` runs only inside `if (!bulk)` (`reviewService.js:414-443`). A 5th confirm delivered by **File All Ready / the teach card's "File up to N"** graduates the scope and mints NOTHING — no template, no F2a lane, and under F3-as-proposed the badge lights "✓ files by itself" while every sub-100 doc refuses `no-template`. Chris confirmed singly so he didn't hit it; the average customer will.
+- "≥5 samples" is ≥5 **DISTINCT** values: `sample_values` is a Set sliced to 20 (`learning.js:1624`). Pin wording must say distinct.
+
+### The seam
+1. **F1 ↔ 07-20 graduation prohibition.** The 07-20 rule said widening scopeTrust would be a *silent* widening because the role branch still refused. F1 changes BOTH halves in one commit, so the widening carries its verification leg. Bounded: F1 can only widen a scope whose required field is ≥75% structured; a wobbling issuer (3+ distinct names → freetext, names are never `_codeish`) still blocks graduation, so the graduation-licensed **issuer freeze** (`graduationTemplate.js:196`) and the fuzzy-geom shed are not reachable through F1. State this in the rewritten comment.
+2. **F1 → F2a chain.** A scope un-bricked by F1 graduates on its next non-bulk confirm → `decide` creates → F2a lane re-reads siblings → auto-accept files them at dominant-class verification. Protected by S3-C5 (changed required read → note → held). Acceptable.
+3. **F2a ↔ enrichment timing.** `_maybeGraduationTemplate` awaits landmarks/fingerprint/sample-angle (`review/handler.js:1763-1766`) — the lane must be scheduled AFTER those, not after `apply`, or the siblings re-read against an unenriched template.
+4. **F2b ↔ `_reprocessOffer`.** Batch end → renderer calls `consume-reprocess-completion` immediately → offer computed over N candidates → bar "File N". F2b's pass fires 1.5 s later (`handler.js:3520`) and files those N. Bar still says "File N"; clicking it drops every doc `not-queued` (`:3922`) → "filed 0". That is the silent-revert UX class Chris reported four rounds running. Two doors from one trigger — the 08-21 (c) objection, reproduced.
+5. **F2b ↔ lane marker.** If the batch's scope has a lane job queued, the pass refuses `quiet-lane-active` (`:3469`) — fine, `onJobDone` re-asks.
+
+### Anomalies / missed cases
+- Dangling-role documents: F1's role branch is also the branch NON-role fields fall into when `_rolesComplete` is false (`:762-763`). Without a precondition F1 would give the real (un-roled) ref field dominant-class verification where the NULL-ROLE GUARD intends strict refusal.
+- `scopeTrust`'s corrobProbe loop (`:663-667`) calls `fieldVerifiable` too — if F1 touches only the main loop, the corroboration route and graduation disagree on the same field.
+- F2a link-on-confirm: every non-bulk confirm of a template-less doc in a graduated scope returns `link` → re-schedules the lane. Bounded by coalescing (`quietLane.js:82`) and the `template_id IS NULL` candidate set; acceptable, but pin that `skip` never schedules.
+- HYPOTHESIS (not measured): Stage 0 must actually MATCH the keyword-only graduation template on the siblings for them to gain `template_id`; seed fields are variable-only (`graduationTemplate.js:195`) so a "read differently" hold is unlikely, and the hold-siblings mark should not fire on a first freeze. Both are re-run gate items.
+
+### Conditions (actionable)
+**F1 (gary/reggie):**
+- C1.1 ONE helper `_effectiveClass(f)` (strict cls, else `_dominantStructuredClass` when strict==='freetext'), used at all three sites: scopeTrust main loop `:693`, corrobProbe loop `:665`, docTrustGate role branch `:852`. Non-role branch `:847-851` untouched.
+- C1.2 Precondition `_rolesComplete` (reuse `:762`) — dangling-role docs keep strict refusal.
+- C1.3 Switch read as a SETTING with env override both directions, hoisted once per call and threadable via `opts` (the `_shadowRowSkipEnabled` idiom, `:360-367`) so `autoFileEligibleIds` stays one lookup per batch.
+- C1.4 Rewrite the comment at `:302-304` to record the 08-22 paired rule; `classifyLearnedShape` itself stays byte-identical.
+- Pins: brief's five, plus (a) 11 codes + `$` outlier graduates ON / not OFF (positive control); (b) 3-distinct-name issuer scope does NOT graduate ON (orthogonality); (c) dangling ref role → refused ON; (d) non-role field byte-identical ON vs OFF; (e) corrobProbe `cleanButForVolume` agrees with the main loop.
+
+**F2a (eric/gary):**
+- C2a.1 Schedule only when `res && res.templateId` (create OR link), reason `'graduated'`, `seedDocId = document_id`, placed at the END of `_maybeGraduationTemplate` after enrichment.
+- C2a.2 Pin: `skip` decision → `schedule` never called; `create` → called once; `link` → called (coalesces when running).
+- C2a.3 Record the bulk gap as the NEXT fix (not tonight): fire `onScopeGraduated` once per human scope at the end of a File-All batch, never for machine vias.
+
+**F2b (eric):**
+- C2b.1 HARD: one ordering. Preferred — run the scope-local pass INSIDE `consume-reprocess-completion` before the offer is built, offer = remainder. Acceptable alternative — the debounced pass prunes `_reprocessOffer.docIds` of filed ids and pushes the new count to the window. A bar that can offer already-filed docs is a refusal.
+- C2b.2 Scopes computed from POST-merge document rows (supplier may have changed in the batch).
+- C2b.3 Pin: batch of 14 eligible → pass files ≤SWEEP_CAP, offer shows 0 (or the remainder), accept files nothing twice.
+
+**F3 (gary):** `ready = (graduated || hasFormat) && hasTemplate`; `graduated && !hasTemplate` is a distinct "needs a re-read/teach" state, not a countdown; W read via trust's own `_configuredWindow`, never a literal.
+
+### Verification gate
+- JS suite: 181 green / the 1 pre-existing red, zero new; Python 307 green; realdoc `RR_APP_ENV=1` OFF vs ON, M=0 and zero per-field accuracy drop.
+- Chris re-run must show: **Harrowgate** — after the 5th single confirm, siblings carry `template_id`, no "read differently"/"sender changed" notes, a "N from Harrowgate filed by itself" receipt, zero wrong folders; then a File-All-delivered 5th confirm on another untaught sender → badge stays NOT ready (the recorded gap, not a lie). **Veltrix** — the 7 at 91 file with correct folder+filename; a planted `VX$…` sibling stays held with `unverifiable-value`. **Badge** — at no point does ✓ light on a scope where `isAutoFileEligible` then returns `no-template` (probe after every badge change). **Reprocess 17** — one receipt, bar offers only the remainder, "Put back" returns the page.
+
+### REFUSED
+Dropping the template requirement from `docTrustGate` for graduated scopes as the "simpler" Harrowgate fix — WRONG LAYER, the template is the layout-identity check. F2a on any confirm in a graduated scope. F2b as an independent second door. F3 as worded.
