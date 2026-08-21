@@ -872,7 +872,18 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          ['money-sign-capture-toggle', 'money_sign_capture'],
                          // The human-licensed class correction (2026-08-19, mig 74): one corrected
                          // reference propagates its exact substitution to the sender's queued siblings.
-                         ['ref-class-fix-toggle', 'ref_class_fix_enabled']]) {
+                         ['ref-class-fix-toggle', 'ref_class_fix_enabled'],
+                         // Lever E (2026-08-20, Oracle SIGN-OFF-W/COND): whitespace-normalise the
+                         // Stage-2.5a issuer-band presence test so a column-broken confirmed
+                         // letterhead ("Silverbeck    Cleaning    Supplies") still sheds the
+                         // "Company inferred… please confirm" note via the graduated confirmed value.
+                         // DEFAULT OFF — flip after the live counterfactual.
+                         ['hint-band-ws-normalize-toggle', 'hint_band_ws_normalize'],
+                         // Lever D (2026-08-20, gary → Oracle SIGN-OFF-W/COND): shed the "Company
+                         // inferred" note when a wide letter-spaced letterhead prints the confirmed
+                         // issuer as a column-broken name the strict geometry pick can't reassemble.
+                         // DEFAULT OFF — default-ON flip needs a recipient-collision fixture (Oracle).
+                         ['identity-geom-fragment-toggle', 'template_identity_geom_fragment_shed']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);
@@ -952,6 +963,10 @@ const DEV_SWITCH_IDS = [
   'filing-sanity-page-match-v2-toggle', 'vat-reg-symbol-confusable-toggle', 'money-sign-capture-toggle',
   // The class correction (mig 74, OFF) — dev-gated until the confirm-path harness has run.
   'ref-class-fix-toggle',
+  // Lever E (2026-08-20, OFF) — reading internal: whitespace-normalise the 2.5a issuer-band test.
+  'hint-band-ws-normalize-toggle',
+  // Lever D (2026-08-20, OFF) — reading internal: shed the inferred-company note on a column-broken letterhead.
+  'identity-geom-fragment-toggle',
 ];
 function _applyDevSwitchVisibility(unlocked, revealGate){
   for (const id of DEV_SWITCH_IDS){

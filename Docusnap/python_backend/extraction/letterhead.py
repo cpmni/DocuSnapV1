@@ -345,6 +345,29 @@ def geometry_from_lines(page_text_lines):
     return {"lines": lines, "rows": rows, "med_h": all_h[len(all_h) // 2], "words": []}
 
 
+def _is_geom_candidate(seg, excluded):
+    """Per-segment gate for a letterhead ISSUER candidate: not an excluded/type-phrase/disqualified
+    string, matches the letterhead-name shape, a plausible supplier name, with a distinctive core.
+    HOISTED from pick_issuer_geometry's inner closure (2026-08-20) so the geom-witness FRAGMENT shed
+    (engine → fragmented_issuer_confirms) applies the IDENTICAL gate and the two cannot drift (Oracle)."""
+    s = seg.strip()
+    if not s or s.lower() in excluded or _contains_type_phrase(s, excluded) or _disqualified(s):
+        return False
+    if not _LETTERHEAD_NAME_RE.match(s):
+        return False
+    if not keyword._is_plausible_supplier_name(s):
+        return False
+    return _distinctive_core(s)
+
+
+def _excluded_set(detected_title, type_phrases):
+    """The lower-cased title + type-phrase exclusion set shared by the geom pick and the fragment shed."""
+    excluded = {str(detected_title or "").strip().lower()}
+    excluded.update(str(p).strip().lower() for p in (type_phrases or []))
+    excluded.discard("")
+    return excluded
+
+
 def pick_issuer_geometry(ocr_text, geometry, detected_title=None, type_phrases=None):
     """The GEOMETRY-ONLY issuer pick — pick_issuer's height arm with NO text-arm fallback (Oracle
     C1). Returns the largest surviving letterhead COLUMN SEGMENT when _pick_by_height is decisive,
@@ -357,18 +380,66 @@ def pick_issuer_geometry(ocr_text, geometry, detected_title=None, type_phrases=N
     lines = chrome_band.issuer_chrome_lines(ocr_text)
     if not lines:
         return None
-    excluded = {str(detected_title or "").strip().lower()}
-    excluded.update(str(p).strip().lower() for p in (type_phrases or []))
-    excluded.discard("")
+    excluded = _excluded_set(detected_title, type_phrases)
+    return _pick_by_height(lines, geometry, lambda seg: _is_geom_candidate(seg, excluded))
 
-    def _geom_candidate(seg):
-        s = seg.strip()
-        if not s or s.lower() in excluded or _contains_type_phrase(s, excluded) or _disqualified(s):
-            return False
-        if not _LETTERHEAD_NAME_RE.match(s):
-            return False
-        if not keyword._is_plausible_supplier_name(s):
-            return False
-        return _distinctive_core(s)
 
-    return _pick_by_height(lines, geometry, _geom_candidate)
+def fragmented_issuer_confirms(ocr_text, geometry, target, norm, detected_title=None, type_phrases=None):
+    """VERIFY-not-assert (Lever D, 2026-08-20, gary → Oracle SIGN-OFF-W/COND, ships DARK). Return
+    True iff the page's own recipient-excluded issuer band prints the CONFIRMED `target` issuer as a
+    letterhead-sized name that reconstruct_page_text FRAGMENTED into column segments (a wide letter-
+    spaced/centred heading emits 4-space column breaks, so the strict pick_issuer_geometry splits the
+    row and returns a single word — 'Cleaning' — never the full 'Silverbeck Cleaning Supplies').
+
+    FIXED-TARGET / NO-SWAP: returns a BOOLEAN — it can only ever CONFIRM `target`, never adopt a
+    different name. Sheds only when the MAXIMAL contiguous run of adjacent same-row segments that are
+    EACH (a) _LETTERHEAD_NAME_RE-shaped (drops '*e'/'ce' junk) AND (b) letterhead-SIZED
+    (_row_height/med_h >= _GEOM_MIN_RATIO — a body-sized recipient column fails this floor) joins to a
+    span that passes _is_geom_candidate AND norm-equals `target`. MAXIMAL-RUN-ONLY (no sub-runs)
+    preserves the superset-doesn't-shed rule (a page printing 'X Ltd' will NOT shed for target 'X')
+    and makes a genuine two-column 'X   Y' row join to a non-target string (no shed).
+
+    NOT part of the shared pick_issuer_geometry (Oracle: a free re-join in the ASSERT path would let a
+    marker-less recipient self-confirm as issuer). Recipient exclusion is preserved by chrome_band's
+    band truncation PLUS the per-segment size floor. `norm` = the caller's accept-normaliser
+    (engine._accept_norm); `target` = the confirmed fill value. Fail toward False on anything doubtful."""
+    if not geometry or not geometry.get("rows"):
+        return False
+    med_h = geometry.get("med_h") or 0
+    lines = geometry.get("lines") or []
+    rows = geometry.get("rows") or []
+    if med_h <= 0 or len(lines) != len(rows):
+        return False
+    tnorm = norm(target)
+    if not tnorm:
+        return False
+    band = chrome_band.issuer_chrome_lines(ocr_text)
+    if not band:
+        return False
+    excluded = _excluded_set(detected_title, type_phrases)
+    by_text = {}
+    for gi, gl in enumerate(lines):
+        by_text.setdefault(gl.strip(), gi)
+    for bline in band:
+        gi = by_text.get(bline.strip())
+        if gi is None:
+            continue
+        best, run = [], []
+        for seg, seg_words in _row_segments(lines[gi].strip(), rows[gi]):
+            ok = (len(seg_words) == len(seg.split())          # pairing intact — heights are real
+                  and bool(_LETTERHEAD_NAME_RE.match(seg))
+                  and med_h and (_row_height(seg_words) / med_h) >= _GEOM_MIN_RATIO)
+            if ok:
+                run.append(seg)
+            else:
+                if len(run) > len(best):
+                    best = run
+                run = []
+        if len(run) > len(best):
+            best = run
+        if not best:
+            continue
+        joined = " ".join(best)
+        if _is_geom_candidate(joined, excluded) and norm(joined) == tnorm:
+            return True
+    return False

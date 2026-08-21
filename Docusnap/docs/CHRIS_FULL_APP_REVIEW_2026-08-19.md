@@ -183,3 +183,123 @@ The **"Company inferred… please confirm before filing"** note. It quietly cost
 ---
 
 **What I may be missing, overall:** I am one simulated office manager on a synthetic corpus of ten senders, driving the app with a script rather than a mouse. My scripted clicks left four native dialogs stacked up at one point, which is my doing, not the app's — I checked, and every one of those confirms had actually been honoured. And I filed one document with a wrong reference myself by clicking Confirm past a warning that told me plainly the value wasn't on the page; I repaired it with Learning Repair afterwards. That one is on me, not on Scan Finder — but it does show the "doesn't appear on this page" warning is advisory only, with nothing standing between a hurried user and a wrong reference in the filing cabinet.
+
+
+---
+
+# CHRIS THE CUSTOMER — ROUND 11 (2026-08-21)
+
+**Sandbox conditions:** fresh install (0 users → create-admin), CDP 9223, isolated userData, copied
+Demo Docs corpus. New-install defaults (mig 70, auto-file bar 90, reading switches ON) PLUS the new
+fixes enabled: `ref_class_fix_enabled`, `hint_band_ws_normalize` (E), `template_identity_geom_fragment_shed`
+(D), `template_date_invalid_yield` (Z). Run driven by the general-purpose Chris persona (the
+`chris-the-customer` subagent type is not spawnable in this environment). Screenshots step01–step21 in
+the session scratchpad `chris-driver/`. Report is VERBATIM.
+
+---
+
+**TL;DR (3 lines):** The app I've now spent a proper session with never once lost a document or filed one in the wrong place — 32 filed, zero misfiles, everything I deleted came straight back. But out of the box it holds *everything* and makes me name the company on all 200 documents one at a time, the "do all 20 at once" button quietly undoes my work, and "File up to 30" filed nothing. Three of the four fixes I was asked to check are genuinely landed (the money one is lovely); the sender-recognition promise still isn't kept until you formally teach.
+
+I'm one made-up office manager driven by a script over one sitting on tidy PDFs — not a real fortnight and not a room full of users. Read it that way.
+
+## Walkthrough (with screenshots)
+
+- **step01–step06** — Made the admin account, saved the recovery code (Continue stays greyed until I tick "I have saved this code" — good), accepted Terms, walked the 6-step setup and set my output folder. First contact is calm and plain-English.
+- **step07** — The 6-card tour. Genuinely well written; "One document type, many layouts" pre-empts the exact question I'd have asked ("do I make a folder per supplier?").
+- **step08** — Home/Import. Clean. "Local only" badge bottom-left is reassuring.
+- **step09–step10** — Imported my first 200 (wave 1). Opened Review: **210 documents · 201 need a look.** Every sales order said *"Couldn't confirm who issued this page — the top of the page reads 'Veltrix Automotive Parts'."* I clicked **Use "Veltrix Automotive Parts"** and it offered **"Apply … to 20 & re-read."**
+- **step11–step13** — Taught a Pelican invoice through the wizard: draw a box → it reads it back → "Looks right?". Clear, calm, honest.
+- **step14–step15** — After teaching, Pelican docs now say **"Layout available: Pelican Office Interiors"** and, once reprocessed, **"Its logo and wording"** with the issuer auto-filled at **95%**. This is the app finally recognising a sender.
+- **step16–step18** — Added a "Balance Due" money field and tested typing an amount (card #4).
+- **step19** — Ran **File All Ready**.
+- **step20** — Search + recycle bin.
+- **step21** — Second batch imported; banner "**18 documents filed automatically**".
+
+## Round-10 cards — re-verify
+
+- **#2 "Never seen this sender before"** → **BETTER, BUT.** The *issuer note* is fixed — it now reads *"Couldn't confirm who issued this page — the top of the page reads 'Veltrix Automotive Parts'. Please confirm the correct company (check it's the sender, not the customer)."* (step09). The old blaming line is gone. **However**, a separate little chip, **"Recognised by: Not seen before,"** still shows on document 14 *after I'd filed 13 from the exact same company* (step14). So one place stopped crying "never seen"; another place still does.
+- **#3 "Company inferred… please confirm"** → **FIXED in the wording; couldn't make it appear live.** The note now spells out the recovery: *"Confirming a few documents from 'X' helps Scan Finder recognise it and stop asking. Use 'Reprocess X'…"* On my clean PDFs the recognised layout read the company cleanly at 95%, so it never needed to "infer" — the trapdoor didn't open for me. On a rougher scan it would. I'll call the copy fixed and the silent-trapdoor unproven-either-way.
+- **#4 £-less money teach** → **FIXED, and nicely (step18).** I typed `2102.40` for the Balance Due field. It answered: *"This looks like a value that changes on each document… Freezing '2102.40' would fill it on every document of this type — but an amount or date usually changes each time. Draw where it sits so each document is read,"* with **"Draw where it sits →" as the primary button** and "Freeze it as typed anyway" demoted. No more "isn't printed / frozen forever." Exactly right.
+- **Drawn date** → **BETTER, BUT.** I drew a box a bit too big and caught the word "Date." It read *"Wate 05-01-2026"* and **warned** *"That doesn't read like a date… redraw it — or type."* Good that it warned instead of silently filing junk — but the date "05-01-2026" is *right there* in what it read, and it kept the messy line rather than lifting the obvious date out. A tight box reads clean.
+
+## New finding cards (ranked by harm)
+
+**1 — "Apply to 20 & re-read" quietly undoes the thing I just fixed** · *trust-eroded / near data-loss* · CONFUSION
+Citation (step10, Review): *"20 more unfiled documents look like the same sender. Apply "Veltrix Automotive Parts" to 20 & re-read."* Moment: I'd just set the company on one sales order and wanted the other 20 to follow. I clicked it; it said "Applying…", the offer vanished (looked like success) — and then **every one of the 20 still said "couldn't confirm," and the one I'd already fixed forgot it too.** I checked several documents by hand: all reverted. I ended up worse off than before I clicked. Proposed: if the re-read is going to wipe the company, don't offer to apply it — or make the applied company *stick* through the re-read. What I might be missing: maybe it's meant to only "pin a spot" and the born-digital layout still declines — but from my chair, I clicked a helpful blue button and it deleted my work.
+
+**2 — "File up to 30" filed 0** · *trust-eroded* · CONFUSION
+Citation (step19): dialog *"File up to 30 of 196 documents… Every document with its type and required fields filled in will be filed."* Result toast: *"Filed 0 of 30 documents — 22 still need a required field (Order Date, Sales Order Number, Invoice Date); 6 have no document type detected; 168 not ready to file."* Moment: I braced for 30 documents to move; none did, and I got a wall of numbers (30, 22, 6, 168) I can't add up. Proposed: count only what will *actually* file ("File 8 ready documents?"), and if it's 0, say "Nothing is ready to file yet" instead of promising 30. What I might be missing: the pre-count is an optimistic guess and the real gate is stricter — but a promise of 30 then 0 reads as broken.
+
+**3 — Confirming a sender 13 times never makes it "recognised"** · *slowed / promise-not-kept* · QUESTION
+Citation (tour): *"Scan Finder learns each new layout the first time it sees it, then recognises it from then on."* Reality: after I filed **13** identical-layout Veltrix documents, number 14 still said **"Not seen before"** and made me set the company again (step14). Only *teaching* (drawing boxes) creates recognition; confirming doesn't. Moment: I did the obvious thing — file a stack of the same invoice — and expected it to "click." It never did. Proposed: either let a few confirms establish the layout, or tell me plainly on the confirm screen: *"Filing these won't stop the asking — teach this layout once to do that."* What I might be missing: there may be good safety reasons confirms don't auto-establish a layout — but then the tour is over-promising.
+
+**4 — Fresh install: nobody's company gets filled in** · *slowed, at scale* · CONFUSION
+Citation: 200 imported, **every** document's Document Issuer held as empty with "Couldn't confirm who issued this page — the top of the page reads 'X'." The company name is printed at the top, the app *shows* it read it, and still won't put it in the box — I have to click "Use 'X'" on each. Moment: my first real batch and there are 200 identical little confirmations ahead of me. Proposed: when the letterhead clearly reads a company and there's nothing contradicting it, fill it in (still un-graduated, still reviewable) rather than leaving all 200 blank. What I might be missing: caution about buyer-issued documents where the top name isn't the sender — but blanking *every* document to guard the few is a heavy tax.
+
+**5 — The sender I *taught* won't auto-file; the one I only *confirmed* does** · *confusing/slowed* · QUESTION
+I taught Pelican a full template — it's recognised beautifully — yet its documents stay in Review (held by a formatting flag and, I gather, needing more confirms). Meanwhile Veltrix, which I never taught but confirmed ~13 times, auto-filed **18/20** of the next batch at 100%. Moment: I did the "proper" thing (teach) and got *less* automation than the lazy thing (confirm a lot). Proposed: after a teach, let a couple of clean confirms graduate that sender too, so teaching visibly pays off. What I might be missing: graduation is deliberately confirm-count based for safety — fair, but it makes teaching feel unrewarded.
+
+**6 — A "$" slipped into a reference and got auto-filed into the filename** · *data-quality* · QUESTION
+Two auto-filed Veltrix files are named `…VX$22033.pdf` and `…VXS$33215.pdf` — the "S" of the order number read as "$". Right company, right month, just a wrong character in the reference that then auto-filed at "100%". A pound-or-dollar sign inside a reference number is an obvious "that's not right" shape. Proposed: flag a currency symbol appearing inside a reference before auto-filing. What I might be missing: I bulk-confirmed the *company* and didn't eyeball each reference — a slower human might have caught these two.
+
+**7 — P1 vs PI: primary guess is the wrong one (but it does own up)** · *cosmetic/slowed* · QUESTION
+Citation (step15): on an invoice printed **PI/26/1792**, the app showed **P1/26/1792** as the answer and warned *"this could read 'P1/26/1792' or 'PI/26/1792' (1 and I look alike on a scan)… please check which is printed,"* with **Use "PI/26/1792"** / **Keep** buttons. Good that it flags and offers both — but its first pick was the wrong one, so I have to correct it. Proposed: when the layout is taught, lean toward the taught shape. What I might be missing: this is a genuinely hard OCR call, and offering both is honest.
+
+**8 — I'm accepting Terms marked "NOT YET IN FORCE"** · *cosmetic/trust* · QUESTION
+Citation (step03): the Terms I must accept literally contain *"WORKING DRAFT — FOR LEGAL REVIEW ONLY. NOT YET IN FORCE"* and "[SOLICITOR:]" notes. A real buyer would pause at being asked to agree to a draft. (I understand this is pre-release.)
+
+## Warnings truth-table (said vs did)
+
+| Button | What it SAID | What it DID | Verdict |
+|---|---|---|---|
+| Delete (one doc) | "Delete '…0029.pdf'? It goes to the app's recycle bin — you can restore it from Search." | Moved to recycle bin; I restored it from Search; back in the queue. | **True** |
+| Delete All Review | "Delete ALL 378… go to the recycle bin… Files on disk are kept. Confirmed and deferred documents are NOT affected." | 378 → recycle bin; 32 confirmed untouched; **Restore all** brought all 378 back. | **True** |
+| File All Ready | "File up to **30** of 196…" | Filed **0**; long confusing toast. | **Misleading (over-promised)** |
+| Reprocess (this doc) | (no scary warning; re-reads in place) | Re-read; filled issuer to 95%; document stayed in Review for me to check. | **True** |
+| Apply "X" to 20 & re-read | "Sets the sender on those documents and re-reads them. They stay in Review." | Set nothing that stuck; reverted the one I'd set. | **False (silent no-op)** |
+| Split (✂) | — | Present in the tool rail; I couldn't exercise it meaningfully — all my documents are single-page. | Untested |
+
+## What genuinely worked
+
+- **Onboarding, tour and copy** — plain, no jargon, reassuring ("Everything stays on this computer").
+- **Filing one at a time is flawless** — every confirm landed as `Company/Year/Month/Type.Date.Ref.pdf` with a matching metadata file. **Zero misfiles all session** (32 filed, two company folders, both correct).
+- **The teach wizard** — reads every box back to me and asks "Looks right?"; the finish screen honestly warns "the next few may still come through Review."
+- **Recognition after teaching** — "Layout available", "Its logo and wording", company auto-filled at 95%.
+- **Card #4 money fix** — the standout.
+- **Delete / Delete-All / Restore-all** — truthful warnings, complete recovery, nothing lost.
+- **Automation shows its work** — "18 documents filed automatically — click to see the list" (step21), each at 100%, with an × to pull one back.
+- **Mature auto-file** — the one sender I confirmed enough auto-filed 90% of its next batch, all correct.
+- **Search** — instant, correct.
+
+## The comparison — first night vs now
+
+| | Wave 1 (fresh install) | Wave 2 (after teaching 1 sender + confirming 1 sender ~13×) |
+|---|---|---|
+| Auto-filed | **0 / 200** | **18 / 200** (all the graduated sender, at 100%) |
+| Misfiles | 0 | **0** |
+| Company captured on import | 0 of 200 | 40 of 200 got a company; the graduated sender ~90% |
+| What made me watch it | Confirming the company on *every* document; the "Apply to 20" that undid itself; "File up to 30" that filed 0 | Much smoother for the graduated sender — it just filed itself and told me |
+
+Net: **the ceiling is high and safe** (right values, right folders, real hands-off filing, everything recoverable), but **the ramp is a grind** and two of the tools meant to speed the ramp (Apply-to-N, File-All-Ready) misbehaved.
+
+## The two-week verdict
+
+**Would I keep using it after two weeks? Yes — but through gritted teeth for the first week.** I'd keep it because in a full session it never lost a document, never filed one wrong, showed me what it did, and let me undo everything — that's the thing I actually lie awake about, and it passed. The "but" is real: getting a supplier to the point where it files itself meant clicking the company name on document after document, the one button that promised to do them all in a batch quietly threw my work away, and "File up to 30" filed nothing. If a colleague asked, I'd say "it's genuinely good once it knows your suppliers — budget a frustrating first week teaching and confirming, and don't trust the 'do them all' buttons yet."
+
+## What's still missing (ranked)
+
+1. **A batch company-apply that actually works** — "Apply to N" is the single biggest lever for the 200-document first day, and it's currently a no-op that reverts. Fix or remove it.
+2. **Fill the company on import when the letterhead plainly reads it** — stop blanking all 200 and making me type the same name over and over.
+3. **Make confirming earn recognition** — or, on the confirm screen, tell me confirming won't stop the asking and point me at teaching.
+4. **Make "File All Ready" honest** — count what will really file; if it's zero, say so.
+5. **Catch obvious reference garbage** (a "$" or "£" inside a reference number) before it auto-files into a filename.
+
+## Humility — what a real fortnight would catch that one sitting can't
+
+- I'm one scripted persona over one session, not real users and not real muscle memory — a true fortnight would test whether I'd *keep* confirming through the grind or give up in week one.
+- I confirmed companies in bulk, faster and more mechanically than a human hand; a real Chris would move slower, probably catch the two "$" references I let sail through, and might tire before any sender graduated.
+- These were clean, born-digital PDFs. Real scans read worse — several of the "better, but" behaviours (the inferred-company note, the P1/PI guess) would show their true colours on a rough scan, which I couldn't fully exercise.
+- I only worked **2 of the 10 senders** deeply; the other eight I'm inferring from.
+- My driver could have mis-clicked or drawn boxes differently from a real mouse — where a finding mattered I checked it against the underlying records (empty company fields, reverted values, filed folders) rather than trusting the screen alone, but I can't rule out a driver quirk entirely.
+
+*— Chris Fenton*

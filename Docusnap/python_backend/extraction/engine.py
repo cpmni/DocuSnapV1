@@ -1412,6 +1412,13 @@ _NAME_GENERIC_TOKENS = frozenset({
     "group", "holdings", "services", "service", "the", "and"})
 
 
+def _collapse_ws(s):
+    """Collapse runs of whitespace to a single space (Lever E, 2026-08-20). LIGHT — NOT the full
+    text_normalise NFKC pass; only the 4-space COLUMN BREAKS that reconstruct_page_text injects
+    between the words of a wide letter-spaced/centred letterhead. `None`/'' → ''."""
+    return re.sub(r"\s+", " ", s or "").strip()
+
+
 def _identity_corroborated_strict(value: str | None, band: str | None) -> bool:
     """STRICTER local predicate for SHEDDING a template-identity review note (S1, Oracle C1
     2026-07-28) — distinct from `_template_identity_corroborated` (>=60%, used for the FILL).
@@ -2769,6 +2776,18 @@ class ExtractionEngine:
                                   it only decides whether to shed the review note."""
         grad_norm = self._accept_norm(incumbent_value) if incumbent_value else None
         best_val, best_usage = None, 0
+        # Lever E (2026-08-20, Oracle SIGN-OFF-W/COND): the band-presence test below was a raw
+        # `val.lower() in ocr_top`. reconstruct_page_text renders a wide letter-spaced/centred
+        # letterhead with 4-SPACE COLUMN BREAKS ("silverbeck    cleaning    supplies"), so a
+        # single-spaced CONFIRMED hint value is not a substring and the note never sheds even with a
+        # usage>=42 hint present (measured: 16 live Silverbeck docs, all held). Collapsing internal
+        # whitespace on BOTH sides restores the match through the CONFIRMED value — the STRONGEST
+        # safety path (usage>=3 + no-swap + recipient-truncated band, all unchanged; the strict S1
+        # path already tokenises on [a-z0-9]+ and never had this bug). Kill switch
+        # HINT_BAND_WS_NORMALIZE default OFF: unarmed, `_haystack`/`_needle` are the raw lowercased
+        # strings and this stays byte-identical.
+        _ws_on = os.environ.get("HINT_BAND_WS_NORMALIZE", "0") != "0"
+        _haystack = _collapse_ws(ocr_top) if _ws_on else ocr_top
         for h in (hints or []):
             if h.get("field_key") != "supplier_name":
                 continue
@@ -2781,7 +2800,8 @@ class ExtractionEngine:
                 continue   # C1: never re-adopt the just-suppressed vendor caption
             if grad_norm is not None and self._accept_norm(val) != grad_norm:
                 continue   # no-swap: a graduation may only confirm the fill's own value
-            if val and val.lower() in ocr_top:
+            _needle = _collapse_ws(val.lower()) if _ws_on else val.lower()
+            if val and _needle in _haystack:
                 if (h.get("usage_count") or 0) > best_usage:
                     best_val, best_usage = val, (h.get("usage_count") or 0)
         return (best_val, best_usage) if best_val else None
@@ -7601,6 +7621,41 @@ class ExtractionEngine:
                 # shadows a freshly drawn mapping / override on every reprocess.
                 # Two DELIBERATE sources (a drawn mapping and an authoritative
                 # anchor) still contend on confidence below, as before.
+                # ── Z: ANCHOR-LOOP DATE-YIELD (Lever Z, 2026-08-20, gary → Oracle SIGN-OFF-W/COND).
+                # SIBLING of the Stage-1 kw leg (~:7225): a LOCATED taught DATE that OCR-misread into an
+                # IMPOSSIBLE (or, under the FUTURE flag, far-future) unsalvageable value must not keep
+                # authority over a confident, INDEPENDENT, format-VALID anchor read of the same field.
+                # The kw leg covers the keyword challenger; THIS covers the anchor path, which otherwise
+                # discards the correct anchor unconditionally at the drawn-source guard just below (the
+                # despatch_date case: mapping 'July 10, 202' beat anchor 'July 10, 2026'@90). Fires
+                # AFTER Tier-A (an authoritative ⊕ anchor already won outright above) and BEFORE that
+                # guard. Witness set = the SAME genuinely-located independent readers KEYWORD_ANCHOR_CORROB
+                # trusts (anchor_registration EXCLUDED — blind geometry). Yields flagged + capped to
+                # Review, never silent; value FIXED to the anchor read (the predicate guarantees a valid
+                # date, so a format-failing challenger is never adopted). REUSES the kw leg's flag(s) —
+                # one flip arms BOTH loops (Oracle Z-2, pinned in test_taught_date_invalid_yield.py).
+                # OFF (default) is byte-identical: the env is the first conjunct.
+                if ((TEMPLATE_DATE_INVALID_YIELD or TEMPLATE_DATE_FUTURE_YIELD)
+                        and key in date_field_keys
+                        and existing and _is_stage05_located(existing.get("method"))
+                        and not data.get("authoritative")
+                        and data.get("method") in ("anchor_inline", "anchor_crop", "anchor_crop_relocated")
+                        and data.get("located", True)
+                        and data.get("value")
+                        and int(data.get("confidence") or 0) >= _KEYWORD_TRUST_FLOOR
+                        and _cmp_norm(data.get("value")) != _cmp_norm(existing.get("value"))):
+                    _reason_z = _invalid_taught_date_yields(existing.get("value"), data.get("value"))
+                    if ((_reason_z == 'impossible' and TEMPLATE_DATE_INVALID_YIELD)
+                            or (_reason_z == 'future' and TEMPLATE_DATE_FUTURE_YIELD)):
+                        _why_z = ("isn't a valid calendar date" if _reason_z == 'impossible'
+                                  else "is far in the future (likely a mis-scanned year)")
+                        results[key] = {**data,
+                                        "confidence": min(int(data.get("confidence") or 0), _CONFLICT_CAP),
+                                        "validation_note": (
+                                            f"Kept the read value “{data.get('value')}” — the taught "
+                                            f"date box read “{existing.get('value')}”, which {_why_z}. "
+                                            f"Please check.")}
+                        continue
                 if (existing and not data.get("authoritative")
                         and (existing.get("method") == "keyword_override"
                              or _is_stage05_located(existing.get("method")))):
@@ -7995,6 +8050,46 @@ class ExtractionEngine:
                     }
                     self.log(f"  G: template-identity note shed — the letterhead geometry reads "
                              f"'{_sn_g['value']}' (confidence 85, no note)")
+
+        # ── G-FRAGMENT: fragmented-letterhead geometry shed (Lever D, 2026-08-20, gary → Oracle
+        # SIGN-OFF-W/COND, ships DARK). The owner's Silverbeck class: the letterhead name reads CLEAN
+        # at 200 DPI, but reconstruct_page_text renders its wide letter-spaced heading with 4-space
+        # COLUMN BREAKS, so the strict G arm's pick_issuer_geometry splits it into single-word segments
+        # and returns 'Cleaning' — never 'Silverbeck Cleaning Supplies' — so the note never sheds over
+        # a clean, on-page issuer. This arm re-joins the MAXIMAL contiguous run of letterhead-sized,
+        # name-shaped segments (letterhead.fragmented_issuer_confirms) and sheds when it norm-equals the
+        # filled value. VERIFY-not-assert + FIXED-TARGET no-swap: the helper returns a BOOLEAN, so this
+        # can ONLY confirm the fill's own value, never adopt a different name. NOT in the shared
+        # pick_issuer_geometry (Oracle: a free re-join in the ASSERT path would let a marker-less
+        # recipient self-confirm). INDEPENDENT switch (Oracle G1 — never nested under GEOM_WITNESS); its
+        # OWN try-wrapped geometry (never references _geom_g/_gp_g). conf 85 / method
+        # template_identity_corroborated / no note — identical shape to the strict G arm. Kill switch
+        # TEMPLATE_IDENTITY_GEOM_FRAGMENT_SHED default '0' = byte-identical.
+        if os.environ.get("TEMPLATE_IDENTITY_GEOM_FRAGMENT_SHED", "0") != "0":
+            _sn_x = results.get("supplier_name")
+            if (isinstance(_sn_x, dict) and _sn_x.get("method") == "template_identity"
+                    and _sn_x.get("value")
+                    and _sn_x.get("validation_note") in (_TEMPLATE_IDENTITY_FILL_NOTE_SINGLE,
+                                                         _TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY)):
+                _confirmed_x = False
+                try:
+                    from extraction import letterhead as _lhx
+                    _geom_x = page0_geometry or _lhx.geometry_from_lines(page_text_lines)
+                    if _geom_x and _geom_x.get("rows"):
+                        _confirmed_x = _lhx.fragmented_issuer_confirms(
+                            ocr_text, _geom_x, _sn_x.get("value"), self._accept_norm,
+                            detected_title=document_type,
+                            type_phrases=_letterhead_type_phrases(self.patterns))
+                except Exception:
+                    _confirmed_x = False   # any witness failure → keep the note (fail-safe)
+                if _confirmed_x:
+                    results["supplier_name"] = {
+                        "value":      _sn_x["value"],
+                        "confidence": 85,
+                        "method":     "template_identity_corroborated",
+                    }
+                    self.log(f"  G-FRAGMENT: template-identity note shed — the letterhead geometry "
+                             f"prints '{_sn_x['value']}' as a column-broken name (confidence 85, no note)")
 
         # ── G-FUZZY: graduation-licensed fuzzy geometry shed (gary → Oracle SIGN-OFF-W/COND
         # 2026-08-14). The owner's Silverbeck class: a layout confirmed 91×/91 to ONE issuer whose
@@ -9267,7 +9362,38 @@ class ExtractionEngine:
                 if not isinstance(_lfld, dict):
                     _lfld = {"value": None, "confidence": 0, "method": "letterhead_suggest"}
                     results["supplier_name"] = _lfld
-                if not _lfld.get("suggested_supplier"):     # never displace a stronger suggestion
+                # ── PREFILL (Chris round-11 card #4; gary→Oracle SIGN-OFF-WITH-CONDITIONS
+                # 2026-08-21, DEFAULT OFF via LETTERHEAD_PREFILL) ──────────────────────────────
+                # Land the SAME name pick_issuer already suggests INTO the box, so one Confirm files
+                # it instead of a per-document "Use 'X'" click. Held in Review TWO independent ways —
+                # confidence 69 (< the 70 needs_review threshold at the validator, engine.py ~4809)
+                # AND the note — so a cold geometric guess can NEVER auto-file and the human still
+                # makes the sender-vs-customer call. The method token is DISTINCT (`letterhead_prefill`):
+                # it matches NO note-demoter (no _resolve_corroborated_notes class keys off it, it is
+                # not in classFixService CLEARABLE_NOTE_MARKS), so a reprocess cannot shed the note and
+                # let the read slip through. It plants NO learning: the row persists as status
+                # 'needs_review', invisible to every confirmed-gated learning reader — only a human
+                # CONFIRM writes a scope (the SAME plant path as clicking "Use 'X'" today). NO
+                # suggested_supplier is set and the note deliberately does NOT match the renderer's
+                # isBrandingFlag regex, so a filled box shows a plain note, not a redundant "Use 'X'"
+                # button (the value-present convention, engine.py:9253-9255). GUARD: only when the row
+                # is wholly UNOWNED — no prior value, suggestion OR note (a contradicted-logo abstain
+                # at :9296 can leave a note without a suggestion; that stays a human decision, never a
+                # prefill). LETTERHEAD_PREFILL=0 → the value-less suggest below runs unchanged
+                # (byte-identical to pre-2026-08-21).
+                if (os.environ.get("LETTERHEAD_PREFILL", "0") == "1"
+                        and not _lfld.get("value")
+                        and not _lfld.get("suggested_supplier")
+                        and not _lfld.get("validation_note")):
+                    _lfld["value"]           = _lh
+                    _lfld["confidence"]      = 69
+                    _lfld["method"]          = "letterhead_prefill"
+                    _lfld["validation_note"] = (
+                        f"The letterhead reads '{_lh}' — filled in for you, but please confirm "
+                        "it's the sender, not the customer, before filing.")
+                    results["_needs_review"] = True
+                    self.log(f"  Letterhead issuer PREFILLED: '{_lh}' (review-bound, conf 69)")
+                elif not _lfld.get("suggested_supplier"):   # never displace a stronger suggestion
                     _lfld["suggested_supplier"] = _lh
                     # ⚠ THE WORDING IS LOAD-BEARING, not cosmetic. The Review renderer decides
                     # whether to draw the "Use '<name>'" button by REGEX-MATCHING this note
@@ -9283,10 +9409,18 @@ class ExtractionEngine:
                     # "is it corroborated by the page text" is true by construction). The operator's
                     # reading of this sentence is the whole remaining safety budget, so it names the
                     # one mistake only a human can catch here: sender versus customer.
+                    # Chris round-10 card #2: this fires whenever the issuer is UNRESOLVED and a
+                    # letterhead name was read — which includes a KNOWN sender whose LAYOUT changed
+                    # (logo moved corner) on, say, the 40th document. "Never seen this sender before"
+                    # was FALSE there (39 already filed). The neutral wording is true in BOTH cases —
+                    # the issuer wasn't confirmed for THIS page — and still carries the load-bearing
+                    # "confirm the correct company" the renderer button regex matches + the sender-vs-
+                    # customer safety budget. (Distinguishing new-sender from new-layout would need a
+                    # known-supplier lookup threaded here — a separate enrichment.)
                     _lfld.setdefault(
                         "validation_note",
-                        f"Never seen this sender before. The top of the page reads '{_lh}' — "
-                        "please confirm the correct company (check it's the sender, not the customer).")
+                        f"Couldn't confirm who issued this page — the top of the page reads '{_lh}'. "
+                        "Please confirm the correct company (check it's the sender, not the customer).")
                     results["_needs_review"] = True
                     self.log(f"  Letterhead issuer SUGGESTED: '{_lh}' (not assigned)")
 

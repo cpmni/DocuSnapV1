@@ -1771,6 +1771,34 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 75 applied: rewrite-marker learning exclusion seeded OFF');
   }
 
+  // ── Migration 76: ship the Chris round-11 PROVEN config ON for fresh installs (owner decision,
+  // 2026-08-21) ─────────────────────────────────────────────────────────────────────────────────
+  // Round 11 ran a fresh install on mig-70 defaults PLUS four validated fixes and recorded zero
+  // misfiles / full recovery. Those four now default ON so a new install starts in that proven
+  // "best working state" (mig 70 reading switches + mig 71 auto-file bar 90 already ship on):
+  //   ref_class_fix_enabled              — the P1/PI class correction (mig 74 seeded it OFF, so this
+  //                                        must UPSERT-force, not INSERT OR IGNORE)
+  //   hint_band_ws_normalize             — lever E
+  //   template_identity_geom_fragment_shed — lever D (re-joins a column-broken letterhead so the
+  //                                        "Company inferred" geom-witness note can shed)
+  //   template_date_invalid_yield        — lever Z (already forced ON by mig 70; re-affirmed here so
+  //                                        the validated SET is one coherent unit)
+  // UPSERT-forced (the mig-70 arc-key stance): these are unreleased/dark switches no established user
+  // has a deliberate choice for. NOT included: letterhead_prefill (built 2026-08-21, DEFAULT OFF —
+  // it is SIGN-OFF-WITH-CONDITIONS and owes its verification gate before any default-ON flip); the
+  // mig-75 starvation switch and every SENT-BACK / gate-owing arm stay OFF.
+  if (!applied.has(76)) {
+    try {
+      const up76 = db.prepare("INSERT INTO settings (key, value) VALUES (?, 'true') ON CONFLICT(key) DO UPDATE SET value='true'");
+      for (const key of ['ref_class_fix_enabled', 'hint_band_ws_normalize',
+                         'template_identity_geom_fragment_shed', 'template_date_invalid_yield']) {
+        up76.run(key);
+      }
+    } catch (e) { console.warn(`  migration 76: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (76)').run();
+    console.log('JS migration 76 applied: Chris round-11 validated fixes defaulted ON (ref-class-fix, hint-band-ws, geom-fragment-shed, date-invalid-yield)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

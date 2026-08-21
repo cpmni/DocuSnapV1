@@ -1246,6 +1246,20 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">File documents from a company you've confirmed, even when its letterhead is widely spaced</div>
+                <div class="threshold-sub">When a company's name is printed with wide gaps between the words in its letterhead, Scan Finder can fail to recognise a company you've already confirmed many times, so those documents keep asking "please confirm before filing" and never file themselves. With this on, once you've confirmed a company on a layout a few times, that same widely-spaced letterhead is matched to the confirmed name and the note is cleared. Only the company you actually confirmed is matched — a different name is never filled. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="hint-band-ws-normalize-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Recognise a confirmed company even when its letterhead is column-spaced</div>
+                <div class="threshold-sub">Some letterheads print the company name with big gaps between the words. Scan Finder can read the gaps as separate columns and fail to match the name to a company you've confirmed, so those documents keep the "please confirm before filing" note. With this on, the spaced-out name is reassembled and, when it matches a company you've confirmed on this layout, the note is cleared. Only the company you confirmed is matched — a name on the page addressed TO you is never treated as the sender. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="identity-geom-fragment-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Read small reference/date print more clearly</div>
                 <div class="threshold-sub">Enlarges a tightly-cropped reference or date before reading it and drops an over-sharpen step, so small print (e.g. “PO-17039” misread as “»0-17039”) reads correctly. Only helps where it can, never changes a read it can't improve. Off by default.</div>
               </div>

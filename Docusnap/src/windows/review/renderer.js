@@ -2346,6 +2346,22 @@ async function _addDetectedType(detName) {
   }
 }
 
+// Lever A (2026-08-20, Chris round-10 card #3): the template-identity FILL note is NOT a
+// "formatting check" — it means the company was INFERRED (no clean letterhead read), and it holds
+// the doc out of auto-file. Surface it as ACTIONABLE guidance (check + confirm + the per-sender
+// reprocess) instead of the opaque generic bucket, and COMPOSE with any other genuine flags rather
+// than hiding them (Oracle condition 2). These two strings are PINNED EQUAL to engine.py
+// _TEMPLATE_IDENTITY_FILL_NOTE_{SINGLE,MAJORITY} (test_review_inferred_identity_reason.js reads
+// engine.py and asserts equality) — a reword there without updating here would re-bury the note.
+const INFERRED_IDENTITY_NOTES = [
+  'Company inferred from one previously filed document — please confirm before filing.',
+  'Company inferred from previously filed documents on this layout — please confirm before filing.',
+];
+function isInferredIdentityNote(note) {
+  const t = String(note || '').trim();
+  return INFERRED_IDENTITY_NOTES.some(c => t === c);
+}
+
 function renderReviewReason(doc) {
   const el = document.getElementById('review-reason');
   if (!el) return;
@@ -2423,17 +2439,24 @@ function renderReviewReason(doc) {
     return;
   }
 
+  // Lever A: split the inferred-identity FILL note out of the generic "formatting check" bucket. It
+  // gets its OWN actionable block; the generic parts still render for any OTHER flagged/low field
+  // (compose, do not blanket-replace — Oracle condition 2). idNotes are computed AFTER the clean
+  // early-return above so an identity-only doc (flagN>=1) still reaches this block. They are excluded
+  // from the format-check COUNT (an inferred identity is not a format check) and the generic note list.
+  const idNotes = _relevant.filter(e => isInferredIdentityNote(e.validation_note));
+  const otherFlagN = Math.max(0, flagN - idNotes.length);
+
   const parts = [];
-  if (lowN)  parts.push(`${lowN} field${lowN === 1 ? ' was' : 's were'} read with low confidence`);
-  if (flagN) parts.push(`${flagN} field${flagN === 1 ? ' was' : 's were'} flagged by a formatting check`);
-  const lead = `Needs a quick check — ${parts.join(', and ')}.`;
+  if (lowN)       parts.push(`${lowN} field${lowN === 1 ? ' was' : 's were'} read with low confidence`);
+  if (otherFlagN) parts.push(`${otherFlagN} field${otherFlagN === 1 ? ' was' : 's were'} flagged by a formatting check`);
 
   const cues = [];
-  if (lowN)  cues.push(`<span class="rr-cue low" title="These fields scored below the confidence threshold set in Settings. Compare the value with the document.">Low confidence · ${lowN}</span>`);
-  if (flagN) cues.push(`<span class="rr-cue flag" title="A formatting check found these values look different from what's usual for this field. They may still be correct — just confirm them.">Format check · ${flagN}</span>`);
+  if (lowN)       cues.push(`<span class="rr-cue low" title="These fields scored below the confidence threshold set in Settings. Compare the value with the document.">Low confidence · ${lowN}</span>`);
+  if (otherFlagN) cues.push(`<span class="rr-cue flag" title="A formatting check found these values look different from what's usual for this field. They may still be correct — just confirm them.">Format check · ${otherFlagN}</span>`);
 
   const notes = _relevant
-    .filter(e => e.validation_note)
+    .filter(e => e.validation_note && !isInferredIdentityNote(e.validation_note))
     .map(e => ({ key: e.field_key, note: e.validation_note }));
   const MAX = 4;
   const noteList = notes.length
@@ -2442,8 +2465,31 @@ function renderReviewReason(doc) {
          notes.length > MAX ? `<li class="rr-more">+${notes.length - MAX} more</li>` : ''}</ul>`
     : '';
 
-  el.innerHTML = `<div class="rr-lead">${escHtml(lead)}</div>` +
-                 `<div class="rr-cues">${cues.join('')}</div>` + noteList;
+  // The inferred-identity guidance block (primary hold reason → rendered first). Honest in EVERY
+  // flag state: confirming files THIS doc, and confirming a few from the sender lets the layout
+  // establish so the rest stop being held. No UNCONDITIONAL auto-file promise (Oracle condition 3:
+  // the reliable auto-release depends on the confirmed-hint release path / a clean sender read).
+  // Reuses the existing rr-lead / rr-notes styling — no new CSS.
+  let idBlock = '';
+  if (idNotes.length) {
+    const sender = String(doc.supplier_name || '').trim();
+    const who = sender ? `“${sender}”` : 'this sender';
+    const idLead = `The company on this document was inferred from earlier documents on this layout — `
+                 + `Scan Finder couldn’t read it cleanly from the letterhead. Check it names the right `
+                 + `company, then Confirm.`;
+    const idHow = `Confirming a few documents from ${who} helps Scan Finder recognise it and stop asking. `
+                + `Use “Reprocess ${sender || 'this sender'}” (in the tools rail) to re-check the rest once you have.`;
+    idBlock = `<div class="rr-lead">${escHtml(idLead)}</div>`
+            + `<ul class="rr-notes"><li>${escHtml(idHow)}</li></ul>`;
+  }
+
+  // Generic block (wording unchanged) — only when something OTHER than the identity note holds.
+  const genericBlock = parts.length
+    ? `<div class="rr-lead">${escHtml(`Needs a quick check — ${parts.join(', and ')}.`)}</div>`
+      + `<div class="rr-cues">${cues.join('')}</div>` + noteList
+    : '';
+
+  el.innerHTML = idBlock + genericBlock;
   el.hidden = false;
 }
 
@@ -2572,16 +2618,22 @@ function _datePreclean(text) {
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
-function _parseDrawnDate(raw, order) {
-  // Preclean (rejoin split digits) then edge-trim a leading "Date:" label + edge punctuation, so a
-  // drawn box that captured a bit of the caption or a stray char still parses instead of surfacing
-  // raw junk via normalizeDrawnValue's `|| text`. The colon requirement means a month-first date
-  // ("Jun 15 2026") is never mistaken for a label; the non-alnum strips never touch a leading day
-  // digit or a trailing year digit. The strict ^…$ matchers + their day/month gates stay unchanged.
-  const t = _datePreclean(raw)
-    .replace(/^[A-Za-z][A-Za-z ]*?:\s*/, '')   // drop a leading "Date:" / "Invoice Date:" label (colon required)
-    .replace(/^[^0-9A-Za-z]+/, '')             // leading "(", "#", …
-    .replace(/[^0-9A-Za-z]+$/, '');            // trailing ".", ")", …
+// Locators for the SEARCH pass (Lever X, 2026-08-20, reggie → Oracle SIGN OFF). Verbatim ports of the
+// Python finder already in the repo (validator._NUMERIC_DATE_RE / _MONTH_NAME_DATE_RE). GLOBAL
+// (matchAll). Numeric requires TWO real /.- separators, so a time "14:32" (colon) or a bare digit run
+// is NEVER located; month-name requires a spelled month + optional ordinal. The located span is only a
+// PROPOSAL — _matchStrictDate (the four ^…$ matchers, day 1..31 / month 1..12 / region order) DISPOSES.
+const _NUMERIC_DRAWN_DATE_RE = /\d{1,4}\s*[/.\-]\s*\d{1,2}\s*[/.\-]\s*\d{1,4}/g;
+const _DRAWN_MONTH_ALT = '(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
+const _MONTH_NAME_DRAWN_DATE_RE = new RegExp(
+  '\\d{1,2}(?:st|nd|rd|th)?\\s*[-/ ]\\s*' + _DRAWN_MONTH_ALT + '\\s*[-/ ,]?\\s*\\d{2,4}' +   // 6th May 2024 / 1-May-24
+  '|' + _DRAWN_MONTH_ALT + '\\s+\\d{1,2}(?:st|nd|rd|th)?,?\\s+\\d{2,4}',                      // May 6th, 2024
+  'gi');
+const _DRAWN_ORDINAL_RE = /\b(\d{1,2})(?:st|nd|rd|th)\b/gi;   // "1st" -> "1"
+
+// The four STRICT ^…$ matchers — the ONLY judge of what is a real date. Extracted VERBATIM from the
+// old _parseDrawnDate so the whole-string (Attempt 1) and the search (Attempt 2) share the exact gate.
+function _matchStrictDate(t, order) {
   let m = t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);   // a/b/yyyy — order-dependent
   if (m) {
     const a = +m[1], b = +m[2], y = +m[3];
@@ -2599,6 +2651,44 @@ function _parseDrawnDate(raw, order) {
   if (m) { const mo = _DRAWN_MONTHS[m[1].slice(0, 3).toLowerCase()]; if (mo) return _fmtDMY(+m[2], mo, +m[3]); }
   m = t.match(/^(\d{1,2})\s+([A-Za-z]{3,9}),?\s+(\d{4})$/);        // DD MMM YYYY (unambiguous)
   if (m) { const mo = _DRAWN_MONTHS[m[2].slice(0, 3).toLowerCase()]; if (mo) return _fmtDMY(+m[1], mo, +m[3]); }
+  return null;
+}
+
+function _parseDrawnDate(raw, order) {
+  const base = _datePreclean(raw);
+  // Attempt 1 — WHOLE-STRING (existing behaviour, BYTE-IDENTICAL; Oracle X-1). Edge-trim a leading
+  // "Date:" label + edge punctuation, then the strict gate. Runs FIRST so every input that parses
+  // today parses identically; only a previously-null input gets Attempt 2.
+  const trimmed = base
+    .replace(/^[A-Za-z][A-Za-z ]*?:\s*/, '')   // drop a leading "Date:" / "Invoice Date:" label (colon required)
+    .replace(/^[^0-9A-Za-z]+/, '')             // leading "(", "#", …
+    .replace(/[^0-9A-Za-z]+$/, '');            // trailing ".", ")", …
+  let out = _matchStrictDate(trimmed, order);
+  if (out) return out;
+  // Attempt 2 — SEARCH (Lever X): a drawn box that captured a longer line ("Sent: 12 June 2026 21:29",
+  // "1st may 2026 14:32pm") — locate date-shaped substrings and validate the LEFTMOST that passes the
+  // strict gate. Leftmost = reading order (a drawn box is a positional act; deliberately DIFFERENT
+  // from the Python salvage's closest-to-today — do NOT "align" them). Fail-safe: return null →
+  // normalizeDrawnValue keeps the raw text via `|| text` (never blank), exactly as today.
+  // Search the RAW text, NOT `base`: _datePreclean's OCR-split digit-join ("2 0 2 6"->"2026") also
+  // fuses a date's day into a trailing time ("2026-06-12 14:30" -> "…1214:30"), corrupting the very
+  // longer-capture case Attempt 2 exists for. The locators already tolerate `\s*` around separators,
+  // and each candidate is separator-ws-collapsed below, so the OCR-split-WITHIN-a-drawn-date case is
+  // still covered by Attempt 1 (whole-string on `base`); only that rare case inside a LONGER line is
+  // out of reach, an acceptable edge.
+  const searchText = String(raw == null ? '' : raw);
+  const spans = [];
+  for (const rx of [_NUMERIC_DRAWN_DATE_RE, _MONTH_NAME_DRAWN_DATE_RE])
+    for (const mm of searchText.matchAll(rx)) spans.push({ i: mm.index, s: mm[0] });
+  spans.sort((a, b) => a.i - b.i);
+  for (const { s } of spans) {
+    const cand = s
+      .replace(/\s*([/.\-])\s*/g, '$1')       // collapse OCR ws around separators
+      .replace(_DRAWN_ORDINAL_RE, '$1')       // "1st may" -> "1 may"
+      .trim();
+    out = _matchStrictDate(cand, order);      // SAME gate: day 1..31, month 1..12, dmy/mdy/ymd order
+    if (out) return out;
+  }
   return null;
 }
 let _regionDateOrder = null;
@@ -6156,14 +6246,30 @@ async function offerIssuerRipple(srcDocId, name, row) {
     apply.disabled = dismiss.disabled = true;
     apply.textContent = 'Applying…';
     try {
-      const ids = siblings.map(s => s.id);
-      const out = await window.docusnap.applyIssuerRipple(ids, name);
+      const siblingIds = siblings.map(s => s.id);
+      // Pin the SOURCE too (idempotent — resolve-issuer already pinned it): the pin persists on every
+      // pinned doc, so a later reprocess re-derives X even for a doc we choose not to re-read now.
+      const pinIds = [srcDocId, ...siblingIds];
+      const out = await window.docusnap.applyIssuerRipple(pinIds, name);
       if (!out || out.ok !== true) { apply.textContent = 'Could not apply'; return; }
       bar.remove();
-      // Re-read them through the SAME batched rail Reprocess-this-sender uses; the pins make the
-      // engine read them as this supplier instead of reverting to the coarse-logo pick.
-      const docs = (queue || []).filter(d => ids.includes(d.id));
-      if (docs.length) await runReprocessBatch(docs, `${docs.length} from “${name}”`);
+      // Re-read the siblings through the SAME batched rail Reprocess-this-sender uses; the pins make
+      // the engine read them as this supplier (operator_pin @75 + "confirm to file" note — never
+      // auto-files) instead of reverting to the value-less letterhead suggest. Include the SOURCE in
+      // the re-read ONLY when its sole pending edit is the supplier just applied (Oracle seam ruling):
+      // re-reading a source that also carries a typed date / staged ⊕ teach / manual type would
+      // silently discard it. Cover DEFERRED siblings too (findSiblings returns them, so they were
+      // pinned but the old queue-only filter never re-read them). Kill switch SUPPLIER_RIPPLE=0 makes
+      // findSiblings return [] upstream, so this whole path is unreachable.
+      const rereadIds = _sourceOnlySupplierDirty() ? pinIds : siblingIds;
+      const pool = [...(queue || []), ...(deferredQueue || [])];
+      const docs = pool.filter(d => rereadIds.includes(d.id));
+      if (docs.length) {
+        // Preserve the open source's panel UNLESS it is actually in this batch (only then does a
+        // refetch show its freshly-persisted value; otherwise a refetch would wipe the in-memory X).
+        const preserveOpenDoc = !docs.some(d => d.id === srcDocId);
+        await runReprocessBatch(docs, `${docs.length} from “${name}”`, { preConfirmed: true, preserveOpenDoc });
+      }
     } catch {
       apply.disabled = dismiss.disabled = false;
       apply.textContent = `Apply “${name}” to ${siblings.length} & re-read`;
@@ -6834,6 +6940,21 @@ function hasPendingReviewEdits() {
   return false;
 }
 
+// Is the OPEN document dirty ONLY with the supplier the operator just resolved (the ripple case),
+// so re-reading it would discard nothing they typed? Mirrors hasPendingReviewEdits but tolerates a
+// lone supplier_name correction. Oracle seam ruling (2026-08-21): the correction-ripple may re-read
+// the SOURCE only when this is true; if the source also carries a hand-typed date, a staged ⊕ teach
+// or a manual type override, the ripple leaves the source panel untouched (its pin still persists).
+function _sourceOnlySupplierDirty() {
+  const corrKeys = corrections ? Object.keys(corrections) : [];
+  if (corrKeys.some(k => k !== 'supplier_name')) return false;
+  if (typeof pendingAnchors === 'object' && pendingAnchors && Object.keys(pendingAnchors).length) return false;
+  if (typeof pendingFieldRules === 'object' && pendingFieldRules && Object.keys(pendingFieldRules).length) return false;
+  const detected = currentDoc && currentDoc.type_slug;
+  if (selectedTypeSlug && detected && selectedTypeSlug !== detected) return false;   // manual type override
+  return true;
+}
+
 // ── Fast on-open re-extract (Slice B, DARK) ─────────────────────────────────────
 // Debounced, doc-guarded trigger for the text-only re-extract. Rapid ↑/↓ cycling must NOT spawn a
 // worker per selection, so it waits for the operator to settle on a doc; it never fires while there
@@ -7111,17 +7232,24 @@ async function reconnectRunningBatch(status) {
 
 // Reprocess a set of documents (the whole queue, or just one sender's) through the shared
 // batched-worker path. scopeLabel is shown in the progress banner + toast.
-async function runReprocessBatch(docs, scopeLabel) {
+async function runReprocessBatch(docs, scopeLabel, opts = {}) {
   if (!docs || docs.length === 0) { showToast('No documents to reprocess', 'warn'); return; }
   if (_batchActive) return;
   // A batch reprocess always confirms first (Chris, both rounds: "Reprocess all warns you not
   // at all — it re-read 160 documents on one click"). The harmless-sounding button is the one
   // that changes the most documents; the count makes the scale visible before it runs.
-  if (!confirm(`Re-read all ${docs.length} document${docs.length === 1 ? '' : 's'} (${scopeLabel}) from their pages? `
+  // EXCEPTION — opts.preConfirmed (the correction-ripple, Chris round-11 card #1): the operator
+  // ALREADY consented by clicking "Apply 'X' to N & re-read" (same count on the button), so re-asking
+  // here would only give a dialog to dismiss — which silently swallowed the whole re-read. When
+  // preConfirmed, both confirms are skipped; the source's OTHER edits are protected instead by
+  // opts.preserveOpenDoc below (Oracle seam ruling 2026-08-21). Do NOT globalise preConfirmed —
+  // Reprocess-All / Reprocess-this-sender must keep their warnings.
+  if (!opts.preConfirmed
+      && !confirm(`Re-read all ${docs.length} document${docs.length === 1 ? '' : 's'} (${scopeLabel}) from their pages? `
              + `Values the documents re-read may replace what's shown now, and this can take a while. `
              + `Documents you've already confirmed and filed are not touched.`)) return;
   // The open document's unsaved edits/type choice are re-rendered away too (QA audit #3).
-  if (hasPendingReviewEdits() && !confirm(REPROCESS_DISCARD_WARNING)) return;
+  if (!opts.preConfirmed && hasPendingReviewEdits() && !confirm(REPROCESS_DISCARD_WARNING)) return;
 
   const btnAll  = document.getElementById('btn-reprocess-all');
   const btnSup  = document.getElementById('btn-reprocess-supplier');
@@ -7176,8 +7304,12 @@ async function runReprocessBatch(docs, scopeLabel) {
     console.warn('[Reprocess All]', e.message);
   } finally {
     window.docusnap.removeReprocessProgress();
-    // Refresh the open document's panel (it may have been reprocessed).
-    if (currentDoc) {
+    // Refresh the open document's panel (it may have been reprocessed). SKIP when
+    // opts.preserveOpenDoc — the correction-ripple sets it when the open SOURCE was NOT in the
+    // re-read batch (it had other unsaved edits), so a refetch here would wipe the in-memory value
+    // the operator just set and the edits they typed (Oracle seam ruling 2026-08-21). The queue
+    // refresh below still runs, so the rippled siblings repaint.
+    if (currentDoc && !opts.preserveOpenDoc) {
       try {
         const full = await window.docusnap.getDocumentWithExtractions(currentDoc.id);
         if (full && currentDoc && currentDoc.id === full.id) {

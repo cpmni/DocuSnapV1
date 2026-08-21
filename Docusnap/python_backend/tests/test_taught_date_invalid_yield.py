@@ -83,6 +83,35 @@ check("predicate uses parse_date + salvage_date + days_in_future (single clock; 
 check("future trigger on its OWN constant _DATE_YIELD_FUTURE_DAYS (decoupled from the 366 flag)",
       E._DATE_YIELD_FUTURE_DAYS > TOL and '_DATE_YIELD_FUTURE_DAYS' in inspect.getsource(E._invalid_taught_date_yields))
 
+# ── Lever Z (2026-08-20): the despatch_date class + the ANCHOR-loop yield leg (Oracle Z-1/Z-2) ──
+# The year-floor dependency (validator.py:123, year<1000) is what makes a clipped year classify
+# 'impossible'; pin it so a future dev letting a 3-digit year parse can't silently kill BOTH legs.
+check("class-lock: 'July 10, 202' + valid anchor -> 'impossible'", Y('July 10, 202', 'July 10, 2026', NOW) == 'impossible')
+check("class-lock: 'July 10, 202¢' (OCR '6'->'¢') -> 'impossible'", Y('July 10, 202¢', 'July 10, 2026', NOW) == 'impossible')
+check("never adopt a garbage challenger ('Estimated') -> ''", Y('July 10, 202', 'Estimated', NOW) == '')
+check("PIN correct-taught month-name precedence: valid 'July 10, 2026' never yields -> ''",
+      Y('July 10, 2026', 'July 09, 2026', NOW) == '')
+
+i_z = src.find('if ((TEMPLATE_DATE_INVALID_YIELD or TEMPLATE_DATE_FUTURE_YIELD)', i_branch + 10)
+check("a SECOND yield leg exists — the anchor loop", i_z != -1 and i_z > i_branch)
+i_tierA = src.find('if data.get("authoritative") and data.get("value") and data.get("located", True) and _ocr_clean and _cov_ok:')
+i_guard = src.find('if (existing and not data.get("authoritative")', i_z if i_z != -1 else 0)
+check("anchor leg placed AFTER Tier-A and BEFORE the drawn-source guard (Oracle Z-1)",
+      i_tierA != -1 and i_guard != -1 and i_tierA < i_z < i_guard)
+_zslice = src[i_z:i_guard] if i_z != -1 else ''
+check("anchor leg gates on the same flag GROUP as FIRST conjunct (Z-2: one flip arms both loops)",
+      _zslice.startswith('if ((TEMPLATE_DATE_INVALID_YIELD or TEMPLATE_DATE_FUTURE_YIELD)'))
+check("anchor leg witness set = {anchor_inline,anchor_crop,anchor_crop_relocated}, EXCLUDES anchor_registration",
+      '("anchor_inline", "anchor_crop", "anchor_crop_relocated")' in _zslice and 'anchor_registration' not in _zslice)
+check("anchor leg requires >= _KEYWORD_TRUST_FLOOR and a _cmp_norm disagreement",
+      '_KEYWORD_TRUST_FLOOR' in _zslice and '_cmp_norm(data.get("value")) != _cmp_norm(existing.get("value"))' in _zslice)
+check("anchor leg calls _invalid_taught_date_yields (predicate not swappable) + arms per-switch",
+      '_invalid_taught_date_yields(existing.get("value"), data.get("value"))' in _zslice
+      and "_reason_z == 'impossible' and TEMPLATE_DATE_INVALID_YIELD" in _zslice
+      and "_reason_z == 'future' and TEMPLATE_DATE_FUTURE_YIELD" in _zslice)
+check("anchor leg commits {**data} + min(_CONFLICT_CAP) + validation_note + own continue",
+      '{**data,' in _zslice and '_CONFLICT_CAP' in _zslice and 'validation_note' in _zslice and _zslice.rstrip().endswith('continue'))
+
 print()
 if FAILED:
     print(f"{len(FAILED)} FAILED")

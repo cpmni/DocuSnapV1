@@ -34,9 +34,9 @@ const check = (label, cond) => { console.log((cond ? 'OK  ' : 'BAD ') + label); 
 
 // ── Extract the LITERAL note the letterhead seam writes ──────────────────────────────────────
 // It is an f-string split across two source lines; join them and drop the interpolation.
-const m = engine.match(/"Never seen this sender before\.[^"]*"\s*\n\s*"([^"]*)"/);
+const m = engine.match(/"Couldn't confirm who issued this page[^"]*"\s*\n\s*"([^"]*)"/);
 check('the letterhead note literal is present in engine.py', !!m);
-const noteText = m ? ('Never seen this sender before. The top of the page reads \'Acme Ltd\' — ' + m[1]) : '';
+const noteText = m ? ("Couldn't confirm who issued this page — the top of the page reads 'Acme Ltd'. " + m[1]) : '';
 
 // ── Extract the renderer's ACTUAL gating regexes (never re-type them here) ────────────────────
 const brandingSrc = renderer.match(/isBrandingFlag\s*=[\s\S]{0,400}?\/([^/]+)\/i\.test\(note\)/);
@@ -56,18 +56,54 @@ console.log('\nthe copy does the job the note is relied on for:');
 // On first contact the corroboration gate cannot protect anything - the name was read verbatim out
 // of the page, so "is it corroborated by the page text" is true by construction. The operator
 // reading this sentence is the entire remaining safety budget.
-check('it says the sender is unknown', /never seen this sender/i.test(noteText));
+check('it says the issuer could not be confirmed (true for a new sender AND a known sender whose layout changed — Chris card #2)',
+      /couldn't confirm who issued/i.test(noteText));
 check('it names the sender-vs-customer mistake, the one only a human can catch here',
       /sender, not the customer/i.test(noteText));
 check('it does not assert - it asks for confirmation', /please confirm/i.test(noteText));
 
-console.log('\nthe python side still emits a value-less row (suggest, never assert):');
 const seam = engine.slice(engine.indexOf('LETTERHEAD ISSUER SUGGESTION'));
 const block = seam.slice(0, seam.indexOf('TYPE-AMBIGUITY guard'));
-check('the seam sets suggested_supplier', block.includes('_lfld["suggested_supplier"] = _lh'));
-check('the seam NEVER writes a value', !/_lfld\["value"\]\s*=\s*(?!None)/.test(block));
-check('the seam is fill-empty-only', block.includes('results["supplier_name"].get("value")'));
-check('the seam is default OFF', /LETTERHEAD_ISSUER", "0"\) == "1"/.test(block));
+// The block now holds TWO branches: a DEFAULT-OFF prefill `if` (Chris round-11 card #4) and the
+// original value-less suggest `elif`. Split on the elif so each contract is checked in isolation.
+const splitAt = block.indexOf('elif not _lfld.get("suggested_supplier")');
+check('the block splits into a prefill branch and a suggest branch', splitAt > 0);
+const prefillBranch = splitAt > 0 ? block.slice(0, splitAt) : '';
+const suggestBranch = splitAt > 0 ? block.slice(splitAt) : block;
+
+console.log('\nthe SUGGEST path still emits a value-less row (suggest, never assert):');
+check('the suggest branch sets suggested_supplier', suggestBranch.includes('_lfld["suggested_supplier"] = _lh'));
+check('the suggest branch NEVER writes a value', !/_lfld\["value"\]\s*=\s*(?!None)/.test(suggestBranch));
+check('the suggest reader is fill-empty-only', block.includes('results["supplier_name"].get("value")'));
+check('the suggest reader is default OFF', /LETTERHEAD_ISSUER", "0"\) == "1"/.test(block));
+
+console.log('\nthe PREFILL path (Chris round-11 card #4) writes a value but stays review-bound:');
+check('prefill is a SEPARATE seam, default OFF', /LETTERHEAD_PREFILL", "0"\) == "1"/.test(prefillBranch));
+check('prefill is fill-empty-only', prefillBranch.includes('not _lfld.get("value")'));
+check('prefill writes the value into the box', /_lfld\["value"\]\s*=\s*_lh/.test(prefillBranch));
+check('C1: prefill holds the row by confidence 69 (< the 70 review threshold), not the note alone',
+      /_lfld\["confidence"\]\s*=\s*69/.test(prefillBranch));
+check('C3: prefill stamps the DISTINCT method token letterhead_prefill (matches no note-demoter)',
+      /_lfld\["method"\]\s*=\s*"letterhead_prefill"/.test(prefillBranch));
+check('C2: prefill does NOT set suggested_supplier (no redundant Use-button on a filled box)',
+      !/_lfld\["suggested_supplier"\]\s*=/.test(prefillBranch));
+
+// C2: the value-present note must NOT arm the branding button, but MUST carry the sender-vs-customer copy.
+const pm = prefillBranch.match(/f"The letterhead reads[^"]*"\s*\n\s*"([^"]*)"/);
+check('the prefill note literal is present in engine.py', !!pm);
+const prefillNote = pm ? ("The letterhead reads 'Acme Ltd' — filled in for you, but please confirm " + pm[1]) : '';
+check('C2: the prefill note does NOT arm the "Use \'X\'" button (value-present = plain note)',
+      !!brandingRe && !brandingRe.test(prefillNote));
+check('C2: ...and does NOT arm the issuer-accept affordance either (no button on a filled box)',
+      !acceptRe || !acceptRe.test(prefillNote));
+check('C2: the prefill note still names the sender-vs-customer mistake', /sender, not the customer/i.test(prefillNote));
+check('the prefill note asks for confirmation, does not assert', /please confirm/i.test(prefillNote));
+
+// C3 cross-file: classFixService must not shed this note on reprocess (its CLEARABLE_NOTE_MARKS set).
+console.log('\nthe prefill note is durable (no note-demoter sheds it):');
+const classFix = read('..', '..', 'services', 'classFixService.js');
+check('C3: classFixService does not clear the letterhead prefill note',
+      !/filled in for you|letterhead reads/i.test(classFix));
 
 console.log(fails ? `\n${fails} FAILED` : '\nAll letterhead note-contract checks passed');
 process.exit(fails ? 1 : 0);

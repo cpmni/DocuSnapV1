@@ -216,6 +216,19 @@ function _reconcileEnv(db) {
     if (learning.getSetting(db, 'recon_shadow_attrib_note_demote', 'false') === 'true') env.RECON_SHADOW_ATTRIB_NOTE_DEMOTE = '1';
     if (learning.getSetting(db, 'snap_confusable_clean_autofile', 'false') === 'true') env.SNAP_CONFUSABLE_CLEAN_AUTOFILE = '1';
     if (learning.getSetting(db, 'name_corrob_suggestion_adopt', 'false') === 'true') env.NAME_CORROB_SUGGESTION_ADOPT = '1';
+    // Lever E (2026-08-20, Oracle SIGN-OFF-W/COND): whitespace-normalise the Stage-2.5a issuer-band
+    // presence test so a CONFIRMED hint whose letterhead is column-broken ("Silverbeck    Cleaning
+    // Supplies") still matches and the "Company inferred… please confirm" note sheds via the
+    // graduated confirmed value. Strongest safety path (usage>=3 + no-swap + recipient-truncated
+    // band). OFF = byte-identical. Releases the 16 live Silverbeck docs; makes the Review recovery
+    // copy honest. Flip needs the live counterfactual (release + no recipient re-admission).
+    if (learning.getSetting(db, 'hint_band_ws_normalize', 'false') === 'true') env.HINT_BAND_WS_NORMALIZE = '1';
+    // Lever D (2026-08-20, gary → Oracle SIGN-OFF-W/COND, DARK): the geom-witness note shed can't fire
+    // on a wide letter-spaced letterhead because reconstruct_page_text column-breaks the name and the
+    // strict pick returns one word. This arm re-joins the letterhead-sized name run and sheds when it
+    // norm-equals the confirmed fill value (verify-not-assert, fixed-target no-swap). NOT in the shared
+    // picker. OFF = byte-identical. Default-ON flip is SEND BACK pending a recipient-collision fixture.
+    if (learning.getSetting(db, 'template_identity_geom_fragment_shed', 'false') === 'true') env.TEMPLATE_IDENTITY_GEOM_FRAGMENT_SHED = '1';
     //   P) ref_prefix_confusable_adopt — (2026-08-16, owner-directed PI/P1 class; Oracle S-O-W/C)
     //      adopt the scope's ≥0.90-dominant ref prefix over a single-confusable read head, ONLY with
     //      a page witness (wider read / keyword) + both-forms refusal + learned-shape pass.
@@ -598,6 +611,15 @@ function _reconcileEnv(db) {
     // hint, a logo and a template, and every later document resolves without this.
     // Default OFF, byte-identical off. App RESTART to load the bridge.
     if (learning.getSetting(db, 'letterhead_issuer', 'false') === 'true') env.LETTERHEAD_ISSUER = '1';
+    // -- COLD-START ISSUER PREFILL (slice 0, Chris round-11 card #4; gary->Oracle
+    // SIGN-OFF-WITH-CONDITIONS 2026-08-21, DEFAULT OFF) --
+    // LETTERHEAD_PREFILL: when LETTERHEAD_ISSUER read a cold-start letterhead name, land it IN the
+    // Document Issuer box (confidence 69, review-bound by that AND a note) instead of leaving it
+    // blank behind a "Use 'X'" button - one Confirm instead of a per-document click on a 200-doc
+    // first batch. Plants NO learning (the row is needs_review; only a human confirm writes a
+    // scope) and can never auto-file (the note is the block). Requires letterhead_issuer ON.
+    // Default OFF, byte-identical off. App RESTART to load the bridge.
+    if (learning.getSetting(db, 'letterhead_prefill', 'false') === 'true') env.LETTERHEAD_PREFILL = '1';
     // -- THE WRONG-COMPANY MISFILE (2026-08-10) --
     // TEMPLATE_IDENTITY_ON_PAGE: a layout may only claim a document that actually names its company.
     // Confirming ONE purchase order created a template for that supplier - and on a document the

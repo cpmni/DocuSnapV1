@@ -36,6 +36,14 @@
   const MAX_RUN = 8;      // longest run of page words a single value may span
   const MAX_HITS = 6;     // a value printed more times than this is not a useful position
   const EDGE_PUNCT = /^[.,;:()[\]{}"'`‘’“”\-–—]+|[.,;:()[\]{}"'`‘’“”\-–—]+$/g;
+  // Currency symbols are NOT edge-punctuation (a £/$ is meaningful, not stray punctuation), so norm
+  // keeps them — which made a typed "4,142.35" fail to locate the page's "£4,142.35" and offered a
+  // FROZEN constant instead (Chris round-10 card #4). Strip a currency symbol ONLY when it directly
+  // abuts a digit at the string START — a deterministic canonicalisation of a money token, never a
+  // fuzzy match. Mirrors review/renderer.js _stripCurrencySymbol so the teach locate agrees with how
+  // the app reads money. Leading-only (no lookbehind) → identical in the browser and Node.
+  const CUR_EDGE = /^[£$€¥₹](?=\d)/;
+  const stripCur = (t) => t.replace(CUR_EDGE, '');
 
   // Compare-time normalisation. Mirrors the spirit of text_normalise.js (case + unicode dash/quote
   // folding + whitespace collapse) plus the SAME edge-punctuation set the engine's page-presence
@@ -64,6 +72,7 @@
     const { words, natW, natH } = opts || {};
     const targetSpaced = norm(value);
     const targetSquash = squash(value);
+    const targetCur = stripCur(targetSquash);   // === targetSquash unless the value itself is money-shaped
     // A one-character target matches noise on any page; there is no position worth storing.
     if (targetSquash.length < 2) return [];
     if (!Array.isArray(words) || !words.length || !(natW > 0) || !(natH > 0)) return [];
@@ -106,8 +115,11 @@
           spaced = run.map((w) => w.text).join(' ');
           squashed = squash(spaced);
           // Prune: once the run is longer than the target under BOTH forms it can only grow.
-          if (squashed.length > targetSquash.length && norm(spaced).length > targetSpaced.length) break;
-          if (norm(spaced) !== targetSpaced && squashed !== targetSquash) continue;
+          // Currency-aware prune/compare (card #4): stripCur is inert unless a token abuts a leading
+          // currency glyph, so this adds NO new bare-number match class — only "£4,142.35" now equals
+          // typed "4,142.35". A non-currency prefix ("#4,142.35") is untouched and still does not match.
+          if (stripCur(squashed).length > targetCur.length && norm(spaced).length > targetSpaced.length) break;
+          if (norm(spaced) !== targetSpaced && squashed !== targetSquash && stripCur(squashed) !== targetCur) continue;
           const x1 = Math.min(...run.map((w) => w.x));
           const x2 = Math.max(...run.map((w) => w.x + w.w));
           const y1 = Math.min(...run.map((w) => w.y));

@@ -975,16 +975,32 @@ function showFixedInput(f, prefill){
 // loses the position, and the one moment a typo becomes a frozen wrong constant on every future
 // document, now gets an acknowledgement and a way back.
 function showNoHit(f, v, saveAsFixed){
-  setPrompt(`That isn't printed on this page`, f.label);
-  $('rg-sub').textContent = `No matching text found. I can still save it — it will be filled in as typed on every document of this type.`;
-  setConfirm(
-    `<div>Value: <span class="val mono">${esc(v)}</span></div>`+
-    `<div class="rb-actions">`+
-      `<button class="btn primary" id="rb-nohit-save">Save it as typed →</button>`+
-      `<span class="rb-sep"></span>`+
-      `<button class="btn ghost quiet" id="rb-nohit-edit">Edit the value</button>`+
-      `<button class="btn ghost quiet" id="rb-nohit-draw">Draw it instead</button>`+
-    `</div>`);
+  if (_freezeDiscouraged(f)) {
+    // Card #4: an amount/date typed without a spot. Freezing it would stamp this figure on every
+    // document, so make "Draw where it sits" the PRIMARY route and demote the freeze to a quiet,
+    // deliberate choice (never removed — a genuinely-constant field is still reachable).
+    setPrompt(`This looks like a value that changes on each document`, f.label);
+    $('rg-sub').textContent = `Freezing "${v}" would fill it on every document of this type — but an amount or date usually changes each time. Draw where it sits so each document is read.`;
+    setConfirm(
+      `<div>Value: <span class="val mono">${esc(v)}</span></div>`+
+      `<div class="rb-actions">`+
+        `<button class="btn primary" id="rb-nohit-draw">Draw where it sits →</button>`+
+        `<span class="rb-sep"></span>`+
+        `<button class="btn ghost quiet" id="rb-nohit-edit">Edit the value</button>`+
+        `<button class="btn ghost quiet" id="rb-nohit-save">Freeze it as typed anyway</button>`+
+      `</div>`);
+  } else {
+    setPrompt(`That isn't printed on this page`, f.label);
+    $('rg-sub').textContent = `No matching text found. I can still save it — it will be filled in as typed on every document of this type.`;
+    setConfirm(
+      `<div>Value: <span class="val mono">${esc(v)}</span></div>`+
+      `<div class="rb-actions">`+
+        `<button class="btn primary" id="rb-nohit-save">Save it as typed →</button>`+
+        `<span class="rb-sep"></span>`+
+        `<button class="btn ghost quiet" id="rb-nohit-edit">Edit the value</button>`+
+        `<button class="btn ghost quiet" id="rb-nohit-draw">Draw it instead</button>`+
+      `</div>`);
+  }
   $('rb-nohit-save').onclick=()=>saveAsFixed(v);
   $('rb-nohit-edit').onclick=()=>showFixedInput(f, v);   // the typo recovery — input prefilled
   $('rb-nohit-draw').onclick=()=>promptField();
@@ -1248,6 +1264,18 @@ async function readBack(box){
 function _isDateField(f){
   return String(f.type || '').toLowerCase() === 'date' || f.key === state.dateFieldKey
          || /(^|_)date($|_)/.test(String(f.key || '').toLowerCase());
+}
+// Chris round-10 card #4: freezing an AMOUNT or DATE as a constant stamps a single figure on every
+// document (a typed balance "£4,142.35" filed onto every future statement). Names and codes
+// (supplier_name, vat_no, account_no) are the LEGITIMATE fixed-value users (census
+// stress_test/fixed_value_locatable.js) — never discourage those. Type-scoped, with a narrow money-
+// name fallback for an amount field a user mis-typed as text. PINNED (test_valueLocate.js) so a future
+// dev can't broaden it to swallow the genuine name/code fixed-value fields.
+function _freezeDiscouraged(f){
+  const t = String((f && f.type) || '').toLowerCase();
+  if (t === 'currency' || t === 'number') return true;
+  if (_isDateField(f)) return true;
+  return /(^|_)(total|amount|balance|due|paid|subtotal|net|gross)($|_)/.test(String((f && f.key) || '').toLowerCase());
 }
 // Conservative "reads as a printed date": common numeric + written-month forms only, with real
 // calendar bounds (either day/month order accepted — this is a plausibility test, not a parse).

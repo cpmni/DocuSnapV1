@@ -1547,3 +1547,50 @@ this = flip-corroborated-by-crop-ledger. Pins tests/test_xcheck_corrob_demote.py
 crosscheck/corrob/CONFADOPT/wiring suites green (test_anchor_crop_crosscheck 3 fails PRE-EXISTING,
 stash-verified). Flag OFF + toggle `xcheck_corrob_note_demote`. FLIP BAR: demote census
 (XCHECK_DEMOTE_CENSUS_DIR) — demoted-and-wrong = 0, one is a no-flip; realdoc M=0 owed at flip.
+
+---
+
+## 2026-08-21 — Note A cold-start letterhead PREFILL (slice 0) — SIGN OFF WITH CONDITIONS
+gary design → Oracle vet. Problem: a fresh install reads a letterhead company but SUGGESTS (value-less
+row + "Use 'X'" button) instead of ASSERTING → 0/200 filled, ~200 clicks (Chris r11 card #4). Premise
+VERIFIED at source: all learning is `status='confirmed'`-gated (getFieldFormats learning.js:1486,
+nearMatchIdentity :201, getDominantSupplier templates.js:183 — needs a template_id a cold doc lacks);
+the Python engine writes no DB; a filled `needs_review` supplier plants/attracts nothing pre-confirm.
+Fix: engine.py:9360-9394, behind `LETTERHEAD_PREFILL` (DEFAULT OFF), write pick_issuer's name into
+`supplier_name.value`. BLOCKING CONDITIONS (all built): **C1** conf 69 not 70 (held by confidence AND
+note; mirrors the logo-detail twin :9277); **C2** a value-present note keeps the "sender, not the
+customer" copy, drops `suggested_supplier`, and does NOT arm the isBrandingFlag button (no double
+affordance — the value-present convention :9253-9255); **C3** method token `letterhead_prefill` matches
+no _resolve_corroborated_notes class nor classFix CLEARABLE_NOTE_MARKS (reprocess cannot shed the note);
+**C4** guard-4: no `.value` write when the logo-abstain block already owns the row with a note. **C5**
+(separate later slice): batch-confirm / "Apply to N" must not blind-accept prefilled rows. Verified
+inert under a pin (value set + re-asserted engine.py:7808 before the prefill guard 9385) and with the
+flag OFF (byte-identical). GATE owed before any default-ON flip: OFF==ON corpus md5; pristine-DB
+cold-pass PREFILL 0-vs-1 (same suggestion set/names, each prefilled held by conf≤69 AND note, zero
+newly auto-file); buyer-branded recipient fixture still noted + ineligible; both-flags classFix pin;
+zero supplier_name regression on already-identified docs. Pin: test_letterhead_note_contract.js
+(revised, both branches, green). SHIPPED DARK.
+
+## 2026-08-21 — "Apply 'X' to N & re-read" silent no-op (slice 1, Chris r11 card #1) — SIGN OFF WITH CONDITIONS
+gary root-cause → Oracle vet. Root cause (verified at source): the correction-ripple re-reads through
+the generic runReprocessBatch, whose two `confirm()` gates (renderer.js:7210, :7214) early-return BEFORE
+the re-read; a dismissed dialog (a scripted CDP driver auto-dismisses window.confirm; a real user may
+Cancel the discard warning) swallows the whole re-read — pins written, the offer removed (looks like
+success), nothing re-read. Compounded: the source's "Use X" persists only `supplier_pin` (resolve-issuer
+handler.js:586); its value is in-memory (persist-on-Confirm) and the source is excluded from the ripple
+set, so the batch's currentDoc refetch repaints it value-less ("source forgot it too"); and deferred
+siblings are pinned but were excluded from `queue` so never re-read. No deeper revert — mergeReprocessRows
+keeps a valued operator_pin row via `used_new`. Fix: `runReprocessBatch(docs, label, opts)` — opts.preConfirmed
+skips both confirms (the "Apply to N" click IS the consent), opts.preserveOpenDoc skips the currentDoc
+refetch; the ripple pins `[source, ...siblings]`, re-reads from `[...queue, ...deferredQueue]`, and includes
+the source in the re-read ONLY when `_sourceOnlySupplierDirty()`. BLOCKING SEAM CONDITION (built): re-read
+the source only when its sole pending edit is the supplier just applied — otherwise a typed date / staged ⊕
+teach / manual type would be silently discarded (Nuance B: save-first does NOT protect — used_new clobbers a
+valued corrected_to). Do NOT globalise preConfirmed — Reprocess-All keeps its "re-read N?" warning. Verified
+no letterhead_prefill interaction (value set under a pin → prefill guard skipped). GATE: swallow-PIN asserts
+reprocessBatch FIRED with source+sibling ids (not merely "no early return"); SEAM test (unrelated source edit
+preserved, source not re-read); durability (operator_pin X persists); narrowing pin (Reprocess-All still blocks
+on confirm→false); deferred fixture; SUPPLIER_RIPPLE=0 inert; realdoc M=0 negative control (VACUOUS here —
+renderer/wiring only; the unit+fixture tests are the real gate). Pins: test_issuer_ripple_pins.js (fixture-DB,
+green), test_issuer_ripple_contract.js (static contract, green). SHIPPED (no new flag — the ripple is already
+gated by SUPPLIER_RIPPLE).
