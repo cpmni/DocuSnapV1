@@ -525,7 +525,8 @@ function createReviewService(deps = {}) {
     if (!_via) {
       try {
         onAfterConfirm(db, { document_id, supplier_name: (allValues && allValues.supplier_name) || supplier_name || null,
-                             typeSlug: document_type_slug || (dtInfo && dtInfo.slug) || null, bulk: !!bulk, via: null });
+                             typeSlug: document_type_slug || (dtInfo && dtInfo.slug) || null, bulk: !!bulk, via: null,
+                             taught: !!(Array.isArray(taught_fields) && taught_fields.length) });
       } catch (e) { logger?.warn?.('onAfterConfirm skipped: ' + (e && e.message)); }
     }
 

@@ -194,11 +194,15 @@ check('the folder label is the last few SEGMENTS, never the absolute path (de-pa
       /parts\.slice\(-3\)\.join\(' \/ '\)/.test(rend));
 check('bulk stays silent per-document (File All Ready reports once at the end)',
       /if \(!bulk\) \{[\s\S]{0,400}Filed as/.test(rend));
-check('File All Ready puts a COUNT in its warning',
-      /File up to \$\{_eligible\} of \$\{docs\.length\} document/.test(rend));
-check('...computed with the loop\'s OWN skip rule, so the dialog cannot promise a different population',
-      /const _eligible = docs\.filter\(d => !isFlagged\(d\) \|\| d\.review_acknowledged_at\)\.length/.test(rend)
+check('File All Ready puts a COUNT in its warning — the number that files, not "up to" (Chris r12 #5)',
+      /File \$\{_eligible\} ready document/.test(rend) && !/File up to \$\{_eligible\}/.test(rend));
+check('...computed with the loop\'s OWN THREE skip reasons (flag · no type · missing required), so the '
+      + 'dialog cannot promise a different population',
+      /const _flagged\s+= docs\.filter\(d => isFlagged\(d\) && !d\.review_acknowledged_at\);/.test(rend)
+      && /const _noType\s+= docs\.filter\(d => ![\s\S]{0,60}!d\.type_slug\);/.test(rend)
+      && /const _missing\s+= docs\.filter\([\s\S]{0,120}missing_required_labels/.test(rend)
       && /if \(isFlagged\(doc\) && !doc\.review_acknowledged_at\) \{ skipped\+\+; continue; \}/.test(rend));
+check('...and names each held group in the dialog', /with no document type yet/.test(rend) && /missing a required detail/.test(rend));
 check('...and refuses early, with a reason, when nothing is eligible',
       /Nothing is ready to file yet/.test(rend));
 check('the run leaves a summary that outlives the 4s toast, naming the senders',

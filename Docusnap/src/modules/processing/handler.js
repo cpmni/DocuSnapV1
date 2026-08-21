@@ -620,6 +620,15 @@ function _reconcileEnv(db) {
     // scope) and can never auto-file (the note is the block). Requires letterhead_issuer ON.
     // Default OFF, byte-identical off. App RESTART to load the bridge.
     if (learning.getSetting(db, 'letterhead_prefill', 'false') === 'true') env.LETTERHEAD_PREFILL = '1';
+    // -- LETTERHEAD FRAGMENT ABSTAIN (Slice 0 of the teach->file arc, Chris round-12 card #2;
+    // gary->Oracle SIGN-OFF-WITH-CONDITIONS 2026-08-21, DEFAULT OFF, mig 79) --
+    // LETTERHEAD_FRAGMENT_ABSTAIN: the geometry letterhead pick abstains instead of returning a lone
+    // word ('Cleaning') when a letterhead-sized, name-shaped segment sits beside it on the same row
+    // ('Silverbeck    Cleaning    Supplies' reconstructs as three column segments and the generic
+    // tail fails the distinctive-core gate, so the middle word won on height alone and was
+    // PRE-FILLED as the company). Empty beats a guess; the text arm still runs. Never re-joins in
+    // the assert path (Oracle). Default OFF, byte-identical off. App RESTART to load the bridge.
+    if (learning.getSetting(db, 'letterhead_fragment_abstain', 'false') === 'true') env.LETTERHEAD_FRAGMENT_ABSTAIN = '1';
     // -- THE WRONG-COMPANY MISFILE (2026-08-10) --
     // TEMPLATE_IDENTITY_ON_PAGE: a layout may only claim a document that actually names its company.
     // Confirming ONE purchase order created a template for that supplier - and on a document the
@@ -721,6 +730,8 @@ const _quietLaneActiveScopes = new Set();
 // live; module-level so reviewService's onAfterConfirm hook can reach them by a lazy require.
 let _scheduleScopeAutoAcceptImpl = null;
 let _autoAcceptInflightProbe = () => false;
+let _quietLaneImpl = null;                 // Slice 3: the quiet re-read lane (bound in register())
+let _applyReprocessResultImpl = null;      // test seam for the applyReprocessResult(expect) guard (S3-C1 pins)
 
 // ── Processing-activity signal for OTHER windows (esp. Review) ─────────────────────────
 // A single-doc reprocess is REFUSED while an import/watch batch is running (heavy work is
@@ -1944,6 +1955,7 @@ function register(ctx) {
     // Track the pre-pass child in the shared batch list so Stop kills it IMMEDIATELY
     // (otherwise stop only takes effect after the current detection finishes).
     _currentBatchProcs.push(proc);
+    try { _quietLaneImpl && _quietLaneImpl.preempt('import'); } catch {}   // Slice 3: the foreground always wins
     const done = (val) => { _currentBatchProcs = _currentBatchProcs.filter(p => p !== proc); resolve(val); };
     proc.stdout.on('data', d => { out += d.toString(); });
     proc.on('close', () => { try { done(JSON.parse(out.trim())); } catch { done(null); } });
@@ -2164,6 +2176,7 @@ function register(ctx) {
       const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
         { windowsHide: true, env });
       _currentBatchProcs.push(proc);
+      try { _quietLaneImpl && _quietLaneImpl.preempt('import'); } catch {}   // Slice 3: the foreground always wins
       let buf = '';
 
       proc.stdout.on('data', (data) => {
@@ -2385,7 +2398,17 @@ function register(ctx) {
   // freshly-recomputed value WINS whenever present; a prior value is preserved only
   // when the new run found nothing for that field, and a field the new run didn't
   // return at all is kept (so reprocess never silently drops a good first-pass read).
-  function applyReprocessResult(db, docId, existing, result, filename, diagOn) {
+  // opts (2026-08-21, Oracle S3-C1/C2 — the quiet lane's defence in depth; foreground callers pass
+  // nothing and are byte-identical):
+  //   expect: { status, fingerprint } — the merge is REFUSED (returns { dropped: reason }) unless the
+  //     document's CURRENT status equals `status` and the CURRENT extraction rows still fingerprint to
+  //     `fingerprint`. Checked INSIDE the same transaction that deletes/inserts the rows AND updates
+  //     the document — the old shape ran the UPDATE outside the row transaction, so a check-then-apply
+  //     from a background lane could interleave with a confirm and revert a just-filed document to
+  //     needs_review with stale rows.
+  //   preserveAck: keep review_acknowledged_at (a background re-read that did not change the
+  //     operator's acknowledged document must not un-acknowledge it).
+  function applyReprocessResult(db, docId, existing, result, filename, diagOn, opts = {}) {
     const newRows = Object.entries(result.extractions).map(([key, data]) => ({
       field_key:         key,
       raw_value:         data.value != null ? String(data.value) : null,
@@ -2486,16 +2509,10 @@ function register(ctx) {
     const mergedRows = mergeReprocessRows(existing, newRows, flip, _emitMerge, _hiddenKeys);
 
     const learning = require('../../../database/modules/learning');
-    // ONE transaction (2026-08-11, found live): the un-wrapped pair stranded a document with
-    // ZERO extraction rows when the insert threw after the delete (the missing-column incident).
-    // better-sqlite3 nests the insert's own transaction as a savepoint.
-    db.transaction(() => {
-      learning.deleteExtractions(db, docId);
-      learning.insertExtractions(db, docId, mergedRows);
-    })();
-
     const _supBlanked = supplierColumnBlanked(mergedRows);
-    db.prepare(
+    const _expect = opts && opts.expect;
+    const _preserveAck = !!(opts && opts.preserveAck);
+    const _updateDoc = () => db.prepare(
       `UPDATE documents SET
          overall_confidence  = ?,
          status              = 'needs_review',
@@ -2507,7 +2524,7 @@ function register(ctx) {
          supplier_name       = CASE WHEN ? THEN NULL ELSE COALESCE(?, supplier_name) END,
          ocr_text            = COALESCE(?, ocr_text),
          detected_type_name  = ?,
-         review_acknowledged_at = NULL
+         review_acknowledged_at = CASE WHEN ? THEN review_acknowledged_at ELSE NULL END
        WHERE id = ?`
     ).run(
       result.overall_confidence || null,
@@ -2522,8 +2539,37 @@ function register(ctx) {
       // Plain assignment, NOT COALESCE: null must actually CLEAR the stamp. COALESCE here would
       // make the suggestion permanent — it would survive the very act of adding the type.
       reprocDetectedName,
+      _preserveAck ? 1 : 0,
       docId
     );
+    if (_expect) {
+      // The lane's guarded merge: status + fingerprint re-checked and the rows + document written in
+      // ONE transaction, so nothing can land between the check and the write (S3-C1).
+      const { extractionsFingerprint } = require('../../services/sweepPredicate');
+      const _verdict = db.transaction(() => {
+        const cur = db.prepare('SELECT status FROM documents WHERE id = ?').get(docId);
+        if (!cur) return { dropped: 'missing' };
+        if (_expect.status && cur.status !== _expect.status) return { dropped: 'status-changed' };
+        if (_expect.fingerprint != null) {
+          const rowsNow = db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(docId);
+          if (extractionsFingerprint(rowsNow) !== String(_expect.fingerprint)) return { dropped: 'rows-changed' };
+        }
+        learning.deleteExtractions(db, docId);
+        learning.insertExtractions(db, docId, mergedRows);
+        _updateDoc();
+        return null;
+      })();
+      if (_verdict) return _verdict;
+    } else {
+      // ONE transaction (2026-08-11, found live): the un-wrapped pair stranded a document with
+      // ZERO extraction rows when the insert threw after the delete (the missing-column incident).
+      // better-sqlite3 nests the insert's own transaction as a savepoint.
+      db.transaction(() => {
+        learning.deleteExtractions(db, docId);
+        learning.insertExtractions(db, docId, mergedRows);
+      })();
+      _updateDoc();
+    }
 
     // SELF-DISCHARGED PIN clear (SUPPLIER_PIN_SELF_DISCHARGE, Oracle W/COND 2026-08-12): the engine
     // proved the natural read independently equals the pin and kept the natural row — release the
@@ -2757,6 +2803,7 @@ function register(ctx) {
     }
 
     _singleReprocessActive = true;   // mark busy now we're committed to spawning (cleared in finish())
+    try { _quietLaneImpl && _quietLaneImpl.preempt('single-reprocess'); } catch {}   // Slice 3: the foreground always wins
     return new Promise((resolve) => {
       const py   = pythonExe();
       // Single-doc reprocess MAY use several cores (parallel full-page OCR = Option B; parallel
@@ -3476,6 +3523,66 @@ function register(ctx) {
   _scheduleScopeAutoAcceptImpl = scheduleScopeAutoAccept;
   _autoAcceptInflightProbe = () => _autoAcceptInflight;
 
+  // ── Slice 3 (2026-08-21, eric+gary → Oracle S3-C1..C6): the QUIET BACKGROUND RE-READ LANE ─────
+  // See quietLane.js for the design. Everything the lane touches is injected here, and every piece
+  // of it is the SAME code the foreground reprocess runs (_stageReprocessDocs / _runReprocessShard /
+  // applyReprocessResult) — the lane adds only its own proc list, its own env (the below-normal
+  // priority marker) and its merge gate. DARK: `quiet_reread_enabled` (mig 79, OFF) / QUIET_REREAD.
+  const _quietEnabled = (db) => {
+    if (process.env.QUIET_REREAD === '0') return false;
+    const learning = require('../../../database/modules/learning');
+    const on = process.env.QUIET_REREAD === '1' || learning.getSetting(db, 'quiet_reread_enabled', 'false') === 'true';
+    if (!on) return false;
+    try { if (require('../licensing/handler').licenseDenied(db)) return false; } catch { return false; }
+    return true;
+  };
+  const _quietLane = require('./quietLane').create({
+    getDb,
+    enabled: _quietEnabled,
+    isForegroundBusy: _anyProcessingBusy,
+    stageDocs: (db, chunk, { auditMeta } = {}) => {
+      const learning2 = require('../../../database/modules/learning');
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'docusnap-qb-'));
+      const { args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath, logger);
+      const staged = _stageReprocessDocs(db, chunk, tmpDir, { auditMeta });
+      for (const [name, nd] of Object.entries(staged.nameToDoc)) {
+        const src = chunk.find(c => c.docId === nd.docId);
+        if (src) nd.folderPath = src.folderPath;
+      }
+      const manifestFile = writeTempJson('qbmanifest', staged.manifest);
+      return {
+        tmpDir, manifestFile, trainingArgs, tmpNames: staged.tmpNames, nameToDoc: staged.nameToDoc,
+        reprMode: _validMode(learning2.getSetting(db, 'processing_mode', 'smart')), diagOn: _diagEnabled(db),
+        cleanup: () => { try { fs.rmSync(tmpDir, { recursive: true }); } catch {} cleanupFiles([manifestFile, ...tempFiles]); },
+      };
+    },
+    runShard: ({ db, staged, label, extraEnv, track, onFileDone }) => _runReprocessShard({
+      db, tmpDir: staged.tmpDir, shard: staged.tmpNames, manifestFile: staged.manifestFile,
+      trainingArgs: staged.trainingArgs, reprMode: staged.reprMode, diagOn: staged.diagOn,
+      deskewAll: false, deskewMinAngle: 0.2,
+      threadCap: _reprocessThreadCap(db),          // S3-C4: the identity rule — same cap as every other read
+      label, extraEnv, track, onFileDone,
+      onMsg: () => {},                              // never the reprocess-progress channel
+    }),
+    applyResult: (db, docId, existing, msg, filename, opts) => applyReprocessResult(db, docId, existing, msg, filename, _diagEnabled(db), opts),
+    presence: require('../../services/presenceService').shared(),
+    extractionsFingerprint: require('../../services/sweepPredicate').extractionsFingerprint,
+    notify: (evt) => { notifyMainWindow('quiet-reprocess', evt); try { notifyDevInspector?.('quiet-reprocess', evt); } catch {} },
+    logAudit, logger,
+    setPriority: (pid, prio) => os.setPriority(pid, prio),
+    taskkill: (pid) => require('child_process').spawnSync(TASKKILL_EXE, ['/F', '/T', '/PID', String(pid)], { windowsHide: true, stdio: 'ignore' }),
+    markScopeActive: (key, on) => { if (on) _quietLaneActiveScopes.add(key); else _quietLaneActiveScopes.delete(key); },
+    findSiblings: (db, seedId, value, opts) => require('../../../database/modules/supplierSiblings').findSiblings(db, seedId, value, opts),
+    // S3-(c): the lane's re-read docs reach filing ONLY via the sweep — a re-ask for the scope (the
+    // renderer also re-runs the consent sweep on job_done, so the bar path is covered when
+    // auto-accept is off).
+    onJobDone: (db, { supplier, typeSlug }) => scheduleScopeAutoAccept(db, { supplier, typeSlug }),
+  });
+  _quietLaneImpl = _quietLane;
+  _applyReprocessResultImpl = applyReprocessResult;
+  ipcMain.handle('get-quiet-reread-status', () => _quietLane.status());
+  ipcMain.handle('cancel-quiet-reread', (_e, { jobId } = {}) => { requireRole('admin', 'edit'); return { ok: _quietLane.cancel(String(jobId || '')) }; });
+
   // ── Catch-up Filing slice 3: Undo all (clean by construction) ───────────────────────
   // Only docs whose row says confirmed_via='scope_sweep' can be undone here (server-verified —
   // a human confirm can never be mass-reverted by this path). deconfirmDocument reverses the
@@ -3514,45 +3621,19 @@ function register(ctx) {
   // --reprocess-manifest, exactly as single-doc reprocess passes them. All DB writes
   // stay on the single-threaded JS event loop (applyReprocessResult), so there is no
   // SQLite contention. Stop kills every worker tree (shared _currentBatchProcs).
-  ipcMain.handle('reprocess-batch', async (event, docs, opts) => {
-    requireRole('admin', 'edit');
-    const db = getDb();
-    const deskewAll = !!(opts && opts.deskewAll);   // C3/C4: force a straightened READ for every doc in this batch (session "Straighten all")
-    const deskewMinAngle = Math.max(0.2, Math.min(5.0, Number(opts && opts.deskewMinAngle) || 0.2));   // clamp the operator's floor (oscar: hard 0.2° min, 5° max)
-    const licenseDenial = require('../licensing/handler').licenseDenied(db);
-    if (licenseDenial) return { success: false, error: 'A valid license is required to reprocess documents. Please re-activate ScanFinder.', ...licenseDenial };
-    // Serialise: refuse Reprocess All while a single reprocess (or another batch/import) is running —
-    // running both at once oversubscribes the CPU and races merges, which presents as a freeze.
-    if (_anyProcessingBusy()) {
-      return { success: false, busy: true, error: 'A reprocess is already running — please wait for it to finish.' };
-    }
-    if (!Array.isArray(docs) || !docs.length) return { success: true, done: 0, failed: 0 };
-
-    const learning2  = require('../../../database/modules/learning');
+  // ── SHARED STAGING + SHARD RUNNER (2026-08-21, eric → Oracle S3) ───────────────────────────
+  // The foreground `reprocess-batch` below and the QUIET LANE (quietLane.js) run the SAME staging
+  // (lock check, working-copy staging, existing-rows snapshot, per-doc manifest overrides, audit
+  // row) and the SAME shard spawn (args, env, thread cap, stdout contract, watchdog). Extracted
+  // statement-for-statement from the handler so the two paths cannot drift — the thread-cap
+  // identity rule (`_reprocessThreadCap`) and every manifest override are read from ONE place. The
+  // handler's observable behaviour is unchanged; the lane differs only in what it passes in (its
+  // own proc list, its own env, its own file_done handler).
+  function _stageReprocessDocs(db, docs, tmpDir, { auditMeta } = {}) {
     const templates2 = require('../../../database/modules/templates');
-    const reprMode   = _validMode(learning2.getSetting(db, 'processing_mode', 'smart'));
-    const diagOn     = _diagEnabled(db);
-    if (diagOn) diaglog.enable();
-    const { args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath, logger);
-
-    // Stage every doc into ONE temp folder under a unique name, snapshot its existing
-    // extractions, and build its per-doc manifest overrides (mirrors single-doc
-    // reprocess: template baseline enhance + known template-id + known doc-slug).
-    const tmpDir    = fs.mkdtempSync(path.join(os.tmpdir(), 'docusnap-rb-'));
     const manifest  = {};   // tmpName -> { known_template_id, known_doc_slug, enhance_params }
     const nameToDoc = {};   // tmpName -> { docId, filename, existing }
     const tmpNames  = [];
-    // WORKFLOW_LOCK (Slice 1 Stage E): SKIP-AND-REPORT, never abort — a locked doc is under
-    // an approver and must not be rewritten by a bulk pass (this is the second reprocess
-    // door; without it the batch silently sails past the single-doc guard). DELIBERATELY no
-    // admin auto-override here (PINNED in test_reprocess_lock.js): bulk mutation under an
-    // approver is exactly the class the lock exists for — the override stays a per-doc act
-    // via single-doc reprocess. Skipped count is surfaced in the summary.
-    // FYI slice (2026-07-19): the skip uses the shared LOCK predicate (workflowService.
-    // hasActiveWorkflowLock = approval routes only, WORKFLOW_ACK_LOCKS-aware) — a doc with
-    // only an open acknowledge/FYI route IS reprocessed (an FYI is a postcard, not a gate;
-    // the recipient's view always joins live fields). Same authority as editGuard, so the
-    // two reprocess doors can never disagree.
     const wfLockSvc = require('../../services/workflowService');
     let lockedSkipped = 0;
     for (const d of docs) {
@@ -3604,9 +3685,101 @@ function register(ctx) {
         nameToDoc[tmpName] = { docId: d.docId, filename: d.filename, existing };
         tmpNames.push(tmpName);
         logAudit(db, { action: 'reprocess', target_type: 'document', target_id: d.docId,
-          document_id: d.docId, outcome: 'success', metadata: { batch: true } });
+          document_id: d.docId, outcome: 'success', metadata: { batch: true, ...(auditMeta || {}) } });
       } catch (e) { logger?.warn(`reprocess-batch stage ${d.filename}: ${e.message}`); }
     }
+    return { manifest, nameToDoc, tmpNames, lockedSkipped };
+  }
+  function _runReprocessShard({ db, tmpDir, shard, manifestFile, trainingArgs, reprMode, diagOn, deskewAll, deskewMinAngle,
+                                threadCap, label, extraEnv, track, onFileDone, onMsg }) {
+    return new Promise((resolve) => {
+      const filesFile = writeTempJson('rbfiles', shard);
+      const scriptArgs = ['--folder', tmpDir, '--tesseract', tesseractPath(), '--mode', reprMode,
+        '--files-file', filesFile, '--reprocess-manifest', manifestFile, ...trainingArgs];
+      if (deskewAll) scriptArgs.push('--deskew-pages', '--deskew-min-angle', String(deskewMinAngle));   // C3: straighten pages tilted past the operator's floor before reading (Python no-ops below it / on born-digital)
+      if (traceWanted(diagOn)) {
+        scriptArgs.push('--trace');
+        try { fs.mkdirSync(ctx.devSliceDir, { recursive: true }); scriptArgs.push('--slice-dir', ctx.devSliceDir); } catch {}
+      }
+      const env = {
+        ...process.env,
+        ...(threadCap > 0 ? { OMP_THREAD_LIMIT: String(threadCap) } : {}),
+        ..._autoTitleEnv(db),
+        ..._ocrDpiEnv(db),
+        ..._anchorCropEnv(db),
+        ..._reconcileEnv(db),
+        ...(extraEnv || {}),
+      };
+      const proc = spawn(pythonExe(), pythonArgs(backendScript(), ...scriptArgs), { windowsHide: true, env });
+      if (track) track(proc);
+      let buf = '', settled = false, watchdog = null;
+      const fin = () => { if (settled) return; settled = true; if (watchdog) clearTimeout(watchdog); try { fs.unlinkSync(filesFile); } catch {} resolve(); };
+      watchdog = setTimeout(() => {
+        logger?.err(`${label} shard timed out`);
+        try { require('child_process').spawnSync(TASKKILL_EXE, ['/F', '/T', '/PID', String(proc.pid)], { windowsHide: true, stdio: 'ignore' }); } catch {}
+        try { proc.kill(); } catch {}
+        fin();   // settle directly — a kill that fails to fire proc.on('close') must not hang Promise.all
+      }, 30 * 60 * 1000);
+      proc.stdout.on('data', (data) => {
+        buf += data.toString();
+        const lines = buf.split('\n'); buf = lines.pop();
+        for (const line of lines) {
+          const t = line.trim(); if (!t) continue;
+          let msg = null; try { msg = JSON.parse(t); } catch { continue; }
+          if (msg.type === 'trace') { routeTrace(msg); continue; }
+          if (msg.type === 'file_done') { _recordDevDoc(msg); onFileDone(msg); }
+          else if (msg.type !== 'start') { if (onMsg) onMsg(msg); }   // file_begin / log
+        }
+      });
+      proc.stderr.on('data', d => { const tx = d.toString().trim(); if (tx) logger?.warn(`${label} stderr: ${tx}`); });
+      proc.on('error', (e) => { logger?.err(`${label} spawn: ${e.message}`); fin(); });
+      proc.on('close', fin);
+    });
+  }
+
+  ipcMain.handle('reprocess-batch', async (event, docs, opts) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const deskewAll = !!(opts && opts.deskewAll);   // C3/C4: force a straightened READ for every doc in this batch (session "Straighten all")
+    const deskewMinAngle = Math.max(0.2, Math.min(5.0, Number(opts && opts.deskewMinAngle) || 0.2));   // clamp the operator's floor (oscar: hard 0.2° min, 5° max)
+    const licenseDenial = require('../licensing/handler').licenseDenied(db);
+    if (licenseDenial) return { success: false, error: 'A valid license is required to reprocess documents. Please re-activate ScanFinder.', ...licenseDenial };
+    // Serialise: refuse Reprocess All while a single reprocess (or another batch/import) is running —
+    // running both at once oversubscribes the CPU and races merges, which presents as a freeze.
+    if (_anyProcessingBusy()) {
+      return { success: false, busy: true, error: 'A reprocess is already running — please wait for it to finish.' };
+    }
+    if (!Array.isArray(docs) || !docs.length) return { success: true, done: 0, failed: 0 };
+
+    const learning2  = require('../../../database/modules/learning');
+    const templates2 = require('../../../database/modules/templates');
+    const reprMode   = _validMode(learning2.getSetting(db, 'processing_mode', 'smart'));
+    const diagOn     = _diagEnabled(db);
+    if (diagOn) diaglog.enable();
+    const { args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath, logger);
+
+    // Stage every doc into ONE temp folder under a unique name, snapshot its existing
+    // extractions, and build its per-doc manifest overrides (mirrors single-doc
+    // reprocess: template baseline enhance + known template-id + known doc-slug).
+    const tmpDir    = fs.mkdtempSync(path.join(os.tmpdir(), 'docusnap-rb-'));
+    const manifest  = {};   // tmpName -> { known_template_id, known_doc_slug, enhance_params }
+    const nameToDoc = {};   // tmpName -> { docId, filename, existing }
+    const tmpNames  = [];
+    // WORKFLOW_LOCK (Slice 1 Stage E): SKIP-AND-REPORT, never abort — a locked doc is under
+    // an approver and must not be rewritten by a bulk pass (this is the second reprocess
+    // door; without it the batch silently sails past the single-doc guard). DELIBERATELY no
+    // admin auto-override here (PINNED in test_reprocess_lock.js): bulk mutation under an
+    // approver is exactly the class the lock exists for — the override stays a per-doc act
+    // via single-doc reprocess. Skipped count is surfaced in the summary.
+    // FYI slice (2026-07-19): the skip uses the shared LOCK predicate (workflowService.
+    // hasActiveWorkflowLock = approval routes only, WORKFLOW_ACK_LOCKS-aware) — a doc with
+    // only an open acknowledge/FYI route IS reprocessed (an FYI is a postcard, not a gate;
+    // the recipient's view always joins live fields). Same authority as editGuard, so the
+    // two reprocess doors can never disagree.
+    const _staged = _stageReprocessDocs(db, docs, tmpDir);
+    Object.assign(manifest, _staged.manifest); Object.assign(nameToDoc, _staged.nameToDoc);
+    tmpNames.push(..._staged.tmpNames);
+    const lockedSkipped = _staged.lockedSkipped;
     if (!tmpNames.length) {
       try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
       cleanupFiles(tempFiles);
@@ -3643,59 +3816,22 @@ function register(ctx) {
     let done = 0, failed = 0;
     const shardFiles = [];
     _currentBatchProcs = [];
+    try { _quietLaneImpl && _quietLaneImpl.preempt('reprocess-batch'); } catch {}   // Slice 3: the foreground always wins
 
-    const runShard = (shard) => new Promise((resolve) => {
-      const filesFile = writeTempJson('rbfiles', shard);
-      shardFiles.push(filesFile);
-      const scriptArgs = ['--folder', tmpDir, '--tesseract', tesseractPath(), '--mode', reprMode,
-        '--files-file', filesFile, '--reprocess-manifest', manifestFile, ...trainingArgs];
-      if (deskewAll) scriptArgs.push('--deskew-pages', '--deskew-min-angle', String(deskewMinAngle));   // C3: straighten pages tilted past the operator's floor before reading (Python no-ops below it / on born-digital)
-      if (traceWanted(diagOn)) {
-        scriptArgs.push('--trace');
-        try { fs.mkdirSync(ctx.devSliceDir, { recursive: true }); scriptArgs.push('--slice-dir', ctx.devSliceDir); } catch {}
-      }
-      const env = {
-        ...process.env,
-        ...(threadCap > 0 ? { OMP_THREAD_LIMIT: String(threadCap) } : {}),
-        ..._autoTitleEnv(db),
-        ..._ocrDpiEnv(db),
-        ..._anchorCropEnv(db),
-        ..._reconcileEnv(db),
-      };
-      const proc = spawn(pythonExe(), pythonArgs(backendScript(), ...scriptArgs), { windowsHide: true, env });
-      _currentBatchProcs.push(proc);
-      let buf = '', settled = false, watchdog = null;
-      const fin = () => { if (settled) return; settled = true; if (watchdog) clearTimeout(watchdog); resolve(); };
-      watchdog = setTimeout(() => {
-        logger?.err('reprocess-batch shard timed out');
-        try { require('child_process').spawnSync(TASKKILL_EXE, ['/F', '/T', '/PID', String(proc.pid)], { windowsHide: true, stdio: 'ignore' }); } catch {}
-        try { proc.kill(); } catch {}
-        fin();   // settle directly — a kill that fails to fire proc.on('close') must not hang Promise.all
-      }, 30 * 60 * 1000);
-      proc.stdout.on('data', (data) => {
-        buf += data.toString();
-        const lines = buf.split('\n'); buf = lines.pop();
-        for (const line of lines) {
-          const t = line.trim(); if (!t) continue;
-          let msg = null; try { msg = JSON.parse(t); } catch { continue; }
-          if (msg.type === 'trace') { routeTrace(msg); continue; }
-          if (msg.type === 'file_done') {
-            _recordDevDoc(msg);
-            const nd = nameToDoc[msg.original_filename] || nameToDoc[msg.filename];
-            if (nd && msg.success && msg.extractions) {
-              try { applyReprocessResult(db, nd.docId, nd.existing, msg, nd.filename, diagOn); done++; }
-              catch (e) { failed++; logger?.err(`reprocess-batch merge ${nd.filename}: ${e.message}`); }
-            } else if (nd) { failed++; }
-            _reprocessStatus.done = done; _reprocessStatus.failed = failed;
-            mirrorReprocess({ type: 'file_done', done, failed, total: tmpNames.length, docId: nd ? nd.docId : null });
-          } else if (msg.type !== 'start') {
-            mirrorReprocess(msg);   // file_begin / log
-          }
-        }
-      });
-      proc.stderr.on('data', d => { const tx = d.toString().trim(); if (tx) logger?.warn(`reprocess-batch stderr: ${tx}`); });
-      proc.on('error', (e) => { logger?.err(`reprocess-batch spawn: ${e.message}`); fin(); });
-      proc.on('close', fin);
+    const runShard = (shard) => _runReprocessShard({
+      db, tmpDir, shard, manifestFile, trainingArgs, reprMode, diagOn, deskewAll, deskewMinAngle, threadCap,
+      label: 'reprocess-batch',
+      track: (p) => _currentBatchProcs.push(p),
+      onFileDone: (msg) => {
+        const nd = nameToDoc[msg.original_filename] || nameToDoc[msg.filename];
+        if (nd && msg.success && msg.extractions) {
+          try { applyReprocessResult(db, nd.docId, nd.existing, msg, nd.filename, diagOn); done++; }
+          catch (e) { failed++; logger?.err(`reprocess-batch merge ${nd.filename}: ${e.message}`); }
+        } else if (nd) { failed++; }
+        _reprocessStatus.done = done; _reprocessStatus.failed = failed;
+        mirrorReprocess({ type: 'file_done', done, failed, total: tmpNames.length, docId: nd ? nd.docId : null });
+      },
+      onMsg: (msg) => mirrorReprocess(msg),
     });
 
     try {
@@ -5013,6 +5149,7 @@ function _recordAutoFiled(db, docId, approved = false) {
 // taskkill /T as the stop-processing IPC) so the app exits clean with no orphaned
 // python.exe. Called from main.js before-quit.
 function killAll() {
+  try { _quietLaneImpl && _quietLaneImpl.shutdown(); } catch {}   // Slice 3: no orphaned quiet worker at quit
   if (!_currentBatchProcs.length) return;
   _cancelRequested = true;
   for (const proc of _currentBatchProcs) {
@@ -5040,6 +5177,9 @@ module.exports = {
   // register() has bound it (and while `scope_sweep_auto_accept` is dark).
   scheduleScopeAutoAccept: (db, info) => (_scheduleScopeAutoAcceptImpl ? _scheduleScopeAutoAcceptImpl(db, info) : false),
   _quietLaneActiveScopes,    // Slice 3 marks a scope here while its quiet re-read is in flight (S1-C5)
+  scheduleQuietReread: (db, info) => (_quietLaneImpl ? _quietLaneImpl.schedule(db, info) : false),   // Slice 3 trigger (a taught confirm)
+  quietLane: () => _quietLaneImpl,
+  _applyReprocessResultForTest: (...a) => (_applyReprocessResultImpl ? _applyReprocessResultImpl(...a) : null),
   _withinAnyRoot,            // SEC-17 reparse-point containment pins (test_path_containment.js)
   _realCanonical,            // ditto — exported so the pin asserts the shipped predicate, not a copy
   _genericFallbackId,        // Generic Document fallback pins (test_generic_fallback_mapping.js)

@@ -182,7 +182,25 @@ def resolve_assigned_type_authority(ks, ks_auth, detected_name_slug, title_trust
     return override, bool(title_trusted_fresh)
 
 
+def _demote_process_priority():
+    """Quiet-lane self-demotion (Slice 3, 2026-08-21, eric → Oracle S3). When the Electron side marks
+    this worker DS_PROCESS_PRIORITY=below_normal, drop OUR OWN priority class so every Tesseract child
+    pytesseract spawns later INHERITS it (CreateProcess semantics) — the Node-side os.setPriority on
+    the launcher PID cannot reach those children (and in dev `py.exe` is a launcher, a PID race).
+    BELOW_NORMAL (0x4000), never IDLE: an idle-class worker crawls under any foreground load. Failure
+    is swallowed — a missed demotion must never fail a read."""
+    if os.environ.get("DS_PROCESS_PRIORITY") != "below_normal" or os.name != "nt":
+        return
+    try:
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        k32.SetPriorityClass(k32.GetCurrentProcess(), 0x4000)
+    except Exception:
+        pass
+
+
 def main():
+    _demote_process_priority()
     parser = argparse.ArgumentParser()
     parser.add_argument("--folder",          required=True)
     parser.add_argument("--tesseract",       default=None)

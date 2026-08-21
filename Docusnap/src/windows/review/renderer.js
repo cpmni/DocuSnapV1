@@ -3381,6 +3381,20 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     // old-supplier-scoped reads (anchor/template/hint); keyword/typed values are kept. No-op if
     // unchanged or the same supplier.
     if (key === 'supplier_name') { _refreshTaughtForType().catch(() => {}); _clearSuspectReadsForNewIssuer(); _resolveFieldVisibility(); }
+    // TYPED-CORRECTION DOORWAY (Chris r12 #1): the correction ripple used to open ONLY from the
+    // "Use 'X'" branding button — but the cold-start prefill note replaced the branding note, so the
+    // natural fix (typing the real name over "Cleaning" and pressing Enter) never offered "Apply to
+    // N & re-read" even though the siblings were findable. Offer it on a settled TYPED issuer that
+    // differs from the read. Same bar, same apply path (pins → review-bound re-read), nothing happens
+    // without a click; once per distinct typed name so a blur/refocus loop can't nag.
+    if (key === 'supplier_name' && !bulkFiling && !_batchActive) {
+      const typed = input.value.trim();
+      const orig  = (input.dataset.original || '').trim();
+      if (typed && typed !== orig && typed !== row.dataset.rippleOffered) {
+        row.dataset.rippleOffered = typed;
+        offerIssuerRipple(currentDoc?.id, typed, row).catch(() => { /* advisory — never disturb the edit */ });
+      }
+    }
   });
 
   // Right-click → field cleanup-rule toolkit (strip a leaked heading/column). Gated
@@ -5394,18 +5408,28 @@ async function fileAllReady() {
   // (`isFlagged(doc) && !doc.review_acknowledged_at`), so the dialog cannot promise a different
   // population from the one that runs. It is stated as "up to", honestly: a document can still be
   // held back by a missing type or required field, which is only knowable once its fields load.
-  const _eligible = docs.filter(d => !isFlagged(d) || d.review_acknowledged_at).length;
-  const _held     = docs.length - _eligible;
-  if (!_eligible) {
-    showToast('Nothing is ready to file yet — every document in the queue is waiting on a check.', 'warn');
+  // Chris r12 #5: "File up to 14" filed 3 — the count included documents with NO type or an EMPTY
+  // required field, which the loop below then skips. Count with the SAME three reasons the loop
+  // skips on (flag-not-acknowledged · no type · missing required, the latter from the queue row's
+  // missing_required_labels — the DB twin of validateConfirm), and name each held group, so the
+  // number on the button is the number that files.
+  const _flagged   = docs.filter(d => isFlagged(d) && !d.review_acknowledged_at);
+  const _noType    = docs.filter(d => !_flagged.includes(d) && !d.type_slug);
+  const _missing   = docs.filter(d => !_flagged.includes(d) && d.type_slug && (d.missing_required_labels || '').trim());
+  const _eligible  = docs.length - _flagged.length - _noType.length - _missing.length;
+  if (_eligible <= 0) {
+    showToast('Nothing is ready to file yet — every document in the queue is waiting on a check or a missing detail.', 'warn');
     return;
   }
+  const _heldLines = [];
+  if (_flagged.length) _heldLines.push(`${_flagged.length} flagged — waiting for you to check a value`);
+  if (_noType.length)  _heldLines.push(`${_noType.length} with no document type yet`);
+  if (_missing.length) _heldLines.push(`${_missing.length} missing a required detail (date, reference or sender)`);
   if (!confirm(
-        `File up to ${_eligible} of ${docs.length} document${docs.length === 1 ? '' : 's'} in the Review queue?\n\n` +
-        (_held ? `${_held} flagged document${_held === 1 ? ' is' : 's are'} not included — they stay in the queue until you check them.\n\n` : '') +
-        `Every document with its type and required fields filled in will be filed, ` +
-        `exactly as if you confirmed it one by one. Documents still missing required ` +
-        `details are left in the queue for you to review.`)) return;
+        `File ${_eligible} ready document${_eligible === 1 ? '' : 's'} (of ${docs.length} in the Review queue)?\n\n` +
+        (_heldLines.length ? `Not included — they stay in the queue:\n  • ${_heldLines.join('\n  • ')}\n\n` : '') +
+        `Each one is filed exactly as if you confirmed it yourself. ` +
+        `Anything that turns out to need a detail is left in the queue for you.`)) return;
 
   const confirmBtn = document.getElementById('btn-confirm');
   const banner   = document.getElementById('bulk-file-progress');
@@ -7683,6 +7707,47 @@ window.docusnap.onScopeAutoFiled?.(async () => {
   try { await refreshAutoCommittedBar(); } catch {}
   try { await _runQueueSweep(); } catch {}
 });
+// Slice 3: the QUIET RE-READ lane (quiet-reprocess channel — never reprocess-progress, so none of
+// the batch banner / _batchActive / button-lock handlers fire). A small hint above the list while a
+// sender's held documents are re-read in the background; the LIST refreshes (throttled), the open
+// document is never touched (the lane skips anything being viewed). On job_done the consent sweep
+// re-asks so a now-ready sender surfaces as a bar — or files by itself when auto-accept is on.
+const _quietJobs = new Map();
+let _quietRefreshTimer = null;
+function _renderQuietHint() {
+  const el = document.getElementById('quiet-reread-hint');
+  if (!el) return;
+  const live = [..._quietJobs.values()].filter(j => j.state !== 'done');
+  if (!live.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const j = live[0];
+  const extra = live.length > 1 ? ` · ${live.length - 1} more sender${live.length > 2 ? 's' : ''} queued` : '';
+  const state = j.state === 'deferred' ? 'paused while you work — resumes on its own' : `${j.done} of ${j.total} done`;
+  el.innerHTML = `<span class="qrh-cancel" title="Stop re-reading this sender's documents">Stop</span>`
+    + `Quietly re-reading <b>${escHtml(j.supplier)}</b> documents you haven't opened, now that you've taught its layout — ${state}${extra}. `
+    + `Review stays fully usable.`;
+  el.style.display = 'block';
+  el.querySelector('.qrh-cancel')?.addEventListener('click', async () => { try { await window.docusnap.cancelQuietReread?.(j.id); } catch {} });
+}
+function _quietRefreshList() {
+  if (_quietRefreshTimer) return;
+  _quietRefreshTimer = setTimeout(async () => { _quietRefreshTimer = null; try { await _refreshQueueFromBroadcast(); } catch {} }, 1000);
+}
+window.docusnap.onQuietReprocess?.(async (ev) => {
+  if (!ev || !ev.jobId) return;
+  const j = _quietJobs.get(ev.jobId) || { id: ev.jobId, supplier: ev.supplier || '', total: 0, done: 0, state: 'running' };
+  if (ev.type === 'job_start')    { j.supplier = ev.supplier || j.supplier; j.total = ev.total || 0; j.done = ev.done || 0; j.state = 'running'; }
+  if (ev.type === 'doc_done')     { j.done = ev.done ?? (j.done + 1); j.total = ev.total || j.total; _quietRefreshList(); }
+  if (ev.type === 'job_deferred') { j.state = 'deferred'; }
+  if (ev.type === 'job_done')     { j.state = 'done'; _quietJobs.delete(ev.jobId); _renderQuietHint(); try { await _refreshQueueFromBroadcast(); } catch {} try { await _runQueueSweep(); } catch {} return; }
+  _quietJobs.set(ev.jobId, j);
+  _renderQuietHint();
+});
+(async () => {   // a window opened mid-job reconnects to the hint
+  try {
+    const st = await window.docusnap.getQuietRereadStatus?.();
+    if (st && st.running) { _quietJobs.set(st.running.id, { ...st.running, state: st.running.state || 'running' }); _renderQuietHint(); }
+  } catch {}
+})();
 window.docusnap.onReviewCountChanged(() => {
   // Ignore File All Ready's interim per-doc broadcasts — its own clean refresh follows the run.
   if (bulkFiling) return;

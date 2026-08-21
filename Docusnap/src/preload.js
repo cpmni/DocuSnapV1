@@ -200,6 +200,8 @@ contextBridge.exposeInMainWorld('docusnap', {
   getDeferredCount:            ()        => ipcRenderer.invoke('get-deferred-count'),
   getFieldRules:               ()        => ipcRenderer.invoke('get-field-rules'),
   getRecentAutoFiled:          ()        => ipcRenderer.invoke('get-recent-auto-filed'),
+  getQuietRereadStatus:        ()        => ipcRenderer.invoke('get-quiet-reread-status'),
+  cancelQuietReread:           (jobId)   => ipcRenderer.invoke('cancel-quiet-reread', { jobId }),
   clearRecentAutoFiled:        ()        => ipcRenderer.invoke('clear-recent-auto-filed'),
   reprocessAutocommitAccept:   ()        => ipcRenderer.invoke('reprocess-autocommit-accept'),
   getAutoFileReason:           (docId)   => ipcRenderer.invoke('get-auto-file-reason', docId),
@@ -467,6 +469,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   onWatchProgress:     (cb) => ipcRenderer.on('watch-progress',   (_e, m) => cb(m)),
   onDocAutoFiled:      (cb) => ipcRenderer.on('doc-auto-filed',   (_e, info) => cb(info)),
   onScopeAutoFiled:    (cb) => ipcRenderer.on('scope-auto-filed', (_e, info) => cb(info)),   // Slice 1: a sender's ready docs filed by itself
+  onQuietReprocess:    (cb) => ipcRenderer.on('quiet-reprocess', (_e, info) => cb(info)),   // Slice 3: the quiet re-read lane's progress (never reprocess-progress)
   onStuckCountChanged: (cb) => ipcRenderer.on('stuck-count-changed', (_e, n) => cb(n)),
   onProcessTrace:      (cb) => ipcRenderer.on('process-trace',    (_e, m) => cb(m)),
   devGetSessionDocs:   ()        => ipcRenderer.invoke('dev-get-session-docs'),

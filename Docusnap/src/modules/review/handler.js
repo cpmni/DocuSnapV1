@@ -102,6 +102,12 @@ function register(ctx) {
     onAfterConfirm: (db, info) => {
       try { require('../processing/handler').scheduleScopeAutoAccept(db, { supplier: info.supplier_name, typeSlug: info.typeSlug, via: info.via }); }
       catch (e) { logger?.warn?.('auto-accept schedule failed: ' + (e && e.message)); }
+      // Slice 3 (DARK behind quiet_reread_enabled): a TAUGHT confirm is the one moment the sender's
+      // other held documents can read differently — re-read the template-less ones quietly.
+      if (info.taught && !info.via) {
+        try { require('../processing/handler').scheduleQuietReread(db, { supplier: info.supplier_name, typeSlug: info.typeSlug, reason: 'teach', seedDocId: info.document_id }); }
+        catch (e) { logger?.warn?.('quiet re-read schedule failed: ' + (e && e.message)); }
+      }
     },
     captureSample: async (tId, docId) => {
       if (ctx.captureSampleWords) {

@@ -74,5 +74,17 @@ check('Reprocess-All passes NO opts (still confirms — cannot be swallowed away
 check('Reprocess-this-sender passes NO opts (still confirms)',
       /runReprocessBatch\(docs, sup\)/.test(R) && !/runReprocessBatch\(docs, sup, /.test(R));
 
+// ── THE DOORWAY (Chris r12 #1): a TYPED issuer correction offers the ripple too ────────────────
+// The "Use 'X'" branding button was the only trigger; the cold-start prefill note displaced the
+// branding note, so typing the real name over "Cleaning" never offered "Apply to N & re-read".
+check('the typed-issuer blur handler offers the ripple (same bar, same apply path)',
+      /if \(key === 'supplier_name' && !bulkFiling && !_batchActive\) \{[\s\S]{0,700}offerIssuerRipple\(currentDoc\?\.id, typed, row\)/.test(R));
+check('...only when the settled value DIFFERS from the read (a no-op edit offers nothing)',
+      /typed && typed !== orig && typed !== row\.dataset\.rippleOffered/.test(R));
+check('...once per distinct typed name (a blur/refocus loop cannot nag)',
+      /row\.dataset\.rippleOffered = typed;/.test(R));
+check('the "Use X" doorway is still there (two doors, one bar)',
+      (R.match(/offerIssuerRipple\(/g) || []).length >= 3);   // definition + button + typed
+
 console.log('\n' + (fails === 0 ? 'All issuer-ripple contract checks passed' : `${fails} FAILED`));
 process.exit(fails ? 1 : 0);

@@ -62,6 +62,11 @@
     #auto-committed-bar b { color: var(--ok); }
     #auto-committed-bar .acb-back { color: var(--accent2); font-weight: 600; }
     #auto-committed-bar .acb-putback { color: var(--warn); font-weight: 600; cursor: pointer; text-decoration: underline; }
+    /* Slice 3: the quiet re-read hint — informational, never blocks, never a button lock. */
+    #quiet-reread-hint { padding: 6px 14px; font-size: 12px; color: var(--muted); background: var(--surface2);
+      border-bottom: 1px solid var(--border); }
+    #quiet-reread-hint b { color: var(--text); }
+    #quiet-reread-hint .qrh-cancel { float: right; cursor: pointer; color: var(--accent2); font-weight: 600; }
     #auto-committed-bar .acb-dismiss { float: right; margin-left: 12px; cursor: pointer;
       color: var(--muted); font-weight: 700; font-size: 15px; line-height: 1.2; padding: 0 4px;
       border-radius: 4px; }
@@ -805,6 +810,7 @@
       </div>
       <!-- "N auto-committed — click to review" bar (recently auto-filed docs, re-surfaced for checking). -->
       <div id="auto-committed-bar" style="display:none;"></div>
+      <div id="quiet-reread-hint" style="display:none;"></div>
       <!-- Post-reprocess consent bar (Oracle 2026-08-12): batch-scoped auto-file OFFER — nothing
            files until "File N" is clicked; the accept IPC is payload-less (server-owned ids). -->
       <div id="reprocess-autofile-bar" style="display:none;"></div>
