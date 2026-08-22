@@ -107,6 +107,10 @@ function createReviewService(deps = {}) {
     const _via = internal && _VIA_SENTINELS.includes(internal.via) ? internal.via : null;
     const actorName = (actor && actor.username) || null;
     const _t0 = Date.now();   // confirm return-latency probe (logged below when diag logging is on)
+    // The issuer the operator CONFIRMED (the field value), param as fallback — the same precedence
+    // documents.update uses below (A1 of the type-split arc, 2026-08-22): the renderer's
+    // `supplier_name` param is the MACHINE's pre-confirm read, never what learning should see.
+    const confirmedSupplier = String((allValues && allValues.supplier_name) || supplier_name || '').trim() || null;
 
     const docRow = documents.getById(db, document_id);
     if (!docRow) return fail('NOT_FOUND', 'Document not found.');
@@ -515,7 +519,7 @@ function createReviewService(deps = {}) {
         // hook self-gates on a resolvable same-type/same-supplier template; a failure can never affect
         // the already-returned confirm.
         if (!(Array.isArray(taught_fields) && taught_fields.length)) {
-          try { await learnTemplateOnCommit(db, document_id, { document_type_slug, supplier_name }); }
+          try { await learnTemplateOnCommit(db, document_id, { document_type_slug, supplier_name: confirmedSupplier }); }
           catch (e) { console.warn('Learn-on-commit failed:', e.message); }
         }
       }).catch(() => {});
@@ -567,7 +571,7 @@ function createReviewService(deps = {}) {
     // carries no taught_fields, so no taught-skip is needed. Detached + fail-open + self-gated on the
     // kill switch (DEFAULT OFF ⇒ byte-identical).
     if (bulk) {
-      Promise.resolve().then(() => learnTemplateOnCommit(db, document_id, { document_type_slug, supplier_name }))
+      Promise.resolve().then(() => learnTemplateOnCommit(db, document_id, { document_type_slug, supplier_name: confirmedSupplier }))
         .catch(() => {});
     }
 

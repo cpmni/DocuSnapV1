@@ -1392,14 +1392,20 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
   // Build template field rules from confirmed values
   const fields = _buildTemplateFields(db, allValues, dtInfo);
 
-  // The Document-Issuer value the operator CONFIRMED for this doc. COLD extraction reads no
-  // supplier, so the `supplier_name` param is empty at a supplier's FIRST confirm even though the
-  // user just typed the issuer in Review — fall back to the confirmed field values (allValues,
-  // string-keyed by field_key), where the identity field carries it. This is what lets a template
-  // be NAMED after its issuer ("City Office NI") instead of the generic "<Type> Template".
+  // The Document-Issuer value the operator CONFIRMED for this doc. The CONFIRMED field value
+  // (allValues, string-keyed by field_key) comes FIRST; the `supplier_name` param is the fallback.
+  // PRECEDENCE FIX (A1 of the type-split arc, 2026-08-22; Oracle SIGN OFF, no switch — a bug): the
+  // Review renderer sends `supplier_name: currentDoc.supplier_name` = the MACHINE's pre-confirm read,
+  // so with the param first a template was born NAMED after a garble ('1 Refrigeration Ltd' on a
+  // Nordwind quote the operator had confirmed as 'Nordwind Refrigeration Ltd') — and that name also
+  // fed _supplierLinkOk, the established-name reuse, the fingerprint hygiene and the seed prune.
+  // reviewService.confirm already uses allValues-first for documents.supplier_name (:426); this
+  // mirrors it. COLD extraction reads no supplier, so the param is empty at a supplier's FIRST
+  // confirm anyway — the field value is what lets a template be NAMED after its issuer ("City
+  // Office NI") instead of the generic "<Type> Template". Pinned: test_upsert_issuer_precedence.js.
   const confirmedIssuer = String(
-    (supplier_name && supplier_name.trim())
-    || (allValues && allValues.supplier_name)
+    (allValues && allValues.supplier_name && String(allValues.supplier_name).trim())
+    || (supplier_name && supplier_name.trim())
     || (allValues && allValues.customer_name)
     || ''
   ).trim();
