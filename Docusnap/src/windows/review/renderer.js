@@ -5396,8 +5396,13 @@ async function confirmCurrentDoc({ bulk = false, expectId = null, acknowledgePre
     }
     // Pass the backend code through so bulk filing can tell a license lapse
     // (abort the whole run once) from an ordinary per-doc failure (skip + continue).
+    // Every HOLD payload the click handlers dispatch on must ride along — Chris round 17 card 1: the
+    // type-split ask (and the round-6 issuer near-match hold before it) fell to their toast branches
+    // because only prefixOutlier came back here. Pinned: test_confirm_hold_payloads.js.
     return { error: result?.error || 'Confirm failed. Check settings.', code: result?.code || null,
-             prefixOutlier: result?.prefixOutlier || null };
+             prefixOutlier: result?.prefixOutlier || null,
+             nearMatch: result?.nearMatch || null,
+             typeSplit: result?.typeSplit || null };
   }
 
   // Persist anchors taught with ⊕ this cycle — DEFERRED to commit so an un-confirmed
