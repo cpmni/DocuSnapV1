@@ -2088,6 +2088,19 @@ function register(ctx) {
       if (processed && foldersOverlap(folderPath, processed)) {
         return { success: false, error: 'This is your “Processed” folder. Importing it would re-process already-filed documents. Please choose a different folder.' };
       }
+      // Q1 seam (Oracle C1.6, 2026-08-22): under keep_processed_originals the DEFAULT
+      // `<source>/Processed` folder becomes a permanent archive of FILED originals, and there is
+      // no content-hash dedupe — "I'll just re-import that folder" would re-queue every filed
+      // document as a new row (`-DUPLICATE` files). DB-driven, no folder-name heuristic: refuse a
+      // folder that is the `folder_path` of ≥1 CONFIRMED document, unless the caller passes
+      // {importAnyway:true} (the renderer asks). Env IMPORT_FILED_FOLDER_GUARD=0 disables.
+      if (process.env.IMPORT_FILED_FOLDER_GUARD !== '0' && !(opts && opts.importAnyway === true)) {
+        const filedHere = _filedDocsInFolder(db, folderPath);
+        if (filedHere > 0) {
+          return { success: false, overridable: true, reason: 'filed-originals-folder', count: filedHere,
+                   error: `This folder holds the original scans of ${filedHere} document${filedHere === 1 ? '' : 's'} you have already filed. Importing it again would create duplicates.` };
+        }
+      }
     }
     // Multi-point licensing enforcement (F-01): bulk import is the highest-value
     // extraction write path. Network-free cached-license re-check before any work.
@@ -4622,6 +4635,23 @@ function _recordDrain(srcPath) {
   const k = _drainTallyKey(srcPath);
   if (k) _drainTally.set(k, (_drainTally.get(k) || 0) + 1);
 }
+/** Q1 seam (2026-08-22): how many CONFIRMED documents name `folder` as their folder_path (i.e. it
+ *  holds their kept originals). Path-normalised compare over the distinct folder_paths. */
+function _filedDocsInFolder(db, folder) {
+  let key = '';
+  try { key = path.resolve(String(folder || '')).toLowerCase(); } catch { return 0; }
+  if (!key) return 0;
+  let n = 0;
+  try {
+    for (const r of db.prepare("SELECT folder_path, COUNT(*) n FROM documents WHERE status = 'confirmed' AND folder_path IS NOT NULL GROUP BY folder_path").all()) {
+      let k = '';
+      try { k = path.resolve(String(r.folder_path)).toLowerCase(); } catch { continue; }
+      if (k === key) n += r.n;
+    }
+  } catch { return 0; }
+  return n;
+}
+
 function _takeDrainTally(folder) {
   let k = '';
   try { k = path.resolve(folder).toLowerCase(); } catch { return 0; }
@@ -4636,7 +4666,7 @@ function _drainNowOrDefer(db, logger, item) {
     // deferred to _flushPendingDrains (after the worker exits), which DOES retry.
     const moved = drainOriginalToFolder(fs, path, item.srcPath, item.destDir, item.originalFilename, { retry: false });
     if (moved) {
-      db.prepare('UPDATE documents SET folder_path = ? WHERE id = ?').run(moved.folder, item.docId);
+      db.prepare("UPDATE documents SET folder_path = ?, drained_at = datetime('now') WHERE id = ?").run(moved.folder, item.docId);
       if (moved.filename !== item.originalFilename) {
         db.prepare('UPDATE documents SET original_filename = ? WHERE id = ?').run(moved.filename, item.docId);
       }
@@ -4659,7 +4689,7 @@ function _flushPendingDrains(db, logger) {
     try {
       const moved = drainOriginalToFolder(fs, path, item.srcPath, item.destDir, item.originalFilename);
       if (moved) {
-        db.prepare('UPDATE documents SET folder_path = ? WHERE id = ?').run(moved.folder, item.docId);
+        db.prepare("UPDATE documents SET folder_path = ?, drained_at = datetime('now') WHERE id = ?").run(moved.folder, item.docId);
         if (moved.filename !== item.originalFilename) {
           db.prepare('UPDATE documents SET original_filename = ? WHERE id = ?').run(moved.filename, item.docId);
         }
@@ -5288,6 +5318,7 @@ module.exports = {
   _anchorCropEnv,            // crop opt-in spawn env: right-grow + label left-clamp (shared with the watch batch)
   _reconcileEnv,             // extraction-reconcile opt-in spawn env: prefix-garble adopt (shared with the watch batch)
   drainOriginalToFolder,
+  _filedDocsInFolder,
   _recordDrain, _takeDrainTally,   // drain-tally pins (test_drain_tally.js — Oracle C1)
   ensureWorkingCopy,
   ensureWorkingCopyAsync,

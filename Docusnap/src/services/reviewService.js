@@ -24,6 +24,16 @@
 
 function fail(code, error, extra) { return { ok: false, success: false, code, error, ...(extra || {}) }; }
 
+/** Q1 switch (2026-08-22): keep the drained original on filing. Env KEEP_PROCESSED_ORIGINALS=0/1
+ *  overrides the `keep_processed_originals` setting (mig 83 UPSERTs 'true' for every install). */
+function keepProcessedOriginals(db, learning) {
+  const env = process.env.KEEP_PROCESSED_ORIGINALS;
+  if (env === '0') return false;
+  if (env === '1') return true;
+  try { return (learning || require('../../database/modules/learning')).getSetting(db, 'keep_processed_originals', 'false') === 'true'; }
+  catch { return false; }
+}
+
 function createReviewService(deps = {}) {
   const documents = deps.documents || require('../../database/modules/documents');
   const learning  = deps.learning  || require('../../database/modules/learning');
@@ -38,6 +48,27 @@ function createReviewService(deps = {}) {
   const audit  = deps.audit || (() => {});
   // Optional Electron-only hooks — no-ops for the API path.
   const onScheduleSourceMove = deps.onScheduleSourceMove || (() => {});
+  // Q1 (2026-08-22): under keep_processed_originals an UN-drained original is drained NOW instead
+  // of unlinked — (srcPath, destDir, originalFilename) → {folder, filename} | null. Optional: with
+  // no dep the original is simply left where it is (the safe direction is always "keep").
+  const drainOriginal        = deps.drainOriginal        || null;
+  function _drainAtConfirm(db, docRow, srcPath, originalFilename) {
+    try {
+      if (!drainOriginal) return;
+      if (learning.getSetting(db, 'drain_processed', 'true') === 'false') return;   // the user keeps originals in place
+      const explicit = learning.getSetting(db, 'processed_folder', null);
+      const destDir  = (explicit && String(explicit).trim()) || path.join(path.dirname(srcPath), 'Processed');
+      const moved = drainOriginal(srcPath, destDir, originalFilename);
+      if (moved && moved.folder) {
+        // direct UPDATE: documents.update() whitelists columns and would silently drop these
+        db.prepare("UPDATE documents SET folder_path = ?, drained_at = datetime('now') WHERE id = ?").run(moved.folder, docRow.id);
+        if (moved.filename && moved.filename !== originalFilename) {
+          db.prepare('UPDATE documents SET original_filename = ? WHERE id = ?').run(moved.filename, docRow.id);
+        }
+        logger?.log?.(`[filing] original drained at confirm: ${originalFilename} → ${moved.folder}`);
+      }
+    } catch (e) { logger?.warn?.('[filing] drain-at-confirm skipped: ' + (e && e.message)); }
+  }
   const onTaughtConfirm      = deps.onTaughtConfirm      || (async () => {});
   const onScopeGraduated     = deps.onScopeGraduated     || (async () => {});
   const learnTemplateOnCommit = deps.learnTemplateOnCommit || (async () => {});   // Slice 1: identity convergence on every commit (dark)
@@ -407,7 +438,23 @@ function createReviewService(deps = {}) {
       } catch { /* guard is best-effort; a failure must never affect the confirm */ }
     }
 
-    if (filingResult.srcPath) onScheduleSourceMove({ srcPath: filingResult.srcPath, originalFilename: original_filename });
+    // KEEP THE PROCESSED ORIGINAL (Chris round 14 card 1; gary (a′) → Oracle SIGN-OFF-W/COND C1.1,
+    // 2026-08-22). `srcPath` is `folder_path/original_filename` — AFTER the import drain that is
+    // the file in the customer's Processed folder, the one the wizard promises is "never deleted".
+    // Unlinking it here made the Output copy the ONLY copy (Put back → Delete → Empty bin destroyed
+    // the scan). THIS IS THE ONE GATE — human, scope-sweep, reprocess-offer and /v1 confirms all
+    // pass through here (the /v1 callback must NOT add a second check). Semantics:
+    //   OFF  → today's removal, byte-identical.
+    //   ON + drained_at set → the original stays (it is the archive copy).
+    //   ON + not drained (drain off, or the file stayed locked at import) → drain it NOW when
+    //        drain_processed allows (stamps drained_at); otherwise leave it in place. NEVER unlink.
+    if (filingResult.srcPath) {
+      if (!keepProcessedOriginals(db, learning)) {
+        onScheduleSourceMove({ srcPath: filingResult.srcPath, originalFilename: original_filename });
+      } else if (!docRow.drained_at) {
+        _drainAtConfirm(db, docRow, filingResult.srcPath, original_filename);
+      }
+    }
     notifyCounts(db);
 
     // Cross-sample landmark learning + taught-confirm auto-promote (best-effort). Both SPAWN a
@@ -564,4 +611,4 @@ function createReviewService(deps = {}) {
   return { queue, deferred, counts, confirm, defer, restore };
 }
 
-module.exports = { createReviewService, fail };
+module.exports = { createReviewService, fail, keepProcessedOriginals };

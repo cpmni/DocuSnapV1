@@ -555,6 +555,18 @@ document.getElementById('multiline-toggle').addEventListener('change', async (e)
   await api.setSetting('multiline_enabled', e.target.checked ? 'true' : 'false');
 });
 
+// ── Keep original scans after filing (keep_processed_originals; mig 83 ON for every install —
+//    Chris round 14 card 1 / Oracle C1.4, 2026-08-22). Unset → treated as OFF (pre-mig DBs) ──
+(async () => {
+  try {
+    const v = await api.getSetting('keep_processed_originals');
+    document.getElementById('keep-originals-toggle').checked = (v === 'true');
+  } catch { document.getElementById('keep-originals-toggle').checked = false; }
+})();
+document.getElementById('keep-originals-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('keep_processed_originals', e.target.checked ? 'true' : 'false');
+});
+
 // ── Auto-rotate sideways/upside-down scans (default ON) ────────────────────────
 (async () => {
   try {

@@ -90,6 +90,10 @@ function register(ctx) {
     fs, path, logger,
     audit: (db, entry) => logAudit(db, entry),
     onScheduleSourceMove: (args) => _scheduleSourceMove(ctx, getDb(), documents, args),
+    // Q1 (2026-08-22): under keep_processed_originals an un-drained original is MOVED into Processed
+    // at confirm instead of unlinked (the same drain the import uses; retries on a transient lock).
+    drainOriginal: (srcPath, destDir, originalFilename) =>
+      require('../processing/handler').drainOriginalToFolder(fs, path, srcPath, destDir, originalFilename),
     onTaughtConfirm: (db, docId, info) => _upsertTemplate(ctx, db, docId, info),
     onScopeGraduated: (db, docId, info) => _maybeGraduationTemplate(ctx, db, docId, info),
     // Slice 1 (learn-on-commit) — keep a matched/graduated template's identity converging on

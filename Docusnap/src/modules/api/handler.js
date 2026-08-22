@@ -181,9 +181,15 @@ function createRequestListener(ctx) {
         ctx.notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
       } catch { /* best-effort */ }
     },
+    // Q1 (2026-08-22): the keep-originals decision is made INSIDE reviewService.confirm (the one
+    // gate) — this callback only runs when the service decided to remove. Do not re-check here.
     onScheduleSourceMove: ({ srcPath }) => {
       try { require('../filing/handler').removeSourceFile(ctx.fs || require('fs'), srcPath, ctx.logger).catch(() => {}); }
       catch { /* best-effort drain */ }
+    },
+    drainOriginal: (srcPath, destDir, originalFilename) => {
+      try { return require('../processing/handler').drainOriginalToFolder(ctx.fs || require('fs'), require('path'), srcPath, destDir, originalFilename); }
+      catch { return null; }
     },
     releaseDelayMs: 0,
   });

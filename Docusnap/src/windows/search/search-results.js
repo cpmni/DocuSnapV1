@@ -274,7 +274,7 @@ async function _act(kind) {
   if (!ids.length) return;
   const noun = ids.length > 1 ? `${ids.length} documents` : 'this document';
   if (kind === 'delete' && !confirm(`Move ${noun} to the recycle bin? You can restore ${ids.length > 1 ? 'them' : 'it'} later.`)) return;
-  if (kind === 'purge'  && !confirm(`Permanently delete ${noun} and ${ids.length > 1 ? 'their files' : 'its file'}? This cannot be undone.`)) return;
+  if (kind === 'purge'  && !confirm(`Permanently delete ${noun} and ${ids.length > 1 ? 'their files' : 'its file'}? This cannot be undone.${await window.SearchState.purgeSuffix()}`)) return;
   if (kind === 'sendback' && !confirm(`Send ${noun} back to the Review queue? ${ids.length > 1 ? 'They stay' : 'It stays'} filed until re-confirmed.`)) return;
   const call = kind === 'delete' ? window.docusnap.deleteDocument
              : kind === 'restore' ? window.docusnap.restoreDocument

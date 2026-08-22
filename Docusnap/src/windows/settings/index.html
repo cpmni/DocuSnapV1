@@ -462,13 +462,20 @@
 
           <div class="section">
             <div class="section-title">Processed Scans Folder</div>
-            <p class="section-desc">Source files are moved here after processing. Leave blank to keep originals in place.</p>
+            <p class="section-desc">Each original scan is moved here as it is imported. Leave blank for a &ldquo;Processed&rdquo; folder beside your scans.</p>
             <div class="row-flex">
-              <input type="text" id="processed-folder-path" class="path-input" readonly placeholder="No folder selected (files stay in source)">
+              <input type="text" id="processed-folder-path" class="path-input" readonly placeholder="No folder selected (a “Processed” folder beside your scans)">
               <button class="btn primary" id="btn-pick-processed" data-help-key="pick-processed">Browse…</button>
             </div>
             <div style="margin-top:6px;">
               <button class="btn small" id="btn-clear-processed" data-help-key="clear-processed" style="font-size:10px; padding:3px 10px; color:var(--err); border-color:var(--err);">Clear</button>
+            </div>
+            <div class="threshold-row" style="margin-top:12px;">
+              <div>
+                <div class="threshold-label">Keep original scans after filing</div>
+                <div class="threshold-sub">On: the original stays in the Processed folder after its filed copy is made, so emptying the recycle bin can never destroy your only copy. This keeps a second copy of every filed scan (about the size of your scan folder again). Off: the original is removed once the filed copy exists.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="keep-originals-toggle"><span class="toggle-slider"></span></label>
             </div>
           </div>
 

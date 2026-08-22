@@ -132,7 +132,8 @@ function initInputs() {
     const n = rows.length;
     if (!n) { await doSearch(); alert('The recycle bin is already empty.'); return; }
     const what = `all ${n} document${n === 1 ? '' : 's'}`;
-    if (!confirm(`Permanently delete ${what} in the recycle bin, including their PDF files? This cannot be undone.`)) return;
+    const suffix = await window.SearchState.purgeSuffix();
+    if (!confirm(`Permanently delete ${what} in the recycle bin, including their PDF files? This cannot be undone.${suffix}`)) return;
     try { await window.docusnap.purgeAllDeleted(); } catch (e) { console.error('empty bin:', e); }
     // The purged doc must not linger in the preview with a live Restore button.
     if (window.SearchState) window.SearchState.selectedDoc = null;

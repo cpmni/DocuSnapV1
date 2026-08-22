@@ -1949,6 +1949,42 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 82 applied: two-line wordmark slice defaulted ON (stack abstain, depth guard, fragment keep, kw select, ready re-read)');
   }
 
+  // ── Migration 83: KEEP THE PROCESSED ORIGINAL (Chris round 14 card 1, gary (a′) → Oracle SIGN-OFF-
+  // W/COND C1.1–C1.7, 2026-08-22) ────────────────────────────────────────────────────────────────
+  // Import MOVES each original into `<source>/Processed` (or `processed_folder`) and the wizard
+  // promises "your original scans are never deleted". But confirm-time `removeSourceFile` predates
+  // that drain: it was "delete the intake file after filing" and now deletes the PROCESSED file —
+  // so after filing the Output copy is the ONLY copy, and Put back → Delete → Empty bin destroys the
+  // scan. Two parts:
+  //   documents.drained_at — stamped by both drain success paths (inline + deferred flush); NULL
+  //     = the original was never moved (drain off, or the file stayed locked). BACKFILL (one-time,
+  //     never consulted at runtime): rows already drained before this migration carry a
+  //     `folder_path` that IS the Processed dir (basename `Processed`, or the processed_folder
+  //     setting) — stamp them so the new gate keeps their originals too.
+  //   keep_processed_originals — UPSERT-forced 'true' for ALL installs (Oracle C1.4: the promise
+  //     was shown to every install; keeping data is the safe direction). Under ON the confirm never
+  //     unlinks a drained original (reviewService: one gate, covers human / sweep / offer / v1);
+  //     an un-drained one is drained now instead. OFF = today's byte-identical removal. Revert =
+  //     the Files & filing toggle (disk cost stated there).
+  if (!applied.has(83)) {
+    if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'drained_at')) {
+      try { db.exec('ALTER TABLE documents ADD COLUMN drained_at TEXT'); }
+      catch (e) { console.warn(`  migration 83 drained_at: ${e.message}`); }
+    }
+    try {
+      let pf = null;
+      try { pf = (db.prepare("SELECT value FROM settings WHERE key = 'processed_folder'").get() || {}).value || null; } catch {}
+      const stamp = "COALESCE(processed_at, datetime('now'))";
+      db.prepare(`UPDATE documents SET drained_at = ${stamp}
+                   WHERE drained_at IS NULL AND folder_path IS NOT NULL
+                     AND (LOWER(folder_path) LIKE '%\processed' OR LOWER(folder_path) LIKE '%/processed'
+                          OR (? IS NOT NULL AND LOWER(TRIM(folder_path)) = LOWER(TRIM(?))))`).run(pf, pf);
+      db.prepare("INSERT INTO settings (key, value) VALUES ('keep_processed_originals', 'true') ON CONFLICT(key) DO UPDATE SET value='true'").run();
+    } catch (e) { console.warn(`  migration 83: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (83)').run();
+    console.log('JS migration 83 applied: documents.drained_at (+backfill) · keep_processed_originals ON (a filed document keeps its Processed original)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

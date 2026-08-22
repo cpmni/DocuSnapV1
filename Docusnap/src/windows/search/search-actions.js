@@ -44,8 +44,9 @@ function renderActions(doc) {
   if (doc.status === 'deleted') {
     // Recycle-bin item: restore (Admin/Edit) or permanently remove (Admin).
     if (canEdit) _btn(docSection, 'Restore', () => _afterChange(window.docusnap.restoreDocument(doc.id)), true);
-    if (isAdmin) _btn(docSection, 'Delete permanently', () => {
-      if (confirm('Permanently delete this document and its file? This cannot be undone.')) _afterChange(window.docusnap.purgeDocument(doc.id));
+    if (isAdmin) _btn(docSection, 'Delete permanently', async () => {
+      const suffix = await window.SearchState.purgeSuffix();
+      if (confirm('Permanently delete this document and its file? This cannot be undone.' + suffix)) _afterChange(window.docusnap.purgeDocument(doc.id));
     });
   } else {
     if (doc.status === 'confirmed') {
