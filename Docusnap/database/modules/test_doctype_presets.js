@@ -25,7 +25,8 @@ function makeDb() {
   db.exec(`
     CREATE TABLE document_types (
       id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, slug TEXT UNIQUE, built_in INTEGER DEFAULT 0,
-      ref_field_key TEXT, date_field_key TEXT, sort_order INTEGER DEFAULT 100, enabled INTEGER DEFAULT 1
+      ref_field_key TEXT, date_field_key TEXT, sort_order INTEGER DEFAULT 100, enabled INTEGER DEFAULT 1,
+      title_aliases TEXT
     );
     CREATE TABLE fields (
       id INTEGER PRIMARY KEY AUTOINCREMENT, document_type_id INTEGER, key TEXT, label TEXT,
@@ -130,6 +131,28 @@ function main() {
 
   // 9. Unticked presets were not created.
   f += !check('unticked preset (receipt) not created', !typeBySlug(db, 'receipt'));
+
+  // 10. A4 of the type-split arc (2026-08-22): catalog TITLE ALIASES ride with the preset, and
+  //     migration 85's seeder fills them on an existing install's alias-less types — never over an
+  //     operator's own aliases, and never an alias that is another type's name.
+  const al = (slug) => JSON.parse(typeBySlug(db, slug).title_aliases || 'null');
+  f += !check("a freshly added Quote carries ['Quotation', 'Estimate']", JSON.stringify(al('quote')) === JSON.stringify(['Quotation', 'Estimate']));
+  f += !check("Statement carries ['Statement of Account']; Remittance Advice ['Remittance']",
+    JSON.stringify(al('statement')) === JSON.stringify(['Statement of Account']) && JSON.stringify(al('remittance_advice')) === JSON.stringify(['Remittance']));
+  f += !check('Delivery Note (no catalog aliases) stays NULL', typeBySlug(db, 'delivery_note').title_aliases == null);
+  // existing-install simulation: strip Quote's aliases, give Statement an operator alias, add a custom type named "Quotation"
+  db.prepare("UPDATE document_types SET title_aliases = NULL WHERE slug = 'quote'").run();
+  db.prepare(`UPDATE document_types SET title_aliases = '["Account Summary"]' WHERE slug = 'statement'`).run();
+  const seeded = doctypes.seedPresetTitleAliases(db);
+  f += !check('seeder fills the alias-less Quote (reported by name)', seeded.includes('Quote') && JSON.stringify(al('quote')) === JSON.stringify(['Quotation', 'Estimate']));
+  f += !check("…and leaves the operator's own Statement alias untouched", JSON.stringify(al('statement')) === JSON.stringify(['Account Summary']) && !seeded.includes('Statement'));
+  f += !check('seeder is idempotent (second run seeds nothing)', doctypes.seedPresetTitleAliases(db).length === 0);
+  db.prepare("UPDATE document_types SET title_aliases = NULL WHERE slug = 'quote'").run();
+  db.prepare("INSERT INTO document_types (name, slug, built_in) VALUES ('Quotation', 'quotation', 0)").run();
+  const seeded2 = doctypes.seedPresetTitleAliases(db);
+  f += !check("an alias that IS another type's name ('Quotation' exists as a type) is refused — Quote stays alias-less",
+    !seeded2.includes('Quote') && typeBySlug(db, 'quote').title_aliases == null);
+  db.prepare("DELETE FROM document_types WHERE slug = 'quotation'").run();
 
   console.log(f === 0 ? '\nALL PASS' : `\n${f} FAILURE(S)`);
   process.exit(f === 0 ? 0 : 1);

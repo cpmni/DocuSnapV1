@@ -575,6 +575,7 @@ const PRESET_CATALOG = [
   },
   {
     name: 'Remittance Advice', ref_field_key: 'remittance_number', date_field_key: 'remittance_date',
+    title_aliases: ['Remittance'],
     company_key: 'supplier_name',
     fields: [
       { key: 'supplier_name',     label: 'Document Issuer',     type: 'text',     required: 1,
@@ -622,6 +623,7 @@ const PRESET_CATALOG = [
   },
   {
     name: 'Statement', ref_field_key: 'statement_number', date_field_key: 'statement_date',
+    title_aliases: ['Statement of Account'],
     company_key: 'supplier_name',
     fields: [
       { key: 'supplier_name',    label: 'Document Issuer',    type: 'text',     required: 1,
@@ -653,6 +655,11 @@ const PRESET_CATALOG = [
   },
   {
     name: 'Quote', ref_field_key: 'quote_number', date_field_key: 'quote_date',
+    // A4 of the type-split arc (2026-08-22): the printed heading is almost always "QUOTATION" — the
+    // type NAME folds in as a heading phrase (keyword.py) but "Quotation" never did, so no Quote
+    // could ever carry a trusted title. Aliases enter the same scoring bucket as the name (a caption
+    // line "Quotation Ref NRQ-2551" scores as a MENTION, never a trusted heading — pinned).
+    title_aliases: ['Quotation', 'Estimate'],
     company_key: 'supplier_name',
     fields: [
       { key: 'supplier_name', label: 'Document Issuer', type: 'text',     required: 1,
@@ -673,6 +680,7 @@ const PRESET_CATALOG = [
     // blast every custom ref type — reggie). No supplier/customer label seeds: name fields are
     // format-ungated, and "Engineer"/"Site" would grab a person/site, not the issuer (Oracle C2).
     name: 'Service Worksheet', ref_field_key: 'reference_number', date_field_key: 'worksheet_date',
+    title_aliases: ['Worksheet', 'Job Sheet'],
     company_key: 'supplier_name',
     fields: [
       { key: 'supplier_name',    label: 'Document Issuer',  type: 'text', required: 1 },
@@ -752,6 +760,7 @@ function addPresetTypes(db, slugs) {
           name: preset.name,
           ref_field_key: preset.ref_field_key,
           date_field_key: preset.date_field_key,
+          title_aliases: preset.title_aliases || null,   // A4: the printed-heading aliases ship with the preset
         });
         const typeId = Number(info.lastInsertRowid);
         let sort = 10;
@@ -781,7 +790,32 @@ function addPresetTypes(db, slugs) {
   return results;
 }
 
+// A4 of the type-split arc (2026-08-22): seed the catalog's title aliases onto an EXISTING install's
+// types that carry none — matched by preset NAME, NEVER overwriting an operator's own aliases (a
+// non-empty row is left alone), and through normaliseTitleAliases so the alias==another-type-name
+// hard reject and the length/letter rules apply exactly as in Settings. Returns the names seeded.
+// Called by migration 85; idempotent.
+function seedPresetTitleAliases(db) {
+  const seeded = [];
+  let hasCol = false;
+  try { hasCol = db.prepare("PRAGMA table_info(document_types)").all().some(c => c.name === 'title_aliases'); } catch { hasCol = false; }
+  if (!hasCol) return seeded;
+  for (const preset of PRESET_CATALOG) {
+    if (!Array.isArray(preset.title_aliases) || !preset.title_aliases.length) continue;
+    const row = db.prepare('SELECT id, name, title_aliases FROM document_types WHERE LOWER(TRIM(name)) = LOWER(?)').get(preset.name);
+    if (!row) continue;
+    const cur = _parseAliases(row.title_aliases);
+    if (Array.isArray(cur) && cur.length) continue;                 // the operator's own aliases stand
+    const na = normaliseTitleAliases(db, preset.title_aliases, row.name);
+    if (na.error || !na.aliases.length) continue;                   // e.g. "Quotation" is already a type here
+    db.prepare('UPDATE document_types SET title_aliases = ? WHERE id = ?').run(_serialiseAliases(na.aliases), row.id);
+    seeded.push(row.name);
+  }
+  return seeded;
+}
+
 module.exports = {
+  seedPresetTitleAliases,
   seedBuiltInTypes, getAll, getWithFields, getAllWithFields, getAllWithFieldsAll,
   addType, updateType, addField, updateField, deleteField, ensureStructuralRoles,
   reshapeCustomerIdentityTypes, cleanupStaleCustomerLearning,

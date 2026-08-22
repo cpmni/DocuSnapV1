@@ -1998,6 +1998,21 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 84 applied: fingerprint_seed_support_prune ON for new installs (one-sample seed support prune)');
   }
 
+  // ── Migration 85: catalog title aliases for EXISTING installs (A4 of the type-split arc, 2026-08-22;
+  // gary → Oracle SIGN-OFF-W/COND S3). The printed heading of a Quote is "QUOTATION" (Remittance
+  // Advice → "Remittance", Statement → "Statement of Account", Service Worksheet → "Worksheet"/"Job
+  // Sheet"); the type NAME folded in as a heading phrase but its alias never did, so on the owner's
+  // install no Quote could carry a trusted title and ONE mis-confirmed sibling held 17 quotes. Fills
+  // title_aliases ONLY where the type carries none (an operator's own aliases are never touched) and
+  // only through normaliseTitleAliases (alias == another type's name is refused). Idempotent.
+  if (!applied.has(85)) {
+    try {
+      const seeded = require('./modules/document_types').seedPresetTitleAliases(db);
+      console.log(`JS migration 85 applied: catalog title aliases seeded on ${seeded.length} type(s)${seeded.length ? ' (' + seeded.join(', ') + ')' : ''}`);
+    } catch (e) { console.warn(`  migration 85: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (85)').run();
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the
