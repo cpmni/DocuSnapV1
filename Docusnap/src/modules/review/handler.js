@@ -131,6 +131,7 @@ function register(ctx) {
       }
     },
     readyProbe: (db, sup, slug) => { try { return require('../processing/handler').readyProbe(db, sup, slug); } catch { return null; } },
+    recordReviewEvent: (db, ev) => { try { return require('../processing/handler').recordReviewEvent(db, ev); } catch { return null; } },   // B1
     captureSample: async (tId, docId) => {
       if (ctx.captureSampleWords) {
         await ctx.captureSampleWords(tId, docId);

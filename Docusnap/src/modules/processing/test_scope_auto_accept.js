@@ -205,7 +205,7 @@ const humanConfirm = (id, supplier) => svc.confirm(db, { username: 'sarah', role
   const rend = fs.readFileSync(path.join(ROOT, 'src', 'windows', 'review', 'renderer.js'), 'utf8');
   const rsvc = fs.readFileSync(path.join(ROOT, 'src', 'services', 'reviewService.js'), 'utf8');
   check('the queue-wide offer yields while an automatic pass is filing (no bar over docs about to file)', /_autoAcceptInflightProbe\(\)\) return \{ ok: false, reason: 'auto-accept-running' \}/.test(src));
-  check('the trigger is an explicit !_via in reviewService (not a renderer timer — covers File-All and /v1)', /if \(!_via\) \{\s*try \{\s*onAfterConfirm\(db,/.test(rsvc));
+  check('the trigger is an explicit !_via in reviewService (not a renderer timer — covers File-All and /v1)', /if \(!_via\) \{\s*try \{[\s\S]{0,400}?onAfterConfirm\(db,/.test(rsvc));
   check('the scheduler refuses a via (machine) trigger before any DB read', /function scheduleScopeAutoAccept\(db, \{ supplier, typeSlug, via \} = \{\}\) \{\s*if \(via\) return false;/.test(src));
   check('one cap, one writer: the automatic path calls the SAME _sweepAcceptCore as the consent bar', (src.match(/_sweepAcceptCore\(db, \{/g) || []).length === 3);   // the definition + the two callers
   check('the receipt bar says what happened in the operator\'s words and offers Put back', /filed by itself after your confirms/.test(rend) && /acb-putback/.test(rend));

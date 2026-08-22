@@ -16,6 +16,11 @@ const _KEYS = new Set([
   // legal-accept / onboarding-complete flows (setSetting direct), so protecting the generic door
   // + backup here never blocks the real path.
   'terms_accepted', 'first_run_completed',
+  // REVIEW ACTIVITY LEDGER (B1 of the activity-strip arc, 2026-08-22; Oracle C3): a ring of recent
+  // filing events keyed on THIS install's document ids. A restored backup would resolve FOREIGN ids
+  // ("See them" shows the wrong documents, "Put back" deconfirms them), so it never crosses installs
+  // and the generic set-setting door may not write it. Written only by src/lib/reviewEvents.js.
+  'review_events',
 ]);
 
 function isProtectedSettingKey(key) {

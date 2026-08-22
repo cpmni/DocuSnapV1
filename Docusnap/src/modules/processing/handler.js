@@ -809,6 +809,17 @@ let _applyReprocessResultImpl = null;      // test seam for the applyReprocessRe
 // completions through _handleFileMessage, so one bump there drives the count for either source.
 let _activity  = null;   // null | { source:'import'|'watch', done, total }
 let _notifyAll = null;   // ctx.notifyAllWindows, set in register()
+// ── REVIEW ACTIVITY LEDGER (B1 of the activity-strip arc, 2026-08-22; barry + eric → Oracle
+// SIGN-OFF-W/COND). src/lib/reviewEvents — a ring of what the app filed and when, merged per BATCH,
+// broadcast as `review-event` (throttled). PRESENTATION only: recorded best-effort AFTER a filing
+// succeeded (the _recordAutoFiled idiom), never inside the filing path, never the source of undo
+// validity (re-checked server-side at click). Four doors feed it: the import auto-file, the scope
+// auto-accept AND the human "File N" (both via _sweepAcceptCore, once per call), the reprocess
+// accept, and the class fix (via reviewService). The strip that reads it is slice B2 (dark).
+let _reviewEvents = null;
+function recordReviewEvent(db, ev) {
+  try { return _reviewEvents ? _reviewEvents.record(db, ev) : null; } catch { return null; }
+}
 let _templatesDirFn = null;   // ctx.templatesDir, set in register() — the auto-file door's template-file sync (Chris r15 card 2)
 function _broadcastActivity() {
   try {
@@ -1715,6 +1726,11 @@ function register(ctx) {
           notifyReview, safeSend, spawn, path, fs, logger } = ctx;
   _pyHelpers = { pythonExe, pythonArgs, backendScript, resourcePath: ctx.resourcePath };
   _notifyAll = ctx.notifyAllWindows;   // broadcast import/watch activity to Review (see _broadcastActivity)
+  try {
+    _reviewEvents = require('../../lib/reviewEvents').create({
+      notify: (ev) => { try { if (_notifyAll) _notifyAll('review-event', ev); } catch { /* best-effort */ } },
+    });
+  } catch (e) { _reviewEvents = null; logger?.warn?.('review-events ledger unavailable: ' + (e && e.message)); }
   _templatesDirFn = typeof ctx.templatesDir === 'function' ? ctx.templatesDir : null;
 
   // Warm OCR worker POOL (draw-tool UX plan Slice 2) — configured once; the ocr-region(-boxes)
@@ -3475,6 +3491,13 @@ function register(ctx) {
                     unticked_ids: (Array.isArray(untickedIds) ? untickedIds : []).join(','),
                     ...(auto ? { auto_accept: true } : {}) } });
     } catch { /* audit is best-effort */ }
+    // B1: ONE receipt per accept call — the human "File N" click (approved) or the scope auto-accept
+    // (self_filed) — carrying what was kept back and why. Both are sweep-undoable (confirmed_via
+    // scope_sweep), re-checked at click.
+    if (filed.length || dropped.length) {
+      recordReviewEvent(db, { kind: auto ? 'self_filed' : 'approved', ids: filed, dropped, approved: !auto,
+                              scope: { supplier: sup, typeSlug: slug }, undo: { type: 'sweep' } });
+    }
     return { ok: true, filed, dropped };
   }
 
@@ -3764,6 +3787,59 @@ function register(ctx) {
   _readyProbeImpl = readyProbe;
   _scheduleReadyRereadImpl = scheduleReadyReread;
   _applyReprocessResultImpl = applyReprocessResult;
+  // ── B1: the activity ledger's IPC (event-id addressed — the renderer never sends a doc-id list) ──
+  ipcMain.handle('get-review-events', () => { requireRole('admin', 'edit'); return _reviewEvents ? _reviewEvents.list(getDb()) : []; });
+  ipcMain.handle('review-events-seen', (_e, { uptoId } = {}) => { requireRole('admin', 'edit'); return { ok: true, marked: _reviewEvents ? _reviewEvents.markSeen(getDb(), uptoId) : 0 }; });
+  ipcMain.handle('get-review-event-docs', (_e, { eventId } = {}) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const ev = _reviewEvents ? _reviewEvents.get(db, eventId) : null;
+    if (!ev) return { ok: false, reason: 'unknown-event', docs: [] };
+    const documents = require('../../../database/modules/documents');
+    return { ok: true, docs: documents.getByIds(db, ev.ids || []) };
+  });
+  // Undo by EVENT: sweep → the same checks as sweep-scope-undo (confirmed + confirmed_via scope_sweep),
+  // CHUNKED in 25s with a yield between chunks, {undone, refused} honest (Oracle C7 — the legacy door's
+  // silent .slice(0,25) undid 25 of 125 with no message); classfix → classFixService.undoBatch; any other
+  // kind, or an event past the undo window → refused.
+  ipcMain.handle('review-event-undo', async (_e, { eventId } = {}) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const ev = _reviewEvents ? _reviewEvents.get(db, eventId) : null;
+    if (!ev) return { ok: false, reason: 'unknown-event', undone: [], refused: [] };
+    if (!_reviewEvents._undoable(ev)) return { ok: false, reason: 'not-undoable', undone: [], refused: (ev.ids || []).slice() };
+    const documents = require('../../../database/modules/documents');
+    const undone = [], refused = [];
+    if (ev.undo.type === 'sweep') {
+      const ids = (ev.ids || []).map(Number).filter(Boolean);
+      for (let i = 0; i < ids.length; i += 25) {
+        for (const id of ids.slice(i, i + 25)) {
+          const row = db.prepare('SELECT id, status, confirmed_via FROM documents WHERE id = ?').get(id);
+          if (!row || row.status !== 'confirmed' || row.confirmed_via !== 'scope_sweep') { refused.push(id); continue; }
+          const r = documents.deconfirmDocument(db, id);
+          if (r && r.changes) undone.push(id); else refused.push(id);
+        }
+        await new Promise(res => setImmediate(res));
+      }
+    } else if (ev.undo.type === 'classfix' && ev.undo.batchId) {
+      let r = null;
+      try { r = require('../../services/classFixService').undoBatch(db, String(ev.undo.batchId), { actorName: (getCurrentUser() || {}).username || null, audit: logAudit, logger }); } catch (e) { r = { ok: false, reason: 'failed', message: e && e.message }; }
+      if (r && r.ok) undone.push(...(ev.ids || [])); else refused.push(...(ev.ids || []));
+      if (!(r && r.ok)) return { ok: false, reason: (r && r.reason) || 'failed', undone, refused };
+    } else {
+      return { ok: false, reason: 'not-undoable', undone: [], refused: (ev.ids || []).slice() };
+    }
+    try {
+      if (undone.length) logAudit(db, { action: ev.undo.type === 'sweep' ? 'scope_sweep_undone' : 'class_fix_undone', target_type: 'scope', outcome: 'success',
+        metadata: { doc_ids: undone.join(','), refused_ids: refused.join(','), event_id: ev.id } });
+    } catch { /* audit is best-effort */ }
+    if (undone.length) recordReviewEvent(db, { kind: 'put_back', ids: undone, scope: ev.scope || { supplier: null, typeSlug: null }, undo: null });
+    try {
+      notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
+      notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+    } catch { /* count broadcast is best-effort */ }
+    return { ok: true, undone, refused };
+  });
   ipcMain.handle('get-quiet-reread-status', () => _quietLane.status());
   ipcMain.handle('cancel-quiet-reread', (_e, { jobId } = {}) => { requireRole('admin', 'edit'); return { ok: _quietLane.cancel(String(jobId || '')) }; });
 
@@ -3789,6 +3865,7 @@ function register(ctx) {
       if (undone.length) logAudit(db, { action: 'scope_sweep_undone', target_type: 'scope', outcome: 'success',
         metadata: { doc_ids: undone.join(','), refused_ids: refused.join(',') } });
     } catch { /* audit is best-effort */ }
+    if (undone.length) recordReviewEvent(db, { kind: 'put_back', ids: undone, scope: { supplier: null, typeSlug: null }, undo: null });   // B1: an undo is a receipt too
     try {
       notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
       notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
@@ -4168,6 +4245,10 @@ function register(ctx) {
       logAudit(db, { action: 'reprocess_autofiled', target_type: 'scope', outcome: 'success',
         metadata: { filed_ids: filed.join(','), dropped: dropped.map(d => `${d.docId}:${d.reason}`).join(',') } });
     } catch { /* audit is best-effort */ }
+    // B1: the post-reprocess "File N" click — approved, queue-wide (no single sender), not sweep-undoable
+    if (filed.length || dropped.length) {
+      recordReviewEvent(db, { kind: 'approved', ids: filed, dropped, approved: true, scope: { supplier: null, typeSlug: null }, undo: null });
+    }
     return { ok: true, filed, dropped };
   });
 
@@ -5312,6 +5393,10 @@ async function _autoFileDoc(db, docId, folderPath, notifyMainWindow, logger) {
     });
   } catch {}
   _recordAutoFiled(db, docId);
+  // B1: the import door fires per document 3–10 s apart; the ledger MERGES the batch into one event
+  // keyed by kind with a per-sender breakdown (Oracle C1). 100 %-matched → not undoable (today's rule).
+  recordReviewEvent(db, { kind: 'auto_filed', ids: [docId], approved: false,
+                          scope: { supplier: allValues.supplier_name || doc.supplier_name || null, typeSlug: dtInfo.slug || null }, undo: null });
   logger?.log(`Auto-filed (100%): ${doc.original_filename} → ${fr.filename}`);
   try {
     notifyMainWindow?.('doc-auto-filed', { docId, count: getAutoFiledIds(db).length });
@@ -5417,6 +5502,7 @@ function killAll() {
 
 module.exports = {
   register,
+  recordReviewEvent,   // B1: the activity ledger's one writer (reviewService's class-fix door reaches it through review/handler)
   // Exposed so other entry points into the same pipeline (e.g. the
   // watch-folder handler) can reuse this setup/dispatch machinery instead
   // of duplicating it on a parallel import path.

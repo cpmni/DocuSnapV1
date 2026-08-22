@@ -85,6 +85,8 @@ function createReviewService(deps = {}) {
   // P2 (2026-08-22): ask whether the scope is READY before this confirm lands, so the after-hook can
   // detect the crossing. Returns null when the feature is dark (no query made).
   const readyProbe           = deps.readyProbe           || (() => null);
+  // B1 (activity strip): the class fix's receipt — {batchId, docs} → a class_fix event with its undo handle.
+  const recordReviewEvent    = deps.recordReviewEvent    || (() => null);
 
   // ── Queue reads (Admin/Edit; the caller gates) ────────────────────────────────
   const queue    = (db) => documents.getReviewQueue(db);
@@ -633,6 +635,13 @@ function createReviewService(deps = {}) {
           presence: (() => { try { return require('./presenceService').shared(); } catch { return null; } })(),
           logger,
         });
+        if (_classFix && _classFix.batchId && Array.isArray(_classFix.docs) && _classFix.docs.length) {
+          try {
+            recordReviewEvent(db, { kind: 'class_fix', ids: _classFix.docs.map(d => d.id), approved: true,
+              scope: { supplier: (allValues && allValues.supplier_name) || supplier_name || null, typeSlug: document_type_slug || (dtInfo && dtInfo.slug) || null },
+              undo: { type: 'classfix', batchId: _classFix.batchId } });
+          } catch { /* presentation only */ }
+        }
       } catch (e) { logger?.warn?.('class fix skipped: ' + (e && e.message)); }
     }
 
