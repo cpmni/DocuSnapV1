@@ -339,7 +339,7 @@ const lane = quietLane.create({
   check('Python self-demotes to BELOW_NORMAL (0x4000), never IDLE, only when marked', /DS_PROCESS_PRIORITY.*below_normal[\s\S]{0,400}SetPriorityClass\(k32\.GetCurrentProcess\(\), 0x4000\)/.test(py));
   check('Review listens on quiet-reprocess and refreshes the LIST only (never the open document)',
         /onQuietReprocess\?\.\(async \(ev\) => \{/.test(rend) && /_quietRefreshList/.test(rend) && !/onQuietReprocess[\s\S]{0,1500}selectDoc\(/.test(rend));
-  check('job_done re-asks the consent sweep (the one filing door)', /if \(ev\.type === 'job_done'\)[\s\S]{0,200}_runQueueSweep\(\)/.test(rend));
+  check('job_done re-asks the consent sweep (the one filing door)', /if \(ev\.type === 'job_done'\)[\s\S]{0,200}_runQueueSweep\(\{ via: 'quiet' \}\)/.test(rend));   // Q4c: via quiet → "re-read just now" copy
   const tsrc = fs.readFileSync(path.join(ROOT, 'database', 'modules', 'templates.js'), 'utf8');
   const rsrc = fs.readFileSync(path.join(ROOT, 'src', 'modules', 'review', 'handler.js'), 'utf8');
   check('(c′) reads the NAMED keyword threshold (no literal) and the matcher mirror writes nothing',

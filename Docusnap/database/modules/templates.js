@@ -1026,6 +1026,121 @@ function stabiliseFingerprint(existing, incoming) {
   return kept.length >= FINGERPRINT_FLOOR ? kept : ex;
 }
 
+// ONE-SAMPLE SEED SUPPORT PRUNE (Q2 of the Chris round-14 queue; measured → Oracle SIGN-OFF-W/COND
+// C1–C9, 2026-08-22 — docs/oracle_log.md "Q2 RE-RULE"). A template born from ONE document freezes
+// that document's fingerprint verbatim. On the owner's worst scan it was
+//   ["SERVICE","WORKSHEET","Lol","DOCUMENT","OLUTIONS","ILa","Ticket","Location","Work","Address"]
+// — three OCR-garble tokens present on NO other document — so every sibling scored exactly 7/10 =
+// 0.70 under the matcher's 0.75 bar: the teach-time quiet re-read selected 0, the ripple's re-read
+// bound 2/14, and only three later confirms' intersections (stabiliseFingerprint) healed it. The
+// intersection can only prune on confirm #2+; this prunes at BIRTH using the evidence the
+// intersection would use — the other documents already in the install:
+//   drop a seed token whose document-frequency over every OTHER document's ocr_text is 0
+//   (the matcher's own word-boundary regex; an EXISTS…LIKE prefilter, regex-confirmed on hits)
+// guarded by (Oracle C2):
+//   G1 issuer-protect — a token that token-matches the confirmed issuer is never pruned (a
+//       first-of-its-kind supplier's brand token has no sibling yet; hygiene condition E's mirror);
+//   G2 reward licence — prune ONLY when the pruned fingerprint RECOVERS ≥2 held, template-less,
+//       same-type-or-untyped documents the raw seed did not reach at 0.75, none of which carries a
+//       non-prefill supplier claim name-disjoint from the issuer (cross-supplier hits are the WRONG
+//       evidence — they must refuse the prune, not license it); no reward → raw seed, no risk taken;
+//       AND a recovered document must agree in its OWN top-band fingerprint (≥ 0.6 of the pruned
+//       tokens appear in documents.keyword_fingerprint — the letterhead zone), not merely anywhere
+//       on its page. The final-rule census caught the path without this: a BUYER-issued PO's seed
+//       (the buyer's letterhead = the address block every supplier prints as the recipient) was
+//       licensed by 60 other suppliers' cold documents and its cross hits went 20 → 179 per seed.
+//       Same-layout evidence lives in the band; the matcher's whole-page score is the weakness of
+//       that class, not its licence;
+//   FLOOR — fewer than FINGERPRINT_FLOOR survivors → raw; HALF-CAP (all-or-nothing) — more than
+//       half would go → raw (never a positional partial prune).
+// Pure with respect to the template: returns the fingerprint to hand to create(); the document's
+// own keyword_fingerprint stays raw. Census (q2_seed_hygiene_census.js, 220 docs): same-supplier
+// recall 98.9% → 100%, cross-supplier hits unchanged. Known limitation: a DUPLICATE import gives a
+// garble df=1 (a recall miss, not a hole). Trade-off pinned: stabiliseFingerprint never re-admits
+// a pruned token — accepted because G2 only prunes tokens absent on ≥2 recovered siblings.
+// Switch: `fingerprint_seed_support_prune` setting / env FINGERPRINT_SEED_SUPPORT (env wins both
+// directions), DEFAULT OFF; OFF returns the seed untouched (byte-identical).
+function seedSupportPruneEnabled(db) {
+  const env = process.env.FINGERPRINT_SEED_SUPPORT;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try { return require('./learning').getSetting(db, 'fingerprint_seed_support_prune', 'false') === 'true'; }
+  catch { return false; }
+}
+
+function _kwRegex(kw) {
+  const esc = String(kw).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?<![a-z0-9])${esc}(?![a-z0-9])`);
+}
+function _kwScore(keywords, ocrLower) {
+  if (!keywords.length) return 0;
+  let hits = 0;
+  for (const kw of keywords) if (_kwRegex(kw).test(ocrLower)) hits++;
+  return hits / keywords.length;
+}
+
+/**
+ * @param {object} db
+ * @param {string[]} seed   the document's own keyword_fingerprint (raw)
+ * @param {object} opts     { docId, issuer, typeId, enabled? }
+ * @returns {{ fingerprint: string[], dropped: string[], reason: string, recovered?: number }}
+ */
+function pruneSeedFingerprint(db, seed, opts = {}) {
+  const raw = _normTokens(seed);
+  const enabled = opts.enabled != null ? !!opts.enabled : seedSupportPruneEnabled(db);
+  if (!enabled) return { fingerprint: raw, dropped: [], reason: 'off' };
+  if (raw.length < FINGERPRINT_FLOOR + 1) return { fingerprint: raw, dropped: [], reason: 'too-short' };
+  const docId = Number(opts.docId) || 0;
+  const issuerToks = _nameTokens(opts.issuer || '');
+  // df=0 over every OTHER document (EXISTS…LIKE prefilter; regex-confirmed on the LIKE hits only)
+  const likeQ = db.prepare('SELECT ocr_text FROM documents WHERE id <> ? AND ocr_text IS NOT NULL AND ocr_text LIKE ? LIMIT 8');
+  const unsupported = [];
+  for (const tok of raw) {
+    const low = tok.toLowerCase();
+    if (issuerToks.has(low)) continue;                                   // G1 issuer-protect
+    let seen = false;
+    try {
+      const re = _kwRegex(tok);
+      for (const r of likeQ.all(docId, `%${tok}%`)) { if (re.test(String(r.ocr_text).toLowerCase())) { seen = true; break; } }
+    } catch { seen = true; }                                            // a read failure never prunes
+    if (!seen) unsupported.push(tok);
+  }
+  if (!unsupported.length) return { fingerprint: raw, dropped: [], reason: 'all-supported' };
+  const drop = new Set(unsupported.map(t => t.toLowerCase()));
+  const pruned = raw.filter(t => !drop.has(t.toLowerCase()));
+  if (pruned.length < FINGERPRINT_FLOOR) return { fingerprint: raw, dropped: [], reason: 'floor' };
+  if (unsupported.length * 2 > raw.length) return { fingerprint: raw, dropped: [], reason: 'half-cap' };
+  // G2 reward licence over the quiet lane's own pool
+  let pool = [];
+  try {
+    pool = db.prepare(`SELECT d.id, d.ocr_text, d.keyword_fingerprint AS fp,
+                              (SELECT e.display_value FROM extractions e WHERE e.document_id = d.id AND e.field_key = 'supplier_name' AND e.display_value IS NOT NULL AND TRIM(e.display_value) <> '' LIMIT 1) AS sup_val,
+                              (SELECT e.extraction_method FROM extractions e WHERE e.document_id = d.id AND e.field_key = 'supplier_name' AND e.display_value IS NOT NULL AND TRIM(e.display_value) <> '' LIMIT 1) AS sup_method
+                         FROM documents d
+                        WHERE d.id <> ? AND d.status = 'needs_review' AND d.template_id IS NULL
+                          AND d.ocr_text IS NOT NULL AND TRIM(d.ocr_text) <> ''
+                          AND (d.document_type_id IS NULL OR d.document_type_id = ?)
+                        LIMIT 500`).all(docId, opts.typeId == null ? -1 : Number(opts.typeId));
+  } catch { pool = []; }
+  let recovered = 0;
+  const prunedLow = pruned.map(t => t.toLowerCase());
+  for (const d of pool) {
+    const low = String(d.ocr_text).toLowerCase();
+    if (_kwScore(raw, low) >= 0.75) continue;                            // the raw seed already reached it
+    if (_kwScore(pruned, low) < 0.75) continue;                          // the prune does not reach it either
+    // same-LAYOUT evidence: the recovered doc's own top-band fingerprint must carry the pruned tokens
+    const dfp = new Set(_normTokens(_parseJson(d.fp, [])).map(t => t.toLowerCase()));
+    if (!dfp.size || prunedLow.filter(t => dfp.has(t)).length < Math.ceil(0.6 * prunedLow.length)) continue;
+    const claim = String(d.sup_val || '').trim();
+    if (claim && d.sup_method !== 'letterhead_prefill' && opts.issuer && supplierNamesDisjoint(opts.issuer, claim)) {
+      return { fingerprint: raw, dropped: [], reason: `contradiction:${d.id}` };   // another sender's claim — wrong evidence
+    }
+    recovered++;
+  }
+  if (recovered < 2) return { fingerprint: raw, dropped: [], reason: `unlicensed:${recovered}` };
+  return { fingerprint: pruned, dropped: unsupported, reason: 'pruned', recovered };
+}
+
 // Logo identity is a single perceptual hash, not a set, so it cannot intersect.
 // The same per-render scan/DPI/enhance drift that affects the fingerprint shifts
 // a recomputed phash by double-digit Hamming on the SAME document, so over-
@@ -1789,7 +1904,7 @@ module.exports = {
   unfreezeAutoFrozenRecipientNames, unfreezeAutoFrozenFields, restoreFrozenFieldsFromBackup,
   searchByName,
   create, update, enrichIdentity, learnTemplateOnCommit, remove, rename, shouldAdoptIssuerName, hammingDistance,
-  stabiliseFingerprint, chooseLogoPhash,
+  stabiliseFingerprint, chooseLogoPhash, pruneSeedFingerprint, seedSupportPruneEnabled,
   getMappings, getMapping, saveMapping, setMappingEnabled, deleteMapping,
   recordMappingTest, setSampleDocument, reassignDocuments, mergeInto, setFieldFixedValue,
   noteIdentitySupported, markBuyerIssued,

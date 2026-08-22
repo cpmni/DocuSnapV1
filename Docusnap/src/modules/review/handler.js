@@ -1597,12 +1597,27 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
       : 'Document';
     const name      = confirmedIssuer || `${typeName} Template`;
 
+    // Q2 (2026-08-22, Oracle C1/C5): the one-sample seed is support-pruned HERE — the value handed to
+    // create(), after the customer strip and after the reuse arms decided; documents.keyword_fingerprint
+    // stays raw. OFF (default) hands the seed through untouched.
+    let _seedFp = keyword_fingerprint;
+    try {
+      const _pr = templates.pruneSeedFingerprint(db, keyword_fingerprint, { docId: document_id, issuer: confirmedIssuer, typeId: dtInfo && dtInfo.id });
+      _seedFp = _pr.fingerprint;
+      if (_pr.dropped.length) {
+        ctx.logger?.log?.(`  Seed fingerprint support-prune: dropped ${JSON.stringify(_pr.dropped)} (recovered ${_pr.recovered} held siblings)`);
+        try { require('../auth/handler').logAudit(db, { action: 'fingerprint_seed_pruned', action_category: 'learning', target_type: 'document', target_id: document_id,
+          outcome: 'success', metadata: { issuer: confirmedIssuer, dropped: _pr.dropped, kept: _seedFp.length, recovered: _pr.recovered } }); } catch {}
+      } else if (_pr.reason !== 'off') {
+        ctx.logger?.log?.(`  Seed fingerprint support-prune: kept raw (${_pr.reason})`);
+      }
+    } catch { _seedFp = keyword_fingerprint; }
     const newTemplateId = templates.create(db, {
       name,
       document_type_slug: document_type_slug || null,
       logo_phash,
       logo_detail_hash,
-      keyword_fingerprint,
+      keyword_fingerprint: _seedFp,
       fields,
     });
 

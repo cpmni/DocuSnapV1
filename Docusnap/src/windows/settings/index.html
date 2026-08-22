@@ -1337,6 +1337,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">When a layout is learned from one page, drop text-fingerprint words that appear on no other document</div>
+                <div class="threshold-sub">A layout taught from a single poor scan keeps that scan's OCR garble in its text fingerprint, so its own siblings score just under the recognition bar until several more confirms wear the garble away. With this on, words found on no other document in the install are dropped at the moment the layout is made — only when that visibly recovers two or more waiting same-layout documents, never a word from the company's own name, never more than half the fingerprint. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="fingerprint-seed-support-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Recognise a confirmed company even when its letterhead is column-spaced</div>
                 <div class="threshold-sub">Some letterheads print the company name with big gaps between the words. Scan Finder can read the gaps as separate columns and fail to match the name to a company you've confirmed, so those documents keep the "please confirm before filing" note. With this on, the spaced-out name is reassembled and, when it matches a company you've confirmed on this layout, the note is cleared. Only the company you confirmed is matched — a name on the page addressed TO you is never treated as the sender. Off by default.</div>
               </div>

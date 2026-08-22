@@ -223,11 +223,20 @@ function apply(db, docId, decision) {
   }
 
   const s = decision.seed;
+  // Q2 (2026-08-22, Oracle C5): the graduation mint is the SECOND one-sample birth path — the same
+  // support prune, same switch, same guards (G1 issuer-protect, G2 reward licence, floor, half-cap).
+  let seedFp = s.keyword_fingerprint;
+  try {
+    const typeId = (db.prepare('SELECT id FROM document_types WHERE LOWER(slug) = LOWER(?)').get(s.slug || '') || {}).id;
+    const pr = templates.pruneSeedFingerprint(db, s.keyword_fingerprint, { docId, issuer: s.name, typeId });
+    seedFp = pr.fingerprint;
+    if (pr.dropped.length) s.pruned = pr.dropped;
+  } catch { seedFp = s.keyword_fingerprint; }
   const templateId = templates.create(db, {
     name: s.name,
     document_type_slug: s.slug,
     logo_phash: s.logo_phash,              // may be null (keyword-only, Oracle C3)
-    keyword_fingerprint: s.keyword_fingerprint,
+    keyword_fingerprint: seedFp,
     fields: s.fields,                      // variable-only (Oracle C6)
     source: 'graduation',                  // provenance (migration 64): which write froze the issuer
   });
