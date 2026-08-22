@@ -417,25 +417,23 @@ function getReviewCount(db) {
   ).get().n;
 }
 
-// Home-dashboard split of the review queue: how many docs genuinely NEED a look
-// (flagged / under-threshold / missing a required field) vs how many are ready to
-// confirm as-is. Derives from getReviewQueue's OWN rows and the same predicate the
-// Review window uses (isFlagged || missing_required_labels) so the two can never
-// disagree — do not re-implement the flag logic in SQL here.
+// Home-dashboard split of the review queue: how many docs genuinely NEED a look vs how many
+// are ready to file as-is. Derives from getReviewQueue's OWN rows and THE ONE classifier
+// (src/windows/shared/reviewReadiness.js — the same function Review's File All Ready dialog
+// partitions with), so the two numbers can never disagree. Q4b (Chris round 14: "20 ready to
+// file" over 20 untyped docs — this split had no "no type" leg and no acknowledged-flag
+// exemption while File All had both; Oracle C4b.1: one classifier, both sides, same commit).
+// Do not re-implement the flag logic in SQL here.
 function getReviewSplit(db) {
   const rows = getReviewQueue(db);
   // FAR two-tier rule (far_lowconf_valued_only, gate-unify slice): when ON, only a VALUED
-  // below-threshold read counts as "needs a look" — an attempted-but-empty optional field @0
-  // does not. Must match the renderer's isFlagged (the "never disagree" contract above) — the
-  // renderer caches the same setting at queue load. OFF = byte-identical to today.
+  // below-threshold read counts as "needs a look" — the renderer caches the same setting at
+  // queue load. OFF = byte-identical to today.
   const valuedOnly = _farValuedOnlyEnabled(db);
-  let need = 0;
-  for (const d of rows) {
-    if ((d.review_flag_count || 0) > 0
-        || ((valuedOnly ? d.below_threshold_valued_count : d.below_threshold_count) || 0) > 0
-        || String(d.missing_required_labels || '').trim()) need++;
-  }
-  return { total: rows.length, need, ready: rows.length - need };
+  const parts = require('../../src/windows/shared/reviewReadiness').partition(rows, { valuedOnly });
+  const ready = parts.ready.length;
+  return { total: rows.length, need: rows.length - ready, ready,
+           flagged: parts.flagged.length, noType: parts.noType.length, missing: parts.missing.length };
 }
 
 // C5 read pattern (see trust.js _shadowRowSkipEnabled): env wins both directions for harness

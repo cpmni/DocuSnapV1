@@ -5438,10 +5438,13 @@ async function fileAllReady() {
   // skips on (flag-not-acknowledged · no type · missing required, the latter from the queue row's
   // missing_required_labels — the DB twin of validateConfirm), and name each held group, so the
   // number on the button is the number that files.
-  const _flagged   = docs.filter(d => isFlagged(d) && !d.review_acknowledged_at);
-  const _noType    = docs.filter(d => !_flagged.includes(d) && !d.type_slug);
-  const _missing   = docs.filter(d => !_flagged.includes(d) && d.type_slug && (d.missing_required_labels || '').trim());
-  const _eligible  = docs.length - _flagged.length - _noType.length - _missing.length;
+  // Q4b (2026-08-22): THE ONE classifier (shared/reviewReadiness.js) — the same partition Home's
+  // "N ready to file" is computed from (documents.getReviewSplit), so the two never disagree.
+  const _parts     = window.ReviewReadiness.partition(docs, { valuedOnly: !!window.__farValuedOnly });
+  const _flagged   = _parts.flagged;
+  const _noType    = _parts.noType;
+  const _missing   = _parts.missing;
+  const _eligible  = _parts.ready.length;
   if (_eligible <= 0) {
     showToast('Nothing is ready to file yet — every document in the queue is waiting on a check or a missing detail.', 'warn');
     return;
@@ -5635,9 +5638,11 @@ document.getElementById('btn-file-all-review')?.addEventListener('click', fileAl
 // completion as `offerIds` (display only). Nothing files until the operator clicks File N; the
 // accept IPC takes NO payload — the server files its own recorded offer, so this window can
 // accept or ignore the offer but never widen it.
+let _rabOfferIds = null;   // Q4c: the reprocess-offer bar's live candidate ids (pruned on every queue refresh)
 function showReprocessAutofileOffer(offerIds) {
   const bar = document.getElementById('reprocess-autofile-bar');
   if (!bar || !Array.isArray(offerIds) || !offerIds.length) return;
+  _rabOfferIds = offerIds.slice();
   const n = offerIds.length;
   bar.innerHTML =
     `<b>${n}</b> reprocessed document${n === 1 ? '' : 's'} read clean and ${n === 1 ? 'is' : 'are'} ready to file — `
@@ -5646,7 +5651,7 @@ function showReprocessAutofileOffer(offerIds) {
     + `<button class="btn" id="rab-dismiss">Not now</button>`;
   bar.style.display = 'block';
   document.getElementById('rab-file')?.addEventListener('click', async () => {
-    bar.style.display = 'none';
+    bar.style.display = 'none'; _rabOfferIds = null;
     let r = null;
     try { r = await window.docusnap.reprocessAutocommitAccept(); } catch {}
     if (r && r.ok) {
@@ -5668,12 +5673,12 @@ function showReprocessAutofileOffer(offerIds) {
     }
   }, { once: true });
   document.getElementById('rab-review')?.addEventListener('click', () => {
-    bar.style.display = 'none';
+    bar.style.display = 'none'; _rabOfferIds = null;
     _sweepFilterIds = new Set(offerIds);   // reuse the existing "Review them" queue filter
     renderQueueList();
   }, { once: true });
   document.getElementById('rab-dismiss')?.addEventListener('click', () => {
-    bar.style.display = 'none';            // offer stays server-side; a new batch overwrites it
+    bar.style.display = 'none'; _rabOfferIds = null;   // offer stays server-side; a new batch overwrites it
   }, { once: true });
 }
 
@@ -5726,13 +5731,22 @@ const _sweepScopeKey = (s, t) => `${String(s || '').trim().toLowerCase()}|${Stri
 //     which also makes the whole feature discoverable instead of ambush-triggered.
 // (Dismissal is per-SCOPE — `_sweepDismissed` — never session-wide: see the 'later' handler.)
 
-async function _runQueueSweep({ manual = false } = {}) {
+// Q4c (2026-08-22): a fresh server answer SUPERSEDES a stale offer. The bar Chris pressed ("File up
+// to 12" → "Filed 0") was an offer-phase snapshot left standing after auto-accept filed those 12 —
+// the re-asked sweep returned nothing and the old code simply returned, leaving the bar. An
+// offer-phase bar is retired on a "nothing" / "auto-accept-running" answer; a 'filing' or 'done'
+// bar is never touched (the receipt belongs to scope-auto-filed / the accept path).
+function _retireStaleOffer() {
+  if (_sweepState && _sweepState.phase === 'offer') { _sweepState = null; renderSweepConsentBar(); }
+}
+async function _runQueueSweep({ manual = false, via = null } = {}) {
   if (bulkFiling || _batchActive) return false;
   let res = null;
   try { res = await window.docusnap.sweepQueueCandidates?.(); } catch { return false; }
   if (res && res.ok === false && res.reason === 'auto-accept-running') {
     // Slice 1: the server is filing a sender's ready documents right now; it will broadcast
     // scope-auto-filed when done and this sweep re-runs then. Never show a bar over those docs.
+    _retireStaleOffer();
     if (manual) showToast('Filing a sender’s ready documents now — check again in a moment.', 'info');
     return false;
   }
@@ -5740,6 +5754,7 @@ async function _runQueueSweep({ manual = false } = {}) {
     // SAY THE NEGATIVE RESULT OUT LOUD (Chris): silence after a confirm is ambiguous between
     // "checked, nothing changed" and "didn't check" — and that ambiguity is exactly what sends
     // people back to Reprocess All. Only on an explicit ask, so it never becomes chatter.
+    _retireStaleOffer();
     if (manual) showToast('Checked everything still waiting — nothing new is ready to file yet.', 'info');
     return false;
   }
@@ -5761,8 +5776,9 @@ async function _runQueueSweep({ manual = false } = {}) {
       .map(c => ({ ...c, filename: byId.get(c.docId)?.original_filename || `#${c.docId}` })),
     excluded: [], unticked: new Set(), listOpen: false,
     otherScopes: others > 0 ? others : 0,
+    via,   // 'quiet' when the quiet re-read's job_done asked — the bar then says "re-read just now"
   };
-  if (!_sweepState.candidates.length) { _sweepState = null; return false; }
+  if (!_sweepState.candidates.length) { _sweepState = null; renderSweepConsentBar(); return false; }
   renderSweepConsentBar();
   return true;
 }
@@ -5917,9 +5933,13 @@ function renderSweepConsentBar() {
     // Re-counting on every queue change is the expensive fix; hedging is the honest one, and it is
     // the wording of the File All Ready dialog he explicitly DID trust — because it said "up to
     // 146 of 195" and then filed exactly 146. Say no more than you can guarantee.
+    // Q4c: after the quiet re-read the documents WERE re-read — say so instead of "nothing was re-read".
+    const readLine = s.via === 'quiet'
+      ? `were re-read just now and pass every check.`
+      : `already read cleanly and now pass every check — nothing was re-read.`;
     bar.innerHTML =
         `<b>${n}</b> <b>${escHtml(s.supplier)}</b> ${escHtml(typeName)} document${n === 1 ? '' : 's'} `
-      + `already read cleanly and now pass every check — nothing was re-read.`
+      + readLine
       + heldLine + otherLine + rows
       + `<div class="scb-actions">`
       + `<button class="scb-btn primary" data-scb="file" ${n === 0 || s.phase === 'filing' ? 'disabled' : ''}>`
@@ -5942,7 +5962,8 @@ function renderSweepConsentBar() {
       // filed copy would leave the document with no file at all (the "no page" class from round 5).
       // A later re-confirm overwrites the same filename in place, so nothing duplicates. Say that,
       // rather than letting the operator discover a copy still sitting in their filing cabinet.
-      + `<span class="scb-undo" data-scb="undo" title="Puts these documents back in Review. The copies already written to your filing folder stay there and are replaced when you file them again.">Put back in Review</span>`
+      // Q4c: no "Put back" link when nothing was filed — there is nothing to put back.
+      + (s.filed.length ? `<span class="scb-undo" data-scb="undo" title="Puts these documents back in Review. The copies already written to your filing folder stay there and are replaced when you file them again.">Put back in Review</span>` : '')
       + (kept ? `<div class="scb-list">${kept}</div>` : '');
     bar.style.display = 'block';
     clearTimeout(s._doneTimer);
@@ -7718,10 +7739,27 @@ async function _refreshQueueFromBroadcast() {
   const prevId  = currentDoc?.id;
   queue         = await window.docusnap.getReviewQueue();
   deferredQueue = await window.docusnap.getDeferredQueue();
+  // Q4d (Chris round 14): the per-sender "N more to file by itself" badge is rendered by
+  // renderQueueList from _scopeReadiness, which was refreshed only at load and after THIS window's
+  // own confirm — a send-back from the Search window (or any other window's confirm) left it
+  // stale ("4 more" after the mis-confirm was undone). Refresh it before the list renders.
+  try { await refreshScopeReadiness(); } catch {}
   updateTabCounts();
+  // Q4c: every offer is a snapshot — prune it to the documents STILL queued, retire it when empty.
+  {
+    const liveIds = new Set(queue.map(d => d.id));
+    const before = _sweepState;
+    _sweepState = window.OfferPrune ? window.OfferPrune.pruneOffer(_sweepState, liveIds) : _sweepState;
+    if (_sweepState !== before || (_sweepState && _sweepState.phase === 'offer')) renderSweepConsentBar();
+    if (_rabOfferIds) {
+      _rabOfferIds = window.OfferPrune ? window.OfferPrune.pruneIds(_rabOfferIds, liveIds) : _rabOfferIds;
+      if (!_rabOfferIds.length) { _rabOfferIds = null; const rb = document.getElementById('reprocess-autofile-bar'); if (rb) rb.style.display = 'none'; }
+    }
+  }
   if (activeTab === 'review')   renderQueueList();
   if (activeTab === 'deferred') renderDeferredList();
   refreshAutoCommittedBar();   // tick the auto-committed tally up after the burst (fetches fresh)
+  updateReprocessSupplierButton();   // Q4c: "Reprocess N from X" follows the live queue
   if (!prevId && queue.length > 0 && activeTab === 'review') selectDoc(queue[0]);
   // Chris r13 card 4: the open document was filed ELSEWHERE (the teach wizard's own confirm, a
   // sweep, another window) — it is no longer in the queue but the pane still shows it with a live
@@ -7774,7 +7812,7 @@ window.docusnap.onQuietReprocess?.(async (ev) => {
   if (ev.type === 'job_start')    { j.supplier = ev.supplier || j.supplier; j.total = ev.total || 0; j.done = ev.done || 0; j.state = 'running'; }
   if (ev.type === 'doc_done')     { j.done = ev.done ?? (j.done + 1); j.total = ev.total || j.total; _quietRefreshList(); }
   if (ev.type === 'job_deferred') { j.state = 'deferred'; }
-  if (ev.type === 'job_done')     { j.state = 'done'; _quietJobs.delete(ev.jobId); _renderQuietHint(); try { await _refreshQueueFromBroadcast(); } catch {} try { await _runQueueSweep(); } catch {} return; }
+  if (ev.type === 'job_done')     { j.state = 'done'; _quietJobs.delete(ev.jobId); _renderQuietHint(); try { await _refreshQueueFromBroadcast(); } catch {} try { await _runQueueSweep({ via: 'quiet' }); } catch {} return; }
   _quietJobs.set(ev.jobId, j);
   _renderQuietHint();
 });

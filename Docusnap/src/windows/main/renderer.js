@@ -194,11 +194,12 @@ async function renderLearning(confirmed) {
   // The truthful "suppliers auto-committing" tally comes from the graduation ROSTER (the same list
   // Settings shows), NOT a distinct-count of a recent CONFIRMED sample — that sample count diverged
   // from the roster (the reported ambiguity). Fall back to the sample only if the tally is missing.
-  let na = null, autoFiledEver = null;
+  let na = null, autoFiledEver = null, selfFiling = null;
   try {
     const x = await window.docusnap.getDashboardExtra();
     if (x && x.autoFilingSuppliers) na = x.autoFilingSuppliers.suppliers;
     if (x && x.autoFiled) autoFiledEver = x.autoFiled.auto || 0;
+    if (x && x.selfFilingSenders) selfFiling = x.selfFilingSenders.senders;   // Q4b: THE readiness predicate (the Review badge's)
   } catch {}
   if (na == null) {
     const s = new Set();
@@ -210,6 +211,19 @@ async function renderLearning(confirmed) {
   // "N suppliers now file automatically" was FALSE on installs where nothing has ever
   // auto-filed (Chris, both rounds: graduation is ELIGIBILITY; the filing bar decides
   // whether it happens). Say "qualified", and admit when none has actually fired.
+  // Q4b (Chris round 14): the headline is the SAME readiness the Review badge shows ("files by
+  // itself" — learned formats + a layout), so the number here equals the count of ✓ badges in
+  // Review; the graduation roster is the sub-line. Falls back to the old wording when the
+  // readiness tally is unavailable.
+  if (selfFiling != null) {
+    const grad = na > 0 ? `<div class="dash-card-note">${na} ${na === 1 ? 'supplier has' : 'suppliers have'} graduated to fully automatic filing${lay}.</div>`
+                        : (lay ? `<div class="dash-card-note">Learned${lay.replace(/^ · learned/, '')}.</div>` : '');
+    body.innerHTML = selfFiling > 0
+      ? `<span class="n">${selfFiling}</span> ${selfFiling === 1 ? 'sender files' : 'senders file'} by ${selfFiling === 1 ? 'itself' : 'themselves'} after your confirmations.` + grad
+        + (autoFiledEver === 0 ? `<div class="dash-card-note">Nothing has filed by itself in the last 7 days yet.</div>` : '')
+      : `No senders file by themselves yet — teach a layout and confirm a few of its documents${lay}.`;
+    return;
+  }
   body.innerHTML = na > 0
     ? `<span class="n">${na}</span> ${na === 1 ? 'supplier has' : 'suppliers have'} qualified for automatic filing${lay}.`
       + (autoFiledEver === 0 ? `<div class="dash-card-note">Nothing filed automatically in the last 7 days — that also depends on the filing bar in Settings → Processing.</div>` : '')
@@ -860,6 +874,14 @@ async function startProcessing() {
   let processResult;
   try {
     processResult = await window.docusnap.processFolder(selectedFolder);
+    // Q1 seam (2026-08-22): the handler REFUSES a folder that holds the kept originals of
+    // already-filed documents (re-importing = duplicates) but lets the user override it.
+    if (processResult && processResult.success === false && processResult.overridable) {
+      const again = confirm(`${processResult.error}
+
+Import it anyway?`);
+      if (again) processResult = await window.docusnap.processFolder(selectedFolder, { importAnyway: true });
+    }
   } catch (e) {
     appendLog(`Fatal error: ${e.message}`, 'err');
     logStatus.textContent = 'Error';

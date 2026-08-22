@@ -196,11 +196,14 @@ check('bulk stays silent per-document (File All Ready reports once at the end)',
       /if \(!bulk\) \{[\s\S]{0,400}Filed as/.test(rend));
 check('File All Ready puts a COUNT in its warning — the number that files, not "up to" (Chris r12 #5)',
       /File \$\{_eligible\} ready document/.test(rend) && !/File up to \$\{_eligible\}/.test(rend));
-check('...computed with the loop\'s OWN THREE skip reasons (flag · no type · missing required), so the '
-      + 'dialog cannot promise a different population',
-      /const _flagged\s+= docs\.filter\(d => isFlagged\(d\) && !d\.review_acknowledged_at\);/.test(rend)
-      && /const _noType\s+= docs\.filter\(d => ![\s\S]{0,60}!d\.type_slug\);/.test(rend)
-      && /const _missing\s+= docs\.filter\([\s\S]{0,120}missing_required_labels/.test(rend)
+// Q4b (2026-08-22): the three skip reasons now come from THE ONE classifier
+// (shared/reviewReadiness.js — flagged › noType › missing) that Home's split uses too; the loop's
+// own flag skip is unchanged.
+check('...computed with the loop\'s OWN THREE skip reasons (flag · no type · missing required) via the shared '
+      + 'classifier, so the dialog cannot promise a different population (nor can Home)',
+      /const _parts\s+= window\.ReviewReadiness\.partition\(docs, \{ valuedOnly: !!window\.__farValuedOnly \}\);/.test(rend)
+      && /const _flagged\s+= _parts\.flagged;/.test(rend) && /const _noType\s+= _parts\.noType;/.test(rend)
+      && /const _missing\s+= _parts\.missing;/.test(rend) && /const _eligible\s+= _parts\.ready\.length;/.test(rend)
       && /if \(isFlagged\(doc\) && !doc\.review_acknowledged_at\) \{ skipped\+\+; continue; \}/.test(rend));
 check('...and names each held group in the dialog', /with no document type yet/.test(rend) && /missing a required detail/.test(rend));
 check('...and refuses early, with a reason, when nothing is eligible',

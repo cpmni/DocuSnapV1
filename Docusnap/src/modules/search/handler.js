@@ -12,6 +12,28 @@
 
 const searchService = require('../../services/searchService');
 
+// Q4b (2026-08-22): senders that FILE BY THEMSELVES = scopeReadiness.isReady over every confirmed
+// (supplier, type) — ONE getFieldFormats scan shared across scopes, memoised 10 s (Oracle C4b.2).
+let _selfFilingMemo = null;   // { at, value }
+function _selfFilingSenders(db, opts = {}) {
+  if (!opts.noMemo && _selfFilingMemo && (Date.now() - _selfFilingMemo.at) < 10000) return _selfFilingMemo.value;
+  const readiness = require('../../../database/modules/scopeReadiness');
+  const learning  = require('../../../database/modules/learning');
+  const formats = learning.getFieldFormats(db);
+  const rows = db.prepare(`SELECT DISTINCT LOWER(TRIM(d.supplier_name)) AS sup, d.supplier_name AS supplier, LOWER(dt.slug) AS slug
+                             FROM documents d JOIN document_types dt ON dt.id = d.document_type_id
+                            WHERE d.status = 'confirmed' AND d.supplier_name IS NOT NULL AND TRIM(d.supplier_name) <> ''`).all();
+  const senders = new Set(); let scopes = 0;
+  for (const r of rows) {
+    let ok = false;
+    try { ok = !!readiness.isReady(db, r.supplier, r.slug, { formats }).ready; } catch { ok = false; }
+    if (ok) { scopes++; senders.add(r.sup); }
+  }
+  const value = { senders: senders.size, scopes };
+  _selfFilingMemo = { at: Date.now(), value };
+  return value;
+}
+
 function register(ctx) {
   const { ipcMain, getDb } = ctx;
   const { requireLogin } = require('../auth/handler');
@@ -79,6 +101,13 @@ function register(ctx) {
       }
       out.autoFilingSuppliers = { suppliers: sups.size, scopes: scopes.length };
     } catch { /* leave undefined */ }
+    // 6) Senders that FILE BY THEMSELVES — THE readiness predicate (scopeReadiness.isReady: role-
+    //    complete learned formats ∥ graduated, AND a taught/graduation layout) over every
+    //    (supplier, type) with ≥1 confirmed doc; ONE getFieldFormats scan shared across scopes and
+    //    memoised 10 s (Oracle C4b.2: hundreds of scopeTrust queries per Home paint otherwise).
+    //    Q4b: Home said "No suppliers file automatically yet" (the graduation roster) after 34
+    //    documents had filed themselves — the Review badge and this card now ask the same function.
+    try { out.selfFilingSenders = _selfFilingSenders(db); } catch { /* leave undefined */ }
     return out;
   });
 
@@ -96,4 +125,4 @@ function register(ctx) {
   });
 }
 
-module.exports = { register };
+module.exports = { register, _selfFilingSenders };
