@@ -734,6 +734,15 @@ function _layoutRereadEnabled(db) {
   try { return require('../../../database/modules/learning').getSetting(db, 'quiet_reread_on_layout', 'false') === 'true'; }
   catch { return false; }
 }
+// Owner card 1 (2026-08-23): the ready arm's own switch (DARK). Rides quiet_reread_on_ready, which is
+// what schedules the 'ready' job in the first place — this only widens THAT job's population.
+function _readyTemplatedEnabled(db) {
+  const env = process.env.QUIET_REREAD_ON_READY_TEMPLATED;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try { return require('../../../database/modules/learning').getSetting(db, 'quiet_reread_on_ready_templated', 'false') === 'true'; }
+  catch { return false; }
+}
 
 // JS MIRROR of template_matcher._name_arm_tokens (Oracle C3.2): the distinctive tokens of a
 // supplier display name — lowercase, ≥3 chars, not a generic company / type / stop word. The
@@ -3711,6 +3720,12 @@ function register(ctx) {
     },
     corroborated: (rec) => require('../../../database/modules/trust')._corrobLicensed(rec),
     typeSplitArm: { enabled: (db) => _typeSplitRippleOn(db) },   // A6
+    // Owner card 1 (2026-08-23): the READY arm — DARK behind `quiet_reread_on_ready_templated`, riding
+    // `quiet_reread_on_ready` (the crossing itself). The floor is the scope's LIVE trust floor.
+    readyArm: {
+      enabled: (db) => _readyTemplatedEnabled(db),
+      floor: (db, supplier, slug) => { const t = require('../../../database/modules/trust').scopeTrust(db, supplier, slug); return t && Number.isFinite(t.floor) ? t.floor : null; },
+    },
     // S3-(c): the lane's re-read docs reach filing ONLY via the sweep — a re-ask for the scope (the
     // renderer also re-runs the consent sweep on job_done, so the bar path is covered when
     // auto-accept is off).
@@ -5531,7 +5546,7 @@ module.exports = {
   scheduleScopeAutoAccept: (db, info) => (_scheduleScopeAutoAcceptImpl ? _scheduleScopeAutoAcceptImpl(db, info) : false),
   _quietLaneActiveScopes,    // Slice 3 marks a scope here while its quiet re-read is in flight (S1-C5)
   scheduleQuietReread,   // Slice 3 trigger (a taught confirm / a layout write)
-  _layoutRereadEnabled, nameArmTokens, NAME_ARM_GENERIC,
+  _layoutRereadEnabled, _readyTemplatedEnabled, nameArmTokens, NAME_ARM_GENERIC,
   readyProbe: (db, sup, slug) => (_readyProbeImpl ? _readyProbeImpl(db, sup, slug) : null),              // P2: scope readiness BEFORE a confirm (memoised)
   scheduleReadyReread: (db, info) => (_scheduleReadyRereadImpl ? _scheduleReadyRereadImpl(db, info) : false),   // P2: fire the lane on the ready crossing
   scheduleTypeSplitReread: (db, info) => (_scheduleTypeSplitRereadImpl ? _scheduleTypeSplitRereadImpl(db, info) : false),   // A6: the confirm-once ripple

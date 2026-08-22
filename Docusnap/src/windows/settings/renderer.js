@@ -917,6 +917,8 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          ['fingerprint-seed-support-toggle', 'fingerprint_seed_support_prune'],
                          // Q3 layout-write re-read (2026-08-22, DARK).
                          ['quiet-reread-on-layout-toggle', 'quiet_reread_on_layout'],
+                         // Owner card 1 (2026-08-23): the READY arm over template-carrying siblings (DARK).
+                         ['quiet-reread-on-ready-templated-toggle', 'quiet_reread_on_ready_templated'],
                          // The garbled-issuer arc (2026-08-22 evening, DARK).
                          ['fixed-seed-fragment-garble-toggle', 'template_fixed_seed_fragment_garble'],
                          ['fixed-seed-debris-wide-toggle', 'template_fixed_debris_wide'],

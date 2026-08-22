@@ -1349,6 +1349,14 @@
               </div>
               <label class="toggle"><input type="checkbox" id="quiet-reread-on-layout-toggle"><span class="toggle-slider"></span></label>
             </div>
+            <!-- Owner card 1 (2026-08-23): the READY arm — template-carrying siblings below the floor (DARK) -->
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">When a sender starts filing by itself, also re-read its waiting documents that already matched a learned layout</div>
+                <div class="threshold-sub">Once a taught sender's siblings match its layout before any confirm, they sit just under the bar the sender needs to file by itself — and the re-read that fires when the sender becomes ready only looks at documents with no layout yet, so those stay waiting for File All. With this on, that re-read also covers the sender's waiting documents that matched its layout but sit below the bar. Same safeguards as the box re-read above; a detail filled in for the first time is held for you to confirm once. Needs "re-read when a sender becomes ready" and "a layout may only claim a document that names its company" to be on. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="quiet-reread-on-ready-templated-toggle"><span class="toggle-slider"></span></label>
+            </div>
             <!-- The garbled-issuer arc (2026-08-22 evening, three slices, all DARK) -->
             <div class="threshold-row">
               <div>

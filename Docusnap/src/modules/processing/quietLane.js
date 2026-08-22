@@ -59,6 +59,7 @@ function create(deps) {
     layoutArm = null,           // Q3: { enabled(db), onPage(db), nameTokens(name) } — the layout arm's preconditions
     corroborated = null,        // Q3 C3.3: trust._corrobLicensed(record) — licenses a first-fill to stand
     typeSplitArm = null,        // A6 (type-split arc): { enabled(db) } — the confirm-once ripple's switch
+    readyArm = null,            // owner card 1 (2026-08-23): { enabled(db), floor(db, supplier, slug) } — the READY-crossing re-read of TEMPLATE-CARRYING held docs below the scope floor
   } = deps;
 
   const jobs = new Map();          // scopeKey -> job
@@ -93,7 +94,7 @@ function create(deps) {
     if (job && job === running) { job.rerun = true; for (const r of reasonList) job.reasons.add(r); if (seedDocId) job.seedDocId = seedDocId; return true; }   // coalesce: one follow-on pass
     if (!job) {
       job = { id: `q${++_seq}`, key, supplier: sup, typeSlug: slug, reason: reasonList[0] || reason, reasons: new Set(), state: 'queued', total: 0, seedDocId: null,
-              remaining: null, done: [], dropped: [], failed: 0, changed: [], rerun: false, cancelled: false, timer: null, layoutArm: null };
+              remaining: null, done: [], dropped: [], failed: 0, changed: [], rerun: false, cancelled: false, timer: null, layoutArm: null, readyArm: null };
       jobs.set(key, job);
     }
     for (const r of reasonList) job.reasons.add(r);
@@ -113,6 +114,42 @@ function create(deps) {
   //       the 08-20 night sandbox), so a name match alone would miss the owner's exact case.
   // Excludes presence viewers + workflow-locked (the staging re-checks the lock) + deferred (parked
   // by the user). Never a doc that already carries a template (those are the sweep's business).
+  // The TEMPLATE-CARRYING population of a scope (the layout arm's rule, shared with the ready arm):
+  // held docs bound to one of the templates the scope OWNS (frozen supplier_name = scope, or the
+  // template's sample document is the scope's) — scopeTemplateIds also admits a template merely
+  // CARRIED by a scope-named doc (a mis-binding to another sender's layout), which is excluded —
+  // that carry the scope's name, same type (or untyped), not in a workflow, and not already holding
+  // an S3-C5 "Read differently after learning" note. `belowFloor` (the ready arm) keeps only docs
+  // whose stored overall_confidence is below it. Returns null when the scope owns no template.
+  function _ownedTemplateRows(db, job, dt, { belowFloor = null } = {}) {
+    let tplIds = new Set();
+    try { tplIds = scopeTemplateIds ? (scopeTemplateIds(db, job.supplier, job.typeSlug) || new Set()) : new Set(); } catch { tplIds = new Set(); }
+    try {
+      const owned = new Set(db.prepare(`
+        SELECT t.id FROM templates t
+         WHERE EXISTS (SELECT 1 FROM template_fields tf WHERE tf.template_id = t.id AND tf.field_key = 'supplier_name'
+                         AND LOWER(TRIM(COALESCE(tf.fixed_value, ''))) = ?)
+            OR EXISTS (SELECT 1 FROM documents sd WHERE sd.id = t.sample_document_id
+                         AND LOWER(TRIM(COALESCE(sd.supplier_name, ''))) = ?)`).all(job.supplier.toLowerCase(), job.supplier.toLowerCase()).map(r => r.id));
+      tplIds = new Set([...tplIds].filter(id => owned.has(id)));
+    } catch { tplIds = new Set(); }
+    if (!tplIds.size) return null;
+    const ph = [...tplIds].map(() => '?').join(',');
+    const args = [...tplIds, job.supplier.toLowerCase(), dt.id];
+    let floorSql = '';
+    if (Number.isFinite(belowFloor)) { floorSql = ' AND COALESCE(d.overall_confidence, 0) < ?'; args.push(belowFloor); }
+    return db.prepare(`
+      SELECT d.id, d.original_filename, d.folder_path FROM documents d
+       WHERE d.status = 'needs_review'
+         AND d.template_id IN (${ph})
+         AND LOWER(TRIM(COALESCE(d.supplier_name, ''))) = ?
+         AND (d.document_type_id = ? OR d.document_type_id IS NULL)
+         AND COALESCE(d.workflow_status, '') NOT IN ('pending', 'claimed')
+         AND NOT EXISTS (SELECT 1 FROM extractions e WHERE e.document_id = d.id
+                           AND e.validation_note LIKE '%Read differently after learning%')${floorSql}
+       ORDER BY d.id`).all(...args);
+  }
+
   function _candidates(db, job) {
     const dt = db.prepare('SELECT id FROM document_types WHERE LOWER(slug) = ?').get(job.typeSlug);
     if (!dt) return [];
@@ -209,37 +246,48 @@ function create(deps) {
       if (why) {
         job.layoutArm = `skipped:${why}`;
       } else {
-        let tplIds = new Set();
-        try { tplIds = scopeTemplateIds ? (scopeTemplateIds(db, job.supplier, job.typeSlug) || new Set()) : new Set(); } catch { tplIds = new Set(); }
-        // Only the templates the scope OWNS (frozen supplier_name = scope, or the template's sample
-        // document is the scope's) — scopeTemplateIds also admits a template merely CARRIED by a
-        // scope-named doc (a mis-binding to another sender's layout), which a layout write on this
-        // scope did not touch.
-        try {
-          const owned = new Set(db.prepare(`
-            SELECT t.id FROM templates t
-             WHERE EXISTS (SELECT 1 FROM template_fields tf WHERE tf.template_id = t.id AND tf.field_key = 'supplier_name'
-                             AND LOWER(TRIM(COALESCE(tf.fixed_value, ''))) = ?)
-                OR EXISTS (SELECT 1 FROM documents sd WHERE sd.id = t.sample_document_id
-                             AND LOWER(TRIM(COALESCE(sd.supplier_name, ''))) = ?)`).all(job.supplier.toLowerCase(), job.supplier.toLowerCase()).map(r => r.id));
-          tplIds = new Set([...tplIds].filter(id => owned.has(id)));
-        } catch { tplIds = new Set(); }
-        if (!tplIds.size) job.layoutArm = 'skipped:no_template';
+        const rows = _ownedTemplateRows(db, job, dt);
+        if (!rows) job.layoutArm = 'skipped:no_template';
         else {
-          const ph = [...tplIds].map(() => '?').join(',');
-          const rows = db.prepare(`
-            SELECT d.id, d.original_filename, d.folder_path FROM documents d
-             WHERE d.status = 'needs_review'
-               AND d.template_id IN (${ph})
-               AND LOWER(TRIM(COALESCE(d.supplier_name, ''))) = ?
-               AND (d.document_type_id = ? OR d.document_type_id IS NULL)
-               AND COALESCE(d.workflow_status, '') NOT IN ('pending', 'claimed')
-               AND NOT EXISTS (SELECT 1 FROM extractions e WHERE e.document_id = d.id
-                                 AND e.validation_note LIKE '%Read differently after learning%')
-             ORDER BY d.id`).all(...tplIds, job.supplier.toLowerCase(), dt.id);
           let n = 0;
           for (const r of rows) { if (!byId.has(r.id)) { add({ ...r, _via: 'layout' }); n++; } }
           job.layoutArm = `selected:${n}`;
+        }
+      }
+    }
+    // ── THE READY ARM (owner card 1, Chris 15 → built 2026-08-23; gary design, Oracle C-set of the
+    // layout arm re-applied). Once the seed-support prune (Q2) makes the teach-time re-read work, the
+    // siblings BIND to the scope's template BEFORE any confirm — at overall 91–93 under the scope's
+    // UNGRADUATED floor (100). The sweep then offers nothing, and the 'ready' crossing (the 3rd
+    // contributing confirm) re-read only TEMPLATE-LESS docs (the S3 boundary) — so the owner saw
+    // "✓ files by itself" over a pile that waited for File All. This arm re-reads, at the READY
+    // crossing only, the scope's template-carrying held docs whose stored overall confidence sits
+    // BELOW the scope's live floor (a doc at/above it files through the sweep without a re-read).
+    // Same population rule + same guards as the layout arm (owned templates · the scope's name · no
+    // prior S3-C5 note · on-page identity ON · judgeable name — so the binding IS re-tested), plus:
+    //   · its own switch `quiet_reread_on_ready_templated` (DARK), riding `quiet_reread_on_ready`;
+    //   · the C3.3 first-fill hold applies (via 'ready' — "confirm once"), fail toward review;
+    //   · filing only via the sweep / scope auto-accept, never here.
+    // An all-generic scope name (DS) is skipped + audited like the layout arm — the owner is told.
+    if (job.reasons && job.reasons.has('ready')) {
+      let why = null;
+      try { if (!(readyArm && readyArm.enabled && readyArm.enabled(db))) why = 'off'; } catch { why = 'off'; }
+      if (!why) { try { if (!(layoutArm && layoutArm.onPage && layoutArm.onPage(db))) why = 'on_page_off'; } catch { why = 'on_page_off'; } }
+      if (!why) { try { if (!(layoutArm.nameTokens(job.supplier).size >= 2)) why = 'unjudgeable_identity'; } catch { why = 'unjudgeable_identity'; } }
+      if (why) {
+        job.readyArm = `skipped:${why}`;
+      } else {
+        let floor = null;
+        try { floor = readyArm.floor ? readyArm.floor(db, job.supplier, job.typeSlug) : null; } catch { floor = null; }
+        if (!Number.isFinite(floor)) job.readyArm = 'skipped:no_floor';
+        else {
+          const rows = _ownedTemplateRows(db, job, dt, { belowFloor: floor });
+          if (!rows) job.readyArm = 'skipped:no_template';
+          else {
+            let n = 0;
+            for (const r of rows) { if (!byId.has(r.id)) { add({ ...r, _via: 'ready' }); n++; } }
+            job.readyArm = `selected:${n}:floor=${floor}`;
+          }
         }
       }
     }
@@ -364,8 +412,11 @@ function create(deps) {
     // (Slice 3's signed path), even when the wizard's mapping saves put 'layout' in the same job's
     // reasons. Round 16: every first-filled DS date got "confirm once" at the TEACH, and a generic-
     // named sender (no layout arm) could never shed it.
-    if (nd.via === 'layout') {
-      try { const ff = _holdFirstFills(db, nd.docId, nd.existing); if (ff.length) job.changed.push({ docId: nd.docId, fields: ff, firstFill: true }); } catch {}
+    // Owner card 1 (2026-08-23): the READY arm's template-carrying re-reads are held the same way —
+    // there is no "new box", so the note names the learning instead.
+    if (nd.via === 'layout' || nd.via === 'ready') {
+      const note = nd.via === 'ready' ? 'Read after learning — confirm once.' : 'Read from your new box — confirm once.';
+      try { const ff = _holdFirstFills(db, nd.docId, nd.existing, note); if (ff.length) job.changed.push({ docId: nd.docId, fields: ff, firstFill: true }); } catch {}
     }
     job.done.push(nd.docId);
     if (changed.length) job.changed.push({ docId: nd.docId, fields: changed });
@@ -375,7 +426,7 @@ function create(deps) {
   // Q3 C3.3: first-fills of REQUIRED ROLE fields (issuer / reference / date) in a 'layout' job.
   // `corroborated(record)` is injected (trust._corrobLicensed: independent_agree across ≥2 PAGE
   // families — mapping/crop/keyword; memory+hint excluded). Returns the held fields.
-  function _holdFirstFills(db, docId, existing) {
+  function _holdFirstFills(db, docId, existing, noteText) {
     const doc = db.prepare('SELECT document_type_id FROM documents WHERE id = ?').get(docId);
     if (!doc || !doc.document_type_id) return [];
     const dt = db.prepare('SELECT ref_field_key, date_field_key FROM document_types WHERE id = ?').get(doc.document_type_id) || {};
@@ -393,7 +444,7 @@ function create(deps) {
       let ok = false;
       try { ok = !!(corroborated && corroborated(after[key].corroboration)); } catch { ok = false; }
       if (ok) continue;                                          // licensed by ≥2 page families — the fill stands
-      const note = 'Read from your new box — confirm once.';
+      const note = noteText || 'Read from your new box — confirm once.';
       const prior = String(after[key].validation_note || '').trim();
       if (!prior.includes(note)) upd.run(prior ? `${prior} ${note}` : note, docId, key);
       held.push({ key, now });
@@ -435,6 +486,7 @@ function create(deps) {
       logAudit(db, { action: 'quiet_reprocess_job', target_type: 'scope', outcome: 'success',
         metadata: { supplier: job.supplier, type_slug: job.typeSlug, reason: job.reason, reasons: [...(job.reasons || [])].join('+'),
                     layout_arm: job.layoutArm || '',
+                    ready_arm: job.readyArm || '',            // owner card 1
                     type_split_arm: job.typeSplitArm || '',   // A6
                     done_ids: job.done.join(','), dropped: job.dropped.map(d => `${d.docId}:${d.reason}`).join(','),
                     failed: job.failed, changed_ids: job.changed.map(c => c.docId).join(','),
