@@ -56,6 +56,8 @@ function create(deps) {
     kwSelectEnabled = null,     // (db) → bool (the `quiet_reread_kw_select` switch)
     scopeTemplateIds = null,    // (db, supplier, slug) → Set of the scope's template ids
     timers = { setTimeout, clearTimeout, setInterval, clearInterval },
+    layoutArm = null,           // Q3: { enabled(db), onPage(db), nameTokens(name) } — the layout arm's preconditions
+    corroborated = null,        // Q3 C3.3: trust._corrobLicensed(record) — licenses a first-fill to stand
   } = deps;
 
   const jobs = new Map();          // scopeKey -> job
@@ -76,18 +78,24 @@ function create(deps) {
   }
 
   // ── schedule: main-side hooks only (a taught confirm, never a renderer) ──────────────────────
-  function schedule(db, { supplier, typeSlug, reason = 'teach', seedDocId = null } = {}) {
+  function schedule(db, opts = {}) {
+    const { supplier, typeSlug, reason = 'teach', seedDocId = null } = opts;
     if (!enabled(db)) return false;
     const sup = String(supplier || '').trim(), slug = String(typeSlug || '').trim().toLowerCase();
     if (!sup || !slug) return false;
     const key = SCOPE_KEY(sup, slug);
     let job = jobs.get(key);
-    if (job && job === running) { job.rerun = true; if (seedDocId) job.seedDocId = seedDocId; return true; }   // coalesce: one follow-on pass
+    const reasonList = (Array.isArray(opts.reasons) ? opts.reasons : []).concat(reason ? [reason] : []).map(r => String(r || '').trim()).filter(Boolean);
+    // Q3 seam 6 (Oracle C3.4): a 'layout' write landing DURING a running 'teach'/'ready' job must
+    // ADD to the job's reasons and the rerun must recompute candidates with the UNION — otherwise
+    // the template-carrying arm is silently skipped exactly when the user is fixing things.
+    if (job && job === running) { job.rerun = true; for (const r of reasonList) job.reasons.add(r); if (seedDocId) job.seedDocId = seedDocId; return true; }   // coalesce: one follow-on pass
     if (!job) {
-      job = { id: `q${++_seq}`, key, supplier: sup, typeSlug: slug, reason, state: 'queued', total: 0, seedDocId: null,
-              remaining: null, done: [], dropped: [], failed: 0, changed: [], rerun: false, cancelled: false, timer: null };
+      job = { id: `q${++_seq}`, key, supplier: sup, typeSlug: slug, reason: reasonList[0] || reason, reasons: new Set(), state: 'queued', total: 0, seedDocId: null,
+              remaining: null, done: [], dropped: [], failed: 0, changed: [], rerun: false, cancelled: false, timer: null, layoutArm: null };
       jobs.set(key, job);
     }
+    for (const r of reasonList) job.reasons.add(r);
     if (seedDocId) job.seedDocId = Number(seedDocId);
     if (job.timer) timers.clearTimeout(job.timer);
     job.timer = timers.setTimeout(() => { job.timer = null; _tick(); }, DEBOUNCE_MS);
@@ -173,6 +181,66 @@ function create(deps) {
         }
       }
     }
+    // ── Q3: THE LAYOUT ARM (Chris round 14 card 6 — a ⊕ box on a sibling re-read nothing until the
+    // user pressed "Reprocess 17"; gary → Oracle SIGN-OFF-W/COND C3.1–C3.7, 2026-08-22). A layout
+    // WRITE (an authoritative anchor or a template mapping) makes every template-carrying read of
+    // the scope stale by definition — the same population the manual "Reprocess N from sender"
+    // re-reads, with the press removed. It crosses the 08-21 S3 "template-less only" boundary,
+    // so it is its own reason ('layout'), its own switch, and it runs ONLY when:
+    //   · quiet_reread_on_layout is on (DARK) AND template_identity_on_page is 'true' — the engine's
+    //     honour path re-imposes known_template_id and must be able to DECLINE a binding the page
+    //     does not name (SEAM-1; C3.1);
+    //   · the scope name is JUDGEABLE — ≥2 distinctive tokens survive the generic filter (the JS
+    //     mirror of template_matcher._name_arm_tokens); an all-generic name ("DOCUMENT SOLUTIONS")
+    //     makes _identity_refuses abstain by construction, so the binding would be re-imposed
+    //     UNTESTED (C3.2) → arm skipped, audited.
+    // Population: held docs carrying one of the scope's templates AND the scope's name, minus any
+    // doc already holding an S3-C5 "Read differently after learning" note (seam 2 — a doc the
+    // lane has already asked the user about is not re-read again). Filing only via the sweep /
+    // auto-accept; a REQUIRED role field first-filled by the new box is held with a note unless
+    // page-corroborated (C3.3, _holdFirstFills).
+    if (job.reasons && job.reasons.has('layout')) {
+      let why = null;
+      try { if (!(layoutArm && layoutArm.enabled && layoutArm.enabled(db))) why = 'off'; } catch { why = 'off'; }
+      if (!why) { try { if (!layoutArm.onPage(db)) why = 'on_page_off'; } catch { why = 'on_page_off'; } }
+      if (!why) { try { if (!(layoutArm.nameTokens(job.supplier).size >= 2)) why = 'unjudgeable_identity'; } catch { why = 'unjudgeable_identity'; } }
+      if (why) {
+        job.layoutArm = `skipped:${why}`;
+      } else {
+        let tplIds = new Set();
+        try { tplIds = scopeTemplateIds ? (scopeTemplateIds(db, job.supplier, job.typeSlug) || new Set()) : new Set(); } catch { tplIds = new Set(); }
+        // Only the templates the scope OWNS (frozen supplier_name = scope, or the template's sample
+        // document is the scope's) — scopeTemplateIds also admits a template merely CARRIED by a
+        // scope-named doc (a mis-binding to another sender's layout), which a layout write on this
+        // scope did not touch.
+        try {
+          const owned = new Set(db.prepare(`
+            SELECT t.id FROM templates t
+             WHERE EXISTS (SELECT 1 FROM template_fields tf WHERE tf.template_id = t.id AND tf.field_key = 'supplier_name'
+                             AND LOWER(TRIM(COALESCE(tf.fixed_value, ''))) = ?)
+                OR EXISTS (SELECT 1 FROM documents sd WHERE sd.id = t.sample_document_id
+                             AND LOWER(TRIM(COALESCE(sd.supplier_name, ''))) = ?)`).all(job.supplier.toLowerCase(), job.supplier.toLowerCase()).map(r => r.id));
+          tplIds = new Set([...tplIds].filter(id => owned.has(id)));
+        } catch { tplIds = new Set(); }
+        if (!tplIds.size) job.layoutArm = 'skipped:no_template';
+        else {
+          const ph = [...tplIds].map(() => '?').join(',');
+          const rows = db.prepare(`
+            SELECT d.id, d.original_filename, d.folder_path FROM documents d
+             WHERE d.status = 'needs_review'
+               AND d.template_id IN (${ph})
+               AND LOWER(TRIM(COALESCE(d.supplier_name, ''))) = ?
+               AND (d.document_type_id = ? OR d.document_type_id IS NULL)
+               AND COALESCE(d.workflow_status, '') NOT IN ('pending', 'claimed')
+               AND NOT EXISTS (SELECT 1 FROM extractions e WHERE e.document_id = d.id
+                                 AND e.validation_note LIKE '%Read differently after learning%')
+             ORDER BY d.id`).all(...tplIds, job.supplier.toLowerCase(), dt.id);
+          let n = 0;
+          for (const r of rows) { if (!byId.has(r.id)) { add({ ...r, _via: 'layout' }); n++; } }
+          job.layoutArm = `selected:${n}`;
+        }
+      }
+    }
     return [...byId.values()].sort((a, b) => a.id - b.id).filter(r => !presence.viewers(r.id).length);
   }
 
@@ -192,7 +260,7 @@ function create(deps) {
     markScopeActive(job.key, true);
     let staged = null;
     try {
-      const all = job.remaining || _candidates(db, job).map(r => ({ docId: r.id, folderPath: r.folder_path, filename: r.original_filename }));
+      const all = job.remaining || _candidates(db, job).map(r => ({ docId: r.id, folderPath: r.folder_path, filename: r.original_filename, via: r._via || null }));
       const chunk = all.slice(0, CHUNK_CAP);
       job.remaining = all.slice(CHUNK_CAP);
       job.total = all.length + job.done.length + job.dropped.length;
@@ -254,11 +322,51 @@ function create(deps) {
     if (verdict && verdict.dropped) return drop(verdict.dropped);
     // S3-C5: a value that was VALUED before and reads DIFFERENTLY now is held with a note.
     const changed = _holdChangedReads(db, nd.docId, nd.existing);
+    // Q3 C3.3 (fail toward review): in a 'layout' job a REQUIRED role field that the new box
+    // FIRST-FILLS (empty → valued) is held with a note unless the read is page-corroborated — the
+    // misfile the Oracle named is a drifted ⊕ box first-filling an empty ref with a same-shape
+    // neighbour code; S3-C5 has no prior value to compare and the sweep's gate would pass the shape.
+    if (job.reasons && job.reasons.has('layout')) {
+      try { const ff = _holdFirstFills(db, nd.docId, nd.existing); if (ff.length) job.changed.push({ docId: nd.docId, fields: ff, firstFill: true }); } catch {}
+    }
     job.done.push(nd.docId);
     if (changed.length) job.changed.push({ docId: nd.docId, fields: changed });
     notify({ type: 'doc_done', jobId: job.id, docId: nd.docId, changed: changed.length > 0, done: job.done.length, total: job.total });
   }
 
+  // Q3 C3.3: first-fills of REQUIRED ROLE fields (issuer / reference / date) in a 'layout' job.
+  // `corroborated(record)` is injected (trust._corrobLicensed: independent_agree across ≥2 PAGE
+  // families — mapping/crop/keyword; memory+hint excluded). Returns the held fields.
+  function _holdFirstFills(db, docId, existing) {
+    const doc = db.prepare('SELECT document_type_id FROM documents WHERE id = ?').get(docId);
+    if (!doc || !doc.document_type_id) return [];
+    const dt = db.prepare('SELECT ref_field_key, date_field_key FROM document_types WHERE id = ?').get(doc.document_type_id) || {};
+    const roleKeys = new Set(['supplier_name', dt.ref_field_key, dt.date_field_key].filter(Boolean));
+    const req = db.prepare('SELECT key FROM fields WHERE document_type_id = ? AND enabled = 1 AND required = 1').all(doc.document_type_id)
+      .map(f => f.key).filter(k => roleKeys.has(k));
+    const before = Object.fromEntries((existing || []).map(r => [r.field_key, r]));
+    const after = Object.fromEntries(db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(docId).map(r => [r.field_key, r]));
+    const held = [];
+    const upd = db.prepare("UPDATE extractions SET validation_note = ? WHERE document_id = ? AND field_key = ?");
+    for (const key of req) {
+      const was = before[key] && String(before[key].display_value || '').trim();
+      const now = after[key] && String(after[key].display_value || '').trim();
+      if (was || !now) continue;                                 // not a first-fill
+      let ok = false;
+      try { ok = !!(corroborated && corroborated(after[key].corroboration)); } catch { ok = false; }
+      if (ok) continue;                                          // licensed by ≥2 page families — the fill stands
+      const note = 'Read from your new box — confirm once.';
+      const prior = String(after[key].validation_note || '').trim();
+      if (!prior.includes(note)) upd.run(prior ? `${prior} ${note}` : note, docId, key);
+      held.push({ key, now });
+    }
+    return held;
+  }
+
+  // S3-C5. NOTE (Q3 C3.6, pinned): a value that was VALUED before and reads EMPTY now is NOT a
+  // "changed read" — the fresh row is stored wholesale and the document is held as missing-required
+  // (it cannot file). The old value must NOT be restored here: keeping it would let a shape-
+  // plausible WRONG value file on the strength of a read the new layout no longer makes.
   function _holdChangedReads(db, docId, existing) {
     const doc = db.prepare('SELECT document_type_id FROM documents WHERE id = ?').get(docId);
     if (!doc || !doc.document_type_id) return [];
@@ -287,15 +395,17 @@ function create(deps) {
     jobs.delete(job.key);
     try {
       logAudit(db, { action: 'quiet_reprocess_job', target_type: 'scope', outcome: 'success',
-        metadata: { supplier: job.supplier, type_slug: job.typeSlug, reason: job.reason,
+        metadata: { supplier: job.supplier, type_slug: job.typeSlug, reason: job.reason, reasons: [...(job.reasons || [])].join('+'),
+                    layout_arm: job.layoutArm || '',
                     done_ids: job.done.join(','), dropped: job.dropped.map(d => `${d.docId}:${d.reason}`).join(','),
-                    failed: job.failed, changed_ids: job.changed.map(c => c.docId).join(',') } });
+                    failed: job.failed, changed_ids: job.changed.map(c => c.docId).join(','),
+                    first_fill_ids: job.changed.filter(c => c.firstFill).map(c => c.docId).join(',') } });
     } catch { /* best-effort */ }
     notify({ type: 'job_done', jobId: job.id, supplier: job.supplier, typeSlug: job.typeSlug,
              done: job.done.length, dropped: job.dropped.length, failed: job.failed, changed: job.changed.length });
     // The ONLY filing door: the sweep (offer bar, or the scope-local auto-accept when it is on).
     try { onJobDone && onJobDone(db, { supplier: job.supplier, typeSlug: job.typeSlug, done: job.done.slice() }); } catch {}
-    if (job.rerun) { job.rerun = false; schedule(db, { supplier: job.supplier, typeSlug: job.typeSlug, reason: job.reason }); }
+    if (job.rerun) { job.rerun = false; schedule(db, { supplier: job.supplier, typeSlug: job.typeSlug, reason: job.reason, reasons: [...(job.reasons || [])], seedDocId: job.seedDocId }); }   // the UNION (C3.4)
     else timers.setTimeout(_tick, 0);
   }
 

@@ -6657,14 +6657,22 @@ class ExtractionEngine:
             # logo/keyword score that dipped below threshold for this scan). Only
             # used as a fallback when live matching fails, so it never overrides
             # a positive live match with a stale link.
-            # ⚠ SEAM-1 PIN (Oracle 2026-07-26, load-bearing invariant): this fallback RE-IMPOSES a
-            # STORED template id whenever live identification returns None — including a None produced
-            # by the detail veto / distinctive gate refusing a wrong pick. That is review-safe TODAY
-            # only because reprocess forces needs_review and _maybeAutoFile has EXACTLY ONE call site
-            # (the import file_done path). If a second auto-file call site is ever added, a stored
-            # WRONG template re-imposed here becomes a silent re-poisoning vector. Do not add one
-            # without re-vetting this seam (memory: project_slice1d_donothing "the known-id fallback
-            # re-imposes the poison").
+            # ⚠ SEAM-1 PIN (Oracle 2026-07-26; REWRITTEN 2026-08-22, Oracle Q3 C3.1): this fallback
+            # RE-IMPOSES a STORED template id whenever live identification returns None — including a
+            # None produced by the detail veto / distinctive gate refusing a wrong pick. The original
+            # pin said "review-safe only because _maybeAutoFile has EXACTLY ONE call site" — that is
+            # no longer true and the claim must not be relied on: reprocess output now reaches filing
+            # through VETTED doors — the scope sweep / scope-local auto-accept (08-21), F2b (auto-
+            # accept after a sender reprocess), and the quiet lane → sweep (08-21/22, incl. the Q3
+            # 'layout' arm that re-reads TEMPLATE-CARRYING siblings). Every one of those doors
+            # re-checks the document through the ONE predicate (trust.isAutoFileEligible + the
+            # sweep's type-flip / contradiction / changed re-checks), and the binding re-imposed HERE
+            # is tested by _identity_refuses below — a layout may only claim a page that NAMES its
+            # company (TEMPLATE_IDENTITY_ON_PAGE, a precondition of the Q3 arm), else
+            # `sticky_binding_declined`. When the scope name is all-generic `_identity_refuses`
+            # ABSTAINS; the Q3 arm skips such scopes for exactly that reason. Any NEW door must name
+            # which of these checks it relies on (memory: project_slice1d_donothing "the known-id
+            # fallback re-imposes the poison").
             if not match and (known_template_id is not None or pinned_template_id is not None):
                 # A B1 PIN also acts as this fallback (Oracle C2, match=None corner): if this engine
                 # call's own match failed, still honour the pinned sibling so Stage 0 runs against it
