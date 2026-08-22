@@ -6733,6 +6733,7 @@ class ExtractionEngine:
 
         # ── Stage 0: Template matching ────────────────────────────────────────
         self._type_ambiguous = False   # Fix A: set True below when the match is an ambiguous same-logo pick
+        self._type_match     = None    # A2: the Stage-0 match dict (rival support rides on it)
         self._type_refused   = False   # C1: set True below when the trusted-title refuse discards a template
         self._veto_fallthrough = False # G1/G2: set True below when the match arrived via the identity-veto
                                        # fall-through (TEMPLATE_VETO_FALLTHROUGH) — arms the corroboration guards
@@ -6830,6 +6831,7 @@ class ExtractionEngine:
                 # HOLD even if THIS engine call's own (raw-image) match resolved non-ambiguously — a
                 # raw-vs-processed split-brain must never let a pinned doc auto-file.
                 self._type_ambiguous = bool(match.get('ambiguous_type')) or (pinned_template_id is not None)
+                self._type_match     = match
                 # G1/G2 guard arming: TRUE only when identify_template matched via the identity-veto
                 # fall-through (the additive tag). The known_id/pinned fallback dicts above never carry
                 # the key → guards stay dark on the reprocess-honour path (review-safe per the SEAM-1
@@ -9667,7 +9669,22 @@ class ExtractionEngine:
         # after the branding block so their notes compose rather than clobber. HOLD-ONLY: never changes a
         # value -> per-field accuracy byte-identical. Kill switch TYPE_AMBIGUITY_GUARD.
         if getattr(self, '_type_ambiguous', False) and os.environ.get('TYPE_AMBIGUITY_GUARD', '1') != '0':
-            self._flag_type_ambiguity(results, ref_field_key)
+            # A2 (type-split arc, 2026-08-22; Oracle S2-py-2): decided HERE, late — `_type_ambiguous`
+            # itself stays untouched (B' label-ownership scoping at Stage 2 reads it). The hold is
+            # WAIVED only when process_docs named THIS matched template (after the B1 pin) as the
+            # waiver candidate AND the document's OWN reference, read by a located method, carries
+            # the pick scope's dominant prefix. Trade-off (pinned): this delays Fix A's hold on a
+            # genuine rare-type doc from the rival's 1st to its 2nd confirm — before the 1st, a
+            # single-slug cohort never fired Fix A at all, so the class is not widened.
+            _waiver = self._type_waiver_ok(results, getattr(self, '_type_match', None), matched_tmpl,
+                                           ref_field_key, supplier_name, document_slug)
+            if _waiver:
+                self.log(f"  Type-ambiguity hold WAIVED: rival type unsupported and the document's own "
+                         f"reference '{_waiver}' carries this sender's usual prefix")
+                self._t('type_ambiguity_waived', field=ref_field_key, value=_waiver,
+                        template_id=(matched_tmpl or {}).get('id'))
+            else:
+                self._flag_type_ambiguity(results, ref_field_key)
         # C1 (TYPE-heading authority): a trusted-title REFUSE (identify_template discarded the matched
         # template because the trusted heading names a DIFFERENT type) leaves the doc with NO template
         # — it must not silently auto-file a detection-only type at overall==100. HOLD it for review.
@@ -9933,6 +9950,64 @@ class ExtractionEngine:
             return None
         results["_supplier_name"] = final
         return (stale, final, fld.get("method"))
+
+    # A2: methods whose read of the ref is LOCATED on the page. Never a memory/hint fill, never a
+    # dominant-value snap or a class fix (both manufacture the dominant prefix — circular), never a
+    # name repair.
+    _WAIVER_LOCATED_PREFIXES = ('template_mapping', 'anchor', 'keyword')
+    _WAIVER_EXCLUDED_MARKS   = ('hint', 'memory', 'snap', 'class_fix', 'name_repair', 'corrected_adopt')
+
+    def _type_waiver_ok(self, results, match, matched_tmpl, ref_field_key, supplier_name, document_slug):
+        """A2 (type-split arc). Returns the ref VALUE when the Fix A hold may be waived, else None.
+        Decided entirely in the engine — process_docs' pre-extract identify + B1 block are SKIPPED on a
+        reprocess of a typed doc (`_ks`), which is exactly the "Reprocess N" path the owner uses.
+        LEG 1 (the rival is unsupported): the Stage-0 `match` is ambiguous and carries `rival_slugs` ⊆
+        `unsupported_rival_slugs` (every rival type has <2 confirmed docs; counts LIVE — the matcher
+        abstains with None otherwise); the matched template AFTER the B1 pin is the PICK itself (the
+        same id as match['template'] — a pin onto a rival never waives) and the pick has
+        ≥ DOMINANT_MIN_COUNT confirmed docs. LEG 2 (the doc's OWN ref): the ref-role field holds a
+        non-empty value read by a LOCATED method and `code_prefix(value)` equals the pick scope's
+        learned dominant prefix (`lookup_prefix` over self.prefix_index — the same poison-barred model
+        the prefix-outlier guard uses); page-anywhere prefix presence is B1's signal and common-mode,
+        so it is NOT a leg. Kill switch TYPE_AMBIG_UNSUPPORTED_WAIVER (default OFF ⇒ None ⇒ hold).
+        Fails toward HOLD on anything missing. Pinned in tests/test_type_ambiguity_unsupported.py."""
+        try:
+            if os.environ.get('TYPE_AMBIG_UNSUPPORTED_WAIVER', '0') == '0':
+                return None
+            if not isinstance(match, dict) or not match.get('ambiguous_type'):
+                return None
+            if not isinstance(matched_tmpl, dict):
+                return None
+            pick = match.get('template') or {}
+            if not pick or pick.get('id') is None or matched_tmpl.get('id') != pick.get('id'):
+                return None                                   # the B1 pin moved us onto a rival
+            rivals = match.get('rival_slugs'); unsup = match.get('unsupported_rival_slugs')
+            if not rivals or unsup is None or not set(rivals) <= set(unsup):
+                return None                                   # a supported rival, or counts not live
+            if int(pick.get('confirmed_count') or 0) < ocr_corrector.DOMINANT_MIN_COUNT:
+                return None
+            if not ref_field_key:
+                return None
+            fld = results.get(ref_field_key)
+            if not isinstance(fld, dict):
+                return None
+            val = str(fld.get('value') or '').strip()
+            if not val:
+                return None
+            meth = str(fld.get('method') or '').lower()
+            if not meth.startswith(self._WAIVER_LOCATED_PREFIXES):
+                return None
+            if any(m in meth for m in self._WAIVER_EXCLUDED_MARKS):
+                return None
+            rec = ocr_corrector.lookup_prefix(self.prefix_index, ref_field_key, supplier_name, document_slug)
+            dom = (rec or {}).get('dominant')
+            if not dom:
+                return None
+            if ocr_corrector.code_prefix(val) != str(dom).upper():
+                return None
+            return val
+        except Exception:
+            return None
 
     def _flag_type_ambiguity(self, results, ref_field_key, note=None):
         """Fix A: HOLD an ambiguous same-letterhead TYPE resolution for review. Lands a persisted

@@ -920,7 +920,9 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // The garbled-issuer arc (2026-08-22 evening, DARK).
                          ['fixed-seed-fragment-garble-toggle', 'template_fixed_seed_fragment_garble'],
                          ['identity-suggest-canonical-toggle', 'identity_suggest_canonical'],
-                         ['review-group-by-letterhead-toggle', 'review_group_by_letterhead']]) {
+                         ['review-group-by-letterhead-toggle', 'review_group_by_letterhead'],
+                         // The type-split arc (2026-08-22 night, DARK).
+                         ['type-ambiguity-waiver-toggle', 'type_ambiguity_unsupported_waiver']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);
@@ -1010,6 +1012,7 @@ const DEV_SWITCH_IDS = [
   'letterhead-stack-abstain-toggle', 'letterhead-depth-guard-toggle', 'fixed-seed-fragment-keep-toggle',
   'quiet-reread-kw-select-toggle', 'quiet-reread-on-ready-toggle', 'fingerprint-seed-support-toggle', 'quiet-reread-on-layout-toggle',
   'fixed-seed-fragment-garble-toggle', 'identity-suggest-canonical-toggle', 'review-group-by-letterhead-toggle',
+  'type-ambiguity-waiver-toggle',
 ];
 function _applyDevSwitchVisibility(unlocked, revealGate){
   for (const id of DEV_SWITCH_IDS){

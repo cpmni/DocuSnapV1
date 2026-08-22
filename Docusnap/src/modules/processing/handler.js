@@ -586,6 +586,12 @@ function _reconcileEnv(db) {
     //  (slice 3 `review_group_by_letterhead` is read by the Review window + reviewService directly.)
     if (learning.getSetting(db, 'template_fixed_seed_fragment_garble', 'false') === 'true') env.TEMPLATE_FIXED_SEED_FRAGMENT_GARBLE = '1';
     if (learning.getSetting(db, 'identity_suggest_canonical', 'false') === 'true') env.IDENTITY_SUGGEST_CANONICAL = '1';
+    // A2 of the type-split arc (2026-08-22; gary → Oracle SIGN-OFF-W/COND, DARK): Fix A's
+    // "letterhead used for several document types" hold is WAIVED when every rival type on the
+    // letterhead has <2 confirmed docs (counts live) AND the document's OWN reference, read by a
+    // located method, carries this sender's usual prefix. Delays the hold from a rival's 1st to its
+    // 2nd confirm; never widens the class. Kill: setting off / env =0.
+    if (learning.getSetting(db, 'type_ambiguity_unsupported_waiver', 'false') === 'true') env.TYPE_AMBIG_UNSUPPORTED_WAIVER = '1';
     // P1 (2026-08-22): the cold letterhead pick abstains on one line of a stacked wordmark
     // ("TIONS" under "DOCUMENT") and never takes a single word deeper than the text arm's band
     // cap ("Patrick", an address tail). Default OFF, byte-identical off.

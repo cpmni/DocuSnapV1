@@ -1371,6 +1371,14 @@
               </div>
               <label class="toggle"><input type="checkbox" id="review-group-by-letterhead-toggle"><span class="toggle-slider"></span></label>
             </div>
+            <!-- The type-split arc (2026-08-22 night) -->
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't hold a sender's documents for a document type that was only ever confirmed once</div>
+                <div class="threshold-sub">When one document from a sender was filed as a different type (one Purchase Order among 24 Quotes), every later document from that sender used to be held with "this letterhead is used for several document types". With this on, a type that has fewer than two confirmed documents behind it does not cause that hold — as long as the document's own reference number carries the sender's usual prefix. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="type-ambiguity-waiver-toggle"><span class="toggle-slider"></span></label>
+            </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Recognise a confirmed company even when its letterhead is column-spaced</div>

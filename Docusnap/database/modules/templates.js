@@ -37,7 +37,7 @@ function getAll(db) {
   const counts = useLive ? liveConfirmedCounts(db) : null;
   const npCache = new Map();   // per-call memo: distinct fixed supplier → name-presence stats
   if (counts) {                                   // null ⇒ uncountable, keep the stored column
-    for (const t of rows) t.confirmed_count = counts.get(t.id) || 0;
+    for (const t of rows) { t.confirmed_count = counts.get(t.id) || 0; t.counts_live = true; }   // A2: the waiver abstains unless live
     // Re-create the SQL ordering in JS so "shown count" and "order" still agree.
     rows.sort((a, b) => (b.confirmed_count - a.confirmed_count)
       || String(a.name || '').localeCompare(String(b.name || '')));

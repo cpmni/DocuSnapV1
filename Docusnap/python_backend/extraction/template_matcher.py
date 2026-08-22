@@ -220,6 +220,41 @@ def _letterhead_cohort(band, best_t):
     return cohort
 
 
+def _unsupported_rival_slugs(cohort, best_t, min_support=2):
+    """A2 of the type-split arc (2026-08-22; gary → Oracle SIGN-OFF-W/COND S2-py-1). Over the pick's
+    SAME-LETTERHEAD cohort, return (rival_slugs, unsupported_rival_slugs): every doc-type slug other than
+    the pick's, and the subset carried ONLY by templates whose LIVE confirmed_count (confirmed docs, any
+    via) is below `min_support` — judged per slug by the MAX count across that slug's templates, so a
+    slug with one supported and one fresh template is still supported. The owner's incident: ONE
+    mis-confirm bore a purchase_order template on a quote-only letterhead and `_type_ambiguity`
+    weighed that 1-confirm slug as equal to the 24-confirm slug. ABSTAINS (returns (rivals, None))
+    unless every cohort template carries `counts_live` — with TEMPLATE_LIVE_COUNTS=0 the stored column
+    is under-counted (never bumped on create) and a supported rival would read 0. Pure; the matcher
+    only EXPOSES this — the waiver itself is decided late, in the engine, against the doc's own ref."""
+    pick = (best_t or {}).get('document_type_slug') or ''
+    by_slug, live = {}, True
+    for t in (cohort or []):
+        s = t.get('document_type_slug') or ''
+        if not s or s == pick:
+            continue
+        if not t.get('counts_live'):
+            live = False
+        by_slug[s] = max(by_slug.get(s, 0), int(t.get('confirmed_count') or 0))
+    rivals = sorted(by_slug)
+    if not live:
+        return (rivals, None)
+    return (rivals, sorted(s for s, c in by_slug.items() if c < min_support))
+
+
+def _attach_rival_support(result, cohort, best_t):
+    """A2: attach `rival_slugs` + `unsupported_rival_slugs` to an AMBIGUOUS match result (additive keys;
+    non-ambiguous matches never carry them)."""
+    rivals, unsup = _unsupported_rival_slugs(cohort, best_t)
+    result['rival_slugs'] = rivals
+    result['unsupported_rival_slugs'] = unsup
+    return result
+
+
 def _type_ambiguity(cands, base_dist, detected_slug, title_trusted, best_t=None) -> bool:
     """FIX A predicate (pure — Oracle SIGN-OFF-WITH-CONDITIONS). Is the logo-resolved supplier's TYPE
     ambiguous on this doc? TRUE when the logo cluster — taken over the WIDER `_AMBIG_LOGO_BAND` (jitter-
@@ -939,6 +974,13 @@ def identify_template(page_image, ocr_text: str, templates: list,
                     # non-ambiguous matches never carry them → every existing caller is unchanged.
                     result['ambiguous_siblings'] = _band_siblings(cands, cluster_dist, best_t=best_t)
                     result['cluster_supplier'] = best_t.get('dominant_supplier')
+                    # A2 (type-split arc): expose the rivals' support over the SAME cohort band the
+                    # ambiguity test used, so process_docs/engine can judge an unsupported rival.
+                    _a2_band = [t for (t, d) in cands if d <= cluster_dist + _AMBIG_LOGO_BAND]
+                    if os.environ.get('TYPE_AMBIG_COHESION', '1') != '0':
+                        _a2_cohort = _letterhead_cohort(_a2_band, best_t)
+                        _a2_band = _a2_cohort if _a2_cohort is not None else []
+                    _attach_rival_support(result, _a2_band, best_t)
                 # Return the accepted logo match — UNLESS the logo arm refused a wrong-type sibling
                 # (LOGO_REFUSE_FALLTHROUGH) or an identity veto refuted the pick (Slice C), in which
                 # case fall through to the same-type rescue / keyword arm.
@@ -1442,16 +1484,8 @@ def _kw_type_ambiguity(scored, best_t, winner_slug_match, title_trusted=False):
             return (True, _hold[0], _hold[1])
     if winner_slug_match != 0:
         return (False, {}, None)
-    top = max(s for _, s in scored)
-    S   = [t for t, s in scored if s == top]
-    bf_set   = {w.lower() for w in (best_t.get('keyword_fingerprint') or [])}
-    best_sup = (best_t.get('dominant_supplier') or '').strip().lower()
-    cohort = [t for t in S
-              if {w.lower() for w in (t.get('keyword_fingerprint') or [])} == bf_set
-              or (best_sup and (t.get('dominant_supplier') or '').strip().lower() == best_sup)]
-    sups = {(t.get('dominant_supplier') or '').strip().lower() for t in cohort}
-    sups.discard('')
-    if len(sups) > 1:                                   # never span two known suppliers
+    cohort = _kw_tie_cohort(scored, best_t)
+    if cohort is None:                                  # never span two known suppliers
         return (False, {}, None)
     slugs = {}
     for t in cohort:
@@ -1461,6 +1495,24 @@ def _kw_type_ambiguity(scored, best_t, winner_slug_match, title_trusted=False):
     if len(slugs) < 2:
         return (False, {}, None)
     return (True, slugs, best_t.get('dominant_supplier'))
+
+
+def _kw_tie_cohort(scored, best_t):
+    """The keyword arm's EXACT-top-score same-letterhead cohort (factored out of _kw_type_ambiguity,
+    byte-identical): the templates tied at the top score that share best_t's fingerprint set or its
+    non-null dominant supplier. None when the tie spans two different known suppliers."""
+    top = max(s for _, s in scored)
+    S   = [t for t, s in scored if s == top]
+    bf_set   = {w.lower() for w in (best_t.get('keyword_fingerprint') or [])}
+    best_sup = (best_t.get('dominant_supplier') or '').strip().lower()
+    cohort = [t for t in S
+              if {w.lower() for w in (t.get('keyword_fingerprint') or [])} == bf_set
+              or (best_sup and (t.get('dominant_supplier') or '').strip().lower() == best_sup)]
+    sups = {(t.get('dominant_supplier') or '').strip().lower() for t in cohort}
+    sups.discard('')
+    if len(sups) > 1:
+        return None
+    return cohort
 
 
 def _match_by_keywords(ocr_text: str, templates: list, detected_slug: str | None = None,
@@ -1545,6 +1597,12 @@ def _match_by_keywords(ocr_text: str, templates: list, detected_slug: str | None
         best['ambiguous_type']     = True
         best['ambiguous_siblings'] = sibs
         best['cluster_supplier']   = cluster_sup
+        # A2 (type-split arc): rival support ONLY for the exact-tie coin-flip cohort — a Lever-3
+        # (non-distinctive subset-fingerprint) hold is not a cohort coin-flip and never waives
+        # (Oracle S2-py-1); its cohort here has <2 slugs, so nothing is attached.
+        _tie = _kw_tie_cohort(scored, best['template']) or []
+        if len({t.get('document_type_slug') or '' for t in _tie} - {''}) >= 2:
+            _attach_rival_support(best, _tie, best['template'])
     return best
 
 

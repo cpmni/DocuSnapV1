@@ -40,7 +40,7 @@ handler.register({
   console.log('doc', docId, d.original_filename, 'working exists:', fs.existsSync(d.working_path || ''));
   const r = await H['reprocess-document']({}, { docId, folderPath: d.folder_path, filename: d.original_filename });
   console.log('result:', JSON.stringify({ success: r && r.success, error: r && r.error }).slice(0, 200));
-  const keep = logs.filter(l => /via|Template|template|identity|Identity|letterhead|Letterhead|variant|fragment|Corrob|shed|fixed/i.test(String(l)));
+  const keep = logs.filter(l => /via|Template|template|identity|Identity|letterhead|Letterhead|variant|fragment|Corrob|shed|fixed|waiv|B1|ambig|prefix/i.test(String(l)));
   console.log(keep.map(l => '  ' + String(l).slice(0, 220)).join('\n'));
   const row = db.prepare("SELECT display_value, confidence, extraction_method, validation_note FROM extractions WHERE document_id = ? AND field_key = 'supplier_name'").get(docId);
   console.log('supplier row after:', JSON.stringify(row));
