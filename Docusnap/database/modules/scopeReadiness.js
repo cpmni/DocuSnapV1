@@ -23,10 +23,23 @@ function hasTemplate(db, supplier, slug) {
   const supN = _norm(supplier), slugN = _norm(slug);
   if (!supN || !slugN) return false;
   try {
-    const byDoc = db.prepare(`SELECT 1 FROM documents d JOIN document_types dt ON dt.id = d.document_type_id
-                               WHERE LOWER(TRIM(COALESCE(d.supplier_name, ''))) = ? AND LOWER(dt.slug) = ?
-                                 AND d.template_id IS NOT NULL LIMIT 1`).get(supN, slugN);
-    if (byDoc) return true;
+    // Chris round 17 card 2(c) (Oracle): a scope-named doc that merely CARRIES a template (a garbled
+    // issuer 'Gay' bound to DOCUMENT SOLUTIONS' layout) must not make 'Gay' "have a template" — the
+    // readiness badge then promised "3 more to file by itself" for a sender that does not exist. The
+    // byDoc arm now requires the carried template's ESTABLISHED identity (dominant confirmed issuer,
+    // else its frozen supplier_name) to BE this scope. A fresh teach passes (the frozen identity is the
+    // scope); a template with no identity yet admits nothing — the safe direction.
+    const carried = db.prepare(`SELECT DISTINCT d.template_id AS id FROM documents d JOIN document_types dt ON dt.id = d.document_type_id
+                                 WHERE LOWER(TRIM(COALESCE(d.supplier_name, ''))) = ? AND LOWER(dt.slug) = ?
+                                   AND d.template_id IS NOT NULL`).all(supN, slugN);
+    if (carried.length) {
+      const templates = require('./templates');
+      for (const r of carried) {
+        let est = null;
+        try { est = templates.establishedIdentity(db, r.id); } catch { est = null; }
+        if (est && _norm(est) === supN) return true;
+      }
+    }
     const byFixed = db.prepare(`SELECT 1 FROM template_fields tf JOIN templates t ON t.id = tf.template_id
                                  WHERE tf.field_key = 'supplier_name' AND LOWER(TRIM(COALESCE(tf.fixed_value, ''))) = ?
                                    AND LOWER(COALESCE(t.document_type_slug, '')) = ? LIMIT 1`).get(supN, slugN);

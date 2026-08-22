@@ -293,12 +293,21 @@ const lane = quietLane.create({
   console.log('§B4b the ready crossing');
   const readiness = require('../../../database/modules/scopeReadiness');
   const RS = 'Readyco';
+  // Chris r17 card 2(c): a scope only "has a template" when the carried template's ESTABLISHED identity is
+  // the scope — so the fixture gives Readyco its own frozen template (what a real teach creates), not a
+  // ride on Acme's identity-less template 7.
+  db.prepare("INSERT INTO templates (id, name, slug, document_type_slug) VALUES (8, 'Readyco Invoice', 'readyco-invoice', 'invoice')").run();
+  db.prepare("INSERT INTO template_fields (template_id, field_key, fixed_value, is_variable) VALUES (8, 'supplier_name', 'Readyco', 0)").run();
   const rHeld = mk(RS, {});                                                          // a template-less held sibling (the lane's candidate)
-  const rTpl = mk(RS, { supplier_name: RS, invoice_number: 'R-0', invoice_date: '01-01-2026' }, { template: 7 });   // gives the scope a template
+  const rTpl = mk(RS, { supplier_name: RS, invoice_number: 'R-0', invoice_date: '01-01-2026' }, { template: 8 });   // gives the scope a template
+  // card 2(c) pin: a garbled-issuer doc that merely CARRIES Readyco's template does not make 'Gay' a sender
+  mk('Gay', { supplier_name: 'Gay', invoice_number: 'G-1', invoice_date: '01-01-2026' }, { template: 8 });
+  check("hasTemplate('Gay') is FALSE — a carried template whose established identity is another scope does not count", readiness.hasTemplate(db, 'Gay', 'invoice') === false);
+  check('…positive control: hasTemplate(Readyco) is TRUE via the same carried template (its frozen identity IS the scope)', readiness.hasTemplate(db, RS, 'invoice') === true);
   const before0 = readiness.isReady(db, RS, 'invoice');
   check('a scope with a template but no solid role groups is NOT ready (' + before0.reason + ')', before0.ready === false && before0.hasTemplate === true);
   const rc = [];
-  for (let i = 1; i <= 4; i++) rc.push(mk(RS, { supplier_name: RS, invoice_number: `R-${i}`, invoice_date: `0${i}-02-2026` }, { template: 7 }));
+  for (let i = 1; i <= 4; i++) rc.push(mk(RS, { supplier_name: RS, invoice_number: `R-${i}`, invoice_date: `0${i}-02-2026` }, { template: 8 }));
   const jobsBefore = hAudits.filter(a => a.action === 'quiet_reprocess_job').length;
   const confirmR = (id, i) => svc.confirm(db, { username: 'sarah', role: 'admin' }, { document_id: id, folder_path: inbox, original_filename: 'x.pdf', corrections: {}, taught_fields: [],
     allValues: { supplier_name: RS, invoice_number: `R-${i}`, invoice_date: `0${i}-02-2026` }, supplier_name: RS, document_type: 'Invoice', document_type_slug: 'invoice' });
