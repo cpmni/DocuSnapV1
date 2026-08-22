@@ -249,13 +249,49 @@
     .qi-btn.danger:hover { border-color: var(--err); color: var(--err); }
 
     /* ── Document viewer (centre) ── */
-    #doc-panel { flex: 1; display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--doc-bg); min-width: 0; position: relative; }
+    #doc-panel { flex: 1; display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--doc-bg); min-width: 0; position: relative;
+      /* B2 (activity strip, Oracle C8): the four absolute children below anchor to the toolbar's bottom
+         through ONE variable; the strip (28 px, first child when armed) bumps it. OFF = 46 px, byte-identical. */
+      --doc-head-h: 46px; }
+    #doc-panel.has-activity-strip { --doc-head-h: 74px; }
+    /* ── B2: the ACTIVITY STRIP — one 28 px row of chips, newest on the left, above the toolbar. Always in
+       flow while armed (never display:none → the preview never jumps, no ResizeObserver churn). ── */
+    #activity-strip { display: none; flex: 0 0 28px; height: 28px; align-items: center; gap: 6px; padding: 0 8px;
+      background: var(--surface); border-bottom: 1px solid var(--border); font-size: 11.5px; color: var(--text); min-width: 0; }
+    #doc-panel.has-activity-strip #activity-strip { display: flex; }
+    .as-nav { flex: 0 0 auto; width: 18px; height: 18px; line-height: 16px; text-align: center; border: 1px solid var(--border2); border-radius: var(--r-sm);
+      background: var(--surface2); color: var(--muted); cursor: pointer; font-size: 11px; user-select: none; }
+    .as-nav[hidden] { display: none; }
+    .as-track { flex: 1; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; min-width: 0; scroll-behavior: smooth; }
+    .as-track::-webkit-scrollbar { display: none; }
+    .as-chip { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; max-width: 260px; padding: 0 9px; height: 20px; line-height: 20px;
+      border: 1px solid var(--border2); border-radius: var(--r-pill); background: var(--surface2); color: var(--text); cursor: pointer; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis; }
+    .as-chip:hover, .as-chip.open { border-color: var(--accent); background: var(--accent-bg); }
+    .as-chip.unseen { box-shadow: inset 0 0 0 1px var(--accent); }
+    .as-chip .as-when { color: var(--muted); }
+    .as-chip .as-caret { color: var(--muted); font-size: 9px; }
+    .as-chip.as-recent { color: var(--muted); font-style: italic; }
+    #activity-panel { display: none; position: absolute; top: var(--doc-head-h); left: 8px; right: 8px; z-index: 8; max-height: 46%; overflow: auto;
+      background: var(--surface); border: 1px solid var(--border2); border-radius: var(--r); box-shadow: 0 6px 22px rgba(0,0,0,.25); padding: 10px 12px; font-size: 12.5px; }
+    #activity-panel.open { display: block; }
+    .ap-row { padding: 6px 0; border-top: 1px solid var(--border); }
+    .ap-row:first-child { border-top: 0; }
+    .ap-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .ap-when { color: var(--muted); font-size: 11px; }
+    .ap-line { flex: 1 1 auto; min-width: 0; }
+    .ap-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .ap-btn { padding: 2px 9px; font-size: 11px; border: 1px solid var(--border2); border-radius: var(--r-sm); background: var(--surface2); color: var(--text); cursor: pointer; }
+    .ap-btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+    .ap-btn[disabled] { opacity: .5; cursor: default; }
+    .ap-sub { margin-top: 3px; font-size: 11px; color: var(--muted); }
+    .ap-kept { margin-top: 3px; font-size: 11px; color: var(--warn); }
     /* Mark Reviewed floats at the top-left of the preview pane. Anchored to
        #doc-panel (which does NOT scroll — only #doc-viewer does), so it stays
        put while the document image scrolls beneath it. Shown only for flagged
        docs via renderer.js updateAcknowledgeButton(); colour/label set there. */
     #btn-acknowledge {
-      position: absolute; top: 46px; left: 12px; z-index: 6;
+      position: absolute; top: var(--doc-head-h); left: 12px; z-index: 6;
       padding: 9px 16px; font-size: 13px; font-weight: 600;
       box-shadow: 0 2px 8px rgba(0,0,0,.35);
     }
@@ -269,7 +305,7 @@
     /* Small hint under Mark Reviewed — shown only while it's actionable (flagged, not yet
        acknowledged). Tells the operator the Space-bar shortcut. */
     #ack-hint {
-      position: absolute; top: 86px; left: 12px; z-index: 6; box-sizing: border-box;
+      position: absolute; top: calc(var(--doc-head-h) + 40px); left: 12px; z-index: 6; box-sizing: border-box;
       font-size: 11px; line-height: 1.35; color: var(--muted); background: var(--surface);
       border: 1px solid var(--border2); border-radius: var(--r-sm);
       padding: 5px 10px; box-shadow: 0 1px 4px rgba(0,0,0,.2); pointer-events: none;
@@ -358,7 +394,7 @@
     #zoom-level { font-size: 11px; color: var(--muted); font-family: var(--mono); min-width: 40px; text-align: center; }
 
     #wizard-panel {
-      display: none; position: absolute; top: 46px; right: 12px; z-index: 7; width: 248px;
+      display: none; position: absolute; top: var(--doc-head-h); right: 12px; z-index: 7; width: 248px;
       flex-direction: column; gap: 9px; padding: 12px;
       background: var(--surface2); border: 1px solid var(--border2);
       border-radius: 9px; box-shadow: 0 8px 24px rgba(0,0,0,.45);
@@ -384,7 +420,7 @@
     #wizard-panel select:focus, #wizard-panel input[type="text"]:focus { border-color: var(--accent); }
     /* top offset clears #doc-toolbar (the readout's offset parent is #doc-panel, which the toolbar
        sits at the top of) so the read-back never covers the zoom/page/Straighten controls — card 7. */
-    .anchor-readout { position: absolute; top: 46px; left: 50%; transform: translateX(-50%); z-index: 20;
+    .anchor-readout { position: absolute; top: var(--doc-head-h); left: 50%; transform: translateX(-50%); z-index: 20;
       max-width: 92%; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
       background: var(--surface); border: 1px solid var(--accent); border-left: 4px solid var(--accent);
       border-radius: 10px; padding: 9px 13px 9px 12px; box-shadow: 0 10px 30px rgba(0,0,0,.30);
@@ -975,6 +1011,15 @@
     <div id="queue-resizer" title="Drag to resize the file list"></div>
 
     <div id="doc-panel">
+      <!-- B2 (activity strip, 2026-08-22; barry + eric → Oracle): what the app just did, newest on the left. Armed by the
+           `review_activity_strip` setting; hidden (and the head variable unchanged) otherwise. data-help-ignore: help-mode
+           must not swallow the expand / undo clicks. -->
+      <div id="activity-strip" data-help-ignore aria-label="Recent activity">
+        <button type="button" class="as-nav" id="as-prev" title="Earlier" hidden>&#8249;</button>
+        <div class="as-track" id="as-track"></div>
+        <button type="button" class="as-nav" id="as-next" title="Later" hidden>&#8250;</button>
+      </div>
+      <div id="activity-panel" data-help-ignore role="dialog" aria-label="Recent activity"></div>
       <div id="doc-toolbar">
         <span class="doc-name" id="doc-name">No document selected</span>
         <div class="zoom-group" data-help-key="zoom">

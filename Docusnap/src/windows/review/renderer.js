@@ -604,6 +604,179 @@ document.getElementById('auto-committed-bar')?.addEventListener('click', async (
 
 // "Start reviewing →" in the empty-pane CTA: land on the first document in the visible order
 // (selectDoc expands its group). Same landing the ↑/↓ nav treats as first.
+// ═══ B2 — THE ACTIVITY STRIP (2026-08-22; barry + eric → Oracle SIGN-OFF-W/COND C2/C5/C6/C7/C9) ═══
+// One 28 px row of CHIPS above the toolbar — newest on the left, ≤ AS_MAX on the strip, scroll ‹ › when
+// they overflow. A chip = `✓ Just now · 23 filed themselves ▾`; clicking it opens the PANEL (an overlay,
+// never a reflow) with the full sentence, the per-sender breakdown, the kept-back reasons (C6) and the
+// actions (See them / Put back). CLICK ANYWHERE closes the PANEL ONLY — the chip stays and can be
+// reopened while in view (the owner's clarification); a chip leaves the strip on AGE (AS_TTL_MS) or when
+// AS_MAX newer arrive; while any event with live undo remains, the band shows a quiet "Recent activity ▾"
+// rather than going blank. Fed by the main-process ledger (B1): `getReviewEvents()` on load,
+// `onReviewEvent` re-renders the strip ONLY (C2 — the doors already broadcast the queue refresh).
+// Relative time is computed from the EVENT's `at`, re-labelled every 30 s, so "47 min ago" after lunch is
+// truthful. The renderer never sends a document-id list (C5): "See them" and "Put back" take the event id.
+// Armed by `review_activity_strip` (read once per window); OFF → no markup change, `--doc-head-h` stays 46.
+const AS_MAX = 10, AS_TTL_MS = 15 * 60 * 1000;
+let _asOn = false, _asEvents = [], _asOpenId = null, _asTick = null;
+function _asRelTime(at) {
+  const d = Math.max(0, Date.now() - Number(at || 0));
+  if (d < 60_000) return 'Just now';
+  if (d < 3_600_000) return `${Math.floor(d / 60_000)} min ago`;
+  if (d < 86_400_000) return `${Math.floor(d / 3_600_000)} hr ago`;
+  const dt = new Date(Number(at)); const hh = String(dt.getHours()).padStart(2, '0'), mm = String(dt.getMinutes()).padStart(2, '0');
+  return d < 2 * 86_400_000 ? `Yesterday ${hh}:${mm}` : `${dt.toLocaleDateString()} ${hh}:${mm}`;
+}
+function _asIcon(ev) { return ev.kind === 'put_back' ? '↩' : ev.kind === 'class_fix' ? '✎' : '✓'; }
+function _asShort(ev) {
+  const n = Number(ev.count) || 0, s = n === 1 ? '' : 's';
+  switch (ev.kind) {
+    case 'auto_filed': return `${n} filed automatically`;
+    case 'self_filed': return `${n} filed themselves`;
+    case 'approved':   return `you filed ${n}`;
+    case 'class_fix':  return `${n} corrected`;
+    case 'put_back':   return `${n} put back`;
+    default:           return `${n} document${s}`;
+  }
+}
+// C9: "filed themselves" is reserved for self_filed (after your confirms); a 100 %-import is "filed automatically".
+function _asLine(ev) {
+  const n = Number(ev.count) || 0, s = n === 1 ? '' : 's', sup = ev.scope && ev.scope.supplier ? escHtml(ev.scope.supplier) : '';
+  switch (ev.kind) {
+    case 'auto_filed': return `${n} document${s} filed automatically — every field read clean (matched 100 %)`;
+    case 'self_filed': return `${n} document${s}${sup ? ` from <b>${sup}</b>` : ''} filed themselves — they matched what you've confirmed`;
+    case 'approved':   return `You filed ${n}${sup ? ` from <b>${sup}</b>` : ''} in one go`;
+    case 'class_fix':  return `${n} ${sup ? `<b>${sup}</b> ` : ''}document${s} ${n === 1 ? 'was' : 'were'} corrected to match your fix`;
+    case 'put_back':   return `${n} ${sup ? `<b>${sup}</b> ` : ''}document${s} ${n === 1 ? 'was' : 'were'} put back in Review — the filed copies stay in your folder until you file them again`;
+    default:           return `${n} document${s}`;
+  }
+}
+function _asVisible(now = Date.now()) {
+  return _asEvents.filter(e => (now - Number(e.at || 0)) <= AS_TTL_MS).slice(0, AS_MAX);
+}
+function renderActivityStrip() {
+  const panel = document.getElementById('doc-panel'), strip = document.getElementById('activity-strip'), track = document.getElementById('as-track');
+  if (!panel || !strip || !track) return;
+  panel.classList.toggle('has-activity-strip', _asOn);
+  if (!_asOn) { track.innerHTML = ''; return; }
+  const vis = _asVisible();
+  const anyUndo = _asEvents.some(e => e.undoable);
+  if (!vis.length) {
+    track.innerHTML = anyUndo || _asEvents.length
+      ? `<span class="as-chip as-recent" data-as="recent" title="Show what the app did recently">Recent activity <span class="as-caret">▾</span></span>`
+      : '';
+  } else {
+    track.innerHTML = vis.map(ev =>
+      `<span class="as-chip${ev.seen ? '' : ' unseen'}${_asOpenId === ev.id ? ' open' : ''}" data-as="${ev.id}" title="${escHtml(_asLine(ev).replace(/<[^>]+>/g, ''))}">`
+      + `${_asIcon(ev)} <span class="as-when">${escHtml(_asRelTime(ev.at))}</span> · ${escHtml(_asShort(ev))} <span class="as-caret">▾</span></span>`).join('');
+  }
+  _asUpdateNav();
+  if (_asOpenId != null) _asRenderPanel();
+}
+function _asUpdateNav() {
+  const track = document.getElementById('as-track'); if (!track) return;
+  const over = track.scrollWidth > track.clientWidth + 2;
+  const prev = document.getElementById('as-prev'), next = document.getElementById('as-next');
+  if (prev) prev.hidden = !over || track.scrollLeft <= 0;
+  if (next) next.hidden = !over || track.scrollLeft + track.clientWidth >= track.scrollWidth - 2;
+}
+function _asRenderPanel() {
+  const panel = document.getElementById('activity-panel'); if (!panel) return;
+  const rows = _asOpenId === 'recent' ? _asEvents : _asEvents.filter(e => e.id === _asOpenId);
+  if (!rows.length) { _asClosePanel(); return; }
+  panel.innerHTML = rows.map(ev => {
+    const by = ev.bySender && Object.keys(ev.bySender).length > 1
+      ? `<div class="ap-sub">${Object.entries(ev.bySender).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${escHtml(k)} ${v}`).join(' · ')}</div>` : '';
+    const kept = (ev.dropped || []).length
+      ? `<div class="ap-kept">${(ev.dropped || []).slice(0, 8).map(d => `kept back — ${escHtml(typeof _sweepReason === 'function' ? _sweepReason(d.reason) : d.reason)} (#${d.docId})`).join('<br>')}${(ev.dropped || []).length > 8 ? `<br>… and ${(ev.dropped || []).length - 8} more` : ''}</div>` : '';
+    const undo = ev.undoable ? `<button type="button" class="ap-btn" data-ap="undo" data-ev="${ev.id}" title="Puts these documents back in Review. The copies already written to your filing folder stay there and are replaced when you file them again.">Put back</button>` : '';
+    const see = Number(ev.count) ? `<button type="button" class="ap-btn primary" data-ap="see" data-ev="${ev.id}">See them</button>` : '';
+    return `<div class="ap-row"><div class="ap-head"><span class="ap-when">${escHtml(_asRelTime(ev.at))}</span><span class="ap-line">${_asIcon(ev)} ${_asLine(ev)}</span><span class="ap-actions">${see}${undo}</span></div>${by}${kept}</div>`;
+  }).join('');
+  panel.classList.add('open');
+}
+function _asOpenPanel(id) {
+  _asOpenId = id;
+  _asRenderPanel();
+  document.querySelectorAll('#as-track .as-chip').forEach(c => c.classList.toggle('open', c.dataset.as === String(id)));
+  try { const top = _asVisible()[0]; if (top && !top.seen) window.docusnap.markReviewEventsSeen?.(top.id).then(() => { _asEvents.forEach(e => { if (e.id <= top.id) e.seen = true; }); renderActivityStrip(); }).catch(() => {}); } catch {}
+}
+function _asClosePanel() {
+  _asOpenId = null;
+  const panel = document.getElementById('activity-panel'); if (panel) { panel.classList.remove('open'); panel.innerHTML = ''; }
+  document.querySelectorAll('#as-track .as-chip.open').forEach(c => c.classList.remove('open'));
+}
+async function _asSeeThem(evId) {
+  let r = null;
+  try { r = await window.docusnap.getReviewEventDocs?.(evId); } catch {}
+  const docs = (r && r.ok && Array.isArray(r.docs)) ? r.docs : [];
+  if (!docs.length) { showToast('Those documents are no longer available to show.', 'warn'); return; }
+  _asClosePanel();
+  _viewingAutoFiled = true;                        // the existing "filed list owns the queue" mode (exitAutoFiledView returns)
+  queue = docs.slice();
+  renderQueueList();
+  if (queue.length) selectDoc(queue[0]);
+  refreshAutoCommittedBar();
+}
+async function _asPutBack(evId) {
+  const ev = _asEvents.find(e => e.id === evId); if (!ev) return;
+  const n = Number(ev.count) || 0;
+  // C7: a big revert is a one-click action — name the number before it happens
+  if (n > 25 && !confirm(`Put ${n} documents back in Review?
+
+The copies already written to your filing folder stay there and are replaced when you file them again.`)) return;
+  let r = null;
+  try { r = await window.docusnap.undoReviewEvent?.(evId); } catch {}
+  const undone = (r && Array.isArray(r.undone)) ? r.undone.length : 0, refused = (r && Array.isArray(r.refused)) ? r.refused.length : 0;
+  if (!r || !r.ok) showToast(r && r.reason === 'not-undoable' ? 'These can no longer be put back from here — open them from Search instead.' : (r && r.reason === 'expired' ? 'That correction can no longer be undone — fix the field by hand.' : 'Nothing was put back.'), 'warn');
+  else showToast(refused ? `Put ${undone} back in Review — ${refused} couldn't be (filed another way since).` : `Put ${undone} document${undone === 1 ? '' : 's'} back in the Review queue.`, undone ? 'info' : 'warn');
+  _asClosePanel();
+  await _refreshQueueFromBroadcast();
+}
+async function initActivityStrip() {
+  try { _asOn = (await window.docusnap.getSetting('review_activity_strip')) === 'true'; } catch { _asOn = false; }
+  if (!_asOn) { renderActivityStrip(); return; }
+  try { _asEvents = (await window.docusnap.getReviewEvents?.()) || []; } catch { _asEvents = []; }
+  renderActivityStrip();
+  try {
+    window.docusnap.onReviewEvent?.((ev) => {          // C2: the strip ONLY — the doors already refresh the queue
+      if (!ev || ev.id == null) return;
+      const i = _asEvents.findIndex(e => e.id === ev.id);
+      if (i >= 0) _asEvents[i] = ev; else _asEvents.unshift(ev);
+      _asEvents.sort((a, b) => Number(b.at) - Number(a.at));
+      renderActivityStrip();
+    });
+  } catch {}
+  if (_asTick) clearInterval(_asTick);
+  _asTick = setInterval(() => { if (_asOn) renderActivityStrip(); }, 30_000);   // re-label only (no refetch)
+  window.addEventListener('beforeunload', () => { if (_asTick) clearInterval(_asTick); });
+  const track = document.getElementById('as-track');
+  track?.addEventListener('scroll', _asUpdateNav);
+  document.getElementById('as-prev')?.addEventListener('click', () => { track.scrollBy({ left: -200 }); });
+  document.getElementById('as-next')?.addEventListener('click', () => { track.scrollBy({ left: 200 }); });
+  track?.addEventListener('click', (e) => {
+    const chip = e.target.closest('.as-chip'); if (!chip) return;
+    const key = chip.dataset.as === 'recent' ? 'recent' : Number(chip.dataset.as);
+    if (_asOpenId === key) _asClosePanel(); else _asOpenPanel(key);
+  });
+  document.getElementById('activity-panel')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-ap]'); if (!b) return;
+    const id = Number(b.dataset.ev);
+    if (b.dataset.ap === 'see') _asSeeThem(id);
+    else if (b.dataset.ap === 'undo') _asPutBack(id);
+  });
+  // C5: OBSERVE-ONLY click-outside (never stopPropagation/preventDefault — the ⊕ pick, drag-select and
+  // help-mode interceptors must see every click); Esc is consumed only while the panel is open.
+  document.addEventListener('click', (e) => {
+    if (_asOpenId == null) return;
+    if (e.target.closest('#activity-panel') || e.target.closest('#activity-strip')) return;
+    _asClosePanel();
+  }, true);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && _asOpenId != null) { _asClosePanel(); e.stopPropagation(); }
+  }, true);
+}
+initActivityStrip();
+
 document.getElementById('btn-start-reviewing')?.addEventListener('click', () => {
   const order = reviewDisplayOrder();
   if (order.length) selectDoc(order[0]);
@@ -6044,6 +6217,12 @@ function renderSweepConsentBar() {
       + `<span class="scb-toggle" data-scb="toggle">${s.listOpen ? 'Hide list' : 'Choose which…'}</span>`
       + `</div>`;
     bar.style.display = 'block';
+    return;
+  }
+  if (s.phase === 'done' && _asOn) {
+    // B2: the receipt lives in the activity strip (server-emitted by the accept door, with the kept-back
+    // reasons — Oracle C6) and keeps its undo for 7 days; the 20 s self-destruct goes with it.
+    _sweepState = null; bar.style.display = 'none'; bar.innerHTML = '';
     return;
   }
   if (s.phase === 'done') {

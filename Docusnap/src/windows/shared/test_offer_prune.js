@@ -46,7 +46,8 @@ console.log('§1 pruneOffer');
 console.log('§2 renderer contract (source pins)');
 {
   const ROOT = path.join(__dirname, '..', '..', '..');
-  const rend = fs.readFileSync(path.join(ROOT, 'src', 'windows', 'review', 'renderer.js'), 'utf8');
+  // CRLF-safe: a core.autocrlf=true checkout hands this test CRLF source, and the `\n}\n` slice below never matched
+  const rend = fs.readFileSync(path.join(ROOT, 'src', 'windows', 'review', 'renderer.js'), 'utf8').split('\r\n').join('\n');
   const html = fs.readFileSync(path.join(ROOT, 'src', 'windows', 'review', 'index.html'), 'utf8');
   const fn = (name) => { const i = rend.indexOf(name); return i < 0 ? '' : rend.slice(i, rend.indexOf('\n}\n', i) + 3); };
   const broadcast = fn('async function _refreshQueueFromBroadcast()');
