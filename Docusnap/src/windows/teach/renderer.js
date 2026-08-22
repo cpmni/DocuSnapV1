@@ -1840,7 +1840,12 @@ async function doCommit(){
   try{
     const allValues={};
     for (const f of state.fields){ const r=state.results[f.key]; if(r&&r.value) allValues[f.key]=r.value; }
-    const supplier = state.doc.supplier_name || allValues.supplier || allValues.supplier_name || null;
+    // The issuer the operator SEES in the wizard wins over the document row's first-pass read: the
+    // row still carries the cold letterhead prefill (owner 2026-08-22: a template was named
+    // "DOCUMENT OLUTIONS" from a 69% misread while the corrected "DOCUMENT SOLUTIONS" went into the
+    // template's identity). The name is what Review shows as "Recognised by" — it must be the
+    // corrected value, not the read the operator just fixed.
+    const supplier = allValues.supplier_name || allValues.supplier || state.doc.supplier_name || null;
     // 1) create/refresh the template + pin this page as the sample (→ landmarks)
     const promo=await D.promoteToTemplate({
       document_id:state.doc.id, allValues, document_type_slug:state.docTypeSlug, supplier_name:supplier,
