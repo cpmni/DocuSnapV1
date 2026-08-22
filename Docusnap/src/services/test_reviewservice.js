@@ -252,7 +252,13 @@ const basePayload = (id, extra = {}) => ({
   check('  → "Keep <type>" (acknowledge) files', rTSack.ok === true && calls.commit === commitsBeforeTS + 1);
   const dTS2 = newDoc(db);
   const rTS2 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, tsPayload(dTS2));
-  check('  → once the second type is confirmed the history is mixed → no further ask', rTS2.ok === true);
+  check('  → after ONE kept second-type doc the ask STILL fires (Chris r17 card 1 rider: one slip never silences it)', rTS2.ok === false && rTS2.code === 'TYPE_SPLIT');
+  const rTS2ack = await svc.confirm(db, { username: 'sarah', role: 'admin' }, tsPayload(dTS2, { acknowledgeTypeSplit: true }));
+  check('  → acknowledged again (now 2 of the second type)', rTS2ack.ok === true);
+  const dTS2b = newDoc(db);
+  const rTS2b = await svc.confirm(db, { username: 'sarah', role: 'admin' }, tsPayload(dTS2b));
+  check('  → at TWO confirms of the second type the history is mixed → no further ask', rTS2b.ok === true);
+  db.prepare("DELETE FROM documents WHERE id = ?").run(dTS2b);
   // reset to a 100 %-one-type history for the remaining cases
   db.prepare("DELETE FROM documents WHERE id IN (?, ?)").run(dTS, dTS2);
   const dTSb = newDoc(db);

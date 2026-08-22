@@ -50,6 +50,14 @@ check('the same row with its note SHED → NULL (ungroups by itself; the gate ke
 check('a clean row → NULL', q[dPlain].issuer_suggested == null);
 check('a noted whole-token disagreement with NO suggestion (slice 2 abstained) → NULL (stays under its own name)', q[dNoSug].issuer_suggested == null);
 check('supplier_name itself is untouched (display only)', q[dGarble].supplier_name === 'NOCUMENT');
+// Chris round 17 card 5b — VACUOUS-TRAP PIN: the classifier reads `issuer_blank`; if the column vanishes the
+// classifier silently restores the "blank issuer counts as ready" bug, so assert the column on real rows.
+const dBlank = mkDoc(null); db.prepare("INSERT INTO extractions (document_id, field_key, raw_value, display_value, confidence, extraction_method) VALUES (?, 'supplier_name', '', '', 62, 'keyword')").run(dBlank);
+const q2 = Object.fromEntries(documents.getReviewQueue(db).map(d => [d.id, d]));
+check('getReviewQueue rows carry issuer_blank: a doc with an EMPTY issuer read → 1', q2[dBlank] && Number(q2[dBlank].issuer_blank) === 1);
+check('…positive control: a doc with an issuer value → 0', Number(q2[dGarble].issuer_blank) === 0);
+const RR = require('../../src/windows/shared/reviewReadiness.js') && globalThis.ReviewReadiness;
+check('…and the classifier puts the blank-issuer row in `missing`, the valued one in `ready`-or-above', RR && RR.classify(q2[dBlank]) === 'missing' && RR.classify(q2[dPlain]) === 'ready');
 
 console.log('\nrenderer source contract:');
 const renderer = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'windows', 'review', 'renderer.js'), 'utf8');

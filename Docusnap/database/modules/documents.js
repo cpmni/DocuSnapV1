@@ -203,6 +203,14 @@ function getReviewQueue(db) {
               OR (e.corrected_to   IS NOT NULL AND e.corrected_to   <> '') )
       ) AS review_flag_count,
       ${_issuerSuggestedSel}
+      -- issuer_blank (Chris round 17 card 5b): the issuer is NOT counted by missing_required_labels
+      -- (warn-only in single review) but the File All loop REFUSES a blank issuer — two readiness
+      -- notions. The classifier reads this column so Home's "N ready" == File All's N. A suggestion
+      -- (corrected_to / suggested_supplier) is not a value.
+      (CASE WHEN EXISTS (SELECT 1 FROM extractions e WHERE e.document_id = d.id AND e.field_key = 'supplier_name'
+                           AND ( (e.display_value IS NOT NULL AND TRIM(e.display_value) <> '')
+                              OR (e.raw_value     IS NOT NULL AND TRIM(e.raw_value)     <> '') ))
+            THEN 0 ELSE 1 END) AS issuer_blank,
       (SELECT COUNT(*) FROM extractions e
          JOIN fields f ON f.document_type_id = d.document_type_id AND f.key = e.field_key
          WHERE e.document_id = d.id

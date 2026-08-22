@@ -26,6 +26,11 @@ function check(label, cond) { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`);
 console.log('§1 the classifier (pure)');
 const clean = { type_slug: 'invoice', review_flag_count: 0, below_threshold_count: 0, missing_required_labels: '' };
 check('typed clean → ready', RR.classify(clean) === 'ready');
+// Chris round 17 card 5b: a blank issuer is 'missing' (File All would refuse it) — Home's N == File All's N
+check('blank issuer (issuer_blank=1) → missing', RR.classify({ ...clean, issuer_blank: 1 }) === 'missing');
+check('…positive control: issuer_blank=0 → ready', RR.classify({ ...clean, issuer_blank: 0 }) === 'ready');
+check('…order: a flagged AND blank doc is flagged first', RR.classify({ ...clean, issuer_blank: 1, review_flag_count: 1 }) === 'flagged');
+check('…an untyped blank doc is noType first', RR.classify({ ...clean, issuer_blank: 1, type_slug: null }) === 'noType');
 check('UNTYPED clean → noType (the "20 ready" exhibit)', RR.classify({ ...clean, type_slug: null }) === 'noType');
 check('flag → flagged', RR.classify({ ...clean, review_flag_count: 1 }) === 'flagged');
 check('ACKNOWLEDGED flag → ready (File All exempts it; the split now does too)', RR.classify({ ...clean, review_flag_count: 1, review_acknowledged_at: '2026-08-22' }) === 'ready');

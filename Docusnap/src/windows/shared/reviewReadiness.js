@@ -33,6 +33,7 @@
     if (isFlagged(row, valuedOnly) && !row.review_acknowledged_at) return 'flagged';
     if (!row.type_slug) return 'noType';
     if (String(row.missing_required_labels || '').trim()) return 'missing';
+    if (Number(row.issuer_blank) === 1) return 'missing';      // Chris r17 card 5b: a blank issuer is not "ready" (File All would refuse it)
     return 'ready';
   }
   /** Partition a queue into the four groups (File All's dialog + the Home split both use this). */

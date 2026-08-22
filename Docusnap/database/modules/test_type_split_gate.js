@@ -36,8 +36,15 @@ for (let i = 0; i < 2; i++) mk('Harbour Glass Ltd', 7);
 check('a thin history (2 confirms) → no ask (reason thin)', checkTypeSplit(db, 'Harbour Glass Ltd', 'purchase_order').reason === 'thin');
 mk('Harbour Glass Ltd', 7);
 check('…at 3 confirms it fires', checkTypeSplit(db, 'Harbour Glass Ltd', 'purchase_order').split === true);
-mk('Nordwind Refrigeration Ltd', 3);   // the acknowledged second type lands
-check('once a second type is confirmed the history is MIXED → never asks again for this issuer',
+mk('Nordwind Refrigeration Ltd', 3);   // ONE acknowledged (or slipped) second-type confirm lands
+// Chris round 17 card 1 rider (Oracle): one slip must not silence the ask for ever — "established" = the
+// dominant type has >= 3 AND every other type has < 2 (the A2 unsupported-rival notion).
+check('after ONE Purchase Order the ask STILL fires on the next PO (24 Q + 1 PO is not a second type yet)',
+      checkTypeSplit(db, 'Nordwind Refrigeration Ltd', 'purchase_order').split === true
+      && checkTypeSplit(db, 'Nordwind Refrigeration Ltd', 'purchase_order').count === 24);
+check('…and on any other type too', checkTypeSplit(db, 'Nordwind Refrigeration Ltd', 'invoice').split === true);
+mk('Nordwind Refrigeration Ltd', 3);   // the SECOND PO confirm — now a genuine second type
+check('TRADE-OFF PIN: at 2 confirms of the second type the history is MIXED → the ask stops (a genuine second type costs one extra ack)',
       checkTypeSplit(db, 'Nordwind Refrigeration Ltd', 'purchase_order').reason === 'mixed'
       && checkTypeSplit(db, 'Nordwind Refrigeration Ltd', 'invoice').reason === 'mixed');
 for (let i = 0; i < 5; i++) mk('Pending Co', 7, 'needs_review');

@@ -31,8 +31,14 @@ function checkTypeSplit(db, supplierName, documentTypeSlug, opts = {}) {
      GROUP BY dt.slug, dt.name`).all(sup);
   const total = rows.reduce((a, r) => a + (r.n || 0), 0);
   if (total < minConfirms) return { split: false, reason: 'thin', count: total };
-  if (rows.length !== 1) return { split: false, reason: 'mixed', count: total };
-  const only = rows[0];
+  // Chris round 17 card 1 rider (Oracle): "established" = the DOMINANT type has >= minConfirms AND every
+  // OTHER type has < 2 confirms — the A2 "unsupported rival" notion — so ONE slip (a single mistyped
+  // confirm) still asks next time, while a genuine second type (2+ confirms) stops asking. The old
+  // `rows.length === 1` went silent for ever after one slip.
+  const sorted = rows.slice().sort((a, b) => (b.n || 0) - (a.n || 0));
+  const only = sorted[0];
+  if ((only.n || 0) < minConfirms) return { split: false, reason: 'thin', count: total };
+  if (sorted.slice(1).some(r => (r.n || 0) >= 2)) return { split: false, reason: 'mixed', count: total };
   if (String(only.slug || '').toLowerCase() === slug.toLowerCase()) return { split: false, reason: 'same', count: total };
   let typedName = null;
   try { typedName = (db.prepare('SELECT name FROM document_types WHERE slug = ?').get(slug) || {}).name || null; } catch { /* advisory */ }
