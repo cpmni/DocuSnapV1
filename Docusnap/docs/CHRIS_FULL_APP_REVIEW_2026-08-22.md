@@ -107,3 +107,82 @@ For a scared first-timer, **the happy path is now genuinely short**: open a held
 
 ## Humility
 One scripted persona, one sitting, clean PDFs from a known corpus, typed-locate teaching rather than drawn boxes (the owner's users may draw). My driver mis-stepped twice: it re-clicked a queue row after taking the "Use PI" offer, which reloaded the doc and dropped my fix (so `P1266000` on disk is my fault, not the app's), and a native "Teach this as a NEW document?" dialog appeared on screen mid-session that I can't attribute with certainty — I closed it via the OS; if a finding looked like the app's doing I checked the records and the disk, not just the pixels. The concurrency test is bounded by how fast the re-read is (19 docs in about a minute). Screenshots: `chris-driver\step01–46.png`.
+
+---
+
+## ROUND 13b — 2026-08-22 ~01:00: the RE-RUN on the fix build (`bff8f5b`), same sandbox DB
+
+**Sandbox conditions:** the round-13 sandbox restarted on the fix build (same userData/DB, so the
+account, queue, taught/confirmed senders and Output survived); `role_field_dominant_class` flipped ON in
+addition to the round-13 switches. Driven by a fresh general-purpose Chris persona given his own round-13
+report to read first. Screenshots step47–69 in the session scratchpad `chris-driver/`. Report is VERBATIM.
+
+I have what I need. Queue 176 → 132 this sitting; Output folder 43 → 87 PDFs, every new file checked against its printed page. Here is my report.
+
+---
+
+# Chris The Customer — Round 13b (fix-build re-run, same sandbox DB, CDP 9223, 2026-08-22 00:58–01:35)
+
+**Route:** signed back in as `chris`; same Playwright-over-CDP driver and typed-locate teaching as round 13. Every claim below was checked against the app's own records (`getReviewQueue`, `getScopeReadiness`, `getRecentAutoFiled`, `getDocumentWithExtractions`) and the Output folder; for every newly filed PDF I rendered the page and read the order number and date off it myself and compared them to the filename (87/87 match, the one "?" being my own checker misreading a round-13 file). Screenshots `step47–69` in `chris-driver\`.
+
+## Walkthrough
+- **step47–48** Home/Review as I left them (176 waiting, 43 filed). The group badges had changed: Harrowgate now *"learned · needs a layout"* (it used to claim "✓ files by itself"); Veltrix and Pelican still "✓ files by itself" with 8 and 5 sitting there.
+- **step49–50 Veltrix.** Opened 0029 (clean read, issuer "Check · 66%"), pressed Confirm once. **2 s later:** *"✓ 15 documents from 2 senders you've confirmed filed by itself after your confirms · Put back"*, queue 176→170, Veltrix 8→2. Disk: 5 new files via `scope_sweep` + mine, all under `Veltrix-Automotive-Parts\`, all matching the page. Of the 2 left: 0025 held on *"'VXS33215' doesn't appear on this page as written"* — the page prints "Order No VXS33215" plainly (safe hold, wrong reason); 0013 read identically to the five that filed and was simply left behind — a second Veltrix confirm didn't pick it up either; "Reprocess 1" then offered "File 1", which filed it correctly (`auto_reprocess`).
+- **step51** Odd-reference probe: typed `VX$12345` over 0013's number + Enter. No warning, the badge beside it still said "High · 95%", and the record didn't change (typing isn't saved without Confirm) — so I couldn't manufacture an odd held document without confirming a wrong value, which I declined to do.
+- **step52** The Reprocess warning now ends *"Re-reading updates the details; it doesn't file anything by itself — documents that come out ready still file through Confirm, File All Ready, or the sender's own auto-file once it's learned."*
+- **step53–54 Harrowgate, the 5th confirm.** Before: badge "learned · needs a layout", readiness `confirms 4/5, hasTemplate false`. Confirm at 0.0 s → **1.1 s** badge "✓ files by itself", readiness `5/3, hasTemplate true, ready true` → **10.2 s** *"Quietly re-reading Harrowgate Timber Supplies documents you haven't opened, now that you've taught its layout — 0 of 14 done"* → **13.3 s** line gone → **14.3 s** *"✓ 29 documents from 3 senders… filed by itself"*, queue 167→153, Harrowgate 15→1. All 14 on disk, all correct (incl. the three that had been flagged at 75%). The badge never lied. Then a green panel appeared: *"14 Harrowgate Timber Supplies Sales Order documents already read cleanly and now pass every check — nothing was re-read. ✓ File up to 14"* — for documents that had just filed. Pressing it: *"✓ Filed 0 from Harrowgate Timber Supplies… Put back in Review"* + fourteen lines of *"kept back — it was handled in the meantime (…)"*.
+- **step55 Reprocess as the single door.** Pressed the receipt's Put back (25 returned: Harrowgate 14, Pelican 6, Veltrix 5 — the receipt had said 29). Then "Reprocess 15 from Harrowgate": **2 s** → *"✓ 14 documents from Harrowgate… filed by itself"*, the bar offered only "File 1" (the document on screen). Correct, in place, no duplicates. A second bar offered "File up to 6" Pelican with *"1 other sender is also ready — file these first and the next offer follows"* → filed 6 correctly; the Veltrix offer never followed. "Reprocess 5 from Veltrix" on the put-back five: *"Completed 0 of 5"*, records untouched, nothing filed, nothing said; File All Ready then counted them as "flagged — waiting for you to check a value". Confirming one of them by hand filed the other 3 in 2 s, leaving the one on screen.
+- **step56–57 Castellan, Enter.** Typed "Castellan Security Systems" into the empty issuer, Enter only → bar at once: *"19 more unfiled documents look like the same sender. Apply "Castellan Security Systems" to 19 & re-read · Not now"*. Apply named 20/20.
+- **step58–65 Nordwind, teach from Review.** Quotation with no type; "Change what's read…" was greyed; picked "＋ Create new type…" → a clear dialog (step59) → "Quotation" created and selected, with *"“Quotation” created. Confirm this document now — or teach Scan Finder where each field sits… [Teach where the fields are]"* (step60; but the date it had read vanished and the blue note still said "doesn't have a document type yet"). Teach: **no dialog**, 3 typed fields, Save → DONE card at 4 s; **Review had already moved to the next document**; quiet re-read 10–45 s, all 19 siblings to 93%, fields filled, 0 flags, honest note *"Confirm 2 more and the rest from this sender can start filing themselves · 1 of 3 confirmed"*. Confirmed 2 → badge "✓ files by itself", readiness `ready true` — **and nothing filed for 50 s**; each held one said *"Nothing looks wrong — Invoice Date couldn't be checked automatically, so this one is waiting for your eye. Overall 93%… Confirm it and it files."* "Reprocess 17 from Nordwind" → 11 s → 16 filed by itself (all correct on disk, skewed scans included).
+- **step66–67 Pelican re-teach.** Through the main-window wizard: no dialog of any kind for a sender taught before. The wizard's suggested spot for the invoice number was the footer line, label shown as *"ment terms: Due on receipt. Please quote (left of the value)"*; I accepted. 0025 filed correctly (`PI269923`) and Review moved on — but the 4 waiting Pelican were not re-read, and after "Reprocess 4" they read *"Not found — doesn't match the expected format — please enter manually"* at 56–70% (they had been 84–93%).
+- **step68–69** Close: 132 waiting, 87 filed, "2 suppliers have qualified for automatic filing · learned 5 layouts".
+
+## Re-verify, items 1–6
+1. **Broken-pattern sender unstuck — FIXED.** One Veltrix confirm → 5 filed by itself in 2 s, right folder/number/date (page-checked). Caveats: one equally clean sibling (0013) was skipped with no visible reason and no later confirm swept it; a "$" typed into a number box draws no warning (I could not make an odd held document without saving a wrong value).
+2. **Harrowgate 5th confirm — FIXED.** Badge honest before and after; layout made at 1 s; re-read 10–13 s; 14 filed by itself at 14 s, all correct. No "Read differently" notes were visible (they filed before I could open one). Copy nit: *"now that you've taught its layout"* — I taught nothing, I confirmed five.
+3. **Reprocess as a single door — BETTER-BUT.** Harrowgate (14 filed, "File 1" only for the on-screen one) and Nordwind (16 filed) behaved exactly as promised. But: the five put-back Veltrix got *"Completed 0 of 5"* and silence; and a stale "File 1"/"File up to 14" can still be pressed and file 0 (card 2). "Reprocess 7 from Veltrix" still showed with 2 left.
+4. **Enter settles the issuer — FIXED.** Immediate bar on Castellan; Apply named all 20.
+5. **Review moves on after the wizard files — FIXED** (two samples: Nordwind at 4 s, Pelican).
+6. **Copy — FIXED except one NOT-SEEN.** Untaught sender: no dialog (Nordwind). Reprocess warning: new sentence present. Empty required field: *"Fill in Invoice Number — a document can't file until its required details are in, whatever the bar."* (still led by the *"read at 61%, below the 90% you've set"* line). **"You've taught X before…": NOT-SEEN** — re-teaching Pelican through the wizard raised no dialog at all, anywhere.
+
+**Known, still present:** "ITH-0093 · 5 more to file by itself", "Dairy Wholesale". The File-All-as-5th-confirm gap: **not constructible** on this DB (no untaught sender has File-All-ready documents), so NOT-SEEN.
+
+## NEW finding cards (ranked by harm)
+
+**1. A sender turns "✓ files by itself" at its 3rd confirm, but its waiting documents keep a stale hold until someone presses Reprocess**
+- Citation: header *"Nordwind Refrigeration Ltd 17 documents ✓ files by itself"*; each document *"Nothing looks wrong — Invoice Date couldn't be checked automatically, so this one is waiting for your eye. Overall 93% · waiting for your check. Confirm it and it files."*
+- User-moment: I had done exactly what the note told me ("Confirm 2 more and the rest… can start filing themselves") and waited 50 s.
+- Observed: nothing filed; "Reprocess 17 from Nordwind" filed 16 in 11 s. So the check that held them was out of date, not failing. Also "Invoice Date" on a Quotation whose field is called "Date".
+- Harm: trust-eroded / slowed (a timid user never presses Reprocess). Class: CONFUSION.
+- Direction: the quiet re-read that runs after a teach should also run after the confirm that makes a sender ready (Harrowgate already does this after its 5th); or don't show "✓ files by itself" until a sweep has filed something.
+- Missing: Pelican/Veltrix didn't need this, so it may be specific to a newly created type.
+
+**2. Offers to file documents that have already filed — "File up to 14" that files 0, and bars that never go away**
+- Citation: *"14 Harrowgate… already read cleanly and now pass every check — nothing was re-read. ✓ File up to 14"* shown seconds after *"✓ 29 documents… filed by itself"*; pressed → *"✓ Filed 0 from Harrowgate Timber Supplies — checked against the documents you just confirmed. Put back in Review"* + 14 × *"kept back — it was handled in the meantime"*. Later: three bars stacked for 30 minutes, one document offered in two of them ("File 1" and "File up to 1"), *"2 other senders are also ready — file these first and the next offer follows"* when nothing followed; the stale "File 1" vanished on press and filed nothing.
+- Harm: trust-eroded (the owner's own rule: never a File N that files 0). Class: CONFUSION.
+- Direction: retire an offer the instant its documents file; one bar per sender; a "Put back in Review" link makes no sense under "Filed 0".
+- Missing: nothing went wrong on disk — every press was harmless.
+
+**3. "Reprocess N from sender" on put-back documents does nothing and says nothing**
+- Citation: *"Completed 0 of 5"* then blank; records' read-time unchanged; File All Ready: *"114 flagged — waiting for you to check a value"* including the five Veltrix that had filed by themselves 20 minutes earlier.
+- User-moment: I'd put them back to check one, then wanted them re-filed.
+- Harm: slowed. Class: QUESTION — why are the same five "ready" at 00:59 and "flagged" at 01:12?
+- Direction: either re-read them or say "these were put back by you — confirm one and the rest follow" (which is what worked).
+
+**4. A second teach of a known sender can quietly make it worse, and doesn't touch the waiting documents**
+- Citation: wizard *"Value: PI/26/9923 · Label: ment terms: Due on receipt. Please quote (left of the value)"*; afterwards the four waiting Pelican: *"INVOICE NUMBER Not found — doesn't match the expected format — please enter manually"*, 56–70% (were 84–93%); Review header went from "2 taught fields" to "1 taught field".
+- Harm: trust-eroded — the DONE card said "Teaching saved. It works straight away", the waiting ones weren't re-read, and when they were, they'd gone backwards. No "You've taught Pelican before" warning anywhere. Class: CONFUSION.
+- Direction: when the label it found is a sentence fragment, say so and prefer the other occurrence; a re-teach should ask "replace the spot you taught on 21 Aug?"; run the quiet re-read after a re-teach too.
+- Missing: I accepted the wizard's spot without stepping through its "printed in 2 places" offer — a careful person might have caught the label.
+
+**5. Small honesty slips (cosmetic)**
+- Creating a type from Review wiped the date it had already read (09-10-2025) and left *"This document doesn't have a document type yet"* above a selected "Quotation". `VX$12345` typed into a number box keeps "High · 95%" and no warning. Group headers lose their badge/countdown after a re-read or put-back (Nordwind "19 documents" with no "2 more", Veltrix no badge while the app's readiness said ready). "Reprocess 7 from Veltrix" with 2 left. A put-back of a "29" receipt returned 25. Class: PREFERENCE.
+
+## The owner's question, updated
+For a scared first-timer: **two of the three paths are now genuinely hands-off.** Harrowgate: five plain Confirms and nothing else — 14 filed themselves with a line that told me what was happening. Veltrix: one Confirm, five filed, receipt with Put back. Those are the first rounds where I pressed nothing I'd have to remember. Nordwind (create type → teach → 2 confirms) still needed **one** press of Reprocess-sender; last round that was two presses plus File All Ready.
+Still to be remembered/pressed that shouldn't be: (a) Reprocess-sender after the confirm that makes a taught sender ready (card 1); (b) Reprocess after re-teaching (card 4); (c) the document you're looking at never files for you — you confirm it or press its "File 1"; (d) dismissing stale offer bars and knowing which of two "File 1"s is real; (e) a put-back sender wants a Confirm, not a Reprocess. Gone since round 13: File All Ready after a reprocess, clicking away instead of Enter, the "Template Manager" dialog, the "lower the bar" advice on an empty field.
+
+**Top friction:** the stale hold/offer problem in both directions — held documents that are already fine (card 1) and offers for documents already gone (card 2). **What genuinely worked:** the Harrowgate minute — confirm, badge, quiet line, receipt, 14 correct files, 14 seconds. **Two-week verdict:** Yes, more firmly than round 13 — 44 documents filed this sitting, zero in a wrong folder, zero wrong numbers or dates, undo worked every time; I'd still be pressing Reprocess for a newly taught sender, but now I'd know it's one press, not a ritual.
+
+## Humility
+One scripted persona, one sitting, the same clean corpus, typed-locate teaching (the owner's users may draw). My driver made the Pelican re-teach worse by accepting the wizard's first located spot; I report it because the wizard proposed it, but a human might have stepped through. The Veltrix 0013 skip is a mystery I could not explain from records. The put-back count (25 vs 29) may reflect documents I'd filed another way in round 13. I could not construct the File-All-5th-confirm gap on this DB. Page checks were my own reading of the rendered pages, not an independent source. Screenshots `step47–69.png` in `chris-driver\`.
