@@ -44,6 +44,13 @@ const mkA = (supplier, { template = null, status = 'needs_review', type = 1 } = 
 const a1 = mkA('Acme'), a2 = mkA('Acme'), aT = mkA('Acme', { template: 7 }), aV = mkA('Acme'), bx = mkA('Bolt'), nn = mkA(null), dd = mkA('Acme', { status: 'deferred' });
 
 let busy = false;
+let kwOn = false;
+// (c′) fixtures: held, template-less, keyword-hit docs in the three allowed states + the refusals
+const kw1 = mkA(null), kw2 = mkA('Acme'), kwPre = mkA('Patrick'), kwOther = mkA('Bolt'), kwTpl = mkA(null, { template: 7 }), kwMiss = mkA(null);
+for (const [id, txt] of [[kw1, 'SERVICE WORKSHEET KWHIT'], [kw2, 'KWHIT'], [kwPre, 'KWHIT'], [kwOther, 'KWHIT'], [kwTpl, 'KWHIT'], [kwMiss, 'nothing here']])
+  dbA.prepare('UPDATE documents SET ocr_text = ? WHERE id = ?').run(txt, id);
+dbA.prepare("INSERT INTO extractions (document_id, field_key, raw_value, display_value, confidence, extraction_method) VALUES (?, 'supplier_name', 'Patrick', 'Patrick', 69, 'letterhead_prefill')").run(kwPre);
+dbA.prepare("INSERT INTO extractions (document_id, field_key, raw_value, display_value, confidence, extraction_method) VALUES (?, 'supplier_name', 'Bolt', 'Bolt', 90, 'keyword')").run(kwOther);
 const viewers = new Set([aV]);
 const events = [], audits = [], staged = [], killed = [];
 let laneOn = true;
@@ -65,6 +72,11 @@ const lane = quietLane.create({
   markScopeActive: () => {},
   onJobDone: () => {},
   findSiblings: (db, seed, value) => (seed === a1 ? [{ id: nn }] : []),
+  // (c′) keyword-fingerprint selection (2026-08-22): the stub "matches" template 7 for any stored
+  // ocr_text containing KWHIT — the real kwSelect is templates.findByKeywordFingerprint.
+  kwSelect: (db, ocrText) => (/KWHIT/.test(String(ocrText || '')) ? 7 : null),
+  kwSelectEnabled: () => kwOn,
+  scopeTemplateIds: () => new Set([7]),
 });
 
 (async () => {
@@ -81,6 +93,7 @@ const lane = quietLane.create({
   check('...never another sender by name (Bolt)', !ids.includes(bx));
   check('...but DOES include a no-supplier doc the text finder says is the same sender (seeded from the taught doc)', ids.includes(nn));
   check('job_start was broadcast on the lane\'s own channel payload', events.some(e => e.type === 'job_start' && e.supplier === 'Acme'));
+  check('(c′) OFF: no keyword-selected doc is in the set (kw1/kwPre untouched)', !ids.includes(kw1) && !ids.includes(kwPre));
 
   // pre-emption = KILL, never hold; the job defers with its remaining docs and resumes when idle
   busy = true;
@@ -103,6 +116,21 @@ const lane = quietLane.create({
   lane.shutdown();
   check('shutdown leaves nothing queued', lane._internals.jobs.size === 0 && lane._internals.procs().length === 0);
 
+  // (c′) ON — the keyword-fingerprint selection arm (2026-08-22, replacing the hash arm that measured dead)
+  console.log('A2. (c′) keyword-fingerprint selection');
+  kwOn = true; staged.length = 0;
+  lane.schedule(dbA, { supplier: 'Acme', typeSlug: 'invoice', seedDocId: a1 });
+  await sleep(150);
+  const ids2 = staged[0] || [];
+  check('an UNNAMED template-less held doc whose stored text the keyword arm matches is selected', ids2.includes(kw1));
+  check('…so is one carrying the scope\'s OWN name', ids2.includes(kw2));
+  check('…and a `letterhead_prefill`-named one (a cold-start suggestion, not a sender claim — "Patrick")', ids2.includes(kwPre));
+  check('NEVER a doc carrying ANOTHER sender\'s claim (Bolt), even on a keyword hit', !ids2.includes(kwOther));
+  check('NEVER a doc that already carries a template (the sweep\'s business)', !ids2.includes(kwTpl));
+  check('no keyword hit → not selected (the arm selects, it does not sweep the pile)', !ids2.includes(kwMiss));
+  check('the (a)∪(b) docs are still there (union, not replacement)', ids2.includes(a1) && ids2.includes(nn));
+  lane.preempt('done'); shardResolve && shardResolve(); await sleep(50); lane.shutdown(); kwOn = false;
+
   // ════════════════════════════════════════════════════════════════════════════════════════
   // B. THE WIRED HANDLER — a fake Python behind the REAL staging / runner / merge gate
   // ════════════════════════════════════════════════════════════════════════════════════════
@@ -122,7 +150,7 @@ const lane = quietLane.create({
   db.prepare("INSERT INTO templates (id, name, slug) VALUES (7, 'Acme Invoice', 'acme-invoice')").run();
   for (const [k, l] of [['supplier_name', 'Document Issuer'], ['invoice_number', 'Invoice Number'], ['invoice_date', 'Invoice Date']])
     db.prepare("INSERT INTO fields (document_type_id, key, label, type, required, built_in) VALUES (1, ?, ?, 'text', 1, 1)").run(k, l);
-  for (const [k, v] of [['quiet_reread_enabled', 'true'], ['output_folder', '/out'], ['auto_file_threshold', '90']]) learning.setSetting(db, k, v);
+  for (const [k, v] of [['quiet_reread_enabled', 'true'], ['quiet_reread_on_ready', 'true'], ['output_folder', '/out'], ['auto_file_threshold', '90']]) learning.setSetting(db, k, v);
   const inbox = fs.mkdtempSync(path.join(os.tmpdir(), 'ds-quiet-test-'));
   let n = 0;
   const mk = (supplier, rows, { template = null, ack = null } = {}) => {
@@ -167,7 +195,11 @@ const lane = quietLane.create({
     filing: { normaliseDate: require('../filing/handler').normaliseDate, commitDocument: async () => ({ success: true, filename: 'F.pdf', filePath: '/out/F.pdf', metadataPath: '/out/.metadata/F.xml', srcPath: '/in/x.pdf' }) },
     fs: { existsSync: () => true, unlinkSync: () => {} }, path, logger: null, audit: (_db, e) => hAudits.push(e),
     onTaughtConfirm: async () => {}, captureSample: async () => {},
-    onAfterConfirm: (d, info) => { if (info.taught && !info.via) handler.scheduleQuietReread(d, { supplier: info.supplier_name, typeSlug: info.typeSlug, reason: 'teach', seedDocId: info.document_id }); },
+    onAfterConfirm: (d, info) => {
+      if (info.taught && !info.via) handler.scheduleQuietReread(d, { supplier: info.supplier_name, typeSlug: info.typeSlug, reason: 'teach', seedDocId: info.document_id });
+      handler.scheduleReadyReread(d, { supplier: info.supplier_name, typeSlug: info.typeSlug, readyBefore: info.readyBefore, seedDocId: info.document_id, via: info.via });
+    },
+    readyProbe: (d, sup, slug) => handler.readyProbe(d, sup, slug),
     releaseDelayMs: 0,
   });
   const revPath = require.resolve('../review/handler');
@@ -257,6 +289,38 @@ const lane = quietLane.create({
   handler._applyReprocessResultForTest(db, d5, [], { extractions: { invoice_number: { value: 'D-5', confidence: 90, method: 'keyword' } }, overall_confidence: 90 }, 'd5.pdf', false);
   check('FOREGROUND (no opts) still clears review_acknowledged_at — byte-identical behaviour', docRow(d5).review_acknowledged_at == null);
 
+  // §B4b — the 'READY' crossing (P2, Oracle C2.4): fires once, on the confirm that makes the scope ready
+  console.log('§B4b the ready crossing');
+  const readiness = require('../../../database/modules/scopeReadiness');
+  const RS = 'Readyco';
+  const rHeld = mk(RS, {});                                                          // a template-less held sibling (the lane's candidate)
+  const rTpl = mk(RS, { supplier_name: RS, invoice_number: 'R-0', invoice_date: '01-01-2026' }, { template: 7 });   // gives the scope a template
+  const before0 = readiness.isReady(db, RS, 'invoice');
+  check('a scope with a template but no solid role groups is NOT ready (' + before0.reason + ')', before0.ready === false && before0.hasTemplate === true);
+  const rc = [];
+  for (let i = 1; i <= 4; i++) rc.push(mk(RS, { supplier_name: RS, invoice_number: `R-${i}`, invoice_date: `0${i}-02-2026` }, { template: 7 }));
+  const jobsBefore = hAudits.filter(a => a.action === 'quiet_reprocess_job').length;
+  const confirmR = (id, i) => svc.confirm(db, { username: 'sarah', role: 'admin' }, { document_id: id, folder_path: inbox, original_filename: 'x.pdf', corrections: {}, taught_fields: [],
+    allValues: { supplier_name: RS, invoice_number: `R-${i}`, invoice_date: `0${i}-02-2026` }, supplier_name: RS, document_type: 'Invoice', document_type_slug: 'invoice' });
+  await confirmR(rc[0], 1); await confirmR(rc[1], 2);
+  await sleep(250);
+  check('after 2 confirms: not ready, no lane job', readiness.isReady(db, RS, 'invoice').ready === false && hAudits.filter(a => a.action === 'quiet_reprocess_job').length === jobsBefore);
+  await confirmR(rc[2], 3);
+  await sleep(400);
+  const readyJobs = () => hAudits.filter(a => a.action === 'quiet_reprocess_job' && a.metadata && a.metadata.reason === 'ready' && a.metadata.supplier === RS);
+  check('the 3rd confirm crosses: ready, and exactly ONE lane job with reason ready', readiness.isReady(db, RS, 'invoice').ready === true && readyJobs().length === 1);
+  check('…which re-read the held template-less sibling', String(readyJobs()[0].metadata.done_ids).split(',').map(Number).includes(rHeld));
+  await confirmR(rc[3], 4);
+  await sleep(400);
+  check('the 4th confirm does NOT re-fire (readyBefore was true)', readyJobs().length === 1);
+  const rHeld2 = mk(RS, {});
+  await svc.confirm(db, { username: 'sarah', role: 'admin' }, { document_id: rHeld2, folder_path: inbox, original_filename: 'x.pdf', corrections: {}, taught_fields: [],
+    allValues: { supplier_name: RS, invoice_number: 'R-9', invoice_date: '09-02-2026' }, supplier_name: RS, document_type: 'Invoice', document_type_slug: 'invoice', bulk: true }, { via: 'scope_sweep' });
+  await sleep(200);
+  check('a machine-via confirm never probes or fires', readyJobs().length === 1);
+  const supOnly = readiness.rolesSolid(db, 'Nobody', 'invoice');
+  check('rolesSolid names what is missing (a supplier-only-solid scope is not ready)', supOnly.ok === false && supOnly.missing.length >= 1);
+
   // §B5 — the foreground doors + shutdown (contract pins on the source)
   console.log('§B5 contract pins');
   const src = fs.readFileSync(path.join(ROOT, 'src', 'modules', 'processing', 'handler.js'), 'utf8');
@@ -276,6 +340,13 @@ const lane = quietLane.create({
   check('Review listens on quiet-reprocess and refreshes the LIST only (never the open document)',
         /onQuietReprocess\?\.\(async \(ev\) => \{/.test(rend) && /_quietRefreshList/.test(rend) && !/onQuietReprocess[\s\S]{0,1500}selectDoc\(/.test(rend));
   check('job_done re-asks the consent sweep (the one filing door)', /if \(ev\.type === 'job_done'\)[\s\S]{0,200}_runQueueSweep\(\)/.test(rend));
+  const tsrc = fs.readFileSync(path.join(ROOT, 'database', 'modules', 'templates.js'), 'utf8');
+  const rsrc = fs.readFileSync(path.join(ROOT, 'src', 'modules', 'review', 'handler.js'), 'utf8');
+  check('(c′) reads the NAMED keyword threshold (no literal) and the matcher mirror writes nothing',
+        /KEYWORD_THRESHOLD = 75;/.test(tsrc) && /T\.findByKeywordFingerprint\(db, ocrText, T\.KEYWORD_THRESHOLD, slug\)/.test(src)
+        && !/UPDATE documents/.test(tsrc.slice(tsrc.indexOf('function findByKeywordFingerprint'), tsrc.indexOf('function findByKeywordFingerprint') + 2000)));
+  check('ONE readiness predicate: the badge IPC consumes scopeReadiness.isReady', /readiness\.isReady\(db, r\.supplier, r\.slug/.test(rsrc));
+  check('the ready probe is memoised per scope (a File-All burst asks once)', /READY_MEMO_MS = 10000/.test(src) && /_readyMemo\.get\(key\)/.test(src));
 
   try { fs.rmSync(inbox, { recursive: true }); } catch {}
   console.log(fails ? `\n${fails} FAILED` : '\nall green');

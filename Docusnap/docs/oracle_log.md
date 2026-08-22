@@ -1819,3 +1819,91 @@ filings). Owner decision: migration 81 force-flips the five + the paired `net_mi
 fresh DB equals the live DB's reading configuration. Migration 80 (same morning) force-flips the
 teach→file arc (sweep, auto-accept, fragment abstain, quiet re-read, role-dominant class). Both revert
 per-switch via the dev-gated Settings toggles.
+
+## 2026-08-22 — the two-line wordmark slice (P1 letterhead stack abstain + depth rule · P2 quiet-lane hash selection + ready trigger + arm (d) · P3 arm F "please confirm" release) — gary design → ORACLE
+**VERDICT**
+
+- **P1(a) vertical-stack abstain — SEND BACK (one mechanism fix, then build).** As designed it is a DEAD GUARD on the primary exhibit: `_is_name_shaped_neighbour` calls `_disqualified`, which rejects any line whose lowercase is in `title_pick.GENERIC_SINGLES` — and that set contains `"document"` (`title_pick.py:44`). So "DOCUMENT" is never name-shaped, `DOCUMENT / TIONS` still returns `'TIONS'` with the flag ON, and gary's own ON pin would be red. `JMENT / JTIONS` would fire; the real one wouldn't.
+- **P1(b) address guard — REFUSED (dead guard, confirmed by fact 2). P1(b′) depth rule — SIGN OFF WITH CONDITIONS** (frame + single-token scope + census).
+- **P2(c) hash selection — SIGN OFF WITH CONDITIONS, gated on a premise measurement that may turn it into DO NOTHING.** P2(d) template-carrying exception — **ACCEPTED as a method-keyed exception, with two hard conditions** (it engages the SEAM-1 sticky-binding pin for the first time in the lane, and it can silently drop a prior S3-C5 hold). P2 'ready' trigger — **SIGN OFF WITH CONDITIONS** (one readiness module, badge consumes it; bounded cost; reason-set coalescing).
+- **P3 arm F — SIGN OFF WITH CONDITIONS.** Page leg REQUIRED (reuse `identity_present_on_page`, not a new predicate); confidence **95, not 85**; `+confirmed_shed` **must** join the mig-75 marker list; `FORMATS_HUMAN_ATTESTED` must include the rewrite-marker exclusion; the logo leg must be shown satisfiable on the exhibit before anyone calls this fired.
+
+**Premise check**
+
+- gary's P1 FACTs hold except the neighbour gate (above). `_MAX_BAND_INDEX` is a BAND index over `chrome_band.issuer_chrome_lines` (first 6 non-blank lines, truncated at a recipient marker — `chrome_band.py:50-66`); `_pick_by_height` iterates `for bl in band_lines` and keys `row_segs` by GEOMETRY row `gi` (`letterhead.py:208-224`). (b′) must be computed from `enumerate(band_lines)`, never `gi` — two frames, off by every line chrome_band dropped.
+- P3 `_NAME_GENERIC_TOKENS` (`engine.py:1410-1412`) does NOT contain document/solutions, so the whole-token leg passes "DOCUMENT" — but `template_matcher._GENERIC_NAME_TOKENS` (`:159-164`) does. Two generic sets with different contents; gary's leg happens to use the right one. Pin which set (by name) the leg reads.
+- P3's pixel leg: on REPROCESS the engine runs a LIVE match first and falls to `known_id` only when live returns None (`engine.py:6578-6628`). Same-supplier phash drift reaches 36 on scans (`template_matcher.py:587`). Whether the held 9 live-match by `logo*` on a re-read is UNMEASURED — if they fall to `known_id`, P3 is a dead guard on the exhibit. The parked DB exists; one `--trace` reprocess of one held doc answers it. Not optional.
+- The overall after shed will NOT get the clean-doc boost gary mentions: `supported_keys` (`engine.py:9183-9186`) is computed from the local `supplier_name` — the FRAGMENT scope ("document") — before the adopt at `:9225`; the `_d4` recompute reuses it (`:9610`). So overall = mean of field confidences +0. With supplier at 85 that is ~91-92 on a three-role doc — above 90, below a graduated floor of 95. That is the real reason 85 is wrong (below).
+- `docTrustGate` is method-agnostic for supplier_name on the sub-100 path (`trust.js:847-894`): `fmts.get('supplier_name')` + `valueMatchesShape` — canon ∈ samples passes. So the shed is NOT cosmetic for the gate; it is cosmetic only if overall lands under the floor.
+- Premise correction for the owner: on scans the 64-bit phash has "zero separating power" cross-supplier (`template_matcher.py:872-874`). A "quick hash rescan" does not find the sender's docs; it finds docs. Its only honest role is picking which docs to spend a re-read on, and the matcher's text gates decide identity. Say this in the card copy.
+
+**The seam**
+
+1. **P2(d) × SEAM-1 pin (`engine.py:6585-6592`).** The 08-21 lane was signed on "template-less docs only", which kept the `known_id` re-imposition path OUT of the lane. (d) re-reads template-carrying docs for the first time: a live-match miss → `known_id` → `template_fixed`@95 (if the page names it) → sweep files with no glance. The pin's test greens because no new `_maybeAutoFile` call site exists — the dead-guard-greens class. Condition: (d) only while `TEMPLATE_IDENTITY_ON_PAGE` is ON (the sticky binding is declined when the page doesn't name the identity, `:6618`), and the pin comment is rewritten to name the lane's (d) arm as the vetted second door.
+2. **P2(d) × S3-C5 hold loss.** `_holdChangedReads` writes its note onto the STORED row after `applyResult` (`quietLane.js:224-232`). A second pass replaces rows wholesale and compares `nd.existing` (now "DOCUMENT SOLUTIONS") with the new read (same) → no hold → the "was 'Patrick'" checkpoint silently disappears and the sweep files. (d) selects exactly that class. Condition: (d) excludes any doc whose required-field rows carry the S3-C5 note marker (or the pass re-attaches it); pin with a positive control.
+3. **'ready' × F2a.** `schedule` coalesces by scope key (`quietLane.js:80-91`); 'ready' fires synchronously at `reviewService.js:525`, 'graduated' later after enrichment, so they coalesce — but `reason` is whichever arrived first, and (d) keys on `reason==='ready'`. A 'ready' coalesced into a running 'graduated' job reruns as 'graduated' and skips (d). Condition: `job.reasons` is a Set; (d) keys on `reasons.has('ready')`.
+4. **P3 × rewrite-marker exclusion (mig 75).** A human who rubber-stamps a shed doc (File All, or Confirm in Review) writes no corrections row, so the `+confirmed_shed` row would count toward the very bucket that licensed the shed — the B7 loop verbatim, on the human channel (`learning.js:1527-1534`). `identity_variant_adopt` rows today at least carried a "please confirm" note that made the human look; the shed removes that. Condition: `+confirmed_shed` joins the flag-gated list (unanchored `%+confirmed\_shed%`, corrections row re-admits), AND `FORMATS_HUMAN_ATTESTED` = exclusion ∧ via column ∧ gate-unify ∧ `learning_exclude_rewrite_markers` — that is the 08-20 invariant verbatim ("neither may see rewrite-created rows"). P3 therefore cannot arm until the owner flips mig 75; its censuses are green, so that is a decision, not a blocker.
+5. **P1 × logo-text gate witness.** `pick_issuer_geometry` is the name-presence accept witness. On the exhibit class the witness went from wrong-name (no accept) to None (no accept) — no change. On a correct single-token issuer at band index 3-5 a (b′) abstain loses an accept → fail toward review. Covered by realdoc `RR_APP_ENV=1` zero issuer drop, not by the census alone.
+
+**Anomalies / missed cases**
+
+- **P1(a) fix:** the vertical-neighbour gate must be `_is_name_shaped_neighbour(seg)` OR (seg is ONE alpha token whose lower is in `template_matcher._GENERIC_NAME_TOKENS` and not in `excluded`). A bare generic company word at letterhead size on its own line IS the stacked-wordmark signature (DOCUMENT / SOLUTIONS / SERVICES / LTD). Keep gary's other legs (adjacent geometry row, in band, exactly one segment, paired, ratio ≥ `_GEOM_MIN_RATIO`). Pins then become live: `DOCUMENT / TIONS → None`, `JMENT / JTIONS → None`, `ACME / Ltd → None`, `Superstore / INVOICE → 'Superstore'`, `Superstore / Statement` (statement ∈ GENERIC_SINGLES, ∉ `_GENERIC_NAME_TOKENS`) → `'Superstore'`.
+- **P1(b′):** single-token winners only; `bi > _MAX_BAND_INDEX` → not a candidate at scoring time; positive control = the same token at `bi ≤ 2` still picks; negative = `Patrick` at `bi=5` → None, OFF → `'Patrick'`.
+- **P3 negative control is VACUOUS as written** if the 8 Reprocess-filed docs carry a human via: de-confirming one of the 3 leaves 2+8 ≥ 3 and the shed still fires. The control must leave < 3 HUMAN confirms of canon (check `confirmed_via` first) — and add the positive control that pins "never `dominant_supplier_count`": 8 machine-filed + 2 human → 0 sheds.
+- **P2(c) population:** on a fresh install most held pre-teach docs are unnamed AND untyped, so "unnamed-or-same-scope, same-type-or-untyped" barely bounds the set. If the ≤6 set covers most of the pile, (c) is a full re-read wearing a selector's badge.
+
+**OCR / geometry & office-doc reality**
+
+The stacked wordmark is the common 2-line logotype (word over word); `reconstruct_page_text` emits each as its own row, so the geometry arm sees two single-token rows, the first a generic word. Treating a generic company word as a stack neighbour is how a human reads it. The depth rule matches how letterheads are laid out (issuer in the top three lines; names deeper in the band are contacts/recipients). Hash selection: same-sender drift up to 36 vs cross-sender MIN 2 on scans — the hash is the weakest signal in the building for THIS job; don't let the card copy sell it as a finder.
+
+**Customer-experience & fail-safe**
+
+P1 trades a wrong prefill for an empty issuer (already the owner's accepted policy). P3 removes a human checkpoint; that is licensed only because every leg is stronger than the `template_fixed`@95 path that files siblings today (page names it + logo-matched layout + canon == template identity + ≥3 human confirms at ≥0.9 share + whole-token fragment). With the page leg, "the re-read agreed" is NOT the corroboration — the page, the layout and three humans are. The (d)/S3-C5 hole (seam 2) would have been a silent wrong-file class; it is the one thing here that would have gone out without a reason attached.
+
+**Conditions / verification gate**
+
+P1 (gary/007):
+- C1.1 Replace the neighbour gate as above; name it `_is_stack_neighbour`; (a) and (b′) each under its own env + setting beside `handler.js:631`.
+- C1.2 (b′) band-index frame, single-token only; pins as listed, plus the existing 15 in `test_letterhead_fragment_abstain.py` unchanged.
+- GATE: `s0_census.py` OFF vs ON — 0 correct lost, 0 new wrong, and report the band-index distribution of the 115 correct picks; realdoc `RR_APP_ENV=1` M=0 + zero Document-Issuer drop (NOT vacuous); `s0_probe.py` over the 22 PDFs — no `TIONS`, no `Patrick`, no re-join.
+
+P2 (eric/gary):
+- C2.1 PREMISE FIRST: on `%APPDATA%\ScanFinder_docsol_run1_*`, read the `quiet_reprocess_job` audit row for the 'teach' job. If the 8 were IN `done_ids`, selection was not the gap and (c) is DO NOTHING — the gap is post-read (report what held them). If absent, report WHY `findSiblings` missed them (empty fingerprint / ratio < bar / named "Patrick"); build (c) only if the hash set contains them and (a)∪(b) does not.
+- C2.2 (c) selectivity gate on the 410-doc sandbox: per taught template, the ≤6 set must be < 50% of the eligible unnamed/untyped pile, else reframe as "re-read every template-less held doc" and bring that back as its own decision. `LOGO_ACCEPT_DIST` named + pinned both sides; boundary negative control at 7; identity never assigned from a hash.
+- C2.3 (d): `TEMPLATE_IDENTITY_ON_PAGE` ON as precondition; exclude S3-C5-noted docs (seam 2); candidate `template_id` ∈ the scope's template set and supplier display_value == scope canon; SEAM-1 pin comment rewritten; `reasons` Set (seam 3).
+- C2.4 'ready': ONE `scopeReadiness.isReady` (role-complete, `&& hasTemplate`), consumed by `get-scope-readiness` in the same commit (two readiness notions is the forbidden class; F3's formula stands with `hasFormat` redefined). Bound the cost: no per-confirm double `getFieldFormats` in bulk — once per scope per batch (start/end), and measure File-All-200 wall time delta < 10%. Pins: 3rd fires once, 2nd/4th don't, `via:'scope_sweep'` never, bulk 3rd fires, supplier-only-solid → not ready.
+
+P3 (gary):
+- C3.1 Add the page leg: `template_matcher.identity_present_on_page(canon, page)` — the fixed stamp's own test, already threaded as `page`. Negative control: SOLUTIONS stripped from the text → held.
+- C3.2 Confidence 95 (parity with the stamp whose evidence this strictly exceeds); 85 parks every graduated-scope doc at 91-92 < 95 — a cosmetic shed on the mature sandbox. Engine pin with `CORROB_NOTE_RECOMPUTE_FC=1`: overall ≥ 95 on a three-role doc; document that `supported_keys` is fragment-scoped (no boost) in the test.
+- C3.3 `+confirmed_shed` into the mig-75 list; `machineExclusionArmed` = exclusion ∧ via ∧ unify ∧ rewrite-markers, shared by `getFieldFormats`, the auto-accept precondition (`handler.js:3425`) and the bridge; grep-pin all three.
+- C3.4 Logo leg stays as gary wrote it (`keywords*`/`known_id`/`pinned_id` refused) — do NOT widen to keywords without a band-scoped page leg. Fired-path on the parked DB must show `match.method` startswith `logo` on all 9; if it doesn't, P3 returns here, it is not loosened in the build.
+- C3.5 Negative control with < 3 human confirms (see anomalies); positive control for the count source; realdoc OFF vs ON M=0 expected VACUOUS — say so in the log.
+
+Chris round 14 (fresh DB, arc + P1/P2/P3 ON, mig 75 flipped, `corrob_note_recompute_fc` ON): (1) 22 worksheets cold — zero `TIONS`/`Patrick`, stacked docs arrive empty-issuer; (2) teach 1 → one 'teach' job whose `done_ids` cover the previously "not identified" set, wrong-folder 0, every "Read differently" hold listed with before-values; (3) confirm 3 → exactly one 'ready' job, the variant-adopt docs shed (`+confirmed_shed`, 95, overall ≥ 95), scope-local auto-accept files them with one receipt, Put back restores all; (4) planted: (i) a 2-human-confirm sender with the same note class stays held; (ii) a sibling with SOLUTIONS illegible stays held (page leg); (iii) a stranger's unnamed doc containing "document" and "solutions" in its body with a colliding hash does NOT file under DOCUMENT SOLUTIONS; (iv) a doc the first pass prefilled wrongly, re-read twice (teach then ready) — its "was 'X'" hold SURVIVES the second pass; (v) a confirmed shed doc does not raise the scope's human count (query `getFieldFormats`, never raw rows).
+
+**REFUSED:** P1(b) as briefed (dead on the real band); any re-join in the assert path; (c) assigning identity or exempting `letterhead_prefill` from S3-C5; (d) on any reason but 'ready' or with the on-page guard off; P3 at 85, P3 without the page leg, P3 reading `dominant_supplier_count` or `machine_value_counts` or note prose, a stored-row JS twin, and any widening of the pixel leg to text-family matches.
+
+Files checked: `C:\GIT Projects\Docusnap\python_backend\extraction\letterhead.py`, `C:\GIT Projects\Docusnap\python_backend\extraction\title_pick.py`, `C:\GIT Projects\Docusnap\python_backend\extraction\template_matcher.py`, `C:\GIT Projects\Docusnap\python_backend\extraction\engine.py`, `C:\GIT Projects\Docusnap\python_backend\extraction\validator.py`, `C:\GIT Projects\Docusnap\python_backend\extraction\chrome_band.py`, `C:\GIT Projects\Docusnap\src\modules\processing\quietLane.js`, `C:\GIT Projects\Docusnap\src\modules\review\handler.js`, `C:\GIT Projects\Docusnap\src\services\reviewService.js`, `C:\GIT Projects\Docusnap\database\modules\learning.js`, `C:\GIT Projects\Docusnap\database\modules\trust.js`, `C:\GIT Projects\Docusnap\database\modules\templates.js`, `C:\GIT Projects\Docusnap\database\modules\supplierSiblings.js`, `C:\GIT Projects\Docusnap\docs\oracle_log.md`.
+**BUILD + GATES (same afternoon), per the re-rule:** P1(a)+(b′) built `letterhead.py` (`_is_stack_neighbour`,
+the generic-word fix; depth guard in the BAND frame, single-token only) — pins `test_letterhead_stack_abstain.py`
+(20). CENSUS OFF vs ON (200 IMPORT fixtures, real OCR, engine type phrases): 115 correct unchanged · **0 correct
+lost · 0 new wrong** · 2 wrong→None (the `ITH-0093` reference-as-sender, Chris card 8) · 3 None→CORRECT
+('Pelican Office Interiors' — the depth guard removed a deep single-word competitor that had tripped the
+lead-abstain). Fired-path on the owner's 22 scans: no `TIONS`, no `Patrick` (doc 10 still yields the two-token
+garble 'ROCUMENT OLUTIONS' — held for review by design, outside every rule). **P4 built** (`engine.py`
+`_fragment_agreement_keeps_seed`, branch `fragment_agreement`, structural band leg = contiguous run of
+issuer-column tokens == the fixed value, read = a proper contiguous sub-run) — pins
+`test_fixed_seed_fragment_keep.py` (15 incl. every Oracle control); FIRED-PATH on the parked run-1 copy: held
+docs 1 + 13 re-read → `Stage 0.5: kept curated supplier 'DOCUMENT SOLUTIONS' — declined mapping read
+'DOCUMENT' (fragment_agreement)` → `template_fixed`@95, no note, overall 100, `isAutoFileEligible` = ok; OFF
+control = the note returns. REALDOC OFF vs ON (P1+P4 on a live-DB copy): identical tables, supplier 100% both
+arms, same single pre-existing #188. **P2 built**: `database/modules/scopeReadiness.js` = THE readiness
+predicate (role-complete solid groups ∥ graduated, AND a template), consumed by `get-scope-readiness` and the
+lane; (c′) keyword-fingerprint selection in `quietLane._candidates` at the exported `KEYWORD_THRESHOLD`
+(bounds: template-less, same type/untyped, unnamed ∥ own name ∥ `letterhead_prefill`); the 'ready' crossing
+(`readyProbe` memoised 10 s per scope, `scheduleReadyReread` fires once when !before && after, machine vias
+never) — pins in `test_quiet_lane.js` (A2 + §B4b + contract: 3rd confirm fires once, 2nd/4th don't,
+scope_sweep never, supplier-only-solid not ready). P3 DEFERRED, (d) dropped, hash DO NOTHING — as ruled.
+Migration 82 defaults the five switches ON (owner's standing decision). Suites: JS 184 green / 1 pre-existing
+red; Python 307 green / 1 + 6 pre-existing.

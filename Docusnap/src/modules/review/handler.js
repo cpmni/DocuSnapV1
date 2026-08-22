@@ -108,7 +108,11 @@ function register(ctx) {
         try { require('../processing/handler').scheduleQuietReread(db, { supplier: info.supplier_name, typeSlug: info.typeSlug, reason: 'teach', seedDocId: info.document_id }); }
         catch (e) { logger?.warn?.('quiet re-read schedule failed: ' + (e && e.message)); }
       }
+      // P2 (2026-08-22): the confirm that makes the scope READY re-reads its held siblings (dark).
+      try { require('../processing/handler').scheduleReadyReread(db, { supplier: info.supplier_name, typeSlug: info.typeSlug, readyBefore: info.readyBefore, seedDocId: info.document_id, via: info.via }); }
+      catch (e) { logger?.warn?.('ready re-read schedule failed: ' + (e && e.message)); }
     },
+    readyProbe: (db, sup, slug) => { try { return require('../processing/handler').readyProbe(db, sup, slug); } catch { return null; } },
     captureSample: async (tId, docId) => {
       if (ctx.captureSampleWords) {
         await ctx.captureSampleWords(tId, docId);
@@ -497,9 +501,6 @@ function register(ctx) {
     // group, whose `confirmed_count` is built from documents that actually carry a value — so
     // that is the number both the promise and the countdown must use.
     const learning = require('../../../database/modules/learning');
-    const solid = new Set((learning.getFieldFormats(db) || [])
-      .filter(f => f.field_key === 'supplier_name' && String(f.supplier_name || '').trim())
-      .map(f => `${String(f.supplier_name).toLowerCase().trim()}|${String(f.document_type || '').toLowerCase().trim()}`));
     const counts = new Map((learning.getFieldFormats(db, { includeProvisional: true }) || [])
       .filter(f => f.field_key === 'supplier_name' && String(f.supplier_name || '').trim())
       .map(f => [`${String(f.supplier_name).toLowerCase().trim()}|${String(f.document_type || '').toLowerCase().trim()}`,
@@ -510,20 +511,20 @@ function register(ctx) {
     // confirms). So: ready = graduated, OR (formats solid AND a template exists for the scope); and
     // an untaught scope's countdown runs to the graduation window, not the 3-confirm format bar.
     const W = trust._configuredWindow(db);   // trust's own clamp — never a literal (Oracle F3)
-    const tplByDoc = db.prepare(`SELECT 1 FROM documents d JOIN document_types dt ON dt.id = d.document_type_id
-                                   WHERE LOWER(TRIM(COALESCE(d.supplier_name, ''))) = ? AND LOWER(dt.slug) = ?
-                                     AND d.template_id IS NOT NULL LIMIT 1`);
-    const tplByFixed = db.prepare(`SELECT 1 FROM template_fields tf JOIN templates t ON t.id = tf.template_id
-                                     WHERE tf.field_key = 'supplier_name' AND LOWER(TRIM(COALESCE(tf.fixed_value, ''))) = ?
-                                       AND LOWER(COALESCE(t.document_type_slug, '')) = ? LIMIT 1`);
+    // ONE readiness predicate (P2, Oracle C2.4 — "two readiness notions is the forbidden class"):
+    // the badge, the teach card and the quiet lane's 'ready' trigger all ask scopeReadiness.isReady.
+    // `hasFormat` is now ROLE-COMPLETE (supplier + the type's ref + date groups solid), not
+    // supplier-only — a supplier-only-solid scope lit "✓ files by itself" while the sweep still
+    // refused the reference (Chris 13b card 1, Nordwind).
+    const readiness = require('../../../database/modules/scopeReadiness');
+    const allFormats = learning.getFieldFormats(db);
     return rows.map(r => {
       const supN = String(r.supplier).toLowerCase().trim(), slugN = String(r.slug).toLowerCase().trim();
       const key = `${supN}|${slugN}`;
-      let graduated = false;
-      try { graduated = !!(trust.scopeTrust(db, r.supplier, r.slug) || {}).trusted; } catch {}
-      const hasFormat = solid.has(key);
-      let hasTemplate = false;
-      try { hasTemplate = !!(tplByDoc.get(supN, slugN) || tplByFixed.get(supN, slugN)); } catch {}
+      const rd = readiness.isReady(db, r.supplier, r.slug, { formats: allFormats });
+      const graduated = !!rd.graduated;
+      const hasFormat = !!rd.rolesSolid || graduated;
+      const hasTemplate = !!rd.hasTemplate;
       return { supplier: r.supplier, slug: r.slug, typeName: r.typeName, queued: r.queued,
                confirms: counts.get(key) || 0, needed: hasTemplate ? need : Math.max(need, W), graduated, hasFormat, hasTemplate,
                // Oracle F3 (SEND BACK → fixed): a template is REQUIRED for any sub-100 doc, so a

@@ -50,6 +50,9 @@ function createReviewService(deps = {}) {
   // (processing/handler). Fired for every human confirm — desktop, File-All, /v1 — which is why it
   // lives here and not on a renderer timer. Fire-and-forget; can never affect the returned confirm.
   const onAfterConfirm       = deps.onAfterConfirm       || (() => {});
+  // P2 (2026-08-22): ask whether the scope is READY before this confirm lands, so the after-hook can
+  // detect the crossing. Returns null when the feature is dark (no query made).
+  const readyProbe           = deps.readyProbe           || (() => null);
 
   // ── Queue reads (Admin/Edit; the caller gates) ────────────────────────────────
   const queue    = (db) => documents.getReviewQueue(db);
@@ -76,6 +79,12 @@ function createReviewService(deps = {}) {
 
     const docRow = documents.getById(db, document_id);
     if (!docRow) return fail('NOT_FOUND', 'Document not found.');
+    // P2: readiness BEFORE the claim (human confirms only; dark ⇒ null, no query).
+    let _readyBefore = null;
+    if (!_via) {
+      try { _readyBefore = readyProbe(db, (allValues && allValues.supplier_name) || supplier_name || null, document_type_slug || null); }
+      catch { _readyBefore = null; }
+    }
     // SECURITY (Stage 1 — H1/M12): the on-disk source paths are resolved SERVER-SIDE from the doc
     // row, NEVER from the payload (which carries field VALUES only). This mirrors the /v1 confirm
     // path (api/handler.js), which already reads folder_path/original_filename from the row. Without
@@ -526,7 +535,7 @@ function createReviewService(deps = {}) {
       try {
         onAfterConfirm(db, { document_id, supplier_name: (allValues && allValues.supplier_name) || supplier_name || null,
                              typeSlug: document_type_slug || (dtInfo && dtInfo.slug) || null, bulk: !!bulk, via: null,
-                             taught: !!(Array.isArray(taught_fields) && taught_fields.length) });
+                             taught: !!(Array.isArray(taught_fields) && taught_fields.length), readyBefore: _readyBefore });
       } catch (e) { logger?.warn?.('onAfterConfirm skipped: ' + (e && e.message)); }
     }
 

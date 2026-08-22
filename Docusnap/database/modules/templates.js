@@ -654,7 +654,13 @@ function findByLogoHash(db, phash, threshold = 13, document_type_slug = null) {
 // _match_by_keywords (word-boundary regex over each template's stored
 // keyword_fingerprint, score = hits/len(keywords)). KEYWORD_THRESHOLD there
 // is 0.75 → confidence >= 75 here, with the same int()-style truncation.
-function findByKeywordFingerprint(db, ocrText, threshold = 75, document_type_slug = null) {
+// The matcher's keyword accept bar, NAMED (P2 of the two-line wordmark slice, 2026-08-22): the JS
+// mirror of template_matcher.KEYWORD_THRESHOLD (0.75 → 75). The quiet lane's selection arm reads
+// this constant, never a literal, so the two sides cannot drift. Read-only consumer: this module's
+// keyword matcher SELECTS; identity is assigned only by the Python pipeline's matcher.
+const KEYWORD_THRESHOLD = 75;
+
+function findByKeywordFingerprint(db, ocrText, threshold = KEYWORD_THRESHOLD, document_type_slug = null) {
   if (!ocrText) return null;
   const ocrLower = ocrText.toLowerCase();
   // Same optional TYPE SCOPING as findByLogoHash — a same-letterhead sibling of a
@@ -1792,7 +1798,7 @@ module.exports = {
   setOcrAutoParams, setOcrAutoEnabled,
   getLandmarks, setLandmarks, clearLandmarks, hasManualLandmarks, hasCrossSampleLandmarks,
   replaceSampleWords, countSampleDocs, getSampleWordsByDoc,
-  getLogoHashes, addLogoHash, getLogoDetailHashes, minLogoDistance, keywordOverlap: _keywordOverlap,
+  getLogoHashes, addLogoHash, getLogoDetailHashes, minLogoDistance, keywordOverlap: _keywordOverlap, KEYWORD_THRESHOLD,
   getAllGroups, createGroup, deleteGroup, setTemplateGroup, getSiblings,
   GRID_COLS, GRID_ROWS,
 };

@@ -162,6 +162,23 @@ _ISSUER_REGION_PRESENCE_ON = os.environ.get('TEMPLATE_ISSUER_REGION_PRESENCE', '
 # Default OFF; OFF is byte-identical (the agreement branch returns None and the read is applied
 # exactly as today). Pins: tests/test_fixed_seed_agreement.py.
 _FIXED_SEED_AGREEMENT_KEEP_ON = os.environ.get('TEMPLATE_FIXED_SEED_AGREEMENT_KEEP', '0') != '0'
+# FRAGMENT AGREEMENT KEEPS THE SEED (P4 of the two-line wordmark slice, 2026-08-22; gary → Oracle
+# SIGN-OFF-W/COND C4.1–C4.4). The owner's real scans: a STACKED wordmark ("DOCUMENT" over
+# "SOLUTIONS"); the taught issuer box reads ONE line ("DOCUMENT"); that Stage-0.5 read DISPLACED
+# the curated `template_fixed` seed ("supplier identity changed during extraction … using field
+# value"), and identity_fusion's variant-adopt then repaired it to the gazetteer canonical at ≤70
+# with a "please confirm" note that no later confirm or re-read could shed (it is regenerated from
+# the pixels). Neither existing keep fires: agreement-keep needs EXACT equality; region-presence
+# pads a one-line box that does not reach the second line. This branch keeps the seed when the
+# read is a WHOLE-TOKEN contiguous sub-run of the fixed value AND the page's issuer BAND prints
+# the fixed value as a contiguous run of lines (each line's issuer column — its first segment
+# before a column break — so 'SOLUTIONS    TS) iL' still reads as SOLUTIONS). Structural, never
+# bag-of-words (Oracle C4.2: 'Ticket' elsewhere in the band must not license "DOCUMENT SOLUTIONS
+# Ticket"). Same seam as the agreement keep: keeping `template_fixed` keeps the name-presence /
+# branding guards armed — here the band names the full company by construction of the leg. No
+# new authority: same method, same confidence, no note. Default OFF; OFF is byte-identical.
+# Pins: tests/test_fixed_seed_fragment_keep.py.
+_FIXED_SEED_FRAGMENT_KEEP_ON = os.environ.get('TEMPLATE_FIXED_SEED_FRAGMENT_KEEP', '0') != '0'
 try:
     _ISSUER_REGION_PAD = float(os.environ.get('TEMPLATE_ISSUER_REGION_PAD', '1.5'))
 except ValueError:
@@ -210,6 +227,64 @@ def _region_confirms_curated_seed(key, existing, data, tmpl_mappings, page_image
     if not (text or '').strip():
         return None
     return bool(_template_identity_corroborated(fixed_val, text))
+
+
+def _name_tokens(text):
+    """Fold for the fragment-agreement leg: lower-case alphanumeric tokens, ≥3 ALPHA characters
+    (Oracle C4.3 — NO generic-word filter: "DOCUMENT" must pass; a 'Ltd' read against 'ACME / Ltd'
+    is a correct keep; the run-equality leg is the discriminator)."""
+    import re as _re
+    out = []
+    for tok in _re.findall(r"[A-Za-z0-9&'’.\-]+", str(text or "")):
+        t = _re.sub(r"[^a-z0-9]", "", tok.lower())
+        if len(_re.sub(r"[^a-z]", "", t)) >= 3:
+            out.append(t)
+    return out
+
+
+def _fragment_agreement_keeps_seed(key, existing, data, ocr_text):
+    """P4: does the Stage-0.5 read agree with the curated seed as a PARTIAL read of the same name?
+
+    True iff (same preconditions as `_region_confirms_curated_seed`) the read's tokens are a
+    contiguous PROPER sub-run of the fixed value's tokens AND the issuer band
+    (chrome_band.issuer_chrome_lines) contains a contiguous run of lines whose issuer-column
+    tokens join to EXACTLY the fixed value's tokens. Pure; the caller logs and keeps."""
+    if key not in _FIXED_SEED_KEYS or not isinstance(existing, dict):
+        return False
+    if (existing.get("method") or "") not in _FIXED_SEED_METHODS:
+        return False
+    read_val = str((data or {}).get("value") or "")
+    fixed_val = str(existing.get("value") or "")
+    if not read_val or not fixed_val or read_val == fixed_val:
+        return False
+    F = _name_tokens(fixed_val)
+    R = _name_tokens(read_val)
+    if len(F) < 2 or not R or len(R) >= len(F):
+        return False
+    # the read is a contiguous proper sub-run of the fixed value
+    sub = any(F[i:i + len(R)] == R for i in range(0, len(F) - len(R) + 1))
+    if not sub:
+        return False
+    from extraction import chrome_band
+    import re as _re
+    lines = chrome_band.issuer_chrome_lines(ocr_text)
+    cols = []
+    for ln in lines:
+        first = _re.split(r" {4,}", ln.strip())[0] if ln.strip() else ""
+        cols.append(_name_tokens(first))
+    # a contiguous run of band lines whose issuer-column tokens join to exactly F
+    n = len(cols)
+    for i in range(n):
+        acc = []
+        for j in range(i, n):
+            if not cols[j]:
+                break                     # an empty issuer column breaks the run
+            acc = acc + cols[j]
+            if acc == F:
+                return True
+            if len(acc) >= len(F) or acc != F[:len(acc)]:
+                break
+    return False
 
 
 def _fixed_seed_declines_mapping(key, existing, data):
@@ -6838,6 +6913,11 @@ class ExtractionEngine:
                                     read=(data or {}).get('value'))
                             if _rp:
                                 _fixed_decline = 'region_presence'
+                        # FRAGMENT AGREEMENT (P4, see the flag block): the read is part of the
+                        # curated name and the issuer band prints the whole of it as a stack.
+                        if not _fixed_decline and _FIXED_SEED_FRAGMENT_KEEP_ON:
+                            if _fragment_agreement_keeps_seed(key, existing, data, ocr_text):
+                                _fixed_decline = 'fragment_agreement'
                         if _fixed_decline:
                             self.log(f"  Stage 0.5: kept curated supplier "
                                      f"'{existing.get('value')}' — declined mapping read "

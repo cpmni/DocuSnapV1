@@ -131,7 +131,10 @@ console.log('6. the per-sender finish line counts what the GATE counts, not what
 
   const h = fs.readFileSync(path.join(REPO, 'src', 'modules', 'review', 'handler.js'), 'utf8');
   check('the IPC derives readiness from the learned format, never a raw document count',
-        /const solid = new Set\(\(learning\.getFieldFormats\(db\) \|\| \[\]\)/.test(h)
+        // 2026-08-22 (P2, Oracle C2.4): readiness now comes from the ONE predicate
+        // scopeReadiness.isReady (role-complete learned formats + a template), consumed here.
+        /const readiness = require\('\.\.\/\.\.\/\.\.\/database\/modules\/scopeReadiness'\);/.test(h)
+        && /readiness\.isReady\(db, r\.supplier, r\.slug, \{ formats: allFormats \}\)/.test(h)
         // 2026-08-22 (Oracle F3): readiness also needs a TEMPLATE — a sub-100 doc is refused
         // 'no-template' however solid the format — so the expression is now
         // (graduated || hasFormat) && hasTemplate. Still format-derived, never a raw doc count.

@@ -1295,6 +1295,41 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Don't pre-fill one line of a two-line company logo</div>
+                <div class="threshold-sub">When a company prints its name as a stacked logo ("DOCUMENT" over "SOLUTIONS"), a scan can read one line badly ("TIONS") and that fragment used to be filled in as the company. With this on, a single word sitting directly above or below another name-sized word is treated as part of a wider name and left for you (or the text reader) instead. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="letterhead-stack-abstain-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Never pre-fill a single word from deep in the page header</div>
+                <div class="threshold-sub">A lone word several lines down the header — the tail of a delivery address ("Patrick") — could be picked as the company. With this on, the reader only accepts a single word from the top three header lines, the same rule the text reader has always used. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="letterhead-depth-guard-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Keep the taught company name when a taught box reads only part of it</div>
+                <div class="threshold-sub">If you taught the Document Issuer on a company whose logo is two lines, a later scan can read only one line ("DOCUMENT") from that box, and that partial read used to replace the company you taught — leaving the document asking you to "please confirm" forever. With this on, a read that is plainly part of the taught name, on a page whose header prints the whole name, keeps the taught name. A genuinely different company still wins. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="fixed-seed-fragment-keep-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">After teaching, also re-read the waiting documents the layout would recognise by their text</div>
+                <div class="threshold-sub">The quiet background re-read after a teach finds the sender's other documents by name and by similarity to the taught page; a badly scanned copy can slip through both. With this on it also re-reads waiting documents that the layout's own text fingerprint matches — the same check the app uses when it recognises a layout — without ever assigning the company by itself. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="quiet-reread-kw-select-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">When a sender becomes ready to file itself, quietly re-read its waiting documents</div>
+                <div class="threshold-sub">A sender's waiting documents were read before its details were learned, so they can keep a stale hold even after the confirms that made it ready. With this on, the confirm that crosses that line triggers one quiet background re-read of its waiting documents, so they can file themselves without you pressing Reprocess. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="quiet-reread-on-ready-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Recognise a confirmed company even when its letterhead is column-spaced</div>
                 <div class="threshold-sub">Some letterheads print the company name with big gaps between the words. Scan Finder can read the gaps as separate columns and fail to match the name to a company you've confirmed, so those documents keep the "please confirm before filing" note. With this on, the spaced-out name is reassembled and, when it matches a company you've confirmed on this layout, the note is cleared. Only the company you confirmed is matched — a name on the page addressed TO you is never treated as the sender. Off by default.</div>
               </div>

@@ -52,6 +52,9 @@ function create(deps) {
   const {
     getDb, enabled, isForegroundBusy, stageDocs, runShard, applyResult, presence, extractionsFingerprint,
     notify, logAudit, logger, setPriority, taskkill, markScopeActive, onJobDone, findSiblings = null,
+    kwSelect = null,            // (c′) deps: (db, ocrText, slug) → template id the keyword arm would match, or null
+    kwSelectEnabled = null,     // (db) → bool (the `quiet_reread_kw_select` switch)
+    scopeTemplateIds = null,    // (db, supplier, slug) → Set of the scope's template ids
     timers = { setTimeout, clearTimeout, setInterval, clearInterval },
   } = deps;
 
@@ -126,6 +129,48 @@ function create(deps) {
              AND COALESCE(d.workflow_status, '') NOT IN ('pending', 'claimed')
              AND d.template_id IS NULL
            ORDER BY d.id`).all(...ids).forEach(add);
+      }
+    }
+    // (c′) — KEYWORD-FINGERPRINT SELECTION (2026-08-22, gary → Oracle SIGN-OFF-W/COND, replacing the
+    // hash arm that measured DEAD on real scans: same-sender phash distance 14–28 vs the ≤6 accept).
+    // The matcher's own keyword arm, mirrored in JS (templates.findByKeywordFingerprint at the
+    // exported KEYWORD_THRESHOLD), asked over each held template-less doc's STORED ocr_text: a hit on
+    // one of the scope's templates SELECTS the doc for a re-read. Measured: 100 on 20 of the owner's 21
+    // worksheets incl. all 8 the text-similarity arm missed, not the stranger; 19/388 (5%) on the
+    // 410-doc pile = the sender's own invoices. SELECTION ONLY — the pipeline's matcher assigns
+    // identity with all its gates; this arm never writes supplier_name or template_id. Bounds: same
+    // type or untyped; unnamed, the scope's own name, OR a `letterhead_prefill` row (a cold-start
+    // suggestion, not a sender claim — S3-C5 still holds its change with "was 'X'").
+    if (kwSelect && kwSelectEnabled && scopeTemplateIds) {
+      let on = false;
+      try { on = !!kwSelectEnabled(db); } catch { on = false; }
+      if (on) {
+        let tplIds = new Set();
+        try { tplIds = scopeTemplateIds(db, job.supplier, job.typeSlug) || new Set(); } catch { tplIds = new Set(); }
+        if (job.seedDocId) {
+          try { const sd = db.prepare('SELECT template_id FROM documents WHERE id = ?').get(job.seedDocId); if (sd && sd.template_id) tplIds.add(sd.template_id); } catch { /* optional */ }
+        }
+        if (tplIds.size) {
+          const rows = db.prepare(`
+            SELECT d.id, d.original_filename, d.folder_path, d.supplier_name, d.ocr_text,
+                   (SELECT e.extraction_method FROM extractions e WHERE e.document_id = d.id AND e.field_key = 'supplier_name') AS sup_method
+              FROM documents d
+             WHERE d.status = 'needs_review'
+               AND d.template_id IS NULL
+               AND (d.document_type_id = ? OR d.document_type_id IS NULL)
+               AND COALESCE(d.workflow_status, '') NOT IN ('pending', 'claimed')
+               AND d.ocr_text IS NOT NULL AND TRIM(d.ocr_text) <> ''
+             ORDER BY d.id`).all(dt.id);
+          const scopeN = job.supplier.toLowerCase();
+          for (const r of rows) {
+            if (byId.has(r.id)) continue;
+            const supN = String(r.supplier_name || '').trim().toLowerCase();
+            if (supN && supN !== scopeN && r.sup_method !== 'letterhead_prefill') continue;   // another sender's claim: never
+            let hit = null;
+            try { hit = kwSelect(db, r.ocr_text, job.typeSlug); } catch { hit = null; }
+            if (hit && tplIds.has(hit)) add({ id: r.id, original_filename: r.original_filename, folder_path: r.folder_path, _via: 'kw' });
+          }
+        }
       }
     }
     return [...byId.values()].sort((a, b) => a.id - b.id).filter(r => !presence.viewers(r.id).length);

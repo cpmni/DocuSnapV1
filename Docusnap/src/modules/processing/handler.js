@@ -571,6 +571,16 @@ function _reconcileEnv(db) {
     //    the letterhead cross-checks, one of which can BLANK a sender it cannot find on the page.
     //    Off by default. App RESTART to load the bridge.
     if (learning.getSetting(db, 'template_fixed_seed_agreement_keep', 'false') === 'true') env.TEMPLATE_FIXED_SEED_AGREEMENT_KEEP = '1';
+    // P4 (2026-08-22, the owner's stacked wordmark): a taught issuer box that reads ONE line of a
+    // two-line logotype is a PARTIAL read of the curated name, not a different company — keep the
+    // template_fixed seed when the read is a whole-token sub-run of it and the issuer band prints
+    // the whole name as a stack. Default OFF, byte-identical off. App RESTART to load the bridge.
+    if (learning.getSetting(db, 'template_fixed_seed_fragment_keep', 'false') === 'true') env.TEMPLATE_FIXED_SEED_FRAGMENT_KEEP = '1';
+    // P1 (2026-08-22): the cold letterhead pick abstains on one line of a stacked wordmark
+    // ("TIONS" under "DOCUMENT") and never takes a single word deeper than the text arm's band
+    // cap ("Patrick", an address tail). Default OFF, byte-identical off.
+    if (learning.getSetting(db, 'letterhead_stack_abstain', 'false') === 'true') env.LETTERHEAD_STACK_ABSTAIN = '1';
+    if (learning.getSetting(db, 'letterhead_depth_guard', 'false') === 'true') env.LETTERHEAD_DEPTH_GUARD = '1';
     // -- THE 2026-08-08 TEACH-SIDE TRIO + THE FILING SANITY FLAGS (bridged 2026-08-09 NIGHT) --
     // All four were built, MEASURED and then left env-only, which in this app means unreachable:
     // `npm start` is a plain `electron .` and injects no environment. They have been dark in the
@@ -731,6 +741,8 @@ const _quietLaneActiveScopes = new Set();
 let _scheduleScopeAutoAcceptImpl = null;
 let _autoAcceptInflightProbe = () => false;
 let _quietLaneImpl = null;                 // Slice 3: the quiet re-read lane (bound in register())
+let _readyProbeImpl = null;                // P2 'ready' trigger (bound in register())
+let _scheduleReadyRereadImpl = null;
 let _setReprocessStatusForTestImpl = null; // test seam: drive consume-reprocess-completion without a spawn
 let _reprocessOfferProbe = () => null;
 let _debugAutoAcceptPreImpl = null;
@@ -3579,12 +3591,59 @@ function register(ctx) {
     taskkill: (pid) => require('child_process').spawnSync(TASKKILL_EXE, ['/F', '/T', '/PID', String(pid)], { windowsHide: true, stdio: 'ignore' }),
     markScopeActive: (key, on) => { if (on) _quietLaneActiveScopes.add(key); else _quietLaneActiveScopes.delete(key); },
     findSiblings: (db, seedId, value, opts) => require('../../../database/modules/supplierSiblings').findSiblings(db, seedId, value, opts),
+    // (c′) keyword-fingerprint selection (2026-08-22): the matcher's JS mirror at its named threshold.
+    kwSelect: (db, ocrText, slug) => {
+      const T = require('../../../database/modules/templates');
+      const m = T.findByKeywordFingerprint(db, ocrText, T.KEYWORD_THRESHOLD, slug);
+      return m && m.template ? m.template.id : null;
+    },
+    kwSelectEnabled: (db) => process.env.QUIET_REREAD_KW_SELECT === '1'
+      || (process.env.QUIET_REREAD_KW_SELECT !== '0' && require('../../../database/modules/learning').getSetting(db, 'quiet_reread_kw_select', 'false') === 'true'),
+    scopeTemplateIds: (db, sup, slug) => require('../../../database/modules/scopeReadiness').templateIds(db, sup, slug),
     // S3-(c): the lane's re-read docs reach filing ONLY via the sweep — a re-ask for the scope (the
     // renderer also re-runs the consent sweep on job_done, so the bar path is covered when
     // auto-accept is off).
     onJobDone: (db, { supplier, typeSlug }) => scheduleScopeAutoAccept(db, { supplier, typeSlug }),
   });
   _quietLaneImpl = _quietLane;
+
+  // ── THE 'READY' CROSSING (P2 trigger, 2026-08-22, gary → Oracle C2.4) ─────────────────────────
+  // A TAUGHT sender's held siblings keep a stale hold after the confirm that makes the scope READY
+  // (Chris 13b card 1; the owner's run): the lane fired on a teach and on a graduation MINT, not on
+  // the 3rd confirm. Now: reviewService asks `readyProbe` for the scope BEFORE the claim and passes
+  // `readyBefore`; after the confirm lands, `scheduleReadyReread` computes readyAfter and schedules
+  // the lane with reason 'ready' exactly when !before && after — one fire per crossing, no memo
+  // persisted, the 4th confirm sees before=true. COST BOUND: the probe memoises per scope for 10 s
+  // (a File-All burst asks once per scope), and readyAfter is computed only when before was false —
+  // a READY scope costs zero extra format scans per confirm. DARK behind `quiet_reread_on_ready`.
+  const _readyMemo = new Map();           // scopeKey -> { ready, at }
+  const READY_MEMO_MS = 10000;
+  const _readyOn = (db) => process.env.QUIET_REREAD_ON_READY === '1'
+    || (process.env.QUIET_REREAD_ON_READY !== '0' && require('../../../database/modules/learning').getSetting(db, 'quiet_reread_on_ready', 'false') === 'true');
+  function readyProbe(db, supplier, typeSlug) {
+    if (!_quietEnabled(db) || !_readyOn(db)) return null;
+    const key = _sweepOfferKey(supplier, typeSlug);
+    if (!supplier || !typeSlug) return null;
+    const m = _readyMemo.get(key);
+    if (m && (Date.now() - m.at) < READY_MEMO_MS) return m.ready;
+    let ready = false;
+    try { ready = !!require('../../../database/modules/scopeReadiness').isReady(db, supplier, typeSlug).ready; } catch { ready = false; }
+    _readyMemo.set(key, { ready, at: Date.now() });
+    return ready;
+  }
+  function scheduleReadyReread(db, { supplier, typeSlug, readyBefore, seedDocId, via } = {}) {
+    if (via) return false;                                   // machine confirms never trigger
+    if (readyBefore !== false) return false;                 // null = probe off/unknown; true = already ready
+    if (!_quietEnabled(db) || !_readyOn(db)) return false;
+    let after = false;
+    try { after = !!require('../../../database/modules/scopeReadiness').isReady(db, supplier, typeSlug).ready; } catch { after = false; }
+    const key = _sweepOfferKey(supplier, typeSlug);
+    _readyMemo.set(key, { ready: after, at: Date.now() });
+    if (!after) return false;
+    return _quietLane.schedule(db, { supplier, typeSlug, reason: 'ready', seedDocId });
+  }
+  _readyProbeImpl = readyProbe;
+  _scheduleReadyRereadImpl = scheduleReadyReread;
   _applyReprocessResultImpl = applyReprocessResult;
   ipcMain.handle('get-quiet-reread-status', () => _quietLane.status());
   ipcMain.handle('cancel-quiet-reread', (_e, { jobId } = {}) => { requireRole('admin', 'edit'); return { ok: _quietLane.cancel(String(jobId || '')) }; });
@@ -5213,6 +5272,8 @@ module.exports = {
   scheduleScopeAutoAccept: (db, info) => (_scheduleScopeAutoAcceptImpl ? _scheduleScopeAutoAcceptImpl(db, info) : false),
   _quietLaneActiveScopes,    // Slice 3 marks a scope here while its quiet re-read is in flight (S1-C5)
   scheduleQuietReread: (db, info) => (_quietLaneImpl ? _quietLaneImpl.schedule(db, info) : false),   // Slice 3 trigger (a taught confirm)
+  readyProbe: (db, sup, slug) => (_readyProbeImpl ? _readyProbeImpl(db, sup, slug) : null),              // P2: scope readiness BEFORE a confirm (memoised)
+  scheduleReadyReread: (db, info) => (_scheduleReadyRereadImpl ? _scheduleReadyRereadImpl(db, info) : false),   // P2: fire the lane on the ready crossing
   quietLane: () => _quietLaneImpl,
   _applyReprocessResultForTest: (...a) => (_applyReprocessResultImpl ? _applyReprocessResultImpl(...a) : null),
   _setReprocessStatusForTest: (st) => (_setReprocessStatusForTestImpl ? _setReprocessStatusForTestImpl(st) : null),

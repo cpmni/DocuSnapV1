@@ -50,9 +50,11 @@ for i, f in enumerate(files):
         text, _ = T.extract_text_and_images(Path(f), page0_words_out=geom)
     except Exception as e:
         C['ocr-error'] += 1; continue
-    os.environ['LETTERHEAD_FRAGMENT_ABSTAIN'] = '0'
-    old = lh.pick_issuer(text, type_phrases=TYPE_PHRASES, geometry=geom)
+    # arm A = the shipped Slice-0 state (fragment abstain ON, the P1 rules OFF); arm B = P1 ON too
     os.environ['LETTERHEAD_FRAGMENT_ABSTAIN'] = '1'
+    os.environ['LETTERHEAD_STACK_ABSTAIN'] = '0'; os.environ['LETTERHEAD_DEPTH_GUARD'] = '0'
+    old = lh.pick_issuer(text, type_phrases=TYPE_PHRASES, geometry=geom)
+    os.environ['LETTERHEAD_STACK_ABSTAIN'] = '1'; os.environ['LETTERHEAD_DEPTH_GUARD'] = '1'
     new = lh.pick_issuer(text, type_phrases=TYPE_PHRASES, geometry=geom)
     txt = lh.pick_issuer(text, type_phrases=TYPE_PHRASES, geometry=None)
     vo, vn = verdict(old, gt), verdict(new, gt)

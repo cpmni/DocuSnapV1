@@ -1922,6 +1922,33 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 81 applied: round-7 reading switches defaulted ON (prefix-adopt, vacuous-suppress, page-match v2, vat-reg $, money sign, net-misread pair)');
   }
 
+  // ── Migration 82: the two-line wordmark slice defaults ON (owner decision 2026-08-22; gary →
+  // Oracle per-part SIGN-OFF-W/COND, docs/oracle_log.md) ──────────────────────────────────────
+  // The owner's real scans (a STACKED logotype, "DOCUMENT" over "SOLUTIONS") exposed four sinks of
+  // one source. All five switches below are their own revert (the dev-gated toggles in Settings →
+  // Processing, or the settings row):
+  //   letterhead_stack_abstain          — the cold issuer pick abstains on one line of a stacked
+  //                                       wordmark ("TIONS" under "DOCUMENT") instead of prefilling it
+  //   letterhead_depth_guard            — a single word deeper than the band cap ("Patrick", an
+  //                                       address tail) is never a candidate
+  //   template_fixed_seed_fragment_keep — a taught issuer box that reads ONE line of the stack keeps the
+  //                                       curated template_fixed identity (the displacement that produced
+  //                                       the un-sheddable "please confirm" note)
+  //   quiet_reread_kw_select            — the quiet lane also re-reads held docs the matcher's keyword
+  //                                       arm would bind to the taught layout (the 8 "not identified")
+  //   quiet_reread_on_ready             — the confirm that makes a sender READY re-reads its siblings
+  // UPSERT-forced (the mig-76 stance); gates: P1 census 0 correct lost / 0 new wrong, realdoc OFF==ON,
+  // fired-path on the owner's parked run (the 9 held docs → template_fixed@95, overall 100).
+  if (!applied.has(82)) {
+    try {
+      const up82 = db.prepare("INSERT INTO settings (key, value) VALUES (?, 'true') ON CONFLICT(key) DO UPDATE SET value='true'");
+      for (const key of ['letterhead_stack_abstain', 'letterhead_depth_guard', 'template_fixed_seed_fragment_keep',
+                         'quiet_reread_kw_select', 'quiet_reread_on_ready']) up82.run(key);
+    } catch (e) { console.warn(`  migration 82: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (82)').run();
+    console.log('JS migration 82 applied: two-line wordmark slice defaulted ON (stack abstain, depth guard, fragment keep, kw select, ready re-read)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

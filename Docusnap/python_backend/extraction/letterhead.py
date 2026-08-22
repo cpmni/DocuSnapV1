@@ -169,7 +169,20 @@ def _fragment_abstain_enabled():
     return os.environ.get("LETTERHEAD_FRAGMENT_ABSTAIN", "0") == "1"
 
 
-def _pick_by_height(band_lines, geometry, is_candidate, neighbour_name_shaped=None):
+def _stack_abstain_enabled():
+    """P1(a) of the two-line wordmark slice (2026-08-22, gary → Oracle SEND BACK → fixed → built):
+    env LETTERHEAD_STACK_ABSTAIN, bridged from `letterhead_stack_abstain`. Unset/0 ⇒ byte-identical."""
+    return os.environ.get("LETTERHEAD_STACK_ABSTAIN", "0") == "1"
+
+
+def _depth_guard_enabled():
+    """P1(b′) (Oracle 2026-08-22): env LETTERHEAD_DEPTH_GUARD, bridged from `letterhead_depth_guard`.
+    Unset/0 ⇒ byte-identical."""
+    return os.environ.get("LETTERHEAD_DEPTH_GUARD", "0") == "1"
+
+
+def _pick_by_height(band_lines, geometry, is_candidate, neighbour_name_shaped=None,
+                    stack_neighbour=None):
     """The geometry verdict, or None (→ the text arm runs). Candidates are the band lines' COLUMN
     SEGMENTS (see _row_segments), each gated by `is_candidate` and scored by its own words'
     upper-median height as a RATIO to med_h. None whenever the pairing cannot be trusted
@@ -205,7 +218,7 @@ def _pick_by_height(band_lines, geometry, is_candidate, neighbour_name_shaped=No
             by_text[key] = gi
     scored = []
     row_segs = {}                           # gi → [(seg, ratio_or_None)] in left-to-right order
-    for bl in band_lines:
+    for bi, bl in enumerate(band_lines):
         gi = by_text.get(bl.strip())
         if gi is None:
             continue                        # e.g. a truncated marker-line head — text arm's problem
@@ -218,6 +231,15 @@ def _pick_by_height(band_lines, geometry, is_candidate, neighbour_name_shaped=No
             if not paired:
                 continue                    # pairing drifted — never score words that aren't the segment's
             if not is_candidate(seg):
+                continue
+            # P1(b′) — DEPTH GUARD (Oracle 2026-08-22): the text arm has always refused an issuer
+            # deeper than _MAX_BAND_INDEX ("a leaked recipient sits BELOW the letterhead's own
+            # lines"); the geometry arm had no depth cap, which is how a SINGLE WORD five band lines
+            # down — "Patrick", the tail of a work address — could out-rank everything and be
+            # PRE-FILLED as the company (owner's scans, 2026-08-22). Single-token candidates only,
+            # measured in the BAND frame (enumerate(band_lines)), never the geometry row index —
+            # the two frames differ by every line chrome_band dropped.
+            if (_depth_guard_enabled() and bi > _MAX_BAND_INDEX and len(seg.split()) == 1):
                 continue
             if ratio is not None:
                 scored.append((ratio, seg, gi, len(segs) - 1))
@@ -251,6 +273,28 @@ def _pick_by_height(band_lines, geometry, is_candidate, neighbour_name_shaped=No
                 if (n_ratio is not None and n_ratio >= _GEOM_MIN_RATIO
                         and neighbour_name_shaped(n_seg)):
                     return None             # a fragment of a wider name — empty beats a guess
+    # P1(a) — VERTICAL-STACK ABSTAIN (2026-08-22, the owner's stacked wordmark). A two-line logotype
+    # ("DOCUMENT" over "SOLUTIONS") reconstructs as two single-token ROWS. The CLEAN stack already
+    # returns None (both words are generic — the distinctive-core gate); what this catches is the
+    # GARBLED stack: "TIONS" / "JTIONS" / "OLUTIONS" under "DOCUMENT" / "JMENT", which are not
+    # generic and out-rank everything on height. Rule: a single-token winner whose band line directly
+    # ABOVE or BELOW is ONE segment (no column break — a two-column row is never consulted), paired,
+    # letterhead-SIZED by its own words, and a STACK NEIGHBOUR — name-shaped and non-excluded, OR a
+    # bare generic company word ("DOCUMENT", "SOLUTIONS", "SERVICES", "LTD": exactly the stacked-
+    # wordmark signature; the Oracle's mechanism fix — `_is_name_shaped_neighbour` alone rejects
+    # "DOCUMENT" because GENERIC_SINGLES disqualifies it, which made the rule a dead guard on the
+    # real exhibit) — is a fragment of a wider name: abstain, the text arm runs. Never a re-join.
+    if (_stack_abstain_enabled() and stack_neighbour is not None
+            and len(scored[0][1].split()) == 1):
+        _r, _seg, gi, _si = scored[0]
+        for ngi in (gi - 1, gi + 1):
+            nsegs = row_segs.get(ngi)
+            if not nsegs or len(nsegs) != 1:
+                continue                    # outside the band, or a column-broken row
+            n_seg, n_ratio = nsegs[0]
+            if (n_ratio is not None and n_ratio >= _GEOM_MIN_RATIO
+                    and stack_neighbour(n_seg)):
+                return None                 # one line of a stacked wordmark — empty beats a guess
     return scored[0][1]
 
 
@@ -416,6 +460,26 @@ def _is_name_shaped_neighbour(seg, excluded):
     return bool(_LETTERHEAD_NAME_RE.match(s))
 
 
+def _is_stack_neighbour(seg, excluded):
+    """P1(a)'s NEIGHBOUR gate (Oracle 2026-08-22, the mechanism fix): the Slice-0 neighbour gate
+    (name-shaped, not excluded/type phrase, not disqualified) OR a bare GENERIC company word — one
+    alphabetic token whose lower-case is in template_matcher._GENERIC_NAME_TOKENS and not excluded.
+    `_is_name_shaped_neighbour` alone rejects "DOCUMENT" (title_pick.GENERIC_SINGLES disqualifies
+    it), and a generic word on its own letterhead-sized line is precisely the stacked-wordmark
+    signature ("DOCUMENT" / "SOLUTIONS" / "SERVICES" / "LTD"). An excluded type phrase ("INVOICE",
+    "STATEMENT") is never a stack neighbour, so `Superstore / INVOICE` keeps picking."""
+    s = seg.strip()
+    if not s or s.lower() in excluded or _contains_type_phrase(s, excluded):
+        return False
+    if _is_name_shaped_neighbour(s, excluded):
+        return True
+    toks = s.split()
+    if len(toks) != 1 or not toks[0].isalpha():
+        return False
+    from extraction.template_matcher import _GENERIC_NAME_TOKENS
+    return toks[0].lower() in _GENERIC_NAME_TOKENS
+
+
 def _excluded_set(detected_title, type_phrases):
     """The lower-cased title + type-phrase exclusion set shared by the geom pick and the fragment shed."""
     excluded = {str(detected_title or "").strip().lower()}
@@ -438,7 +502,8 @@ def pick_issuer_geometry(ocr_text, geometry, detected_title=None, type_phrases=N
         return None
     excluded = _excluded_set(detected_title, type_phrases)
     return _pick_by_height(lines, geometry, lambda seg: _is_geom_candidate(seg, excluded),
-                           neighbour_name_shaped=lambda seg: _is_name_shaped_neighbour(seg, excluded))
+                           neighbour_name_shaped=lambda seg: _is_name_shaped_neighbour(seg, excluded),
+                           stack_neighbour=lambda seg: _is_stack_neighbour(seg, excluded))
 
 
 def fragmented_issuer_confirms(ocr_text, geometry, target, norm, detected_title=None, type_phrases=None):
