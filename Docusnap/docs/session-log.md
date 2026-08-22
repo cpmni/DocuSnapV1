@@ -3008,3 +3008,49 @@ censuses green (zero de-graduations both DBs — flip precondition MET, owner de
    never rewrites `extraction_method`; `mergeReprocessRows` (`handler.js:975`) takes the fresh row
    wholesale and silently reverts propagated values.
 
+## ARCHIVED 2026-08-23 — the CLAUDE.md '(previous) 2026-08-22 EVENING' block, verbatim
+
+## (previous) 2026-08-22 EVENING: **READ `HANDOVER_2026-08-22_EVENING.md`** (state, the shipped
+table, the owner vet queue, traps, how to resume), then `HANDOVER_2026-08-22.md` (the overnight arc, the
+afternoon wordmark slice, rounds 13/13b/14), then `HANDOVER_2026-08-20_EVENING.md`. Chris rounds 13/13b/14/15(/16) verbatim in
+`docs/CHRIS_FULL_APP_REVIEW_2026-08-22.md`; every Oracle verdict + gate in `docs/oracle_log.md`.
+**Chris 15 (the owner's 22 real scans + Demo Docs): YES — 57 filed, zero wrong folder/value, "nothing went
+missing and nothing needed a trick".** What shipped today (each behind its own switch; mig 79–84):
+- **Mig 83 `keep_processed_originals` ON for EVERY install** — filing no longer unlinks the Processed
+  original (`documents.drained_at` + backfill; THE ONE gate in `reviewService.confirm`; un-drained → drained
+  at confirm, never unlinked); `process-folder` refuses a folder holding filed originals with "Import it
+  anyway?"; the purge dialogs say what is NOT deleted. The owner's run-1 "lost scans" were this mechanism
+  — nothing was lost (all 11 in Output; Windows CopyFile keeps the scan's mtime, so `find -newer` misses them).
+- **`shared/reviewReadiness.js` = THE review-queue classifier** (Home's "N ready" == File All's N);
+  Home headline "N senders file by themselves" = `scopeReadiness.isReady`. `shared/offerPrune.js` retires
+  stale offer bars. The badge refreshes on any broadcast (a send-back counts nowhere — stale render).
+- **Type nudge**: the issuer READ is never offered as a type (`TYPE_NUDGE_ISSUER_EXCLUDE`, garble-tolerant);
+  line 0 is admissible with a known issuer (`TYPE_NUDGE_L0`, census +16 correct / 0 new wrong). Residual:
+  junk-caps scraps ("Poo"/"Ment"/"Print") still offered — Chris 15 card 3.
+- **Q2 ROOT CAUSE of "the teach does nothing" (measured):** a template born from ONE scan freezes that
+  scan's fingerprint; three OCR-garble tokens capped every sibling at EXACTLY 0.70 < 0.75. Fix = the
+  one-sample SEED SUPPORT PRUNE at birth (`templates.pruneSeedFingerprint`: df=0 tokens dropped; G1
+  issuer-protect; G2 reward licence ≥2 recovered same-LAYOUT held docs — the same-layout leg is what stops
+  a buyer-issued seed being licensed by other suppliers' pages; floor; all-or-nothing half-cap); both birth
+  paths; `fingerprint_seed_support_prune` / `FINGERPRINT_SEED_SUPPORT`; **mig 84 ON for new installs**.
+  Chris 15: teach from the worst scan → `kept 7 recovered 20` → the teach-time re-read did 19/19 (round 14: 0).
+- **Q3 the LAYOUT arm (DARK, `quiet_reread_on_layout`)**: an authoritative anchor / mapping WRITE re-reads
+  the scope's template-carrying held siblings (the manual "Reprocess N" population, press removed) — only
+  with `template_identity_on_page` ON and a judgeable scope name (≥2 name-arm tokens; JS mirror pinned to
+  the Python generic set); a first-filled REQUIRED role field is HELD "Read from your new box — confirm
+  once." unless page-corroborated; valued→empty merges as empty. Chris 16 = its own round.
+- **Chris 15 card 2 FIXED (`8c0f26b`)**: `learnTemplateOnCommit` intersected the DB fingerprint but the
+  Python matcher reads the template FILE — both callers now rewrite it (`TEMPLATE_FILE_SYNC_ON_COMMIT=0`).
+  **TRAP FOUND:** in dev, `templatesDir` was the repo `templates/` folder shared by the owner's app and every
+  sandbox — fixed for `DOCUSNAP_USERDATA` sandboxes; rounds ≤15 carry a contamination caveat.
+**OPEN (owner/Oracle vet):** Chris 15 card 1 — once Q2 makes the teach-time re-read work, siblings bind
+BEFORE any confirm at overall 91–93 under the ungraduated floor 100 and the 'ready' arm (template-less only)
+never re-reads them → "✓ files by itself" over a pile that waits for File All. Direction: a READY-crossing
+re-read of TEMPLATE-CARRYING docs with oc < floor (the Q3 boundary, same guards). Also: the junk-caps type
+nudge; the young-scope "differs from the usual format" false alarms; the offer bar that auto-accepts 1.5 s
+later; the DONE card's count. **Traps:** `PYTHONIOENCODING=utf-8` for script-style Python tests (cp1252 `→`
+= a false exit 1); `src/modules/templates/` is gitignored by the `templates/` line — `git add -f`; the repo
+root is `C:\GIT Projects` (worktrees land at `<path>/Docusnap/`); bash heredocs strip a backslash level —
+write patch scripts with the Write tool. The 08-20 machine-confirm starvation + P1/PI class-fix notes
+live in `HANDOVER_2026-08-20_EVENING.md` + `memory/project_*_20260819.md`.
+

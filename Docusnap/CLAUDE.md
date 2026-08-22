@@ -21,7 +21,42 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-22 NIGHT: **READ `docs/designs/TYPE_SPLIT_AND_ACTIVITY_STRIP_PLAN_2026-08-22.md` FIRST**
+## ⏭ LATEST — 2026-08-23 OVERNIGHT (Chris r17 fix loop): **READ `HANDOVER_2026-08-23.md` FIRST**, then the
+type-split/strip plan (`docs/designs/TYPE_SPLIT_AND_ACTIVITY_STRIP_PLAN_2026-08-22.md`, STATUS table) and
+`HANDOVER_2026-08-22_EVENING.md`. Branch `feat/teach-side-overnight`, **NOT pushed** (owner's standing rule).
+Chris round 17 (fresh sandbox, every switch ON) → 8 cards → agents → Oracle-gated → one commit each
+(`99b90f1` … `740a243`, table in `docs/CHRIS_FULL_APP_REVIEW_2026-08-22.md` "Round 17 TRIAGE"); round 18
+ran on the fixes. Headlines:
+- **THE IDENTITY UNFREEZE CLASS (`11ca0ba`, a bug, no switch):** `_fieldsWithMultipleConfirmedValues` judged
+  the company key TYPE-WIDE — ≥2 distinct confirmed suppliers on a TYPE unfroze EVERY template's identity at
+  its next write (the "Gay" / "DOCUMENT" folders). Now per template by DOMINANCE (`templates.getDominantSupplier`);
+  a NULL-over-frozen write is loud (warn + audit `template_identity_unfrozen`). **Owner step:**
+  `node scripts/refreeze-template-identity-20260823.js --apply --templates-dir <repo templates/>` on the live DB
+  (dry run found 5: Silverbeck, Veltrix, Castellan, Harrowgate, Nordwind; realdoc base vs re-frozen = identical, M=0).
+- **Holds that never rendered (`99b90f1`):** the refused-confirm return dropped `nearMatch`/`typeSplit`. Rider
+  `320433f`: one kept slip no longer silences the type-split ask ('mixed' needs ≥2 of the second type); a blank
+  issuer is 'missing', never 'ready' (`issuer_blank`).
+- **Garble/fragment (`72a75bd`, `875a433`, `9ae6c2b`):** wide debris leg DARK `template_fixed_debris_wide`;
+  JUNK kind of the letterhead suggestion; `hasTemplate` requires the template's identity to BE the scope;
+  the near-match SUB-RUN arm (`name_proximity.tokenSubrunIdentity`) asks with the full name first.
+- **Review UX (`e9106aa`, `2cf5f26`):** tile yields under the strip + derives from status/door; File All
+  records ONE bulk chip (ledger key `approved|bulk`, merge into the newest SAME-KEY event in the gap);
+  import banner self-heals; Reprocess copy; "Sent back from Search"; `markUndone` + "Already back in Review.".
+- **OWNER CARD 1 — THE READY ARM (`740a243`, DARK `quiet_reread_on_ready_templated`):** at the ready crossing
+  the lane also re-reads the scope's OWNED-template held docs with `overall_confidence < scopeTrust().floor`
+  (layout-arm guards + the C3.3 hold "Read after learning — confirm once."). **Cannot help an all-generic
+  name (DS) — skipped + audited; tell the owner.** `_ownedTemplateRows` is the shared population query.
+**Traps this session:** `core.autocrlf=true` → renderer.js etc. are CRLF on disk (tests slicing `
+}
+` must
+normalise; patch scripts must open with `newline=""`); bash heredocs strip a backslash level (write tests with
+the Write tool); hand-rolled test schemas lack mig columns (`pragma_table_info`); the `chris-the-customer`
+agent type was NOT registered — spawn general-purpose + Read the persona file. Pre-existing reds unchanged:
+`test_authoritative_anchor`, `test_v1_contract`, `test_doctype_surface_parity`, `test_teach_multipage`;
+Python `test_identity_fusion` + 6 script-style.
+
+
+## (previous) 2026-08-22 NIGHT: **READ `docs/designs/TYPE_SPLIT_AND_ACTIVITY_STRIP_PLAN_2026-08-22.md` FIRST**
 (the plan + the STATUS table at its foot), then `HANDOVER_2026-08-22_EVENING.md`. Branch `feat/teach-side-overnight`,
 HEAD `44b6661`, NOT pushed. Three arcs landed tonight, every switch DARK unless stated:
 - **The garbled-issuer arc `c5a4050`** (a one-line box over a stacked wordmark read `NOCUMENT` and minted a sender):
@@ -50,50 +85,6 @@ checkout is `core.autocrlf=true` — any source-contract test slicing on `
 }
 ` must normalise CRLF first; Python
 `open(p,'w')` patch scripts and bash heredocs both mangle backslashes — use the Write/Edit tools for test files.
-
-## (previous) 2026-08-22 EVENING: **READ `HANDOVER_2026-08-22_EVENING.md`** (state, the shipped
-table, the owner vet queue, traps, how to resume), then `HANDOVER_2026-08-22.md` (the overnight arc, the
-afternoon wordmark slice, rounds 13/13b/14), then `HANDOVER_2026-08-20_EVENING.md`. Chris rounds 13/13b/14/15(/16) verbatim in
-`docs/CHRIS_FULL_APP_REVIEW_2026-08-22.md`; every Oracle verdict + gate in `docs/oracle_log.md`.
-**Chris 15 (the owner's 22 real scans + Demo Docs): YES — 57 filed, zero wrong folder/value, "nothing went
-missing and nothing needed a trick".** What shipped today (each behind its own switch; mig 79–84):
-- **Mig 83 `keep_processed_originals` ON for EVERY install** — filing no longer unlinks the Processed
-  original (`documents.drained_at` + backfill; THE ONE gate in `reviewService.confirm`; un-drained → drained
-  at confirm, never unlinked); `process-folder` refuses a folder holding filed originals with "Import it
-  anyway?"; the purge dialogs say what is NOT deleted. The owner's run-1 "lost scans" were this mechanism
-  — nothing was lost (all 11 in Output; Windows CopyFile keeps the scan's mtime, so `find -newer` misses them).
-- **`shared/reviewReadiness.js` = THE review-queue classifier** (Home's "N ready" == File All's N);
-  Home headline "N senders file by themselves" = `scopeReadiness.isReady`. `shared/offerPrune.js` retires
-  stale offer bars. The badge refreshes on any broadcast (a send-back counts nowhere — stale render).
-- **Type nudge**: the issuer READ is never offered as a type (`TYPE_NUDGE_ISSUER_EXCLUDE`, garble-tolerant);
-  line 0 is admissible with a known issuer (`TYPE_NUDGE_L0`, census +16 correct / 0 new wrong). Residual:
-  junk-caps scraps ("Poo"/"Ment"/"Print") still offered — Chris 15 card 3.
-- **Q2 ROOT CAUSE of "the teach does nothing" (measured):** a template born from ONE scan freezes that
-  scan's fingerprint; three OCR-garble tokens capped every sibling at EXACTLY 0.70 < 0.75. Fix = the
-  one-sample SEED SUPPORT PRUNE at birth (`templates.pruneSeedFingerprint`: df=0 tokens dropped; G1
-  issuer-protect; G2 reward licence ≥2 recovered same-LAYOUT held docs — the same-layout leg is what stops
-  a buyer-issued seed being licensed by other suppliers' pages; floor; all-or-nothing half-cap); both birth
-  paths; `fingerprint_seed_support_prune` / `FINGERPRINT_SEED_SUPPORT`; **mig 84 ON for new installs**.
-  Chris 15: teach from the worst scan → `kept 7 recovered 20` → the teach-time re-read did 19/19 (round 14: 0).
-- **Q3 the LAYOUT arm (DARK, `quiet_reread_on_layout`)**: an authoritative anchor / mapping WRITE re-reads
-  the scope's template-carrying held siblings (the manual "Reprocess N" population, press removed) — only
-  with `template_identity_on_page` ON and a judgeable scope name (≥2 name-arm tokens; JS mirror pinned to
-  the Python generic set); a first-filled REQUIRED role field is HELD "Read from your new box — confirm
-  once." unless page-corroborated; valued→empty merges as empty. Chris 16 = its own round.
-- **Chris 15 card 2 FIXED (`8c0f26b`)**: `learnTemplateOnCommit` intersected the DB fingerprint but the
-  Python matcher reads the template FILE — both callers now rewrite it (`TEMPLATE_FILE_SYNC_ON_COMMIT=0`).
-  **TRAP FOUND:** in dev, `templatesDir` was the repo `templates/` folder shared by the owner's app and every
-  sandbox — fixed for `DOCUSNAP_USERDATA` sandboxes; rounds ≤15 carry a contamination caveat.
-**OPEN (owner/Oracle vet):** Chris 15 card 1 — once Q2 makes the teach-time re-read work, siblings bind
-BEFORE any confirm at overall 91–93 under the ungraduated floor 100 and the 'ready' arm (template-less only)
-never re-reads them → "✓ files by itself" over a pile that waits for File All. Direction: a READY-crossing
-re-read of TEMPLATE-CARRYING docs with oc < floor (the Q3 boundary, same guards). Also: the junk-caps type
-nudge; the young-scope "differs from the usual format" false alarms; the offer bar that auto-accepts 1.5 s
-later; the DONE card's count. **Traps:** `PYTHONIOENCODING=utf-8` for script-style Python tests (cp1252 `→`
-= a false exit 1); `src/modules/templates/` is gitignored by the `templates/` line — `git add -f`; the repo
-root is `C:\GIT Projects` (worktrees land at `<path>/Docusnap/`); bash heredocs strip a backslash level —
-write patch scripts with the Write tool. The 08-20 machine-confirm starvation + P1/PI class-fix notes
-live in `HANDOVER_2026-08-20_EVENING.md` + `memory/project_*_20260819.md`.
 
 ## (historical) 2026-08-15: **READ `HANDOVER_2026-08-15.md` FIRST.** HEAD **`717058b`**, 11 commits
 **PUSHED to origin**, tree clean. The corroboration arc shipped + validated; owner flipped all reading
