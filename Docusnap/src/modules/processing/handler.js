@@ -3807,6 +3807,7 @@ function register(ctx) {
     const db = getDb();
     const ev = _reviewEvents ? _reviewEvents.get(db, eventId) : null;
     if (!ev) return { ok: false, reason: 'unknown-event', undone: [], refused: [] };
+    if (ev.put_back_at) return { ok: false, reason: 'already-put-back', undone: [], refused: [] };   // card 7: a stale render pressed Put back twice
     if (!_reviewEvents._undoable(ev)) return { ok: false, reason: 'not-undoable', undone: [], refused: (ev.ids || []).slice() };
     const documents = require('../../../database/modules/documents');
     const undone = [], refused = [];
@@ -3833,12 +3834,15 @@ function register(ctx) {
       if (undone.length) logAudit(db, { action: ev.undo.type === 'sweep' ? 'scope_sweep_undone' : 'class_fix_undone', target_type: 'scope', outcome: 'success',
         metadata: { doc_ids: undone.join(','), refused_ids: refused.join(','), event_id: ev.id } });
     } catch { /* audit is best-effort */ }
+    // card 7: the event stops offering Put back (full AND partial — the refused rows are non-sweep rows a
+    // retry would refuse again); the updated event rides back so the renderer replaces its copy.
+    const updated = undone.length ? _reviewEvents.markUndone(db, ev.id, { undone, refused }) : null;
     if (undone.length) recordReviewEvent(db, { kind: 'put_back', ids: undone, scope: ev.scope || { supplier: null, typeSlug: null }, undo: null });
     try {
       notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
       notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
     } catch { /* count broadcast is best-effort */ }
-    return { ok: true, undone, refused };
+    return { ok: true, undone, refused, event: updated };
   });
   ipcMain.handle('get-quiet-reread-status', () => _quietLane.status());
   ipcMain.handle('cancel-quiet-reread', (_e, { jobId } = {}) => { requireRole('admin', 'edit'); return { ok: _quietLane.cancel(String(jobId || '')) }; });

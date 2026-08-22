@@ -727,8 +727,13 @@ The copies already written to your filing folder stay there and are replaced whe
   let r = null;
   try { r = await window.docusnap.undoReviewEvent?.(evId); } catch {}
   const undone = (r && Array.isArray(r.undone)) ? r.undone.length : 0, refused = (r && Array.isArray(r.refused)) ? r.refused.length : 0;
-  if (!r || !r.ok) showToast(r && r.reason === 'not-undoable' ? 'These can no longer be put back from here — open them from Search instead.' : (r && r.reason === 'expired' ? 'That correction can no longer be undone — fix the field by hand.' : 'Nothing was put back.'), 'warn');
+  if (!r || !r.ok) showToast(r && r.reason === 'already-put-back' ? 'Already back in Review.'
+    : r && r.reason === 'not-undoable' ? 'These can no longer be put back from here — open them from Search instead.'
+    : (r && r.reason === 'expired' ? 'That correction can no longer be undone — fix the field by hand.' : 'Nothing was put back.'), 'warn');
   else showToast(refused ? `Put ${undone} back in Review — ${refused} couldn't be (filed another way since).` : `Put ${undone} document${undone === 1 ? '' : 's'} back in the Review queue.`, undone ? 'info' : 'warn');
+  // card 7: the server hands back the updated event (undo gone) — replace our copy rather than wait for the
+  // throttled broadcast, so the chip stops offering Put back immediately
+  if (r && r.event && r.event.id != null) { const i = _asEvents.findIndex(e => e.id === r.event.id); if (i >= 0) _asEvents[i] = r.event; }
   _asClosePanel();
   await _refreshQueueFromBroadcast();
 }

@@ -130,6 +130,13 @@ const events = () => H['get-review-events']({});
   evs = events();
   check('…the undo is itself a receipt (put_back, count 2)', evs[0].kind === 'put_back' && evs[0].count === 2);
   check('unknown event id → refused', !(await H['review-event-undo']({}, { eventId: 999999 })).ok);
+  // Chris round 17 card 7: the undone event stops offering Put back; a second press is refused honestly
+  const undoneEv = evs.find(e => e.kind === 'approved' && e.scope.supplier === 'Bolt');
+  check('the undo returned the updated event with undo gone', u.event && u.event.id === undoneEv.id && u.event.undo === null && u.event.undoable === false);
+  check('…and the ledger no longer offers Put back on it', events().find(e => e.id === undoneEv.id).undoable === false);
+  const again = await H['review-event-undo']({}, { eventId: undoneEv.id });
+  check("a second press → { reason: 'already-put-back' }, nothing touched", !again.ok && again.reason === 'already-put-back' && again.undone.length === 0
+        && status(c1).status === 'needs_review' && status(c3).status === 'confirmed');
   check('an auto_filed (100 %) event is never undoable', (() => { require('./handler').recordReviewEvent(db, { kind: 'auto_filed', ids: [a0], scope: { supplier: 'Acme', typeSlug: 'invoice' }, undo: null }); return events()[0].undoable === false; })());
   const r3 = await H['review-event-undo']({}, { eventId: events()[0].id });
   check('…and its undo is refused server-side', !r3.ok && r3.reason === 'not-undoable');

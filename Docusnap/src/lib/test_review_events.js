@@ -106,6 +106,16 @@ check('two more within a second → no extra sends yet (coalesced)', sent.length
 tick(1000);
 check('…one trailing send after the throttle window, carrying the merged count', sent.length === 2 && sent[1].count === 3);
 
+console.log('\nmarkUndone (Chris round 17 card 7):');
+tick(61_000);
+const mu = L.record(db, { kind: 'self_filed', ids: [5001, 5002, 5003], scope: { supplier: 'Nordwind', typeSlug: 'quote' }, undo: { type: 'sweep' } });
+check('fixture: a fresh sweep event is undoable', L.list(db)[0].undoable === true);
+const pub = L.markUndone(db, mu.id, { undone: [5001, 5002], refused: [5003] });
+check('markUndone returns the updated PUBLIC event: undo gone, put_back_at stamped, no id list', pub && pub.undo === null && pub.undoable === false && Number.isFinite(pub.put_back_at) && !('ids' in pub));
+check('…and the stored event no longer offers undo', L.list(db)[0].id === mu.id && L.list(db)[0].undoable === false && L.list(db)[0].undo === null);
+check('…put_back_ids / put_back_refused recorded', JSON.stringify(L.get(db, mu.id).put_back_ids) === '[5001,5002]' && JSON.stringify(L.get(db, mu.id).put_back_refused) === '[5003]');
+check('unknown id → null', L.markUndone(db, 999999, { undone: [1] }) === null);
+
 console.log('\nprotected setting (Oracle C3):');
 check("'review_events' is refused by the generic set-setting door and excluded from backups", isProtectedSettingKey(SETTING_KEY) === true);
 

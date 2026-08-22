@@ -150,7 +150,29 @@ function create(deps = {}) {
     } catch { return 0; }
   }
 
-  return { record, list, get, markSeen, _load, _save, _undoable, SETTING_KEY, CAP: cap, BURST_GAP_MS: burstGapMs, UNDO_WINDOW_MS: undoWindowMs };
+  /**
+   * markUndone(db, id, { undone, refused }) — Chris round 17 card 7: after a successful put-back the event
+   * must stop offering Put back (a second press said "34 couldn't be (filed another way since)" about
+   * documents the user had just put back). Sets `undo = null`, stamps `put_back_at` + `put_back_ids`,
+   * saves and emits. Returns the updated PUBLIC event (the caller replaces its copy — the throttled
+   * broadcast may drop a third emit inside one second) or null.
+   */
+  function markUndone(db, id, info = {}) {
+    try {
+      const state = _load(db);
+      const ev = state.events.find(e => e.id === Number(id));
+      if (!ev) return null;
+      ev.undo = null;
+      ev.put_back_at = now();
+      ev.put_back_ids = [...new Set((Array.isArray(info.undone) ? info.undone : []).map(Number).filter(Boolean))];
+      if (Array.isArray(info.refused) && info.refused.length) ev.put_back_refused = info.refused.map(Number).filter(Boolean);
+      _save(db, state);
+      _emit(ev);
+      return _public(ev);
+    } catch { return null; }
+  }
+
+  return { record, list, get, markSeen, markUndone, _load, _save, _undoable, SETTING_KEY, CAP: cap, BURST_GAP_MS: burstGapMs, UNDO_WINDOW_MS: undoWindowMs };
 }
 
 module.exports = { create, SETTING_KEY, CAP, BURST_GAP_MS, NOTIFY_THROTTLE_MS, UNDO_WINDOW_MS, KINDS };
