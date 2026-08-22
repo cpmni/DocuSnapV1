@@ -152,8 +152,8 @@ check('a warning that needs a DECISION does not time out',
       /if \(!warn\) _anchorReadoutTimer = setTimeout\(hideAnchorReadout/.test(rend));
 
 console.log('\n3. the near-match challenge, and what it may not do');
-check('the renderer asks the shared near-match predicate',
-      /checkIdentityNearMatch\(text\)/.test(rend));
+check('the renderer asks the shared near-match predicate (with the doc\'s template id since Chris r17 card 3)',
+      /checkIdentityNearMatch\(\{ value: text, templateId: currentDoc\?\.template_id \|\| null \}\)/.test(rend));
 check('it offers the incumbent as a one-click choice',
       /Use "\$\{nm\.existing\}"/.test(rend) || /Use "\$\{escHtml\(nm\.existing\)\}"/.test(rend));
 check('it also offers KEEP — a different company must stay teachable',
