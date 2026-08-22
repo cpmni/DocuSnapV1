@@ -1344,6 +1344,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">After you draw or fix a box on a learned layout, quietly re-read that sender's waiting documents</div>
+                <div class="threshold-sub">Today a box drawn on one document only takes effect on the others when you press "Reprocess N from this sender". With this on, the app re-reads that sender's waiting documents in the background after the box is saved — the same documents that button would re-read. A detail the new box fills in for the first time is held for you to confirm once unless the page backs it up two ways; anything the app already asked you about is left alone. Needs "a layout may only claim a document that names its company" to be on. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="quiet-reread-on-layout-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Recognise a confirmed company even when its letterhead is column-spaced</div>
                 <div class="threshold-sub">Some letterheads print the company name with big gaps between the words. Scan Finder can read the gaps as separate columns and fail to match the name to a company you've confirmed, so those documents keep the "please confirm before filing" note. With this on, the spaced-out name is reassembled and, when it matches a company you've confirmed on this layout, the note is cleared. Only the company you confirmed is matched — a name on the page addressed TO you is never treated as the sender. Off by default.</div>
               </div>

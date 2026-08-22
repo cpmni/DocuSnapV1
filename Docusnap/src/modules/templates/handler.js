@@ -731,7 +731,30 @@ function register(ctx) {
       if (w <= 0 || h <= 0) return { success: false, error: `${side} box has no area` };
       if (x + w > 1.0001 || y + h > 1.0001) return { success: false, error: `${side} box off the page` };
     }
+    // Q3: snapshot the field's mapping BEFORE the write (a no-op re-save must not trigger a re-read).
+    const _mapSnap = () => {
+      try {
+        const m = (templates.getMappings(getDb(), templateId) || []).find(x => x.field_key === mapping.field_key);
+        return m ? JSON.stringify(['anchor_x_norm', 'anchor_y_norm', 'anchor_w_norm', 'anchor_h_norm', 'target_x_norm', 'target_y_norm', 'target_w_norm', 'target_h_norm', 'anchor_text'].map(k => m[k])) : 'none';
+      } catch { return null; }
+    };
+    const _mapBefore = _mapSnap();
     const saved = templates.saveMapping(getDb(), templateId, mapping);
+    // Q3 (Oracle C3.5): a template MAPPING write that changed the layout schedules the lane's
+    // 'layout' re-read for the template's (frozen supplier, type). The wizard's commit saves several
+    // mappings in a row — the lane's debounce coalesces them into one job.
+    try {
+      if (_mapBefore !== null && _mapSnap() !== _mapBefore) {
+        const db = getDb();
+        const t = db.prepare('SELECT document_type_slug, sample_document_id FROM templates WHERE id = ?').get(templateId);
+        const fixed = db.prepare("SELECT fixed_value FROM template_fields WHERE template_id = ? AND field_key = 'supplier_name' AND fixed_value IS NOT NULL AND TRIM(fixed_value) <> '' LIMIT 1").get(templateId);
+        let supplier = fixed ? fixed.fixed_value : null;
+        if (!supplier && t && t.sample_document_id) supplier = (db.prepare('SELECT supplier_name FROM documents WHERE id = ?').get(t.sample_document_id) || {}).supplier_name || null;
+        if (t && t.document_type_slug && supplier) {
+          require('../processing/handler').scheduleQuietReread(db, { supplier, typeSlug: t.document_type_slug, reason: 'layout', seedDocId: t.sample_document_id || null });
+        }
+      }
+    } catch (e) { try { (ctx.logger || console).warn?.(`layout re-read (mapping): ${e && e.message}`); } catch {} }
 
     // TAUGHT LABEL BECOMES THE KEYWORD — the WIZARD half (owner decision 2026-08-11).
     // The ⊕ Review teach writes this from `save-field-anchor`; the TEACH WIZARD does not go

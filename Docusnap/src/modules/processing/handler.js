@@ -705,6 +705,41 @@ const _validMode = (m) => (m === 'fast' || m === 'smart') ? m : 'smart';
 // --slice-dir even with no inspector window open, and (b) tee every trace event
 // to the JSONL diagnostic file. Off by default → no --trace → byte-identical
 // pipeline. Env mirrors the licensing escape-hatch convention.
+// Q3 (2026-08-22, Oracle C3.1): the quiet lane's LAYOUT arm — an authoritative anchor / template
+// mapping write re-reads the scope's TEMPLATE-CARRYING held siblings (the manual "Reprocess N"
+// population, press removed). DARK: env QUIET_REREAD_ON_LAYOUT wins both ways, else the setting.
+function _layoutRereadEnabled(db) {
+  const env = process.env.QUIET_REREAD_ON_LAYOUT;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try { return require('../../../database/modules/learning').getSetting(db, 'quiet_reread_on_layout', 'false') === 'true'; }
+  catch { return false; }
+}
+
+// JS MIRROR of template_matcher._name_arm_tokens (Oracle C3.2): the distinctive tokens of a
+// supplier display name — lowercase, ≥3 chars, not a generic company / type / stop word. The
+// Python arm is JUDGEABLE only when ≥2 survive; with fewer, _identity_refuses ABSTAINS and a
+// stored binding is re-imposed untested — so the layout arm must not run there. MIRROR PAIR: the
+// generic set below must equal template_matcher._GENERIC_NAME_TOKENS (pinned by reading the .py).
+const NAME_ARM_GENERIC = new Set([
+  'ltd', 'limited', 'plc', 'inc', 'llc', 'llp', 'gmbh', 'corp', 'company', 'group',
+  'holdings', 'office', 'offices', 'services', 'service', 'supplies', 'systems',
+  'solutions', 'trading', 'registered', 'enterprises', 'international', 'the', 'and',
+  'document', 'documents',
+]);
+const NAME_ARM_TYPEWORDS = new Set(['invoice', 'invoices', 'order', 'orders', 'purchase', 'sales', 'delivery', 'note', 'notes',
+  'statement', 'receipt', 'quote', 'quotation', 'credit', 'worksheet', 'remittance', 'advice', 'for', 'with', 'from']);
+function nameArmTokens(name) {
+  const out = new Set();
+  for (const w of String(name || '').toLowerCase().normalize('NFKC').match(/[a-z0-9]{2,}/g) || []) {
+    if (w.length < 3 || NAME_ARM_GENERIC.has(w) || NAME_ARM_TYPEWORDS.has(w)) continue;
+    out.add(w);
+  }
+  return out;
+}
+
+function scheduleQuietReread(db, info) { return _quietLaneImpl ? _quietLaneImpl.schedule(db, info) : false; }
+
 function _diagEnabled(db) {
   const env = (process.env.DOCUSNAP_DIAGNOSTIC_LOG || '').toLowerCase();
   if (env === 'on'  || env === 'true'  || env === '1') return true;
@@ -3615,6 +3650,13 @@ function register(ctx) {
     kwSelectEnabled: (db) => process.env.QUIET_REREAD_KW_SELECT === '1'
       || (process.env.QUIET_REREAD_KW_SELECT !== '0' && require('../../../database/modules/learning').getSetting(db, 'quiet_reread_kw_select', 'false') === 'true'),
     scopeTemplateIds: (db, sup, slug) => require('../../../database/modules/scopeReadiness').templateIds(db, sup, slug),
+    // Q3 (2026-08-22): the LAYOUT arm's preconditions + the first-fill corroboration licence.
+    layoutArm: {
+      enabled: (db) => _layoutRereadEnabled(db),
+      onPage: (db) => require('../../../database/modules/learning').getSetting(db, 'template_identity_on_page', 'false') === 'true',
+      nameTokens: (name) => nameArmTokens(name),
+    },
+    corroborated: (rec) => require('../../../database/modules/trust')._corrobLicensed(rec),
     // S3-(c): the lane's re-read docs reach filing ONLY via the sweep — a re-ask for the scope (the
     // renderer also re-runs the consent sweep on job_done, so the bar path is covered when
     // auto-accept is off).
@@ -4327,7 +4369,23 @@ function register(ctx) {
     requireRole('admin', 'edit');
     const learning = require('../../../database/modules/learning');
     const db = getDb();
+    // Q3: snapshot the authoritative row BEFORE the write so a no-op re-save never triggers a re-read.
+    const _authSnap = () => {
+      try {
+        return JSON.stringify(db.prepare(`SELECT anchor_label, direction, x_norm, y_norm, w_norm, h_norm, offset_dx_norm, offset_dy_norm
+                                             FROM field_anchors WHERE field_key = ? AND supplier_name IS ? AND document_type IS ?
+                                              AND last_authoritative_at IS NOT NULL ORDER BY id`).all(data.field_key, data.supplier_name || null, data.document_type || null));
+      } catch { return null; }
+    };
+    const _before = data && data.authoritative ? _authSnap() : null;
     learning.saveAnchor(db, data);
+    // Q3 (Oracle C3.5): an AUTHORITATIVE anchor write that CHANGED the scope's layout schedules the
+    // lane's 'layout' re-read for (supplier, type) — never a plain confirm, never an identical re-save.
+    try {
+      if (data && data.authoritative && data.supplier_name && data.document_type && _before !== null && _authSnap() !== _before) {
+        scheduleQuietReread(db, { supplier: data.supplier_name, typeSlug: data.document_type, reason: 'layout', seedDocId: data.document_id || null });
+      }
+    } catch (e) { logger?.warn?.(`layout re-read (anchor): ${e && e.message}`); }
 
     // TAUGHT LABEL BECOMES THE KEYWORD (owner decision 2026-08-11).
     // A ⊕ teach persists `anchor_label` into `field_anchors`, which drives STAGE 2 anchoring —
@@ -5309,7 +5367,8 @@ module.exports = {
   // register() has bound it (and while `scope_sweep_auto_accept` is dark).
   scheduleScopeAutoAccept: (db, info) => (_scheduleScopeAutoAcceptImpl ? _scheduleScopeAutoAcceptImpl(db, info) : false),
   _quietLaneActiveScopes,    // Slice 3 marks a scope here while its quiet re-read is in flight (S1-C5)
-  scheduleQuietReread: (db, info) => (_quietLaneImpl ? _quietLaneImpl.schedule(db, info) : false),   // Slice 3 trigger (a taught confirm)
+  scheduleQuietReread,   // Slice 3 trigger (a taught confirm / a layout write)
+  _layoutRereadEnabled, nameArmTokens, NAME_ARM_GENERIC,
   readyProbe: (db, sup, slug) => (_readyProbeImpl ? _readyProbeImpl(db, sup, slug) : null),              // P2: scope readiness BEFORE a confirm (memoised)
   scheduleReadyReread: (db, info) => (_scheduleReadyRereadImpl ? _scheduleReadyRereadImpl(db, info) : false),   // P2: fire the lane on the ready crossing
   quietLane: () => _quietLaneImpl,

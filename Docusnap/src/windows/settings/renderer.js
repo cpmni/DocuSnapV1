@@ -914,7 +914,9 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          ['quiet-reread-kw-select-toggle', 'quiet_reread_kw_select'],
                          ['quiet-reread-on-ready-toggle', 'quiet_reread_on_ready'],
                          // Q2 one-sample seed support prune (2026-08-22, DARK).
-                         ['fingerprint-seed-support-toggle', 'fingerprint_seed_support_prune']]) {
+                         ['fingerprint-seed-support-toggle', 'fingerprint_seed_support_prune'],
+                         // Q3 layout-write re-read (2026-08-22, DARK).
+                         ['quiet-reread-on-layout-toggle', 'quiet_reread_on_layout']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);
@@ -1002,7 +1004,7 @@ const DEV_SWITCH_IDS = [
   'scope-sweep-toggle', 'scope-sweep-auto-accept-toggle', 'letterhead-fragment-abstain-toggle', 'quiet-reread-toggle',
   'role-dominant-class-toggle',
   'letterhead-stack-abstain-toggle', 'letterhead-depth-guard-toggle', 'fixed-seed-fragment-keep-toggle',
-  'quiet-reread-kw-select-toggle', 'quiet-reread-on-ready-toggle', 'fingerprint-seed-support-toggle',
+  'quiet-reread-kw-select-toggle', 'quiet-reread-on-ready-toggle', 'fingerprint-seed-support-toggle', 'quiet-reread-on-layout-toggle',
 ];
 function _applyDevSwitchVisibility(unlocked, revealGate){
   for (const id of DEV_SWITCH_IDS){
