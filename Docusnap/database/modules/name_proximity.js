@@ -112,7 +112,40 @@ function nearMatchIdentity(candidate, existing) {
   return out(true, 'near-match', d, sim);
 }
 
+// ── TOKEN SUB-RUN arm (Chris round 17 card 3, 2026-08-23; gary → Oracle SIGN-OFF-W/COND) ───────────
+// A one-line box over a stacked wordmark reads ONE line of the name ("DOCUMENT" of "DOCUMENT SOLUTIONS");
+// the edit-distance arm above cannot see that (a missing whole word is many edits), so the wizard said
+// "Looks right →" and filed under `DOCUMENT\…` while DOCUMENT SOLUTIONS was already taught on the very
+// layout. This arm: the candidate's name tokens are a contiguous PROPER sub-run of a known identity's
+// tokens; after dropping the small generic set (mirrors the engine's _NAME_GENERIC_TOKENS — NOT the
+// name-arm generic list, which would exempt 'document'/'solutions') at least one candidate token
+// survives, and a single surviving token needs >= 6 alpha chars ('Acme' vs 'Acme Holdings' → not near:
+// pinned trade-off — two real companies can share a short first word). ASK-only by design: every
+// consumer offers the full name FIRST and keeps the typed value as the quiet second choice.
+const NAME_GENERIC_TOKENS = new Set(['ltd', 'limited', 'plc', 'llp', 'inc', 'incorporated', 'co', 'company', 'corp',
+                                     'group', 'holdings', 'services', 'service', 'the', 'and']);
+function nameTokens(s) {
+  return (String(s || '').match(/[A-Za-z0-9&'’.\-]+/g) || [])
+    .map(t => t.toLowerCase().replace(/[^a-z0-9]/g, ''))
+    .filter(t => t.replace(/[^a-z]/g, '').length >= 3);
+}
+function tokenSubrunIdentity(candidate, existing) {
+  const out = (near, reason, similarity = null) => ({ near, reason, distance: null, similarity, kind: 'subrun' });
+  const C = nameTokens(candidate), E = nameTokens(existing);
+  if (!C.length || !E.length) return out(false, 'empty');
+  if (C.length >= E.length) return out(false, 'not-a-proper-subrun');
+  let at = -1;
+  for (let i = 0; i + C.length <= E.length; i++) {
+    if (C.every((t, j) => t === E[i + j])) { at = i; break; }
+  }
+  if (at < 0) return out(false, 'not-a-subrun');
+  const distinctive = C.filter(t => !NAME_GENERIC_TOKENS.has(t));
+  if (!distinctive.length) return out(false, 'generic-only');
+  if (distinctive.length === 1 && distinctive[0].replace(/[^a-z]/g, '').length < 6) return out(false, 'single-token-too-short');
+  return out(true, 'subrun', C.length / E.length);
+}
+
 module.exports = {
-  foldIdentity, levenshtein, similarIdentity, nearMatchIdentity,
-  MIN_FOLD_LEN, MAX_EDITS, MIN_SIMILARITY,
+  foldIdentity, levenshtein, similarIdentity, nearMatchIdentity, tokenSubrunIdentity, nameTokens,
+  MIN_FOLD_LEN, MAX_EDITS, MIN_SIMILARITY, NAME_GENERIC_TOKENS,
 };

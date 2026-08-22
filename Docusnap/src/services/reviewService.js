@@ -252,7 +252,7 @@ function createReviewService(deps = {}) {
         const issuerVal = (allValues && allValues.supplier_name != null) ? String(allValues.supplier_name).trim() : '';
         const acked = !!(payload && payload.acknowledgeIssuerNearMatch === true);
         if (issuerVal && !acked) {
-          const nm = learning.findNearMatchIdentity(db, issuerVal);
+          const nm = learning.findNearMatchIdentity(db, issuerVal, { templateId: docRow.template_id || null });   // card 3: the sub-run arm sees the doc's own layout
           if (nm && nm.near && issuerVal.toLowerCase() !== String(nm.existing).toLowerCase()) {
             audit(db, { action: 'confirm_held_issuer_near_match', target_type: 'document', target_id: document_id,
               document_id, outcome: 'held', actor_username: actorName,

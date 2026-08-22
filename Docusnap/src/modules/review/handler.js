@@ -273,6 +273,9 @@ function register(ctx) {
   ipcMain.handle('check-identity-near-match', (_e, value) => {
     requireLogin();
     try {
+      // Chris r17 card 3: the wizard may pass { value, templateId } so a sub-run hit on the document's own
+      // layout reads as 'prefix-template'; a bare string still works (the ⊕ teach, older callers).
+      if (value && typeof value === 'object') return learning.findNearMatchIdentity(getDb(), value.value, { templateId: value.templateId || null });
       return learning.findNearMatchIdentity(getDb(), value);
     } catch (e) {
       logger?.warn?.(`check-identity-near-match: ${e.message}`);

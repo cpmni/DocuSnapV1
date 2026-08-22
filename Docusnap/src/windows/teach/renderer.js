@@ -1325,13 +1325,20 @@ async function _warnOnIssuerValue(f, r){
   if (!v) return;
   let implausible = false, nm = null;
   try { const res = await D.checkIssuerRead(v); implausible = !!(res && res.implausible); } catch {}
-  try { if (D.checkIdentityNearMatch) nm = await D.checkIdentityNearMatch(v); } catch {}
+  try { if (D.checkIdentityNearMatch) nm = await D.checkIdentityNearMatch({ value: v, templateId: (state.doc && state.doc.template_id) || null }); } catch {}
   // The operator may have moved on (redraw, typed a different value, next field) while we waited.
   if (curField() !== f || String((state.results[f.key]||{}).value||'').trim() !== v) return;
   const host = $('rg-confirm-top'); if (!host) return;
   host.querySelector('.rb-idwarn')?.remove();
   let html = null, offer = null;
-  if (nm && nm.near) {
+  if (nm && nm.near && nm.kind === 'subrun') {
+    // Chris r17 card 3: the box caught ONE line of a stacked name — offer the full name FIRST.
+    const where = nm.source === 'prefix-template' ? 'the name this layout already uses'
+                : nm.source === 'template' ? `the name a saved layout already uses`
+                : `which you already use on ${nm.confirms} document${nm.confirms === 1 ? '' : 's'}`;
+    html = `&#9888; "${esc(v)}" is part of <span class="mono">${esc(nm.existing)}</span>, ${where} — a box over a two-line name often catches one line. Filing as "${esc(v)}" would start a second folder.`;
+    offer = nm.existing;
+  } else if (nm && nm.near) {
     // Tier B (a fresh install) knows the name only from the sender's own frozen layout, not a
     // confirm count — word it accordingly so the sentence is never "on null documents" (card 3).
     const known = nm.source === 'template'

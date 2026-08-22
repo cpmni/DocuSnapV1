@@ -172,8 +172,8 @@ function issuerReadLooksImplausible(value) {
 //
 // ADVISORY ONLY: returns a verdict, changes nothing, blocks nothing. The caller decides whether to
 // offer the incumbent; the operator decides whether to take it.
-function findNearMatchIdentity(db, candidate, { minConfirms = 3 } = {}) {
-  const { nearMatchIdentity } = require('./name_proximity');
+function findNearMatchIdentity(db, candidate, { minConfirms = 3, templateId = null } = {}) {
+  const { nearMatchIdentity, tokenSubrunIdentity } = require('./name_proximity');
   const v = String(candidate == null ? '' : candidate).trim();
   if (!v) return { near: false, reason: 'empty' };
   // Older DBs / fixtures predate confirmed_via (migration 57) — fall back to counting every
@@ -182,16 +182,21 @@ function findNearMatchIdentity(db, candidate, { minConfirms = 3 } = {}) {
   try { db.prepare('SELECT confirmed_via FROM documents LIMIT 0'); } catch { hasVia = false; }
   const { MACHINE_VIAS_SQL } = require('./machine_vias');
   let best = null;
-  const consider = (existing, n, source) => {
+  // Ranking (Chris r17 card 3): Tier A (confirms) > Tier B (template); within a tier an EDIT hit
+  // (kind 'edit') > a SUB-RUN hit (kind 'subrun'); within the same kind, the closer match. A sub-run hit
+  // on the document's OWN template (opts.templateId) is reported as source 'prefix-template' — the
+  // wizard's strongest sentence ("the name this layout already uses").
+  const consider = (existing, n, source, tplId = null) => {
     if (!existing) return;
-    const verdict = nearMatchIdentity(v, existing);
+    let verdict = nearMatchIdentity(v, existing);
+    let kind = 'edit';
+    if (!verdict.near) { verdict = tokenSubrunIdentity(v, existing); kind = 'subrun'; }
     if (!verdict.near) return;
-    // Tier A always beats Tier B; within a tier, the closer match wins.
-    const beatsTier = best && best.source === 'template' && source === 'confirms';
-    const sameTierCloser = best && best.source === source && verdict.similarity > best.similarity;
-    if (!best || beatsTier || sameTierCloser) {
-      best = { near: true, existing, confirms: n, similarity: verdict.similarity, distance: verdict.distance, source };
-    }
+    const tier = (s) => (s === 'confirms' ? 2 : 1);
+    const rank = (b) => tier(b.source === 'prefix-template' ? 'template' : b.source) * 10 + (b.kind === 'edit' ? 1 : 0);
+    const cand = { near: true, existing, confirms: n, similarity: verdict.similarity, distance: verdict.distance, kind,
+                   source: (kind === 'subrun' && source === 'template' && templateId != null && Number(tplId) === Number(templateId)) ? 'prefix-template' : source };
+    if (!best || rank(cand) > rank(best) || (rank(cand) === rank(best) && cand.similarity > best.similarity)) best = cand;
   };
   // Tier A — human confirms.
   try {
@@ -208,12 +213,12 @@ function findNearMatchIdentity(db, candidate, { minConfirms = 3 } = {}) {
   // Tier B — frozen template identities (ASK-only; the fresh-install source).
   try {
     for (const r of db.prepare(`
-      SELECT DISTINCT TRIM(fixed_value) AS v
+      SELECT TRIM(fixed_value) AS v, template_id AS tid
       FROM template_fields
       WHERE field_key = 'supplier_name' AND is_variable = 0
         AND fixed_value IS NOT NULL AND TRIM(fixed_value) <> ''
     `).all()) {
-      consider(r.v, null, 'template');
+      consider(r.v, null, 'template', r.tid);
     }
   } catch { /* older DBs without template_fields — any Tier A result still stands */ }
   return best || { near: false, reason: 'no-near-match' };

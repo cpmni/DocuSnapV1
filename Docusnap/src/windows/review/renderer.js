@@ -5075,7 +5075,7 @@ function _applyTeachValue(fieldKey, value) {
 async function speakIssuerTeach(fieldKey, text) {
   let implausible = false, nm = null;
   try { const r = await window.docusnap.checkIssuerRead(text); implausible = !!(r && r.implausible); } catch {}
-  try { nm = await window.docusnap.checkIdentityNearMatch(text); } catch {}
+  try { nm = await window.docusnap.checkIdentityNearMatch({ value: text, templateId: currentDoc?.template_id || null }); } catch {}
   const read = `I read <span class="ar-val">${escHtml(text)}</span> from your box.`;
   if (nm && nm.near) {
     // Tier A names how many documents already use the name; Tier B (a fresh install, where the only
@@ -5084,7 +5084,9 @@ async function speakIssuerTeach(fieldKey, text) {
       ? `<span class="ar-val">${escHtml(nm.existing)}</span>, the name this sender's saved layout already uses`
       : `<span class="ar-val">${escHtml(nm.existing)}</span>, which you already use on ${nm.confirms} document${nm.confirms === 1 ? '' : 's'}`;
     showTeachMessage(
-      `&#9888; ${read} That is <strong>${nm.distance === 1 ? 'one character' : nm.distance + ' characters'}</strong> different from `
+      (nm.kind === 'subrun'
+        ? `&#9888; ${read} That is part of `
+        : `&#9888; ${read} That is <strong>${nm.distance === 1 ? 'one character' : nm.distance + ' characters'}</strong> different from `)
       + `${_known}. `
       + `Two spellings would file this sender into two folders.`,
       { warn: true, actions: [
@@ -5592,6 +5594,9 @@ function showIssuerNearMatchHold(nm, idx, supplier) {
   const lead = nm.source === 'letterhead'
     ? `The letterhead on this page reads <strong>${known}</strong> — the issuer box read "${escHtml(cur)}". `
       + `Filing as "${escHtml(cur)}" would start a new sender folder. `
+    : nm.kind === 'subrun'
+    ? `"${escHtml(cur)}" is part of <strong>${known}</strong>${nm.source === 'prefix-template' ? ', the name this layout already uses' : ''} — `
+      + `a box over a two-line name often catches one line. Filing as "${escHtml(cur)}" would start a second folder. `
     : `"${escHtml(cur)}" is <strong>${diff}</strong> off <strong>${known}</strong>, which you already use — `
       + `two spellings would file this sender into two folders. `;
   note.innerHTML = lead
