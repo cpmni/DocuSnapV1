@@ -188,6 +188,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   // predicate in learning.js so the teach surfaces cannot grow their own copy of it.
   checkIssuerRead:     (value)      => ipcRenderer.invoke('check-issuer-read', value),
   checkIdentityNearMatch: (value)   => ipcRenderer.invoke('check-identity-near-match', value),
+  checkTypeSplit:      (p)          => ipcRenderer.invoke('check-type-split', p),   // A3: {supplier_name, document_type_slug}
   getFieldPatterns:      ()         => ipcRenderer.invoke('get-field-patterns'),
   getFieldSuggestions:   (docId, key) => ipcRenderer.invoke('get-field-suggestions', docId, key),
 

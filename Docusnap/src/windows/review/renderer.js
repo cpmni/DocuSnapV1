@@ -5128,7 +5128,7 @@ function extractLabel(text) { return window.AnchorLabel.extractLabel(text); }
 // blindly — and the on-screen-image steps (logo-fingerprint save + image-clear
 // animation) are skipped, since File All cycles documents itself. The file-by-
 // file behaviour is otherwise unchanged.
-async function confirmCurrentDoc({ bulk = false, expectId = null, acknowledgePrefixOutlier = null, acknowledgeIssuerNearMatch = null } = {}) {
+async function confirmCurrentDoc({ bulk = false, expectId = null, acknowledgePrefixOutlier = null, acknowledgeIssuerNearMatch = null, acknowledgeTypeSplit = null } = {}) {
   if (!currentDoc) return { error: 'No document selected.' };
   // Bulk-race guard: the caller (File All Ready) captures the doc it intends to
   // file; if a delete / row-click reassigned the module-global `currentDoc` in an
@@ -5212,6 +5212,8 @@ async function confirmCurrentDoc({ bulk = false, expectId = null, acknowledgePre
     acknowledgePrefixOutlier,
     // Chris round 6: "Keep what I typed" past the issuer near-match hold (a deliberate second company).
     acknowledgeIssuerNearMatch,
+    // A3 (type-split arc): "Keep as <type>" past the type-split ask (a deliberate second type).
+    acknowledgeTypeSplit,
   });
 
   if (!result?.success) {
@@ -5343,6 +5345,46 @@ function showPrefixOutlierHold(detail, idx, supplier) {
 // files under one folder), or keep what was typed as a genuinely separate company (acknowledged, so
 // the gate lets it through). Mirrors showPrefixOutlierHold; reuses the .field-note + .prefix-ack-btn
 // styling so it looks and dismisses like the reference hold.
+// A3 (type-split arc, 2026-08-22; Oracle S2-js-a): the TYPE-SPLIT hold. reviewService refused the
+// confirm because this issuer's history (N confirmed docs) is 100 % one other type. Two honest
+// answers, inline under the type select: change the type (focus the select — the field list follows
+// it, the operator confirms again as usual) or keep the chosen type (acknowledge → files; once filed,
+// the history is no longer 100 % one type and the ask never fires again for this sender).
+function showTypeSplitHold(ts, idx, groupKey) {
+  const sel = document.getElementById('doctype-select');
+  const host = sel?.closest('.field-row, .type-row, .doctype-row') || sel?.parentElement;
+  if (!host || !ts || !ts.established_name) {
+    showToast(ts && ts.message ? ts.message : 'This sender has only ever filed as one document type — check the type before filing.', 'warn');
+    return;
+  }
+  host.querySelector('.field-note.type-split-hold')?.remove();
+  const note = document.createElement('div');
+  note.className = 'field-note type-split-hold';
+  const est = escHtml(ts.established_name), typed = escHtml(ts.typed_name || ts.typed_slug || 'this type');
+  note.innerHTML = `<strong>${escHtml(ts.supplier || '')}</strong> files as <strong>${est}</strong> (${Number(ts.count) || 0} so far). `
+    + `File this one as <strong>${typed}</strong>? `
+    + `<button type="button" class="prefix-ack-btn tsh-change-btn">Change the type</button> `
+    + `<button type="button" class="prefix-ack-btn tsh-keep-btn">Keep ${typed}</button>`;
+  host.appendChild(note);
+  note.querySelector('.tsh-change-btn')?.addEventListener('click', () => {
+    note.remove();
+    try { sel.focus(); if (typeof sel.showPicker === 'function') sel.showPicker(); } catch {}
+  });
+  note.querySelector('.tsh-keep-btn')?.addEventListener('click', async () => {
+    note.remove();
+    const r2 = await confirmCurrentDoc({ acknowledgeTypeSplit: true });
+    if (r2.cancelled) return;
+    if (r2.code === 'PREFIX_OUTLIER') { showPrefixOutlierHold(r2.prefixOutlier, idx, ts.supplier); return; }
+    if (r2.code === 'ISSUER_NEAR_MATCH') { showIssuerNearMatchHold(r2.nearMatch, idx, ts.supplier); return; }
+    if (r2.error || r2.code) { showToast(r2.error || 'Confirm failed.', 'err'); return; }
+    updateTabCounts();
+    advanceAfterAction(idx, groupKey);
+    refreshScopeReadiness().then(() => renderQueueList()).catch(() => {});
+    try { window.docusnap.markFocusSuspect?.(); } catch {}
+    window.docusnap.notifyReviewComplete();
+  });
+}
+
 function showIssuerNearMatchHold(nm, idx, supplier) {
   const row = document.querySelector('#fields-scroll .field-row[data-key="supplier_name"]');
   const input = row?.querySelector('.field-input');
@@ -5424,6 +5466,9 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
   // Chris round 6: the typed issuer is one/two characters off a company already in use — offer the
   // known spelling or an explicit "keep what I typed", inline on the issuer field, before filing.
   if (r.code === 'ISSUER_NEAR_MATCH') { showIssuerNearMatchHold(r.nearMatch, idx, supplier); return; }
+  // A3 (type-split arc): this issuer has only ever filed as ONE other type — ask once, inline on the
+  // type select, before a mistyped confirm plants a rival template on the letterhead.
+  if (r.code === 'TYPE_SPLIT') { showTypeSplitHold(r.typeSplit, idx, _groupKey); return; }
   if (r.error) { showToast(r.error, 'err'); return; }
   updateTabCounts();
   advanceAfterAction(idx, _groupKey);

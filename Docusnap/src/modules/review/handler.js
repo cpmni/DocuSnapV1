@@ -247,6 +247,22 @@ function register(ctx) {
   //
   // Advisory only: no write, no block, no rewrite. A failure returns "not near", so a broken
   // lookup can never stop a teach (the same posture as check-issuer-read).
+  // A3 (type-split arc): PURE pre-check — would confirming `document_type_slug` for this issuer split
+  // a 100 %-one-type history? The teach wizard asks BEFORE it promotes (it promotes before it
+  // confirms, so a gate fail at confirm would leave a half-born template); reviewService's gate is the
+  // pre-claim backstop. Advisory: a failure returns {split:false}.
+  ipcMain.handle('check-type-split', (_e, p) => {
+    requireLogin();
+    try {
+      if (learning.getSetting(getDb(), 'type_split_confirm_gate', 'true') === 'false' || process.env.TYPE_SPLIT_CONFIRM_GATE === '0') {
+        return { split: false, reason: 'off' };
+      }
+      return require('../../../database/modules/typeSplit').checkTypeSplit(getDb(), p && p.supplier_name, p && p.document_type_slug);
+    } catch (e) {
+      logger?.warn?.(`check-type-split: ${e.message}`);
+      return { split: false, reason: 'error' };
+    }
+  });
   ipcMain.handle('check-identity-near-match', (_e, value) => {
     requireLogin();
     try {

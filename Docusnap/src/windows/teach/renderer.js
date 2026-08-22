@@ -1846,6 +1846,24 @@ async function doCommit(){
     // template's identity). The name is what Review shows as "Recognised by" — it must be the
     // corrected value, not the read the operator just fixed.
     const supplier = allValues.supplier_name || allValues.supplier || state.doc.supplier_name || null;
+    // A3 (type-split arc, 2026-08-22; Oracle S2-js-a-1): ask BEFORE the template is born. The wizard
+    // promotes before it confirms, so reviewService's own gate would fire too late (a half-born
+    // template with no confirmed document). One question, once per sender-type split; advisory.
+    if (!state.typeSplitAck && D.checkTypeSplit) {
+      let ts = null;
+      try { ts = await D.checkTypeSplit({ supplier_name: supplier, document_type_slug: state.docTypeSlug }); } catch {}
+      if (ts && ts.split) {
+        const est = esc(ts.established_name), typed = esc(ts.typed_name || state.docTypeSlug);
+        $('commit-err').innerHTML = `<strong>${esc(ts.supplier || supplier || '')}</strong> files as <strong>${est}</strong> `
+          + `(${Number(ts.count) || 0} so far). Teach this one as <strong>${typed}</strong>? `
+          + `<button type="button" class="btn-sm" id="ts-keep">Yes, teach it as ${typed}</button> `
+          + `<button type="button" class="btn-sm" id="ts-back">No — go back and change the type</button>`;
+        next.disabled=false; next.textContent='Save';
+        $('ts-keep')?.addEventListener('click', () => { state.typeSplitAck = true; $('commit-err').textContent=''; doCommit(); });
+        $('ts-back')?.addEventListener('click', () => { $('commit-err').textContent=''; try { $('btn-back')?.click(); } catch {} });
+        return;
+      }
+    }
     // 1) create/refresh the template + pin this page as the sample (→ landmarks)
     const promo=await D.promoteToTemplate({
       document_id:state.doc.id, allValues, document_type_slug:state.docTypeSlug, supplier_name:supplier,
@@ -1888,6 +1906,7 @@ async function doCommit(){
     }
     // 3) file the document via the normal confirm path (runs learning)
     const conf=await D.confirmReview({
+      acknowledgeTypeSplit: !!state.typeSplitAck,   // A3: the wizard already asked (pre-promote)
       document_id:state.doc.id, folder_path:state.doc.folder_path, original_filename:state.doc.original_filename,
       allValues, supplier_name:supplier, document_type:state.docTypeName, document_type_slug:state.docTypeSlug,
       corrections:[], taught_fields:state.fields.map(f=>f.key),

@@ -35,7 +35,7 @@ let filingMode = 'ok';   // 'ok' | 'fail'
 const calls = { audit: [], saveCorrections: 0, notifyCounts: 0, sourceMove: 0, taught: 0, captured: 0, commit: 0 };
 const deps = {
   documents,
-  learning: { getSetting: (d, key, def) => (key === 'issuer_near_match_confirm_guard' || key === 'review_group_by_letterhead')
+  learning: { getSetting: (d, key, def) => (key === 'issuer_near_match_confirm_guard' || key === 'review_group_by_letterhead' || key === 'type_split_confirm_gate')
                 ? require('../../database/modules/learning').getSetting(d, key, def)   // honour the real DB row for the toggle tests
                 : '/out',
     saveCorrections: (_db, _id, corr, _s, _slug, allValues) => { calls.saveCorrections++; calls.lastAllValues = allValues; calls.lastCorrections = corr; },
@@ -228,6 +228,57 @@ const basePayload = (id, extra = {}) => ({
   const rG4 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, garblePayload(dG4));
   check('  → note but NO suggestion (whole-token disagreement, slice 2 abstained) → no hold (byte-identical)', rG4.ok === true);
   db.prepare("DELETE FROM settings WHERE key='review_group_by_letterhead'").run();
+
+  // ── TYPE-SPLIT ask (A3 of the type-split arc, 2026-08-22; Oracle S2-js-a): confirming a type the
+  //    issuer has NEVER filed as, when its history (≥3 confirmed) is 100 % one other type, is HELD
+  //    pre-claim with code TYPE_SPLIT (same payload shape as ISSUER_NEAR_MATCH). Ack files; bulk and
+  //    machine vias never ask; re-file is NOT exempt; setting OFF → byte-identical. Default ON. ───────
+  db.prepare("INSERT INTO document_types (id, name, slug, built_in) VALUES (7, 'Quote', 'quote', 0)").run();
+  for (let i = 0; i < 3; i++) db.prepare(
+    "INSERT INTO documents (original_filename, folder_path, status, supplier_name, document_type_id) VALUES ('q.pdf','/in','confirmed','Nordwind Refrigeration Ltd',7)").run();
+  const tsPayload = (id, extra = {}) => basePayload(id, {
+    supplier_name: 'Nordwind Refrigeration Ltd',
+    allValues: { supplier_name: 'Nordwind Refrigeration Ltd', invoice_number: 'NRQ-2551', invoice_date: '01-01-2026' },
+    corrections: {}, ...extra });
+  const commitsBeforeTS = calls.commit;
+  const dTS = newDoc(db);
+  const rTS = await svc.confirm(db, { username: 'sarah', role: 'admin' }, tsPayload(dTS));
+  check('type-split: 3 quotes + an Invoice confirm → ok:false, code TYPE_SPLIT', rTS.ok === false && rTS.code === 'TYPE_SPLIT');
+  check('  → names the established type + count and the typed type', rTS.typeSplit && rTS.typeSplit.established_slug === 'quote'
+        && rTS.typeSplit.count === 3 && rTS.typeSplit.typed_slug === 'invoice');
+  check('  → did NOT file (held pre-claim)', calls.commit === commitsBeforeTS && get(db, dTS).status === 'needs_review');
+  check('  → audited as confirm_held_type_split', calls.audit.some(e => e.action === 'confirm_held_type_split' && e.document_id === dTS));
+  const rTSack = await svc.confirm(db, { username: 'sarah', role: 'admin' }, tsPayload(dTS, { acknowledgeTypeSplit: true }));
+  check('  → "Keep <type>" (acknowledge) files', rTSack.ok === true && calls.commit === commitsBeforeTS + 1);
+  const dTS2 = newDoc(db);
+  const rTS2 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, tsPayload(dTS2));
+  check('  → once the second type is confirmed the history is mixed → no further ask', rTS2.ok === true);
+  // reset to a 100 %-one-type history for the remaining cases
+  db.prepare("DELETE FROM documents WHERE id IN (?, ?)").run(dTS, dTS2);
+  const dTSb = newDoc(db);
+  const rTSb = await svc.confirm(db, { username: 'sarah', role: 'admin' }, tsPayload(dTSb, { bulk: true }));
+  check('  → bulk never asks (no affordance on that route)', rTSb.ok === true);
+  db.prepare("DELETE FROM documents WHERE id = ?").run(dTSb);
+  const dTSm = newDoc(db);
+  const rTSm = await svc.confirm(db, { username: 'sarah', role: 'admin' }, tsPayload(dTSm), { via: 'scope_sweep' });
+  check('  → a machine via never asks', rTSm.ok === true);
+  db.prepare("DELETE FROM documents WHERE id = ?").run(dTSm);
+  const dTSq = newDoc(db);
+  const rTSq = await svc.confirm(db, { username: 'sarah', role: 'admin' }, tsPayload(dTSq, { document_type: 'Quote', document_type_slug: 'quote' }));
+  check('  → the established type itself files straight through', rTSq.ok === true);
+  const dTSr = newDoc(db);
+  await svc.confirm(db, { username: 'sarah', role: 'admin' }, tsPayload(dTSr, { document_type: 'Quote', document_type_slug: 'quote' }));
+  // the doctypes stub always answers with the Invoice type id — pin the two quote confirms to type 7 so the
+  // history stays 100 % Quote (what the real getWithFields would have stored)
+  db.prepare("UPDATE documents SET document_type_id = 7 WHERE id IN (?, ?)").run(dTSq, dTSr);
+  const rTSr = await svc.confirm(db, { username: 'sarah', role: 'admin' }, tsPayload(dTSr, { allowRefile: true }));
+  check('  → a RE-FILE changing the type is NOT exempt (Edit in Review is where a type gets changed)', rTSr.ok === false && rTSr.code === 'TYPE_SPLIT');
+  db.prepare("INSERT OR REPLACE INTO settings (key,value) VALUES ('type_split_confirm_gate','false')").run();
+  const dTSoff = newDoc(db);
+  const rTSoff = await svc.confirm(db, { username: 'sarah', role: 'admin' }, tsPayload(dTSoff));
+  check('  → the setting can be turned OFF (files without a hold)', rTSoff.ok === true);
+  db.prepare("DELETE FROM settings WHERE key='type_split_confirm_gate'").run();
+  db.prepare("DELETE FROM documents WHERE supplier_name = 'Nordwind Refrigeration Ltd'").run();
 
   // ── defer / restore CAS ───────────────────────────────────────────────────────
   const d6 = newDoc(db);

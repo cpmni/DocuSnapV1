@@ -40,6 +40,7 @@ function createReviewService(deps = {}) {
   const doctypes  = deps.doctypes  || require('../../database/modules/document_types');
   const templates = deps.templates || require('../../database/modules/templates');
   const prefixOutlier = deps.prefixOutlier || require('../../database/modules/prefix_outlier');
+  const typeSplit = deps.typeSplit || require('../../database/modules/typeSplit');   // A3: the type-split ask
   const filing    = deps.filing    || require('../modules/filing/handler');
   const foreignFields = deps.foreignFields || require('../lib/foreignFields');
   const fs   = deps.fs   || require('fs');
@@ -277,6 +278,33 @@ function createReviewService(deps = {}) {
         }
       } catch (e) {
         if (logger && logger.warn) logger.warn('issuer near-match confirm gate skipped: ' + (e && e.message));
+      }
+    }
+
+    // ── TYPE-SPLIT ask (A3 of the type-split arc, 2026-08-22; gary → Oracle SIGN-OFF-W/COND) ────
+    // Confirming a type the issuer has NEVER filed as, when its history (≥3 confirmed docs) is 100 %
+    // one other type, is asked about ONCE before filing — the owner's mis-confirm of one quote as a
+    // Purchase Order bore a rival template and held 17 siblings. Human, non-bulk confirms only (a
+    // bulk route carries no affordance; machine vias never invent a type); NOT exempt on re-file
+    // (Oracle: "Edit in Review" is exactly where a type gets changed). Pre-claim; advisory; fails
+    // OPEN. The Review window shows an inline Keep/Change; the teach wizard asks BEFORE it promotes
+    // (check-type-split IPC) so a template is never born half-committed — this gate is the backstop.
+    // Same fail/ack payload shape as ISSUER_NEAR_MATCH so the /v1 client degrades to a message.
+    // Setting `type_split_confirm_gate` (default ON), env TYPE_SPLIT_CONFIRM_GATE=0 kills.
+    if (!_via && !bulk
+        && process.env.TYPE_SPLIT_CONFIRM_GATE !== '0'
+        && learning.getSetting(db, 'type_split_confirm_gate', 'true') !== 'false'
+        && !(payload && payload.acknowledgeTypeSplit === true)) {
+      try {
+        const ts = typeSplit.checkTypeSplit(db, confirmedSupplier, document_type_slug);
+        if (ts && ts.split) {
+          audit(db, { action: 'confirm_held_type_split', target_type: 'document', target_id: document_id,
+            document_id, outcome: 'held', actor_username: actorName,
+            metadata: { supplier: ts.supplier, established: ts.established_slug, typed: ts.typed_slug, count: ts.count } });
+          return fail('TYPE_SPLIT', ts.message, { typeSplit: ts });
+        }
+      } catch (e) {
+        if (logger && logger.warn) logger.warn('type-split confirm gate skipped: ' + (e && e.message));
       }
     }
 
