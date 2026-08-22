@@ -665,3 +665,20 @@ The DOCUMENT / SOLUTIONS wordmark: the app knows the right name, says so, and st
 
 ## Humility
 My Search "Send back (39)" and "Put back" shaped the history that the type-split gate reads; a customer's order of events would differ, and the "thin/mixed" silence may be intended. I drove boxes by locating words, so a human's sloppier rectangle could change the wordmark reads. The "39" tile and the stuck banner might be window-refresh artefacts rather than logic. Screenshots are of a 1920-wide window; smaller screens may differ. Nothing here should change code without the owner's go.
+
+---
+
+## Round 17 TRIAGE + FIXES (2026-08-23 overnight, owner asleep — "take chris's recommendations to the agents, plan and fix")
+Every card went to the advisors (gary for the engine/DB classes, eric for the Review/IPC classes) and was Oracle-gated; one commit per card; plain bugs shipped, behaviour widenings DARK behind their own switch; zero-misfile rule kept (realdoc gate on the re-freeze: byte-identical, M=0). Nothing pushed.
+| Card | Verdict | Fix (commit) |
+|---|---|---|
+| 1 near-match / type-split holds never shown | BUG | `99b90f1` the refused-confirm return now carries `nearMatch` + `typeSplit`; RIDER `320433f`: one kept slip no longer silences the type-split ask ('mixed' needs ≥2 of the second type) |
+| 2 "Gay" / "DOCUMENT" folders from a stacked wordmark | SYSTEM (three mechanisms) | `72a75bd` wide debris leg (DARK `template_fixed_debris_wide`) + JUNK kind of the letterhead suggestion; `875a433` a scope only "has a template" when that template's identity IS the scope; `11ca0ba` **the identity UNFREEZE class** (type-wide distinct count unfroze every template's identity) → per-template dominance + loud guard + `scripts/refreeze-template-identity-20260823.js` (owner applies live: 5 templates) |
+| 3 one-line drawn teach creates "DOCUMENT" unasked | SYSTEM | `9ae6c2b` the sub-run arm of the near-match finder asks with the full name first (typed AND drawn; ⊕ read-back too) |
+| 4 tile vs strip contradict | UX | `e9106aa` the tile yields under the strip; its count derives from status + door (no more "39 filed" over 35 in-queue docs) |
+| 5a File All leaves no chip / 5b "N ready" counts blank issuers | BUG | `e9106aa` one bulk chip "You filed N in one go" (ledger merges by kind); `320433f` a blank issuer is 'missing', never 'ready' |
+| 6 Reprocess copy + stuck import banner | BUG + copy | `e9106aa` banner self-heals (main + a 30 s re-pull); the dialog says a clean re-read WILL file when the sender files by itself |
+| 7 Put back offered after it was done | BUG | `2cf5f26` `markUndone`; second press → "Already back in Review." |
+| 8 sender change wipes fields / stale badge / toast / ghost folders / "from Learning Repair" | mixed | `e9106aa` "Sent back from Search"; the clearing IS the anti-bleed rule (kept); badge/toast/empty-folder items queued (cosmetic) |
+| OWNER card 1 (Chris 15) "files by itself" over a waiting pile | SYSTEM | `740a243` the READY arm of the quiet lane (DARK `quiet_reread_on_ready_templated`): template-carrying siblings below the floor re-read at the ready crossing. Cannot help an all-generic name (DS) — skipped + audited |
+

@@ -155,6 +155,8 @@ Also owed from earlier tonight: a Chris round with the three garbled-issuer swit
 | B1 ledger + doors + IPC | `3676415` | DARK (records regardless; nothing renders). `review_events` is a protected setting. |
 | B2 chip strip | `44b6661` | DARK `review_activity_strip`. |
 | B3 retire the tiles | — | NOT STARTED (Oracle SEND BACK until the trace list above is closed). |
+| B3 (partial) tile yields | `e9106aa` | Chris r17 card 4: under the strip (`_asOn`) the tile returns early (after the "viewing" branch) and `get-recent-auto-filed` derives from status + door. The tile still renders with the strip OFF — full retirement stays SEND BACK. |
+| B1 bulk door | `e9106aa` | Chris r17 card 5a: File All Ready records one bulk `approved` chip; the ledger merges into the newest SAME-KEY event within the gap. |
 
 **Pre-existing reds recorded:** `test_teach_multipage.js` (a comment at teach/renderer.js:28 matches its own "discard" regex — red before A3); `test_offer_prune.js` was red on any `core.autocrlf` checkout (CRLF) — FIXED in `44b6661`. Python: the documented `test_identity_fusion` + 6 script-style reds, zero new.
 
