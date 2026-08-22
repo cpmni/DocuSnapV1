@@ -1024,7 +1024,11 @@ def main():
             if doc_type_result is None and os.environ.get("TYPE_HEADING_NUDGE", "1") != "0":   # default ON 2026-07-30; =0 disables
                 try:
                     from extraction.keyword import _harvest_top_band_heading
-                    _hh = _harvest_top_band_heading(ocr_text.split("\n"), known_type_names)
+                    # Q4a: the issuer READ (resolved identity + the supplier_name field value) is
+                    # handed in so it is never offered back as a document TYPE.
+                    _issuer_reads = [supplier_name,
+                                     (extractions.get("supplier_name") or {}).get("value") if isinstance(extractions.get("supplier_name"), dict) else None]
+                    _hh = _harvest_top_band_heading(ocr_text.split("\n"), known_type_names, exclude_texts=_issuer_reads)
                     if _hh:
                         doc_type_result = _hh
                         log(f"  Detected uninstalled type heading '{_hh}' -> UNTYPED + Add-type nudge")

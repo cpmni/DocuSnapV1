@@ -717,6 +717,10 @@ document.getElementById('doctype-select').addEventListener('change', (e) => {
   if (currentDoc) {
     currentDoc.type_slug             = selectedTypeSlug;
     currentDoc.document_type_slug    = selectedTypeSlug;
+    // Q4a (Chris round 14 card 5, Oracle C4a.5): the "This looks like a <type> — Add it" card keys on
+    // document_type_id and stayed on screen after a type was chosen. Follow the choice and re-render.
+    currentDoc.document_type_id      = dt ? (dt.id ?? null) : null;
+    try { renderReviewReason(currentDoc); } catch {}
   }
   // Re-render fields preserving current input values
   const existing = {};

@@ -667,16 +667,69 @@ _HARVEST_STOP = frozenset({
 })
 
 
-def _harvest_top_band_heading(lines, installed_type_names=None):
+def _tokens_covered(a, b):
+    """Every token of `a` has a match in `b` — equal, or an OCR-garble of it (both >= 5 chars and
+    difflib ratio >= 0.8: 'olutions' ~ 'solutions'). Used by the Q4a issuer exclusion so a garbled
+    sibling line ('DOCUMENT OLUTIONS' against the read 'DOCUMENT SOLUTIONS') is still recognised as
+    the issuer and never offered as a type. Subtractive only."""
+    if not a or not b:
+        return False
+    from difflib import SequenceMatcher
+    for t in a:
+        if t in b:
+            continue
+        if len(t) >= 5 and any(len(u) >= 5 and SequenceMatcher(None, t, u).ratio() >= 0.8 for u in b):
+            continue
+        return False
+    return True
+
+
+def _harvest_top_band_heading(lines, installed_type_names=None, exclude_texts=()):
     """Best-effort dominant standalone TYPE heading — an UNINSTALLED type like 'Worksheet' — from the
     top band, to seed the "Add <type>" nudge when the type-presence gate/veto leaves a doc UNTYPED.
     CONSERVATIVE: returns None on any ambiguity (a wrong harvest = a confusing nudge; None = plain
     untyped, safe). Skips line 0 (letterhead); a candidate is the leftmost column segment of a line
     that is an ALL-CAPS standalone of 1-2 alpha words (each >=3 chars) — the shape a real type BANNER
     takes ("WORKSHEET", "DELIVERY DOCKET") — that is neither a field caption nor an already-installed
-    type (an installed type would have been detected and typed the doc)."""
+    type (an installed type would have been detected and typed the doc).
+
+    Q4a (Chris round 14 card 5, gary → Oracle SIGN-OFF-W/COND C4a.1–C4a.5, 2026-08-22): on the
+    owner's stacked-wordmark scans the nudge offered the ISSUER read as a TYPE ("This looks like a
+    Document Olutions…", siblings "Add “Document”"). Two arms, each its own env switch:
+      TYPE_NUDGE_ISSUER_EXCLUDE (default ON; =0 restores today) — SUBTRACTIVE: a candidate whose
+        tokens are a subset/superset of the issuer READ's tokens (`exclude_texts` — the read VALUE
+        only, NEVER the raw band lines: those are the first six lines verbatim and would kill every
+        top-band title, the dead-guard class), or whose EVERY word is a generic company token
+        (template_matcher._GENERIC_NAME_TOKENS — "DOCUMENT" dies, "SERVICE WORKSHEET" survives because
+        'worksheet' is not generic), is skipped and the scan continues. Only ever REMOVES a nudge →
+        fails toward "no nudge".
+      TYPE_NUDGE_L0 (default ON — census 2026-08-22 over the r14 sandbox, 221 docs: +16 correct, 0 new
+        wrong; =0 reverts) — ADDITIVE: on 17 of the owner's 22 scans
+        the real title "SERVICE WORKSHEET" IS line 0 (a title set ABOVE a graphic wordmark — Tesseract
+        emits it as row 0), which the positional letterhead skip throws away. Line 0 becomes
+        admissible ONLY when the issuer read is non-empty and line 0 is not it (with no issuer, a
+        letterhead and a title at line 0 are indistinguishable — keep skipping)."""
+    import os
+    import re as _re
     installed_lc = {str(n).strip().lower() for n in (installed_type_names or [])}
-    for line in (lines or [])[1:12]:                              # skip L0 (letterhead); top band only
+    issuer_excl = os.environ.get("TYPE_NUDGE_ISSUER_EXCLUDE", "1") != "0"
+    l0_on = os.environ.get("TYPE_NUDGE_L0", "1") != "0"      # default ON 2026-08-22 (census: +16 correct, 0 new wrong over 221 docs); =0 reverts
+    excl_toks = []
+    if issuer_excl:
+        for t in (exclude_texts or ()):
+            toks = set(_re.findall(r"[a-z0-9]+", str(t or "").lower()))
+            if toks:
+                excl_toks.append(toks)
+    generic = frozenset()
+    if issuer_excl:
+        try:
+            from extraction.template_matcher import _GENERIC_NAME_TOKENS as generic
+        except Exception:
+            generic = frozenset()
+    start = 0 if (l0_on and excl_toks) else 1                  # L0 admissible only with a known issuer
+    for idx, line in enumerate((lines or [])[:12]):            # top band only
+        if idx < start:
+            continue                                            # skip L0 (letterhead) — the default
         seg = _COL_BREAK_RE.split((line or "").strip())[0].strip()
         words = seg.split()
         if not (1 <= len(words) <= 2):
@@ -688,6 +741,12 @@ def _harvest_top_band_heading(lines, installed_type_names=None):
         low = seg.lower()
         if low in installed_lc or any(w.lower() in _HARVEST_STOP for w in words):
             continue
+        if issuer_excl:
+            seg_toks = set(w.lower() for w in words)
+            if any(_tokens_covered(seg_toks, e) or _tokens_covered(e, seg_toks) for e in excl_toks):
+                continue                                        # the issuer read is not a type
+            if generic and all(w.lower() in generic for w in words):
+                continue                                        # "DOCUMENT" / "SERVICES" — company words
         return seg.title()                                        # "WORKSHEET" -> "Worksheet"
     return None
 

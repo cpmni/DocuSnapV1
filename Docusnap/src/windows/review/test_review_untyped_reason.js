@@ -70,5 +70,15 @@ const trust = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'database',
 check("isAutoFileEligible still refuses a null-type doc with 'no-type' (unconditional)",
       /!doc\.document_type_id/.test(trust) && /'no-type'/.test(trust));
 
+console.log('\nQ4a (Chris round 14 card 5): the "Add <type>" card follows a type choice');
+{
+  const i = renderer.indexOf("document.getElementById('doctype-select').addEventListener('change'");
+  const handler = renderer.slice(i, renderer.indexOf('\n});\n', i));
+  check('the type-change handler updates currentDoc.document_type_id to the chosen type (null when none)',
+        /currentDoc\.document_type_id\s+= dt \? \(dt\.id \?\? null\) : null;/.test(handler));
+  check('...and re-renders the review reason so the card disappears the moment a type is chosen',
+        /renderReviewReason\(currentDoc\)/.test(handler));
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nAll untyped-reason checks passed');
 process.exit(fails ? 1 : 0);
