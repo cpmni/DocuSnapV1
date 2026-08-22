@@ -326,7 +326,12 @@ function create(deps) {
     // FIRST-FILLS (empty → valued) is held with a note unless the read is page-corroborated — the
     // misfile the Oracle named is a drifted ⊕ box first-filling an empty ref with a same-shape
     // neighbour code; S3-C5 has no prior value to compare and the sweep's gate would pass the shape.
-    if (job.reasons && job.reasons.has('layout')) {
+    // SCOPE (Chris round 16 card 2): ONLY a document the LAYOUT ARM selected (a template-carrying
+    // sibling re-read under its stored binding) — never the teach-time re-read of template-less docs
+    // (Slice 3's signed path), even when the wizard's mapping saves put 'layout' in the same job's
+    // reasons. Round 16: every first-filled DS date got "confirm once" at the TEACH, and a generic-
+    // named sender (no layout arm) could never shed it.
+    if (nd.via === 'layout') {
       try { const ff = _holdFirstFills(db, nd.docId, nd.existing); if (ff.length) job.changed.push({ docId: nd.docId, fields: ff, firstFill: true }); } catch {}
     }
     job.done.push(nd.docId);

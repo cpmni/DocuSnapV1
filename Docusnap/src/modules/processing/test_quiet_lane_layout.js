@@ -67,7 +67,7 @@ const lane = quietLane.create({
   getDb: () => db,
   enabled: () => laneOn,
   isForegroundBusy: () => false,
-  stageDocs: (d, chunk) => { staged.push(chunk.map(c => c.docId)); return { tmpNames: chunk.map(c => `rb_${c.docId}.pdf`), nameToDoc: Object.fromEntries(chunk.map(c => [`rb_${c.docId}.pdf`, { docId: c.docId, filename: c.filename, existing: d.prepare('SELECT * FROM extractions WHERE document_id = ?').all(c.docId) }])), cleanup: () => {} }; },
+  stageDocs: (d, chunk) => { staged.push(chunk.map(c => c.docId)); return { tmpNames: chunk.map(c => `rb_${c.docId}.pdf`), nameToDoc: Object.fromEntries(chunk.map(c => [`rb_${c.docId}.pdf`, { docId: c.docId, filename: c.filename, via: c.via || null, existing: d.prepare('SELECT * FROM extractions WHERE document_id = ?').all(c.docId) }])), cleanup: () => {} }; },
   runShard: ({ staged: st, onFileDone }) => new Promise(res => { shardResolve = res; if (fakeResult) for (const name of st.tmpNames) onFileDone({ ...fakeResult, original_filename: name, success: true }); }),
   applyResult: (d, docId, existing, msg) => {
     // simulate the merge: replace the rows with the fresh read
@@ -194,6 +194,18 @@ const finishRun = async () => { shardResolve && shardResolve(); await sleep(80);
   await sleep(150); await finishRun();
   const f4ref = db.prepare("SELECT display_value, validation_note FROM extractions WHERE document_id = ? AND field_key = 'invoice_number'").get(F4);
   check('C3.6: F4 valued→EMPTY merged as EMPTY (held missing-required), the old INV-44 NOT restored, no note', f4ref && !(f4ref.display_value || '').trim() && !(f4ref.validation_note || '').trim());
+  // Chris round 16 card 2: the hold is SCOPED to docs the layout ARM selected. A template-LESS doc
+  // re-read by the teach arms in a job that also carries 'layout' (the wizard's mapping saves + its
+  // taught confirm coalesce) is Slice 3's signed path — its first-fills must NOT be held.
+  const F5 = mk(SUP, { rows: [{ key: 'supplier_name', value: SUP, method: 'letterhead_prefill' }] });   // template-less, arm (a)
+  fakeResult = { extractions: { supplier_name: { value: SUP, method: 'template_fixed' }, invoice_number: { value: 'PO-7781', method: 'template_mapping' }, invoice_date: { value: '01-08-2026', method: 'template_mapping' } } };
+  corrobOk = false;
+  lane.schedule(db, { supplier: SUP, typeSlug: 'invoice', reason: 'teach' });
+  lane.schedule(db, { supplier: SUP, typeSlug: 'invoice', reason: 'layout' });   // the wizard's mapping save lands in the same debounce
+  await sleep(150); await finishRun();
+  const f5ref = db.prepare("SELECT display_value, validation_note FROM extractions WHERE document_id = ? AND field_key = 'invoice_number'").get(F5);
+  check('Chris r16 card 2: a template-LESS doc (teach arm) in a teach+layout job is first-filled WITHOUT the "confirm once" hold', f5ref && f5ref.display_value === 'PO-7781' && !/confirm once/.test(f5ref.validation_note || ''));
+  check("…the job carried both reasons (the coalesced wizard case)", /teach\+layout|layout\+teach/.test(lastJobAudit().metadata.reasons));
   fakeResult = null;
 
   console.log('§6 the triggers (C3.5) + the switch — source contract');

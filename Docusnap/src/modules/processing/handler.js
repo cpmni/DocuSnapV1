@@ -3804,7 +3804,7 @@ function register(ctx) {
           // deskew would gate deskew OFF and serve raw text (silent no-op). Kill switch DESKEW_CACHE_FAST=0.
           ...(!enh && row && row.ocr_text && row.ocr_text.trim() ? { ocr_text: row.ocr_text } : {}),
         };
-        nameToDoc[tmpName] = { docId: d.docId, filename: d.filename, existing };
+        nameToDoc[tmpName] = { docId: d.docId, filename: d.filename, existing, via: d.via || null };   // via: which lane arm selected it (Q3: 'layout')
         tmpNames.push(tmpName);
         logAudit(db, { action: 'reprocess', target_type: 'document', target_id: d.docId,
           document_id: d.docId, outcome: 'success', metadata: { batch: true, ...(auditMeta || {}) } });
