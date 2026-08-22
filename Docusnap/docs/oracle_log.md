@@ -1806,3 +1806,16 @@ slices", 2026-08-21 23:0x) — all DARK, mig 79 seeds the four switches OFF:**
 
 ### REFUSED
 Dropping the template requirement from `docTrustGate` for graduated scopes as the "simpler" Harrowgate fix — WRONG LAYER, the template is the layout-identity check. F2a on any confirm in a graduated scope. F2b as an independent second door. F3 as worded.
+
+## 2026-08-22 morning — the round-7 switches' OWED CORPUS ARM (owner: "should these not be on?")
+The five mig-71/72 switches (`ref_prefix_confusable_adopt`, `raw_witness_vacuous_suppress`,
+`filing_sanity_page_match_v2`, `vat_reg_symbol_confusable`, `money_sign_capture`) owed the OFF==ON
+realdoc arm before any default-ON flip (08-16 condition). RAN: `RR_APP_ENV=1 OCR_RENDER_DPI=200` on a
+live-DB copy (93 confirmed docs), all five OFF vs all five ON — IDENTICAL tables (type/supplier/date 100%,
+ref 98.9%), the same single pre-existing #188 regression in both arms: M delta 0, zero per-field drop.
+HONEST CAVEAT: identical tables also mean this corpus exercised none of the five lanes (the vacuous-arm
+trap) — the fired-path evidence is Chris rounds 10–13b (every lane seen firing, zero misfiles over ~170
+filings). Owner decision: migration 81 force-flips the five + the paired `net_misread_total_flag` ON so a
+fresh DB equals the live DB's reading configuration. Migration 80 (same morning) force-flips the
+teach→file arc (sweep, auto-accept, fragment abstain, quiet re-read, role-dominant class). Both revert
+per-switch via the dev-gated Settings toggles.

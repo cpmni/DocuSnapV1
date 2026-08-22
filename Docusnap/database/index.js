@@ -1898,6 +1898,30 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 80 applied: teach→file arc defaulted ON (sweep, auto-accept, fragment-abstain, quiet re-read, role-dominant-class)');
   }
 
+  // ── Migration 81: the round-7 reading switches default ON (owner decision, 2026-08-22) ──────────
+  // mig 71/72 seeded these OFF because they "owed the corpus arm". The arm has now run (realdoc
+  // RR_APP_ENV=1 OCR_RENDER_DPI=200 on a live-DB copy, all five OFF vs all five ON: identical tables,
+  // M delta 0, zero per-field drop — docs/oracle_log.md 2026-08-22) and every Chris round since round 10
+  // ran them ON with zero misfiles; the owner's live DB has run them ON since 08-16. The owner asked
+  // that a fresh DB match that configuration:
+  //   ref_prefix_confusable_adopt   — restore a confirmed reference start over one look-alike glyph (P1/→PI/)
+  //   raw_witness_vacuous_suppress  — don't ask the operator to compare a value with itself
+  //   filing_sanity_page_match_v2   — Gate-C page-match v2 (split / joined / one-confusable reads)
+  //   vat_reg_symbol_confusable     — a misread '$' never turns a VAT registration into an amount
+  //   money_sign_capture            — keep the minus on a credit-note amount
+  //   net_misread_total_flag        — PAIRED with vat_reg_not_amount on one Settings toggle (already ON
+  //                                   since mig 70); seeding it keeps the pair together on a fresh DB
+  // UPSERT-forced (the mig-76 stance). Revert = the toggle or the settings row.
+  if (!applied.has(81)) {
+    try {
+      const up81 = db.prepare("INSERT INTO settings (key, value) VALUES (?, 'true') ON CONFLICT(key) DO UPDATE SET value='true'");
+      for (const key of ['ref_prefix_confusable_adopt', 'raw_witness_vacuous_suppress', 'filing_sanity_page_match_v2',
+                         'vat_reg_symbol_confusable', 'money_sign_capture', 'net_misread_total_flag']) up81.run(key);
+    } catch (e) { console.warn(`  migration 81: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (81)').run();
+    console.log('JS migration 81 applied: round-7 reading switches defaulted ON (prefix-adopt, vacuous-suppress, page-match v2, vat-reg $, money sign, net-misread pair)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

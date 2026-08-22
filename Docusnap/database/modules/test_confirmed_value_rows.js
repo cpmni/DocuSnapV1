@@ -184,8 +184,9 @@ console.log('7. migration 78 defaults BOTH flags ON, PAIRED, and does not distur
   check('format_corrections_dedupe defaulted ON', get('format_corrections_dedupe') === 'true');
   check('the pair moves TOGETHER (never one without the other)',
         get('confirm_persist_values') === get('format_corrections_dedupe'));
-  check('the migration-72 switches are still OFF', get('filing_sanity_page_match_v2') === 'false'
-        && get('vat_reg_symbol_confusable') === 'false' && get('money_sign_capture') === 'false');
+  // 2026-08-22: migration 81 defaults the mig-72 switches ON after the corpus arm ran green.
+  check('the migration-72 switches are ON (mig 81, post-arm)', get('filing_sanity_page_match_v2') === 'true'
+        && get('vat_reg_symbol_confusable') === 'true' && get('money_sign_capture') === 'true');
   db.close();
 }
 
