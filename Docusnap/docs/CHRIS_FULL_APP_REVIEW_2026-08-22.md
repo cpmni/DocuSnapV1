@@ -507,3 +507,161 @@ One persona, one sitting, driven by script — the typed issuer box landed on th
 
 ## Humility
 One persona, one sitting, boxes drawn by script at one size — my Pelican number box was **deliberately** on the label, which is the worst case, not the common one. I corrected "P1"→"PI" and "ws"→"WS" by typing before each Confirm, as I would at my desk; that typed correction may have changed what the app did next. The DS ⊕ fix was on the stamped copy with a hand-typed date, so it's not a clean twin of the Pelican one. "Right" and "wrong" are my own reading of rendered pages plus a crude machine check that passes "Invoice-Number" because those words are on the page. Rounds 15's cards 3 and 5 weren't reached. The header-cut re-import was tested with only 3 worksheets filed; the fix may need more. The "confirm once" hold on a generic-named sender may be intended. I changed no code, no repo file, and nothing outside the sandbox; everything here is for the owner to vet.
+
+
+---
+
+## ROUND 17 — 2026-08-22 night (fresh sandbox CDP 9223, PID 32344; switches ON: template_fixed_seed_fragment_garble, identity_suggest_canonical, review_group_by_letterhead, type_ambiguity_unsupported_waiver, type_ambiguity_ripple, review_activity_strip, quiet_reread_enabled, quiet_reread_on_layout, scope_sweep_enabled, scope_sweep_auto_accept, template_identity_on_page, fingerprint_seed_support_prune; corpus SINGLE 10 + IMPORT 200 + IMPORT2 200 + Doc sol 22; mig 85) — VERBATIM
+
+# Chris The Customer — Round 17 (2026-08-22 night)
+
+**Sandbox:** CDP 9223 · PID 32344 · userData `…\chris-sandbox\userData` · Output `…\chris-sandbox\Output`. Owner's app (PID 32388) never touched.
+**Admin I created:** username `chris` · password `ChrisRound17!` · recovery code `A838-DSUH-YSCD-AN3H` (sandbox only).
+**Screenshots:** `…\chris-sandbox\s01…s99_*.png` (referenced below by number).
+
+## TL;DR
+1. **Two wrong folders were created tonight** — `Output\Gay\…` and `Output\DOCUMENT\…` — both from the stacked DOCUMENT/SOLUTIONS wordmark, both with the app already *knowing* the right name and neither confirm held. Siblings stayed contained (18/18 read DOCUMENT SOLUTIONS). I repaired both; the empty ghost folders remain.
+2. **The type-split ask in Review has no buttons.** The wizard asks beautifully before saving; Review only shows a toast with no "Keep"/"Change", so a deliberate second type can't be filed from Review at all (code seam: `confirmCurrentDoc` drops `typeSplit` from its failure return).
+3. **The strip works and is the right idea** — chips, detail, See them, the >25 Put-back ask, ageing, "Recent activity" all behaved — but the OLD tile beside it now says "39 filed automatically" about 35 documents that are sitting in the queue, and the commonest batch action (File All Ready) leaves no chip.
+
+---
+
+## Walkthrough
+
+**Setup (s01–s08).** Admin created, Terms accepted, wizard walked. My driver mangled the output folder once (backslash); I corrected it to `chris-sandbox\Output` before any import (s07/s08).
+
+**Imports.** SINGLE 10 (s10) → IMPORT 200 in 109 s (s11) → Doc sol 22 (s12). 232 in Review, 0 filed — expected on a fresh install. Three garble senders already exist in the list: "Dairy Wholesale", "DOCUMENT OLUTIONS", "Ticket Type" (s13).
+
+**Teach Nordwind via the wizard (s20–s31).** "Add from catalog…" gave me Quote + Service Worksheet in one tick — lovely. Drew four boxes; every read-back correct; filed to `Nordwind-Refrigeration-Ltd\2025\June\Quote.10-06-2025.NRQ-8153.pdf`. The "Quietly re-reading Nordwind … 5 of 20 done. Review stays fully usable." notice is exactly the right tone (s32). 19 of 20 siblings came out ready at 93% with correct values (checked NRQ-7396 / 02-12-2025 / 979.44 against the page, s34).
+
+**Two confirms → "✓ files by itself" (s35–s37).** The panel's "1 of 3 confirmed from this sender · Confirm it and it files — and it counts towards this sender filing on its own" is the best copy in the app. After the second confirm the group flipped to "✓ files by itself" — **and 17 quotes at 93% just sat there.** Nothing filed itself; the strip stayed empty (DB checked 60 s later: 3 confirmed). This is the owner's open card 1, reproduced exactly.
+
+**File All Ready (s38–s40).** Dialog: "File 20 ready documents (of 229…)". It filed **17** (all Nordwind, all correct folders). The other 3 "ready" were docs 4/7/10: no sender, 60–62%, whose own panel says "Read at 62% … so it's waiting for you" and "if you file now it will be saved under 'Unknown Company'" (s41). Home still says "3 ready to file". **No chip appeared for the 17.**
+
+**IMPORT2 (s42–s46).** 20 Nordwind quotes auto-filed at 100% — every folder/ref checked, all correct. First chip: "✓ Just now · 20 filed automatically ▾". Click → "20 documents filed automatically — every field read clean (matched 100 %) · See them" (no Put back, no sender named). Click away → detail closed, chip stayed, reopenable ✓. "See them" → exactly those 20 ✓ (s46). Old tile simultaneously said "✓ 20 documents filed automatically — click to see the list — they stay filed; nothing is changed" — same event, two voices (s43).
+
+**Scenario 2 — type-split (s51–s65).** First attempt filed a quote as a PO with **no question** — my own fault: my Search "Send back to Review (39)" had left Nordwind with only 1 confirmed quote (gate needs ≥3 and exactly one type). But note what that did: the history became *mixed* (1 Quote + 1 PO), which silences the ask for that sender for ever. I undid it, confirmed three quotes, and retried on 0044-2 as Purchase Order: Confirm was held with only a toast — *"This sender has only ever filed as one document type — check the type before filing."* — no inline question, no Keep/Change (s56, s57). Pressing Confirm again: same toast. **The wizard route** (s62–s65) asked properly *before* saving: "Nordwind Refrigeration Ltd files as Quote (4 so far). Teach this one as Purchase Order? [Yes, teach it as Purchase Order] [No — go back and change the type]"; the footer "Save" was a dead click while the question was open (safe). I chose Yes → `Nordwind-Refrigeration-Ltd\2026\June\Purchase-Order.02-06-2026.NRQ-1058.pdf` (deliberate wrong filing, recorded). The re-file-path ask couldn't be tested after that: one Keep makes the history mixed, so no ask ever fires again for Nordwind.
+
+**Scenario 3 — rival + ripple (s66–s67).** The quiet re-read after the PO teach re-read doc 332 and flagged "Document type changed from 'Purchase Order' to 'Quote' on reprocess — please check". None of the 36 held quotes carried "This letterhead is used for several document types…" — not before, and not after "Reprocess 36 from Nordwind" re-read them all with the rival present (DB notes checked). 34 then **filed themselves** (all Quote folders, refs matching), 2 stayed (one totals note; one I was viewing). Confirms needed: **zero**.
+
+**Put back >25 (s68–s72).** Chip "✓ 34 filed themselves" → detail "34 documents from Nordwind Refrigeration Ltd filed themselves — they matched what you've confirmed · See them · Put back". Put back → asked "Put 34 documents back in Review? The copies already written to your filing folder stay there and are replaced when you file them again." → DB: all 34 `needs_review` ✓ → new chip "↩ Just now · 34 put back". Second press on the old chip: asked again, then "Put 0 back in Review — 34 couldn't be (filed another way since)."
+
+**Scenario 4 — the wordmark (s73–s89, s94–s97).** Typed arm: one-line box over DOCUMENT read "REE DOCUMENT" then (tighter) "DOCUMENT"; I typed DOCUMENT SOLUTIONS; filed correctly; 19/21 siblings then read DOCUMENT SOLUTIONS. One sibling read **"Gay"** (a word not on the page) at "High · 70%", as its **own sender group** with "3 more to file by itself", note *"Letterhead may read "DOCUMENT SOLUTIONS" — detected "Gay". Please confirm the issuer. ✓ Keep "Gay" as the issuer"* — the only button keeps the wrong one. Confirm unedited → **not held** → "Filed as … in Gay / 2026 / May." (s82/s83). Drawn arm: "DOCUMENT" accepted at "Looks right", no question at Save, "I'll recognise DOCUMENT from now on" → filed under `DOCUMENT\2026\January\` (s85–s89). Siblings stayed DOCUMENT SOLUTIONS (contained). Both repaired via Send back + retype; changing the sender cleared the two correct fields (s95) and left ghost folders.
+
+**Delete/restore (s91–s93).** Delete asked ("It goes to the app's recycle bin — you can restore it from Search."), bin showed it, right-click Restore returned it to the queue with the badge live. ✓
+
+**Ageing (s98–s99).** Chips vanished at ~15 min; "Recent activity ▾" remained and listed all three events.
+
+---
+
+## NEW finding cards (ranked by harm)
+
+### 1. The type-split question in Review has no buttons — a second type can't be filed from Review
+- **Citation:** Review, after Confirm on a Nordwind quote set to Purchase Order — toast: *"This sender has only ever filed as one document type — check the type before filing."* (s56, s57). Nothing under the type dropdown.
+- **User-moment:** Deliberately filing one Nordwind quote as a PO (the owner's scenario).
+- **Observed confusion:** I'd expect "Nordwind… files as Quote (4 so far). File this one as Purchase Order? [Change the type] [Keep Purchase Order]". I get a toast and a Confirm that re-holds forever. The wizard asks perfectly; Review never does. (Seam, verified in code: `confirmCurrentDoc` returns only `error/code/prefixOutlier` on failure, so `showTypeSplitHold(undefined)` falls to its toast branch.)
+- **Harm:** blocked (for a deliberate second type); slowed for everyone else.
+- **Class:** CONFUSION.
+- **Proposed alternative:** pass the hold's details through so the inline Keep/Change renders; keep the toast only as the fallback.
+- **What I may be missing:** maybe the owner wants Review to be strict and the wizard to be the only door for a second type — but then the toast should say so.
+- *QUESTION rider:* once a sender is "thin" (<3) or "mixed" (any second type), the ask is silent for good. My one slip (39 sent back → 1 confirmed quote) filed a quote as a PO with no question, and from then on Nordwind would never be asked again. Is "ask once, ever" the intent?
+
+### 2. A garble sender is offered only "Keep", and confirming it unedited files a wrong folder
+- **Citation:** Review, Worksheet.22-05-2026.2605-0805-1: *"Letterhead may read "DOCUMENT SOLUTIONS" — detected "Gay". Please confirm the issuer. ✓ Keep "Gay" as the issuer"*; group *"Gay · 1 document · 1 needs a look · 3 more to file by itself"*; after Confirm: *"Filed as Service-Worksheet.22-05-2026.2605-0805-1.pdf in Gay / 2026 / May."* (s82, s83).
+- **User-moment:** Reviewing the worksheets after teaching DOCUMENT SOLUTIONS.
+- **Observed confusion:** The note names the right answer but the only button keeps the wrong one; "Gay" gets its own group, its own "Change what's read from Gay's documents", its own "Reprocess 1 from 'Gay'", and a promise that it will file by itself. Confirm was not held. Folder `Output\Gay\2026\May` was created (DB + disk checked).
+- **Harm:** trust-eroded (wrong folder from one click).
+- **Class:** CONFUSION.
+- **Proposed alternative:** the button should be *Use "DOCUMENT SOLUTIONS"* (with Keep as the quiet second choice); list the doc under the DOCUMENT SOLUTIONS group with a "check sender" chip; hold an unedited confirm of a value the app itself doubts.
+- **What I may be missing:** the near-match issuer gate (round 6) may be scoped to typed/drawn values, not to letterhead-inferred ones.
+
+### 3. A one-line drawn teach over the stacked wordmark creates sender "DOCUMENT" with no question
+- **Citation:** Teach wizard: *"Company name: DOCUMENT · Looks right →"*; done screen: *"DOCUMENT is filed and its layout is saved. I'll recognise DOCUMENT from now on."*; filed to `DOCUMENT\2026\January\…` (s85, s89).
+- **User-moment:** Teaching a second worksheet by drawing round the top line only — what a customer does with a two-line logo.
+- **Observed confusion:** DOCUMENT SOLUTIONS was already taught, filed and graduated on this layout; I expected "Did you mean DOCUMENT SOLUTIONS?" at read-back or at Save. Nothing asked. (Containment held — the 18 siblings stayed DOCUMENT SOLUTIONS, and the learned layout was merged rather than duplicated — but the document itself went to a wrong folder and a `DOCUMENT` hint row was learned.)
+- **Harm:** trust-eroded (wrong folder).
+- **Class:** CONFUSION.
+- **Proposed alternative:** when a drawn/typed issuer is a prefix or near-match of a sender already taught on the same layout, ask with the full name as the first button.
+- **What I may be missing:** the wordmark slice may key on the read "NOCUMENT"/"MENT", not on a clean partial "DOCUMENT".
+
+### 4. The old tile and the new strip contradict each other
+- **Citation:** left tile *"✓ 39 documents filed automatically — click to see the list — they stay filed; nothing is changed"* (s90) while the strip read *"34 put back ▾ · 34 filed themselves ▾"* and earlier *"20 filed automatically"*.
+- **User-moment:** "What just happened?" audit after the reprocess + put back.
+- **Observed confusion:** the tile's list of 39 contained 35 documents sitting in the queue (put back / sent back) and 5 I filed by hand (my three confirms, the wizard PO, my PO confirm). "They stay filed; nothing is changed" was false for 35 of them. The count also changed 20→39 with no event I could name.
+- **Harm:** trust-eroded.
+- **Class:** CONFUSION.
+- **Proposed alternative:** one voice. If both must stay this round, the tile should read from the same ledger as the strip and drop documents that have left `confirmed`.
+- **What I may be missing:** the tile may be meant as "recently auto-filed, ever" rather than "currently filed".
+
+### 5. File All Ready leaves no trace in the strip, and promises a count it then doesn't file
+- **Citation:** dialog *"File 20 ready documents (of 229 in the Review queue)?"* → 17 filed; strip empty afterwards (s38–s40). Home: *"3 ready to file"* for three documents whose own panel says *"Read at 62% … it's waiting for you"* / *"saved under 'Unknown Company'"* (s41).
+- **User-moment:** First batch filing after graduation.
+- **Observed confusion:** the strip promised "you filed N"; the most common way to file 17 at once produced nothing (code: Review's File All Ready is a renderer loop, not one of the ledger's four doors). And "ready" includes sender-less 62% documents that the loop then refuses.
+- **Harm:** slowed / trust-eroded.
+- **Class:** CONFUSION.
+- **Proposed alternative:** record File All Ready as an "approved" event; exclude issuer-empty docs from "ready".
+- **What I may be missing:** "ready" may intentionally mean "nothing *blocks* filing" (Unknown Company is allowed).
+
+### 6. "Reprocess N" says it won't file anything; 30 seconds later 34 filed themselves — and a stuck import banner
+- **Citation:** dialog *"Re-reading updates the details; it doesn't file anything by itself — documents that come out ready still file through Confirm, File All Ready, or the sender's own auto-file once it's learned."* → strip *"✓ Just now · 34 filed themselves"* (s67). Banner *"Processing new documents from import — 200 of 200. Reprocess is paused until this finishes."* showing 15+ minutes after IMPORT2 ended (Home said "Finished").
+- **User-moment:** Re-reading Nordwind after the rival layout.
+- **Observed confusion:** I read the dialog as "safe, nothing moves"; then 34 moved. Technically the clause "or the sender's own auto-file" covers it, but a customer doesn't parse that. The stuck banner made me think an import was still running.
+- **Harm:** trust-eroded (good outcome, wrong promise); cosmetic for the banner.
+- **Class:** QUESTION.
+- **Proposed alternative:** "For a sender that already files by itself, anything that re-reads clean will file — you'll see it in the activity strip with a Put back." Clear the banner when the import ends.
+- **What I may be missing:** the banner may be tied to the Review window missing one broadcast.
+
+### 7. Put back is still offered after it has been done, and blames a phantom
+- **Citation:** second press on the aged "34 filed themselves" chip → *"Put 34 documents back in Review?"* → *"Put 0 back in Review — 34 couldn't be (filed another way since)."* (s72); "Recent activity" panel still shows "Put back" on that event (s99).
+- **User-moment:** Checking what the strip still lets me undo.
+- **Observed confusion:** they weren't "filed another way" — I had just put them back. Safe (nothing moved) but the reason is wrong.
+- **Harm:** trust-eroded (cosmetic).
+- **Class:** CONFUSION.
+- **Proposed alternative:** mark the event not-undoable once a put-back succeeds; message "Already back in Review."
+- **What I may be missing:** the ledger may deliberately keep undo live for 7 days for partial cases.
+
+### 8. Changing the sender wipes correct fields, leaves stale badges, a wandering toast, and ghost folders
+- **Citation:** *"⚠ Worksheet Number and Worksheet Date were read using the previous supplier's learned positions, so they have been cleared. Check them before you confirm. [Undo — put them back]"* with "Not found" boxes still badged *"High · 90%"* (s95); the same toast later sat on top of an unrelated Meadowvale credit note (s99); after re-filing, `Output\Gay\2026\May` and `Output\DOCUMENT\2026\January` remain as empty folders. Also every Search "Send back to Review" doc says *"Sent back from Learning Repair"* (I never opened Learning Repair).
+- **User-moment:** Repairing my two wrong folders.
+- **Observed confusion:** same layout, same page, same correct values — cleared on a name change; I had to find "Undo" to get them back. Empty folders in my cabinet look like lost documents.
+- **Harm:** slowed / cosmetic.
+- **Class:** PREFERENCE.
+- **Proposed alternative:** keep values when the new sender uses the same learned layout; drop the confidence badge on an empty box; dismiss the toast on document change; remove an emptied folder chain after a re-file; "Sent back from Search".
+- **What I may be missing:** clearing may be a deliberate anti-bleed rule.
+
+---
+
+## Verifies of previously reported items
+- **Chris 15 card 1 ("✓ files by itself" over a waiting pile): NEW-PROBLEM persists** — reproduced: 17 quotes at 93% waited for File All while the group said files by itself; strip empty.
+- **Offer bar auto-accepting after 1.5 s: BETTER** — "25 Nordwind… were re-read just now and pass every check · File up to 25 / Review them / Not now / Choose which…" stayed on screen >15 min without acting.
+- **Round-5 recycle bin: still FIXED** — delete → bin → restore, page intact, badge live.
+- **"A send-back counts nowhere — stale render": still** — Review badge stayed 392 after 39 came back until I navigated; the old tile never changed.
+- **Q3 layout arm (Chris 16): WORKED** — teach → "Quietly re-reading … 5 of 20 done" → 19/20 ready; after the PO teach it re-read the mistyped doc and flagged "changed from 'Purchase Order' to 'Quote' — please check".
+- **Young-scope format false alarms: BETTER-BUT** — "Needs a quick check — 1 field was flagged by a formatting check · Format check · 1" appears on 100% Nordwind quotes with no field marked.
+- **Nordwind PO teach marked `buyer_issued`** — fine, just noting it.
+
+## Warnings truth table
+| Prompt (verbatim) | What happened | Verdict |
+|---|---|---|
+| "File 20 ready documents (of 229…)? … Anything that turns out to need a detail is left in the queue" | filed 17 | cried wolf on 3 |
+| "Re-read all 36 documents (Nordwind…)? … it doesn't file anything by itself" | 34 filed themselves | wrong promise |
+| "Put 34 documents back in Review? The copies … stay there and are replaced" | 34 back, copies stayed, later re-file moved them in place | earned |
+| same, second press | 0 back, "filed another way since" | cried wolf |
+| "Send 39 documents back to the Review queue? They stay filed until re-confirmed." | true | earned |
+| "Delete "…"? It goes to the app's recycle bin" | bin, restorable | earned |
+| Wizard: "files as Quote (4 so far). Teach this one as Purchase Order?" | asked before save; Save inert meanwhile | earned |
+| Review toast: "This sender has only ever filed as one document type" | held forever, no buttons | blocks |
+| "Letterhead may read DOCUMENT SOLUTIONS — detected Gay" + Keep | filed Gay unedited | did not hold |
+| "…cleared. Check them before you confirm. Undo" | undo restored values | earned, but noisy |
+
+## What genuinely worked
+The teach-to-strip arc on a real sender: wizard (catalog tick, four clean read-backs, correct filing) → quiet re-read with a calm notice → "1 of 3 confirmed … counts towards this sender filing on its own" → IMPORT2 filed 20 untouched and correct → chip → See them → Put back with an honest ask and a truthful "copies stay" sentence → ageing → "Recent activity". And the waiver: a rival layout born from a deliberate mis-teach did not poison one sibling; 34 filed themselves with zero extra confirms. Zero wrong values all night.
+
+## Top friction
+The DOCUMENT / SOLUTIONS wordmark: the app knows the right name, says so, and still hands me a button to keep the wrong one — twice, by two routes — and then treats the garble as a real company with a promise to file by itself.
+
+## Two-week verdict
+**Yes, because** every value it filed was right and the strip finally tells me what moved; **but** only if the two wrong folders can't happen — a small office will hit a stacked logo in week one, and "Gay / 2026 / May" in the cabinet is the kind of thing that gets the app uninstalled.
+
+## Humility
+My Search "Send back (39)" and "Put back" shaped the history that the type-split gate reads; a customer's order of events would differ, and the "thin/mixed" silence may be intended. I drove boxes by locating words, so a human's sloppier rectangle could change the wordmark reads. The "39" tile and the stuck banner might be window-refresh artefacts rather than logic. Screenshots are of a 1920-wide window; smaller screens may differ. Nothing here should change code without the owner's go.
