@@ -2954,3 +2954,57 @@ Repair, (4) catch-up slice 4 gates → flip.**
 · GOTCHAS: stale-main-process bit thrice more (restart for main JS; window REOPEN suffices for
   renderer-only); an Edit once wrote a NUL byte into renderer.js (grep suddenly says "binary
   file" → scan for \x00, repair via python byte-surgery); `documents` has NO updated_at column.
+
+
+<!-- moved from CLAUDE.md LATEST on 2026-08-22 evening (verbatim) -->
+## ⏭ LATEST — 2026-08-22 OVERNIGHT: **READ `HANDOVER_2026-08-22.md` FIRST** (the "teach 1 → import N
+→ it files itself" arc), then `HANDOVER_2026-08-20_EVENING.md`, `_2026-08-20.md`, `_2026-08-19.md`.
+**Built DARK, mig 79 seeds all five switches OFF** (each is its own revert): `scope_sweep_auto_accept`
+(Slice 1, scope-local auto-accept of the post-confirm sweep + receipt/Put back) · `letterhead_fragment_abstain`
+(Slice 0: no more "Cleaning"/"Security" as a company; census 34 abstained all wrong, 0 correct lost) ·
+`quiet_reread_enabled` (Slice 3: `quietLane.js` — after a TAUGHT confirm or a graduation MINT the sender's
+template-less held docs are re-read on a below-normal lane, invisible to `_anyProcessingBusy`, killed at
+every foreground door, merge-gated via `applyReprocessResult(opts.expect)`) · `role_field_dominant_class`
+(a ROLE field judged by its dominant shape when one confirmed outlier collapsed the strict class — the
+Veltrix `VX$22033` brick) · plus the shipped `scope_sweep_enabled`. **Slice 2 (Tier-1.5 recompute) is
+DEAD by measurement** (`TESTING/_measure/s2_histogram.js`: 0/22, 0/378, ceiling 0.5%). Chris rounds 13/13b in
+`docs/CHRIS_FULL_APP_REVIEW_2026-08-22.md`. Traps: `applyReprocessResult` returns the result object on
+success and `{dropped}` only with `opts.expect`; `_stageReprocessDocs`/`_runReprocessShard` are the ONE
+staging+spawn for foreground + lane (thread-cap identity lives there); `getById` is `SELECT *` (no
+`type_slug`); a 5th confirm via File-All graduates without minting a template (`onScopeGraduated` is
+non-bulk only — NEXT fix). The 08-20 block below is historical.
+**Chris ROUND 10 ran (all nine switches ON): the class fix WORKS end to end** — 15 typed
+corrections down to an honest 4; 410 docs, 356 filed, ZERO wrong folder/value; one correction fixed
+six siblings, Undo put all six back, the `P1L/` control was refused; first round Chris says yes
+with no "but". 3 of 7 new cards fixed same night (`815631c`: Approve's SILENT 8s two-step revert —
+reported four rounds; sweep offer now "File up to N"; the class-fix reprocess guard kept a stale
+note against the discarded read — note now follows the value). **OPEN cards: #3 "Company inferred"
+note held 52/90 remaining docs (cost 39 wave-2 auto-files — the biggest UX lever); #2 "never seen
+this sender" on the 40th doc (cause UNVERIFIED); #4 £-less money freeze; #7 notice stack/counters.**
+Card 6b is NOT a bug: Gate C truthfully flags an OCR misread of a correct value; the rescue leg
+declined because dominance is STARVED on a fresh install — the starvation's customer face.
+HEAD `815631c`, ALL PUSHED. Mig 75 (`learning_exclude_rewrite_markers`, DARK) shipped + both
+censuses green (zero de-graduations both DBs — flip precondition MET, owner decision pending).
+**Two things a new session must not re-derive:**
+1. **THE MACHINE-CONFIRM STARVATION (measured).** `learning_exclude_machine_confirms` removes every
+   `auto_threshold`/`scope_sweep`/`auto_graduated` confirm from the substrate `getFieldFormats`
+   COUNTS. Round-9 DB: Pelican `invoice_number` has **27 confirmed `PI/` values but the learned
+   corpus counts 4**; whole install **38 human vs 331 machine = 89.7% invisible**. So the dominance
+   bars (≥5 extractable prefixes, ≥5 dominant, ≥0.90 share) licensing the P adopt lane, the
+   dominant-value snap and the prefix guard **cannot arm on a scope the app files well** — the better
+   the auto-filing, the blinder the reading. **RULED (Oracle SPLIT, 08-20): slice 0 SHIPPED** (mig 75
+   `learning_exclude_rewrite_markers` DARK — a value a REWRITE created may not be evidence for that
+   rewrite; classFixService now unions machine history REFUSAL-ONLY, unconditional); **slice 1
+   (un-starving the readers) SENT BACK — NOT built**, its killing pin is in the repo. The invariant:
+   refusal tests may see all evidence; licensing tests human-attested only; neither may see
+   rewrite-created rows; split the input, never amplify a shared index.
+   **Always measure what learning KNOWS through `getFieldFormats`, never off raw `extractions`** (it
+   also drops any group with <3 contributing documents — a count of 0 can mean "no group").
+2. **The P1/PI class correction shipped DARK** (`ref_class_fix_enabled`, migration 74, +
+   `REF_PREFIX_CONFUSABLE_ADOPT` widened): correct one reference by a single confusable glyph inside
+   its code prefix and the sender's other QUEUED documents follow, reported after with an Undo.
+   Traps recorded in `memory/project_ref_class_fix_20260819.md` — `corrected_to` is a TRAP as a badge
+   carrier (trust.js counts it as flagged behind a user-visible toggle); `updateExtractionValue`
+   never rewrites `extraction_method`; `mergeReprocessRows` (`handler.js:975`) takes the fresh row
+   wholesale and silently reverts propagated values.
+
