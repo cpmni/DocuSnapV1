@@ -1381,6 +1381,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">After you confirm one held document of a sender, quietly re-check the others held for the same reason</div>
+                <div class="threshold-sub">When a sender's documents are held with "this letterhead is used for several document types" and you confirm one of them, the others from the same sender and layout that carry the same note are re-read in the background — they clear by themselves when the option above applies, and are left alone otherwise. Needs the quiet re-read and the option above to be on. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="type-ambiguity-ripple-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Recognise a confirmed company even when its letterhead is column-spaced</div>
                 <div class="threshold-sub">Some letterheads print the company name with big gaps between the words. Scan Finder can read the gaps as separate columns and fail to match the name to a company you've confirmed, so those documents keep the "please confirm before filing" note. With this on, the spaced-out name is reassembled and, when it matches a company you've confirmed on this layout, the note is cleared. Only the company you confirmed is matched — a name on the page addressed TO you is never treated as the sender. Off by default.</div>
               </div>

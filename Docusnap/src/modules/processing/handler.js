@@ -794,6 +794,9 @@ let _autoAcceptInflightProbe = () => false;
 let _quietLaneImpl = null;                 // Slice 3: the quiet re-read lane (bound in register())
 let _readyProbeImpl = null;                // P2 'ready' trigger (bound in register())
 let _scheduleReadyRereadImpl = null;
+let _scheduleTypeSplitRereadImpl = null;   // A6
+const _typeSplitRippleOn = (db) => process.env.TYPE_AMBIGUITY_RIPPLE === '1'
+  || (process.env.TYPE_AMBIGUITY_RIPPLE !== '0' && require('../../../database/modules/learning').getSetting(db, 'type_ambiguity_ripple', 'false') === 'true');
 let _setReprocessStatusForTestImpl = null; // test seam: drive consume-reprocess-completion without a spawn
 let _reprocessOfferProbe = () => null;
 let _debugAutoAcceptPreImpl = null;
@@ -3673,6 +3676,7 @@ function register(ctx) {
       nameTokens: (name) => nameArmTokens(name),
     },
     corroborated: (rec) => require('../../../database/modules/trust')._corrobLicensed(rec),
+    typeSplitArm: { enabled: (db) => _typeSplitRippleOn(db) },   // A6
     // S3-(c): the lane's re-read docs reach filing ONLY via the sweep — a re-ask for the scope (the
     // renderer also re-runs the consent sweep on job_done, so the bar path is covered when
     // auto-accept is off).
@@ -3715,6 +3719,48 @@ function register(ctx) {
     if (!after) return false;
     return _quietLane.schedule(db, { supplier, typeSlug, reason: 'ready', seedDocId });
   }
+  // ── A6 (type-split arc): the confirm-once ripple's scheduler. Fires from reviewService via the
+  // review handler after a HUMAN confirm of a doc that carried the Fix A note. JS PRE-CHECK (Oracle
+  // S1): the waiver switch (A2) must be ON and every OTHER-type template the sender owns must be
+  // UNSUPPORTED (<2 confirmed docs) — otherwise the re-read would only re-plant the note, so skip
+  // with an audit row. DARK behind `type_ambiguity_ripple`; rides `quiet_reread_enabled`.
+  function scheduleTypeSplitReread(db, { supplier, typeSlug, templateId, seedDocId, via } = {}) {
+    if (via) return false;
+    if (!_quietEnabled(db) || !_typeSplitRippleOn(db)) return false;
+    const sup = String(supplier || '').trim(), slug = String(typeSlug || '').trim().toLowerCase();
+    if (!sup || !slug || !templateId) return false;
+    let skip = null;
+    if (!(process.env.TYPE_AMBIG_UNSUPPORTED_WAIVER === '1'
+          || require('../../../database/modules/learning').getSetting(db, 'type_ambiguity_unsupported_waiver', 'false') === 'true')) skip = 'waiver_off';
+    if (!skip) {
+      try {
+        // the sender's OTHER-type templates (owned: frozen supplier or sample doc is the sender's) and
+        // their LIVE confirmed counts — the same "unsupported" the matcher judges (<2, any via)
+        const rivals = db.prepare(`
+          SELECT t.id, t.document_type_slug AS slug,
+                 (SELECT COUNT(*) FROM documents d WHERE d.template_id = t.id AND d.status = 'confirmed') AS n
+            FROM templates t
+           WHERE LOWER(COALESCE(t.document_type_slug, '')) <> ?
+             AND (EXISTS (SELECT 1 FROM template_fields tf WHERE tf.template_id = t.id AND tf.field_key = 'supplier_name'
+                            AND LOWER(TRIM(COALESCE(tf.fixed_value, ''))) = ?)
+                  OR EXISTS (SELECT 1 FROM documents sd WHERE sd.id = t.sample_document_id
+                            AND LOWER(TRIM(COALESCE(sd.supplier_name, ''))) = ?)
+                  OR EXISTS (SELECT 1 FROM documents cd WHERE cd.template_id = t.id AND cd.status = 'confirmed'
+                            AND LOWER(TRIM(COALESCE(cd.supplier_name, ''))) = ?))`).all(slug, sup.toLowerCase(), sup.toLowerCase(), sup.toLowerCase());
+        const bySlug = new Map();
+        for (const r of rivals) bySlug.set(r.slug, Math.max(bySlug.get(r.slug) || 0, Number(r.n) || 0));
+        const supported = [...bySlug.entries()].filter(([, n]) => n >= 2).map(([s]) => s);
+        if (supported.length) skip = `rival_supported:${supported.join(',')}`;
+      } catch (e) { skip = 'precheck_failed'; }
+    }
+    if (skip) {
+      try { logAudit(db, { action: 'type_split_ripple_skipped', action_category: 'learning', target_type: 'template', target_id: templateId,
+                           document_id: seedDocId || null, outcome: 'skipped', details: JSON.stringify({ supplier: sup, typeSlug: slug, why: skip }) }); } catch {}
+      return false;
+    }
+    return _quietLane.schedule(db, { supplier: sup, typeSlug: slug, reason: 'typesplit', seedDocId, typeSplitTemplateId: templateId });
+  }
+  _scheduleTypeSplitRereadImpl = scheduleTypeSplitReread;
   _readyProbeImpl = readyProbe;
   _scheduleReadyRereadImpl = scheduleReadyReread;
   _applyReprocessResultImpl = applyReprocessResult;
@@ -5387,6 +5433,7 @@ module.exports = {
   _layoutRereadEnabled, nameArmTokens, NAME_ARM_GENERIC,
   readyProbe: (db, sup, slug) => (_readyProbeImpl ? _readyProbeImpl(db, sup, slug) : null),              // P2: scope readiness BEFORE a confirm (memoised)
   scheduleReadyReread: (db, info) => (_scheduleReadyRereadImpl ? _scheduleReadyRereadImpl(db, info) : false),   // P2: fire the lane on the ready crossing
+  scheduleTypeSplitReread: (db, info) => (_scheduleTypeSplitRereadImpl ? _scheduleTypeSplitRereadImpl(db, info) : false),   // A6: the confirm-once ripple
   quietLane: () => _quietLaneImpl,
   _applyReprocessResultForTest: (...a) => (_applyReprocessResultImpl ? _applyReprocessResultImpl(...a) : null),
   _setReprocessStatusForTest: (st) => (_setReprocessStatusForTestImpl ? _setReprocessStatusForTestImpl(st) : null),

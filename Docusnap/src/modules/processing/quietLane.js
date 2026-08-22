@@ -58,6 +58,7 @@ function create(deps) {
     timers = { setTimeout, clearTimeout, setInterval, clearInterval },
     layoutArm = null,           // Q3: { enabled(db), onPage(db), nameTokens(name) } — the layout arm's preconditions
     corroborated = null,        // Q3 C3.3: trust._corrobLicensed(record) — licenses a first-fill to stand
+    typeSplitArm = null,        // A6 (type-split arc): { enabled(db) } — the confirm-once ripple's switch
   } = deps;
 
   const jobs = new Map();          // scopeKey -> job
@@ -97,6 +98,7 @@ function create(deps) {
     }
     for (const r of reasonList) job.reasons.add(r);
     if (seedDocId) job.seedDocId = Number(seedDocId);
+    if (opts.typeSplitTemplateId) job.typeSplitTemplateId = Number(opts.typeSplitTemplateId);   // A6: the confirmed doc's template
     if (job.timer) timers.clearTimeout(job.timer);
     job.timer = timers.setTimeout(() => { job.timer = null; _tick(); }, DEBOUNCE_MS);
     return true;
@@ -239,6 +241,37 @@ function create(deps) {
           for (const r of rows) { if (!byId.has(r.id)) { add({ ...r, _via: 'layout' }); n++; } }
           job.layoutArm = `selected:${n}`;
         }
+      }
+    }
+    // ── A6 (the type-split arc, 2026-08-22; gary → Oracle SIGN-OFF-W/COND S1, build LAST): the
+    // CONFIRM-ONCE RIPPLE. After a human confirms a document that carried the Fix A note ("this
+    // letterhead is used for several document types"), the sender's OTHER held documents on the SAME
+    // template + SAME type that still carry that exact note are re-read here — never a stored-row
+    // note shed (a reprocess re-plants it; the `_d4` lesson: the penalty is removed where it is
+    // computed). Under the unsupported-rival waiver (A2) the re-read drops the note and its penalty
+    // at extraction; a sibling is never re-typed — its own re-read resolves or stays held, so a
+    // genuinely mixed batch is safe by construction. The caller (processing/handler) pre-checks the
+    // waiver switch + the rival's support and audit-skips otherwise (Oracle: never fire when the
+    // waiver cannot succeed — it would re-plant the note for nothing).
+    if (job.reasons && job.reasons.has('typesplit')) {
+      let why = null;
+      try { if (!(typeSplitArm && typeSplitArm.enabled && typeSplitArm.enabled(db))) why = 'off'; } catch { why = 'off'; }
+      if (!why && !job.typeSplitTemplateId) why = 'no_template';
+      if (why) {
+        job.typeSplitArm = `skipped:${why}`;
+      } else {
+        const rows = db.prepare(`
+          SELECT d.id, d.original_filename, d.folder_path FROM documents d
+           WHERE d.status = 'needs_review'
+             AND d.template_id = ?
+             AND d.document_type_id = ?
+             AND COALESCE(d.workflow_status, '') NOT IN ('pending', 'claimed')
+             AND EXISTS (SELECT 1 FROM extractions e WHERE e.document_id = d.id
+                           AND e.validation_note LIKE '%used for several document types%')
+           ORDER BY d.id`).all(job.typeSplitTemplateId, dt.id);
+        let n = 0;
+        for (const r of rows) { if (!byId.has(r.id)) { add({ ...r, _via: 'typesplit' }); n++; } }
+        job.typeSplitArm = `selected:${n}`;
       }
     }
     return [...byId.values()].sort((a, b) => a.id - b.id).filter(r => !presence.viewers(r.id).length);
@@ -402,6 +435,7 @@ function create(deps) {
       logAudit(db, { action: 'quiet_reprocess_job', target_type: 'scope', outcome: 'success',
         metadata: { supplier: job.supplier, type_slug: job.typeSlug, reason: job.reason, reasons: [...(job.reasons || [])].join('+'),
                     layout_arm: job.layoutArm || '',
+                    type_split_arm: job.typeSplitArm || '',   // A6
                     done_ids: job.done.join(','), dropped: job.dropped.map(d => `${d.docId}:${d.reason}`).join(','),
                     failed: job.failed, changed_ids: job.changed.map(c => c.docId).join(','),
                     first_fill_ids: job.changed.filter(c => c.firstFill).map(c => c.docId).join(',') } });

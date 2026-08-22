@@ -115,6 +115,13 @@ function createReviewService(deps = {}) {
 
     const docRow = documents.getById(db, document_id);
     if (!docRow) return fail('NOT_FOUND', 'Document not found.');
+    // A6 (type-split arc): did THIS document carry the Fix A type-ambiguity note before the confirm?
+    // Read pre-claim (the confirm clears notes); consumed by the after-hook only. Never fatal.
+    let _typeSplitNoted = false;
+    try {
+      _typeSplitNoted = !!db.prepare(`SELECT 1 FROM extractions WHERE document_id = ? AND field_key = 'supplier_name'
+                                         AND validation_note LIKE '%used for several document types%'`).get(document_id);
+    } catch { _typeSplitNoted = false; }
     // P2: readiness BEFORE the claim (human confirms only; dark ⇒ null, no query).
     let _readyBefore = null;
     if (!_via) {
@@ -635,9 +642,12 @@ function createReviewService(deps = {}) {
     // the moment a sender crosses the line — and the scheduler debounces the burst into one pass.
     if (!_via) {
       try {
+        let _tplAfter = null;
+        try { _tplAfter = (documents.getById(db, document_id) || {}).template_id || null; } catch { _tplAfter = null; }
         onAfterConfirm(db, { document_id, supplier_name: (allValues && allValues.supplier_name) || supplier_name || null,
                              typeSlug: document_type_slug || (dtInfo && dtInfo.slug) || null, bulk: !!bulk, via: null,
-                             taught: !!(Array.isArray(taught_fields) && taught_fields.length), readyBefore: _readyBefore });
+                             taught: !!(Array.isArray(taught_fields) && taught_fields.length), readyBefore: _readyBefore,
+                             typeSplitNoted: _typeSplitNoted, templateId: _tplAfter });   // A6
       } catch (e) { logger?.warn?.('onAfterConfirm skipped: ' + (e && e.message)); }
     }
 

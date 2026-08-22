@@ -123,6 +123,12 @@ function register(ctx) {
       // P2 (2026-08-22): the confirm that makes the scope READY re-reads its held siblings (dark).
       try { require('../processing/handler').scheduleReadyReread(db, { supplier: info.supplier_name, typeSlug: info.typeSlug, readyBefore: info.readyBefore, seedDocId: info.document_id, via: info.via }); }
       catch (e) { logger?.warn?.('ready re-read schedule failed: ' + (e && e.message)); }
+      // A6 (type-split arc, dark): confirming a doc that carried the "several document types" note
+      // re-reads its same-template, same-type, still-noted siblings (the confirm-once ripple).
+      if (info.typeSplitNoted && !info.via) {
+        try { require('../processing/handler').scheduleTypeSplitReread(db, { supplier: info.supplier_name, typeSlug: info.typeSlug, templateId: info.templateId, seedDocId: info.document_id, via: info.via }); }
+        catch (e) { logger?.warn?.('type-split ripple schedule failed: ' + (e && e.message)); }
+      }
     },
     readyProbe: (db, sup, slug) => { try { return require('../processing/handler').readyProbe(db, sup, slug); } catch { return null; } },
     captureSample: async (tId, docId) => {
