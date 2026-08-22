@@ -193,6 +193,34 @@ let queue            = [];
 // Review-queue view: group rows by sender (default) vs raw newest-first. A same-window
 // UI preference (persisted in localStorage, not a DB setting), like the queue splitter.
 let queueGrouped     = (localStorage.getItem('review_queue_grouped') || 'true') !== 'false';
+// Slice 3 of the garbled-issuer arc (2026-08-22 evening; Oracle C3.1/C3.2): a held document whose
+// issuer is a GARBLE of a known company (the engine carried the letterhead canonical in
+// `issuer_suggested` beside the still-standing identity note) groups UNDER that company in the
+// sender list — never as a sender of its own ("NOCUMENT · 2 documents" beside DOCUMENT SOLUTIONS).
+// Display only: the document's supplier_name is untouched (the per-sender Reprocess, the catch-up
+// sweep scope and Home's sender count all keep reading the real value). A whole-token disagreement
+// (a buyer-issued PO on another letterhead) carries no suggestion, so it stays where it is.
+// `review_group_by_letterhead` setting, read once per window; OFF → plain supplier_name key.
+let reviewGroupByLetterhead = false;
+(async () => {
+  try { reviewGroupByLetterhead = (await window.docusnap.getSetting('review_group_by_letterhead')) === 'true'; }
+  catch { /* stays false — legacy grouping */ }
+})();
+function reviewGroupKey(doc) {
+  if (reviewGroupByLetterhead) {
+    const sug = String(doc?.issuer_suggested || '').trim();
+    if (sug) return sug;
+  }
+  return String(doc?.supplier_name || '').trim() || '—';
+}
+// A row whose group is the letterhead company while its own read still differs → "check sender".
+function reviewGroupChip(doc) {
+  if (!reviewGroupByLetterhead) return '';
+  const sug = String(doc?.issuer_suggested || '').trim();
+  const own = String(doc?.supplier_name || '').trim();
+  if (!sug || sug === own) return '';
+  return ` <span class="qi-check-sender" title="The letterhead reads “${escHtml(sug)}” but this document's issuer box read “${escHtml(own)}”. Open it to use the letterhead name.">check sender</span>`;
+}
 // Which sender groups are EXPANDED in the grouped list. Default: none (all collapsed).
 // Same-session UI state (not persisted) — each window open starts fully collapsed;
 // selecting a doc auto-expands its group so the review flow stays visible.
@@ -1170,7 +1198,7 @@ function _sweepVisibleQueue() {
 function reviewDisplayGroups() {
   const groups = new Map();
   for (const doc of _sweepVisibleQueue()) {
-    const key = (doc.supplier_name || '').trim() || '—';
+    const key = reviewGroupKey(doc);     // slice 3: a garble groups under the company it is a garble of
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(doc);
   }
@@ -1266,7 +1294,7 @@ function buildQueueItem(doc) {
       <div style="flex:1; min-width:0;">
         <span class="qi-name" title="${escHtml(doc.original_filename)}">${escHtml(doc.original_filename)}</span>
         <div style="display:flex; align-items:center; gap:6px;">
-          <span class="qi-supplier" style="flex:1; min-width:0;">${escHtml(doc.supplier_name || 'Sender not identified')}</span>
+          <span class="qi-supplier" style="flex:1; min-width:0;">${escHtml(doc.supplier_name || 'Sender not identified')}${reviewGroupChip(doc)}</span>
           ${doc.page_count > 1 ? `<span class="qi-multipage" title="Multi-page document (${doc.page_count} pages)" style="flex-shrink:0;display:inline-flex;color:var(--muted)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></svg></span>` : ''}
           ${confBadge}
         </div>
@@ -1365,7 +1393,7 @@ async function selectDoc(doc, opts) {
   // collapsed group would have no row to light up. Covers confirm-advance / keyboard nav
   // stepping into the next group.
   if (queueGrouped && doc) {
-    const key = (doc.supplier_name || '').trim() || '—';
+    const key = reviewGroupKey(doc);     // slice 3: same key as reviewDisplayGroups (lockstep)
     if (!expandedSuppliers.has(key)) { expandedSuppliers.add(key); renderQueueList(); }
   }
   try { await _selectDoc(doc, opts); } catch(err) {
@@ -3263,16 +3291,27 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   const isIssuerFlag = !!note && !isApplied
     && key === 'supplier_name'          // RC2 (2026-07-10): identity = supplier_name ONLY; customer_name is a recipient
     && /letterhead may read|confirm the issuer/i.test(note);
+  // The label NAMES the value it affirms (Chris 16 card 1 convention; slice 2 of the garbled-issuer
+  // arc, 2026-08-22): "✓ Issuer is correct" beside a garble like “NOCUMENT” read as a rubber stamp —
+  // clicking it allowlists the garble forever. Nobody should affirm a value blind.
   const issuerAcceptHtml = isIssuerFlag
-    ? ` <button type="button" class="issuer-accept-btn" data-key="${key}" title="Confirm this really is the correct issuer, so Scan Finder stops flagging it — even though a different name appears in the letterhead. Applies to future documents from this issuer too.">✓ Issuer is correct</button>`
+    ? ` <button type="button" class="issuer-accept-btn" data-key="${key}" title="Confirm this really is the correct issuer, so Scan Finder stops flagging it — even though a different name appears in the letterhead. Applies to future documents from this issuer too.">${String(val ?? '').trim() ? `✓ Keep “${_btnVal(val)}” as the issuer` : '✓ Issuer is correct'}</button>`
     : '';
   // "Use '<name>'" — the branding cross-check DETECTED the true issuer (the page branding reads a
   // different known name than the resolved supplier). One click accepts the detected name for the
-  // Document Issuer — it fills the value (persisted on Confirm, like a typed correction). The regex is
-  // DISJOINT from the issuer-accept regex above, so the two buttons can never double-render on one note.
+  // Document Issuer — it fills the value (persisted on Confirm, like a typed correction), PINS the
+  // document's issuer and offers the sibling ripple (see the branding-resolve click handler).
+  // Slice 2 of the garbled-issuer arc (2026-08-22, Oracle C2.3): the identity-conflict note
+  // ("Letterhead may read …") ALSO qualifies — the engine now carries the letterhead canonical in
+  // `suggested_supplier` when the resolved read is a GARBLE of it (and only then; a whole-token
+  // disagreement such as a buyer-issued PO carries no suggestion, so this button never offers the
+  // wrong company with a ripple). On that note the row renders TWO honest answers to one question:
+  // this `Use “<letterhead name>”` and the issuer-accept `✓ Keep “<read>” as the issuer` above. The
+  // two regexes overlap ON PURPOSE now; the accept-btn (`Use` off corrected_to) cannot double-render
+  // because the engine clears corrected_to whenever it writes the suggestion (pinned).
   const isBrandingFlag = !!note && !isApplied
     && key === 'supplier_name' && !!suggestedSupplier
-    && /page branding reads|confirm the correct company/i.test(note);
+    && /page branding reads|confirm the correct company|letterhead may read/i.test(note);
   const brandingResolveHtml = isBrandingFlag
     ? ` <button type="button" class="branding-resolve-btn" data-key="${key}" data-name="${escHtml(suggestedSupplier)}" title="Set the Document Issuer to the company the letterhead reads. Saved when you confirm this document.">Use “${escHtml(suggestedSupplier)}”</button>`
     : '';
@@ -5323,8 +5362,14 @@ function showIssuerNearMatchHold(nm, idx, supplier) {
   const diff  = nm.distance === 1 ? 'one character' : `${nm.distance} characters`;
   const note = document.createElement('div');
   note.className = 'field-note issuer-nm-hold';
-  note.innerHTML = `"${escHtml(cur)}" is <strong>${diff}</strong> off <strong>${known}</strong>, which you already use — `
-    + `two spellings would file this sender into two folders. `
+  // source 'letterhead' (slice 3 of the garbled-issuer arc, Oracle C3.3): not a near-miss of a
+  // company you use — the letterhead on THIS page reads the company; the issuer box read a garble.
+  const lead = nm.source === 'letterhead'
+    ? `The letterhead on this page reads <strong>${known}</strong> — the issuer box read "${escHtml(cur)}". `
+      + `Filing as "${escHtml(cur)}" would start a new sender folder. `
+    : `"${escHtml(cur)}" is <strong>${diff}</strong> off <strong>${known}</strong>, which you already use — `
+      + `two spellings would file this sender into two folders. `;
+  note.innerHTML = lead
     + `<button type="button" class="prefix-ack-btn inm-use-btn">Use "${known}"</button> `
     + `<button type="button" class="prefix-ack-btn inm-keep-btn">Keep "${escHtml(cur)}"</button>`;
   row.appendChild(note);
@@ -5366,6 +5411,7 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
   const list = activeTab === 'deferred' ? deferredQueue : reviewDisplayOrder();
   const idx  = list.findIndex(d => d.id === currentDoc?.id);
   const supplier = (currentDoc?.supplier_name || '').trim();   // finish this sender's docs before moving on
+  const _groupKey = reviewGroupKey(currentDoc);                 // slice 3: the VISIBLE pile, not the raw value
   // Catch-up: capture the scope BEFORE confirm mutates/advances the selection. The confirmed
   // supplier may differ from the row (operator typed/accepted one) — prefer the on-screen value.
   const _sweepSupplier = (document.querySelector('#fields-scroll .field-input[data-key="supplier_name"]')?.value || supplier || '').trim();
@@ -5380,7 +5426,7 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
   if (r.code === 'ISSUER_NEAR_MATCH') { showIssuerNearMatchHold(r.nearMatch, idx, supplier); return; }
   if (r.error) { showToast(r.error, 'err'); return; }
   updateTabCounts();
-  advanceAfterAction(idx, supplier);
+  advanceAfterAction(idx, _groupKey);
   // The finish line must MOVE as the operator works — a countdown that only updates on reopen is
   // worse than none (it reads as "nothing I did counted"). One cheap read-only call per confirm.
   refreshScopeReadiness().then(() => renderQueueList()).catch(() => {});
@@ -6179,7 +6225,7 @@ document.getElementById('btn-defer').addEventListener('click', async () => {
   // Remember the slot + sender BEFORE removing, so we advance to the NEXT doc (finishing this
   // sender first) instead of snapping to the top or clearing the pane — mirrors single-doc Confirm.
   const idx      = reviewDisplayOrder().findIndex(d => d.id === currentDoc.id);
-  const supplier = (currentDoc.supplier_name || '').trim();
+  const supplier = reviewGroupKey(currentDoc);   // slice 3: finish the VISIBLE pile (== supplier_name unless a garble is grouped under its company)
   await window.docusnap.deferDocument(currentDoc.id);
   deferredQueue = await window.docusnap.getDeferredQueue();
   queue         = queue.filter(d => d.id !== currentDoc.id);
@@ -6306,9 +6352,10 @@ function advanceAfterAction(removedIdx = 0, preferSupplier = null) {
 function _pickNextDoc(order, at, preferSupplier) {
   if (!order || order.length === 0) return null;
   if (preferSupplier) {
-    const norm = s => (s || '').trim();
-    for (let i = at; i < order.length; i++) if (norm(order[i].supplier_name) === preferSupplier) return order[i];
-    for (let i = Math.min(at, order.length) - 1; i >= 0; i--) if (norm(order[i].supplier_name) === preferSupplier) return order[i];
+    // slice 3: compare on the GROUP key (== supplier_name unless a garbled issuer is grouped under
+    // its letterhead company), so "finish this sender" never jumps out of the visible pile.
+    for (let i = at; i < order.length; i++) if (reviewGroupKey(order[i]) === preferSupplier) return order[i];
+    for (let i = Math.min(at, order.length) - 1; i >= 0; i--) if (reviewGroupKey(order[i]) === preferSupplier) return order[i];
   }
   return order[Math.min(at, order.length - 1)];
 }

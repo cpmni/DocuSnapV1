@@ -35,8 +35,8 @@ let filingMode = 'ok';   // 'ok' | 'fail'
 const calls = { audit: [], saveCorrections: 0, notifyCounts: 0, sourceMove: 0, taught: 0, captured: 0, commit: 0 };
 const deps = {
   documents,
-  learning: { getSetting: (d, key, def) => key === 'issuer_near_match_confirm_guard'
-                ? require('../../database/modules/learning').getSetting(d, key, def)   // honour the real DB row for the toggle-off test
+  learning: { getSetting: (d, key, def) => (key === 'issuer_near_match_confirm_guard' || key === 'review_group_by_letterhead')
+                ? require('../../database/modules/learning').getSetting(d, key, def)   // honour the real DB row for the toggle tests
                 : '/out',
     saveCorrections: (_db, _id, corr, _s, _slug, allValues) => { calls.saveCorrections++; calls.lastAllValues = allValues; calls.lastCorrections = corr; },
     // the issuer near-match gate (card, round 6) calls this — delegate to the real implementation so
@@ -187,6 +187,47 @@ const basePayload = (id, extra = {}) => ({
   const rOff = await svc.confirm(db, { username: 'sarah', role: 'admin' }, nmPayload(dfNM));
   check('the toggle can be turned OFF (near-miss then files without a hold)', rOff.ok === true);
   db.prepare("INSERT OR REPLACE INTO settings (key,value) VALUES ('issuer_near_match_confirm_guard','true')").run();
+
+  // ── LETTERHEAD-SUGGESTION hold (slice 3 of the garbled-issuer arc, 2026-08-22; Oracle C3.3):
+  //    the Review list groups a garbled issuer under the company the letterhead reads, which hides
+  //    the garble in the LIST but not in the FIELD — so confirming a value that is not the stored
+  //    `suggested_supplier` while the identity note still stands is HELD with the same Use/Keep
+  //    choice. Shed note (the "Keep … as the issuer" click clears it) → passes; equal value →
+  //    passes; acknowledge → passes; setting OFF → byte-identical. ──────────────────────────────
+  const seedGarble = (id, note) => db.prepare(
+    `INSERT INTO extractions (document_id, field_key, raw_value, display_value, confidence, extraction_method, validation_note, suggested_supplier)
+     VALUES (?, 'supplier_name', 'NOCUMENT', 'NOCUMENT', 70, 'template_mapping', ?, 'DOCUMENT SOLUTIONS')`).run(id, note);
+  const garblePayload = (id, extra = {}) => basePayload(id, {
+    supplier_name: 'NOCUMENT',
+    allValues: { supplier_name: 'NOCUMENT', invoice_number: 'INV-9', invoice_date: '01-01-2026' },
+    corrections: {}, ...extra });
+  const NOTE = 'Letterhead may read “DOCUMENT SOLUTIONS” — detected “NOCUMENT”. Please confirm the issuer.';
+  const dG0 = newDoc(db); seedGarble(dG0, NOTE);
+  const commitsBeforeG = calls.commit;
+  const rG0 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, garblePayload(dG0));
+  check('letterhead hold OFF (setting unset): a noted garble files as before (byte-identical)', rG0.ok === true && calls.commit === commitsBeforeG + 1);
+  db.prepare("INSERT OR REPLACE INTO settings (key,value) VALUES ('review_group_by_letterhead','true')").run();
+  const dG1 = newDoc(db); seedGarble(dG1, NOTE);
+  const rG1 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, garblePayload(dG1));
+  check('letterhead hold ON: confirming "NOCUMENT" while the note stands → HELD, code ISSUER_NEAR_MATCH', rG1.ok === false && rG1.code === 'ISSUER_NEAR_MATCH');
+  check('  → names the letterhead company, source letterhead', rG1.nearMatch && rG1.nearMatch.existing === 'DOCUMENT SOLUTIONS' && rG1.nearMatch.source === 'letterhead');
+  check('  → did NOT file (held pre-claim)', calls.commit === commitsBeforeG + 1 && get(db, dG1).status === 'needs_review');
+  check('  → audited as confirm_held_letterhead_suggestion', calls.audit.some(e => e.action === 'confirm_held_letterhead_suggestion' && e.document_id === dG1));
+  const rG1use = await svc.confirm(db, { username: 'sarah', role: 'admin' }, garblePayload(dG1, {
+    supplier_name: 'DOCUMENT SOLUTIONS', allValues: { supplier_name: 'DOCUMENT SOLUTIONS', invoice_number: 'INV-9', invoice_date: '01-01-2026' } }));
+  check('  → "Use DOCUMENT SOLUTIONS" (value == suggestion) files', rG1use.ok === true && calls.commit === commitsBeforeG + 2);
+  const dG2 = newDoc(db); seedGarble(dG2, NOTE);
+  const rG2 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, garblePayload(dG2, { acknowledgeIssuerNearMatch: true }));
+  check('  → acknowledge ("Keep") files', rG2.ok === true);
+  const dG3 = newDoc(db); seedGarble(dG3, null);
+  const rG3 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, garblePayload(dG3));
+  check('  → note SHED (accept-issuer cleared it) → no hold, files (the gate keys on the NOTE, not the column)', rG3.ok === true);
+  const dG4 = newDoc(db);
+  db.prepare(`INSERT INTO extractions (document_id, field_key, raw_value, display_value, confidence, extraction_method, validation_note)
+              VALUES (?, 'supplier_name', 'NOCUMENT', 'NOCUMENT', 70, 'template_mapping', ?)`).run(dG4, NOTE);
+  const rG4 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, garblePayload(dG4));
+  check('  → note but NO suggestion (whole-token disagreement, slice 2 abstained) → no hold (byte-identical)', rG4.ok === true);
+  db.prepare("DELETE FROM settings WHERE key='review_group_by_letterhead'").run();
 
   // ── defer / restore CAS ───────────────────────────────────────────────────────
   const d6 = newDoc(db);

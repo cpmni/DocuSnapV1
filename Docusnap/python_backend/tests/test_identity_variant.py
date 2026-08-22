@@ -105,6 +105,55 @@ check("... customer field untouched", r5["customer_name"]["value"] == "pplies Lt
 check("empty/None verdict values → no swap",
       A(res("pplies Ltd"), {"text_led": "", "resolved": "pplies Ltd"}) is False)
 
+# ── SUGGESTION = CANONICAL (slice 2 of the garbled-issuer arc, 2026-08-22 evening; Oracle C2.1–C2.5) ──
+# The owner's live run: the flag-only conflict note named "DOCUMENT SOLUTIONS" while a Stage-4.5 TOKEN
+# repair left corrected_to='DOCUMENT' → the Review window offered `Use “DOCUMENT”` — a third wrong scope.
+from extraction import engine as E
+S = ExtractionEngine._suggest_identity_canonical
+print()
+print("suggest-canonical (flag-only path):")
+E._IDENTITY_SUGGEST_CANONICAL_ON = False
+f = {"value": "NOCUMENT", "confidence": 70, "corrected_to": "DOCUMENT"}
+check("OFF: inert — corrected_to token repair survives, no suggested_supplier (byte-identical)",
+      S(f, {"text_led": "DOCUMENT SOLUTIONS", "resolved": "NOCUMENT"}) is False
+      and f["corrected_to"] == "DOCUMENT" and "suggested_supplier" not in f)
+E._IDENTITY_SUGGEST_CANONICAL_ON = True
+f = {"value": "NOCUMENT", "confidence": 70, "corrected_to": "DOCUMENT"}
+check("ON, garble-kind ('NOCUMENT' one edit from DOCUMENT): suggested_supplier = canonical, corrected_to cleared",
+      S(f, {"text_led": "DOCUMENT SOLUTIONS", "resolved": "NOCUMENT"}) is True
+      and f["suggested_supplier"] == "DOCUMENT SOLUTIONS" and f["corrected_to"] is None)
+check("... value / confidence untouched (the human checkpoint survives)", f["value"] == "NOCUMENT" and f["confidence"] == 70)
+f = {"value": "Quillstone Print & Packaging", "confidence": 70, "corrected_to": "Quillstone Print"}
+check("NOT garble-kind (buyer-issued PO: whole-token disagreement with the letterhead) → inert, no ripple of the wrong company",
+      S(f, {"text_led": "Bramblewood Joinery Ltd", "resolved": "Quillstone Print & Packaging"}) is False
+      and f["corrected_to"] == "Quillstone Print" and "suggested_supplier" not in f)
+f = {"value": "MENT", "confidence": 70}
+check("a 4-char scrap ('MENT') is below the C2 floor → inert (not garble-kind)",
+      S(f, {"text_led": "DOCUMENT SOLUTIONS", "resolved": "MENT"}) is False and "suggested_supplier" not in f)
+f = {"value": "", "confidence": 70}
+check("empty value → inert", S(f, {"text_led": "DOCUMENT SOLUTIONS", "resolved": "NOCUMENT"}) is False)
+check("_identity_garble_of: equal folds are not a garble; two edits on one token are not; None-safe",
+      E._identity_garble_of("DOCUMENT SOLUTIONS", "DOCUMENT SOLUTIONS") is False
+      and E._identity_garble_of("NOCUMEMT", "DOCUMENT SOLUTIONS") is False
+      and E._identity_garble_of(None, "X") is False)
+check("_identity_garble_of: 'Nocument Solutons' (one edit per token) IS garble-kind",
+      E._identity_garble_of("Nocument Solutons", "DOCUMENT SOLUTIONS") is True)
+print("suggest-canonical (adopt path, C2.2):")
+r = res("pplies Ltd", extra=None)
+r["supplier_name"]["corrected_to"] = "plies Ltd"
+check("ON: adopt clears a stale token repair (value IS the canonical)",
+      A(r, IDV) is True and r["supplier_name"]["corrected_to"] is None)
+E._IDENTITY_SUGGEST_CANONICAL_ON = False
+r = res("pplies Ltd", extra=None)
+r["supplier_name"]["corrected_to"] = "plies Ltd"
+check("OFF: adopt leaves corrected_to alone (byte-identical)", A(r, IDV) is True and r["supplier_name"]["corrected_to"] == "plies Ltd")
+src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "extraction", "engine.py"), encoding="utf-8").read()
+check("the flag reads IDENTITY_SUGGEST_CANONICAL, default OFF", "os.environ.get('IDENTITY_SUGGEST_CANONICAL', '0') != '0'" in src)
+check("the flag-only path calls the helper for supplier_name only",
+      '_idk == "supplier_name" and' in src and "ExtractionEngine._suggest_identity_canonical(_f, _idv)" in src)
+check("C2.5: _is_degraded_variant is NOT widened to garble ('NOCUMENT' is not a clipped fragment)",
+      ExtractionEngine._is_degraded_variant("NOCUMENT", "DOCUMENT SOLUTIONS") is False)
+
 print()
 print(f"{fails} FAILED" if fails else "All identity-variant checks passed")
 sys.exit(1 if fails else 0)

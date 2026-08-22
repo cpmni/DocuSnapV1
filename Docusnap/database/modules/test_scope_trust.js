@@ -859,6 +859,20 @@ function main() {
     const rBnull = trust.isAutoFileEligible(db, d98, { extractions: exB('', 'PI/26/9646'), templateMatched: true, vacuousCorrectedToIgnore: true });
     check("B ON: empty display_value + corrected_to → still flags (null-safe)",
       rBnull.eligible === false && rBnull.reason === 'flagged');
+
+    // Slice 2 of the garbled-issuer arc (2026-08-22 evening; Oracle C2.4): the engine now CLEARS a
+    // Stage-4.5 token repair from corrected_to when it writes `suggested_supplier` beside the
+    // identity-conflict note. The NOTE alone must keep the document held — the human checkpoint
+    // does not live in corrected_to.
+    const exS2 = [
+      { field_key: 'supplier_name',  display_value: 'NOCUMENT', corrected_to: null, suggested_supplier: 'DOCUMENT SOLUTIONS',
+        validation_note: 'Letterhead may read “DOCUMENT SOLUTIONS” — detected “NOCUMENT”. Please confirm the issuer.' },
+      { field_key: 'invoice_date',   display_value: '05-06-2026' },
+      { field_key: 'invoice_number', display_value: 'PI/26/9646' },
+    ];
+    const rS2 = trust.isAutoFileEligible(db, d98, { extractions: exS2, templateMatched: true, vacuousCorrectedToIgnore: true });
+    check("S2: identity note + corrected_to null + suggested_supplier → still held, reason 'flagged'",
+      rS2.eligible === false && rS2.reason === 'flagged');
   }
 
   console.log(`\n${fails === 0 ? 'ALL PASS' : fails + ' FAILED'}`);

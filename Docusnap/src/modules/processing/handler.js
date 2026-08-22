@@ -576,6 +576,16 @@ function _reconcileEnv(db) {
     // template_fixed seed when the read is a whole-token sub-run of it and the issuer band prints
     // the whole name as a stack. Default OFF, byte-identical off. App RESTART to load the bridge.
     if (learning.getSetting(db, 'template_fixed_seed_fragment_keep', 'false') === 'true') env.TEMPLATE_FIXED_SEED_FRAGMENT_KEEP = '1';
+    // The garbled-issuer arc (2026-08-22 evening; gary → Oracle SIGN-OFF-W/COND, all DARK):
+    //  • TEMPLATE_FIXED_SEED_FRAGMENT_GARBLE — slice 1: the P4 keep above tolerates ONE edit per
+    //    ≥6-char read token ('NOCUMENT' for DOCUMENT) — the same per-token rule as the graduated
+    //    geometry arm — with the band leg untouched and a sister-company exclusion. Needs P4 ON.
+    //  • IDENTITY_SUGGEST_CANONICAL — slice 2: beside the "Letterhead may read X" note the engine
+    //    carries X in `suggested_supplier` (the branding-resolve button: fill + pin + ripple) and
+    //    clears the Stage-4.5 token repair from corrected_to — only when the read is a GARBLE of X.
+    //  (slice 3 `review_group_by_letterhead` is read by the Review window + reviewService directly.)
+    if (learning.getSetting(db, 'template_fixed_seed_fragment_garble', 'false') === 'true') env.TEMPLATE_FIXED_SEED_FRAGMENT_GARBLE = '1';
+    if (learning.getSetting(db, 'identity_suggest_canonical', 'false') === 'true') env.IDENTITY_SUGGEST_CANONICAL = '1';
     // P1 (2026-08-22): the cold letterhead pick abstains on one line of a stacked wordmark
     // ("TIONS" under "DOCUMENT") and never takes a single word deeper than the text arm's band
     // cap ("Patrick", an address tail). Default OFF, byte-identical off.

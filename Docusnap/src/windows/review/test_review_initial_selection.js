@@ -90,7 +90,10 @@ check('refreshAutoCommittedBar is still called in loadQueue (Oracle C3 — not d
       /refreshAutoCommittedBar\(\)/.test(lqBody));
 
 check("group KEY fallback stays '—' in reviewDisplayGroups (expand/nav depends on it)",
-      /const key = \(doc\.supplier_name \|\| ''\)\.trim\(\) \|\| '—';/.test(renderer));
+      // slice 3 of the garbled-issuer arc (2026-08-22): the key now comes from ONE helper,
+      // reviewGroupKey(doc), whose fallback is the same '—' (pinned there).
+      /const key = reviewGroupKey\(doc\);/.test(renderer)
+      && /function reviewGroupKey\(doc\)[\s\S]{0,400}?\|\| '—';/.test(renderer));
 check('groupTitle maps the "—" pile to human copy by live group count (display only)',
       /function groupTitle\(supplier, groupCount\)/.test(renderer)
       && /Your scanned documents/.test(renderer) && /Sender not identified/.test(renderer));

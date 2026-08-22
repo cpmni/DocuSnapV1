@@ -105,5 +105,29 @@ const classFix = read('..', '..', 'services', 'classFixService.js');
 check('C3: classFixService does not clear the letterhead prefill note',
       !/filled in for you|letterhead reads/i.test(classFix));
 
+// ── Slice 2 of the garbled-issuer arc (2026-08-22 evening; Oracle C2.3) ──────────────────────
+// The identity-CONFLICT note ("Letterhead may read “X” — detected “Y”. Please confirm the issuer.")
+// now ALSO arms the branding-resolve button, because the engine carries X in `suggested_supplier`
+// when Y is a GARBLE of X (and clears any Stage-4.5 token repair from corrected_to, so the weaker
+// accept-btn `Use “DOCUMENT”` can never double-render). The row shows two honest answers:
+// `Use “X”` (fills + pins + sibling ripple) and `✓ Keep “Y” as the issuer` (names the value).
+console.log('\nslice 2 — the identity-conflict note:');
+const idm = engine.match(/f"Letterhead may read “\{_idv\.get\('text_led'\)\}” — "\s*\n\s*f"([^"]*)"/);
+check('the identity-conflict note literal is present in engine.py', !!idm);
+const idNote = idm ? ('Letterhead may read “DOCUMENT SOLUTIONS” — ' + idm[1].replace("{_idv.get('resolved')}", 'NOCUMENT')) : '';
+check('the identity note ARMS the branding-resolve button (the suggestion is no longer dropped)',
+      !!brandingRe && brandingRe.test(idNote));
+const issuerSrc = renderer.match(/isIssuerFlag\s*=[\s\S]{0,400}?\/([^/]+)\/i\.test\(note\)/);
+const issuerRe  = issuerSrc ? new RegExp(issuerSrc[1], 'i') : null;
+check('…and the issuer-accept affordance too — two honest answers on purpose', !!issuerRe && issuerRe.test(idNote));
+check('the issuer-accept label NAMES the value it affirms (never a blind "Issuer is correct" beside a garble)',
+      /✓ Keep “\$\{_btnVal\(val\)\}” as the issuer/.test(renderer));
+check('the branding button is gated on suggested_supplier (no suggestion → no button → unarmed install is byte-identical)',
+      /isBrandingFlag\s*=[\s\S]{0,200}?!!suggestedSupplier/.test(renderer));
+check('engine: the suggestion writer clears corrected_to in the same breath (no accept-btn double-render)',
+      /f\["suggested_supplier"\] = canon\s*\n\s*f\["corrected_to"\] = None/.test(engine));
+check('engine: the letterhead-prefill note (prefillNote) still does NOT arm the branding button (value-present)',
+      !!brandingRe && !brandingRe.test(prefillNote));
+
 console.log(fails ? `\n${fails} FAILED` : '\nAll letterhead note-contract checks passed');
 process.exit(fails ? 1 : 0);

@@ -179,6 +179,93 @@ _FIXED_SEED_AGREEMENT_KEEP_ON = os.environ.get('TEMPLATE_FIXED_SEED_AGREEMENT_KE
 # new authority: same method, same confidence, no note. Default OFF; OFF is byte-identical.
 # Pins: tests/test_fixed_seed_fragment_keep.py.
 _FIXED_SEED_FRAGMENT_KEEP_ON = os.environ.get('TEMPLATE_FIXED_SEED_FRAGMENT_KEEP', '0') != '0'
+
+# GARBLE-TOLERANT FRAGMENT AGREEMENT (slice 1 of the garbled-issuer arc, 2026-08-22 evening; gary →
+# Oracle SIGN-OFF-W/COND C1.1–C1.5). The owner's live run: the one-line issuer box over the stacked
+# "DOCUMENT" / "SOLUTIONS" wordmark read `NOCUMENT` @78 on two scans — one glyph wrong in ONE token.
+# P4 above needs EXACT token equality, the near-match / garble rules compare the WHOLE string
+# ('nocument' vs 'documentsolutions' = far), region-presence cannot see line 2 — so the garble won on
+# authority and minted a "NOCUMENT" sender; the identical read @73 lost only via the <75 weak rule.
+# This arm lets each READ token be a ≤1-edit variant of the corresponding fixed-value token — the
+# Oracle C2 per-token rule already in `_identity_geom_fuzzy_match` (tokens <6 chars stay EXACT, ≥6
+# chars budget 1; 'Ace'→'Ale' collides, 'document'→'nocument' does not) — while the contiguous
+# PROPER sub-run leg, the structural band leg (the page must print the FULL fixed value as a stack)
+# and `_name_tokens` stay byte-identical. Fuzz is READ-side only: the band leg is what proves the
+# company is on THIS page, and a fuzzy band would license a sister company ("DOCUMENT SOLUTION")
+# — Oracle refused 1b. C1.2 SISTER EXCLUSION: a fuzzed token must not EXACTLY equal a token of any
+# OTHER template's identity (a read that spells a known neighbour is not a garble of this seed).
+# `MENT` / `TIONS` stay out (length delta > budget). Keeping the seed keeps `template_fixed`, so the
+# name-presence / branding guards stay armed. Named trade-off (pinned): a one-token read one edit
+# from a ≥6-char seed token on a page that prints the full seed stacked keeps the seed @95.
+# Default OFF; OFF is byte-identical. Pins: tests/test_fixed_seed_fragment_keep.py (garble arm).
+_FIXED_SEED_FRAGMENT_GARBLE_ON = os.environ.get('TEMPLATE_FIXED_SEED_FRAGMENT_GARBLE', '0') != '0'
+
+
+# SUGGESTION = CANONICAL (slice 2, see the identity-conflict block in extract()). Garble-kind test
+# = `_identity_geom_fuzzy_match(resolved, canonical)`: every distinctive token of the RESOLVED read
+# must sit within the Oracle C2 edit budget of a canonical token (<6 chars exact, ≥6 chars one edit;
+# one ≥6-char token or two tokens required). 'NOCUMENT' → True; 'MENT' (4 chars) → False;
+# 'Quillstone Print & Packaging' vs 'Bramblewood Joinery Ltd' → False (whole-token disagreement).
+_IDENTITY_SUGGEST_CANONICAL_ON = os.environ.get('IDENTITY_SUGGEST_CANONICAL', '0') != '0'
+
+
+def _identity_garble_of(resolved, canonical):
+    """True when `resolved` reads as a GARBLE of `canonical` (slice 2 garble-kind gate). Pure;
+    fails toward False on anything empty / equal / a whole-token disagreement."""
+    try:
+        r = str(resolved or '').strip(); c = str(canonical or '').strip()
+        if not r or not c:
+            return False
+        from extraction.name_match import fold_identity
+        if fold_identity(r) == fold_identity(c):
+            return False
+        return bool(_identity_geom_fuzzy_match(r, c))
+    except Exception:
+        return False
+
+
+def _fragment_tokens_agree(read_toks, fixed_toks, other_tokens=None):
+    """Per-token agreement for the garble arm (C1.1/C1.2). `read_toks` and `fixed_toks` are equal-
+    length `_name_tokens` runs. Exact equality always agrees. Armed, a read token may be within ONE
+    edit of a fixed token of ≥6 characters (Oracle C2 floor) — unless that read token exactly equals a
+    token of another template's identity (`other_tokens`), the sister case. Pure."""
+    for r, f in zip(read_toks, fixed_toks):
+        if r == f:
+            continue
+        if not _FIXED_SEED_FRAGMENT_GARBLE_ON:
+            return False
+        if len(f) < 6 or not _token_within(r, f, 1):
+            return False
+        if other_tokens and r in other_tokens:
+            return False
+    return True
+
+
+def _is_exact_token_subrun(read_val, fixed_val):
+    """True when the read's `_name_tokens` are an EXACT contiguous sub-run of the fixed value's —
+    P4's original leg; used only to label the decline branch (exact vs garble) in the log/trace."""
+    F, R = _name_tokens(fixed_val), _name_tokens(read_val)
+    if not R or not F or len(R) > len(F):
+        return False
+    return any(F[i:i + len(R)] == R for i in range(0, len(F) - len(R) + 1))
+
+
+def _other_identity_tokens(templates, matched_tmpl):
+    """C1.2: the `_name_tokens` of every OTHER template's asserted identity (dominant supplier /
+    frozen supplier_name fixed value / name). Pure; empty when nothing else is known."""
+    out = set()
+    mid = (matched_tmpl or {}).get('id') if isinstance(matched_tmpl, dict) else None
+    for t in (templates or []):
+        if not isinstance(t, dict) or (mid is not None and t.get('id') == mid):
+            continue
+        names = [t.get('dominant_supplier'), t.get('name')]
+        for f in (t.get('fields') or []):
+            if (f or {}).get('field_key') == 'supplier_name' and not (f or {}).get('is_variable'):
+                names.append((f or {}).get('fixed_value'))
+        for nm in names:
+            if nm:
+                out.update(_name_tokens(nm))
+    return out
 try:
     _ISSUER_REGION_PAD = float(os.environ.get('TEMPLATE_ISSUER_REGION_PAD', '1.5'))
 except ValueError:
@@ -242,13 +329,16 @@ def _name_tokens(text):
     return out
 
 
-def _fragment_agreement_keeps_seed(key, existing, data, ocr_text):
+def _fragment_agreement_keeps_seed(key, existing, data, ocr_text, other_tokens=None):
     """P4: does the Stage-0.5 read agree with the curated seed as a PARTIAL read of the same name?
 
     True iff (same preconditions as `_region_confirms_curated_seed`) the read's tokens are a
     contiguous PROPER sub-run of the fixed value's tokens AND the issuer band
     (chrome_band.issuer_chrome_lines) contains a contiguous run of lines whose issuer-column
-    tokens join to EXACTLY the fixed value's tokens. Pure; the caller logs and keeps."""
+    tokens join to EXACTLY the fixed value's tokens. Pure; the caller logs and keeps.
+    Garble arm (TEMPLATE_FIXED_SEED_FRAGMENT_GARBLE, see `_fragment_tokens_agree`): the sub-run
+    test tolerates one edit per ≥6-char READ token; `other_tokens` = the other templates' identity
+    tokens (C1.2 sister exclusion). The band leg is never fuzzed."""
     if key not in _FIXED_SEED_KEYS or not isinstance(existing, dict):
         return False
     if (existing.get("method") or "") not in _FIXED_SEED_METHODS:
@@ -261,8 +351,10 @@ def _fragment_agreement_keeps_seed(key, existing, data, ocr_text):
     R = _name_tokens(read_val)
     if len(F) < 2 or not R or len(R) >= len(F):
         return False
-    # the read is a contiguous proper sub-run of the fixed value
-    sub = any(F[i:i + len(R)] == R for i in range(0, len(F) - len(R) + 1))
+    # the read is a contiguous proper sub-run of the fixed value (per-token; exact unless the
+    # garble arm is armed — `_fragment_tokens_agree` is `==` when it is off)
+    sub = any(_fragment_tokens_agree(R, F[i:i + len(R)], other_tokens)
+              for i in range(0, len(F) - len(R) + 1))
     if not sub:
         return False
     from extraction import chrome_band
@@ -4526,8 +4618,31 @@ class ExtractionEngine:
             f["validation_note"] = (
                 f"The issuer read “{frag}” looks like a clipped fragment of “{canon}” — "
                 f"using the letterhead name; please confirm.")
+            if _IDENTITY_SUGGEST_CANONICAL_ON:
+                # C2.2: the value IS the canonical now — a Stage-4.5 token repair of the old
+                # fragment ('ocument' → 'document') must not stand as a `Use “…”` offer.
+                f["corrected_to"] = None
             results["_supplier_name"] = canon
             results["_needs_review"] = True
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _suggest_identity_canonical(f, idv):
+        """Slice 2 (C2.1): on a FLAG-ONLY identity conflict whose resolved read is a GARBLE of the
+        letterhead canonical (`_identity_garble_of`), carry the canonical in `suggested_supplier`
+        and clear any Stage-4.5 token repair from `corrected_to`. Mutates `f` in place; returns True
+        when it acted. Inert (False, `f` untouched) when the switch is off, the verdict is not
+        garble-kind, or the field has no value. Pure otherwise; pinned in tests/test_identity_variant.py."""
+        try:
+            if not _IDENTITY_SUGGEST_CANONICAL_ON or not isinstance(f, dict) or not f.get("value"):
+                return False
+            canon = str((idv or {}).get("text_led") or "").strip()
+            if not canon or not _identity_garble_of((idv or {}).get("resolved"), canon):
+                return False
+            f["suggested_supplier"] = canon
+            f["corrected_to"] = None
             return True
         except Exception:
             return False
@@ -6924,8 +7039,17 @@ class ExtractionEngine:
                         # FRAGMENT AGREEMENT (P4, see the flag block): the read is part of the
                         # curated name and the issuer band prints the whole of it as a stack.
                         if not _fixed_decline and _FIXED_SEED_FRAGMENT_KEEP_ON:
-                            if _fragment_agreement_keeps_seed(key, existing, data, ocr_text):
-                                _fixed_decline = 'fragment_agreement'
+                            # Garble arm (slice 1, 2026-08-22): the other templates' identity
+                            # tokens feed the C1.2 sister exclusion; branch name distinguishes a
+                            # fuzzed keep from P4's exact keep in the log/trace.
+                            _other_toks = (_other_identity_tokens(templates, matched_tmpl)
+                                           if _FIXED_SEED_FRAGMENT_GARBLE_ON else None)
+                            if _fragment_agreement_keeps_seed(key, existing, data, ocr_text,
+                                                              _other_toks):
+                                _fixed_decline = ('fragment_agreement'
+                                                  if _is_exact_token_subrun(data.get('value'),
+                                                                            existing.get('value'))
+                                                  else 'fragment_agreement_garble')
                         if _fixed_decline:
                             self.log(f"  Stage 0.5: kept curated supplier "
                                      f"'{existing.get('value')}' — declined mapping read "
@@ -9318,6 +9442,27 @@ class ExtractionEngine:
                                 f"Letterhead may read “{_idv.get('text_led')}” — "
                                 f"detected “{_idv.get('resolved')}”. Please confirm the issuer.")
                             _f["confidence"] = min(int(_f.get("confidence") or 100), 70)
+                            # SUGGESTION = CANONICAL (slice 2 of the garbled-issuer arc,
+                            # 2026-08-22 evening; Oracle SEND-BACK → rebuilt, C2.1). The Stage-4.5
+                            # WEAK name repair ran BEFORE this verdict existed and may have left a
+                            # TOKEN repair in `corrected_to` ('NOCUMENT' → 'DOCUMENT'); the Review
+                            # window renders that as `Use “DOCUMENT”` beside a note that names the
+                            # real company — one click mints a THIRD wrong sender scope. When the
+                            # resolved value is a GARBLE of the letterhead canonical (the Oracle C2
+                            # per-token rule: every distinctive token of the read within one edit
+                            # of a canonical token), carry the canonical in the PERSISTED
+                            # `suggested_supplier` column (the branding-resolve button: fills the
+                            # value, pins the doc, offers the sibling ripple) and CLEAR the token
+                            # repair. A whole-token DISAGREEMENT (a buyer-issued PO on another
+                            # letterhead) is NOT garble-kind → byte-identical: no suggestion, no
+                            # ripple of the wrong company. Note / 70 / needs_review unchanged —
+                            # the human checkpoint survives. Default OFF; OFF is byte-identical.
+                            # Pins: tests/test_identity_variant.py (suggest-canonical block).
+                            if _idk == "supplier_name" and \
+                                    ExtractionEngine._suggest_identity_canonical(_f, _idv):
+                                self._t('identity_suggest_canonical', field=_idk,
+                                        resolved=_idv.get('resolved'),
+                                        suggested=_f.get("suggested_supplier"))
                             break
         # BRANDING-CONFLICT cross-check (Oracle 2026-07-12) — the dependency-free backstop for the
         # logo-collision wrong-supplier class, and the ONLY identity text-check live in packaged

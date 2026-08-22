@@ -79,10 +79,62 @@ print("\n-- switch semantics --")
 src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "extraction", "engine.py"), encoding="utf-8").read()
 check("the call site asks only when no other keep fired AND the flag is on",
       "if not _fixed_decline and _FIXED_SEED_FRAGMENT_KEEP_ON:" in src)
-check("…and names its branch 'fragment_agreement' (distinct from the debris 'fragment')",
-      "_fixed_decline = 'fragment_agreement'" in src)
+check("…and names its branch 'fragment_agreement' (distinct from the debris 'fragment'; the garble arm labels its own)",
+      "_fixed_decline = ('fragment_agreement'" in src and "else 'fragment_agreement_garble')" in src)
 check("the flag reads TEMPLATE_FIXED_SEED_FRAGMENT_KEEP, default OFF",
       "os.environ.get('TEMPLATE_FIXED_SEED_FRAGMENT_KEEP', '0') != '0'" in src)
+
+# ── GARBLE ARM (slice 1 of the garbled-issuer arc, 2026-08-22 evening; Oracle C1.1–C1.3) ──────────
+# The owner's live run: the same one-line box read `NOCUMENT` @78 on two scans (one glyph wrong in
+# ONE token) — P4's exact leg missed it, the garble won on authority and minted a "NOCUMENT" sender.
+print("\n-- garble arm: OFF (byte-identical to P4) --")
+E._FIXED_SEED_FRAGMENT_GARBLE_ON = False
+check("(f) OFF: 'NOCUMENT' against the exhibit band → NOT kept (P4 exact, unchanged)",
+      keep("supplier_name", FIXED, "NOCUMENT", BAND) is False)
+check("(f) OFF: '_fragment_tokens_agree' is plain equality", E._fragment_tokens_agree(["nocument"], ["document"]) is False
+      and E._fragment_tokens_agree(["document"], ["document"]) is True)
+
+print("\n-- garble arm: ON --")
+E._FIXED_SEED_FRAGMENT_GARBLE_ON = True
+check("(a) 'NOCUMENT' (one edit of DOCUMENT) with the band printing DOCUMENT / SOLUTIONS → KEPT",
+      keep("supplier_name", FIXED, "NOCUMENT", BAND) is True)
+check("(a) 'SOLUTIGNS' (one edit of SOLUTIONS) → KEPT", keep("supplier_name", FIXED, "SOLUTIGNS", BAND) is True)
+check("(b) 'Nocument Ltd' — two tokens = the whole fixed length → NOT kept (proper sub-run leg pinned)",
+      keep("supplier_name", {"value": "Nocument Ltd", "method": "template_fixed", "confidence": 95}, "Nocument Ltd", BAND) is False
+      and keep("supplier_name", FIXED, "NOCUMENT SOLUTIONS", BAND) is False)
+check("(c) 'NOCUMENT' with the band NOT printing the stack → NOT kept (band leg is the proof)",
+      keep("supplier_name", FIXED, "NOCUMENT", "SERVICE WORKSHEET\nDOCUMENT\nTicket\n") is False)
+check("(c) band itself garbled ('NOCUMENT' / 'SOLUTIONS') → NOT kept (the band leg is never fuzzed — 1b refused)",
+      keep("supplier_name", FIXED, "DOCUMENT", "SERVICE WORKSHEET\nNOCUMENT\nSOLUTIONS\nTicket\n") is False)
+check("(d) 'MENT' / 'TIONS' (stamp-occluded scraps, length delta > 1) → NOT kept",
+      keep("supplier_name", FIXED, "MENT", BAND) is False and keep("supplier_name", FIXED, "TIONS", BAND) is False)
+check("(d) two edits ('NOCUMEMT') → NOT kept (budget is ONE)", keep("supplier_name", FIXED, "NOCUMEMT", BAND) is False)
+check("(e) C1.2 sister exclusion: a fuzzed token that EXACTLY spells another template's identity token → NOT kept",
+      E._fragment_agreement_keeps_seed("supplier_name", FIXED, {"value": "NOCUMENT"}, BAND, other_tokens={"nocument"}) is False)
+check("(e) …positive control: other templates that do NOT carry the token leave the keep standing",
+      E._fragment_agreement_keeps_seed("supplier_name", FIXED, {"value": "NOCUMENT"}, BAND, other_tokens={"castellan", "security"}) is True)
+check("(e) _other_identity_tokens skips the matched template and reads dominant/name/fixed_value",
+      E._other_identity_tokens([{"id": 1, "name": "DOCUMENT SOLUTIONS"},
+                                {"id": 2, "name": "Nocument Ltd", "dominant_supplier": "Nocument Holdings",
+                                 "fields": [{"field_key": "supplier_name", "is_variable": 0, "fixed_value": "Nocument Group"}]}],
+                               {"id": 1}) == {"nocument", "ltd", "holdings", "group"})
+check("(g) short-token seed stays EXACT: 'Lid' against fixed 'ACME Ltd' (band 'ACME / Ltd') → NOT kept; 'Ltd' → KEPT",
+      keep("supplier_name", ACME, "Lid", "ACME\nLtd\n1 High Street\n") is False
+      and keep("supplier_name", ACME, "Ltd", "ACME\nLtd\n1 High Street\n") is True)
+check("(g) 'ACMF' against 'ACME Ltd' → NOT kept (4-char token, budget 0)",
+      keep("supplier_name", ACME, "ACMF", "ACME\nLtd\n1 High Street\n") is False)
+check("TRADE-OFF PIN (the named misfile path, accepted by the Oracle): a one-token read one edit from a "
+      ">=6-char seed token on a page that prints the FULL seed as a stack keeps the seed — 'Nocument' alone",
+      keep("supplier_name", FIXED, "Nocument", BAND) is True)
+check("customer_name untouched by the garble arm",
+      keep("customer_name", {"value": "DOCUMENT SOLUTIONS", "method": "template_fixed"}, "NOCUMENT", BAND) is False)
+check("the branch label helper: exact sub-run vs garble", E._is_exact_token_subrun("DOCUMENT", "DOCUMENT SOLUTIONS") is True
+      and E._is_exact_token_subrun("NOCUMENT", "DOCUMENT SOLUTIONS") is False)
+check("the flag reads TEMPLATE_FIXED_SEED_FRAGMENT_GARBLE, default OFF",
+      "os.environ.get('TEMPLATE_FIXED_SEED_FRAGMENT_GARBLE', '0') != '0'" in src)
+check("the call site threads the other templates' tokens only when the garble arm is armed",
+      "_other_identity_tokens(templates, matched_tmpl)" in src and "if _FIXED_SEED_FRAGMENT_GARBLE_ON else None" in src)
+E._FIXED_SEED_FRAGMENT_GARBLE_ON = False
 
 print()
 if fails:

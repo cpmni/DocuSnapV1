@@ -247,6 +247,29 @@ function createReviewService(deps = {}) {
               `"${issuerVal}" looks like "${nm.existing}", a company you already use — please check the issuer.`,
               { nearMatch: { existing: nm.existing, distance: nm.distance, confirms: nm.confirms, source: nm.source } });
           }
+          // ── LETTERHEAD-SUGGESTION hold (slice 3 of the garbled-issuer arc, 2026-08-22; Oracle C3.3) ──
+          // The Review list now GROUPS a garbled issuer ("NOCUMENT") under the company the letterhead
+          // reads ("DOCUMENT SOLUTIONS"), which hides the garble in the list but NOT in the field — a
+          // rubber-stamp Confirm would still mint the garble as a sender. So at this same last gate:
+          // while the identity note still stands on the stored row AND the engine carried a letterhead
+          // suggestion, confirming a value that is not that suggestion is HELD with the same inline
+          // choice (Use the letterhead name / Keep what is there). An explicit "Keep … as the issuer"
+          // click clears the note (accept-issuer) and passes; "Use" makes the value equal and passes;
+          // the acknowledge flag passes. Gated on the slice-3 setting; fails OPEN like the near-match.
+          if (learning.getSetting(db, 'review_group_by_letterhead', 'false') === 'true') {
+            const srow = db.prepare(`SELECT suggested_supplier, validation_note FROM extractions
+                                      WHERE document_id = ? AND field_key = 'supplier_name'`).get(document_id);
+            const sug  = srow ? String(srow.suggested_supplier || '').trim() : '';
+            const noted = !!(srow && String(srow.validation_note || '').trim());
+            if (sug && noted && issuerVal.toLowerCase() !== sug.toLowerCase()) {
+              audit(db, { action: 'confirm_held_letterhead_suggestion', target_type: 'document', target_id: document_id,
+                document_id, outcome: 'held', actor_username: actorName,
+                metadata: { typed: issuerVal, suggested: sug } });
+              return fail('ISSUER_NEAR_MATCH',
+                `The letterhead on this page reads "${sug}" — the issuer box read "${issuerVal}". Please check the issuer.`,
+                { nearMatch: { existing: sug, distance: null, confirms: null, source: 'letterhead' } });
+            }
+          }
         }
       } catch (e) {
         if (logger && logger.warn) logger.warn('issuer near-match confirm gate skipped: ' + (e && e.message));

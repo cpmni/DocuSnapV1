@@ -182,6 +182,19 @@ function getReviewQueue(db) {
     ? `AND NOT EXISTS (SELECT 1 FROM template_hidden_fields h
                         WHERE h.template_id = d.template_id AND h.field_key = f.key)`
     : '';
+  // issuer_suggested (slice 3 of the garbled-issuer arc, 2026-08-22; Oracle C3.2): the letterhead
+  // canonical the engine carried beside a STILL-NOTED identity read (the persisted mig-49 column,
+  // never parsed out of prose). NULL once the note is shed, so a resolved row ungroups by itself. The
+  // Review list groups a garble under the company it is a garble OF. Same conditional shape as the
+  // hidden-fields fragment: a DB / test fixture without the column gets a NULL column, byte-identical.
+  const _hasSuggested = !!safeQ(db, "SELECT 1 FROM pragma_table_info('extractions') WHERE name = 'suggested_supplier'");
+  const _issuerSuggestedSel = _hasSuggested
+    ? `(SELECT e.suggested_supplier FROM extractions e
+         WHERE e.document_id = d.id AND e.field_key = 'supplier_name'
+           AND e.suggested_supplier IS NOT NULL AND TRIM(e.suggested_supplier) <> ''
+           AND e.validation_note IS NOT NULL AND e.validation_note <> ''
+         LIMIT 1) AS issuer_suggested,`
+    : `NULL AS issuer_suggested,`;
   return db.prepare(`
     SELECT d.*, dt.name as type_name, dt.slug as type_slug,
       (SELECT COUNT(*) FROM extractions e
@@ -189,6 +202,7 @@ function getReviewQueue(db) {
            AND ( (e.validation_note IS NOT NULL AND e.validation_note <> '')
               OR (e.corrected_to   IS NOT NULL AND e.corrected_to   <> '') )
       ) AS review_flag_count,
+      ${_issuerSuggestedSel}
       (SELECT COUNT(*) FROM extractions e
          JOIN fields f ON f.document_type_id = d.document_type_id AND f.key = e.field_key
          WHERE e.document_id = d.id

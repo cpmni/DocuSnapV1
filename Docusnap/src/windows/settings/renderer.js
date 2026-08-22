@@ -916,7 +916,11 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // Q2 one-sample seed support prune (2026-08-22, DARK).
                          ['fingerprint-seed-support-toggle', 'fingerprint_seed_support_prune'],
                          // Q3 layout-write re-read (2026-08-22, DARK).
-                         ['quiet-reread-on-layout-toggle', 'quiet_reread_on_layout']]) {
+                         ['quiet-reread-on-layout-toggle', 'quiet_reread_on_layout'],
+                         // The garbled-issuer arc (2026-08-22 evening, DARK).
+                         ['fixed-seed-fragment-garble-toggle', 'template_fixed_seed_fragment_garble'],
+                         ['identity-suggest-canonical-toggle', 'identity_suggest_canonical'],
+                         ['review-group-by-letterhead-toggle', 'review_group_by_letterhead']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);
@@ -1005,6 +1009,7 @@ const DEV_SWITCH_IDS = [
   'role-dominant-class-toggle',
   'letterhead-stack-abstain-toggle', 'letterhead-depth-guard-toggle', 'fixed-seed-fragment-keep-toggle',
   'quiet-reread-kw-select-toggle', 'quiet-reread-on-ready-toggle', 'fingerprint-seed-support-toggle', 'quiet-reread-on-layout-toggle',
+  'fixed-seed-fragment-garble-toggle', 'identity-suggest-canonical-toggle', 'review-group-by-letterhead-toggle',
 ];
 function _applyDevSwitchVisibility(unlocked, revealGate){
   for (const id of DEV_SWITCH_IDS){

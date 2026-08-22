@@ -1349,6 +1349,28 @@
               </div>
               <label class="toggle"><input type="checkbox" id="quiet-reread-on-layout-toggle"><span class="toggle-slider"></span></label>
             </div>
+            <!-- The garbled-issuer arc (2026-08-22 evening, three slices, all DARK) -->
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Keep the taught company name when a taught box misreads one word of it</div>
+                <div class="threshold-sub">A taught Document Issuer box over a two-line logo can read one line with a single wrong letter ("NOCUMENT" for "DOCUMENT"). That misread used to replace the company you taught and start a new sender of its own. With this on, a read that is one letter off a word of the taught name, on a page whose header prints the whole name, keeps the taught name. A genuinely different company still wins; a read that spells another company you use is never treated as a misread. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="fixed-seed-fragment-garble-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">When the letterhead names the company, offer that name — not a spelling fix</div>
+                <div class="threshold-sub">When the app notes "Letterhead may read X — detected Y", the button next to the issuer used to offer a one-word spelling fix of Y instead of X. With this on, the button offers X (the company the letterhead reads), and choosing it also pins this document and offers to apply it to the sender's other waiting documents. Only when Y looks like a misread of X; a different company named on the page is never offered. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="identity-suggest-canonical-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">In the Review list, show a misread issuer under the company the letterhead reads</div>
+                <div class="threshold-sub">A document whose issuer box misread the company ("NOCUMENT") used to appear as a sender of its own in the list. With this on it sits under the company the letterhead reads, marked "check sender", and filing it under the misread name is held with a one-click choice. Needs the option above to be on. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="review-group-by-letterhead-toggle"><span class="toggle-slider"></span></label>
+            </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Recognise a confirmed company even when its letterhead is column-spaced</div>
