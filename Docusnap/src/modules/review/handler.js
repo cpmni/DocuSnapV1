@@ -1412,8 +1412,11 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
   const logo_detail_hash     = doc.logo_detail_hash || null;   // Slice B: isolated-mark discriminator, enrolled into the template set
   let keyword_fingerprint    = _parseJson(doc.keyword_fingerprint, []);
 
-  // Build template field rules from confirmed values
-  const fields = _buildTemplateFields(db, allValues, dtInfo);
+  // Build template field rules from confirmed values — LAZILY, once the template is resolved (C9.1):
+  // the company key's variability is judged against THAT template's own confirmed documents; a CREATE
+  // passes null (freeze at birth, as today). The reuse arms below only read the DB, so deferring the
+  // build past them changes nothing else.
+  const buildFields = (tid) => _buildTemplateFields(db, allValues, dtInfo, { templateId: tid || null, documentId: document_id });
 
   // The Document-Issuer value the operator CONFIRMED for this doc. The CONFIRMED field value
   // (allValues, string-keyed by field_key) comes FIRST; the `supplier_name` param is the fallback.
@@ -1592,6 +1595,7 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
     // fingerprint; keep an established logo_phash) so one noisy sample's OCR
     // garble / per-document tokens can't poison Stage 0 matching and strand the
     // learned anchors — see templates.stabiliseFingerprint / chooseLogoPhash.
+    const fields = buildFields(templateId);
     templates.update(db, templateId, { logo_phash, logo_detail_hash, keyword_fingerprint, fields });
     // BUYER-ISSUED MARK (migration 66): record that this layout came from a PO-shaped document —
     // the class behind Chris's "40 documents from two other companies under MY company's name".
@@ -1649,6 +1653,7 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
         ctx.logger?.log?.(`  Seed fingerprint support-prune: kept raw (${_pr.reason})`);
       }
     } catch { _seedFp = keyword_fingerprint; }
+    const fields = buildFields(null);
     const newTemplateId = templates.create(db, {
       name,
       document_type_slug: document_type_slug || null,
@@ -1671,9 +1676,33 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
 // values for this doc-type (corrected value if the user edited, else the
 // extracted one — the same "final value" getFieldFormats uses). Evidence that a
 // field differs per document, regardless of the schema's variability guess.
-function _fieldsWithMultipleConfirmedValues(db, dtInfo) {
+function _fieldsWithMultipleConfirmedValues(db, dtInfo, opts = {}) {
   const out = new Set();
   if (!db || !dtInfo || !dtInfo.id) return out;
+  // ── THE IDENTITY UNFREEZE CLASS (found 2026-08-22 night; Oracle SIGN-OFF-W/COND C9.1/C9.2) ──
+  // The query below counts distinct confirmed values over the WHOLE DOCUMENT TYPE. For a COMPANY key
+  // the value IS the scope key, so with two senders of one type (or ONE confirmed garble row beside 23
+  // correct ones — the owner's live DB) supplier_name is always "multi-valued" and the next upsert
+  // UNFROZE the template's identity (fixed_value NULL). Verified on the owner's live backup: all three
+  // sales_order senders, Castellan and Nordwind had lost their frozen identity — and with no
+  // `template_fixed` seed every keep rule (near-match, fragment, garble, region-presence, P4, the
+  // letterhead text_led) has NOTHING to keep; identity falls to the box read alone (the 'Gay' /
+  // 'DOCUMENT' folders of Chris round 17). So company keys are now judged WITHIN THE TEMPLATE'S OWN
+  // confirmed documents by DOMINANCE (Oracle: distinct-count is not enough — the garble row sits on
+  // the template too): variable iff total ≥ 2 AND the dominant issuer does NOT hold a strict majority.
+  // A ×3 + one garble stays frozen; a buyer-issued layout (A/B/C ×1) stays variable; A×1/B×1 goes
+  // variable (fail toward variable — pinned trade-off). CREATE (no template yet) → not multi-valued →
+  // freeze at birth, as today. Non-company keys keep the type-wide query (per-template would freeze a
+  // per-supplier VAT / terms value — the freeze_guard class). Pinned in test_build_template_fields.js.
+  const { COMPANY_KEYS } = require('../../../database/modules/document_types');
+  const companyKeys = new Set(COMPANY_KEYS || ['supplier_name']);
+  if (opts.templateId) {
+    try {
+      const templates = require('../../../database/modules/templates');
+      const dom = templates.getDominantSupplier(db, opts.templateId, opts.documentId || null);
+      if (dom && dom.total >= 2 && !(dom.count * 2 > dom.total)) for (const k of companyKeys) out.add(k);
+    } catch { /* fall through: the company key stays freezable */ }
+  }
   try {
     const rows = db.prepare(`
       SELECT e.field_key AS k,
@@ -1685,7 +1714,7 @@ function _fieldsWithMultipleConfirmedValues(db, dtInfo) {
         AND TRIM(COALESCE(c.corrected_value, e.display_value)) != ''
       GROUP BY e.field_key
     `).all(dtInfo.id);
-    for (const r of rows) if ((r.n || 0) >= 2) out.add(r.k);
+    for (const r of rows) if ((r.n || 0) >= 2 && !companyKeys.has(r.k)) out.add(r.k);   // company keys: per-template dominance above
   } catch { /* older schema -> fall back to the schema heuristic only */ }
   return out;
 }
@@ -1717,7 +1746,7 @@ function _freezeQualifyEnabled(db) {
   } catch { return false; }
 }
 
-function _buildTemplateFields(db, allValues, dtInfo) {
+function _buildTemplateFields(db, allValues, dtInfo, opts = {}) {
   // A field is "variable" (differs per document — reference, date, and ALSO any
   // field the confirmed history shows taking multiple values) or "constant" for a
   // supplier (company name, address). The schema gives a first guess
@@ -1741,7 +1770,7 @@ function _buildTemplateFields(db, allValues, dtInfo) {
   const { COMPANY_KEYS }    = require('../../../database/modules/document_types');
   const companyKeys = COMPANY_KEYS || ['supplier_name'];
   const fieldMeta   = new Map((dtInfo?.fields || []).map(f => [f.key, f]));
-  const multiValued = _fieldsWithMultipleConfirmedValues(db, dtInfo);
+  const multiValued = _fieldsWithMultipleConfirmedValues(db, dtInfo, opts);   // opts.templateId → company keys by per-template dominance
 
   // (A) OWN-TYPE FILTER (gary/Oracle): only build a field the template's OWN doc type actually has,
   // so a cross-type LEAK — a foreign field carried in allValues because a shared-logo wrong-type

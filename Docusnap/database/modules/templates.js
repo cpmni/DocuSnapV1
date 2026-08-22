@@ -1414,7 +1414,24 @@ function _identityOverwriteGuard(db, templateId, f) {
     const { COMPANY_KEYS } = require('./document_types');
     if (!(COMPANY_KEYS || ['supplier_name']).includes(f.field_key)) return f;
     const rawIncoming = String(f.fixed_value == null ? '' : f.fixed_value).trim();
-    if (!rawIncoming) return f;                                  // clearing / leaving variable
+    if (!rawIncoming) {
+      // C9.3 (2026-08-22 night): "may NOTHING replace Y" was ungoverned — the 08-13 guard compared
+      // only a displacing VALUE. A NULL landing on a FROZEN identity is how every unfreeze in the
+      // identity-unfreeze class happened. Loud, not blocked (a buyer-issued layout legitimately goes
+      // variable): log + audit so the next one is visible the moment it happens.
+      try {
+        const cur = db.prepare("SELECT fixed_value, is_variable FROM template_fields WHERE template_id = ? AND field_key = ?").get(templateId, f.field_key);
+        if (cur && cur.is_variable === 0 && String(cur.fixed_value || '').trim()) {
+          console.warn(`[identity-guard] UNFROZE template ${templateId} ${f.field_key}: '${cur.fixed_value}' -> variable`);
+          try {
+            require('../../src/modules/auth/handler').logAudit(db, { action: 'template_identity_unfrozen', action_category: 'learning',
+              target_type: 'template', target_id: templateId, outcome: 'warning',
+              details: JSON.stringify({ field: f.field_key, was: cur.fixed_value }) });
+          } catch { /* audit is best-effort */ }
+        }
+      } catch { /* best-effort */ }
+      return f;                                                  // clearing / leaving variable
+    }
     // Tidy ONCE at entry, before the near-match switch — the hygiene is ungated (Oracle order):
     // a junk-edged value must never be frozen even when the keep-guard itself is disabled.
     const incoming = _tidyIdentityValue(rawIncoming);
