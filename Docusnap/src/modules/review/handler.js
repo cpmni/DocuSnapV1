@@ -98,7 +98,15 @@ function register(ctx) {
     onScopeGraduated: (db, docId, info) => _maybeGraduationTemplate(ctx, db, docId, info),
     // Slice 1 (learn-on-commit) — keep a matched/graduated template's identity converging on
     // EVERY confirm, not only a taught one (kill switch template_learn_on_confirm, DEFAULT OFF).
-    learnTemplateOnCommit: (db, docId, info) => templates.learnTemplateOnCommit(db, docId, info),
+    learnTemplateOnCommit: (db, docId, info) => {
+      const tid = templates.learnTemplateOnCommit(db, docId, info);
+      // Chris round 15 card 2: the intersection above lives in the DB; the Python matcher reads the
+      // template FILE. Mirror it (the same write _upsertTemplate does on a taught confirm).
+      if (tid && process.env.TEMPLATE_FILE_SYNC_ON_COMMIT !== '0') {
+        try { _writeTemplateFile(db, tid, path, fs, templatesDir()); } catch (e) { logger?.warn?.(`template file sync (commit): ${e && e.message}`); }
+      }
+      return tid;
+    },
     // Slice 1 (2026-08-21, scope-local auto-accept, DARK behind scope_sweep_auto_accept): a human
     // confirm on (supplier, type) schedules the server-side pass for THAT scope. Lazy require —
     // processing/handler requires this module for getReviewService, so a top-level require would
@@ -1355,7 +1363,7 @@ function register(ctx) {
 // The ONE shared reviewService instance (set in register) — the Catch-up sweep accept files
 // through it so there is never a second confirm/filing implementation. Null until register runs.
 let _sharedReviewServiceInstance = null;
-module.exports = { register, _buildTemplateFields, _upsertTemplate,   // _buildTemplateFields + _upsertTemplate exported for tests (test_build_template_fields.js, test_upsert_type_link.js)
+module.exports = { _writeTemplateFileForSync, register, _buildTemplateFields, _upsertTemplate,   // _buildTemplateFields + _upsertTemplate exported for tests (test_build_template_fields.js, test_upsert_type_link.js)
                    getReviewService: () => _sharedReviewServiceInstance };
 
 // ── Template create / update ──────────────────────────────────────────────────
@@ -1815,6 +1823,11 @@ async function _maybeGraduationTemplate(ctx, db, document_id, info) {
       supplier: info && info.supplier_name, typeSlug: info && info.document_type_slug,
       reason: 'graduated', seedDocId: document_id });
   } catch (e) { console.warn('Graduation quiet re-read schedule failed:', e && e.message); }
+}
+
+/** Chris round 15 card 2: the one file-write for callers outside register() (the auto-file door). */
+function _writeTemplateFileForSync(db, templateId, dir) {
+  _writeTemplateFile(db, templateId, require('path'), require('fs'), dir);
 }
 
 function _writeTemplateFile(db, templateId, path, fs, dir) {

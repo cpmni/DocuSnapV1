@@ -1299,6 +1299,12 @@ function learnTemplateOnCommit(db, document_id, { document_type_slug, supplier_n
     keyword_fingerprint: Array.isArray(fp) ? fp : undefined,
     appendLogoOnly:      true,          // C-A — never seed a new primary logo automatically
   });
+  // Chris round 15 card 2 (2026-08-22): this write changes the DB row the Python matcher NEVER
+  // reads — it reads the template FILE (_writeTemplateFile's JSON dump). Return the id so the
+  // caller can rewrite the file; otherwise every intersection done here is invisible to the
+  // pipeline (the DS file said 7 tokens while the DB said 5 → header-cut copies 5/7 = 0.71 <
+  // 0.75 → "Couldn't match this document to a saved layout" on re-import).
+  return tid;
 }
 
 // EVERY confirmed-history template write funnels through here — create(), update(), mergeInto() —

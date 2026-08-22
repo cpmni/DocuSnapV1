@@ -755,6 +755,7 @@ let _applyReprocessResultImpl = null;      // test seam for the applyReprocessRe
 // completions through _handleFileMessage, so one bump there drives the count for either source.
 let _activity  = null;   // null | { source:'import'|'watch', done, total }
 let _notifyAll = null;   // ctx.notifyAllWindows, set in register()
+let _templatesDirFn = null;   // ctx.templatesDir, set in register() — the auto-file door's template-file sync (Chris r15 card 2)
 function _broadcastActivity() {
   try {
     _notifyAll?.('processing-activity', _activity
@@ -1660,6 +1661,7 @@ function register(ctx) {
           notifyReview, safeSend, spawn, path, fs, logger } = ctx;
   _pyHelpers = { pythonExe, pythonArgs, backendScript, resourcePath: ctx.resourcePath };
   _notifyAll = ctx.notifyAllWindows;   // broadcast import/watch activity to Review (see _broadcastActivity)
+  _templatesDirFn = typeof ctx.templatesDir === 'function' ? ctx.templatesDir : null;
 
   // Warm OCR worker POOL (draw-tool UX plan Slice 2) — configured once; the ocr-region(-boxes)
   // handlers route through it when ENABLED (default OFF: env OCR_WARM_WORKER=1 or setting
@@ -5199,7 +5201,13 @@ async function _autoFileDoc(db, docId, folderPath, notifyMainWindow, logger) {
   // identity converging on it too, or a supplier whose docs all auto-file would never converge past
   // its first frozen sample. Self-gated on the kill switch (DEFAULT OFF ⇒ byte-identical) + a
   // resolvable same-type/same-supplier template. fail-open — the doc is already filed above.
-  try { require('../../../database/modules/templates').learnTemplateOnCommit(db, docId, { document_type_slug: dtInfo.slug, supplier_name: allValues.supplier_name || doc.supplier_name || null }); }
+  try {
+    const tid = require('../../../database/modules/templates').learnTemplateOnCommit(db, docId, { document_type_slug: dtInfo.slug, supplier_name: allValues.supplier_name || doc.supplier_name || null });
+    // Chris round 15 card 2: mirror the DB intersection into the template FILE the matcher reads.
+    if (tid && process.env.TEMPLATE_FILE_SYNC_ON_COMMIT !== '0' && _templatesDirFn) {
+      try { require('../review/handler')._writeTemplateFileForSync(db, tid, _templatesDirFn()); } catch (e) { logger?.warn?.(`[auto-file] template file sync: ${e && e.message}`); }
+    }
+  }
   catch (e) { logger?.warn?.(`[auto-file] learn-on-commit skipped for docId=${docId}: ${e && e.message}`); }
 
   // Routing slice (SEAM A): auto-create an approval route from the extracted total/type — detached +

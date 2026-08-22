@@ -148,7 +148,11 @@ function configPath() {
 }
 
 function templatesDir() {
-  const dir = app.isPackaged
+  // Chris round 15 (2026-08-22): a DOCUSNAP_USERDATA sandbox must not share the repo's dev
+  // `templates/` folder with the owner's live dev app — the Python matcher reads every JSON in
+  // this dir, so rounds ≤15 silently saw each other's (and the owner's June) templates. Dev-only.
+  const sandboxed = !app.isPackaged && !!process.env.DOCUSNAP_USERDATA;
+  const dir = (app.isPackaged || sandboxed)
     ? path.join(app.getPath('userData'), 'templates')
     : resourcePath('templates');
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
