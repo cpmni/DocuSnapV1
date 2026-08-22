@@ -140,3 +140,22 @@ A1 → owner remedy (delete 12 → retype 135 → Reprocess 17) → A2 (dark →
 flip) → A3 (ON, fail-open) → A4 (migration, corpus-gated) → A5 (measure) → A6 (dark, last) → **B1** (can
 slot in any time, dark) → B2 → B3 (after its trace list). Chris rounds: one after A3, one after B2.
 Also owed from earlier tonight: a Chris round with the three garbled-issuer switches ON (`c5a4050`).
+
+---
+
+## STATUS — built 2026-08-22 night (all DARK unless stated; every switch has a dev-gated Settings toggle)
+| # | Commit | State |
+|---|---|---|
+| A1 name precedence | `40f47e3` | SHIPPED (bug fix, no switch) |
+| A2 unsupported-rival waiver | `e2fa804` | DARK `type_ambiguity_unsupported_waiver`. Decided ENTIRELY in the engine (process_docs' B1 block is skipped on a reprocess of a typed doc — the "Reprocess N" path). Gates: realdoc OFF vs ON M=0, M_type=0, per-field identical, would-auto-file 389→410; live-copy fired path doc 323 held→waived; negative control held. |
+| A3 type-split ask | `c67f8e1` | ON by default (`type_split_confirm_gate`, fail-open). Wizard asks BEFORE promote; Review inline hold. |
+| A4 catalog aliases | `a4cbd84` | SHIPPED via migration 85 (fills only alias-less types). With A4 alone, doc 323 resolved clean on the live copy (the existing `heading_absent_reread` arm finally has "Quotation" in its vocabulary). |
+| A5 heading-absent census | `7fdfa80` | MEASURED on the owner's DB (416 typed confirmed docs): banner VERBATIM 157 · GAP-SPLIT 154 (a ≥4-space column gap inside a two-word banner; detection handles it, type 100 %) · DROPPED 105 (Pelican 40/40, Nordwind 23/24, Silverbeck 37/40 — degraded-scan variants). A blind top-35 % grey band OCR (PSM 11) recovers the dropped banner 18/18 at conf 96; grey = every channel = inverted, so colour/inversion is NOT the mechanism. The existing `HEADING_BAND_REREAD` (geometry-prominence pre-gate) never fires because the dropped word leaves no banner-height geometry. Fix direction = its own Oracle arc. |
+| A6 confirm-once ripple | `7fdfa80` | DARK `type_ambiguity_ripple` (rides `quiet_reread_enabled`). |
+| B1 ledger + doors + IPC | `3676415` | DARK (records regardless; nothing renders). `review_events` is a protected setting. |
+| B2 chip strip | `44b6661` | DARK `review_activity_strip`. |
+| B3 retire the tiles | — | NOT STARTED (Oracle SEND BACK until the trace list above is closed). |
+
+**Pre-existing reds recorded:** `test_teach_multipage.js` (a comment at teach/renderer.js:28 matches its own "discard" regex — red before A3); `test_offer_prune.js` was red on any `core.autocrlf` checkout (CRLF) — FIXED in `44b6661`. Python: the documented `test_identity_fusion` + 6 script-style reds, zero new.
+
+**Owner steps tonight:** (1) the Nordwind remedy in the order above (delete template 12 → retype doc 135 as Quote → Reprocess 17) — OR simply restart the app: migration 85 seeds the Quote aliases and the 17 resolve on Reprocess; (2) to see A2/A6/B2 on the live install: Settings → Processing (SFDEV) → tick the toggles → restart.

@@ -21,7 +21,37 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-22 EVENING: **READ `HANDOVER_2026-08-22_EVENING.md` FIRST** (state, the shipped
+## ⏭ LATEST — 2026-08-22 NIGHT: **READ `docs/designs/TYPE_SPLIT_AND_ACTIVITY_STRIP_PLAN_2026-08-22.md` FIRST**
+(the plan + the STATUS table at its foot), then `HANDOVER_2026-08-22_EVENING.md`. Branch `feat/teach-side-overnight`,
+HEAD `44b6661`, NOT pushed. Three arcs landed tonight, every switch DARK unless stated:
+- **The garbled-issuer arc `c5a4050`** (a one-line box over a stacked wordmark read `NOCUMENT` and minted a sender):
+  `template_fixed_seed_fragment_garble` (P4 tolerates one edit per ≥6-char READ token; band leg never fuzzed),
+  `identity_suggest_canonical` (the "Letterhead may read X" note now carries X in `suggested_supplier` → the
+  branding button; the Stage-4.5 token repair `Use "DOCUMENT"` is cleared), `review_group_by_letterhead` (a garble
+  groups under its letterhead company + a confirm-time hold). Adversarial census 16,809 pairs → 0 keeps.
+- **The type-split arc** (17 Nordwind quotes held by Fix A after ONE mis-confirm bore a purchase_order rival):
+  A1 `40f47e3` name-precedence BUG FIX (a template took the machine's pre-confirm read as its name) · A2 `e2fa804`
+  `type_ambiguity_unsupported_waiver` — decided ENTIRELY in the engine (process_docs' B1 block is skipped on a
+  reprocess of a typed doc), realdoc M=0/M_type=0, would-auto-file 389→410 · A3 `c67f8e1` `type_split_confirm_gate`
+  ON (asks once: "Nordwind files as Quote (24 so far). File this one as a Purchase Order?"; the wizard asks BEFORE
+  it promotes) · A4 `a4cbd84` catalog `title_aliases` + **mig 85** (Quote → Quotation/Estimate …; with A4 alone the
+  live copy's held quote resolved clean) · A5 `7fdfa80` `heading_absent_census.py`: on the owner's DB the printed
+  type banner is DROPPED from page text on 105/416 docs and a blind top-band grey OCR recovers 18/18 @96 — NOT a
+  colour mechanism; fix = its own arc · A6 `7fdfa80` `type_ambiguity_ripple` (rides the quiet lane).
+- **The activity strip** (the top-left tiles re-total `recent_auto_filed` and never expire): B1 `3676415`
+  `src/lib/reviewEvents.js` ledger (merge-in-place per batch, `review_events` PROTECTED, four doors incl. the human
+  File N, event-id IPC, chunked honest undo) · B2 `44b6661` `review_activity_strip` — chips above the document,
+  newest left, click-anywhere closes the panel only · B3 (retire the tiles) = Oracle SEND BACK, not started.
+**Owed:** a Chris round with the new switches ON; then the new-install flips. **Owner remedy for Nordwind:** delete
+template 12 → retype doc 135 as Quote → Reprocess 17 — or just restart (mig 85) and Reprocess.
+**Pre-existing reds:** `test_teach_multipage.js` (its own comment matches its regex), `test_authoritative_anchor`,
+`test_v1_contract`, `test_doctype_surface_parity`; Python `test_identity_fusion` + 6 script-style. **Trap:** this
+checkout is `core.autocrlf=true` — any source-contract test slicing on `
+}
+` must normalise CRLF first; Python
+`open(p,'w')` patch scripts and bash heredocs both mangle backslashes — use the Write/Edit tools for test files.
+
+## (previous) 2026-08-22 EVENING: **READ `HANDOVER_2026-08-22_EVENING.md`** (state, the shipped
 table, the owner vet queue, traps, how to resume), then `HANDOVER_2026-08-22.md` (the overnight arc, the
 afternoon wordmark slice, rounds 13/13b/14), then `HANDOVER_2026-08-20_EVENING.md`. Chris rounds 13/13b/14/15(/16) verbatim in
 `docs/CHRIS_FULL_APP_REVIEW_2026-08-22.md`; every Oracle verdict + gate in `docs/oracle_log.md`.
