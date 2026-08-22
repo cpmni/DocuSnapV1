@@ -1871,6 +1871,33 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 79 applied: teach→file arc switches seeded OFF (sweep, auto-accept, fragment-abstain, quiet re-read)');
   }
 
+  // ── Migration 80: the teach→file arc defaults ON (owner decision, 2026-08-22 morning) ──────────
+  // Chris rounds 13/13b on a fresh sandbox with these five ON: 87 documents filed, zero wrong
+  // folders, zero wrong numbers/dates, undo worked every time; "two of the three paths are now
+  // genuinely hands-off" (docs/CHRIS_FULL_APP_REVIEW_2026-08-22.md). The owner asked for the next
+  // builds and `npm start`s to run in that configuration, so a fresh DB gets it out of the box.
+  //   scope_sweep_enabled        — the post-confirm re-check + consent bar
+  //   scope_sweep_auto_accept    — a sender files its own ready documents after your confirms
+  //                                (scope-local; receipt + Put back) — needs the sweep above plus
+  //                                learning_exclude_machine_confirms + autofile_gate_unify, both
+  //                                already ON since mig 70 and re-checked at every pass
+  //   letterhead_fragment_abstain — never "Cleaning"/"Security" as a company
+  //   quiet_reread_enabled       — the background re-read after a teach / graduation
+  //   role_field_dominant_class  — one odd confirmed value no longer bricks a sender
+  // UPSERT-forced (the mig-76 stance: dark switches no established user has chosen). Revert = flip
+  // the toggle (Settings → Processing, dev-gated) or set the row to 'false'; mig 79 seeded the rows.
+  // The Oracle asked for the quiet lane to be vetted apart from the auto-accept; the owner accepted
+  // the combined rounds (docs/oracle_log.md 2026-08-21/22) — recorded, not hidden.
+  if (!applied.has(80)) {
+    try {
+      const up80 = db.prepare("INSERT INTO settings (key, value) VALUES (?, 'true') ON CONFLICT(key) DO UPDATE SET value='true'");
+      for (const key of ['scope_sweep_enabled', 'scope_sweep_auto_accept', 'letterhead_fragment_abstain',
+                         'quiet_reread_enabled', 'role_field_dominant_class']) up80.run(key);
+    } catch (e) { console.warn(`  migration 80: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (80)').run();
+    console.log('JS migration 80 applied: teach→file arc defaulted ON (sweep, auto-accept, fragment-abstain, quiet re-read, role-dominant-class)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

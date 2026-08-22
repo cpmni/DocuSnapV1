@@ -91,7 +91,9 @@ check('F: the count + first sibling are still returned for the card', ff.firstSi
 check('A: siblingsUnread FALSE when siblings carry references', fa.siblingsUnread === false);
 // ── G — Chris r12 #4: the promise wording follows the install (auto-accept on/off) ────────────
 const learning = require('../../database/modules/learning');
-check('G: autoAccept FALSE by default (mig 79 seeds OFF)', computeTeachFollowup(db, fTaught).autoAccept === false);
+check('G: autoAccept TRUE on a fresh DB (mig 80 defaults the arc ON; mig 79 had seeded OFF)', computeTeachFollowup(db, fTaught).autoAccept === true);
+learning.setSetting(db, 'scope_sweep_auto_accept', 'false');
+check('G: …the auto-accept switch off alone turns it off', computeTeachFollowup(db, fTaught).autoAccept === false);
 learning.setSetting(db, 'scope_sweep_enabled', 'true'); learning.setSetting(db, 'scope_sweep_auto_accept', 'true');
 check('G: autoAccept TRUE only with BOTH switches on', computeTeachFollowup(db, fTaught).autoAccept === true);
 learning.setSetting(db, 'scope_sweep_enabled', 'false');

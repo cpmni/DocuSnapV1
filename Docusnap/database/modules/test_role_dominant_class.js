@@ -70,7 +70,9 @@ console.log('§1 the exhibit — 11 codes + one confirmed "$" outlier on the ref
   check('ON: a WORD in the reference role is still refused (verification, not exemption)', elig(db, word, true).reason === 'unverifiable-value:invoice_number');
   const dollar = held(db, mk, 'Acme', { supplier_name: 'Acme', invoice_number: 'VX$99999', invoice_date: '03-09-2025' });
   check('ON: the outlier SHAPE itself ("VX$…") is refused — $ is not codeish', elig(db, dollar, true).reason === 'unverifiable-value:invoice_number');
-  check('switch read from the setting: default OFF', trust._roleDominantEnabled(db) === false);
+  check('switch read from the setting: ON on a fresh DB (mig 80; mig 79 had seeded OFF)', trust._roleDominantEnabled(db) === true);
+  learning.setSetting(db, 'role_field_dominant_class', 'false');
+  check('…OFF via the setting (the revert)', trust._roleDominantEnabled(db) === false && trust.isAutoFileEligible(db, good).reason === 'unverifiable-value:invoice_number');
   learning.setSetting(db, 'role_field_dominant_class', 'true');
   check('…ON via the setting', trust._roleDominantEnabled(db) === true && trust.isAutoFileEligible(db, good).eligible === true);
   process.env.ROLE_FIELD_DOMINANT_CLASS = '0';
