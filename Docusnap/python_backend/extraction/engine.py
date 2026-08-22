@@ -98,6 +98,9 @@ _FIXED_SEED_KEYS = frozenset({"supplier_name"})
 _FIXED_SEED_METHODS = ("template_fixed", "template_fixed_locked")
 _FIXED_NEAR_MATCH_ON = os.environ.get('TEMPLATE_FIXED_NEAR_MATCH_RECONCILE', '0') != '0'
 _FIXED_FRAGMENT_DECLINE_ON = os.environ.get('TEMPLATE_FIXED_FRAGMENT_DECLINE', '0') != '0'
+# Chris round 17 card 2(a) (2026-08-23): the WIDE debris leg — a <=4-char read ('Gay') or a single short
+# piece of the curated name ('MENT') never displaces a curated seed, under TEMPLATE_IDENTITY_ON_PAGE only.
+_FIXED_DEBRIS_WIDE_ON = os.environ.get('TEMPLATE_FIXED_DEBRIS_WIDE', '0') != '0'
 # ISSUER REPAIR (2026-08-09, owner-reported and measured). The two guards above are calibrated for a
 # gentler failure than reality produces: near-match tolerates ONE edit, the fragment rule only debris
 # under 3 characters. Measured on 135 template-matched documents, 42 read something other than the
@@ -207,6 +210,41 @@ _FIXED_SEED_FRAGMENT_GARBLE_ON = os.environ.get('TEMPLATE_FIXED_SEED_FRAGMENT_GA
 # one ≥6-char token or two tokens required). 'NOCUMENT' → True; 'MENT' (4 chars) → False;
 # 'Quillstone Print & Packaging' vs 'Bramblewood Joinery Ltd' → False (whole-token disagreement).
 _IDENTITY_SUGGEST_CANONICAL_ON = os.environ.get('IDENTITY_SUGGEST_CANONICAL', '0') != '0'
+
+
+# Chris round 17 card 2(b): a JUNK read ('Gay', a date line, a 3-char scrap) is neither a garble of the
+# canonical nor a different company — the letterhead name is still the right offer. Rides slice 2
+# (IDENTITY_SUGGEST_CANONICAL); IDENTITY_SUGGEST_CANONICAL_JUNK=0 kills just this kind.
+_IDENTITY_SUGGEST_JUNK_ON = os.environ.get('IDENTITY_SUGGEST_CANONICAL_JUNK', '1') != '0'
+
+
+def _identity_junk_read(resolved, canonical):
+    """True when `resolved` is JUNK against `canonical`: fold <= 4 alnum chars; or `is_not_an_issuer_read`
+    (a date line / a 4+ digit run); or no token with >= 3 alpha chars; or a SINGLE token that is a proper
+    substring of the canonical fold. A DIFFERENT COMPANY (a >= 6-char token, or >= 2 tokens, none near the
+    canonical) is NOT junk — the buyer-issued PO still gets no suggestion. Pure; fails toward False."""
+    try:
+        r = str(resolved or '').strip(); c = str(canonical or '').strip()
+        if not r or not c:
+            return False
+        from extraction.name_match import fold_identity, is_not_an_issuer_read
+        fr, fc = fold_identity(r), fold_identity(c)
+        if not fr or fr == fc:
+            return False
+        if len(fr) <= 4:
+            return True
+        if is_not_an_issuer_read(r, c):
+            return True
+        import re as _re
+        toks = [t for t in _re.findall(r"[A-Za-z0-9]+", r)]
+        alpha_toks = [t for t in toks if len(_re.sub(r"[^a-z]", "", t.lower())) >= 3]
+        if not alpha_toks:
+            return True
+        if len(toks) == 1 and toks[0].lower() in fc and toks[0].lower() != fc:
+            return True
+        return False
+    except Exception:
+        return False
 
 
 def _identity_garble_of(resolved, canonical):
@@ -418,6 +456,11 @@ def _fixed_seed_declines_mapping(key, existing, data):
         return 'near_match'
     if _FIXED_FRAGMENT_DECLINE_ON and _nm.is_fragment_read(read_val, fixed_val):
         return 'fragment'
+    # Chris round 17 card 2(a): the WIDE debris leg — only under TEMPLATE_IDENTITY_ON_PAGE (the doc carries
+    # this seed only because the page names the company; see is_debris_read). Own switch, default OFF.
+    if (_FIXED_DEBRIS_WIDE_ON and os.environ.get('TEMPLATE_IDENTITY_ON_PAGE', '0') != '0'
+            and _nm.is_debris_read(read_val, fixed_val)):
+        return 'debris'
     if _FIXED_ISSUER_REPAIR_ON:
         # Same name, misread past the one-edit budget ('lronciad Tool Hire' -> 'Ironclad Tool Hire',
         # 0.88 similar). Bounded by a similarity floor, so it can narrow a garble back to the
@@ -4639,10 +4682,16 @@ class ExtractionEngine:
             if not _IDENTITY_SUGGEST_CANONICAL_ON or not isinstance(f, dict) or not f.get("value"):
                 return False
             canon = str((idv or {}).get("text_led") or "").strip()
-            if not canon or not _identity_garble_of((idv or {}).get("resolved"), canon):
+            if not canon:
+                return False
+            resolved = (idv or {}).get("resolved")
+            kind = 'garble' if _identity_garble_of(resolved, canon) else (
+                'junk' if (_IDENTITY_SUGGEST_JUNK_ON and _identity_junk_read(resolved, canon)) else None)
+            if not kind:
                 return False
             f["suggested_supplier"] = canon
             f["corrected_to"] = None
+            f["suggested_kind"] = kind
             return True
         except Exception:
             return False

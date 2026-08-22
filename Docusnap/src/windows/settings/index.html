@@ -1359,6 +1359,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Keep the taught company name when a taught box reads only scraps</div>
+                <div class="threshold-sub">A box over a two-line logo can read a three-letter scrap that is not even on the page ("Gay") or a piece of one word ("MENT"), and that scrap used to replace the company you taught and start a new sender folder. With this on, a read of four characters or fewer, or a short piece of the taught name, keeps the taught name — only on pages that print that company. Needs "a layout may only claim a document that names its company" to be on. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="fixed-seed-debris-wide-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">When the letterhead names the company, offer that name — not a spelling fix</div>
                 <div class="threshold-sub">When the app notes "Letterhead may read X — detected Y", the button next to the issuer used to offer a one-word spelling fix of Y instead of X. With this on, the button offers X (the company the letterhead reads), and choosing it also pins this document and offers to apply it to the sender's other waiting documents. Only when Y looks like a misread of X; a different company named on the page is never offered. Off by default.</div>
               </div>

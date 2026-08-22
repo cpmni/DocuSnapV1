@@ -586,6 +586,9 @@ function _reconcileEnv(db) {
     //  (slice 3 `review_group_by_letterhead` is read by the Review window + reviewService directly.)
     if (learning.getSetting(db, 'template_fixed_seed_fragment_garble', 'false') === 'true') env.TEMPLATE_FIXED_SEED_FRAGMENT_GARBLE = '1';
     if (learning.getSetting(db, 'identity_suggest_canonical', 'false') === 'true') env.IDENTITY_SUGGEST_CANONICAL = '1';
+    // Chris round 17 card 2(a): the WIDE debris leg ('Gay' / 'MENT' never displace a curated seed; needs the
+    // on-page guard, which the Python side checks itself). Default OFF.
+    if (learning.getSetting(db, 'template_fixed_debris_wide', 'false') === 'true') env.TEMPLATE_FIXED_DEBRIS_WIDE = '1';
     // A2 of the type-split arc (2026-08-22; gary → Oracle SIGN-OFF-W/COND, DARK): Fix A's
     // "letterhead used for several document types" hold is WAIVED when every rival type on the
     // letterhead has <2 confirmed docs (counts live) AND the document's OWN reference, read by a

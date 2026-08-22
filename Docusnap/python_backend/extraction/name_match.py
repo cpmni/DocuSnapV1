@@ -510,6 +510,35 @@ def near_match_identity(read, fixed, allow_edit=True):
     return _levenshtein(fr, ff) <= _NEAR_MATCH_MAX_EDITS      # branch B — one edge-glyph slip
 
 
+_DEBRIS_MAX_FOLD = 4          # a fold of <=4 alnum chars against a curated name >=8 is debris ('Gay', 'ba)', 'Poo')
+_DEBRIS_MAX_SUBTOKEN_ALPHA = 5  # a single <=5-alpha token that is a piece OF the curated fold ('MENT', 'TIONS')
+
+
+def is_debris_read(read, fixed):
+    """Chris round 17 card 2(a) (2026-08-23; gary → Oracle SIGN-OFF-W/COND). True when `read` is DEBRIS
+    against a curated company name: the fixed fold is >= _NEAR_MATCH_MIN_FIXED_LEN (8) AND either the
+    read fold has <= 4 alnum chars ('Gay' — a word not on the page — beat the seed at 75 because the
+    shipped debris rule is `< 3`), OR the read is a SINGLE token of <= 5 alpha chars that is a proper
+    substring of the fixed fold ('MENT', 'TIONS' — a stamp-occluded piece of the stacked wordmark).
+    Lives beside is_fragment_read rather than changing its constant (its pins stand). The 08-06
+    "a genuinely different company still displaces" ruling survives ON the on-page condition: the
+    caller fires this only under TEMPLATE_IDENTITY_ON_PAGE, where the doc carries the seed only if the
+    page names that company — so a <=4-char read there is debris, not Asda (pinned as the trade-off:
+    'Asda' vs 'DOCUMENT SOLUTIONS' -> kept). A short FIXED name ('BP', '3M') never enters (the 8 floor).
+    Pinned in tests/test_fixed_seed_debris.py."""
+    fr, ff = fold_identity(read), fold_identity(fixed)
+    if not fr or len(ff) < _NEAR_MATCH_MIN_FIXED_LEN or fr == ff:
+        return False
+    if len(fr) <= _DEBRIS_MAX_FOLD:
+        return True
+    toks = [t for t in re.findall(r"[A-Za-z0-9]+", str(read or ''))]
+    if len(toks) == 1:
+        alpha = re.sub(r"[^a-z]", "", toks[0].lower())
+        if 0 < len(alpha) <= _DEBRIS_MAX_SUBTOKEN_ALPHA and toks[0].lower() in ff and toks[0].lower() != ff:
+            return True
+    return False
+
+
 def is_fragment_read(read, fixed):
     """True when the read is a DEBRIS FRAGMENT ('ba)') against a real curated company name.
 

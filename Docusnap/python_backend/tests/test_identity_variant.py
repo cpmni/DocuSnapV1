@@ -128,8 +128,13 @@ check("NOT garble-kind (buyer-issued PO: whole-token disagreement with the lette
       S(f, {"text_led": "Bramblewood Joinery Ltd", "resolved": "Quillstone Print & Packaging"}) is False
       and f["corrected_to"] == "Quillstone Print" and "suggested_supplier" not in f)
 f = {"value": "MENT", "confidence": 70}
-check("a 4-char scrap ('MENT') is below the C2 floor → inert (not garble-kind)",
+check("a 4-char scrap ('MENT') is below the C2 garble floor — but it IS junk (Chris r17 card 2b) → suggested with kind 'junk'",
+      S(f, {"text_led": "DOCUMENT SOLUTIONS", "resolved": "MENT"}) is True and f.get("suggested_supplier") == "DOCUMENT SOLUTIONS" and f.get("suggested_kind") == 'junk')
+E._IDENTITY_SUGGEST_JUNK_ON = False
+f = {"value": "MENT", "confidence": 70}
+check("…with the junk kind off, the scrap is inert (the original C2-floor behaviour)",
       S(f, {"text_led": "DOCUMENT SOLUTIONS", "resolved": "MENT"}) is False and "suggested_supplier" not in f)
+E._IDENTITY_SUGGEST_JUNK_ON = True
 f = {"value": "", "confidence": 70}
 check("empty value → inert", S(f, {"text_led": "DOCUMENT SOLUTIONS", "resolved": "NOCUMENT"}) is False)
 check("_identity_garble_of: equal folds are not a garble; two edits on one token are not; None-safe",
