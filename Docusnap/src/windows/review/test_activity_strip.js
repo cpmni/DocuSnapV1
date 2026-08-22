@@ -79,5 +79,28 @@ console.log(LF + 'preload:');
 for (const name of ['getReviewEvents', 'onReviewEvent', 'markReviewEventsSeen', 'getReviewEventDocs', 'undoReviewEvent'])
   check(`preload exposes ${name}`, new RegExp('\\b' + name + ':').test(pre));
 
+console.log(LF + 'Chris round 17 cards 4 / 5a / 6 / 8 (eric batch):');
+const rh = read('..', '..', 'modules', 'review', 'handler.js'), ph = read('..', '..', 'modules', 'processing', 'handler.js');
+const rsvc = read('..', '..', 'services', 'repairService.js'), sa = read('..', 'search', 'search-actions.js');
+const tile = fn('async function refreshAutoCommittedBar');
+check('card 4: under the strip the tile yields (early return on _asOn) — placed AFTER the "viewing" back-bar branch',
+      /if \(typeof _asOn !== 'undefined' && _asOn\) \{ bar\.style\.display = 'none'; bar\.innerHTML = ''; return; \}/.test(tile)
+      && tile.indexOf("_viewingAutoFiled") < tile.indexOf("typeof _asOn !== 'undefined' && _asOn"));
+check('card 4: get-recent-auto-filed derives from status + a machine door (never the rolling id set alone)',
+      /\.filter\(d => d && d\.status === 'confirmed' && \(d\.confirmed_via \|\| \/\^Auto-filed\/\.test\(String\(d\.confirmed_by_username \|\| ''\)\)\)\)/.test(rh));
+check("card 5a: the strip line for a BULK approval drops the sender (the breakdown lives in the panel)",
+      /case 'approved':\s+return ev\.bulk \? `You filed \$\{n\} in one go`/.test(rend));
+check('card 6: get-processing-activity self-heals a stale import banner when nothing is running',
+      /if \(_activity && _activity\.source === 'import' && !_anyProcessingBusy\(\)\) \{ _activity = null; _broadcastActivity\(\); \}/.test(ph));
+check('card 6: the renderer re-pulls the activity truth every 30 s while the banner shows',
+      /setInterval\(\(\) => \{ if \(_processingActive\) window\.docusnap\.getProcessingActivity\?\.\(\)/.test(rend));
+check('card 6: the Reprocess dialog says a clean re-read WILL file when the sender files by itself (and how to undo)',
+      /anything that re-reads clean will file straight away — you'll see it in the activity strip with a Put back/.test(rend)
+      && /const _selfFiles = /.test(rend));
+check("card 8: Search's send-back names its door ('Sent back from Search'), Learning Repair keeps its own",
+      /const _prefix = source === 'search' \? 'Sent back from Search' : NOTE_PREFIX;/.test(rsvc)
+      && /\$\{_prefix\}: \$\{s\.note\}/.test(rsvc) && /\$\{_prefix\} — please re-check this document before filing\./.test(rsvc)
+      && /repairDeconfirm\(doc\.id, \{ source: 'search' \}\)/.test(sa));
+
 console.log(fails ? LF + fails + ' FAILED' : LF + 'All activity-strip contract checks passed');
 process.exit(fails ? 1 : 0);

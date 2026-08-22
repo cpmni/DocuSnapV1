@@ -658,6 +658,14 @@ function createReviewService(deps = {}) {
                              taught: !!(Array.isArray(taught_fields) && taught_fields.length), readyBefore: _readyBefore,
                              typeSplitNoted: _typeSplitNoted, templateId: _tplAfter });   // A6
       } catch (e) { logger?.warn?.('onAfterConfirm skipped: ' + (e && e.message)); }
+      // Chris round 17 card 5a: File All Ready is a renderer loop of bulk human confirms — not one of the
+      // ledger's doors, so the commonest batch action left no chip. One receipt per doc, merged by the
+      // ledger into ONE bulk event with a per-sender breakdown ("You filed 17 in one go · Nordwind 12 …").
+      // Not sweep-undoable (human via) → undo:null; the /v1 client's bulk confirm is a File N too.
+      if (bulk) {
+        try { recordReviewEvent(db, { kind: 'approved', ids: [document_id], approved: true, undo: null, bulk: true,
+                                      scope: { supplier: confirmedSupplier, typeSlug: document_type_slug || (dtInfo && dtInfo.slug) || null } }); } catch { /* presentation only */ }
+      }
     }
 
     return { ok: true, success: true, ...filingResult, ...(_classFix ? { classFix: _classFix } : {}) };

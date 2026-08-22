@@ -56,21 +56,25 @@ L.record(db, { kind: 'self_filed', ids: [901, 902], scope: { supplier: 'Nordwind
 L.record(db, { kind: 'self_filed', ids: [903], scope: { supplier: 'Pelican', typeSlug: 'invoice' }, undo: { type: 'sweep' } });
 L.record(db, { kind: 'self_filed', ids: [904], scope: { supplier: 'Nordwind', typeSlug: 'quote' }, undo: { type: 'sweep' } });
 evs = L.list(db);
-check('self_filed for two senders within the gap → two events (scope-keyed), and only the LATEST of a key merges',
-      evs.filter(e => e.kind === 'self_filed').length === 3 || evs.filter(e => e.kind === 'self_filed').length === 2,
+check('self_filed for two senders within the gap → two events (scope-keyed)',
+      evs.filter(e => e.kind === 'self_filed').length === 2,
       JSON.stringify(evs.map(e => [e.kind, e.scope.supplier, e.count])));
-// the latest self_filed is Pelican, so the Nordwind 904 cannot merge into 901/902 (not the latest) — by design:
-// merging only into the LATEST event keeps the strip strictly chronological.
-check('…Nordwind 904 became its own event (merge targets the latest event only — chronology preserved)',
-      evs[0].kind === 'self_filed' && evs[0].scope.supplier === 'Nordwind' && evs[0].count === 1);
-check('ids are de-duplicated on merge', (() => { L.record(db, { kind: 'self_filed', ids: [904, 905], scope: { supplier: 'Nordwind', typeSlug: 'quote' } }); return L.list(db)[0].count === 2; })());
+// Chris round 17 card 5a (Oracle nod): the merge targets the newest event with the SAME KEY inside the burst
+// gap — so Nordwind 904 joins 901/902 even though Pelican's event is newer (the old "latest only" rule split
+// one File All into two chips when the scope auto-accept landed mid-loop).
+const _nw = evs.find(e => e.kind === 'self_filed' && e.scope.supplier === 'Nordwind');
+check('…Nordwind 904 merged into Nordwind 901/902 past the newer Pelican event (same-key merge within the gap)',
+      _nw && _nw.count === 3 && evs.find(e => e.scope.supplier === 'Pelican').count === 1);
+check('ids are de-duplicated on merge', (() => { L.record(db, { kind: 'self_filed', ids: [904, 905], scope: { supplier: 'Nordwind', typeSlug: 'quote' } }); return L.list(db).find(e => e.scope.supplier === 'Nordwind' && e.kind === 'self_filed').count === 4; })());
 
 console.log('\nseen / persistence:');
 const top = L.list(db)[0];
 L.markSeen(db, top.id);
 check('markSeen(upto) marks everything at or below', L.list(db).every(e => e.seen === true));
 L.record(db, { kind: 'self_filed', ids: [906], scope: { supplier: 'Nordwind', typeSlug: 'quote' } });
-check('a merge resets seen (new documents arrived)', L.list(db)[0].seen === false && L.list(db)[0].count === 3);
+const _nw2 = L.list(db).find(e => e.kind === 'self_filed' && e.scope.supplier === 'Nordwind');
+check('a merge resets seen (new documents arrived)', _nw2.seen === false && _nw2.count === 5
+      && L.list(db).filter(e => e.kind === 'self_filed' && e.scope.supplier === 'Pelican').every(e => e.seen === true));
 const raw = JSON.parse(store.get(SETTING_KEY));
 check('persisted as ONE setting row with seq + events', raw && Array.isArray(raw.events) && Number.isFinite(raw.seq));
 const L2 = create({ learning, now, timers });
@@ -105,6 +109,26 @@ L.record(db, { kind: 'auto_filed', ids: [4002], scope: { supplier: 'A', typeSlug
 check('two more within a second → no extra sends yet (coalesced)', sent.length === 1);
 tick(1000);
 check('…one trailing send after the throttle window, carrying the merged count', sent.length === 2 && sent[1].count === 3);
+
+console.log('\nbulk approval (Chris round 17 card 5a):');
+tick(61_000);
+L.record(db, { kind: 'approved', ids: [6001], approved: true, undo: null, bulk: true, scope: { supplier: 'Nordwind', typeSlug: 'quote' } });
+tick(5000);
+L.record(db, { kind: 'approved', ids: [6002], approved: true, undo: null, bulk: true, scope: { supplier: 'Pelican', typeSlug: 'invoice' } });
+check('two bulk approvals, two senders, 5 s apart → ONE event keyed by kind, bySender 2 rows, not undoable',
+      L.list(db)[0].kind === 'approved' && L.list(db)[0].bulk === true && L.list(db)[0].count === 2
+      && Object.keys(L.list(db)[0].bySender).length === 2 && L.list(db)[0].undoable === false);
+tick(2000);
+L.record(db, { kind: 'self_filed', ids: [6003], scope: { supplier: 'Nordwind', typeSlug: 'quote' }, undo: { type: 'sweep' } });   // the auto-accept lands MID-loop
+tick(2000);
+L.record(db, { kind: 'approved', ids: [6004], approved: true, undo: null, bulk: true, scope: { supplier: 'Oakhaven', typeSlug: 'invoice' } });
+check('…a self_filed event landing mid-loop does NOT split the bulk chip (merge targets the newest SAME-KEY event within the gap)',
+      L.list(db).filter(e => e.kind === 'approved' && e.bulk).length === 1 && L.list(db).find(e => e.bulk).count === 3
+      && L.list(db).filter(e => e.kind === 'self_filed').length >= 1);
+tick(61_000);
+L.record(db, { kind: 'approved', ids: [6005], approved: true, scope: { supplier: 'Nordwind', typeSlug: 'quote' }, undo: { type: 'sweep' } });
+check("a sweep 'File N' (not bulk) stays scope-keyed and undoable — a different key from the bulk event",
+      L.list(db)[0].kind === 'approved' && !L.list(db)[0].bulk && L.list(db)[0].undoable === true && L.list(db)[0].count === 1);
 
 console.log('\nmarkUndone (Chris round 17 card 7):');
 tick(61_000);

@@ -429,7 +429,11 @@ function register(ctx) {
         if (Array.isArray(o.approved)) approved = o.approved.filter(id => ids.includes(id));
       }
     } catch {}
-    const docs = ids.length ? documents.getByIds(db, ids) : [];
+    // Chris round 17 card 4: derive-don't-maintain — the rolling id SET never forgets a doc that was put
+    // back / sent back / re-filed by hand, so the tile counted 35 in-queue docs as "filed automatically".
+    // Only docs STILL confirmed by a machine door (a via, or the import's 'Auto-filed (…)' username) count.
+    const docs = (ids.length ? documents.getByIds(db, ids) : [])
+      .filter(d => d && d.status === 'confirmed' && (d.confirmed_via || /^Auto-filed/.test(String(d.confirmed_by_username || ''))));
     return { count: docs.length, docs, approvedIds: approved };
   });
   ipcMain.handle('clear-recent-auto-filed', () => {

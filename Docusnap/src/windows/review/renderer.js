@@ -531,6 +531,10 @@ async function refreshAutoCommittedBar() {
     bar.style.display = 'block';
     return;
   }
+  // Chris round 17 card 4: under the activity strip the strip owns the receipts — the tile said "39 filed
+  // automatically" about 35 documents sitting in the queue. Placed AFTER the viewing branch above ("See
+  // them" renders its "← Back" into this bar). The B2 precedent (the sweep done-phase already defers).
+  if (typeof _asOn !== 'undefined' && _asOn) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
   let res = { docs: [] };
   try { res = (await window.docusnap.getRecentAutoFiled?.()) || res; } catch {}
   _autoFiledDocs = res.docs || [];
@@ -644,7 +648,7 @@ function _asLine(ev) {
   switch (ev.kind) {
     case 'auto_filed': return `${n} document${s} filed automatically — every field read clean (matched 100 %)`;
     case 'self_filed': return `${n} document${s}${sup ? ` from <b>${sup}</b>` : ''} filed themselves — they matched what you've confirmed`;
-    case 'approved':   return `You filed ${n}${sup ? ` from <b>${sup}</b>` : ''} in one go`;
+    case 'approved':   return ev.bulk ? `You filed ${n} in one go` : `You filed ${n}${sup ? ` from <b>${sup}</b>` : ''} in one go`;
     case 'class_fix':  return `${n} ${sup ? `<b>${sup}</b> ` : ''}document${s} ${n === 1 ? 'was' : 'were'} corrected to match your fix`;
     case 'put_back':   return `${n} ${sup ? `<b>${sup}</b> ` : ''}document${s} ${n === 1 ? 'was' : 'were'} put back in Review — the filed copies stay in your folder until you file them again`;
     default:           return `${n} document${s}`;
@@ -7451,6 +7455,10 @@ function applyProcessingActivity(s) {
 try {
   window.docusnap.onProcessingActivity?.(applyProcessingActivity);
   window.docusnap.getProcessingActivity?.().then(applyProcessingActivity).catch(() => {});
+  // Chris round 17 card 6: the banner is ONE boolean fed by a fire-and-forget {active:false}; a lost send
+  // left "Processing new documents from import — 200 of 200" up for 15 minutes. Self-heal: re-pull the
+  // main process's truth every 30 s while the banner shows (and on every queue broadcast, below).
+  setInterval(() => { if (_processingActive) window.docusnap.getProcessingActivity?.().then(applyProcessingActivity).catch(() => {}); }, 30_000);
 } catch { /* older main without the activity signal — bar simply never shows */ }
 
 document.getElementById('btn-reprocess').addEventListener('click', async (e) => {
@@ -7640,12 +7648,17 @@ async function runReprocessBatch(docs, scopeLabel, opts = {}) {
   // preConfirmed, both confirms are skipped; the source's OTHER edits are protected instead by
   // opts.preserveOpenDoc below (Oracle seam ruling 2026-08-21). Do NOT globalise preConfirmed —
   // Reprocess-All / Reprocess-this-sender must keep their warnings.
+  // Chris round 17 card 6: when the sender already files by itself, a re-read that comes out clean WILL
+  // file (the scope auto-accept) — say so, with where to look and how to undo.
+  const _selfFiles = (() => { try { return Array.isArray(_scopeReadiness) && _scopeReadiness.some(s => s && s.ready && docs.some(d => String(d.supplier_name || '').trim().toLowerCase() === String(s.supplier || '').trim().toLowerCase())); } catch { return false; } })();
+  const _fileLine = _selfFiles
+    ? `Re-reading updates the details. Because this sender already files by itself, anything that re-reads clean will file straight away — you'll see it in the activity strip with a Put back.`
+    : `Re-reading updates the details; it doesn't file anything by itself — documents that come out ready still file through Confirm, File All Ready, or the sender's own auto-file once it's learned.`;
   if (!opts.preConfirmed
       && !confirm(`Re-read all ${docs.length} document${docs.length === 1 ? '' : 's'} (${scopeLabel}) from their pages? `
              + `Values the documents re-read may replace what's shown now, and this can take a while. `
              + `Documents you've already confirmed and filed are not touched.\n\n`
-             + `Re-reading updates the details; it doesn't file anything by itself — documents that come out ready `
-             + `still file through Confirm, File All Ready, or the sender's own auto-file once it's learned.`)) return;
+             + _fileLine)) return;
   // The open document's unsaved edits/type choice are re-rendered away too (QA audit #3).
   if (!opts.preConfirmed && hasPendingReviewEdits() && !confirm(REPROCESS_DISCARD_WARNING)) return;
 

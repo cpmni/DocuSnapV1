@@ -2479,9 +2479,17 @@ function register(ctx) {
   // (filenames, which routinely carry supplier + reference numbers), so it was an unauthenticated
   // metadata-disclosure surface; gate all four launchpad reads to any logged-in user. The "Try
   // again" action reuses the role-gated reprocess-document IPC below.
-  ipcMain.handle('get-processing-activity', () => { requireLogin(); return _activity
-    ? { active: true, source: _activity.source, done: _activity.done, total: _activity.total }
-    : { active: false }; });
+  ipcMain.handle('get-processing-activity', () => {
+    requireLogin();
+    // Chris round 17 card 6: self-heal — a stale `_activity` with no batch running (the end-of-batch
+    // clear is the only writer that nulls it; a dropped send to a window is not its fault) reads as idle.
+    // Only nulls the presentation state; never spawns or kills. Guarded by the batch/single-reprocess
+    // liveness the rest of this module trusts (_anyProcessingBusy).
+    if (_activity && _activity.source === 'import' && !_anyProcessingBusy()) { _activity = null; _broadcastActivity(); }
+    return _activity
+      ? { active: true, source: _activity.source, done: _activity.done, total: _activity.total }
+      : { active: false };
+  });
 
   ipcMain.handle('get-concurrency-info', () => { requireLogin(); return {
     cores: os.cpus().length || 1,

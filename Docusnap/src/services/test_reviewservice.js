@@ -262,9 +262,22 @@ const basePayload = (id, extra = {}) => ({
   // reset to a 100 %-one-type history for the remaining cases
   db.prepare("DELETE FROM documents WHERE id IN (?, ?)").run(dTS, dTS2);
   const dTSb = newDoc(db);
-  const rTSb = await svc.confirm(db, { username: 'sarah', role: 'admin' }, tsPayload(dTSb, { bulk: true }));
+  // Chris round 17 card 5a: a BULK human confirm (File All Ready) records ONE 'approved' receipt per doc,
+  // flagged bulk, undo:null — the ledger merges them into one chip. A non-bulk confirm records nothing here
+  // (its receipts come from the sweep / class-fix doors).
+  const _led = [];
+  const svcLed = createReviewService({ ...deps, recordReviewEvent: (_db, ev) => { _led.push(ev); return ev; } });
+  const rTSb = await svcLed.confirm(db, { username: 'sarah', role: 'admin' }, tsPayload(dTSb, { bulk: true }));
   check('  → bulk never asks (no affordance on that route)', rTSb.ok === true);
+  check('  → bulk records ONE approved receipt: bulk:true, undo:null, scope = the confirmed sender (card 5a)',
+        _led.length === 1 && _led[0].kind === 'approved' && _led[0].bulk === true && _led[0].undo === null
+        && _led[0].approved === true && JSON.stringify(_led[0].ids) === JSON.stringify([dTSb]) && !!(_led[0].scope && _led[0].scope.supplier));
   db.prepare("DELETE FROM documents WHERE id = ?").run(dTSb);
+  const dTSn = newDoc(db);
+  _led.length = 0;
+  const rTSn = await svcLed.confirm(db, { username: 'sarah', role: 'admin' }, tsPayload(dTSn, { acknowledgeTypeSplit: true }));
+  check('  → positive control: a NON-bulk human confirm files but records no bulk receipt', rTSn.ok === true && _led.length === 0);
+  db.prepare("DELETE FROM documents WHERE id = ?").run(dTSn);
   const dTSm = newDoc(db);
   const rTSm = await svc.confirm(db, { username: 'sarah', role: 'admin' }, tsPayload(dTSm), { via: 'scope_sweep' });
   check('  → a machine via never asks', rTSm.ok === true);

@@ -54,7 +54,7 @@ function renderActions(doc) {
       // until re-confirmed (repair-deconfirm keeps stored_path). First action so it's prominent.
       if (isAdmin) _btn(docSection, '↩ Send back to Review', () => {
         if (confirm('Send this document back to the Review queue? It stays filed until you re-confirm it.'))
-          _afterChange(window.docusnap.repairDeconfirm(doc.id));
+          _afterChange(window.docusnap.repairDeconfirm(doc.id, { source: 'search' }));   // card 8: the note names Search, not Learning Repair
       }, true);
       // Escape hatches to the real file — deliberately kept (round-2 Chris fix restored
       // them), EDIT/ADMIN only, and now DOC-ID-RESOLVED: the search ROW surface carries

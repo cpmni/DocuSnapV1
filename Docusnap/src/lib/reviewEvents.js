@@ -104,11 +104,23 @@ function create(deps = {}) {
       const t = now();
       const state = _load(db);
       const scope = { supplier: String((ev.scope || {}).supplier || '').trim() || null, typeSlug: String((ev.scope || {}).typeSlug || '').trim().toLowerCase() || null };
-      const key = kind === 'auto_filed' ? 'auto_filed' : `${kind}|${_scopeKey(scope)}`;
+      // Chris round 17 card 5a: a BULK approval (File All Ready) is keyed by kind like auto_filed — one chip
+      // with a per-sender breakdown — while the sweep's "File N" stays scope-keyed (and undoable).
+      const key = kind === 'auto_filed' ? 'auto_filed'
+        : (kind === 'approved' && ev.bulk) ? 'approved|bulk'
+        : `${kind}|${_scopeKey(scope)}`;
       const sender = scope.supplier || '—';
-      const latest = state.events.length ? state.events[state.events.length - 1] : null;
+      // Merge into the NEWEST event with the SAME key inside the burst gap — not only the very latest event
+      // (Oracle nod, 2026-08-23): a File All confirm triggers the 1.5 s scope auto-accept, whose self_filed
+      // event can land MID-loop and would otherwise split one File All into two chips.
+      let latest = null;
+      for (let i = state.events.length - 1; i >= 0; i--) {
+        const e = state.events[i];
+        if ((t - Number(e.at || 0)) >= burstGapMs) break;
+        if (e.key === key) { latest = e; break; }
+      }
       let out;
-      if (latest && latest.key === key && (t - Number(latest.at || 0)) < burstGapMs) {
+      if (latest) {
         const have = new Set(latest.ids || []);
         for (const id of ids) have.add(id);
         latest.ids = [...have];
@@ -124,7 +136,7 @@ function create(deps = {}) {
         state.seq += 1;
         out = { id: state.seq, key, kind, at: t, started_at: t, ids, bySender: { [sender]: ids.length }, scope,
                 approved: !!ev.approved, undo: ev.undo && ev.undo.type ? { type: String(ev.undo.type), ...(ev.undo.batchId ? { batchId: String(ev.undo.batchId) } : {}) } : null,
-                dropped, seen: false };
+                dropped, seen: false, ...(ev.bulk ? { bulk: true } : {}) };
         state.events.push(out);
       }
       _save(db, state);

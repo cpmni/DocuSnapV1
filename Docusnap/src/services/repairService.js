@@ -43,7 +43,9 @@ const learning = require('../../database/modules/learning');
 const NOTE_PREFIX = 'Sent back from Learning Repair';
 const GENERIC_NOTE = NOTE_PREFIX + ' — please re-check this document before filing.';
 
-function sendBackToReview(db, docId, { suspects } = {}) {
+function sendBackToReview(db, docId, { suspects, source } = {}) {
+  // Chris round 17 card 8: every Search send-back said "Sent back from Learning Repair" — name the real door.
+  const _prefix = source === 'search' ? 'Sent back from Search' : NOTE_PREFIX;
   const run = db.transaction(() => {
     const r = documents.deconfirmDocument(db, docId);
     if (!r.changes) return { ok: false, error: 'not-confirmed' };
@@ -86,7 +88,7 @@ function sendBackToReview(db, docId, { suspects } = {}) {
     const flagged_fields = [];
     for (const s of list) {
       const field = s.field || 'supplier_name';   // doc-level suspects land on the identity row
-      const note = s.field && s.note ? `${NOTE_PREFIX}: ${s.note}` : GENERIC_NOTE;
+      const note = s.field && s.note ? `${_prefix}: ${s.note}` : `${_prefix} — please re-check this document before filing.`;
       if (!stamp.run({ n: note, id: docId, f: field }).changes) {
         insertNoteRow.run({ n: note, id: docId, f: field });   // C5: no row → create it so the flag COUNTS
       }
