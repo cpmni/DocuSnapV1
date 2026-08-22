@@ -1109,6 +1109,20 @@ app.whenReady().then(() => {
       // file that runs on every install with no toggle and no mention in the UI. Full detail now
       // follows Diagnostic Logging, which is admin-gated, off by default and already tells the
       // operator what it holds. One switch, one consent, one place to explain it.
+      // DEV SESSIONS KEEP DIAGNOSTIC LOGGING ON (owner request 2026-08-22): `npm start` runs
+      // scripts/dev-start.js, which sets DOCUSNAP_DIAGNOSTIC_LOG=on. The env alone only armed the
+      // processing path (_diagEnabled); the Settings toggle, the support-log detail and every other
+      // consumer read the `diagnostic_logging` ROW — so in an UNPACKAGED app the env writes the row
+      // (idempotent; a fresh DB gets it on first start). Packaged builds never receive the env and
+      // keep the customer default: OFF until the admin flips the toggle.
+      try {
+        const _devDiag = (process.env.DOCUSNAP_DIAGNOSTIC_LOG || '').toLowerCase();
+        if (!app.isPackaged && ['on', 'true', '1'].includes(_devDiag)
+            && learning.getSetting(db, 'diagnostic_logging', 'false') !== 'true') {
+          learning.setSetting(db, 'diagnostic_logging', 'true');
+          logger.log('startup: dev session — diagnostic_logging set ON from DOCUSNAP_DIAGNOSTIC_LOG');
+        }
+      } catch { /* best-effort */ }
       try {
         logger.setDetailed(learning.getSetting(db, 'diagnostic_logging', 'false') === 'true');
       } catch { /* unreadable setting -> stay redacted, the safe direction */ }
