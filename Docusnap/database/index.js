@@ -1985,6 +1985,19 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 83 applied: documents.drained_at (+backfill) · keep_processed_originals ON (a filed document keeps its Processed original)');
   }
 
+  // ── Migration 84: the one-sample seed SUPPORT PRUNE defaults ON for NEW installs only (Oracle
+  // Q2 RE-RULE C9, 2026-08-22: after the final-rule census — recall 98.9%→100%, cross-supplier hits
+  // unchanged — and Chris 15 — teach from the worst scan: `fingerprint_seed_pruned kept 7 recovered
+  // 20` → the teach-time re-read did 19/19, round 14: 0). INSERT OR IGNORE: an existing install
+  // keeps whatever it has (never UPSERT-forced; the intersection already heals a frozen garble on
+  // the next confirm). Revert = the dev-gated toggle / env FINGERPRINT_SEED_SUPPORT=0.
+  if (!applied.has(84)) {
+    try { db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('fingerprint_seed_support_prune', 'true')").run(); }
+    catch (e) { console.warn(`  migration 84: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (84)').run();
+    console.log('JS migration 84 applied: fingerprint_seed_support_prune ON for new installs (one-sample seed support prune)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the
