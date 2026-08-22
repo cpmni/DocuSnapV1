@@ -21,9 +21,9 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-22 EVENING: **READ `HANDOVER_2026-08-22.md` FIRST** (the overnight "teach 1 →
-import N → it files itself" arc + the afternoon two-line wordmark slice + the evening round-14 vet queue),
-then `HANDOVER_2026-08-20_EVENING.md`. Chris rounds 13/13b/14/15(/16) verbatim in
+## ⏭ LATEST — 2026-08-22 EVENING: **READ `HANDOVER_2026-08-22_EVENING.md` FIRST** (state, the shipped
+table, the owner vet queue, traps, how to resume), then `HANDOVER_2026-08-22.md` (the overnight arc, the
+afternoon wordmark slice, rounds 13/13b/14), then `HANDOVER_2026-08-20_EVENING.md`. Chris rounds 13/13b/14/15(/16) verbatim in
 `docs/CHRIS_FULL_APP_REVIEW_2026-08-22.md`; every Oracle verdict + gate in `docs/oracle_log.md`.
 **Chris 15 (the owner's 22 real scans + Demo Docs): YES — 57 filed, zero wrong folder/value, "nothing went
 missing and nothing needed a trick".** What shipped today (each behind its own switch; mig 79–84):
