@@ -57,6 +57,20 @@ ran on the fixes. Headlines:
   pre-claim `PUT_BACK`; only a human claim clears; the auto accept files as "Auto-filed (after your confirms)").
   A4 `7b8c8e1` the `confirm-review` IPC whitelist dropped `typeSplit`. A2/A6/5/7/copy `8b5ae1a`, A7 `615263c`.
   Census `TESTING/_measure/first_fill_reliability_census.js`: DS 0 held, Copperfield held, K=1≈K=2.
+- **ROUND 19 → (04:00–04:40):** A2/A3/A4 FIXED; A1 fixed on the lane road but **four wrong dates self-filed via the
+  manual "Reprocess N"** (N1) and **Ironbridge filed 18 on zero confirms** (N2). **THE MEASUREMENT THAT MATTERED:** the
+  corroboration record called EVERY date a "disagreement" (`_cmp_norm` is separator-blind: `17-12-2026` vs
+  `17/12/2026`) → no date was ever corroborated and the keyword family's CORRECT read on the four wrong rows was
+  invisible → `6b77f30` date-aware compare (`FIELD_CORROBORATION_DATE_FOLD`) + the every-road `docTrustGate`
+  refusal `disagreeing-read:<role>` (DARK `trust_role_disagreement_refuse`). N2 mechanism: the TYPE-wide
+  `supplier_name` group was `constant` at 2 names (Copperfield + Ironbridge's own wizard confirm) → `69a65de`
+  DARK `trust_company_key_own_scope` (a company key never borrows the type's names; the badge and the gate agree).
+  P1 `5979bdc` **`src/modules/processing/rereadHolds.js` = ONE road for re-read holds** (the lane delegates; the
+  manual batch + single-doc Reprocess write the same holds, DARK `reprocess_holds_as_lane`; C1: the S3-C5 baseline
+  is the row's TYPE-VALID `corrected_to` else its display — never offer 'INV-29273' on a date). P3 `9dc7bf4` the
+  layout arm re-reads noted docs (a new box is new evidence); N4/N5/N6/N8 `67aef42` + `65ff83d`. **OPEN:** the
+  realdoc drift on the same DB copy (389/416 M=0 at 00:11 → 381/416 M=1 at 04:20; bisect `72a75bd`); the ON arm
+  + round 20 results are in `HANDOVER_2026-08-23.md`.
 **Traps this session:** `core.autocrlf=true` → renderer.js etc. are CRLF on disk (tests slicing `
 }
 ` must
