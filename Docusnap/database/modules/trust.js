@@ -516,6 +516,28 @@ const _CORROB_PAGE_FAMILIES = new Set(['mapping', 'crop', 'keyword']);
 // a frozen-issuer template) — relaxing it needs BOTH analyses re-run, not just this table.
 // Unknown/future family names count toward set size but never toward the page requirement —
 // fails closed. Malformed/missing records (incl. every pre-migration-63 row) → not licensed.
+// Chris round 19 (2026-08-23, Oracle gate item (d)): a ROLE field (the type's ref/date) whose
+// corroboration record says an independent PAGE family read a DIFFERENT value is refused on EVERY
+// road (import auto-file, the scope sweep, the reprocess accept) — the four wrong Copperfield dates
+// each carried `disagree: [{family:'keyword', value:<the right date>}]` while the box's read sat at
+// 94 % "Nothing looks wrong". Memory/hint disagreements do not count (near-circular). Fail-open when
+// the record is absent (an un-threaded harness overlay never refuses). DARK:
+// `trust_role_disagreement_refuse` / TRUST_ROLE_DISAGREEMENT_REFUSE. Depends on the engine's date fold
+// (FIELD_CORROBORATION_DATE_FOLD): before it every correct date also read as a disagreement.
+function _roleDisagreementRefuseEnabled(db) {
+  const env = process.env.TRUST_ROLE_DISAGREEMENT_REFUSE;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try { return require('./learning').getSetting(db, 'trust_role_disagreement_refuse', 'false') === 'true'; }
+  catch { return false; }
+}
+function _pageFamilyDisagrees(record) {
+  let rec = record;
+  if (typeof rec === 'string') { try { rec = JSON.parse(rec); } catch { return null; } }
+  if (!rec || typeof rec !== 'object' || !Array.isArray(rec.disagree)) return null;
+  const hit = rec.disagree.find(d => d && _CORROB_PAGE_FAMILIES.has(String(d.family || '')));
+  return hit ? { family: String(hit.family), value: String(hit.value ?? '') } : null;
+}
 function _corrobLicensed(record) {
   let rec = record;
   if (typeof rec === 'string') { try { rec = JSON.parse(rec); } catch { return false; } }
@@ -765,8 +787,11 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
   // extraction_method is selected for the SHADOW-ROW skip below. It is also the field the two
   // harness overlays (stress_test/realdoc_regression.js, services/sweepPredicate.js) were missing,
   // which would have made the gate for that skip VACUOUSLY GREEN — they now thread it too.
+  const _roleDisagreeOn = (opts.roleDisagreementRefuse !== undefined) ? !!opts.roleDisagreementRefuse : _roleDisagreementRefuseEnabled(db);
   const exs = opts.extractions || db.prepare(
-    'SELECT field_key, display_value, raw_value, validation_note, extraction_method FROM extractions WHERE document_id = ?'
+    _roleDisagreeOn
+      ? 'SELECT field_key, display_value, raw_value, validation_note, extraction_method, corroboration FROM extractions WHERE document_id = ?'
+      : 'SELECT field_key, display_value, raw_value, validation_note, extraction_method FROM extractions WHERE document_id = ?'
   ).all(docId);
 
   // STRUCTURAL ROLE keys — the issuer plus the type's ref/date roles. These decide the folder path
@@ -804,6 +829,11 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
     if (!v) continue;                                                    // empty → safe
     if (e.validation_note && String(e.validation_note).trim())           // any flag → not safe
       return { ok: false, reason: `flagged:${e.field_key}` };
+    // r19 (d): a filing-critical role read that an independent page family contradicts never files
+    // by itself — the page said something else; a person decides which.
+    if (_roleDisagreeOn && (e.field_key === _dtRow.ref_field_key || e.field_key === _dtRow.date_field_key)
+        && 'corroboration' in e && _pageFamilyDisagrees(e.corroboration))
+      return { ok: false, reason: `disagreeing-read:${e.field_key}` };
     // SHADOW-ROW SKIP (see _shadowRowSkipEnabled). Deliberately AFTER the note check above: a
     // flagged shadow row still blocks. A row that is VISIBLE to the operator — a defined field of
     // this type, or a structural role — is never skipped, whatever its method, which preserves the
@@ -1115,9 +1145,10 @@ function autoFileEligibleIds(db, docs, opts = {}) {
     ? !!opts.vacuousCorrectedToIgnore : _vacuousCorrectedToIgnore(db);
   // 2026-08-22 role-field dominant class (C1.3) — one settings read per batch.
   const roleDominant = (opts.roleDominant !== undefined) ? !!opts.roleDominant : _roleDominantEnabled(db);
+  const roleDisagreementRefuse = (opts.roleDisagreementRefuse !== undefined) ? !!opts.roleDisagreementRefuse : _roleDisagreementRefuseEnabled(db);   // r19 (d)
   const ids = [];
   for (const d of (docs || [])) {
-    if (isAutoFileEligible(db, d, { ...opts, formats, gradOn, optOut, shadowRowSkip, corrobAutoFile, gateUnify, critFieldCorrobRelax, vacuousCorrectedToIgnore, roleDominant }).eligible) ids.push(d.id);
+    if (isAutoFileEligible(db, d, { ...opts, formats, gradOn, optOut, shadowRowSkip, corrobAutoFile, gateUnify, critFieldCorrobRelax, vacuousCorrectedToIgnore, roleDominant, roleDisagreementRefuse }).eligible) ids.push(d.id);
   }
   return ids;
 }
@@ -1179,6 +1210,7 @@ module.exports = {
   _missingRequiredKey,             // exported for the T2 pins (test_scope_trust.js)
   _corrobLicensed,                 // exported for the declined census + pins — decision logic stays HERE
   _critFieldCorrobRelaxEnabled, _vacuousCorrectedToIgnore,   // exported so pins can't drift from the default
+  _roleDisagreementRefuseEnabled, _pageFamilyDisagrees,      // r19 (d): the role-field disagreement refusal
   validDate: _validDate, validIban: _validIban, validVatGb: _validVatGb,
   currencyDpConsistent: _currencyDpConsistent, currencyConsistentForField: _currencyConsistentForField, matchesTypePattern: _matchesTypePattern,
   scopeTrust, docTrustGate, isAutoFileEligible, autoFileEligibleIds,

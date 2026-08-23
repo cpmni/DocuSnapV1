@@ -1046,6 +1046,36 @@ def _cmp_norm(value) -> str:
         return "".join(str(value or "").strip().lower().split())
 
 
+# Chris round 19 (2026-08-23, Oracle gate item (d)): the corroboration record compared a VALIDATOR-
+# normalised winner ('17-12-2026') with a raw keyword candidate ('17/12/2026') through _cmp_norm, which
+# folds whitespace but not date separators — so EVERY date read as a "disagreement" (independent_agree
+# False on correct rows; no date was ever corroborated) and the four GENUINE disagreements on the wrong
+# Copperfield dates (keyword '12/10/2026' vs the box's '02-10-2026') were indistinguishable from the
+# artefact. Date-aware compare: when BOTH strings are date-shaped, compare their normalised forms.
+# Record-only upstream; downstream the record LICENSES (the C3.3 exemption, critfield relax,
+# corroboration auto-file) and will feed the role-disagreement refusal — so it is its own switch.
+# Kill: FIELD_CORROBORATION_DATE_FOLD=0 (default ON for the emit: a record that lies is worse than one
+# that widens a licence the owner controls with its own switches).
+_DATE_SHAPE_RE = re.compile(r"^\s*\d{1,4}[\/\-.]\d{1,2}[\/\-.]\d{2,4}\s*$")
+
+def _corrob_values_agree(a, b) -> bool:
+    """Corroboration-time equality: the shared token normaliser, plus a date fold when both values are
+    date-shaped (separator / padding differences are not disagreements)."""
+    if _cmp_norm(a) == _cmp_norm(b):
+        return True
+    if os.environ.get('FIELD_CORROBORATION_DATE_FOLD', '1') == '0':
+        return False
+    sa, sb = str(a or ''), str(b or '')
+    if not (_DATE_SHAPE_RE.match(sa) and _DATE_SHAPE_RE.match(sb)):
+        return False
+    try:
+        from extraction import validator as _v
+        da, db_ = _v.parse_date(sa), _v.parse_date(sb)
+        return bool(da and db_ and da == db_)
+    except Exception:
+        return False
+
+
 # Confidence a cross-check flip is RESTORED to when an independent keyword read corroborates it
 # (E2, below). Must clear trust.js's 88 critical-field floor with margin, and stay within the
 # located-inline ceiling (~93) — a corroborated located read, not a certainty.
@@ -4122,7 +4152,7 @@ class ExtractionEngine:
                 cv = c.get('value')
                 if cv in (None, ''):
                     continue
-                if _cmp_norm(cv) == win_norm:
+                if _corrob_values_agree(cv, val):
                     if win_bucket is not None:
                         agree.add(fam)
                 else:
