@@ -1373,6 +1373,14 @@
               </div>
               <label class="toggle"><input type="checkbox" id="trust-role-disagreement-toggle"><span class="toggle-slider"></span></label>
             </div>
+            <!-- Chris r19 N1 (2026-08-23): Reprocess writes the same holds as the background re-read (DARK) -->
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">When you press Reprocess, keep a value that reads differently from before for your check, like the background re-read does</div>
+                <div class="threshold-sub">Today "Reprocess N from this sender" and the single-document Reprocess replace values silently. With this on they behave like the background re-read: a date or reference that now reads differently is kept for you with the previous value one click away, and a blank the re-read fills in for the first time is held for you to confirm once where the same box misread a sibling. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="reprocess-holds-toggle"><span class="toggle-slider"></span></label>
+            </div>
             <!-- The garbled-issuer arc (2026-08-22 evening, three slices, all DARK) -->
             <div class="threshold-row">
               <div>

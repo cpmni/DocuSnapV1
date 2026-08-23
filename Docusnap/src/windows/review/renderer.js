@@ -7693,9 +7693,12 @@ async function runReprocessBatch(docs, scopeLabel, opts = {}) {
   // Chris round 17 card 6: when the sender already files by itself, a re-read that comes out clean WILL
   // file (the scope auto-accept) — say so, with where to look and how to undo.
   const _selfFiles = (() => { try { return Array.isArray(_scopeReadiness) && _scopeReadiness.some(s => s && s.ready && docs.some(d => String(d.supplier_name || '').trim().toLowerCase() === String(s.supplier || '').trim().toLowerCase())); } catch { return false; } })();
+  // r19 N1 (Oracle C6): say what "clean" means when the re-read holds like the lane does.
+  let _holdsLine = '';
+  try { if ((await window.docusnap.getSetting('reprocess_holds_as_lane')) === 'true') _holdsLine = ` A value that reads differently from before is kept for you to check — the previous value is one click away.`; } catch {}
   const _fileLine = _selfFiles
-    ? `Re-reading updates the details. Because this sender already files by itself, anything that re-reads clean will file straight away — you'll see it in the activity strip with a Put back.`
-    : `Re-reading updates the details; it doesn't file anything by itself — documents that come out ready still file through Confirm, File All Ready, or the sender's own auto-file once it's learned.`;
+    ? `Re-reading updates the details. Because this sender already files by itself, anything that re-reads clean will file straight away — you'll see it in the activity strip with a Put back.${_holdsLine}`
+    : `Re-reading updates the details; it doesn't file anything by itself — documents that come out ready still file through Confirm, File All Ready, or the sender's own auto-file once it's learned.${_holdsLine}`;
   if (!opts.preConfirmed
       && !confirm(`Re-read all ${docs.length} document${docs.length === 1 ? '' : 's'} (${scopeLabel}) from their pages? `
              + `Values the documents re-read may replace what's shown now, and this can take a while. `

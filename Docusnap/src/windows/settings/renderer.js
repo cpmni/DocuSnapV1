@@ -923,6 +923,8 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          ['quiet-reread-ff-reliability-toggle', 'quiet_reread_first_fill_reliability_hold'],
                          // Chris r19 (d) (2026-08-23): the role-field disagreement refusal (DARK).
                          ['trust-role-disagreement-toggle', 'trust_role_disagreement_refuse'],
+                         // Chris r19 N1 (2026-08-23): Reprocess writes the lane's holds (DARK).
+                         ['reprocess-holds-toggle', 'reprocess_holds_as_lane'],
                          // The garbled-issuer arc (2026-08-22 evening, DARK).
                          ['fixed-seed-fragment-garble-toggle', 'template_fixed_seed_fragment_garble'],
                          ['fixed-seed-debris-wide-toggle', 'template_fixed_debris_wide'],

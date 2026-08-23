@@ -96,7 +96,7 @@ function create(deps) {
     if (!job) {
       job = { id: `q${++_seq}`, key, supplier: sup, typeSlug: slug, reason: reasonList[0] || reason, reasons: new Set(), state: 'queued', total: 0, seedDocId: null,
               remaining: null, done: [], dropped: [], failed: 0, changed: [], rerun: false, cancelled: false, timer: null, layoutArm: null, readyArm: null,
-              fieldStats: new Map(), provisionalHolds: [], reliabilityHeld: [] };
+              holdsBatch: _holds.newBatch() };
       jobs.set(key, job);
     }
     for (const r of reasonList) job.reasons.add(r);
@@ -444,151 +444,33 @@ function create(deps) {
     // `quiet_reread_first_fill_reliability_hold`; via layout/ready keep their unconditional hold.
     const _ffOn = (() => { try { return !!(firstFillReliability && firstFillReliability.enabled && firstFillReliability.enabled(db)); } catch { return false; } })();
     if (nd.via === 'layout' || nd.via === 'ready') {
-      const note = nd.via === 'ready' ? 'Read after learning — confirm once.' : 'Read from your new box — confirm once.';
-      try { const ff = _holdFirstFills(db, nd.docId, nd.existing, note); if (ff.length) job.changed.push({ docId: nd.docId, fields: ff, firstFill: true }); } catch {}
+      try { const ff = _holds.holdFirstFills(db, nd.docId, nd.existing, _holds.NOTES[nd.via]); if (ff.length) job.changed.push({ docId: nd.docId, fields: ff, firstFill: true }); } catch {}
+      if (_ffOn) { try { _holds.onDocMerged(db, job.holdsBatch, { docId: nd.docId, existing: nd.existing, via: 'witness-only', reliability: true, _changed: changed }); } catch {} }
     } else if (_ffOn) {
-      try {
-        const ff = _holdFirstFills(db, nd.docId, nd.existing, RELIABILITY_NOTE);
-        for (const h of ff) job.provisionalHolds.push({ docId: nd.docId, key: h.key, now: h.now });
-      } catch {}
-    }
-    if (_ffOn) {
-      // the witnesses of an unreliable box, per field: S3-C5 disagreements, valued→empty losses, the
-      // engine's taught-box yield notes ("Kept the read value … — the taught/a taught … read …")
-      const bump = (key, kind) => { const st = job.fieldStats.get(key) || { unreliable: 0, kinds: [] }; st.unreliable++; st.kinds.push(`${kind}:${nd.docId}`); job.fieldStats.set(key, st); };
-      for (const c of changed) bump(c.key, 'changed');
-      try { for (const l of _lostReads(db, nd.docId, nd.existing)) bump(l.key, 'lost'); } catch {}
-      try { for (const y of _yieldReads(db, nd.docId)) bump(y.key, 'yield'); } catch {}
+      try { _holds.onDocMerged(db, job.holdsBatch, { docId: nd.docId, existing: nd.existing, via: nd.via || 'teach', reliability: true, _changed: changed }); } catch {}
     }
     job.done.push(nd.docId);
     if (changed.length) job.changed.push({ docId: nd.docId, fields: changed });
     notify({ type: 'doc_done', jobId: job.id, docId: nd.docId, changed: changed.length > 0, done: job.done.length, total: job.total });
   }
 
-  // Q3 C3.3: first-fills of REQUIRED ROLE fields (issuer / reference / date) in a 'layout' job.
-  // `corroborated(record)` is injected (trust._corrobLicensed: independent_agree across ≥2 PAGE
-  // families — mapping/crop/keyword; memory+hint excluded). Returns the held fields.
-  function _holdFirstFills(db, docId, existing, noteText) {
-    const doc = db.prepare('SELECT document_type_id FROM documents WHERE id = ?').get(docId);
-    if (!doc || !doc.document_type_id) return [];
-    const dt = db.prepare('SELECT ref_field_key, date_field_key FROM document_types WHERE id = ?').get(doc.document_type_id) || {};
-    const roleKeys = new Set(['supplier_name', dt.ref_field_key, dt.date_field_key].filter(Boolean));
-    const req = db.prepare('SELECT key FROM fields WHERE document_type_id = ? AND enabled = 1 AND required = 1').all(doc.document_type_id)
-      .map(f => f.key).filter(k => roleKeys.has(k))
-      // Chris r19 N4: the RELIABILITY hold never judges the identity field — a first-filled issuer is the
-      // template's identity seed, arbitrated by the near-match / letterhead / template-identity gates, and
-      // one deliberate fragment box held six correct DS issuer rows. The layout/ready "new box" holds keep it.
-      .filter(k => noteText !== RELIABILITY_NOTE || !COMPANY_KEYS.has(k));
-    const before = Object.fromEntries((existing || []).map(r => [r.field_key, r]));
-    const after = Object.fromEntries(db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(docId).map(r => [r.field_key, r]));
-    const held = [];
-    const upd = db.prepare("UPDATE extractions SET validation_note = ? WHERE document_id = ? AND field_key = ?");
-    for (const key of req) {
-      const was = before[key] && String(before[key].display_value || '').trim();
-      const now = after[key] && String(after[key].display_value || '').trim();
-      if (was || !now) continue;                                 // not a first-fill
-      let ok = false;
-      try { ok = !!(corroborated && corroborated(after[key].corroboration)); } catch { ok = false; }
-      if (ok) continue;                                          // licensed by ≥2 page families — the fill stands
-      const note = noteText || 'Read from your new box — confirm once.';
-      const prior = String(after[key].validation_note || '').trim();
-      if (!prior.includes(note)) upd.run(prior ? `${prior} ${note}` : note, docId, key);
-      held.push({ key, now });
-    }
-    return held;
-  }
-
-  const RELIABILITY_NOTE = 'The box that reads this field read it differently on another document from this sender — confirm once.';
-  const COMPANY_KEYS = new Set((() => { try { return require('../../../database/modules/document_types').COMPANY_KEYS || ['supplier_name']; } catch { return ['supplier_name']; } })());
-  // A valued required ROLE field that reads EMPTY now — not restored (C3.6), but a witness that the
-  // box cannot find the field on this sibling.
-  function _lostReads(db, docId, existing) {
-    const doc = db.prepare('SELECT document_type_id FROM documents WHERE id = ?').get(docId);
-    if (!doc || !doc.document_type_id) return [];
-    const dt = db.prepare('SELECT ref_field_key, date_field_key FROM document_types WHERE id = ?').get(doc.document_type_id) || {};
-    const roleKeys = new Set(['supplier_name', dt.ref_field_key, dt.date_field_key].filter(Boolean));
-    const before = Object.fromEntries((existing || []).map(r => [r.field_key, r]));
-    const after = Object.fromEntries(db.prepare('SELECT field_key, display_value FROM extractions WHERE document_id = ?').all(docId).map(r => [r.field_key, r]));
-    const out = [];
-    for (const key of roleKeys) {
-      const was = before[key] && String(before[key].display_value || '').trim();
-      const now = after[key] && String(after[key].display_value || '').trim();
-      if (was && !now) out.push({ key, was });
-    }
-    return out;
-  }
-  // The engine's own verdict that the taught box read an impossible / unconfirmable value on this
-  // page ("Kept the read value “…” — the taught date box read “L0/06/2026”, which isn't a valid
-  // calendar date" and its siblings) — the strongest witness of all.
-  const YIELD_RE = /^Kept the read value .* — (the taught|a taught) /;
-  function _yieldReads(db, docId) {
-    return db.prepare("SELECT field_key, validation_note FROM extractions WHERE document_id = ? AND validation_note IS NOT NULL").all(docId)
-      .filter(r => YIELD_RE.test(String(r.validation_note || '').trim()))
-      .map(r => ({ key: r.field_key }));
-  }
-  // At job end: release every provisional hold whose field stayed reliable (< K witnesses) — only on a
-  // row still in the queue with the value the lane wrote and our note intact; keep the rest and record.
-  function _releaseProvisionalHolds(db, job) {
-    const K = Number(firstFillReliability && firstFillReliability.k) || 1;
-    const sel = db.prepare(`SELECT e.validation_note FROM extractions e JOIN documents d ON d.id = e.document_id
-                             WHERE e.document_id = ? AND e.field_key = ? AND d.status = 'needs_review' AND TRIM(COALESCE(e.display_value, '')) = ?`);
-    const upd = db.prepare('UPDATE extractions SET validation_note = ? WHERE document_id = ? AND field_key = ?');
-    const released = [], held = [];
-    for (const h of job.provisionalHolds) {
-      const st = job.fieldStats.get(h.key);
-      const unreliable = st ? st.unreliable : 0;
-      if (unreliable >= K) { held.push(h); continue; }
-      const row = sel.get(h.docId, h.key, String(h.now || '').trim());
-      if (!row) continue;                                                  // confirmed / edited meanwhile — leave it
-      const cur = String(row.validation_note || '');
-      if (!cur.includes(RELIABILITY_NOTE)) continue;                       // someone else's note now — leave it
-      const next = cur.replace(RELIABILITY_NOTE, '').replace(/\s{2,}/g, ' ').trim();
-      upd.run(next || null, h.docId, h.key);
-      released.push(h);
-    }
-    job.reliabilityHeld = held;
-    for (const h of held) job.changed.push({ docId: h.docId, fields: [{ key: h.key, now: h.now }], firstFill: true });
-    return { released, held };
-  }
-
-  // S3-C5. NOTE (Q3 C3.6, pinned): a value that was VALUED before and reads EMPTY now is NOT a
-  // "changed read" — the fresh row is stored wholesale and the document is held as missing-required
-  // (it cannot file). The old value must NOT be restored here: keeping it would let a shape-
-  // plausible WRONG value file on the strength of a read the new layout no longer makes.
-  function _holdChangedReads(db, docId, existing) {
-    const doc = db.prepare('SELECT document_type_id FROM documents WHERE id = ?').get(docId);
-    if (!doc || !doc.document_type_id) return [];
-    const req = db.prepare('SELECT key, label FROM fields WHERE document_type_id = ? AND enabled = 1 AND required = 1').all(doc.document_type_id);
-    const before = Object.fromEntries((existing || []).map(r => [r.field_key, r]));
-    const after = Object.fromEntries(db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(docId).map(r => [r.field_key, r]));
-    const changed = [];
-    const upd = db.prepare("UPDATE extractions SET validation_note = ? WHERE document_id = ? AND field_key = ?");
-    // Oracle 2026-08-23 Q2 (SIGN OFF W/COND): the box's NEW value stays on display, but the OLD value
-    // rides `corrected_to` (only when the fresh row carries no Stage-4.5 suggestion of its own) so
-    // Review's existing Use/Keep buttons offer it one click away — Chris saw four boxes showing the
-    // wrong value with the right one buried in the note. A "Use" then records the correction
-    // (original = the box's read), which is how the box's wrongness reaches trust and the ripple.
-    const updCt = db.prepare("UPDATE extractions SET corrected_to = ? WHERE document_id = ? AND field_key = ? AND (corrected_to IS NULL OR TRIM(corrected_to) = '')");
-    for (const f of req) {
-      const was = before[f.key] && String(before[f.key].display_value || '').trim();
-      const now = after[f.key] && String(after[f.key].display_value || '').trim();
-      if (!was || !now) continue;                               // a fill (or a loss) is not a changed read
-      if (_norm(was) === _norm(now)) continue;
-      const note = `Read differently after learning — was '${was}', now '${now}'. Please check which is right.`;
-      const prior = String(after[f.key].validation_note || '').trim();
-      upd.run(prior ? `${prior} ${note}` : note, docId, f.key);
-      try { updCt.run(was, docId, f.key); } catch { /* pre-corrected_to fixtures */ }
-      changed.push({ key: f.key, was, now });
-    }
-    return changed;
-  }
+  // ── THE HOLDS LIVE IN rereadHolds.js (Chris r19 N1, Oracle P1: ONE road for holds) ───────────────
+  // S3-C5 changed reads (with the C1 type-valid baseline), first-fill holds per via, the reliability
+  // witnesses + release — shared with the manual "Reprocess N" road. Thin aliases keep the names the
+  // tests and the merge below use.
+  const _holds = require('./rereadHolds').create({ corroborated, k: Number(firstFillReliability && firstFillReliability.k) || 1 });
+  const RELIABILITY_NOTE = _holds.RELIABILITY_NOTE;
+  const _holdChangedReads = (db, docId, existing) => _holds.holdChangedReads(db, docId, existing);
+  const _holdFirstFills = (db, docId, existing, noteText) => _holds.holdFirstFills(db, docId, existing, noteText);
+  const _releaseProvisionalHolds = (db, job) => _holds.release(db, job.holdsBatch);
 
   function _finish(job, db) {
     job.state = 'done';
     // A1: the reliability release runs BEFORE onJobDone (the sweep) and before the scope goes inactive —
     // a held row is never sweepable, a released row is released only on a reliable field.
     let _rel = { released: [], held: [] };
-    try { if (job.provisionalHolds && job.provisionalHolds.length) _rel = _releaseProvisionalHolds(db, job); } catch {}
+    try { if (job.holdsBatch && job.holdsBatch.provisionalHolds.length) _rel = _releaseProvisionalHolds(db, job); } catch {}
+    for (const h of _rel.held) job.changed.push({ docId: h.docId, fields: [{ key: h.key, now: h.now }], firstFill: true });
     running = null;
     markScopeActive(job.key, false);
     jobs.delete(job.key);
@@ -601,7 +483,7 @@ function create(deps) {
                     done_ids: job.done.join(','), dropped: job.dropped.map(d => `${d.docId}:${d.reason}`).join(','),
                     failed: job.failed, changed_ids: job.changed.map(c => c.docId).join(','),
                     first_fill_ids: job.changed.filter(c => c.firstFill).map(c => c.docId).join(','),
-                    field_unreliable: [...(job.fieldStats || new Map()).entries()].map(([k, v]) => `${k}:${v.unreliable}`).join(','),   // A1
+                    field_unreliable: job.holdsBatch ? _holds.statsSummary(job.holdsBatch) : '',   // A1
                     reliability_held_ids: _rel.held.map(h => h.docId).join(','), reliability_released_ids: _rel.released.map(h => h.docId).join(',') } });
     } catch { /* best-effort */ }
     notify({ type: 'job_done', jobId: job.id, supplier: job.supplier, typeSlug: job.typeSlug,

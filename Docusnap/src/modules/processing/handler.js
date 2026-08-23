@@ -747,6 +747,20 @@ function _firstFillReliabilityEnabled(db) {
   try { return require('../../../database/modules/learning').getSetting(db, 'quiet_reread_first_fill_reliability_hold', 'false') === 'true'; }
   catch { return false; }
 }
+// Chris r19 N1 (Oracle P1, 2026-08-23): the MANUAL "Reprocess N" / single-doc Reprocess road writes the
+// SAME holds the quiet lane writes (S3-C5 with the C1 baseline, the first-fill hold, the reliability
+// release) — four wrong dates filed through this road at 93 % "Nothing looks wrong" while the lane held
+// the same slip on Larkspur. A behaviour change for a shipped, owner-ON feature → its own DARK switch.
+function _reprocessHoldsEnabled(db) {
+  const env = process.env.REPROCESS_HOLDS_AS_LANE;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try { return require('../../../database/modules/learning').getSetting(db, 'reprocess_holds_as_lane', 'false') === 'true'; }
+  catch { return false; }
+}
+function _rereadHolds() {
+  return require('./rereadHolds').create({ corroborated: (rec) => require('../../../database/modules/trust')._corrobLicensed(rec), k: FIRST_FILL_UNRELIABLE_K });
+}
 // Owner card 1 (2026-08-23): the ready arm's own switch (DARK). Rides quiet_reread_on_ready, which is
 // what schedules the 'ready' job in the first place — this only widens THAT job's population.
 function _readyTemplatedEnabled(db) {
@@ -3050,6 +3064,13 @@ function register(ctx) {
         }
 
         const applied = applyReprocessResult(db, docId, existing, result, filename, diagOn);
+        // r19 N1 (P1 C5): the single-document Reprocess — S3-C5 against the last independent value and
+        // an UNCONDITIONAL "confirm once" on a required role the re-read first-fills (no batch, no
+        // witnesses, no release: the person is on the document; one click they were making anyway).
+        if (_reprocessHoldsEnabled(db)) {
+          try { const h = _rereadHolds(); h.onDocMerged(db, h.newBatch(), { docId, existing, via: 'manual-single' }); }
+          catch (e) { logger?.warn?.(`reprocess holds (single) ${filename}: ${e && e.message}`); }
+        }
         finish({ success: true, ...applied, ruleCreated: ruleCreatedFor });
       });
     });
@@ -4144,6 +4165,12 @@ function register(ctx) {
     const shardFiles = [];
     _currentBatchProcs = [];
     try { _quietLaneImpl && _quietLaneImpl.preempt('reprocess-batch'); } catch {}   // Slice 3: the foreground always wins
+    // r19 N1 (P1): the batch's holds — one object keyed per (supplier|slug|field) so a queue-wide
+    // Reprocess never lets one sender's bad box hold another sender's first-fills (C3).
+    const _holdsOn = _reprocessHoldsEnabled(db);
+    const _holds = _holdsOn ? _rereadHolds() : null;
+    const _holdsBatch = _holdsOn ? _holds.newBatch() : null;
+    let _holdsRel = { released: [], held: [] };
 
     const runShard = (shard) => _runReprocessShard({
       db, tmpDir, shard, manifestFile, trainingArgs, reprMode, diagOn, deskewAll, deskewMinAngle, threadCap,
@@ -4152,7 +4179,12 @@ function register(ctx) {
       onFileDone: (msg) => {
         const nd = nameToDoc[msg.original_filename] || nameToDoc[msg.filename];
         if (nd && msg.success && msg.extractions) {
-          try { applyReprocessResult(db, nd.docId, nd.existing, msg, nd.filename, diagOn); done++; }
+          try {
+            applyReprocessResult(db, nd.docId, nd.existing, msg, nd.filename, diagOn); done++;
+            // r19 N1 (P1): the same holds the lane writes — S3-C5 (C1 baseline) + a PROVISIONAL first-fill
+            // hold released at batch end unless the field proved unreliable in this batch.
+            if (_holdsOn) { try { _holds.onDocMerged(db, _holdsBatch, { docId: nd.docId, existing: nd.existing, via: 'manual', reliability: true }); } catch (e) { logger?.warn?.(`reprocess holds ${nd.filename}: ${e && e.message}`); } }
+          }
           catch (e) { failed++; logger?.err(`reprocess-batch merge ${nd.filename}: ${e.message}`); }
         } else if (nd) { failed++; }
         _reprocessStatus.done = done; _reprocessStatus.failed = failed;
@@ -4164,6 +4196,13 @@ function register(ctx) {
     try {
       await Promise.all(shards.map(runShard));
     } finally {
+      // r19 N1 (P1 C4): release the reliable first-fills BEFORE the batch stops counting as busy — a
+      // confirm-debounce sweep or the F2b offer must see the final rows, never the provisional ones.
+      if (_holdsOn) {
+        try { _holdsRel = _holds.release(db, _holdsBatch); } catch (e) { logger?.warn?.(`reprocess holds release: ${e && e.message}`); }
+        try { logAudit(db, { action: 'reprocess_holds', target_type: 'batch', outcome: 'success',
+                             metadata: { field_unreliable: _holds.statsSummary(_holdsBatch), held_ids: _holdsRel.held.map(h => h.docId).join(','), released_ids: _holdsRel.released.map(h => h.docId).join(',') } }); } catch {}
+      }
       _currentBatchProcs = [];
       // Mark the batch finished + tell the LIVE Review window (which may be a REOPENED window that
       // reconnected mid-run) so it can refresh the queue + re-enable its buttons. The window that
@@ -5587,7 +5626,7 @@ module.exports = {
   scheduleScopeAutoAccept: (db, info) => (_scheduleScopeAutoAcceptImpl ? _scheduleScopeAutoAcceptImpl(db, info) : false),
   _quietLaneActiveScopes,    // Slice 3 marks a scope here while its quiet re-read is in flight (S1-C5)
   scheduleQuietReread,   // Slice 3 trigger (a taught confirm / a layout write)
-  _layoutRereadEnabled, _readyTemplatedEnabled, _firstFillReliabilityEnabled, FIRST_FILL_UNRELIABLE_K, nameArmTokens, NAME_ARM_GENERIC,
+  _layoutRereadEnabled, _readyTemplatedEnabled, _firstFillReliabilityEnabled, FIRST_FILL_UNRELIABLE_K, _reprocessHoldsEnabled, nameArmTokens, NAME_ARM_GENERIC,
   readyProbe: (db, sup, slug) => (_readyProbeImpl ? _readyProbeImpl(db, sup, slug) : null),              // P2: scope readiness BEFORE a confirm (memoised)
   scheduleReadyReread: (db, info) => (_scheduleReadyRereadImpl ? _scheduleReadyRereadImpl(db, info) : false),   // P2: fire the lane on the ready crossing
   scheduleTypeSplitReread: (db, info) => (_scheduleTypeSplitRereadImpl ? _scheduleTypeSplitRereadImpl(db, info) : false),   // A6: the confirm-once ripple
