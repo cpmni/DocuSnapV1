@@ -408,8 +408,11 @@ function createReviewService(deps = {}) {
       documents.update(db, document_id, { stored_filename: filingResult.filename, stored_path: filingResult.filePath });
     }
 
+    // Chris r19 N5 (Oracle SEND BACK → here): a MACHINE via's audit row must not carry the signed-in
+    // user's id — logAudit injects currentSession.id and the Audit screen renders the user join first,
+    // so a sweep that filed 14 showed "Chris (admin)" ×14. The explicit null overrides the injection.
     audit(db, { action: 'review_confirmed', target_type: 'document', target_id: document_id,
-      document_id, outcome: 'success', actor_username: actorName,
+      document_id, outcome: 'success', actor_username: actorName, ...(_via ? { user_id: null } : {}),
       metadata: { type: document_type_slug || null, filed: filingResult.filename,
                   fields_changed: Object.keys(corrections || {}).join(',') || null,
                   ...(_via ? { via: _via } : {}) } });

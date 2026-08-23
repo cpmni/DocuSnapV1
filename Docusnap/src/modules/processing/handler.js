@@ -3634,7 +3634,7 @@ function register(ctx) {
       // r18 A3 (Oracle): the AUTO accept is not a consented File N — stamp a machine name, never the
       // person whose confirm merely triggered it ("the records say I confirmed them"). Trust keys on
       // confirmed_via, never the name; the Home tally + the tile match 'Auto-filed%'.
-      const _autoActor = { ...(actor || {}), id: null, userId: null, username: 'Auto-filed (after your confirms)' };   // r19 N5: no user join → the Audit screen shows the machine name
+      const _autoActor = { ...(actor || {}), username: 'Auto-filed (after your confirms)' };   // r19 N5: the audit row's user_id is nulled by reviewService for a machine via
       const r = await _sweepAcceptCore(db, { sup, slug, accepts: candidates, untickedIds: [], actor: _autoActor, auto: true });
       if (!r || !r.ok) break;
       filedAll.push(...r.filed); droppedAll.push(...r.dropped);

@@ -281,6 +281,12 @@ const basePayload = (id, extra = {}) => ({
   const dTSm = newDoc(db);
   const rTSm = await svc.confirm(db, { username: 'sarah', role: 'admin' }, tsPayload(dTSm), { via: 'scope_sweep' });
   check('  → a machine via never asks', rTSm.ok === true);
+  // Chris r19 N5: the machine via's review_confirmed audit row carries user_id: null (the main-process
+  // logAudit would otherwise inject the signed-in user's id and the Audit screen would name them).
+  const _mAudit = calls.audit.filter(e => e.action === 'review_confirmed' && e.document_id === dTSm).pop();
+  check("  → its review_confirmed audit entry carries user_id: null (the Audit screen shows the machine name)", !!_mAudit && _mAudit.user_id === null);
+  const _hAudit = calls.audit.filter(e => e.action === 'review_confirmed' && e.document_id === dTSb).pop();
+  check('  → positive control: a human confirm\'s entry does NOT force user_id (the session id stands)', !!_hAudit && !('user_id' in _hAudit));
   db.prepare("DELETE FROM documents WHERE id = ?").run(dTSm);
   const dTSq = newDoc(db);
   const rTSq = await svc.confirm(db, { username: 'sarah', role: 'admin' }, tsPayload(dTSq, { document_type: 'Quote', document_type_slug: 'quote' }));
