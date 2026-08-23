@@ -60,7 +60,11 @@ function register(ctx) {
       const total = db.prepare("SELECT COUNT(*) c FROM documents WHERE status='confirmed' AND confirmed_at >= ?").get(weekAgo).c;
       // LIKE, not exact: three machine usernames exist — 'Auto-filed (100%)', 'Auto-filed (corroborated)',
       // 'Auto-filed (reprocess)' — the old exact match silently undercounted (Oracle 2026-08-12 Q5).
-      const auto  = db.prepare("SELECT COUNT(*) c FROM documents WHERE status='confirmed' AND confirmed_at >= ? AND confirmed_by_username LIKE 'Auto-filed%'").get(weekAgo).c;
+      // Chris round 18 A7: the scope sweep ("filed themselves") stamps confirmed_via='scope_sweep' under the
+      // triggering user's name, so a username-only count said "Nothing has filed by itself in the last 7
+      // days" while the Review strip listed 23. Any machine via counts (column-guarded for old fixtures).
+      const _hasVia = !!db.prepare("SELECT 1 FROM pragma_table_info('documents') WHERE name='confirmed_via'").get();
+      const auto  = db.prepare(`SELECT COUNT(*) c FROM documents WHERE status='confirmed' AND confirmed_at >= ? AND (confirmed_by_username LIKE 'Auto-filed%'${_hasVia ? " OR (confirmed_via IS NOT NULL AND TRIM(confirmed_via) <> '')" : ''})`).get(weekAgo).c;
       out.autoFiled = { auto, total, pct: total ? Math.round((auto / total) * 100) : null };
     } catch { /* leave undefined */ }
     // 2) Storage: output folder, free disk space, total filed documents.
