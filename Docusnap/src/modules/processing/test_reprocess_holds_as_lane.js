@@ -83,6 +83,12 @@ holds.onDocMerged(db, holds.newBatch(), { docId: dX, existing, via: 'manual', re
 check("a junk display AND a junk corrected_to on a date row: the note still fires (baseline falls back to the display) but NO type-invalid value is written as the offer (corrected_to stays empty — never 'INV-9999')",
       /Read differently/.test(ext(dX, 'invoice_date').validation_note || '') && !String(ext(dX, 'invoice_date').corrected_to || '').trim());
 
+console.log('\n§1b r20 card 2 — the identity never gets a one-click Use of its old read');
+const dI = mk(CF, base('Ticket Type', 'INV-7', '07-07-2026'));
+existing = snapshot(dI); setRows(dI, base(CF, 'INV-7', '07-07-2026'));
+holds.onDocMerged(db, holds.newBatch(), { docId: dI, existing, via: 'manual', reliability: true });
+check("an issuer that read 'Ticket Type' before and the real sender now: the S3-C5 note lands but corrected_to stays EMPTY (no one-click 'Use Ticket Type')", /Read differently after learning — was 'Ticket Type'/.test(ext(dI, 'supplier_name').validation_note || '') && !String(ext(dI, 'supplier_name').corrected_to || '').trim());
+
 console.log('\n§2 per-scope keying');
 const A1 = mk('Sender A', base('Sender A', 'A-1', '01-01-2026')), A2 = mk('Sender A', [{ key: 'supplier_name', value: 'Sender A' }, { key: 'invoice_number', value: 'A-2' }]);
 const B1 = mk('Sender B', [{ key: 'supplier_name', value: 'Sender B' }, { key: 'invoice_number', value: 'B-1' }]);

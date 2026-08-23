@@ -85,8 +85,14 @@ function create(deps = {}) {
       if (_norm(was) === _norm(now)) continue;
       const note = `Read differently after learning — was '${was}', now '${now}'. Please check which is right.`;
       const prior = String(after[key].validation_note || '').trim();
-      upd.run(prior ? `${prior} ${note}` : note, docId, key);
-      if (_typeValid(was, isDate)) { try { updCt.run(was, docId, key); } catch { /* pre-corrected_to fixtures */ } }
+      // Chris round 20 card 7: a Reprocess that re-reads the SAME value carries the earlier hold
+      // (mergeReprocessRows) — never print the same sentence twice.
+      if (!prior.includes(note)) upd.run(prior ? `${prior} ${note}` : note, docId, key);
+      // Chris round 20 card 2: the one-click "Use <old>" is for dates/references — never for the IDENTITY.
+      // An old issuer read ('Ticket Type', 'DOCUMENT OLUTIONS') is a garble the arbiters already replaced;
+      // offering it back one click from Confirm filed a worksheet under Ticket-Type6\January with no
+      // second-folder warning. The note still names the old value; the human types a real sender if needed.
+      if (_typeValid(was, isDate) && !COMPANY_KEYS.has(key)) { try { updCt.run(was, docId, key); } catch { /* pre-corrected_to fixtures */ } }
       changed.push({ key, was, now });
     }
     return changed;

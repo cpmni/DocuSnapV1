@@ -5835,6 +5835,10 @@ async function fileAllReady() {
       // Flagged docs (validation note / correction candidate / below-threshold
       // field) are excluded from bulk filing until a human clicks Mark Reviewed.
       if (isFlagged(doc) && !doc.review_acknowledged_at) { skipped++; continue; }
+      // Chris round 20 card 1: the loop must skip EXACTLY what the dialog said it would — THE ONE
+      // classifier (shared/reviewReadiness.js). A put-back document carries no note, so the note-only
+      // check above let "File 2" file 11: the nine the dialog had listed under "Not included".
+      if (window.ReviewReadiness && window.ReviewReadiness.classify(doc, { valuedOnly: !!window.__farValuedOnly }) !== 'ready') { skipped++; continue; }
 
       try {
         await selectDoc(doc, { fieldsOnly: true });    // loads fields (no preview render); runs validateConfirm()

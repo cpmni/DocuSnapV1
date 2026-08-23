@@ -125,6 +125,10 @@ console.log('§4 source contract');
   check('Review loads the shared module before renderer.js', html.indexOf('shared/reviewReadiness.js') > -1 && html.indexOf('shared/reviewReadiness.js') < html.indexOf('src="renderer.js"'));
   check('getReviewSplit requires the same file', /shared\/reviewReadiness'\)\.partition\(rows/.test(docsJs));
   check('Home headline reads selfFilingSenders', /selfFilingSenders/.test(mainR) && /files by itself|file by themselves/.test(mainR));
+  // Chris round 20 card 1: the File All LOOP must skip exactly what the dialog excluded — the classifier,
+  // not a note-only check (a put-back doc carries no note; "File 2" filed 11).
+  const loop = rend.slice(rend.indexOf("const r = await confirmCurrentDoc({ bulk: true, expectId: doc.id });") - 2500, rend.indexOf("const r = await confirmCurrentDoc({ bulk: true, expectId: doc.id });"));
+  check('the File All loop skips any doc the classifier does not call ready (put-back docs included)', /window\.ReviewReadiness\.classify\(doc, \{ valuedOnly: !!window\.__farValuedOnly \}\) !== 'ready'\) \{ skipped\+\+; continue; \}/.test(loop));
 }
 
 console.log(fails ? `\nFAILED: ${fails}` : '\nALL PASS');
