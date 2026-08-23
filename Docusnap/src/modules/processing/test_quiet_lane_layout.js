@@ -104,21 +104,25 @@ const finishRun = async () => { shardResolve && shardResolve(); await sleep(80);
   await sleep(150);
   const sel = staged[0] || [];
   check('the clean template-carrying named sibling IS selected', sel.includes(L1));
-  check('a doc already holding an S3-C5 "Read differently" note is NOT (seam 2)', !sel.includes(L2));
+  // P3 (Chris r19 N3, Oracle 2026-08-23 W/COND): the LAYOUT arm re-reads NOTED docs too — a new box is new
+  // evidence and the note was about the previous box (the corrected re-teach re-read nothing). The READY
+  // arm keeps the exclusion (test_quiet_lane_ready_templated.js); REPROCESS_CARRY_LANE_HOLD=0 falls back.
+  check('P3: a doc holding an S3-C5 "Read differently" note IS selected by the LAYOUT arm (a new box re-tests it)', sel.includes(L2));
   check("another sender's claim on the scope's template is NOT", !sel.includes(L3));
   check("the scope's name on ANOTHER scope's template is NOT", !sel.includes(L4));
   check('filed / deferred docs never', !sel.includes(L6) && !sel.includes(L7));
   check('union with arm (a): the template-less named doc is still there', sel.includes(L5));
   await finishRun();
-  check('audit: reasons=layout, layout_arm=selected:1', lastJobAudit().metadata.reasons === 'layout' && lastJobAudit().metadata.layout_arm === 'selected:1');
-  // positive control for seam 2: clear the note → selected
-  db.prepare("UPDATE extractions SET validation_note = NULL WHERE document_id = ?").run(L2);
+  check('audit: reasons=layout, layout_arm=selected:2 (L1 + the noted L2)', lastJobAudit().metadata.reasons === 'layout' && lastJobAudit().metadata.layout_arm === 'selected:2');
+  // the carry kill-switch: the layout arm falls back to EXCLUDING noted docs (a same-value re-read would
+  // shed the hold without the carry) — the original seam-2 rule
+  process.env.REPROCESS_CARRY_LANE_HOLD = '0';
   staged.length = 0;
   lane.schedule(db, { supplier: SUP, typeSlug: 'invoice', reason: 'layout' });
   await sleep(150);
-  check('positive control: the same doc WITHOUT the note IS selected', (staged[0] || []).includes(L2));
+  check('REPROCESS_CARRY_LANE_HOLD=0 → the noted doc is NOT selected (seam-2 fallback), the clean one still is', !(staged[0] || []).includes(L2) && (staged[0] || []).includes(L1));
   await finishRun();
-  db.prepare("UPDATE extractions SET validation_note = 'Read differently after learning — was A, now B.' WHERE document_id = ?").run(L2);
+  delete process.env.REPROCESS_CARRY_LANE_HOLD;
 
   console.log('§3 preconditions (C3.1 / C3.2) — each skip is audited and selects nothing extra');
   for (const [label, setup, expect] of [

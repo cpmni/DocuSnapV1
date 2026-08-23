@@ -123,7 +123,7 @@ function create(deps) {
   // that carry the scope's name, same type (or untyped), not in a workflow, and not already holding
   // an S3-C5 "Read differently after learning" note. `belowFloor` (the ready arm) keeps only docs
   // whose stored overall_confidence is below it. Returns null when the scope owns no template.
-  function _ownedTemplateRows(db, job, dt, { belowFloor = null } = {}) {
+  function _ownedTemplateRows(db, job, dt, { belowFloor = null, excludeNoted = true } = {}) {
     let tplIds = new Set();
     try { tplIds = scopeTemplateIds ? (scopeTemplateIds(db, job.supplier, job.typeSlug) || new Set()) : new Set(); } catch { tplIds = new Set(); }
     try {
@@ -140,16 +140,25 @@ function create(deps) {
     const args = [...tplIds, job.supplier.toLowerCase(), dt.id];
     let floorSql = '';
     if (Number.isFinite(belowFloor)) { floorSql = ' AND COALESCE(d.overall_confidence, 0) < ?'; args.push(belowFloor); }
+    // P3 (Chris r19 N3, Oracle W/COND): the LAYOUT arm re-reads NOTED docs too — a new/changed box is new
+    // evidence about WHERE, and the notes were about the PREVIOUS box (the corrected Copperfield re-teach
+    // re-read nothing: every sibling carried a note from the wrong-order teach). The re-read re-derives
+    // the holds honestly (S3-C5 against the displayed value, the first-fill hold, and mergeReprocessRows
+    // carries a same-value hold). The READY arm keeps the exclusion (same box → same read → a silent
+    // un-hold). Depends on the carry: REPROCESS_CARRY_LANE_HOLD=0 falls back to excluding noted docs.
+    const noteSql = excludeNoted
+      ? `
+         AND NOT EXISTS (SELECT 1 FROM extractions e WHERE e.document_id = d.id
+                           AND (e.validation_note LIKE '%Read differently after learning%'
+                             OR e.validation_note LIKE '%— confirm once.%'))`
+      : '';
     return db.prepare(`
       SELECT d.id, d.original_filename, d.folder_path FROM documents d
        WHERE d.status = 'needs_review'
          AND d.template_id IN (${ph})
          AND LOWER(TRIM(COALESCE(d.supplier_name, ''))) = ?
          AND (d.document_type_id = ? OR d.document_type_id IS NULL)
-         AND COALESCE(d.workflow_status, '') NOT IN ('pending', 'claimed')
-         AND NOT EXISTS (SELECT 1 FROM extractions e WHERE e.document_id = d.id
-                           AND (e.validation_note LIKE '%Read differently after learning%'
-                             OR e.validation_note LIKE '%— confirm once.%'))${floorSql}
+         AND COALESCE(d.workflow_status, '') NOT IN ('pending', 'claimed')${noteSql}${floorSql}
        ORDER BY d.id`).all(...args);
   }
   // Oracle 2026-08-23 (A1 seam): the NOT EXISTS above covers the WHOLE lane-hold family — S3-C5 AND every
@@ -254,7 +263,7 @@ function create(deps) {
       if (why) {
         job.layoutArm = `skipped:${why}`;
       } else {
-        const rows = _ownedTemplateRows(db, job, dt);
+        const rows = _ownedTemplateRows(db, job, dt, { excludeNoted: process.env.REPROCESS_CARRY_LANE_HOLD === '0' });   // P3
         if (!rows) job.layoutArm = 'skipped:no_template';
         else {
           let n = 0;

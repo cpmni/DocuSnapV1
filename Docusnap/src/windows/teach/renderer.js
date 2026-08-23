@@ -1467,6 +1467,15 @@ function showValueConfirm(f, r){
     r.status='done'; drawMode='value'; advanceField();
   };
   if (typeRow) _wireTypeRow(doTyped, /*focus*/false);
+  // Chris r19 N3 (the s55 screenshot shows the amber warning WAS there and the big blue "Looks right →"
+  // directly under it was pressed): when the read is the WRONG KIND of value for this field, keeping it
+  // is never the default — same demotion as the issuer fragment warning (A2).
+  if (_cohWarn) {
+    const _yes = $('rb-yes');
+    if (_yes) { _yes.classList.remove('primary'); _yes.classList.add('ghost', 'quiet'); _yes.textContent = 'Use it anyway'; _yes.title = _cohWarn.replace(/^⚠ /, ''); }
+    const _rd = $('rb-redraw');
+    if (_rd) { _rd.classList.remove('ghost', 'quiet'); _rd.classList.add('primary'); }
+  }
   // THE VERDICT ARRIVES BEFORE THE COMMIT, not after it (Oracle, 2026-08-13). The plausibility
   // check used to be fired inside finishIssuerField — i.e. AFTER "Looks right →", concurrently with
   // advanceField() — so its answer landed as a toast over the NEXT field, and its `.catch(_ok)`
