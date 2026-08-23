@@ -80,9 +80,13 @@
        The class-fix bar (2026-08-19) shares every one of these rules: it is the same
        kind of object — an after-the-fact statement of something the app did, with a way
        back — so it must not look like a different feature. */
-    #sweep-consent-bar, #class-fix-bar { padding: 8px 12px; font-size: 12px; line-height: 1.5;
+    #sweep-consent-bar, #class-fix-bar { padding: 8px 12px; font-size: 12px; line-height: 1.5; position: relative;
       background: color-mix(in srgb, var(--ok) 8%, var(--surface)); border-bottom: 1px solid var(--border); }
     #sweep-consent-bar b, #class-fix-bar b { color: var(--ok); }
+    /* Dismiss X on the class-fix RECEIPT (bug fix 2026-08-23) — the result bar had no close and lingered. */
+    #class-fix-bar .scb-x { position: absolute; top: 4px; right: 8px; cursor: pointer; color: var(--muted);
+      font-size: 16px; line-height: 1; padding: 2px 4px; }
+    #class-fix-bar .scb-x:hover { color: var(--text); }
     #sweep-consent-bar .scb-actions, #class-fix-bar .scb-actions { margin-top: 6px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     #sweep-consent-bar .scb-btn, #class-fix-bar .scb-btn { border: 1px solid var(--border2); border-radius: var(--r-pill);
       padding: 3px 12px; cursor: pointer; background: var(--surface); color: var(--text); font-size: 12px; }
@@ -237,6 +241,10 @@
 
     .qi-name     { font-family: var(--mono); font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
     .qi-supplier { font-size: 11px; color: var(--muted); margin-top: 2px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* Put-back marker (mig 87): a put-back doc is a visible class in the queue. "will re-file" = File All
+       will file it again (accent); plain = held for the user's own confirm (muted). */
+    .qi-putback { flex-shrink: 0; font-size: 10px; padding: 1px 6px; border-radius: 10px; background: var(--surface3); color: var(--muted); white-space: nowrap; }
+    .qi-putback.refiling { background: var(--accent-bg); color: var(--accent2); }
     /* slice 3 of the garbled-issuer arc: a garbled issuer grouped under its letterhead company */
     .qi-check-sender { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: var(--r-pill); font-size: 10px; line-height: 16px; color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); vertical-align: middle; }
     .qi-actions  { display: flex; gap: 5px; margin-top: 6px; }
@@ -253,28 +261,46 @@
       /* B2 (activity strip, Oracle C8): the four absolute children below anchor to the toolbar's bottom
          through ONE variable; the strip (28 px, first child when armed) bumps it. OFF = 46 px, byte-identical. */
       --doc-head-h: 46px; }
-    #doc-panel.has-activity-strip { --doc-head-h: 74px; }
-    /* ── B2: the ACTIVITY STRIP — one 28 px row of chips, newest on the left, above the toolbar. Always in
-       flow while armed (never display:none → the preview never jumps, no ResizeObserver churn). ── */
-    #activity-strip { display: none; flex: 0 0 28px; height: 28px; align-items: center; gap: 6px; padding: 0 8px;
-      background: var(--surface); border-bottom: 1px solid var(--border); font-size: 11.5px; color: var(--text); min-width: 0; }
+    #doc-panel.has-activity-strip { --doc-head-h: 92px; }
+    /* ── B2: the ACTIVITY STRIP — a 46 px row of TWO-LINE chips, newest on the left, above the toolbar.
+       Line 1 = the action (bold, kind-coloured icon); line 2 = WHEN + a short detail. Always in flow while
+       armed (never display:none → the preview never jumps, no ResizeObserver churn). THE STRIP HEIGHT (46)
+       AND THE --doc-head-h BUMP MOVE TOGETHER (toolbar 46 + strip 46 = 92) — the overlays below anchor to that
+       ONE variable (Oracle C8); a height change to one that forgets the other misaligns every overlay. ── */
+    #activity-strip { display: none; flex: 0 0 46px; height: 46px; align-items: center; gap: 7px; padding: 0 8px;
+      background: var(--surface); border-bottom: 1px solid var(--border2); font-size: 12px; color: var(--text); min-width: 0; }
     #doc-panel.has-activity-strip #activity-strip { display: flex; }
-    .as-nav { flex: 0 0 auto; width: 18px; height: 18px; line-height: 16px; text-align: center; border: 1px solid var(--border2); border-radius: var(--r-sm);
-      background: var(--surface2); color: var(--muted); cursor: pointer; font-size: 11px; user-select: none; }
+    .as-nav { flex: 0 0 auto; width: 20px; height: 38px; line-height: 36px; text-align: center; border: 1px solid var(--border2); border-radius: var(--r-sm);
+      background: var(--surface2); color: var(--muted); cursor: pointer; font-size: 12px; user-select: none; }
     .as-nav[hidden] { display: none; }
-    .as-track { flex: 1; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; min-width: 0; scroll-behavior: smooth; }
+    .as-track { flex: 1; display: flex; align-items: center; gap: 7px; overflow-x: auto; scrollbar-width: none; min-width: 0; scroll-behavior: smooth; }
     .as-track::-webkit-scrollbar { display: none; }
-    .as-chip { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; max-width: 260px; padding: 0 9px; height: 20px; line-height: 20px;
-      border: 1px solid var(--border2); border-radius: var(--r-pill); background: var(--surface2); color: var(--text); cursor: pointer; white-space: nowrap;
-      overflow: hidden; text-overflow: ellipsis; }
+    /* two-line chip = a flex COLUMN. text-overflow:ellipsis does nothing on a flex container, so the clip
+       lives on each line span (as-l1/as-l2), never on .as-chip itself (Oracle C8 pin). */
+    .as-chip { flex: 0 0 auto; display: inline-flex; flex-direction: column; justify-content: center; gap: 0; max-width: 320px; padding: 4px 11px; height: 40px;
+      border: 1px solid var(--border2); border-radius: var(--r); background: var(--surface2); color: var(--text); cursor: pointer; min-width: 0; }
+    .as-chip .as-l1, .as-chip .as-l2 { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 296px; }
+    .as-chip .as-l1 { font-size: 12.5px; line-height: 16px; }
+    .as-chip .as-l2 { font-size: 11px; line-height: 15px; color: var(--muted); }
+    .as-chip .as-act { font-weight: 600; color: var(--text); }
+    .as-chip .as-ico { margin-right: 4px; font-weight: 700; }
+    .as-chip .as-ico.filed { color: var(--ok); }
+    .as-chip .as-ico.putback { color: var(--warn); }
+    .as-chip .as-ico.fix { color: var(--accent); }
     .as-chip:hover, .as-chip.open { border-color: var(--accent); background: var(--accent-bg); }
-    .as-chip.unseen { box-shadow: inset 0 0 0 1px var(--accent); }
+    .as-chip.unseen { box-shadow: inset 0 0 0 1px var(--accent); border-color: var(--accent); }
     .as-chip .as-when { color: var(--muted); }
-    .as-chip .as-caret { color: var(--muted); font-size: 9px; }
-    .as-chip.as-recent { color: var(--muted); font-style: italic; }
+    .as-chip .as-caret { color: var(--muted); font-size: 9px; margin-left: 3px; }
+    .as-chip.as-recent { flex-direction: row; align-items: center; color: var(--muted); font-style: italic; }
     #activity-panel { display: none; position: absolute; top: var(--doc-head-h); left: 8px; right: 8px; z-index: 8; max-height: 46%; overflow: auto;
-      background: var(--surface); border: 1px solid var(--border2); border-radius: var(--r); box-shadow: 0 6px 22px rgba(0,0,0,.25); padding: 10px 12px; font-size: 12.5px; }
+      background: var(--surface); border: 1px solid var(--border2); border-radius: var(--r); box-shadow: 0 6px 22px rgba(0,0,0,.25); padding: 30px 12px 10px; font-size: 12.5px; }
     #activity-panel.open { display: block; }
+    /* C5-safe close affordance: a real X + a click on the panel body (not the action buttons) closes it —
+       both handled by the ONE delegated #activity-panel listener via data-ap; the capture-phase outside-click
+       closer and Esc handler are untouched (no stopPropagation/preventDefault). */
+    .ap-close { position: absolute; top: 6px; right: 8px; width: 24px; height: 24px; line-height: 22px; text-align: center; font-size: 14px;
+      border: 1px solid var(--border2); border-radius: var(--r-sm); background: var(--surface2); color: var(--muted); cursor: pointer; }
+    .ap-close:hover { border-color: var(--accent); color: var(--text); }
     .ap-row { padding: 6px 0; border-top: 1px solid var(--border); }
     .ap-row:first-child { border-top: 0; }
     .ap-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }

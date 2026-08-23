@@ -107,5 +107,54 @@ check("renderCleanHoldReason renders the 'put-back' kind with its own lead", /v\
 const tr = read(path.join(__dirname, 'trust.js'));
 check('the refusal sits BEFORE the floor logic (unconditional — any confidence, any graduation)', tr.indexOf("reason: 'put-back'") < tr.indexOf("const floor = (graduated || corroborated)"));
 
+// ── mig 87: PUT-BACK RE-FILE via File All Ready (2026-08-23, Oracle SIGN-OFF-W/COND) ──────────────
+console.log('\nmig 87 columns:');
+check('documents.refile_declined_at + putback_refiled_at exist', !!db.prepare("SELECT 1 FROM pragma_table_info('documents') WHERE name='refile_declined_at'").get() && !!db.prepare("SELECT 1 FROM pragma_table_info('documents') WHERE name='putback_refiled_at'").get());
+check('version 87 stamped', !!db.prepare('SELECT 1 FROM migrations WHERE version = 87').get());
+const qmap = () => Object.fromEntries(documents.getReviewQueue(db).map(d => [d.id, d]));
+
+console.log('\nOFF is byte-identical (the switch defaults off):');
+const P = mk(100); documents.markPutBack(db, P);
+let Q = qmap();
+check('OFF: a clean put-back doc is NOT stamped refileable → classify flagged (held, exactly mig 86)', !Q[P].putback_refileable && RR.classify(Q[P]) === 'flagged');
+check('OFF: the bypass predicate is not consulted — a machine read still refuses put-back', trust.isAutoFileEligible(db, row(P)).reason === 'put-back');
+
+console.log('\nswitch ON — the explicit File-All population widens, machine paths do not:');
+learning.setSetting(db, 'putback_refile_on_file_all', 'true');
+Q = qmap();
+check('ON: a clean put-back doc is stamped refileable → classify ready', Q[P].putback_refileable === 1 && RR.classify(Q[P]) === 'ready');
+check('bypass containment: isAutoFileEligible WITH bypassPutBack = eligible; WITHOUT = put-back', trust.isAutoFileEligible(db, row(P), { bypassPutBack: true }).eligible === true && trust.isAutoFileEligible(db, row(P)).reason === 'put-back');
+check('machine batch door (no bypass) STILL drops the put-back doc (the bypass never leaks to machine paths)', !trust.autoFileEligibleIds(db, [row(P)]).includes(P));
+
+console.log('\nthe danger pin — a doc that would never auto-file stays held even ON:');
+const F = mk(100);
+db.prepare("UPDATE extractions SET validation_note = 'check this' WHERE document_id = ? AND field_key = 'invoice_number'").run(F);
+documents.markPutBack(db, F);
+const QF = qmap();
+check('a flagged (never-eligible) put-back doc is NOT refileable → held even with the switch on', !QF[F].putback_refileable && RR.classify(QF[F]) === 'flagged');
+check('…because the bypass predicate still refuses it (flagged runs AFTER the put-back bypass)', trust.isAutoFileEligible(db, row(F), { bypassPutBack: true }).eligible === false);
+
+console.log('\nthe re-file records history; the undo loop hard-holds (Oracle BLOCKING cond 2):');
+const claimP = documents.confirmIfReviewable(db, P, { stored_filename: 'p.pdf', stored_path: '/out/p.pdf', confirmed_by_username: 'chris' });
+check('File-All re-file (human confirm) clears put_back_at AND records putback_refiled_at', claimP.changes === 1 && row(P).status === 'confirmed' && row(P).put_back_at == null && !!row(P).putback_refiled_at);
+documents.deconfirmDocument(db, P);
+check('pulling the re-filed doc BACK again sets refile_declined_at (the reversal is the strongest signal)', !!row(P).refile_declined_at && !!row(P).put_back_at);
+const rP = trust.isAutoFileEligible(db, row(P), { bypassPutBack: true });
+check("…and the bypass can NEVER resurrect it (reason 'refile-declined')", rP.eligible === false && rP.reason === 'refile-declined');
+const QP2 = qmap();
+check('…so it is not refileable → a SECOND File All will NOT re-file it', !QP2[P].putback_refileable && RR.classify(QP2[P]) === 'flagged');
+const claimP2 = documents.confirmIfReviewable(db, P, { stored_filename: 'p2.pdf', stored_path: '/out/p2.pdf', confirmed_by_username: 'chris' });
+check('ONLY a per-doc human confirm clears the hard-hold (refile_declined_at + put_back_at both null)', claimP2.changes === 1 && row(P).refile_declined_at == null && row(P).put_back_at == null && row(P).status === 'confirmed');
+
+console.log('\nthe refusal order (refile-declined before put-back, both before the floor):');
+check('trust.js refuses refile-declined BEFORE put-back, and put-back before the floor', (() => {
+  const tr2 = read(path.join(__dirname, 'trust.js'));
+  return tr2.indexOf("reason: 'refile-declined'") < tr2.indexOf("reason: 'put-back'")
+      && tr2.indexOf("reason: 'put-back'") < tr2.indexOf('const floor = (graduated || corroborated)');
+})());
+check('the put-back refusal is bypassable ONLY via opts.bypassPutBack (source contract)', /doc\.put_back_at && !opts\.bypassPutBack/.test(read(path.join(__dirname, 'trust.js'))));
+
+learning.setSetting(db, 'putback_refile_on_file_all', 'false');   // leave the fixture switch off
+
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
 process.exit(fails ? 1 : 0);

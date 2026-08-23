@@ -130,6 +130,26 @@ L.record(db, { kind: 'approved', ids: [6005], approved: true, scope: { supplier:
 check("a sweep 'File N' (not bulk) stays scope-keyed and undoable — a different key from the bulk event",
       L.list(db)[0].kind === 'approved' && !L.list(db)[0].bulk && L.list(db)[0].undoable === true && L.list(db)[0].count === 1);
 
+console.log('\nkept-back dedup on merge (Oracle 2026-08-23, Seam D):');
+// A user who clicks File All Ready twice while the same put-back/missing docs remain would, with a blind
+// concat, see the "N kept back" count DOUBLE and the panel list each doc twice — a confidently-wrong number.
+// The merge (and create) must fold `dropped` by docId, keeping the last reason.
+check('two zero-filed File-All receipts within the gap sharing docIds → each doc listed ONCE, count not inflated', (() => {
+  tick(61_000);
+  L.record(db, { kind: 'approved', ids: [], bulk: true, dropped: [{ docId: 71, reason: 'put-back' }, { docId: 72, reason: 'no-type' }] });
+  L.record(db, { kind: 'approved', ids: [], bulk: true, dropped: [{ docId: 71, reason: 'put-back' }, { docId: 72, reason: 'no-type' }] });
+  const e = L.list(db).find(x => x.kind === 'approved' && x.bulk && x.count === 0);
+  return !!e && e.dropped.length === 2 && new Set(e.dropped.map(d => d.docId)).size === 2;
+})());
+check('the last reason wins on a docId re-drop (a stale reason never lingers)', (() => {
+  tick(61_000);
+  L.record(db, { kind: 'approved', ids: [], bulk: true, dropped: [{ docId: 81, reason: 'no-type' }] });
+  L.record(db, { kind: 'approved', ids: [], bulk: true, dropped: [{ docId: 81, reason: 'missing-required' }] });
+  const e = L.list(db).find(x => x.kind === 'approved' && x.bulk && x.count === 0 && (x.dropped || []).some(d => d.docId === 81));
+  const row = e && e.dropped.find(d => d.docId === 81);
+  return !!row && row.reason === 'missing-required' && e.dropped.filter(d => d.docId === 81).length === 1;
+})());
+
 console.log('\nmarkUndone (Chris round 17 card 7):');
 tick(61_000);
 const mu = L.record(db, { kind: 'self_filed', ids: [5001, 5002, 5003], scope: { supplier: 'Nordwind', typeSlug: 'quote' }, undo: { type: 'sweep' } });

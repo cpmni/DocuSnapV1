@@ -934,7 +934,11 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          ['type-ambiguity-waiver-toggle', 'type_ambiguity_unsupported_waiver'],
                          ['type-ambiguity-ripple-toggle', 'type_ambiguity_ripple'],
                          // The Review activity strip (2026-08-22 night, DARK).
-                         ['review-activity-strip-toggle', 'review_activity_strip']]) {
+                         ['review-activity-strip-toggle', 'review_activity_strip'],
+                         // Put-back re-file via File All Ready (2026-08-23, DARK).
+                         ['putback-refile-toggle', 'putback_refile_on_file_all'],
+                         // Detail-veto single-supplier immunity (2026-08-23, DARK) — RESTART to load (Python env bridge).
+                         ['logo-detail-immune-toggle', 'logo_detail_veto_single_supplier_immune']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);

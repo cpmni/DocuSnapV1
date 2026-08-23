@@ -29,7 +29,9 @@ const cssRule = (sel) => { const i = html.indexOf(sel + ' {'); return i < 0 ? ''
 
 console.log('gating + layout (C8):');
 check("armed by the review_activity_strip setting, read once", /_asOn = \(await window\.docusnap\.getSetting\('review_activity_strip'\)\) === 'true'/.test(rend));
-check('OFF → the doc-panel head variable stays 46 px; ON → 74 px', /#doc-panel \{[^}]*--doc-head-h: 46px;/.test(html) && /#doc-panel\.has-activity-strip \{ --doc-head-h: 74px; \}/.test(html));
+check('OFF → the doc-panel head variable stays 46 px; ON → 92 px (two-line strip)', /#doc-panel \{[^}]*--doc-head-h: 46px;/.test(html) && /#doc-panel\.has-activity-strip \{ --doc-head-h: 92px; \}/.test(html));
+check('C8: the strip height (46) and the head-variable bump move together (toolbar 46 + strip 46 = 92)', /#activity-strip \{ display: none; flex: 0 0 46px; height: 46px;/.test(html));
+check('C8: the two-line ellipsis lives on the line spans, NOT on .as-chip (a flex column ignores it)', /\.as-chip \.as-l1, \.as-chip \.as-l2 \{[^}]*text-overflow: ellipsis;/.test(html) && !/\.as-chip \{[^}]*text-overflow: ellipsis/.test(html));
 check('the strip is display:none unless #doc-panel carries has-activity-strip', /#activity-strip \{ display: none;/.test(html) && /#doc-panel\.has-activity-strip #activity-strip \{ display: flex; \}/.test(html));
 check('…and renderActivityStrip toggles that class from _asOn', /panel\.classList\.toggle\('has-activity-strip', _asOn\)/.test(rend));
 const consumes = (sel) => /top: (var\(--doc-head-h\)|calc\(var\(--doc-head-h\) \+ 40px\))/.test(cssRule(sel));
@@ -50,10 +52,16 @@ check('relative time is computed from the event stamp', /function _asRelTime\(at
 console.log(LF + 'the strip (owner + barry):');
 check('chips ≤ 10, newest first, age out at 15 min', /const AS_MAX = 10, AS_TTL_MS = 15 \* 60 \* 1000;/.test(rend) && /\.slice\(0, AS_MAX\)/.test(rend));
 check('scroll ‹ › buttons hide unless the track overflows', /prev\.hidden = !over \|\| track\.scrollLeft <= 0/.test(rend));
-check('a chip reads "<icon> <when> · <short>[ · put back] ▾" (r18 card 7: the put-back state is on the chip)', /\$\{_asIcon\(ev\)\} <span class="as-when">\$\{escHtml\(_asRelTime\(ev\.at\)\)\}<\/span> · \$\{escHtml\(_asShort\(ev\)\)\}\$\{escHtml\(_asPutBackTag\(ev\)\)\} <span class="as-caret">▾<\/span>/.test(rend)
-      && /function _asPutBackTag\(ev\) \{ return ev && ev\.put_back_at \? ' · put back' : ''; \}/.test(rend));
+check('a chip is TWO lines: line1 = kind-coloured icon + bold action; line2 = when + detail + ▾',
+      rend.includes('<span class="as-l1"><span class="as-ico ${_asIconClass(ev)}">${_asIcon(ev)}</span><span class="as-act">${escHtml(_asShort(ev))}</span></span>')
+      && rend.includes('<span class="as-l2"><span class="as-when">${escHtml(_asRelTime(ev.at))}</span>${detail ? ` · ${escHtml(detail)}` : \'\'}<span class="as-caret">▾</span></span>'));
+check('the put-back state stays visible on the chip (now via the line-2 detail)', /function _asChipDetail\(ev\)[\s\S]{0,700}put back/.test(rend));
+check('the icon carries a kind-colour class (green filed / amber put-back / accent fix)',
+      /function _asIconClass\(ev\)[\s\S]{0,320}return 'filed'/.test(rend)
+      && /\.as-chip \.as-ico\.filed \{ color: var\(--ok\); \}/.test(html)
+      && /\.as-chip \.as-ico\.putback \{ color: var\(--warn\); \}/.test(html));
 check('…and the panel line says "put back by you" after an undo (r18 card 7)', /function _asLineFull\(ev\)[\s\S]{0,400}put back<\/b> by you/.test(rend) && /\$\{_asIcon\(ev\)\} \$\{_asLineFull\(ev\)\}/.test(rend));
-check('a bulk receipt always names its senders, even one (r18 card 5)', /Object\.keys\(ev\.bySender\)\.length > 1 \|\| \(ev\.bulk && Object\.keys\(ev\.bySender\)\.length\)/.test(rend));
+check('a bulk receipt still names its sender even when there is only one (r18 card 5) — via the real-sender filter', /const senders = ev\.bySender \? Object\.entries\(ev\.bySender\)\.filter\(\(\[k, v\]\) => k && k !== '—' && Number\(v\) > 0\) : \[\];/.test(rend) && /const by = senders\.length/.test(rend));
 check("the lane notice names the real trigger: ready / layout / typesplit / teach (r18 copy)", /j\.reason === 'ready' \? 'now that this sender files by itself'/.test(rend) && /j\.reason === 'layout' \? 'after your box change'/.test(rend));
 check("…and the job_start event's reason reaches the hint's job record (r20 card 5 — it was dropped on the way)", /if \(ev\.reason\) j\.reason = ev\.reason;/.test(rend));
 check('no chip → a quiet "Recent activity ▾" while any event remains (never a blank band)', /Recent activity <span class="as-caret">▾<\/span>/.test(rend));
@@ -81,7 +89,7 @@ const literals = (stripCode.match(/`[^`]*`|'[^'\n]*'|"[^"\n]*"/g) || []).join(LF
 check('no banned jargon in the strip copy (scope / sweep / lane / reprocess / template)', stripCode.length > 0 && !/\b(scope|sweep|lane|reprocess|template)\b/i.test(literals));
 
 console.log(LF + 'preload:');
-for (const name of ['getReviewEvents', 'onReviewEvent', 'markReviewEventsSeen', 'getReviewEventDocs', 'undoReviewEvent'])
+for (const name of ['getReviewEvents', 'onReviewEvent', 'markReviewEventsSeen', 'getReviewEventDocs', 'undoReviewEvent', 'recordFileAllOutcome'])
   check(`preload exposes ${name}`, new RegExp('\\b' + name + ':').test(pre));
 
 console.log(LF + 'Chris round 17 cards 4 / 5a / 6 / 8 (eric batch):');
@@ -106,6 +114,33 @@ check("card 8: Search's send-back names its door ('Sent back from Search'), Lear
       /const _prefix = source === 'search' \? 'Sent back from Search' : NOTE_PREFIX;/.test(rsvc)
       && /\$\{_prefix\}: \$\{s\.note\}/.test(rsvc) && /\$\{_prefix\} — please re-check this document before filing\./.test(rsvc)
       && /repairDeconfirm\(doc\.id, \{ source: 'search' \}\)/.test(sa));
+
+console.log(LF + 'the close affordance (#5) + File All kept-back receipt (2026-08-23):');
+// the delegated #activity-panel listener: non-capture, C5-safe, routes See/Put-back, closes on X or body
+const panelListStart = rend.indexOf("document.getElementById('activity-panel')?.addEventListener('click'");
+const panelList = panelListStart < 0 ? '' : rend.slice(panelListStart, rend.indexOf('});', panelListStart) + 3);
+check('#5: a visible close X (data-ap="close") is prepended to the panel; .ap-close is styled',
+      /const closeX = `<button type="button" class="ap-close" data-ap="close"/.test(rend)
+      && /panel\.innerHTML = closeX \+ rows\.map/.test(rend) && /\.ap-close \{ position: absolute;/.test(html));
+check('#5: the panel listener routes See / Put back and closes on the X or any body click',
+      panelList.length > 0 && /dataset\.ap === 'see'\)  \{ _asSeeThem/.test(panelList)
+      && /dataset\.ap === 'undo'\) \{ _asPutBack/.test(panelList) && /_asClosePanel\(\);   \/\/ the X/.test(panelList));
+check('#5: that panel listener is NON-capture and C5-safe (no stopPropagation / preventDefault)',
+      panelList.length > 0 && !/\}, true\)/.test(panelList) && !/stopPropagation|preventDefault/.test(panelList));
+check('the zero-filed placeholder sender ("—") is dropped from the panel breakdown',
+      /const senders = ev\.bySender \? Object\.entries\(ev\.bySender\)\.filter\(\(\[k, v\]\) => k && k !== '—' && Number\(v\) > 0\)/.test(rend));
+// the receipt door
+check('File All records a kept-back receipt via record-file-all-outcome (never silent at zero filed)',
+      /ipcMain\.handle\('record-file-all-outcome'/.test(ph) && /kind: 'approved', bulk: true, ids: \[\], dropped/.test(ph));
+check('…the door is role-gated and refuses an empty payload', /record-file-all-outcome'[\s\S]{0,200}requireRole\('admin', 'edit'\)[\s\S]{0,120}nothing-to-record/.test(ph));
+check('the renderer reconciles the strip at the end of File All (records dropped + refetches the ledger)',
+      /async function _asFileAllReconcile\(dropped\)/.test(rend)
+      && /await window\.docusnap\.recordFileAllOutcome\?\.\(\{ dropped \}\)/.test(rend)
+      && /_asEvents = \(await window\.docusnap\.getReviewEvents\?\.\(\)\) \|\| _asEvents/.test(rend));
+check('…called in BOTH the zero-eligible early return AND the post-loop finalize', (rend.match(/await _asFileAllReconcile\(_dropped\)/g) || []).length >= 2);
+check('…building the kept-back set from THE ONE classifier (put-back / flagged / no-type / missing)',
+      /reason: 'put-back'/.test(rend) && /reason: 'stored-flagged'/.test(rend) && /reason: 'no-type'/.test(rend) && /reason: 'missing-required'/.test(rend));
+check('the kept-back reason codes render as plain sentences', /'no-type':\s+'it has no document type yet'/.test(rend) && /'missing-required':/.test(rend) && /'put-back':\s+'you put it back/.test(rend));
 
 console.log(fails ? LF + fails + ' FAILED' : LF + 'All activity-strip contract checks passed');
 process.exit(fails ? 1 : 0);

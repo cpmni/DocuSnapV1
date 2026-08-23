@@ -521,6 +521,11 @@ async function loadQueue() {
 // any that need it. The auto-refresh listener is suppressed while this view is active.
 let _viewingAutoFiled = false;
 let _autoFiledDocs    = [];
+// Authoritative needs_review count for the tab badge (bug fix 2026-08-23): the badge used to read
+// `queue.length`, which is a SUBSET in the filtered "See them" / auto-filed view — so after a bulk put-back
+// the badge read "1" while 18 sat in the queue. Kept fresh from the review-count-changed event and every
+// full-queue load; the badge shows it (not the filtered length) whenever a filtered view is active.
+let _authReviewCount  = null;
 
 async function refreshAutoCommittedBar() {
   const bar = document.getElementById('auto-committed-bar');
@@ -631,20 +636,46 @@ function _asRelTime(at) {
   return d < 2 * 86_400_000 ? `Yesterday ${hh}:${mm}` : `${dt.toLocaleDateString()} ${hh}:${mm}`;
 }
 function _asIcon(ev) { return ev.kind === 'put_back' ? '↩' : ev.kind === 'class_fix' ? '✎' : '✓'; }
+// Kind → an icon COLOUR class (green filed · amber put-back · accent fix) so the line reads at a glance
+// without painting the whole chip (bob: reserve colour, don't nag). A zero-filed approved is "kept back",
+// which reads as put-back tone (amber), not a green tick.
+function _asIconClass(ev) {
+  if (ev.kind === 'put_back') return 'putback';
+  if (ev.kind === 'class_fix') return 'fix';
+  if (ev.kind === 'approved' && (Number(ev.count) || 0) === 0) return 'putback';
+  return 'filed';
+}
 function _asShort(ev) {
   const n = Number(ev.count) || 0, s = n === 1 ? '' : 's';
+  const kept = Array.isArray(ev.dropped) ? ev.dropped.length : 0;
   switch (ev.kind) {
     case 'auto_filed': return `${n} filed automatically`;
     case 'self_filed': return `${n} filed themselves`;
-    case 'approved':   return `you filed ${n}`;
+    // A zero-filed File All is the run that most needs a receipt (Chris r5 card 2) — say "kept back", not "you filed 0".
+    case 'approved':   return n === 0 && kept ? `Nothing filed — ${kept} kept back` : `You filed ${n}`;
     case 'class_fix':  return `${n} corrected`;
     case 'put_back':   return `${n} put back`;
     default:           return `${n} document${s}`;
   }
 }
+// Line 2 of a chip — the WHEN plus one short detail, kept calm (senders + the full sentence live in the
+// panel). Named senders on filed runs; kept-back count on a held run; the put-back tag once reverted.
+function _asChipDetail(ev) {
+  const bits = [];
+  const kept = Array.isArray(ev.dropped) ? ev.dropped.length : 0;
+  if ((Number(ev.count) || 0) > 0 && kept) bits.push(`${kept} kept back`);
+  else if ((Number(ev.count) || 0) === 0 && kept && ev.kind !== 'approved') bits.push(`${kept} kept back`);
+  const senders = ev.bySender ? Object.entries(ev.bySender).filter(([k, v]) => k && k !== '—' && Number(v) > 0) : [];
+  if ((Number(ev.count) || 0) > 0 && senders.length) {
+    const top = senders.sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k]) => k).join(', ');
+    bits.push(senders.length > 2 ? `${top} +${senders.length - 2}` : top);
+  }
+  if (ev.put_back_at) bits.push('put back');
+  return bits.join(' · ');
+}
 // Chris r18 card 7: after a Put back the chip must SAY so (the button vanished but the chip read as if
-// nothing happened, then dropped off). Suffix on the short label + a trailing sentence on the line.
-function _asPutBackTag(ev) { return ev && ev.put_back_at ? ' · put back' : ''; }
+// nothing happened, then dropped off). Now carried on the chip's line 2 by _asChipDetail ('put back') and
+// in the panel by _asLineFull.
 // C9: "filed themselves" is reserved for self_filed (after your confirms); a 100 %-import is "filed automatically".
 function _asLine(ev) {
   const n = Number(ev.count) || 0, s = n === 1 ? '' : 's', sup = ev.scope && ev.scope.supplier ? escHtml(ev.scope.supplier) : '';
@@ -678,9 +709,13 @@ function renderActivityStrip() {
       ? `<span class="as-chip as-recent" data-as="recent" title="Show what the app did recently">Recent activity <span class="as-caret">▾</span></span>`
       : '';
   } else {
-    track.innerHTML = vis.map(ev =>
-      `<span class="as-chip${ev.seen ? '' : ' unseen'}${_asOpenId === ev.id ? ' open' : ''}" data-as="${ev.id}" title="${escHtml(_asLine(ev).replace(/<[^>]+>/g, ''))}">`
-      + `${_asIcon(ev)} <span class="as-when">${escHtml(_asRelTime(ev.at))}</span> · ${escHtml(_asShort(ev))}${escHtml(_asPutBackTag(ev))} <span class="as-caret">▾</span></span>`).join('');
+    track.innerHTML = vis.map(ev => {
+      const detail = _asChipDetail(ev);
+      return `<span class="as-chip${ev.seen ? '' : ' unseen'}${_asOpenId === ev.id ? ' open' : ''}" data-as="${ev.id}" title="${escHtml(_asLine(ev).replace(/<[^>]+>/g, ''))}">`
+        + `<span class="as-l1"><span class="as-ico ${_asIconClass(ev)}">${_asIcon(ev)}</span><span class="as-act">${escHtml(_asShort(ev))}</span></span>`
+        + `<span class="as-l2"><span class="as-when">${escHtml(_asRelTime(ev.at))}</span>${detail ? ` · ${escHtml(detail)}` : ''}<span class="as-caret">▾</span></span>`
+        + `</span>`;
+    }).join('');
   }
   _asUpdateNav();
   if (_asOpenId != null) _asRenderPanel();
@@ -696,10 +731,15 @@ function _asRenderPanel() {
   const panel = document.getElementById('activity-panel'); if (!panel) return;
   const rows = _asOpenId === 'recent' ? _asEvents : _asEvents.filter(e => e.id === _asOpenId);
   if (!rows.length) { _asClosePanel(); return; }
-  panel.innerHTML = rows.map(ev => {
+  // A visible X (data-ap="close") + a click on the panel body both close via the ONE delegated listener.
+  const closeX = `<button type="button" class="ap-close" data-ap="close" aria-label="Close" title="Close">&#10005;</button>`;
+  panel.innerHTML = closeX + rows.map(ev => {
     // r18 card 5: a bulk "you filed N" names its senders even when there is only one — that IS the receipt.
-    const by = ev.bySender && (Object.keys(ev.bySender).length > 1 || (ev.bulk && Object.keys(ev.bySender).length))
-      ? `<div class="ap-sub">${Object.entries(ev.bySender).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${escHtml(k)} ${v}`).join(' · ')}</div>` : '';
+    // A zero-filed File All merges a placeholder ('—': 0) sender: drop empty/placeholder rows so the
+    // breakdown only ever names real recipients.
+    const senders = ev.bySender ? Object.entries(ev.bySender).filter(([k, v]) => k && k !== '—' && Number(v) > 0) : [];
+    const by = senders.length
+      ? `<div class="ap-sub">${senders.sort((a, b) => b[1] - a[1]).map(([k, v]) => `${escHtml(k)} ${v}`).join(' · ')}</div>` : '';
     const kept = (ev.dropped || []).length
       ? `<div class="ap-kept">${(ev.dropped || []).slice(0, 8).map(d => `kept back — ${escHtml(typeof _sweepReason === 'function' ? _sweepReason(d.reason) : d.reason)} (#${d.docId})`).join('<br>')}${(ev.dropped || []).length > 8 ? `<br>… and ${(ev.dropped || []).length - 8} more` : ''}</div>` : '';
     const undo = ev.undoable ? `<button type="button" class="ap-btn" data-ap="undo" data-ev="${ev.id}" title="Puts these documents back in Review. The copies already written to your filing folder stay there and are replaced when you file them again.">Put back</button>` : '';
@@ -718,6 +758,17 @@ function _asClosePanel() {
   _asOpenId = null;
   const panel = document.getElementById('activity-panel'); if (panel) { panel.classList.remove('open'); panel.innerHTML = ''; }
   document.querySelectorAll('#as-track .as-chip.open').forEach(c => c.classList.remove('open'));
+}
+// End-of-File-All reconcile: (1) record the kept-back set so a zero-filed run still leaves a chip and a
+// run that filed some carries its "N kept back" reasons (merged into the run's approved|bulk event by the
+// ledger); (2) REFETCH the authoritative ledger so the bulk count is correct despite the 1/s emit throttle
+// coalescing interleaved self_filed/approved records mid-run (eric's count-staleness fix). Best-effort:
+// wrapped so the receipt can never affect the filing that already happened.
+async function _asFileAllReconcile(dropped) {
+  try {
+    if (Array.isArray(dropped) && dropped.length) await window.docusnap.recordFileAllOutcome?.({ dropped });
+  } catch { /* the receipt must never affect filing */ }
+  if (_asOn) { try { _asEvents = (await window.docusnap.getReviewEvents?.()) || _asEvents; renderActivityStrip(); } catch {} }
 }
 async function _asSeeThem(evId) {
   let r = null;
@@ -777,11 +828,15 @@ async function initActivityStrip() {
     const key = chip.dataset.as === 'recent' ? 'recent' : Number(chip.dataset.as);
     if (_asOpenId === key) _asClosePanel(); else _asOpenPanel(key);
   });
+  // ONE delegated listener owns every panel click (survives _asRenderPanel's full re-render). See-them and
+  // Put-back run and self-close (each calls _asClosePanel); the X and ANY other click on the panel body
+  // close it. C5-safe: non-capture, no stopPropagation/preventDefault — and because the panel overlays the
+  // document the click never reaches the page beneath, so no teach/drag-select interceptor is disturbed.
   document.getElementById('activity-panel')?.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-ap]'); if (!b) return;
-    const id = Number(b.dataset.ev);
-    if (b.dataset.ap === 'see') _asSeeThem(id);
-    else if (b.dataset.ap === 'undo') _asPutBack(id);
+    const b = e.target.closest('[data-ap]');
+    if (b && b.dataset.ap === 'see')  { _asSeeThem(Number(b.dataset.ev)); return; }
+    if (b && b.dataset.ap === 'undo') { _asPutBack(Number(b.dataset.ev)); return; }
+    _asClosePanel();   // the X (data-ap="close") or a bare click on the panel body
   });
   // C5: OBSERVE-ONLY click-outside (never stopPropagation/preventDefault — the ⊕ pick, drag-select and
   // help-mode interceptors must see every click); Esc is consumed only while the panel is open.
@@ -1245,7 +1300,19 @@ document.getElementById('tab-deferred').addEventListener('click', () => {
 });
 
 function updateTabCounts() {
-  document.getElementById('tab-review-count').textContent   = queue.length;
+  const rc = document.getElementById('tab-review-count');
+  if (rc) {
+    if (_viewingAutoFiled) {
+      // Filtered view: `queue` is a subset — show the TRUE needs_review count, not the filtered length.
+      if (_authReviewCount != null) rc.textContent = _authReviewCount;
+      window.docusnap.getReviewCount?.().then(n => {
+        if (typeof n === 'number') { _authReviewCount = n; if (_viewingAutoFiled) rc.textContent = n; }
+      }).catch(() => {});
+    } else {
+      _authReviewCount = queue.length;   // normal view: the full queue IS the needs_review set
+      rc.textContent = queue.length;
+    }
+  }
   document.getElementById('tab-deferred-count').textContent = deferredQueue.length;
 }
 
@@ -1480,6 +1547,14 @@ function buildQueueItem(doc) {
       + `<span aria-hidden="true">⚠</span>Needs: ${escHtml(missingReq[0])}`
       + `${missingReq.length > 1 ? ` +${missingReq.length - 1} more` : ''}</div>`
     : '';
+  // Put-back marker (mig 87, Oracle W/COND cond 4): a put-back doc is a visible class BEFORE any File All
+  // click. A refileable one (still clears the strict predicate) says it WILL re-file; a held one says it
+  // waits for the user. OFF → putback_refileable is never set, so a put-back doc shows the plain "put back".
+  const putBackChip = doc.put_back_at
+    ? (doc.putback_refileable
+        ? `<span class="qi-putback refiling" title="You put this back to look at it. It still reads clean, so File All Ready will file it again — you can undo that from the activity strip.">↩ will re-file</span>`
+        : `<span class="qi-putback" title="You put this back — confirm it yourself to file it.">↩ put back</span>`)
+    : '';
   el.innerHTML = `
     <div style="display:flex; align-items:flex-start; gap:8px;">
       <img class="qi-thumb" alt="">
@@ -1487,6 +1562,7 @@ function buildQueueItem(doc) {
         <span class="qi-name" title="${escHtml(doc.original_filename)}">${escHtml(doc.original_filename)}</span>
         <div style="display:flex; align-items:center; gap:6px;">
           <span class="qi-supplier" style="flex:1; min-width:0;">${escHtml(doc.supplier_name || 'Sender not identified')}${reviewGroupChip(doc)}</span>
+          ${putBackChip}
           ${doc.page_count > 1 ? `<span class="qi-multipage" title="Multi-page document (${doc.page_count} pages)" style="flex-shrink:0;display:inline-flex;color:var(--muted)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></svg></span>` : ''}
           ${confBadge}
         </div>
@@ -1580,6 +1656,12 @@ function renderDeferredList() {
 
 // ── Select document ───────────────────────────────────────────────────────────
 async function selectDoc(doc, opts) {
+  // Dismiss a lingering class-fix RECEIPT when the operator moves to another document (bug fix 2026-08-23:
+  // it had no close and lingered long after the doc left). The 'ask' phase is a pending decision — leave it;
+  // during a File All run (bulkFiling) selectDoc churns, so skip.
+  if (_classFixState && _classFixState.phase !== 'ask' && doc && _classFixState.documentId !== doc.id && !bulkFiling) {
+    _classFixState = null; renderClassFixBar();
+  }
   // Grouped mode: make sure the doc's sender group is EXPANDED before we select — the
   // active-row highlight is toggled on the rendered element (_selectDoc), so a doc in a
   // collapsed group would have no row to light up. Covers confirm-advance / keyboard nav
@@ -5771,10 +5853,26 @@ async function fileAllReady() {
   // of the flagged line (the classifier files them under 'flagged' so File All never sweeps them).
   const _putBack   = _flagged.filter(d => d && d.put_back_at);
   const _flaggedOnly = _flagged.length - _putBack.length;
+  // Put-back re-file (mig 87, Oracle W/COND cond 4): the put-back docs that will RE-FILE on this click —
+  // they are in `ready` because they still clear the strict auto-file predicate (putback_refileable). They
+  // must be NAMED as a distinct, undoable line in the dialog so the re-file is never a silent surprise. OFF
+  // → no put-back doc is ever 'ready', so this set is always empty and the line never shows.
+  const _putBackRefiling = _parts.ready.filter(d => d && d.put_back_at);
+  // THE KEPT-BACK SET for the strip receipt — built from THE ONE classifier so the chip names exactly the
+  // population the dialog named. A zero-filed File All then still leaves a chip ("Nothing filed — N kept
+  // back", each reason spelled out in the panel), instead of the strip staying silent (the record() null
+  // at zero ids/zero dropped). Merged into the run's approved|bulk chip when some do file.
+  const _dropped = [
+    ..._putBack.map(d => ({ docId: d.id, reason: 'put-back' })),
+    ..._flagged.filter(d => d && !d.put_back_at).map(d => ({ docId: d.id, reason: 'stored-flagged' })),
+    ..._noType.map(d => ({ docId: d.id, reason: 'no-type' })),
+    ..._missing.map(d => ({ docId: d.id, reason: 'missing-required' })),
+  ].filter(d => d.docId);
   if (_eligible <= 0) {
     showToast(_putBack.length
       ? `Nothing is ready to file by itself — ${_putBack.length} you put back ${_putBack.length === 1 ? 'is' : 'are'} waiting for your Confirm, and the rest are waiting on a check or a missing detail.`
       : 'Nothing is ready to file yet — every document in the queue is waiting on a check or a missing detail.', 'warn');
+    await _asFileAllReconcile(_dropped);   // leave a strip receipt even though nothing filed
     return;
   }
   const _heldLines = [];
@@ -5784,6 +5882,9 @@ async function fileAllReady() {
   if (_missing.length) _heldLines.push(`${_missing.length} missing a required detail (date, reference or sender)`);
   if (!confirm(
         `File ${_eligible} ready document${_eligible === 1 ? '' : 's'} (of ${docs.length} in the Review queue)?\n\n` +
+        (_putBackRefiling.length
+          ? `Includes ${_putBackRefiling.length} you put back and looked at — ${_putBackRefiling.length === 1 ? 'it' : 'they'} will be filed again (you can undo this from the activity strip).\n\n`
+          : '') +
         (_heldLines.length ? `Not included — they stay in the queue:\n  • ${_heldLines.join('\n  • ')}\n\n` : '') +
         `Each one is filed exactly as if you confirmed it yourself. ` +
         `Anything that turns out to need a detail is left in the queue for you.`)) return;
@@ -5901,6 +6002,9 @@ async function fileAllReady() {
     const top = [..._fileAllScopes.entries()].sort((a, b) => b[1] - a[1])[0];
     if (top) { try { const [sup, slug] = JSON.parse(top[0]); _scheduleScopeSweep(sup, slug); } catch {} }
   }
+  // Strip receipt: merge the kept-back reasons into this run's chip (or leave a 0-filed chip) and refetch
+  // the ledger so the bulk count is accurate — the activity strip must never be silent after a File All.
+  await _asFileAllReconcile(_dropped);
 
   // Banner done-state, then auto-dismiss. Already-filed docs stay filed.
   const stoppedNote = _bulkFileStopped ? ' (stopped)' : '';
@@ -6039,6 +6143,10 @@ const _SWEEP_REASON_COPY = {
   'stored-flagged':      'it is flagged for review',
   'fresh-flagged':       'the re-check flagged it',
   'type-flip':           'the document type read differently on re-check',
+  // File All Ready kept-back reasons (the strip receipt names why a document did not file)
+  'no-type':             'it has no document type yet',
+  'missing-required':    'it is missing a required detail (date, reference or sender)',
+  'put-back':            'you put it back — it waits for your own Confirm',
 };
 function _sweepReason(r) {
   if (!r) return 'it did not pass the checks';
@@ -6183,8 +6291,11 @@ function renderClassFixBar() {
   const n = s.docs.length;
   const cleared = s.docs.filter(d => d.noteCleared).length;
   const held = n - cleared;
+  // The RESULT phase (not the 'ask', which needs a decision) is a RECEIPT — it must be dismissible.
+  // A close X (data-cf="close") + it also clears when the operator moves to another document (selectDoc).
   bar.innerHTML =
-    `<div>Also corrected <b>${escHtml(s.from)}</b> to <b>${escHtml(s.to)}</b> on `
+    `<span class="scb-x" data-cf="close" title="Dismiss">&times;</span>`
+    + `<div>Also corrected <b>${escHtml(s.from)}</b> to <b>${escHtml(s.to)}</b> on `
     + `<b>${n}</b> other document${n === 1 ? '' : 's'} waiting from this sender.</div>`
     + (held
         ? `<div class="scb-muted">${cleared ? `${cleared} now read cleanly. ` : ''}`
@@ -6203,6 +6314,7 @@ function renderClassFixBar() {
 document.getElementById('class-fix-bar')?.addEventListener('click', async (e) => {
   const act = e.target?.dataset?.cf;
   if (!act || !_classFixState) return;
+  if (act === 'close') { _classFixState = null; renderClassFixBar(); return; }   // dismiss the receipt
   if (act === 'list') { _classFixState.listOpen = !_classFixState.listOpen; renderClassFixBar(); return; }
   if (act === 'undo') {
     const id = _classFixState.batchId;
@@ -8180,7 +8292,13 @@ window.docusnap.onQuietReprocess?.(async (ev) => {
     if (st && st.running) { _quietJobs.set(st.running.id, { ...st.running, state: st.running.state || 'running' }); _renderQuietHint(); }
   } catch {}
 })();
-window.docusnap.onReviewCountChanged(() => {
+window.docusnap.onReviewCountChanged((n) => {
+  // Keep the authoritative badge count fresh even while a filtered view is active (bug fix 2026-08-23):
+  // a bulk put-back fires this with the true count, so the badge is right the moment the user returns.
+  if (typeof n === 'number') {
+    _authReviewCount = n;
+    if (_viewingAutoFiled) { const rc = document.getElementById('tab-review-count'); if (rc) rc.textContent = n; }
+  }
   // Ignore File All Ready's interim per-doc broadcasts — its own clean refresh follows the run.
   if (bulkFiling) return;
   if (_reviewRefreshTimer) clearTimeout(_reviewRefreshTimer);

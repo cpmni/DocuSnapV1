@@ -325,6 +325,61 @@ def _logo_detail_veto(cands, base_dist, best_t, query_detail_hash, all_templates
         return False   # best-effort; a broken veto must never break identification
 
 
+def _detail_veto_single_supplier_immune(cands, cluster, best_t, best_dist, ocr_lower,
+                                        query_detail_hash, all_templates=None) -> bool:
+    """LOGO_DETAIL_VETO_SINGLE_SUPPLIER_IMMUNE (2026-08-23, iris finding → Oracle SIGN-OFF-W/COND;
+    DEFAULT OFF). SUPPRESS a detail-veto abstain when the coarse pick is a CORROBORATED single-supplier
+    lock AND the rival that tripped the veto is only MARGINAL.
+
+    THE CLASS (Oakhaven): logo_detail._region crops the TOP-LEFT quadrant, but a CENTRE-top diamond mark
+    is clipped, so _mark_bbox isolates a wordmark LETTER. A 256-bit hash of a letterform is colourway-
+    unstable (blue sample vs black scan) and collides with any round glyph — so the mark 'disagrees with
+    its OWN set' (>72) while a rival's round letter lands marginally (Nordwind 62). veto_by_detail then
+    ABSTAINS a pick whose coarse phash is a dist-2 lock and whose own keyword branding is all over the page.
+
+    PRESERVES the veto's real job (doc-193 / Saltmarsh): a DECISIVE rival — detail min ≤ the confident
+    distance (48) — is a genuine positive cross-supplier identity and STILL vetoes. Only a MARGINAL rival
+    (48 < m ≤ 72) over a corroborated single-supplier lock is immunised. ALL must hold:
+      • tight coarse lock (best_dist ≤ 6) AND the ±margin cluster is ONE supplier (_letterhead_cohort);
+      • the pick's OWN distinctive branding is on the page (the same gate as the refuse/text arms);
+      • the triggering rival is MARGINAL: its min-over-set detail distance > logo_detail._confident_dist().
+    Pure/best-effort: any miss → False (KEEP the veto). Implemented at the call site — veto_by_detail /
+    _logo_detail_veto / anchor.try_logo_supplier_match are untouched (their pins + the anchor consumer
+    stay byte-identical)."""
+    try:
+        if os.environ.get('LOGO_DETAIL_VETO_SINGLE_SUPPLIER_IMMUNE', '0') == '0':
+            return False
+        if best_dist is None or best_dist > 6:
+            return False
+        # the ±margin coarse cluster must resolve to exactly ONE supplier (None ⇒ spans ≥2 ⇒ not immune)
+        if _letterhead_cohort(cluster, best_t) is None:
+            return False
+        # the pick's OWN branding must be present on the page (never immunise a lock whose letterhead
+        # is not even here — that is the collision case TEMPLATE_LOGO_TEXT_GATE handles)
+        _ro, _rk = _distinctive_hit_ratio(best_t, ocr_lower)
+        if not (_rk > 0 and _ro >= _BRANDING_PRESENT_RATIO):
+            return False
+        # the triggering rival must be MARGINAL, not decisive — build the rival universe the SAME way
+        # _logo_detail_veto does (global when armed) and take the closest rival's detail distance
+        import logo_detail
+        best_sup = (best_t.get('dominant_supplier') or '').strip().lower()
+        _global = bool(all_templates) and os.environ.get('LOGO_DETAIL_GLOBAL_RIVALS', '1') != '0'
+        _src = [(t, None) for t in all_templates] if _global else cands
+        rival_min = None
+        for (t, _d) in _src:
+            sn = (t.get('dominant_supplier') or '').strip()
+            if not sn or sn.lower() == best_sup:
+                continue
+            m = logo_detail.min_over_set(query_detail_hash, t.get('logo_detail_hashes') or [])
+            if m is not None and (rival_min is None or m < rival_min):
+                rival_min = m
+        if rival_min is None:
+            return False                                   # no rival to be marginal → keep the veto
+        return rival_min > logo_detail._confident_dist()   # marginal ⇒ immune; decisive (≤48) ⇒ keep veto
+    except Exception:
+        return False   # best-effort; a broken immunity check must never break identification
+
+
 def _band_siblings(cands, base_dist, best_t=None) -> dict:
     """FIX B1 (suggest-only): {doc_type_slug: closest template} over the SAME wider `_AMBIG_LOGO_BAND`
     the ambiguity test uses (NOT the margin-3 pick cluster — a real drifted sibling can sit at Hamming
@@ -888,8 +943,14 @@ def identify_template(page_image, ocr_text: str, templates: list,
                 # DISAGREES with the scan is a look-alike collision → ABSTAIN (fall to keyword + branding
                 # net + review). See _logo_detail_veto (scoped, fail-safe, kill-switched, inert until
                 # Slice-B detail hashes accrue). Ordered after the trusted-title refuse, before Fix A.
-                if _logo_refused is None and _logo_detail_veto(cands, cluster_dist, best_t,
-                                                               query_detail_hash, all_templates=templates):
+                if (_logo_refused is None
+                        and _logo_detail_veto(cands, cluster_dist, best_t,
+                                              query_detail_hash, all_templates=templates)
+                        # …unless this is a corroborated single-supplier lock tripped by a MARGINAL rival
+                        # (the Oakhaven clipped-logo class; DEFAULT OFF). A DECISIVE rival still vetoes.
+                        and not _detail_veto_single_supplier_immune(cands, cluster, best_t, best_dist,
+                                                                    ocr_lower, query_detail_hash,
+                                                                    all_templates=templates)):
                     if not _vf_on:
                         return None
                     # Slice C (detail-veto flavour): refuse the pick but keep matching — record the

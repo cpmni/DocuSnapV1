@@ -1433,6 +1433,22 @@
               </div>
               <label class="toggle"><input type="checkbox" id="review-activity-strip-toggle"><span class="toggle-slider"></span></label>
             </div>
+            <!-- Put-back re-file via File All Ready (2026-08-23, DARK) -->
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Let "File All Ready" re-file documents you put back just to look at</div>
+                <div class="threshold-sub">When Scan Finder auto-files a document and you put it back only to have a glance, "File All Ready" normally skips it and asks you to confirm it one by one. With this on, a put-back document that still reads cleanly is filed again by "File All Ready" as if you confirmed it — the confirm dialog names how many, and you can undo from the activity strip. A document you actually change stays held, and if you put a re-filed one back again it is held until you confirm it yourself. Documents the system was never confident about stay held. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="putback-refile-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <!-- Detail-veto single-supplier immunity (2026-08-23, DARK) -->
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't reject a document's own saved layout over a logo look-alike when the sender is certain</div>
+                <div class="threshold-sub">A fine logo check occasionally rejects a document that clearly belongs to one sender — it mistakes part of the letterhead for another company's mark, so a document that matches its sender's saved layout is sent to review with "couldn't match this layout". With this on, when the logo is a strong single-sender match and the sender's own name is printed on the page, that fine check is only allowed to override when it is genuinely confident the mark belongs to a different company — a marginal look-alike no longer blocks the match. A real two-company logo collision is still caught. Needs an app restart to take effect. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="logo-detail-immune-toggle"><span class="toggle-slider"></span></label>
+            </div>
             <div class="threshold-row">
               <div>
                 <div class="threshold-label">Recognise a confirmed company even when its letterhead is column-spaced</div>

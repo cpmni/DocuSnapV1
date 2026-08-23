@@ -30,7 +30,12 @@
   function classify(row, opts) {
     const valuedOnly = !!(opts && opts.valuedOnly);
     if (!row) return 'missing';
-    if (row.put_back_at) return 'flagged';                    // Chris r18 A3: put back = "waiting for your eye" — never swept by File All either
+    // Chris r18 A3: put back = "waiting for your eye" — HELD, and never swept by any machine door.
+    // mig 87 (DARK putback_refile_on_file_all): a put-back doc that STILL clears the strict auto-file
+    // predicate today (putback_refileable, stamped by getReviewQueue via the bypass; a refile-declined
+    // doc is refused there so it never gets the flag) falls through to the normal ready checks, so an
+    // EXPLICIT File All re-files it as a human confirm. OFF → column absent → held exactly as mig 86.
+    if (row.put_back_at && !row.putback_refileable) return 'flagged';
     if (isFlagged(row, valuedOnly) && !row.review_acknowledged_at) return 'flagged';
     if (!row.type_slug) return 'noType';
     if (String(row.missing_required_labels || '').trim()) return 'missing';

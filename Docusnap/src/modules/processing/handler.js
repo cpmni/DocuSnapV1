@@ -155,6 +155,11 @@ function _reconcileEnv(db) {
     // together, sep-guard AFTER the witness (Oracle C4).
     if (learning.getSetting(db, 'raw_crop_witness_flag', 'false') === 'true') env.RAW_CROP_WITNESS_FLAG = '1';
     if (learning.getSetting(db, 'raw_crop_witness_adopt', 'false') === 'true') env.RAW_CROP_WITNESS_ADOPT = '1';
+    // Detail-veto single-supplier immunity (2026-08-23, iris → Oracle W/COND). Placed in this SHARED env
+    // helper (spread at the import, watch-batch AND reprocess spawns) — not only buildTrainingArgs — so the
+    // switch reaches the REPROCESS path too (a stuck doc is fixed by Reprocess, which does not run the
+    // buildTrainingArgs inline block). Default OFF. See template_matcher._detail_veto_single_supplier_immune.
+    if (learning.getSetting(db, 'logo_detail_veto_single_supplier_immune', 'false') === 'true') env.LOGO_DETAIL_VETO_SINGLE_SUPPLIER_IMMUNE = '1';
     // Filing-identity coherence (2026-08-14): `documents.supplier_name` — the FILING FOLDER and
     // the universal LEARNING SCOPE KEY — is taken from engine `_supplier_name`, which is captured
     // BEFORE Stage 4.5, `_adopt_identity_variant` and the late supplier writers can heal the
@@ -625,6 +630,14 @@ function _reconcileEnv(db) {
     if (learning.getSetting(db, 'keyword_generic_caption_exclusive', 'false') === 'true') env.KEYWORD_GENERIC_CAPTION_EXCLUSIVE = '1';
     if (learning.getSetting(db, 'type_title_owner_precedence', 'false') === 'true') env.TYPE_TITLE_OWNER_PRECEDENCE = '1';
     if (learning.getSetting(db, 'filing_value_sanity_flags', 'false') === 'true') env.FILING_VALUE_SANITY_FLAGS = '1';
+    // LOGO_DETAIL_VETO_SINGLE_SUPPLIER_IMMUNE (2026-08-23, iris → Oracle SIGN-OFF-W/COND): the detail-hash
+    // veto crops the top-LEFT quadrant, so a CENTRE-top logo is clipped and it hashes a wordmark LETTER —
+    // colourway-unstable + collides with other suppliers' round glyphs, so a doc's own mark "disagrees with
+    // itself" and a rival lands marginally, false-abstaining a dist-2 single-supplier lock (the Oakhaven
+    // class). When on, a corroborated single-supplier lock tripped by a MARGINAL rival (detail dist >48) is
+    // immune; a DECISIVE rival (≤48, the doc-193/buyer-issued class) still vetoes. Default OFF, byte-identical
+    // off. App RESTART to load the bridge.
+    if (learning.getSetting(db, 'logo_detail_veto_single_supplier_immune', 'false') === 'true') env.LOGO_DETAIL_VETO_SINGLE_SUPPLIER_IMMUNE = '1';
     // -- THE COLD-START ISSUER READER (bridged 2026-08-09 NIGHT) --
     // LETTERHEAD_ISSUER: on a document from a supplier the app has NEVER SEEN, there is no logo,
     // no hint, no anchor and no template, so every identity path abstains and the sender comes out
@@ -3878,6 +3891,18 @@ function register(ctx) {
     if (!ev) return { ok: false, reason: 'unknown-event', docs: [] };
     const documents = require('../../../database/modules/documents');
     return { ok: true, docs: documents.getByIds(db, ev.ids || []) };
+  });
+  // File All Ready kept-back receipt: the renderer sends only the DROPPED set (docId + reason code) — never
+  // filed ids (those were recorded per-doc as approved|bulk). The ledger merges the reasons into this run's
+  // approved|bulk chip, or — when nothing filed — creates a zero-count chip so the strip is never silent
+  // after a File All (the record() null at zero ids/zero dropped was the "no chip appeared" bug). Best-effort;
+  // undo:null (a human via, never sweep-undoable). Presentation only — cannot affect any filing.
+  ipcMain.handle('record-file-all-outcome', (_e, { dropped } = {}) => {
+    requireRole('admin', 'edit');
+    if (!Array.isArray(dropped) || !dropped.length) return { ok: false, reason: 'nothing-to-record' };
+    const ev = recordReviewEvent(getDb(), { kind: 'approved', bulk: true, ids: [], dropped,
+      scope: { supplier: null, typeSlug: null }, undo: null });
+    return { ok: !!ev };
   });
   // Undo by EVENT: sweep → the same checks as sweep-scope-undo (confirmed + confirmed_via scope_sweep),
   // CHUNKED in 25s with a yield between chunks, {undone, refused} honest (Oracle C7 — the legacy door's

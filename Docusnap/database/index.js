@@ -2029,6 +2029,31 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 86 applied: documents.put_back_at (a put-back document never files itself until a human confirms it)');
   }
 
+  // ── Migration 87: PUT-BACK RE-FILE via File All Ready (2026-08-23, Oracle SIGN-OFF-W/COND). The
+  // owner's rule: a doc the system ALREADY auto-filed and the user merely put back to GLANCE at should
+  // re-file on an explicit File All click without a per-doc re-confirm — it still clears the strictest
+  // auto-file predicate today (bypassing only the put-back stamp). Two support columns, both NULL-inert:
+  //   • refile_declined_at — HARD-HELD marker: set when a user pulls a re-filed-from-put-back doc BACK
+  //     again (the undo-loop closure, Oracle blocking cond 2). isAutoFileEligible refuses it
+  //     UNCONDITIONALLY (never bypassable); only a per-doc human confirm clears it. Prevents File All
+  //     from silently re-burying a doc the user keeps reversing (the illusory-undo class A3 guarded).
+  //   • putback_refiled_at — history: stamped when a human confirm clears a put_back_at (the doc was
+  //     confirmed OUT of a put-back state). deconfirm reads it to know a later put-back is a REVERSAL.
+  // The whole behaviour is DARK behind the setting `putback_refile_on_file_all`; OFF = a put-back doc is
+  // held exactly as mig 86 left it (both columns unread), so OFF is byte-identical.
+  if (!applied.has(87)) {
+    if (tableExists(db, 'documents')) {
+      for (const col of ['refile_declined_at', 'putback_refiled_at']) {
+        if (!hasColumn(db, 'documents', col)) {
+          try { db.exec(`ALTER TABLE documents ADD COLUMN ${col} TEXT`); }
+          catch (e) { console.warn(`  migration 87 (${col}): ${e.message}`); }
+        }
+      }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (87)').run();
+    console.log('JS migration 87 applied: documents.refile_declined_at + putback_refiled_at (put-back re-file via File All, DARK)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

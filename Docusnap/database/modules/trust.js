@@ -994,11 +994,22 @@ function isAutoFileEligible(db, doc, opts = {}) {
   // test_generic_autofile_refusal.js — do not weaken or move below the floor logic.
   if (slug === require('./document_types').GENERIC_SLUG)
     return { eligible: false, floor: UNTRUSTED_FLOOR, reason: 'generic-type' };
+  // REFILE DECLINED (mig 87, Oracle 2026-08-23 undo-loop closure — BLOCKING cond 2): the user pulled
+  // this doc BACK again AFTER it had been re-filed out of a put-back — the strongest "no, this one needs
+  // me" signal, and the illusory-undo class the A3 incident was about. HARD-HELD: refused unconditionally
+  // and the put-back bypass below can NEVER clear it; only a per-doc human confirm clears it (at claim).
+  if (doc.refile_declined_at)
+    return { eligible: false, floor: UNTRUSTED_FLOOR, reason: 'refile-declined' };
   // PUT BACK (Chris round 18 A3, mig 86): the user returned this document to the queue to LOOK at it.
   // Unconditional until a human confirm clears the stamp at claim — any confidence, any slider, any
   // graduation; every machine door (scope sweep, reprocess accept, class-fix siblings) shares this
   // predicate. A row without the column / an import-time doc object carries no stamp → unchanged.
-  if (doc.put_back_at)
+  // BYPASS (mig 87, Oracle W/COND): opts.bypassPutBack is set ONLY by the File-All readiness recompute
+  // (documents.getReviewQueue → putback_refileable), so an EXPLICIT File All can offer a put-back doc
+  // that still clears every OTHER gate below. NO machine door (import auto-file, scope sweep, quiet +
+  // manual reprocess, class-fix) ever passes it, so they all keep refusing 'put-back'. The refile-declined
+  // refusal ABOVE runs first, so the bypass can never resurrect a hard-held doc.
+  if (doc.put_back_at && !opts.bypassPutBack)
     return { eligible: false, floor: UNTRUSTED_FLOOR, reason: 'put-back' };
   const corrobOn = (opts.corrobAutoFile !== undefined) ? !!opts.corrobAutoFile : _corrobAutofileEnabled(db);
   const t = scopeTrust(db, doc.supplier_name, slug, { ...opts, corrobProbe: corrobOn });

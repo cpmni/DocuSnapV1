@@ -42,6 +42,19 @@ function _scopeKey(scope) {
   return `${String(s.supplier || '').trim().toLowerCase()}|${String(s.typeSlug || '').trim().toLowerCase()}`;
 }
 
+// Fold a kept-back list by docId, keeping the LAST reason, capped (Oracle 2026-08-23, Seam D+C): a blind
+// concat on merge doubled the "N kept back" count when File All Ready was clicked twice on the same held
+// docs, and grew one event's dropped list without bound. Dedup + cap keeps the receipt honest and the
+// review_events setting small. Reason length is already clamped at the record() ingress.
+const DROPPED_CAP = 200;
+function _dedupDropped(arr) {
+  const m = new Map();
+  for (const d of (Array.isArray(arr) ? arr : [])) {
+    if (d && d.docId) m.set(Number(d.docId), { docId: Number(d.docId), reason: String(d.reason || '') });
+  }
+  return [...m.values()].slice(-DROPPED_CAP);
+}
+
 function create(deps = {}) {
   const learning = deps.learning || require('../../database/modules/learning');
   const now = deps.now || (() => Date.now());
@@ -99,7 +112,7 @@ function create(deps = {}) {
       const kind = String(ev.kind || '');
       if (!KINDS.has(kind)) return null;
       const ids = [...new Set((Array.isArray(ev.ids) ? ev.ids : []).map(Number).filter(Boolean))];
-      const dropped = Array.isArray(ev.dropped) ? ev.dropped.filter(d => d && d.docId).map(d => ({ docId: Number(d.docId), reason: String(d.reason || '') })) : [];
+      const dropped = Array.isArray(ev.dropped) ? ev.dropped.filter(d => d && d.docId).map(d => ({ docId: Number(d.docId), reason: String(d.reason || '').slice(0, 200) })) : [];
       if (!ids.length && !dropped.length) return null;
       const t = now();
       const state = _load(db);
@@ -126,7 +139,7 @@ function create(deps = {}) {
         latest.ids = [...have];
         latest.bySender = latest.bySender || {};
         latest.bySender[sender] = (latest.bySender[sender] || 0) + ids.length;
-        latest.dropped = (latest.dropped || []).concat(dropped);
+        latest.dropped = _dedupDropped((latest.dropped || []).concat(dropped));   // fold by docId (Seam D): a re-drop of the same held doc must not double the count
         latest.at = t;
         latest.seen = false;
         if (ev.approved != null) latest.approved = !!ev.approved;
@@ -136,7 +149,7 @@ function create(deps = {}) {
         state.seq += 1;
         out = { id: state.seq, key, kind, at: t, started_at: t, ids, bySender: { [sender]: ids.length }, scope,
                 approved: !!ev.approved, undo: ev.undo && ev.undo.type ? { type: String(ev.undo.type), ...(ev.undo.batchId ? { batchId: String(ev.undo.batchId) } : {}) } : null,
-                dropped, seen: false, ...(ev.bulk ? { bulk: true } : {}) };
+                dropped: _dedupDropped(dropped), seen: false, ...(ev.bulk ? { bulk: true } : {}) };
         state.events.push(out);
       }
       _save(db, state);

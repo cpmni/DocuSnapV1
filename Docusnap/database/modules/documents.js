@@ -195,7 +195,7 @@ function getReviewQueue(db) {
            AND e.validation_note IS NOT NULL AND e.validation_note <> ''
          LIMIT 1) AS issuer_suggested,`
     : `NULL AS issuer_suggested,`;
-  return db.prepare(`
+  const _rows = db.prepare(`
     SELECT d.*, dt.name as type_name, dt.slug as type_slug,
       (SELECT COUNT(*) FROM extractions e
          WHERE e.document_id = d.id
@@ -259,6 +259,32 @@ function getReviewQueue(db) {
     WHERE d.status = 'needs_review'
     ORDER BY d.processed_at DESC
   `).all();
+  _stampPutBackRefileable(db, _rows);
+  return _rows;
+}
+
+// Put-back re-file (mig 87, Oracle W/COND, DARK `putback_refile_on_file_all`). Stamp putback_refileable=1
+// on the put-back rows that STILL clear the strict auto-file predicate today (bypassing ONLY the put-back
+// stamp), so THE ONE classifier can offer them to an explicit File All Ready. Computed once per batch via
+// the bypass predicate (a refile-declined doc is refused there → never stamped → stays hard-held). This is
+// a READ used only to widen the File-All population; every machine door omits bypassPutBack, so the sweep /
+// import / reprocess / class-fix keep refusing put-back docs. OFF (or no put-back rows) → no column →
+// classify() holds put-back exactly as mig 86 left it (byte-identical). Fail-closed on any error.
+function _putbackRefileEnabled(db) {
+  const env = process.env.PUTBACK_REFILE_ON_FILE_ALL;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try { return require('./learning').getSetting(db, 'putback_refile_on_file_all', 'false') === 'true'; }
+  catch { return false; }
+}
+function _stampPutBackRefileable(db, rows) {
+  try {
+    if (!_hasPutBackAt(db) || !_putbackRefileEnabled(db)) return;
+    const pb = (rows || []).filter(r => r && r.put_back_at);
+    if (!pb.length) return;
+    const ok = new Set(require('./trust').autoFileEligibleIds(db, pb, { bypassPutBack: true }));
+    for (const r of pb) if (ok.has(r.id)) r.putback_refileable = 1;
+  } catch { /* fail-closed: a put-back doc simply stays held */ }
 }
 
 function getDeferredQueue(db) {
@@ -353,9 +379,28 @@ function deconfirmDocument(db, id) {
   // the class-fix undo) is a human saying "look again", and the NOTE those doors write is shed by the
   // next re-read (`used_new`), after which "it stays filed until you re-confirm it" would be false.
   const pbStamp = _hasPutBackAt(db) ? ", put_back_at = datetime('now')" : '';
+  // Undo-loop closure (mig 87, Oracle BLOCKING cond 2): pulling a doc BACK that was re-filed OUT of a
+  // put-back (putback_refiled_at set) is the user reversing a File-All re-file → HARD-HELD (refile_declined
+  // _at), so File All can never re-bury it; only a per-doc human confirm clears it. Switch- + column-guarded
+  // (CASE reads the pre-update putback_refiled_at). OFF / pre-mig-87 → byte-identical to mig 86.
+  const declineStamp = (_hasRefileDeclined(db) && _putbackRefileEnabled(db))
+    ? ", refile_declined_at = CASE WHEN putback_refiled_at IS NOT NULL THEN datetime('now') ELSE refile_declined_at END"
+    : '';
   return db.prepare(
-    `UPDATE documents SET status = 'needs_review', confirmed_at = NULL, confirmed_by_username = NULL${viaClear}${pbStamp} WHERE id = ? AND status = 'confirmed'`
+    `UPDATE documents SET status = 'needs_review', confirmed_at = NULL, confirmed_by_username = NULL${viaClear}${pbStamp}${declineStamp} WHERE id = ? AND status = 'confirmed'`
   ).run(id);
+}
+// Column-presence cache for documents.refile_declined_at / putback_refiled_at (mig 87) — WeakMap per DB
+// handle so a pre-migration fixture DB never throws (same pattern as _hasPutBackAt / _hasConfirmedVia).
+const _refileDeclinedPresence = new WeakMap();
+function _hasRefileDeclined(db) {
+  let has = _refileDeclinedPresence.get(db);
+  if (has === undefined) {
+    try { has = db.prepare("SELECT 1 FROM pragma_table_info('documents') WHERE name='refile_declined_at'").get() != null; }
+    catch { has = false; }
+    _refileDeclinedPresence.set(db, has);
+  }
+  return has;
 }
 
 // Chris round 18 A3 (mig 86): a document the user PUT BACK carries put_back_at until a human confirms
@@ -561,6 +606,13 @@ function confirmIfReviewable(db, id, { stored_filename = null, stored_path = nul
   // learn-on-commit guard reads it back from the row) sees the truth. Guarded on column
   // presence for pre-mig-57 fixture DBs (same pattern as trust.js).
   const hasVia = _hasConfirmedVia(db);
+  // Put-back re-file (mig 87): a HUMAN confirm (no via) is the ONLY thing that clears the hard-held
+  // refile_declined marker, and it records putback_refiled_at when it confirms a doc OUT of a put-back
+  // state (so a later put-back is recognised as a REVERSAL). Switch- + column-guarded so OFF / pre-mig-87
+  // is byte-identical. The CASE reads the pre-update put_back_at (SQLite evaluates RHS from the old row).
+  const _refileClear = (_hasRefileDeclined(db) && !confirmed_via && _putbackRefileEnabled(db))
+    ? ",\n           refile_declined_at    = NULL,\n           putback_refiled_at    = CASE WHEN put_back_at IS NOT NULL THEN datetime('now') ELSE putback_refiled_at END"
+    : '';
   return db.prepare(`
     UPDATE documents
        SET status                = 'confirmed',
@@ -569,7 +621,7 @@ function confirmIfReviewable(db, id, { stored_filename = null, stored_path = nul
            ${hasVia ? 'confirmed_via = @confirmed_via,' : ''}
            stored_filename       = @stored_filename,
            stored_path           = @stored_path,
-           supplier_pin          = NULL${_hasPutBackAt(db) && !confirmed_via ? ',\n           put_back_at           = NULL' : ''}
+           supplier_pin          = NULL${_hasPutBackAt(db) && !confirmed_via ? ',\n           put_back_at           = NULL' : ''}${_refileClear}
      WHERE id = @id
        AND ( status IN ('needs_review','deferred')
           OR (status = 'confirmed' AND @allowRefile = 1) )
