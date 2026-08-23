@@ -836,3 +836,18 @@ Left in Review at the end (8): Copperfield invoice_14 + invoice_12 (held on righ
 - I don't know whether the strip drops chips on a count or on a clock; I only know the put-back chips were gone while the documents were still in the queue.
 - Every native dialog tonight was logged and answered on purpose; no stray watcher was left running (checked before writing this).
 
+---
+
+## Round 20 TRIAGE + FIXES (2026-08-23, 05:45–06:00)
+Verdict of the night: **the headline is fixed and measured — 73 filed, 0 wrong by the app; every wrong read Chris could provoke was held with the right value one click away.** Remaining cards, one commit each; nothing pushed.
+| Card | Verdict | Fix (commit) |
+|---|---|---|
+| 1 File All Ready filed the 9 put-back docs its dialog excluded | BUG — the loop skipped on its own note-only check, not the classifier | `0929e33` the loop skips anything the ONE classifier does not call 'ready' (pinned: the dialog and the loop share the rule) |
+| 2 one-click Use "Ticket Type" filed under a garble folder | BUG — the S3-C5 one-click offer is for dates/refs, never the identity | `0929e33` `rereadHolds` never writes `corrected_to` for a company key (the note still names the old read) |
+| 3 the offer bar answers itself / two bars | KNOWN (owner vet since r17: the 1.5 s scope auto-accept after a confirm files the doc the bar was asking about) | owner vet — make the bar a notice or wait |
+| 4 sender change wipes values + stale "High" badge | PREFERENCE (the anti-bleed rule; r18 A5) | owner vet |
+| 5 lane hint "taught its layout" after a confirm; done card counts | BUG (the reason never reached the hint's record) + copy | `8bc3f32` reason carried; the done card's "N are waiting that look just like this one" count → owner vet |
+| 6 the open document never files itself | by design (presence exclusion) — copy missing | owner vet: say "won't file while you have it open" |
+| 7 duplicate S3-C5 note after Reprocess; debug-text styling | BUG + PREFERENCE | `0929e33` no duplicate sentence; styling → owner vet |
+| 8 the strip forgets (15-min TTL) / "senders" vs "suppliers" | PREFERENCE | owner vet: keep a chip while its docs are in the queue |
+
