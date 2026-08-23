@@ -401,7 +401,7 @@ const HELP_TEXTS = {
   'stop-file-all': 'Stop filing the rest. Documents already filed stay filed.',
   'stop-reprocess':'Stop reprocessing the rest. Already-done documents keep their new values.',
   'draw-anchor':   'Draw a box around a fixed label on the page (e.g. “Date:”) for the wizard to track.',
-  'draw-target':   'Draw a box around the value to read, next to the anchor label.',
+  'draw-target':   'Draw a box around the value to read, next to its label.',
   'wiz-save':      'Save this field mapping for the layout, so future documents read it automatically.',
   'show-resolved': 'Show where the saved mapping actually reads on this page (highlighted in amber).',
   'open-manager':  'Open the full Template Manager (in Settings) for this layout.',
@@ -5277,7 +5277,7 @@ function showAnchorReadout(detected, value) {
       ? '&#9888; That&#39;s the document&#39;s <strong>title</strong>, not a label for this field &mdash; so Scan Finder will <strong>remember this spot</strong> (highlighted) and read whatever prints here on future documents. If a real label word sits beside the value, type it below to anchor on the word instead:'
       : suspicious
         ? '&#9888; Couldn&#39;t read the label beside this value &mdash; so Scan Finder will <strong>remember this spot</strong> (highlighted) and read whatever prints here on future documents. Type the label as printed to anchor on the word instead:'
-        : `&#10003; Anchor (label ${isAbove ? 'above' : 'to the left'}):`;
+        : `&#10003; The label ${isAbove ? 'above' : 'to the left'}:`;
     msg = `<span class="ar-msg">${lead} `
       + `<input class="ar-label-edit" spellcheck="false" title="The caption this field sits beside — edit if it was misread" `
       + `style="font:inherit;font-weight:600;padding:1px 5px;min-width:90px;border:1px solid var(--border2);border-radius:5px;background:var(--surface)"> `
@@ -5288,7 +5288,7 @@ function showAnchorReadout(detected, value) {
     + `<span class="ar-dir"><span class="ar-lbl">Label is:</span>`
     + `<button class="ar-btn ${isLeft ? 'on' : ''}" data-dir="right">&larr; Left</button>`
     + `<button class="ar-btn ${isAbove ? 'on' : ''}" data-dir="below">&uarr; Above</button>`
-    + `<button class="ar-btn ar-draw" title="Draw a box around the exact label to anchor on (e.g. &quot;Invoice Total&quot;) — useful when the value sits beside a repeating word like GBP">&#9998; Draw the anchor</button></span>`
+    + `<button class="ar-btn ar-draw" title="Draw a box around the exact label to read from (e.g. &quot;Invoice Total&quot;) — useful when the value sits beside a repeating word like GBP">&#9998; Point out the label</button></span>`
     + `<span class="ar-x" title="Dismiss">&times;</span>`;
   bar.style.display = '';
   // Populate + wire the editable label (value set via JS to avoid attribute-escaping issues).
