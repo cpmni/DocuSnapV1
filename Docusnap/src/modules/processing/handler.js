@@ -734,6 +734,19 @@ function _layoutRereadEnabled(db) {
   try { return require('../../../database/modules/learning').getSetting(db, 'quiet_reread_on_layout', 'false') === 'true'; }
   catch { return false; }
 }
+// Chris r18 A1 (2026-08-23): the first-fill reliability hold (DARK). K is a NAMED constant: one witness
+// (an S3-C5 disagreement, a valued→empty loss or an engine taught-box yield) on a role field in one lane
+// job holds that field's uncorroborated first-fills in the job — a first-fill is single-witness by
+// definition. The audit-replay census (TESTING/_measure/first_fill_reliability_census.js) is the only
+// evidence for raising K; do not raise it on a guess.
+const FIRST_FILL_UNRELIABLE_K = 1;
+function _firstFillReliabilityEnabled(db) {
+  const env = process.env.QUIET_REREAD_FF_RELIABILITY;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try { return require('../../../database/modules/learning').getSetting(db, 'quiet_reread_first_fill_reliability_hold', 'false') === 'true'; }
+  catch { return false; }
+}
 // Owner card 1 (2026-08-23): the ready arm's own switch (DARK). Rides quiet_reread_on_ready, which is
 // what schedules the 'ready' job in the first place — this only widens THAT job's population.
 function _readyTemplatedEnabled(db) {
@@ -1142,6 +1155,20 @@ function mergeReprocessRows(existing, newRows, flip = null, onTrace = null, hidd
       }
       trace(row.field_key, 'class_fix_dropped', ex.display_value, row.display_value);
       return row;
+    }
+    // LANE HOLD SURVIVAL (Oracle 2026-08-23, A1 seam, blocking). A note the quiet lane wrote to HOLD a
+    // document ("Read differently after learning …", "… — confirm once.") must survive a re-read that
+    // comes back with the SAME value — the same box reproducing the same misread is not a re-verification
+    // (the READY arm and "Reprocess N" both re-read held docs; `used_new` shed every such hold, after
+    // which the sweep filed the doc). A DIFFERENT fresh value outranks the hold and drops it.
+    if (ex.display_value && _isLaneHoldNote(ex.validation_note)
+        && String(row.display_value || '').trim() === String(ex.display_value || '').trim()
+        && process.env.REPROCESS_CARRY_LANE_HOLD !== '0') {
+      const keep = String(ex.validation_note || '').trim();
+      const fresh = String(row.validation_note || '').trim();
+      trace(row.field_key, 'kept_lane_hold', ex.display_value, row.display_value);
+      return { ...row, validation_note: fresh && !keep.includes(fresh) ? `${keep} ${fresh}` : keep,
+               corrected_to: row.corrected_to || ex.corrected_to || null };
     }
     if (ex.display_value) trace(row.field_key, 'used_new', ex.display_value, row.display_value);
     return row;
@@ -3727,6 +3754,8 @@ function register(ctx) {
     typeSplitArm: { enabled: (db) => _typeSplitRippleOn(db) },   // A6
     // Owner card 1 (2026-08-23): the READY arm — DARK behind `quiet_reread_on_ready_templated`, riding
     // `quiet_reread_on_ready` (the crossing itself). The floor is the scope's LIVE trust floor.
+    // Chris r18 A1 (Oracle 2026-08-23): the per-job FIELD-RELIABILITY hold on first-fills. DARK.
+    firstFillReliability: { enabled: (db) => _firstFillReliabilityEnabled(db), k: FIRST_FILL_UNRELIABLE_K },
     readyArm: {
       enabled: (db) => _readyTemplatedEnabled(db),
       floor: (db, supplier, slug) => { const t = require('../../../database/modules/trust').scopeTrust(db, supplier, slug); return t && Number.isFinite(t.floor) ? t.floor : null; },
@@ -5308,6 +5337,11 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
 // commit from aborting the rest (each doc still rolls itself back inside _autoFileDoc).
 let _autoFileChain = Promise.resolve();
 
+// The quiet lane's hold family (S3-C5 + every "— confirm once." note). Shared by mergeReprocessRows.
+function _isLaneHoldNote(note) {
+  const n = String(note || '');
+  return n.includes('Read differently after learning') || n.includes('— confirm once.');
+}
 function _maybeAutoFile(db, msg, folderPath, notifyMainWindow, logger) {
   try {
     const learning = require('../../../database/modules/learning');
@@ -5553,7 +5587,7 @@ module.exports = {
   scheduleScopeAutoAccept: (db, info) => (_scheduleScopeAutoAcceptImpl ? _scheduleScopeAutoAcceptImpl(db, info) : false),
   _quietLaneActiveScopes,    // Slice 3 marks a scope here while its quiet re-read is in flight (S1-C5)
   scheduleQuietReread,   // Slice 3 trigger (a taught confirm / a layout write)
-  _layoutRereadEnabled, _readyTemplatedEnabled, nameArmTokens, NAME_ARM_GENERIC,
+  _layoutRereadEnabled, _readyTemplatedEnabled, _firstFillReliabilityEnabled, FIRST_FILL_UNRELIABLE_K, nameArmTokens, NAME_ARM_GENERIC,
   readyProbe: (db, sup, slug) => (_readyProbeImpl ? _readyProbeImpl(db, sup, slug) : null),              // P2: scope readiness BEFORE a confirm (memoised)
   scheduleReadyReread: (db, info) => (_scheduleReadyRereadImpl ? _scheduleReadyRereadImpl(db, info) : false),   // P2: fire the lane on the ready crossing
   scheduleTypeSplitReread: (db, info) => (_scheduleTypeSplitRereadImpl ? _scheduleTypeSplitRereadImpl(db, info) : false),   // A6: the confirm-once ripple

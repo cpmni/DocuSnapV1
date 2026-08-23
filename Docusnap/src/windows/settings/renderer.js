@@ -919,6 +919,8 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          ['quiet-reread-on-layout-toggle', 'quiet_reread_on_layout'],
                          // Owner card 1 (2026-08-23): the READY arm over template-carrying siblings (DARK).
                          ['quiet-reread-on-ready-templated-toggle', 'quiet_reread_on_ready_templated'],
+                         // Chris r18 A1 (2026-08-23): the first-fill reliability hold (DARK).
+                         ['quiet-reread-ff-reliability-toggle', 'quiet_reread_first_fill_reliability_hold'],
                          // The garbled-issuer arc (2026-08-22 evening, DARK).
                          ['fixed-seed-fragment-garble-toggle', 'template_fixed_seed_fragment_garble'],
                          ['fixed-seed-debris-wide-toggle', 'template_fixed_debris_wide'],

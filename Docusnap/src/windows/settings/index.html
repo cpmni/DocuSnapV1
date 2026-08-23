@@ -1357,6 +1357,14 @@
               </div>
               <label class="toggle"><input type="checkbox" id="quiet-reread-on-ready-templated-toggle"><span class="toggle-slider"></span></label>
             </div>
+            <!-- Chris r18 A1 (2026-08-23): the first-fill reliability hold (DARK) -->
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Hold a detail the background re-read filled in for the first time when the same box misread it on a sibling</div>
+                <div class="threshold-sub">When the app re-reads a sender's waiting documents after a teach, a box that reads a date or reference differently from what the page already said on one document is treated as unreliable for that whole re-read: any document where that same box filled in a blank is held for you to confirm once instead of filing by itself. Where the box reads cleanly everywhere, nothing changes. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="quiet-reread-ff-reliability-toggle"><span class="toggle-slider"></span></label>
+            </div>
             <!-- The garbled-issuer arc (2026-08-22 evening, three slices, all DARK) -->
             <div class="threshold-row">
               <div>

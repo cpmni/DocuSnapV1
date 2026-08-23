@@ -60,6 +60,7 @@ function create(deps) {
     corroborated = null,        // Q3 C3.3: trust._corrobLicensed(record) — licenses a first-fill to stand
     typeSplitArm = null,        // A6 (type-split arc): { enabled(db) } — the confirm-once ripple's switch
     readyArm = null,            // owner card 1 (2026-08-23): { enabled(db), floor(db, supplier, slug) } — the READY-crossing re-read of TEMPLATE-CARRYING held docs below the scope floor
+    firstFillReliability = null, // Chris r18 A1 (Oracle 2026-08-23): { enabled(db), k } — hold every first-fill at merge, release at finish unless the field proved unreliable in this job
   } = deps;
 
   const jobs = new Map();          // scopeKey -> job
@@ -94,7 +95,8 @@ function create(deps) {
     if (job && job === running) { job.rerun = true; for (const r of reasonList) job.reasons.add(r); if (seedDocId) job.seedDocId = seedDocId; return true; }   // coalesce: one follow-on pass
     if (!job) {
       job = { id: `q${++_seq}`, key, supplier: sup, typeSlug: slug, reason: reasonList[0] || reason, reasons: new Set(), state: 'queued', total: 0, seedDocId: null,
-              remaining: null, done: [], dropped: [], failed: 0, changed: [], rerun: false, cancelled: false, timer: null, layoutArm: null, readyArm: null };
+              remaining: null, done: [], dropped: [], failed: 0, changed: [], rerun: false, cancelled: false, timer: null, layoutArm: null, readyArm: null,
+              fieldStats: new Map(), provisionalHolds: [], reliabilityHeld: [] };
       jobs.set(key, job);
     }
     for (const r of reasonList) job.reasons.add(r);
@@ -146,9 +148,15 @@ function create(deps) {
          AND (d.document_type_id = ? OR d.document_type_id IS NULL)
          AND COALESCE(d.workflow_status, '') NOT IN ('pending', 'claimed')
          AND NOT EXISTS (SELECT 1 FROM extractions e WHERE e.document_id = d.id
-                           AND e.validation_note LIKE '%Read differently after learning%')${floorSql}
+                           AND (e.validation_note LIKE '%Read differently after learning%'
+                             OR e.validation_note LIKE '%— confirm once.%'))${floorSql}
        ORDER BY d.id`).all(...args);
   }
+  // Oracle 2026-08-23 (A1 seam): the NOT EXISTS above covers the WHOLE lane-hold family — S3-C5 AND every
+  // "— confirm once." note (layout / ready / reliability). Without it the READY arm re-read a held
+  // first-fill below the floor, the same box reproduced the same wrong value, both holds went silent
+  // (was == now; was valued) and the sweep filed it. A doc the lane has already asked about is never
+  // re-read by the lane again; the human's confirm or the manual Reprocess is the way out.
 
   function _candidates(db, job) {
     const dt = db.prepare('SELECT id FROM document_types WHERE LOWER(slug) = ?').get(job.typeSlug);
@@ -414,9 +422,34 @@ function create(deps) {
     // named sender (no layout arm) could never shed it.
     // Owner card 1 (2026-08-23): the READY arm's template-carrying re-reads are held the same way —
     // there is no "new box", so the note names the learning instead.
+    // Chris round 18 A1 (Oracle 2026-08-23, SEND BACK → rebuilt): doc 447's date was BLANK at import,
+    // FIRST-FILLED 13-11-2026 by the teach-time re-read (single-family, nothing on the page agreed) and
+    // swept at the ready crossing; four siblings of the SAME job carried S3-C5 disagreements on the
+    // same date box (the page agreed with the old value every time). The box was provably unreliable
+    // on this layout and nothing aggregated the evidence. Now: every first-fill on a teach/kw via is
+    // HELD at merge ("confirm once"); at _finish — before onJobDone, i.e. before any sweep — the hold
+    // is RELEASED unless that field proved unreliable in this job (K=1: one S3-C5 disagreement, one
+    // valued→empty loss, or one engine taught-box yield on the same field). DS-shaped jobs (every
+    // sibling blank before, no disagreements) release at finish → the hand-off stands; Copperfield
+    // holds 447. Corroborated first-fills (≥2 page families) never hold. DARK behind
+    // `quiet_reread_first_fill_reliability_hold`; via layout/ready keep their unconditional hold.
+    const _ffOn = (() => { try { return !!(firstFillReliability && firstFillReliability.enabled && firstFillReliability.enabled(db)); } catch { return false; } })();
     if (nd.via === 'layout' || nd.via === 'ready') {
       const note = nd.via === 'ready' ? 'Read after learning — confirm once.' : 'Read from your new box — confirm once.';
       try { const ff = _holdFirstFills(db, nd.docId, nd.existing, note); if (ff.length) job.changed.push({ docId: nd.docId, fields: ff, firstFill: true }); } catch {}
+    } else if (_ffOn) {
+      try {
+        const ff = _holdFirstFills(db, nd.docId, nd.existing, RELIABILITY_NOTE);
+        for (const h of ff) job.provisionalHolds.push({ docId: nd.docId, key: h.key, now: h.now });
+      } catch {}
+    }
+    if (_ffOn) {
+      // the witnesses of an unreliable box, per field: S3-C5 disagreements, valued→empty losses, the
+      // engine's taught-box yield notes ("Kept the read value … — the taught/a taught … read …")
+      const bump = (key, kind) => { const st = job.fieldStats.get(key) || { unreliable: 0, kinds: [] }; st.unreliable++; st.kinds.push(`${kind}:${nd.docId}`); job.fieldStats.set(key, st); };
+      for (const c of changed) bump(c.key, 'changed');
+      try { for (const l of _lostReads(db, nd.docId, nd.existing)) bump(l.key, 'lost'); } catch {}
+      try { for (const y of _yieldReads(db, nd.docId)) bump(y.key, 'yield'); } catch {}
     }
     job.done.push(nd.docId);
     if (changed.length) job.changed.push({ docId: nd.docId, fields: changed });
@@ -452,6 +485,58 @@ function create(deps) {
     return held;
   }
 
+  const RELIABILITY_NOTE = 'The box that reads this field read it differently on another document from this sender — confirm once.';
+  // A valued required ROLE field that reads EMPTY now — not restored (C3.6), but a witness that the
+  // box cannot find the field on this sibling.
+  function _lostReads(db, docId, existing) {
+    const doc = db.prepare('SELECT document_type_id FROM documents WHERE id = ?').get(docId);
+    if (!doc || !doc.document_type_id) return [];
+    const dt = db.prepare('SELECT ref_field_key, date_field_key FROM document_types WHERE id = ?').get(doc.document_type_id) || {};
+    const roleKeys = new Set(['supplier_name', dt.ref_field_key, dt.date_field_key].filter(Boolean));
+    const before = Object.fromEntries((existing || []).map(r => [r.field_key, r]));
+    const after = Object.fromEntries(db.prepare('SELECT field_key, display_value FROM extractions WHERE document_id = ?').all(docId).map(r => [r.field_key, r]));
+    const out = [];
+    for (const key of roleKeys) {
+      const was = before[key] && String(before[key].display_value || '').trim();
+      const now = after[key] && String(after[key].display_value || '').trim();
+      if (was && !now) out.push({ key, was });
+    }
+    return out;
+  }
+  // The engine's own verdict that the taught box read an impossible / unconfirmable value on this
+  // page ("Kept the read value “…” — the taught date box read “L0/06/2026”, which isn't a valid
+  // calendar date" and its siblings) — the strongest witness of all.
+  const YIELD_RE = /^Kept the read value .* — (the taught|a taught) /;
+  function _yieldReads(db, docId) {
+    return db.prepare("SELECT field_key, validation_note FROM extractions WHERE document_id = ? AND validation_note IS NOT NULL").all(docId)
+      .filter(r => YIELD_RE.test(String(r.validation_note || '').trim()))
+      .map(r => ({ key: r.field_key }));
+  }
+  // At job end: release every provisional hold whose field stayed reliable (< K witnesses) — only on a
+  // row still in the queue with the value the lane wrote and our note intact; keep the rest and record.
+  function _releaseProvisionalHolds(db, job) {
+    const K = Number(firstFillReliability && firstFillReliability.k) || 1;
+    const sel = db.prepare(`SELECT e.validation_note FROM extractions e JOIN documents d ON d.id = e.document_id
+                             WHERE e.document_id = ? AND e.field_key = ? AND d.status = 'needs_review' AND TRIM(COALESCE(e.display_value, '')) = ?`);
+    const upd = db.prepare('UPDATE extractions SET validation_note = ? WHERE document_id = ? AND field_key = ?');
+    const released = [], held = [];
+    for (const h of job.provisionalHolds) {
+      const st = job.fieldStats.get(h.key);
+      const unreliable = st ? st.unreliable : 0;
+      if (unreliable >= K) { held.push(h); continue; }
+      const row = sel.get(h.docId, h.key, String(h.now || '').trim());
+      if (!row) continue;                                                  // confirmed / edited meanwhile — leave it
+      const cur = String(row.validation_note || '');
+      if (!cur.includes(RELIABILITY_NOTE)) continue;                       // someone else's note now — leave it
+      const next = cur.replace(RELIABILITY_NOTE, '').replace(/\s{2,}/g, ' ').trim();
+      upd.run(next || null, h.docId, h.key);
+      released.push(h);
+    }
+    job.reliabilityHeld = held;
+    for (const h of held) job.changed.push({ docId: h.docId, fields: [{ key: h.key, now: h.now }], firstFill: true });
+    return { released, held };
+  }
+
   // S3-C5. NOTE (Q3 C3.6, pinned): a value that was VALUED before and reads EMPTY now is NOT a
   // "changed read" — the fresh row is stored wholesale and the document is held as missing-required
   // (it cannot file). The old value must NOT be restored here: keeping it would let a shape-
@@ -464,6 +549,12 @@ function create(deps) {
     const after = Object.fromEntries(db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(docId).map(r => [r.field_key, r]));
     const changed = [];
     const upd = db.prepare("UPDATE extractions SET validation_note = ? WHERE document_id = ? AND field_key = ?");
+    // Oracle 2026-08-23 Q2 (SIGN OFF W/COND): the box's NEW value stays on display, but the OLD value
+    // rides `corrected_to` (only when the fresh row carries no Stage-4.5 suggestion of its own) so
+    // Review's existing Use/Keep buttons offer it one click away — Chris saw four boxes showing the
+    // wrong value with the right one buried in the note. A "Use" then records the correction
+    // (original = the box's read), which is how the box's wrongness reaches trust and the ripple.
+    const updCt = db.prepare("UPDATE extractions SET corrected_to = ? WHERE document_id = ? AND field_key = ? AND (corrected_to IS NULL OR TRIM(corrected_to) = '')");
     for (const f of req) {
       const was = before[f.key] && String(before[f.key].display_value || '').trim();
       const now = after[f.key] && String(after[f.key].display_value || '').trim();
@@ -472,6 +563,7 @@ function create(deps) {
       const note = `Read differently after learning — was '${was}', now '${now}'. Please check which is right.`;
       const prior = String(after[f.key].validation_note || '').trim();
       upd.run(prior ? `${prior} ${note}` : note, docId, f.key);
+      try { updCt.run(was, docId, f.key); } catch { /* pre-corrected_to fixtures */ }
       changed.push({ key: f.key, was, now });
     }
     return changed;
@@ -479,6 +571,10 @@ function create(deps) {
 
   function _finish(job, db) {
     job.state = 'done';
+    // A1: the reliability release runs BEFORE onJobDone (the sweep) and before the scope goes inactive —
+    // a held row is never sweepable, a released row is released only on a reliable field.
+    let _rel = { released: [], held: [] };
+    try { if (job.provisionalHolds && job.provisionalHolds.length) _rel = _releaseProvisionalHolds(db, job); } catch {}
     running = null;
     markScopeActive(job.key, false);
     jobs.delete(job.key);
@@ -490,7 +586,9 @@ function create(deps) {
                     type_split_arm: job.typeSplitArm || '',   // A6
                     done_ids: job.done.join(','), dropped: job.dropped.map(d => `${d.docId}:${d.reason}`).join(','),
                     failed: job.failed, changed_ids: job.changed.map(c => c.docId).join(','),
-                    first_fill_ids: job.changed.filter(c => c.firstFill).map(c => c.docId).join(',') } });
+                    first_fill_ids: job.changed.filter(c => c.firstFill).map(c => c.docId).join(','),
+                    field_unreliable: [...(job.fieldStats || new Map()).entries()].map(([k, v]) => `${k}:${v.unreliable}`).join(','),   // A1
+                    reliability_held_ids: _rel.held.map(h => h.docId).join(','), reliability_released_ids: _rel.released.map(h => h.docId).join(',') } });
     } catch { /* best-effort */ }
     notify({ type: 'job_done', jobId: job.id, supplier: job.supplier, typeSlug: job.typeSlug,
              done: job.done.length, dropped: job.dropped.length, failed: job.failed, changed: job.changed.length });
@@ -535,7 +633,7 @@ function create(deps) {
   }
 
   return { schedule, preempt, cancel, status, shutdown,
-           _internals: { jobs, get running() { return running; }, procs: () => _quietProcs, tick: _tick } };
+           _internals: { jobs, get running() { return running; }, procs: () => _quietProcs, tick: _tick, holdChangedReads: _holdChangedReads, releaseProvisionalHolds: _releaseProvisionalHolds } };
 }
 
 module.exports = { create, SCOPE_KEY, CHUNK_CAP, DEBOUNCE_MS, BUSY_POLL_MS };
