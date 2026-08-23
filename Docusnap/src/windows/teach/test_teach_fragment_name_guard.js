@@ -42,8 +42,7 @@ check('Keep anyway sets the ack and re-runs commit', /\$\('nm-keep'\)\?\.addEven
 check('the confirm payload carries acknowledgeIssuerNearMatch from the ack', /acknowledgeIssuerNearMatch: !!state\.issuerNearMatchAck/.test(commit));
 check('the sub-run wording names the second folder; the edit-distance wording names two spellings', /saving it would start a second folder/.test(commit) && /two spellings file into two folders/.test(commit));
 
-console.log('
-r19 N3 — the wrong-kind-of-value warning demotes the primary (the s55 screenshot):');
+console.log('\nr19 N3 — the wrong-kind-of-value warning demotes the primary (the s55 screenshot):');
 check('when _cohWarn fires, "Looks right →" becomes a ghost "Use it anyway" and Redraw becomes the primary',
       /if \(_cohWarn\) \{[\s\S]{0,400}_yes\.textContent = 'Use it anyway'[\s\S]{0,300}_rd\.classList\.add\('primary'\)/.test(src));
 
