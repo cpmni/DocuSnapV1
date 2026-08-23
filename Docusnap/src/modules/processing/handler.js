@@ -3411,6 +3411,7 @@ function register(ctx) {
     if (!verdict.pass) return { excluded: { docId: doc.id, reason: verdict.reason, field: verdict.field } };
     const synth = { id: doc.id, document_type_id: doc.document_type_id,
                     supplier_name: doc.supplier_name,
+                    put_back_at: doc.put_back_at || null,            // r18 A3: the stamp rides the synth row too
                     overall_confidence: Number(r.result.overall_confidence) || 0 };
     const gate = trust.isAutoFileEligible(db, synth, {
       extractions: verdict.overlay,
@@ -3603,7 +3604,11 @@ function register(ctx) {
       const candidates = _sweepOfferForScope(db, sup, dtRow);
       if (!candidates.length) break;
       passes++;
-      const r = await _sweepAcceptCore(db, { sup, slug, accepts: candidates, untickedIds: [], actor, auto: true });
+      // r18 A3 (Oracle): the AUTO accept is not a consented File N — stamp a machine name, never the
+      // person whose confirm merely triggered it ("the records say I confirmed them"). Trust keys on
+      // confirmed_via, never the name; the Home tally + the tile match 'Auto-filed%'.
+      const _autoActor = { ...(actor || {}), username: 'Auto-filed (after your confirms)' };
+      const r = await _sweepAcceptCore(db, { sup, slug, accepts: candidates, untickedIds: [], actor: _autoActor, auto: true });
       if (!r || !r.ok) break;
       filedAll.push(...r.filed); droppedAll.push(...r.dropped);
       for (const id of r.filed) { try { _recordAutoFiled(db, id, false); } catch {} }   // S1-C4: the receipt

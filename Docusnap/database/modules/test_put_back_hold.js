@@ -68,14 +68,22 @@ const claim = documents.confirmIfReviewable(db, A, { stored_filename: 'x.pdf', s
 check('confirmIfReviewable claims the put-back row', claim.changes === 1 && row(A).status === 'confirmed');
 check('…and clears put_back_at at claim time', row(A).put_back_at == null);
 documents.deconfirmDocument(db, A);
-check('deconfirm alone (a Search send-back) does NOT stamp — only the undo doors do', row(A).status === 'needs_review' && row(A).put_back_at == null);
+check('deconfirmDocument itself STAMPS (Oracle W/COND: Search / Repair send-back notes are not durable — every human "look again" door holds)', row(A).status === 'needs_review' && !!row(A).put_back_at);
+const M = mk(100, 'confirmed'); documents.deconfirmDocument(db, M);
+const mclaim = documents.confirmIfReviewable(db, M, { stored_filename: 'm.pdf', stored_path: '/out/m.pdf', confirmed_by_username: 'Auto-filed (x)', confirmed_via: 'scope_sweep' });
+check('a MACHINE claim (confirmed_via set) does NOT clear the stamp — only a human claim does', mclaim.changes === 1 && !!row(M).put_back_at);
+db.prepare("UPDATE documents SET status = 'confirmed' WHERE id = ?").run(A);
+const R = { sn: 'Acme Widgets', slug: 'invoice' };
+documents.requeueConfirmedDocsForScope(db, { supplier_name: R.sn, document_type_slug: R.slug });
+check('requeueConfirmedDocsForScope stamps every row it returns to the queue', db.prepare("SELECT COUNT(*) c FROM documents WHERE status='needs_review' AND supplier_name='Acme Widgets' AND put_back_at IS NULL").get().c === 0);
 
 console.log('\nthe classifier (File All / Home):');
 const RR = require('../../src/windows/shared/reviewReadiness.js') && globalThis.ReviewReadiness;
 const B = mk(100); documents.markPutBack(db, B);
+const Dc = mk(100);                                               // a clean, never-returned row
 const q = Object.fromEntries(documents.getReviewQueue(db).map(d => [d.id, d]));
-check('getReviewQueue rows carry put_back_at', q[B] && !!q[B].put_back_at && q[A] && q[A].put_back_at == null);
-check("a put-back row classifies as 'flagged' (never 'ready'); the clean row stays 'ready'", RR.classify(q[B]) === 'flagged' && RR.classify(q[A]) === 'ready');
+check('getReviewQueue rows carry put_back_at', q[B] && !!q[B].put_back_at && q[Dc] && q[Dc].put_back_at == null);
+check("a put-back row classifies as 'flagged' (never 'ready'); the clean row stays 'ready'", RR.classify(q[B]) === 'flagged' && RR.classify(q[Dc]) === 'ready');
 
 console.log('\nthe class fix skips put-back siblings:');
 const cfs = read(path.join(__dirname, '..', '..', 'src', 'services', 'classFixService.js'));
@@ -87,6 +95,11 @@ const undoA = ph.slice(ph.indexOf("ipcMain.handle('review-event-undo'"), ph.inde
 const undoB = ph.slice(ph.indexOf("ipcMain.handle('sweep-scope-undo'"), ph.indexOf("ipcMain.handle('sweep-scope-undo'") + 2500);
 check('review-event-undo marks every de-confirmed doc put back', /undone\.push\(id\); try \{ documents\.markPutBack\(db, id\); \} catch \{\}/.test(undoA));
 check('sweep-scope-undo marks every de-confirmed doc put back', /undone\.push\(id\); try \{ documents\.markPutBack\(db, id\); \} catch \{\}/.test(undoB));
+check('the Tier-2 synth row carries put_back_at (the stamp reaches the predicate there too)', /put_back_at: doc\.put_back_at \|\| null,/.test(ph));
+check("the AUTO accept files under a machine name, never the triggering person", /username: 'Auto-filed \(after your confirms\)'/.test(ph) && /actor: _autoActor, auto: true/.test(ph));
+const rs = read(path.join(__dirname, '..', '..', 'src', 'services', 'reviewService.js'));
+check('reviewService refuses a MACHINE via on a stamped doc pre-claim (PUT_BACK, audited)', /if \(_via\) \{[\s\S]{0,900}return fail\('PUT_BACK'/.test(rs) && /confirm_refused_put_back/.test(rs));
+check('…and the claim clears the stamp only when confirmed_via is NULL', /_hasPutBackAt\(db\) && !confirmed_via \?/.test(read(path.join(__dirname, 'documents.js'))));
 
 console.log('\nReview says why:');
 const rend = read(path.join(__dirname, '..', '..', 'src', 'windows', 'review', 'renderer.js'));

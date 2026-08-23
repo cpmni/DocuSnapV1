@@ -332,7 +332,7 @@ function requeueConfirmedDocsForScope(db, { supplier_name, document_type_slug } 
   const sn = supplier_name || null;
   return db.prepare(`
     UPDATE documents
-       SET status = 'needs_review', confirmed_at = NULL, confirmed_by_username = NULL
+       SET status = 'needs_review', confirmed_at = NULL, confirmed_by_username = NULL${_hasPutBackAt(db) ? ", put_back_at = datetime('now')" : ''}
      WHERE status = 'confirmed'
        AND (@sn IS NULL OR supplier_name = @sn COLLATE NOCASE)
        AND document_type_id = (SELECT id FROM document_types WHERE slug = @slug)
@@ -348,8 +348,13 @@ function deconfirmDocument(db, id) {
   // Also clears confirmed_via (when the column exists): a doc sent back to the queue is no
   // longer "confirmed by" anything — a later human re-confirm stamps its own via at claim.
   const viaClear = _hasConfirmedVia(db) ? ', confirmed_via = NULL' : '';
+  // Oracle 2026-08-23 (put-back W/COND): the stamp lives HERE, not at the callers — every door that
+  // returns a filed document to the queue (the chip's Put back, Search / Learning Repair send-back,
+  // the class-fix undo) is a human saying "look again", and the NOTE those doors write is shed by the
+  // next re-read (`used_new`), after which "it stays filed until you re-confirm it" would be false.
+  const pbStamp = _hasPutBackAt(db) ? ", put_back_at = datetime('now')" : '';
   return db.prepare(
-    `UPDATE documents SET status = 'needs_review', confirmed_at = NULL, confirmed_by_username = NULL${viaClear} WHERE id = ? AND status = 'confirmed'`
+    `UPDATE documents SET status = 'needs_review', confirmed_at = NULL, confirmed_by_username = NULL${viaClear}${pbStamp} WHERE id = ? AND status = 'confirmed'`
   ).run(id);
 }
 
@@ -564,7 +569,7 @@ function confirmIfReviewable(db, id, { stored_filename = null, stored_path = nul
            ${hasVia ? 'confirmed_via = @confirmed_via,' : ''}
            stored_filename       = @stored_filename,
            stored_path           = @stored_path,
-           supplier_pin          = NULL${_hasPutBackAt(db) ? ',\n           put_back_at           = NULL' : ''}
+           supplier_pin          = NULL${_hasPutBackAt(db) && !confirmed_via ? ',\n           put_back_at           = NULL' : ''}
      WHERE id = @id
        AND ( status IN ('needs_review','deferred')
           OR (status = 'confirmed' AND @allowRefile = 1) )

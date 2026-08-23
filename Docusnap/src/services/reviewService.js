@@ -320,6 +320,18 @@ function createReviewService(deps = {}) {
     // CLAIM before filing (first-confirm only) so a lost race can't double-file. The loser
     // reads the winner's name off confirmed_by_username and reports it.
     if (!isRefile) {
+      // Oracle 2026-08-23 (put-back W/COND): a machine via never files a document a human put back —
+      // every machine door runs the predicate first, but make it structural here so a future door
+      // that forgets cannot. Human confirms (no via) pass; the claim below clears the stamp only then.
+      if (_via) {
+        let _pb = null;
+        try { _pb = (documents.getById(db, document_id) || {}).put_back_at || null; } catch { _pb = null; }
+        if (_pb) {
+          try { audit(db, { action: 'confirm_refused_put_back', target_type: 'document', target_id: document_id, outcome: 'refused',
+                                           document_id, metadata: { via: _via, put_back_at: _pb } }); } catch { /* best-effort */ }
+          return fail('PUT_BACK', 'This document was put back by a person — it waits for their confirm.');
+        }
+      }
       // 'auto_reprocess' stamps a machine username so audit/search/banner can tell these files
       // from hand confirms (today's incident forensics needed exactly this). scope_sweep keeps
       // the human name byte-identical — it is a human-CONSENTED action, shipped and flipped ON.
