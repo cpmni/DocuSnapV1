@@ -8167,7 +8167,7 @@ function _quietRefreshList() {
 window.docusnap.onQuietReprocess?.(async (ev) => {
   if (!ev || !ev.jobId) return;
   const j = _quietJobs.get(ev.jobId) || { id: ev.jobId, supplier: ev.supplier || '', total: 0, done: 0, state: 'running' };
-  if (ev.type === 'job_start')    { j.supplier = ev.supplier || j.supplier; j.total = ev.total || 0; j.done = ev.done || 0; j.state = 'running'; }
+  if (ev.type === 'job_start')    { j.supplier = ev.supplier || j.supplier; j.total = ev.total || 0; j.done = ev.done || 0; j.state = 'running'; if (ev.reason) j.reason = ev.reason; }   // r20 card 5: the hint names the real trigger
   if (ev.type === 'doc_done')     { j.done = ev.done ?? (j.done + 1); j.total = ev.total || j.total; _quietRefreshList(); }
   if (ev.type === 'job_deferred') { j.state = 'deferred'; }
   if (ev.type === 'job_done')     { j.state = 'done'; _quietJobs.delete(ev.jobId); _renderQuietHint(); try { await _refreshQueueFromBroadcast(); } catch {} try { await _runQueueSweep({ via: 'quiet' }); } catch {} return; }

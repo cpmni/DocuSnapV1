@@ -55,6 +55,7 @@ check('a chip reads "<icon> <when> · <short>[ · put back] ▾" (r18 card 7: th
 check('…and the panel line says "put back by you" after an undo (r18 card 7)', /function _asLineFull\(ev\)[\s\S]{0,400}put back<\/b> by you/.test(rend) && /\$\{_asIcon\(ev\)\} \$\{_asLineFull\(ev\)\}/.test(rend));
 check('a bulk receipt always names its senders, even one (r18 card 5)', /Object\.keys\(ev\.bySender\)\.length > 1 \|\| \(ev\.bulk && Object\.keys\(ev\.bySender\)\.length\)/.test(rend));
 check("the lane notice names the real trigger: ready / layout / typesplit / teach (r18 copy)", /j\.reason === 'ready' \? 'now that this sender files by itself'/.test(rend) && /j\.reason === 'layout' \? 'after your box change'/.test(rend));
+check("…and the job_start event's reason reaches the hint's job record (r20 card 5 — it was dropped on the way)", /if \(ev\.reason\) j\.reason = ev\.reason;/.test(rend));
 check('no chip → a quiet "Recent activity ▾" while any event remains (never a blank band)', /Recent activity <span class="as-caret">▾<\/span>/.test(rend));
 check('click-anywhere closes the PANEL only (the chip stays)', /if \(_asOpenId == null\) return;\s*\n\s*if \(e\.target\.closest\('#activity-panel'\) \|\| e\.target\.closest\('#activity-strip'\)\) return;\s*\n\s*_asClosePanel\(\);/.test(rend));
 const capStart = rend.indexOf("document.addEventListener('click', (e) => {" + LF + "    if (_asOpenId == null) return;");
