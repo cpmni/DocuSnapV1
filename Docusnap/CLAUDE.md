@@ -21,11 +21,15 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-23 OVERNIGHT (Chris r17 fix loop): **READ `HANDOVER_2026-08-23.md` FIRST**, then the
-type-split/strip plan (`docs/designs/TYPE_SPLIT_AND_ACTIVITY_STRIP_PLAN_2026-08-22.md`, STATUS table) and
-`HANDOVER_2026-08-22_EVENING.md`. Branch `feat/teach-side-overnight`, **NOT pushed** (owner's standing rule).
-Chris round 17 (fresh sandbox, every switch ON) → 8 cards → agents → Oracle-gated → one commit each
-(`99b90f1` … `740a243`, table in `docs/CHRIS_FULL_APP_REVIEW_2026-08-22.md` "Round 17 TRIAGE"); round 18
+## ⏭ LATEST — 2026-08-23 OVERNIGHT (Chris rounds 17→20 fix loop): **READ `HANDOVER_2026-08-23.md` FIRST**
+(its OWNER STEPS + the switch table), then `docs/CHRIS_FULL_APP_REVIEW_2026-08-23.md` (rounds 18/19/20 verbatim +
+triage tables). Branch `feat/teach-side-overnight`, **~60 commits ahead, NOT pushed** (owner's standing rule).
+**Round 20 verdict: the wrong-date self-file class is FIXED as seen — 73 filed, 0 wrong by the app, every wrong
+read Chris could provoke was held with the right value one click away; Ironbridge/Larkspur waited for their
+confirms.** Six new DARK switches (table in the handover); do NOT flip `trust_company_key_own_scope` live (holds 45
+of the owner's docs). Owner owes: the re-freeze script on the live DB; the flip order; the r20 vet cards.
+Round 17 (fresh sandbox, every switch ON) → 8 cards → agents → Oracle-gated → one commit each
+(`99b90f1` … `740a243`, table in `docs/CHRIS_FULL_APP_REVIEW_2026-08-22.md` "Round 17 TRIAGE"); rounds 18–20
 ran on the fixes. Headlines:
 - **THE IDENTITY UNFREEZE CLASS (`11ca0ba`, a bug, no switch):** `_fieldsWithMultipleConfirmedValues` judged
   the company key TYPE-WIDE — ≥2 distinct confirmed suppliers on a TYPE unfroze EVERY template's identity at
