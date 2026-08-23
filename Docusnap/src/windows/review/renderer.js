@@ -642,6 +642,9 @@ function _asShort(ev) {
     default:           return `${n} document${s}`;
   }
 }
+// Chris r18 card 7: after a Put back the chip must SAY so (the button vanished but the chip read as if
+// nothing happened, then dropped off). Suffix on the short label + a trailing sentence on the line.
+function _asPutBackTag(ev) { return ev && ev.put_back_at ? ' · put back' : ''; }
 // C9: "filed themselves" is reserved for self_filed (after your confirms); a 100 %-import is "filed automatically".
 function _asLine(ev) {
   const n = Number(ev.count) || 0, s = n === 1 ? '' : 's', sup = ev.scope && ev.scope.supplier ? escHtml(ev.scope.supplier) : '';
@@ -653,6 +656,12 @@ function _asLine(ev) {
     case 'put_back':   return `${n} ${sup ? `<b>${sup}</b> ` : ''}document${s} ${n === 1 ? 'was' : 'were'} put back in Review — the filed copies stay in your folder until you file them again`;
     default:           return `${n} document${s}`;
   }
+}
+function _asLineFull(ev) {
+  const base = _asLine(ev);
+  if (!ev || !ev.put_back_at) return base;
+  const pb = Array.isArray(ev.put_back_ids) ? ev.put_back_ids.length : null;
+  return `${base} — <b>put back</b> by you${pb != null && pb !== Number(ev.count) ? ` (${pb} of ${ev.count})` : ''}; they wait in Review until you confirm them`;
 }
 function _asVisible(now = Date.now()) {
   return _asEvents.filter(e => (now - Number(e.at || 0)) <= AS_TTL_MS).slice(0, AS_MAX);
@@ -671,7 +680,7 @@ function renderActivityStrip() {
   } else {
     track.innerHTML = vis.map(ev =>
       `<span class="as-chip${ev.seen ? '' : ' unseen'}${_asOpenId === ev.id ? ' open' : ''}" data-as="${ev.id}" title="${escHtml(_asLine(ev).replace(/<[^>]+>/g, ''))}">`
-      + `${_asIcon(ev)} <span class="as-when">${escHtml(_asRelTime(ev.at))}</span> · ${escHtml(_asShort(ev))} <span class="as-caret">▾</span></span>`).join('');
+      + `${_asIcon(ev)} <span class="as-when">${escHtml(_asRelTime(ev.at))}</span> · ${escHtml(_asShort(ev))}${escHtml(_asPutBackTag(ev))} <span class="as-caret">▾</span></span>`).join('');
   }
   _asUpdateNav();
   if (_asOpenId != null) _asRenderPanel();
@@ -688,13 +697,14 @@ function _asRenderPanel() {
   const rows = _asOpenId === 'recent' ? _asEvents : _asEvents.filter(e => e.id === _asOpenId);
   if (!rows.length) { _asClosePanel(); return; }
   panel.innerHTML = rows.map(ev => {
-    const by = ev.bySender && Object.keys(ev.bySender).length > 1
+    // r18 card 5: a bulk "you filed N" names its senders even when there is only one — that IS the receipt.
+    const by = ev.bySender && (Object.keys(ev.bySender).length > 1 || (ev.bulk && Object.keys(ev.bySender).length))
       ? `<div class="ap-sub">${Object.entries(ev.bySender).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${escHtml(k)} ${v}`).join(' · ')}</div>` : '';
     const kept = (ev.dropped || []).length
       ? `<div class="ap-kept">${(ev.dropped || []).slice(0, 8).map(d => `kept back — ${escHtml(typeof _sweepReason === 'function' ? _sweepReason(d.reason) : d.reason)} (#${d.docId})`).join('<br>')}${(ev.dropped || []).length > 8 ? `<br>… and ${(ev.dropped || []).length - 8} more` : ''}</div>` : '';
     const undo = ev.undoable ? `<button type="button" class="ap-btn" data-ap="undo" data-ev="${ev.id}" title="Puts these documents back in Review. The copies already written to your filing folder stay there and are replaced when you file them again.">Put back</button>` : '';
     const see = Number(ev.count) ? `<button type="button" class="ap-btn primary" data-ap="see" data-ev="${ev.id}">See them</button>` : '';
-    return `<div class="ap-row"><div class="ap-head"><span class="ap-when">${escHtml(_asRelTime(ev.at))}</span><span class="ap-line">${_asIcon(ev)} ${_asLine(ev)}</span><span class="ap-actions">${see}${undo}</span></div>${by}${kept}</div>`;
+    return `<div class="ap-row"><div class="ap-head"><span class="ap-when">${escHtml(_asRelTime(ev.at))}</span><span class="ap-line">${_asIcon(ev)} ${_asLineFull(ev)}</span><span class="ap-actions">${see}${undo}</span></div>${by}${kept}</div>`;
   }).join('');
   panel.classList.add('open');
 }
@@ -2495,8 +2505,17 @@ function renderCleanHoldReason(el, doc) {
     const _have = Number.isFinite(v.scopeConfirms)  ? v.scopeConfirms  : null;
     const _left = (_need != null && _have != null) ? Math.max(1, _need - _have) : null;
     const _sender = String(doc.supplier_name || '').trim();
+    // Chris round 18 A6: the field the gate refused on may be FOREIGN to this type — read at import
+    // against every installed type's keys, invisible on this panel, dropped only at confirm (the
+    // 07-22 foreignFields rule: a foreign row still holds at gate time). Naming a field the user
+    // can't see ("Customer Name couldn't be checked" on a worksheet) reads as a defect — say what it
+    // is and what clears it instead.
+    const _foreign = !!(v.field && Array.isArray(fieldDefs) && fieldDefs.length && !fieldDefs.some(x => x.key === v.field));
     const why = {
-      'unverifiable-value': _left != null
+      'unverifiable-value': _foreign
+        ? `the app also read a <strong>${escHtml(fieldName)}</strong> on the page — a detail this document type doesn't use — `
+          + `and couldn't check it. It isn't shown here and won't be filed; confirming the document clears it.`
+        : _left != null
         ? `this is only the ${['first', 'second', 'third', 'fourth', 'fifth'][_have] || `${_have + 1}th`} document `
           + `${_sender ? `from <strong>${escHtml(_sender)}</strong>` : 'from this sender'}, so there isn't `
           + `enough confirmed history yet to check <strong>${escHtml(fieldName || 'its details')}</strong> `
@@ -5599,7 +5618,10 @@ function showIssuerNearMatchHold(nm, idx, supplier) {
   }
   row.querySelector('.field-note.issuer-nm-hold')?.remove();
   const known = escHtml(nm.existing);
-  const diff  = nm.distance === 1 ? 'one character' : `${nm.distance} characters`;
+  // r18 copy bug: a sub-run hit carries distance:null — never print "null characters". The branch below
+  // routes on kind; this fallback covers any payload that lost its kind on the way here.
+  const _dist = Number(nm.distance);
+  const diff  = _dist === 1 ? 'one character' : (Number.isFinite(_dist) && _dist > 0 ? `${_dist} characters` : 'a few characters');
   const note = document.createElement('div');
   note.className = 'field-note issuer-nm-hold';
   // source 'letterhead' (slice 3 of the garbled-issuer arc, Oracle C3.3): not a near-miss of a
@@ -8108,8 +8130,14 @@ function _renderQuietHint() {
   const j = live[0];
   const extra = live.length > 1 ? ` · ${live.length - 1} more sender${live.length > 2 ? 's' : ''} queued` : '';
   const state = j.state === 'deferred' ? 'paused while you work — resumes on its own' : `${j.done} of ${j.total} done`;
+  // r18 copy: name the real trigger — the lane also fires on the READY crossing (after a confirm, not a
+  // teach), on a box change (layout) and on a type confirm (typesplit).
+  const why = j.reason === 'ready' ? 'now that this sender files by itself'
+            : j.reason === 'layout' ? 'after your box change'
+            : j.reason === 'typesplit' ? 'after your type confirm'
+            : 'now that you have taught its layout';
   el.innerHTML = `<span class="qrh-cancel" title="Stop re-reading this sender's documents">Stop</span>`
-    + `Quietly re-reading <b>${escHtml(j.supplier)}</b> documents you haven't opened, now that you've taught its layout — ${state}${extra}. `
+    + `Quietly re-reading <b>${escHtml(j.supplier)}</b> documents you haven't opened, ${why} — ${state}${extra}. `
     + `Review stays fully usable.`;
   el.style.display = 'block';
   el.querySelector('.qrh-cancel')?.addEventListener('click', async () => { try { await window.docusnap.cancelQuietReread?.(j.id); } catch {} });

@@ -1354,9 +1354,17 @@ async function _warnOnIssuerValue(f, r){
   const div = document.createElement('div');
   div.className = 'rb-idwarn';
   div.style.cssText = 'margin-top:6px;color:var(--warn);font-size:12.5px;font-weight:600';
+  // Chris round 18 A2: when a known full name is on offer, USING IT is the primary action — the big
+  // blue "Looks right →" directly under the warning was pressed "as I would at 5 pm" and started a
+  // second folder. Swap the roles: Use "X" is primary; the old primary becomes a ghost
+  // "Keep "v" anyway" (the deliberate second-company path stays one click away, just not the default).
   div.innerHTML = html + (offer
-    ? ` <button type="button" class="btn ghost quiet" id="rb-use-known" style="margin-left:6px">Use "${esc(offer)}"</button>`
+    ? ` <button type="button" class="btn primary" id="rb-use-known" style="margin-left:6px">Use "${esc(offer)}"</button>`
     : '');
+  if (offer) {
+    const yes = host.querySelector('#rb-yes');
+    if (yes) { yes.classList.remove('primary'); yes.classList.add('ghost', 'quiet'); yes.textContent = `Keep "${v}" anyway`; yes.title = 'File this sender under its own folder, separate from ' + offer; }
+  }
   // Below the value line, above the actions — where the eye already is. (Explicit if/else, not
   // `?.before(div) || appendChild(div)`: `before()` returns undefined, so the fallback would ALWAYS
   // run and the warning would render twice.)
@@ -1871,6 +1879,30 @@ async function doCommit(){
         return;
       }
     }
+    // Chris round 18 A2: the issuer-step warning is one click from being skipped; at SAVE — the last
+    // door before the template is born with this name — ask ONCE more when the name on the summary is a
+    // fragment / near-miss of a sender already in use. Same lookup the issuer step ran; advisory; the
+    // "keep" path stays (a genuine second company) but is never the default button.
+    if (!state.issuerNearMatchAck && supplier && D.checkIdentityNearMatch) {
+      let nm = null;
+      try { nm = await D.checkIdentityNearMatch({ value: supplier, templateId: (state.doc && state.doc.template_id) || null }); } catch {}
+      if (nm && nm.near && nm.existing && String(nm.existing).trim().toLowerCase() !== String(supplier).trim().toLowerCase()) {
+        const full = esc(nm.existing), frag = esc(supplier);
+        $('commit-err').innerHTML = (nm.kind === 'subrun'
+            ? `"<strong>${frag}</strong>" is part of <strong>${full}</strong>, a sender you already use — saving it would start a second folder. `
+            : `"<strong>${frag}</strong>" is ${nm.distance === 1 ? 'one character' : (Number(nm.distance) || 'a few') + ' characters'} off <strong>${full}</strong>, a sender you already use — two spellings file into two folders. `)
+          + `<button type="button" class="btn-sm" id="nm-use">Use "${full}"</button> `
+          + `<button type="button" class="btn-sm" id="nm-keep">Keep "${frag}" anyway</button>`;
+        next.disabled=false; next.textContent='Save';
+        $('nm-use')?.addEventListener('click', () => {
+          const isf = state.fields.find(f => isIssuerField(f));
+          if (isf && state.results[isf.key]) { state.results[isf.key].value = nm.existing; state.results[isf.key].valueSource = 'known-name'; }
+          state.issuerNearMatchAck = true; $('commit-err').textContent=''; doCommit();
+        });
+        $('nm-keep')?.addEventListener('click', () => { state.issuerNearMatchAck = true; $('commit-err').textContent=''; doCommit(); });
+        return;
+      }
+    }
     // 1) create/refresh the template + pin this page as the sample (→ landmarks)
     const promo=await D.promoteToTemplate({
       document_id:state.doc.id, allValues, document_type_slug:state.docTypeSlug, supplier_name:supplier,
@@ -1914,6 +1946,7 @@ async function doCommit(){
     // 3) file the document via the normal confirm path (runs learning)
     const conf=await D.confirmReview({
       acknowledgeTypeSplit: !!state.typeSplitAck,   // A3: the wizard already asked (pre-promote)
+      acknowledgeIssuerNearMatch: !!state.issuerNearMatchAck,   // r18 A2: "Keep anyway" at Save is the deliberate second company
       document_id:state.doc.id, folder_path:state.doc.folder_path, original_filename:state.doc.original_filename,
       allValues, supplier_name:supplier, document_type:state.docTypeName, document_type_slug:state.docTypeSlug,
       corrections:[], taught_fields:state.fields.map(f=>f.key),

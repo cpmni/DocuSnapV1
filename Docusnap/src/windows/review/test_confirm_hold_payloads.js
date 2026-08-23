@@ -47,5 +47,16 @@ check("confirm-review forwards prefixOutlier on PREFIX_OUTLIER", /r\.code === 'P
 check("confirm-review forwards nearMatch on ISSUER_NEAR_MATCH", /r\.code === 'ISSUER_NEAR_MATCH' \? \{ nearMatch: r\.nearMatch \}/.test(edge));
 check("confirm-review forwards typeSplit on TYPE_SPLIT (round 18 A4)", /r\.code === 'TYPE_SPLIT' \? \{ typeSplit: r\.typeSplit \}/.test(edge));
 
+// r18 copy bugs on the same hold chain: the service payload must carry the near-match KIND (a sub-run hit
+// has distance:null — without kind the renderer printed "null characters off"), and the renderer never
+// prints a non-numeric distance.
+const svc = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'services', 'reviewService.js'), 'utf8').split(CR + LF).join(LF);
+check('reviewService forwards nearMatch.kind', /nearMatch: \{ existing: nm\.existing, distance: nm\.distance, confirms: nm\.confirms, source: nm\.source, kind: nm\.kind \|\| null \}/.test(svc));
+check('showIssuerNearMatchHold never prints "null characters" (numeric guard with a prose fallback)', /const _dist = Number\(nm\.distance\);/.test(rend) && /Number\.isFinite\(_dist\) && _dist > 0 \? `\$\{_dist\} characters` : 'a few characters'/.test(rend));
+// r18 A6: a hold on a FOREIGN field (a key this type does not define) is named as such, never as a
+// field the user should go and fix.
+check('renderCleanHoldReason names a foreign-field hold honestly', /const _foreign = !!\(v\.field && Array\.isArray\(fieldDefs\) && fieldDefs\.length && !fieldDefs\.some\(x => x\.key === v\.field\)\);/.test(rend)
+      && /a detail this document type doesn't use/.test(rend));
+
 console.log(fails ? LF + fails + ' FAILED' : LF + 'All confirm-hold payload checks passed');
 process.exit(fails ? 1 : 0);

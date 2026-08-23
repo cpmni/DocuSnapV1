@@ -259,7 +259,7 @@ function createReviewService(deps = {}) {
               metadata: { typed: issuerVal, existing: nm.existing, distance: nm.distance, source: nm.source } });
             return fail('ISSUER_NEAR_MATCH',
               `"${issuerVal}" looks like "${nm.existing}", a company you already use — please check the issuer.`,
-              { nearMatch: { existing: nm.existing, distance: nm.distance, confirms: nm.confirms, source: nm.source } });
+              { nearMatch: { existing: nm.existing, distance: nm.distance, confirms: nm.confirms, source: nm.source, kind: nm.kind || null } });   // r18: `kind` rides along — without it the sub-run hold read "null characters off" 
           }
           // ── LETTERHEAD-SUGGESTION hold (slice 3 of the garbled-issuer arc, 2026-08-22; Oracle C3.3) ──
           // The Review list now GROUPS a garbled issuer ("NOCUMENT") under the company the letterhead

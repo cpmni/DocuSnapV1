@@ -50,7 +50,11 @@ check('relative time is computed from the event stamp', /function _asRelTime\(at
 console.log(LF + 'the strip (owner + barry):');
 check('chips ≤ 10, newest first, age out at 15 min', /const AS_MAX = 10, AS_TTL_MS = 15 \* 60 \* 1000;/.test(rend) && /\.slice\(0, AS_MAX\)/.test(rend));
 check('scroll ‹ › buttons hide unless the track overflows', /prev\.hidden = !over \|\| track\.scrollLeft <= 0/.test(rend));
-check('a chip reads "<icon> <when> · <short> ▾"', /\$\{_asIcon\(ev\)\} <span class="as-when">\$\{escHtml\(_asRelTime\(ev\.at\)\)\}<\/span> · \$\{escHtml\(_asShort\(ev\)\)\} <span class="as-caret">▾<\/span>/.test(rend));
+check('a chip reads "<icon> <when> · <short>[ · put back] ▾" (r18 card 7: the put-back state is on the chip)', /\$\{_asIcon\(ev\)\} <span class="as-when">\$\{escHtml\(_asRelTime\(ev\.at\)\)\}<\/span> · \$\{escHtml\(_asShort\(ev\)\)\}\$\{escHtml\(_asPutBackTag\(ev\)\)\} <span class="as-caret">▾<\/span>/.test(rend)
+      && /function _asPutBackTag\(ev\) \{ return ev && ev\.put_back_at \? ' · put back' : ''; \}/.test(rend));
+check('…and the panel line says "put back by you" after an undo (r18 card 7)', /function _asLineFull\(ev\)[\s\S]{0,400}put back<\/b> by you/.test(rend) && /\$\{_asIcon\(ev\)\} \$\{_asLineFull\(ev\)\}/.test(rend));
+check('a bulk receipt always names its senders, even one (r18 card 5)', /Object\.keys\(ev\.bySender\)\.length > 1 \|\| \(ev\.bulk && Object\.keys\(ev\.bySender\)\.length\)/.test(rend));
+check("the lane notice names the real trigger: ready / layout / typesplit / teach (r18 copy)", /j\.reason === 'ready' \? 'now that this sender files by itself'/.test(rend) && /j\.reason === 'layout' \? 'after your box change'/.test(rend));
 check('no chip → a quiet "Recent activity ▾" while any event remains (never a blank band)', /Recent activity <span class="as-caret">▾<\/span>/.test(rend));
 check('click-anywhere closes the PANEL only (the chip stays)', /if \(_asOpenId == null\) return;\s*\n\s*if \(e\.target\.closest\('#activity-panel'\) \|\| e\.target\.closest\('#activity-strip'\)\) return;\s*\n\s*_asClosePanel\(\);/.test(rend));
 const capStart = rend.indexOf("document.addEventListener('click', (e) => {" + LF + "    if (_asOpenId == null) return;");
