@@ -1180,7 +1180,11 @@ function register(ctx) {
                // placeholder 'a company you already use'. That fallback carries NO buttons — so the
                // hold became a DEAD END: the operator could neither adopt the known spelling nor
                // keep their own, and a correct document could not be filed at all.
-               ...(r.code === 'ISSUER_NEAR_MATCH' ? { nearMatch: r.nearMatch } : {}) };
+               ...(r.code === 'ISSUER_NEAR_MATCH' ? { nearMatch: r.nearMatch } : {}),
+               // TYPE_SPLIT (Chris round 18 A4 — the SAME whitelist trap, one link further along):
+               // round 17's fix carried the payload through the RENDERER's refused-return, but this
+               // IPC edge still dropped it, so showTypeSplitHold fell to its toast every time.
+               ...(r.code === 'TYPE_SPLIT' ? { typeSplit: r.typeSplit } : {}) };
     }
     return r;   // { ok:true, success:true, ...filingResult, classFix? }
   });

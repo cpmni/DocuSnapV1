@@ -38,5 +38,14 @@ for (const k of keys) check(`failure return carries \`${k}\``, new RegExp(`\\b${
 check('showTypeSplitHold renders Change the type / Keep when given the payload',
       /function showTypeSplitHold\(ts, idx, groupKey\)[\s\S]{0,2500}tsh-change-btn[\s\S]{0,600}tsh-keep-btn/.test(rend));
 
+// Chris round 18 A4: the IPC edge is the SECOND whitelist on the same path — every hold payload the
+// renderer dispatches on must come through `confirm-review` too. Each code is asserted by name, with
+// the chain's two links checked together (a pin on one link greened while the other still dropped it).
+const hnd = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'modules', 'review', 'handler.js'), 'utf8').split(CR + LF).join(LF);
+const edge = hnd.slice(hnd.indexOf("ipcMain.handle('confirm-review'"), hnd.indexOf("ipcMain.handle('confirm-review'") + 3000);
+check("confirm-review forwards prefixOutlier on PREFIX_OUTLIER", /r\.code === 'PREFIX_OUTLIER' \? \{ prefixOutlier:/.test(edge));
+check("confirm-review forwards nearMatch on ISSUER_NEAR_MATCH", /r\.code === 'ISSUER_NEAR_MATCH' \? \{ nearMatch: r\.nearMatch \}/.test(edge));
+check("confirm-review forwards typeSplit on TYPE_SPLIT (round 18 A4)", /r\.code === 'TYPE_SPLIT' \? \{ typeSplit: r\.typeSplit \}/.test(edge));
+
 console.log(fails ? LF + fails + ' FAILED' : LF + 'All confirm-hold payload checks passed');
 process.exit(fails ? 1 : 0);
