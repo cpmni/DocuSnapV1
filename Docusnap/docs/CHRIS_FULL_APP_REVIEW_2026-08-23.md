@@ -271,3 +271,20 @@ The app's self-filing doesn't pause when I signal doubt: Put back is undone by m
 - The Doc Sol scans had already been filed once by the owner under their old names; I used those names only as hints and checked every page myself — three of the owner's old names (9605-…, 16-09-…, 2008) were the ones that were wrong, not the app's.
 - A stray watcher of mine was cancelling native dialogs for about ten minutes around 01:19–01:29; I killed it and re-ran every send-back, so none of the findings above rest on that window. The Put back with no warning happened before it existed.
 - "Generic name" for DOCUMENT SOLUTIONS is the owner's word; from the screen I can't tell a generic sender from a normal one, which is itself the finding in A6.
+
+---
+
+## Round 18 TRIAGE + FIXES (2026-08-23 overnight, continued)
+gary (A1 design) → Oracle (A1 SEND BACK → rebuilt; put-back W/COND; A4/A2/A6 signed; Q2; A3 part 2). One commit per card; behaviour widenings DARK; nothing pushed.
+| Card | Verdict | Fix (commit) |
+|---|---|---|
+| A1 wrong date self-filed (447) | SYSTEM — the teach-arm first-fill had NO evidence gate; the same job held 4 S3-C5 disagreements on the same box | `371ef2d` the FIRST-FILL RELIABILITY hold (DARK `quiet_reread_first_fill_reliability_hold`): hold every first-fill at merge, release at finish unless the field proved unreliable in the job (K=1; witnesses = S3-C5, loss, engine yield); the "— confirm once." family survives the READY arm and a same-value Reprocess; S3-C5 rows carry `corrected_to = was` (Use/Keep). Census: DS 0 held, Copperfield held |
+| A3 Put back does not stick | BUG | `19e91b0` + `061ca82` mig 86 `put_back_at` stamped by every human "look again" door; the ONE predicate refuses; a machine via refused pre-claim; only a human claim clears; the auto accept files as "Auto-filed (after your confirms)" |
+| A4 Review type-split dead end | BUG (one link past the r17 fix) | `7b8c8e1` the IPC whitelist forwards `typeSplit` |
+| A2 one click past the warning | UX | `8b5ae1a` Use "FULL NAME" primary; Save re-asks; ack carried |
+| A5 type change wipes values | PREFERENCE | owner vet (the anti-bleed rule) |
+| A6 badge over a waiting pile; phantom Customer Name | by design (07-22 foreign rows hold) + copy | `8b5ae1a` honest foreign-field copy; the badge/licence mismatch → owner vet |
+| A7 Home contradicts the strip | BUG | `615263c` the tally counts every machine via |
+| A8 untaught garble groups | PREFERENCE | owner vet |
+| cards 5 / 7 / copy | UX | `8b5ae1a` bulk lists senders; chip says put back; "null characters" (kind forwarded); the lane notice names the trigger |
+
