@@ -21,7 +21,24 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-23 OVERNIGHT (Chris rounds 17→20 fix loop): **READ `HANDOVER_2026-08-23_MORNING.md` FIRST**
+## ⏭ LATEST — 2026-08-23 EVENING (live test on a FRESH wiped DB): **READ `HANDOVER_2026-08-23_EVENING.md` FIRST**
+Branch `feat/teach-side-overnight`, **HEAD `0b62235`, 63 commits ahead, NOT pushed.** The owner wiped the live DB
+and ran a hands-on session; ONE commit built the fixes (all OFF byte-identical, Oracle-gated): **(1)** activity-strip
+UX (two-line chips, ✕/click-to-close, always-a-receipt File All incl. 0-filed; `reviewEvents` dedups `dropped`);
+**(2)** put-back re-file via File All (`putback_refile_on_file_all`, **mig 87** `refile_declined_at`+`putback_refiled_at`)
+— a glanced-then-put-back doc re-files on the explicit click when it STILL passes the strict predicate
+(`isAutoFileEligible({bypassPutBack})`), never via any machine path; undo-loop hard-holds; **(3)** two bugs (tab badge
+was `queue.length`→DB count; class-fix bar ✕ + clears on doc change); **(4)** detail-veto single-supplier immunity
+(`logo_detail_veto_single_supplier_immune`) — the 256-bit veto crops top-left + hashes a wordmark LETTER, false-
+abstaining a dist-2 lock (Oakhaven 543/544); a call-site helper suppresses it ONLY for a corroborated single-supplier
+lock tripped by a MARGINAL rival (>48), a DECISIVE rival (≤48, doc-193/buyer) still vetoes. **Verified:** 543/544 →
+template 2 on the real app; realdoc A/B OFF-vs-ON byte-identical (supplier 100%, 0 new wrong-supplier, M_type=0);
+all targeted+related suites green. **Live fresh DB** = `%APPDATA%\ScanFinder\docusnap.db` (mig 87, app running, all
+new switches ON except `trust_company_key_own_scope`). **Deferred:** 531 (skew/coarse near-miss); the 12 wrong-date
+auto-files (leading-digit date class — next accuracy arc); notification consolidation; the 5 garble/type-split vet
+switches. **The overnight re-freeze/flip owner-owed items are MOOT (DB was wiped).**
+
+## (previous) 2026-08-23 OVERNIGHT (Chris rounds 17→20 fix loop): `HANDOVER_2026-08-23_MORNING.md`
 (the standard wrap: verification state, first actions, deferred conditions), then `HANDOVER_2026-08-23.md`
 (its OWNER STEPS + the switch table), then `docs/CHRIS_FULL_APP_REVIEW_2026-08-23.md` (rounds 18/19/20 verbatim +
 triage tables). Branch `feat/teach-side-overnight`, **~60 commits ahead, NOT pushed** (owner's standing rule).
