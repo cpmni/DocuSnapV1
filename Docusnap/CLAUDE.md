@@ -21,7 +21,8 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-23 OVERNIGHT (Chris rounds 17→20 fix loop): **READ `HANDOVER_2026-08-23.md` FIRST**
+## ⏭ LATEST — 2026-08-23 OVERNIGHT (Chris rounds 17→20 fix loop): **READ `HANDOVER_2026-08-23_MORNING.md` FIRST**
+(the standard wrap: verification state, first actions, deferred conditions), then `HANDOVER_2026-08-23.md`
 (its OWNER STEPS + the switch table), then `docs/CHRIS_FULL_APP_REVIEW_2026-08-23.md` (rounds 18/19/20 verbatim +
 triage tables). Branch `feat/teach-side-overnight`, **~60 commits ahead, NOT pushed** (owner's standing rule).
 **Round 20 verdict: the wrong-date self-file class is FIXED as seen — 73 filed, 0 wrong by the app, every wrong
@@ -72,9 +73,13 @@ ran on the fixes. Headlines:
   P1 `5979bdc` **`src/modules/processing/rereadHolds.js` = ONE road for re-read holds** (the lane delegates; the
   manual batch + single-doc Reprocess write the same holds, DARK `reprocess_holds_as_lane`; C1: the S3-C5 baseline
   is the row's TYPE-VALID `corrected_to` else its display — never offer 'INV-29273' on a date). P3 `9dc7bf4` the
-  layout arm re-reads noted docs (a new box is new evidence); N4/N5/N6/N8 `67aef42` + `65ff83d`. **OPEN:** the
-  realdoc drift on the same DB copy (389/416 M=0 at 00:11 → 381/416 M=1 at 04:20; bisect `72a75bd`); the ON arm
-  + round 20 results are in `HANDOVER_2026-08-23.md`.
+  layout arm re-reads noted docs (a new box is new evidence); N4/N5/N6/N8 `67aef42` + `65ff83d`. **Realdoc on the
+  owner's copy (current app env): 381/416, M=1 (#413, a leading-digit date with no page witness — the next arc);
+  the ON arm holds 45 more via `trust_company_key_own_scope` (do not flip) and exactly 1 via the disagreement
+  refusal. The 389→381 "drift" was BISECTED: the round-17 HEAD reproduces 381/M=1 — tonight's code is exonerated.**
+- **ROUND 20 → `0929e33` File All's loop skips on the ONE classifier (it filed the 9 put-back docs its dialog
+  excluded); the identity never gets a one-click Use of its old garble; no duplicate S3-C5 note; `8bc3f32` the lane
+  hint carries the job reason. Verdict: 73 filed, 0 wrong by the app.**
 **Traps this session:** `core.autocrlf=true` → renderer.js etc. are CRLF on disk (tests slicing `
 }
 ` must
