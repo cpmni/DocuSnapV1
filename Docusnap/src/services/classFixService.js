@@ -128,10 +128,12 @@ function applyForConfirm(db, opts) {
         JOIN document_types t ON t.id = d.document_type_id
        WHERE d.status = 'needs_review'
          AND d.id <> @docId
+         AND (@hasPutBack = 0 OR d.put_back_at IS NULL)   -- A3: a put-back sibling waits for its own human confirm
          AND LOWER(TRIM(COALESCE(d.supplier_name, ''))) = LOWER(@sup)
          AND LOWER(TRIM(COALESCE(t.slug, ''))) = LOWER(@slug)
          AND COALESCE(d.workflow_status, '') NOT IN ('pending', 'claimed')
-       ORDER BY d.id`).all({ refKey, docId: documentId, sup: scope.sup, slug: scope.slug });
+       ORDER BY d.id`).all({ refKey, docId: documentId, sup: scope.sup, slug: scope.slug,
+                              hasPutBack: require('../../database/modules/documents')._hasPutBackAt(db) ? 1 : 0 });
   } catch (e) { logger?.warn?.('class fix: candidate scan failed: ' + (e && e.message)); return null; }
 
   if (presence) rows = rows.filter(r => !presence.viewers(r.id).length);

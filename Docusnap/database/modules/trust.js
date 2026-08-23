@@ -946,6 +946,12 @@ function isAutoFileEligible(db, doc, opts = {}) {
   // test_generic_autofile_refusal.js — do not weaken or move below the floor logic.
   if (slug === require('./document_types').GENERIC_SLUG)
     return { eligible: false, floor: UNTRUSTED_FLOOR, reason: 'generic-type' };
+  // PUT BACK (Chris round 18 A3, mig 86): the user returned this document to the queue to LOOK at it.
+  // Unconditional until a human confirm clears the stamp at claim — any confidence, any slider, any
+  // graduation; every machine door (scope sweep, reprocess accept, class-fix siblings) shares this
+  // predicate. A row without the column / an import-time doc object carries no stamp → unchanged.
+  if (doc.put_back_at)
+    return { eligible: false, floor: UNTRUSTED_FLOOR, reason: 'put-back' };
   const corrobOn = (opts.corrobAutoFile !== undefined) ? !!opts.corrobAutoFile : _corrobAutofileEnabled(db);
   const t = scopeTrust(db, doc.supplier_name, slug, { ...opts, corrobProbe: corrobOn });
   // Graduation is gated by the master switch + a per-scope opt-out (the visible controls). If

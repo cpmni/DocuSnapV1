@@ -2474,6 +2474,15 @@ function renderCleanHoldReason(el, doc) {
   // "Ready to file" — asserting readiness for a document the predicate had refused. Never invent
   // a reason when the authoritative one is available.
   const v = _holdVerdict;
+  // Chris round 18 A3: the user put this one back — say so, and say what ends the hold.
+  if (v && !v.eligible && v.kind === 'put-back') {
+    el.classList.add('rr-calm');
+    el.innerHTML = `<div class="rr-lead">You put this document back — it won't file itself until you confirm it.</div>`
+                 + `<div class="rr-cues"><span class="rr-cue info">Put back by you</span></div>`
+                 + `<div class="rr-hint">Check the values and press Confirm to file it; Reprocess re-reads it but still waits for you.</div>`;
+    el.hidden = false;
+    return;
+  }
   if (v && !v.eligible && v.kind && v.kind !== 'below-floor') {
     const fieldName = _holdFieldLabel(v.field);
     // COLD-START COUNTDOWN (2026-08-18): when the honest reason is "I have not confirmed enough

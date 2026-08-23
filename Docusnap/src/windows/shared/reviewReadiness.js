@@ -30,6 +30,7 @@
   function classify(row, opts) {
     const valuedOnly = !!(opts && opts.valuedOnly);
     if (!row) return 'missing';
+    if (row.put_back_at) return 'flagged';                    // Chris r18 A3: put back = "waiting for your eye" — never swept by File All either
     if (isFlagged(row, valuedOnly) && !row.review_acknowledged_at) return 'flagged';
     if (!row.type_slug) return 'noType';
     if (String(row.missing_required_labels || '').trim()) return 'missing';

@@ -353,6 +353,24 @@ function deconfirmDocument(db, id) {
   ).run(id);
 }
 
+// Chris round 18 A3 (mig 86): a document the user PUT BACK carries put_back_at until a human confirms
+// it — THE ONE auto-file predicate refuses it ('put-back') so no machine door can re-file it. Column-
+// guarded for pre-mig-86 fixtures (the stamp is then simply absent → the old behaviour).
+const _putBackPresence = new WeakMap();
+function _hasPutBackAt(db) {
+  let has = _putBackPresence.get(db);
+  if (has === undefined) {
+    try { has = db.prepare("SELECT 1 FROM pragma_table_info('documents') WHERE name='put_back_at'").get() != null; }
+    catch { has = false; }
+    _putBackPresence.set(db, has);
+  }
+  return has;
+}
+function markPutBack(db, id) {
+  if (!_hasPutBackAt(db)) return { changes: 0 };
+  return db.prepare("UPDATE documents SET put_back_at = datetime('now') WHERE id = ? AND status = 'needs_review'").run(id);
+}
+
 // List a scope's CONFIRMED documents (for the recovery preview / set-aside picker).
 function getConfirmedDocsForScope(db, { supplier_name, document_type_slug } = {}) {
   if (!document_type_slug) return [];
@@ -546,7 +564,7 @@ function confirmIfReviewable(db, id, { stored_filename = null, stored_path = nul
            ${hasVia ? 'confirmed_via = @confirmed_via,' : ''}
            stored_filename       = @stored_filename,
            stored_path           = @stored_path,
-           supplier_pin          = NULL
+           supplier_pin          = NULL${_hasPutBackAt(db) ? ',\n           put_back_at           = NULL' : ''}
      WHERE id = @id
        AND ( status IN ('needs_review','deferred')
           OR (status = 'confirmed' AND @allowRefile = 1) )
@@ -725,7 +743,7 @@ module.exports = {
   getReviewCount, getReviewSplit, getDeferredCount, getStuckCount, getStuckQueue, getFiledCounts,
   _farValuedOnlyEnabled,           // single source of the FAR two-tier default (pins + renderer parity)
   softDelete, restoreDeleted, getDeletedQueue, getDeletedCount,
-  requeueConfirmedDocsForScope, getConfirmedDocsForScope, getConfirmedDocsByIds, getConfirmedFieldValues, deconfirmDocument,
+  requeueConfirmedDocsForScope, getConfirmedDocsForScope, getConfirmedDocsByIds, getConfirmedFieldValues, deconfirmDocument, markPutBack, _hasPutBackAt,
   getFieldValueSuggestions,
   confirm, confirmIfReviewable, deferIfReviewable, restoreIfDeferred,
   deleteDoc, deleteByStatus, search,

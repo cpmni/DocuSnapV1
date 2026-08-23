@@ -3844,7 +3844,8 @@ function register(ctx) {
           const row = db.prepare('SELECT id, status, confirmed_via FROM documents WHERE id = ?').get(id);
           if (!row || row.status !== 'confirmed' || row.confirmed_via !== 'scope_sweep') { refused.push(id); continue; }
           const r = documents.deconfirmDocument(db, id);
-          if (r && r.changes) undone.push(id); else refused.push(id);
+          if (r && r.changes) { undone.push(id); try { documents.markPutBack(db, id); } catch {} }   // A3: put back must STICK
+          else refused.push(id);
         }
         await new Promise(res => setImmediate(res));
       }
@@ -3889,7 +3890,8 @@ function register(ctx) {
       const row = db.prepare('SELECT id, status, confirmed_via FROM documents WHERE id = ?').get(id);
       if (!row || row.status !== 'confirmed' || row.confirmed_via !== 'scope_sweep') { refused.push(id); continue; }
       const r = documents.deconfirmDocument(db, id);
-      if (r && r.changes) undone.push(id); else refused.push(id);
+      if (r && r.changes) { undone.push(id); try { documents.markPutBack(db, id); } catch {} }   // A3: put back must STICK
+      else refused.push(id);
     }
     try {
       if (undone.length) logAudit(db, { action: 'scope_sweep_undone', target_type: 'scope', outcome: 'success',

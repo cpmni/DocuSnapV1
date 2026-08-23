@@ -1,0 +1,98 @@
+'use strict';
+/*
+ * test_put_back_hold.js — Chris round 18 card A3 (2026-08-23): PUT BACK MUST STICK.
+ *
+ * THE INCIDENT: "Put back" on an activity chip de-confirmed 7 swept documents; 1.5 s after the user's
+ * next confirm on that sender the scope auto-accept re-filed all 7 (and 9 Copperfield siblings the
+ * moment a date was corrected) — recorded as confirmed by the user. The undo was illusory.
+ *
+ * Pins:
+ *   • mig 86 adds documents.put_back_at (NULL-inert)
+ *   • documents.markPutBack stamps a needs_review row; THE ONE predicate (trust.isAutoFileEligible)
+ *     refuses a stamped row with reason 'put-back' at ANY confidence (100, user threshold 1) —
+ *     positive control: the same row un-stamped is eligible
+ *   • a human confirm clears the stamp at claim (confirmIfReviewable) — the next machine door sees a
+ *     clean row
+ *   • the readiness classifier never calls a put-back row 'ready' (File All / Home)
+ *   • the class fix's candidate scan skips put-back siblings (source contract + live query)
+ *   • both undo doors stamp what they de-confirm (source contract)
+ *   • Review says why ('put-back' kind renders its own calm lead)
+ *
+ * Run: ELECTRON_RUN_AS_NODE=1 node_modules/.bin/electron database/modules/test_put_back_hold.js
+ */
+const fs = require('fs');
+const path = require('path');
+const Database = require('better-sqlite3');
+const { runMigrations } = require('../index');
+const documents = require('./documents');
+const trust = require('./trust');
+const learning = require('./learning');
+
+let fails = 0;
+const check = (label, cond) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`); if (!cond) fails++; };
+const CR = String.fromCharCode(13), LF = String.fromCharCode(10);
+const read = (p) => fs.readFileSync(p, 'utf8').split(CR + LF).join(LF);
+
+const db = new Database(':memory:');
+runMigrations(db);
+console.log('migration 86:');
+check('documents.put_back_at exists after migrations', !!db.prepare("SELECT 1 FROM pragma_table_info('documents') WHERE name='put_back_at'").get());
+check('version 86 stamped', !!db.prepare('SELECT 1 FROM migrations WHERE version = 86').get());
+
+db.prepare("INSERT INTO document_types (id, name, slug, built_in, ref_field_key, date_field_key) VALUES (1, 'Invoice', 'invoice', 1, 'invoice_number', 'invoice_date')").run();
+for (const [k, req] of [['supplier_name', 1], ['invoice_number', 1], ['invoice_date', 1]])
+  db.prepare("INSERT INTO fields (document_type_id, key, label, type, required, enabled, built_in) VALUES (1, ?, ?, 'text', ?, 1, 1)").run(k, k, req);
+learning.setSetting(db, 'auto_file_threshold', '1');          // the laxest slider: only the stamp can refuse
+const mk = (oc = 100, status = 'needs_review') => {
+  const id = Number(documents.insert(db, { original_filename: `d${Math.random().toString(36).slice(2, 6)}.pdf`, folder_path: '/in', status, supplier_name: 'Acme Widgets', document_type_id: 1 }).lastInsertRowid);
+  db.prepare('UPDATE documents SET overall_confidence = ? WHERE id = ?').run(oc, id);
+  for (const [k, v] of [['supplier_name', 'Acme Widgets'], ['invoice_number', 'INV-100'], ['invoice_date', '01-08-2026']])
+    db.prepare("INSERT INTO extractions (document_id, field_key, raw_value, display_value, confidence, extraction_method) VALUES (?, ?, ?, ?, 99, 'keyword')").run(id, k, v, v);
+  return id;
+};
+const row = (id) => db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
+
+console.log('\nthe predicate:');
+const A = mk(100);
+check('positive control: an un-stamped 100 % row is eligible', trust.isAutoFileEligible(db, row(A)).eligible === true);
+check('markPutBack stamps a needs_review row', documents.markPutBack(db, A).changes === 1 && !!row(A).put_back_at);
+const rA = trust.isAutoFileEligible(db, row(A));
+check("…and the predicate refuses it with reason 'put-back' at 100 % / slider 1 (unconditional)", rA.eligible === false && rA.reason === 'put-back');
+check('autoFileEligibleIds (the sweep\'s batch door) drops it too', !trust.autoFileEligibleIds(db, [row(A)]).includes(A));
+const C = mk(100, 'confirmed');
+check('markPutBack does nothing to a row that is not in the queue', documents.markPutBack(db, C).changes === 0);
+check("a doc object WITHOUT the field (an import-time message) is judged as before", trust.isAutoFileEligible(db, { ...row(A), put_back_at: undefined }).eligible === true);
+
+console.log('\nthe human confirm clears it:');
+const claim = documents.confirmIfReviewable(db, A, { stored_filename: 'x.pdf', stored_path: '/out/x.pdf', confirmed_by_username: 'chris' });
+check('confirmIfReviewable claims the put-back row', claim.changes === 1 && row(A).status === 'confirmed');
+check('…and clears put_back_at at claim time', row(A).put_back_at == null);
+documents.deconfirmDocument(db, A);
+check('deconfirm alone (a Search send-back) does NOT stamp — only the undo doors do', row(A).status === 'needs_review' && row(A).put_back_at == null);
+
+console.log('\nthe classifier (File All / Home):');
+const RR = require('../../src/windows/shared/reviewReadiness.js') && globalThis.ReviewReadiness;
+const B = mk(100); documents.markPutBack(db, B);
+const q = Object.fromEntries(documents.getReviewQueue(db).map(d => [d.id, d]));
+check('getReviewQueue rows carry put_back_at', q[B] && !!q[B].put_back_at && q[A] && q[A].put_back_at == null);
+check("a put-back row classifies as 'flagged' (never 'ready'); the clean row stays 'ready'", RR.classify(q[B]) === 'flagged' && RR.classify(q[A]) === 'ready');
+
+console.log('\nthe class fix skips put-back siblings:');
+const cfs = read(path.join(__dirname, '..', '..', 'src', 'services', 'classFixService.js'));
+check('candidate scan excludes d.put_back_at IS NOT NULL (column-guarded)', /AND \(@hasPutBack = 0 OR d\.put_back_at IS NULL\)/.test(cfs) && /_hasPutBackAt\(db\) \? 1 : 0/.test(cfs));
+
+console.log('\nthe undo doors stamp (source contract):');
+const ph = read(path.join(__dirname, '..', '..', 'src', 'modules', 'processing', 'handler.js'));
+const undoA = ph.slice(ph.indexOf("ipcMain.handle('review-event-undo'"), ph.indexOf("ipcMain.handle('get-quiet-reread-status'"));
+const undoB = ph.slice(ph.indexOf("ipcMain.handle('sweep-scope-undo'"), ph.indexOf("ipcMain.handle('sweep-scope-undo'") + 2500);
+check('review-event-undo marks every de-confirmed doc put back', /undone\.push\(id\); try \{ documents\.markPutBack\(db, id\); \} catch \{\}/.test(undoA));
+check('sweep-scope-undo marks every de-confirmed doc put back', /undone\.push\(id\); try \{ documents\.markPutBack\(db, id\); \} catch \{\}/.test(undoB));
+
+console.log('\nReview says why:');
+const rend = read(path.join(__dirname, '..', '..', 'src', 'windows', 'review', 'renderer.js'));
+check("renderCleanHoldReason renders the 'put-back' kind with its own lead", /v\.kind === 'put-back'/.test(rend) && /You put this document back — it won't file itself until you confirm it\./.test(rend));
+const tr = read(path.join(__dirname, 'trust.js'));
+check('the refusal sits BEFORE the floor logic (unconditional — any confidence, any graduation)', tr.indexOf("reason: 'put-back'") < tr.indexOf("const floor = (graduated || corroborated)"));
+
+console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
+process.exit(fails ? 1 : 0);

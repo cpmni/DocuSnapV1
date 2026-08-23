@@ -2013,6 +2013,22 @@ function runJsMigrations(db, applied) {
     db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (85)').run();
   }
 
+  // ── Migration 86: PUT BACK MUST STICK (Chris round 18 card A3, 2026-08-23). "Put back" on an
+  // activity chip de-confirmed the swept documents — and the scope auto-accept re-filed them 1.5 s
+  // after the user's NEXT confirm on that sender (the undo was illusory; the records then said the
+  // user confirmed them). `documents.put_back_at` is stamped by both undo doors and read by THE ONE
+  // auto-file predicate (trust.isAutoFileEligible → reason 'put-back'), so every machine door (the
+  // scope sweep, the reprocess accept, the class fix's siblings) refuses the document until a HUMAN
+  // confirm clears the stamp at claim time. NULL-inert: nothing changes for an un-stamped row.
+  if (!applied.has(86)) {
+    if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'put_back_at')) {
+      try { db.exec('ALTER TABLE documents ADD COLUMN put_back_at TEXT'); }
+      catch (e) { console.warn(`  migration 86: ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (86)').run();
+    console.log('JS migration 86 applied: documents.put_back_at (a put-back document never files itself until a human confirms it)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the
