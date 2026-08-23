@@ -581,3 +581,258 @@ Oracle consult on N1/N2/N3 (`docs/oracle_log.md`); one commit per item; widening
 | N7 holds look like debug text; "Change the type" | PREFERENCE | owner vet (styling) |
 | N8 Home / lane hint | copy | `67aef42` Home says "N filed by themselves in the last 7 days"; the hint names its trigger |
 
+---
+
+## ROUND 20 — 2026-08-23 overnight (fresh sandbox CDP 9223, PID 31404; the round-19 fixes `67aef42`…`5979bdc` in the build; switches ON: the round-19 set + `reprocess_holds_as_lane` + `trust_role_disagreement_refuse` + `trust_company_key_own_scope`; corpus Demo Docs Copperfield / Ironbridge / Larkspur 20 each + Doc sol 22) — VERBATIM
+
+# Chris The Customer — Round 20 (2026-08-23 overnight, fourth overnight round)
+
+Sandbox: fresh ScanFinder on CDP 9223 (PID 31404), admin "chris", output `chris-sandbox\Output` (empty at start). Catalog: Quote, Service Worksheet, Delivery Note, Credit Note, Statement. Corpora in the order the brief set: Demo Docs *Copperfield Electrical\invoice* 20 → *Ironbridge Fabrication\invoice* 20 → *Larkspur Interiors\invoice* 20 → Corpus *Doc sol* 22. (No SINGLE / IMPORT / IMPORT2 this round — the brief didn't ask for them, so the Nordwind type-split is untested tonight.) Screenshots `chris-sandbox\r20_sNN_*.png`; my page-truth sheets `r20_truth_ds_*.png` (Copperfield/Ironbridge/Larkspur truth re-used from my round-19 sheets, same scans); the filed table is `r20_filed_table.md`; per-document scans of the queue are `r20_cf_scan_*.txt`, `r20_ib_scan.txt`, `r20_lk_scan.txt`, `r20_ds_scan*.txt`. One simulated persona, not a user test. I changed no code and no setting a customer couldn't reach; everything stayed inside the sandbox.
+
+## TL;DR
+1. **The headline is fixed.** Copperfield, mistake included: after my corrected re-teach the pile re-read itself, five invoices came back with a wrong date, **all five were held** — four with "Read differently after learning — was X, now Y" and a one-click **Use "X"** that offered the *right date every time*, never a reference — and "Reprocess 19" kept every hold. Two confirms → 9 filed themselves, **zero wrong**. Ironbridge waited for its two confirms this time. 73 filed tonight, 41 by themselves, **0 wrong on disk, 0 wrong ever filed by the app.**
+2. **New problem, and it's the brake: "File All Ready" filed the 9 documents I had put back — after its own dialog said "Not included — they stay in the queue: • 9 you put back — each waits for your own Confirm"** (s81). All nine were right, which is luck, not design.
+3. **A one-click button in Review filed a worksheet under a folder called "Ticket-Type"** with the letterhead "DOCUMENT SOLUTIONS" plainly on the page — the wizard stops that exact mistake twice; Review's Use "Ticket Type" + Confirm didn't say a word (s72). Fixing the sender back then wiped the two correct values (Undo restored them).
+
+---
+
+## Walkthrough
+
+**Setup (s02–s05).** Admin → recovery code → Terms → setup wizard → my driver mangled the output path again, fixed before any import (s04b shows the real tick). Catalog types added.
+
+**N1 — Copperfield, mistake included (s06–s35).** Import: 19 right, invoice_16 no date (same as round 19). Wizard on invoice_01: issuer fine; at the **Invoice Date** step I drew the number box on purpose. Read-back (s09): "Value: INV-29597 · Label: Invoice No." with, under it, the amber **"⚠ That doesn't read like a date. If the box caught the wrong text, redraw it — or type the Invoice Date below."** — and the buttons are now **[Use it anyway] (grey) · [Redraw value] (blue, primary) · [Redraw label]**. I pressed Use it anyway. At the Invoice Number step I drew the date; a second warning: **"⚠ Are you sure? That looks like a DATE, not a Invoice Number — the Invoice Date is its own field."** Use it anyway again. Summary (s12): "Invoice Date INV-29597 / Invoice Number 23/11/2026" — no trace of the two warnings I'd waved through. Filed to `Copperfield-Electrical\Unknown-Year\Unknown-Month\Invoice.23112026.pdf`. Re-read ran ("after your box change — N of 19 done"); siblings got a date in the number box at 69–74%, held with "this looks like a date, but this field expects a reference" + "was 'INV-41557', now '17/12/2026'" (s14), as last time.
+
+Search → Send back ("It stays filed until you re-confirm it.") → re-taught in the right order (s16–s19), filed right, the Unknown-Year file replaced (the empty folder is still on disk). **(a)** Pressed Done → Review: **"Quietly re-reading Copperfield Electrical documents you haven't opened, now that you have taught its layout — 3 of 19 done"** — the corrected teach re-read the pile by itself (s20). Result (`r20_cf_scan_after_reteach.txt`): 12 right at 93%; five wrong dates — invoice_19 (02-04 for 23/04), _09 (03-07 for 13/07), _07 (02-10 for 12/10), _05 (17-02 for 03/12), _16 (13-11 for 03/11) — **every one held**: four with *"Read differently after learning — was '23-04-2026', now '02-04-2026'. Please check which is right. Use "23-04-2026" / Keep "02-04-2026""* (s21), invoice_16 with *"Read from your new box — confirm once."* (s22 — no old value to offer, the import had read nothing). Two more held on right values ("Kept the read value "10/06/2026" — the taught date box read "L0/06/2026", which isn't a valid calendar date"; "…read "7/02/2096", which is far in the future"). invoice_02, which I had open, was skipped. **(b)** Pressed **Reprocess 19**: dialog now ends *"A value that reads differently from before is kept for you to check — the previous value is one click away."* (s23). After it: the same five held, Use "X" still the right date on all four (s24) — but each note now printed **twice**. invoice_02 came right. **(c)** Confirmed invoice_13 and invoice_18 by hand (both right) → **"✓ Just now · 9 filed themselves"** — all nine right against the page; the 5 wrong dates + 2 "Kept the read value" holds stayed; invoice_17 (right, 93%) sat "Ready to file" under "✓ files by itself" until I confirmed it. The hint after that third confirm: *"Quietly re-reading … **now that you have taught its layout** — 0 of 2 done."* Nothing tonight was held with "the page reads Invoice Date two ways". Use "23-04-2026" filled the box and cleared the note (the headline "Needs a quick check — 1 field was flagged" stayed until Confirm) → filed right; same for _09, _07, _05 (s35). invoice_16 corrected by hand.
+
+**Put back (s28–s34).** Chip panel "9 documents from Copperfield Electrical filed themselves — they matched what you've confirmed · See them · Put back" → "Put 9 documents back in the Review queue." → strip "↩ Just now · 9 put back ▾ ✓ 1 min ago · 9 filed themselves · put back ▾". Confirmed invoice_17 by hand → the 9 stayed. Corrected invoice_16 by hand → the 9 stayed; each reads "You put this document back — it won't file itself until you confirm it. / Put back by you" (s33). **File All Ready** then: toast *"Nothing is ready to file by itself — 9 you put back are waiting for your Confirm, and the rest are waiting on a check or a missing detail."* (s34).
+
+**N2 — Ironbridge (s36–s43).** Import: all 20 right, 7 without a sender. Wizard teach in the right order; done card: "Confirm 2 more Ironbridge Fabrication Invoice and the rest of their Invoice in the queue will file themselves — 11 are waiting that look just like this one." Re-read → **"19 documents · 2 need a look · 2 more to file by itself" and it stayed that way for 3½ minutes** (s40). All 19 right; two held on right values ("manually mapped value differs from the usual format for this field — please verify" on invoice_08; the letterhead note on invoice_09). Confirm invoice_15 → "18 documents · 2 need a look · **1 more** to file by itself"; confirm invoice_14 → **"✓ Just now · 14 filed themselves"**, then 15 as the re-read cleared invoice_09's note (s43). Group head and strip agreed with what happened at every step. invoice_16 (open at the time) sat "Ready to file".
+
+**Larkspur (s44–s49).** Same road: "15 are waiting" on the card, re-read → "19 documents · 3 need a look · 2 more to file by itself", waited. invoice_02 held with *"A wider reading of this date box shows '02-04-2026'… was '02-04-2026', now '12-04-2026' · Use "02-04-2026""* (s47); invoice_19 "taught date box read "32/12/2026"". Two confirms → "13 filed themselves" → 14. All right. Use "02-04-2026" + Confirm finished invoice_02.
+
+**Doc sol (s50–s60).** Import 22: "DOCUMENT OLUTIONS" and "Ticket Type" as senders on two, the rest blank. Typed-locate teach "DOCUMENT SOLUTIONS" → "Found it — the green box shows where" → number + date drawn. **Teach another** on 2601-0371-1 with a tight one-line box over "DOCUMENT": *"⚠ "DOCUMENT" is part of DOCUMENT SOLUTIONS, the name a saved layout already uses — a box over a two-line name often catches one line. Filing as "DOCUMENT" would start a second folder."* with **Use "DOCUMENT SOLUTIONS"** leading (s56); I pressed Keep anyway; at Save it asked again (s57); Use → filed under `DOCUMENT-SOLUTIONS\2026\January`. **N4:** across three full scans of the pile (after the teach, after a confirm, after "Reprocess 13") the issuer note "The box that reads this field read it differently…" appeared **0 times**. One confirm → "5 filed themselves"; the pile then showed the honest copy I missed last round: *"Nothing looks wrong — the app also read a Customer Name on the page — a detail this document type doesn't use — and couldn't check it. It isn't shown here and won't be filed; confirming the document clears it."* and *"Worksheet Number wasn't read certainly enough for automatic filing, so this one is waiting for your eye."* Reprocess 13 → 6 more filed themselves, sender whole, no DOCUMENT/SOLUTIONS fragments. Two docs at **100%** carried *"Read differently after learning — was 'DOCUMENT OLUTIONS', now 'DOCUMENT SOLUTIONS' · Use "DOCUMENT OLUTIONS" / Keep "DOCUMENT SOLUTIONS""* and the "Ticket Type" twin (s71, s72).
+
+**Audit / Home (s61, s61b, s62, s83).** Settings → Audit, Category Review: the self-filed rows show **USER = "Auto-filed (after your confirms)"**; my File-All rows show Chris (admin) — fair, I pressed it. Home: **"40 filed by themselves in the last 7 days."** (41 at the end), "4 senders file by themselves after your confirmations.", and a new line "2 suppliers have graduated to fully automatic filing · learned 4 layouts."
+
+**Breaking what's new (s70–s82).** Single-document Reprocess on a held Copperfield invoice: the "Kept the read value" hold survived (no dialog on the single-doc button). Keep "DOCUMENT SOLUTIONS" on a 100% doc: note cleared, waited for Confirm, nothing filed. **Use "Ticket Type"** on the other: sender box became "Ticket Type · High · 95%", Confirm green → *"Filed as Service-Worksheet.14-01-2026.2601-0563-1.pdf in Ticket-Type / 2026 / January."* (s72–s73). Send back → typed DOCUMENT SOLUTIONS → banner *"⚠ Worksheet Number and Worksheet Date were read using the previous supplier's learned positions, so they have been cleared. Check them before you confirm. [Undo — put them back]"*, both boxes "Not found" while still badged "High · 97%" / "High · 96%", Confirm greyed with "To file this document, please fill in Worksheet Date and Worksheet Number" (s75b). Undo restored both; confirmed; filed right; the empty `Ticket-Type\2026\January` tree stays on disk. 1.5 s after that confirm, the doc I'd had open during the Reprocess (2603-1351-1, "Ready to file", 100%) filed itself — the top-left offer bar *"1 reprocessed document read clean and is ready to file — [✓ File 1] [Review them] [Not now]"* answered itself (Audit: `scope_sweep_offered` → `scope_sweep_auto_accepted` in the same second). Re-importing the Copperfield `Processed` folder: *"This folder holds the original scans of 9 documents you have already filed. Importing it again would create duplicates. Import it anyway?"* — cancelled, nothing ran (s79). **File All Ready** with 2 ready + 9 put back + 7 held + 1 missing a date: dialog *"File 2 ready documents (of 19 in the Review queue)? Not included — they stay in the queue: • 9 you put back — each waits for your own Confirm • 7 flagged — waiting for you to check a value • 1 missing a required detail…"* → **"Filed 11 documents · 8 left for review"**; receipt "✓ Filed 11 documents — Copperfield Electrical (9), Larkspur Interiors (1), Ironbridge Fabrication (1)" (s81, s82).
+
+**Scary buttons (s66–s69).** All told the truth (table below).
+
+---
+
+## VERIFY lines (round-19 fixes)
+
+1. **N1 the wrong-date self-file via Reprocess: FIXED.** Teach road and Reprocess road now behave the same: 5/5 wrong dates held, the old (right) value one click away on 4, Reprocess kept every hold, the dialog says so, two confirms filed 9 with zero wrong. **BETTER-BUT:** after Reprocess every "Read differently" note is printed twice; invoice_16's hold ("Read from your new box — confirm once.") offers nothing to click because the import had no date — you must read the page. Never saw "the page reads Invoice Date two ways".
+2. **N3 wizard warning: FIXED.** "Redraw value" is the blue primary, "Use it anyway" a grey ghost, at both the date step and the number step (s09, s11). **BETTER-BUT:** the summary and done card carry no mark that two warnings were overridden; "a Invoice Number". **N3 re-teach re-reads the siblings: FIXED** (s20).
+3. **N2 Ironbridge 18-on-zero-confirms: FIXED.** Waited at "2 more", then "1 more", then filed on the third; head and strip agreed throughout. Larkspur identical.
+4. **N4 "confirm once" ×6 on the issuer: FIXED** — 0 occurrences in three scans, even after my deliberate one-line "DOCUMENT" box.
+5. **N5 Audit names Chris: FIXED** — "Auto-filed (after your confirms)" in the USER column (s61b).
+6. **N6 File All "nothing ready" over put-backs: FIXED on the copy, NEW-PROBLEM on the action** — the toast and the dialog both name "9 you put back", and then the dialog's "File 2" filed 11 (card 1).
+7. **N8 Home: FIXED** ("40 filed by themselves in the last 7 days."). **N8 lane notice: NOT FIXED as seen** — after the third confirm on Copperfield and on Ironbridge the hint still read "…now that you have taught its layout — 0 of 2 done". (After a *teach* the same words are right, and they were.)
+8. **A3 Put back: FIXED** through a hand confirm and a hand correction, chip "· put back", document copy — **undone by File All Ready** (card 1), and the put-back chips drop off the strip once three newer chips arrive (card 8).
+9. **A6 honest copy: ENCOUNTERED, reads well** (the Customer Name line, the "wasn't read certainly enough" line). **The "Ready to file" doc under "✓ files by itself" still sits forever** — one per sender tonight, each the document I had open when the sender crossed the line (card 6).
+
+---
+
+## NEW finding cards (ranked by harm)
+
+### 1. "File All Ready" filed the nine documents its own dialog promised to leave in the queue
+- **Citation:** Review → File All Ready (s81): *"File 2 ready documents (of 19 in the Review queue)? Not included — they stay in the queue: • 9 you put back — each waits for your own Confirm • 7 flagged — waiting for you to check a value • 1 missing a required detail (date, reference or sender)"* → progress *"Filed 11 · 8 left for review … Already-filed documents stay filed - Stop is not an undo."* → receipt *"✓ Filed 11 documents — Copperfield Electrical (9), Larkspur Interiors (1), Ironbridge Fabrication (1)."* Put-back document copy (s33): "You put this document back — it won't file itself until you confirm it."
+- **User-moment:** Filing the two ready ones so I could go through my nine put-backs one at a time, as the app told me to.
+- **Observed confusion:** I said yes to "File 2". It filed 11. The nine I had deliberately pulled out to check went in the one way the app said they wouldn't. They were all right tonight — I'd checked them — but Put back exists for the night they aren't.
+- **Harm:** trust-eroded, borderline blocked (the brake doesn't hold under the bulk button). Fear #2 and #3 together.
+- **Class:** CONFUSION.
+- **Proposed alternative:** File All files exactly the number in its dialog; put-back documents are excluded until each is confirmed (or the dialog offers them as a separate ticked line "• 9 you put back — tick to include"). Keep the count honest either way.
+- **What I may be missing:** the nine may count as "ready" because I'd already corrected nothing on them; but the dialog itself listed them as excluded, so the words and the action disagree whichever rule is right.
+
+### 2. A one-click button filed a worksheet under a folder called "Ticket-Type" — the wizard stops this exact mistake, Review doesn't
+- **Citation:** Review, `Worksheet.14-01-2026.2601-0563-1-1.pdf` at 100% (s72): DOCUMENT ISSUER note *"Read differently after learning — was 'Ticket Type', now 'DOCUMENT SOLUTIONS'. Please check which is right. Use "Ticket Type" / Keep "DOCUMENT SOLUTIONS""*. After Use: "Ticket Type · High · 95%", Confirm green → *"Filed as Service-Worksheet.14-01-2026.2601-0563-1.pdf in Ticket-Type / 2026 / January."* Its twin offered *Use "DOCUMENT OLUTIONS"*. Wizard, same afternoon (s56): *""DOCUMENT" is part of DOCUMENT SOLUTIONS … Filing as "DOCUMENT" would start a second folder."*
+- **User-moment:** Clearing a 100% document that the app itself said needed a check.
+- **Observed confusion:** The letterhead says DOCUMENT SOLUTIONS, the sender already has a layout, the value shown was right — and the one-click option is the wrong one, with no "this would start a second folder" anywhere on the road to the folder. I'd pressed it on purpose; a tired person would press it because it's the button on the left.
+- **Harm:** misfiled folder (repaired), plus an empty `Ticket-Type\2026\January` left on disk.
+- **Class:** QUESTION — why is a value the app already replaced offered back as a one-click, with no second-folder warning, when the wizard warns twice?
+- **Proposed alternative:** Never offer a sender name that isn't a known sender as a one-click; if the old value must be reachable, the same "would start a second folder" line the wizard uses, at Use and again at Confirm.
+- **What I may be missing:** on a date the old value is usually the right one — the button is good there; the sender box may just need different rules.
+
+### 3. The offer bar that answers itself, and two of them at once
+- **Citation:** Review top-left (s72, s75b): *"1 reprocessed document read clean and is ready to file — [✓ File 1] [Review them] [Not now]"* stacked above *"1 Ironbridge Fabrication Invoice document already read cleanly and now pass every check — nothing was re-read. 2 other senders are also ready — file these first and the next offer follows. [✓ File up to 1] [Review them] [Not now] Choose which…"*. 1.5 s after my next confirm: strip "✓ Just now · 1 filed themselves" (2603-1351-1); Audit 05:33:28: `scope_sweep_offered` → `scope_sweep_auto_accepted`.
+- **User-moment:** Reading the first bar to decide.
+- **Observed confusion:** Three buttons, and the app pressed one of them for me while I read the other bar. "Not now" isn't "not now" if it expires in a second and a half. And after the Larkspur doc filed, its bar stayed ("1 Larkspur Interiors Invoice … File up to 1", s80).
+- **Harm:** trust-eroded (a question that decides itself is worse than no question).
+- **Class:** QUESTION.
+- **Proposed alternative:** Either it's a question (then wait for me) or it's a notice ("1 reprocessed document filed itself — Put back"); one bar at a time; drop a bar when its document is gone.
+- **What I may be missing:** the self-answer may be the sender's normal "files by itself" catching up with a document that was only waiting because I'd had it open; if so, say that instead of offering buttons.
+
+### 4. Correcting the sender wipes the two right values, while their badges still say "High · 97%"
+- **Citation:** Review (s75b): *"⚠ Worksheet Number and Worksheet Date were read using the previous supplier's learned positions, so they have been cleared. Check them before you confirm. [Undo — put them back]"*; fields "Not found" under WORKSHEET NUMBER "High · 97%" and WORKSHEET DATE "High · 96%"; Confirm greyed: "To file this document, please fill in Worksheet Date and Worksheet Number — these fields are needed to file it."
+- **User-moment:** Typing the right sender over a wrong one, with the right number and date already on screen.
+- **Observed confusion:** I fixed one box and lost two. "Previous supplier's learned positions" is not a sentence I'd say aloud. Undo worked, but I'd have retyped them if I hadn't spotted the small link.
+- **Harm:** slowed; the green "High" badge on an empty box is a small lie.
+- **Class:** PREFERENCE.
+- **Proposed alternative:** Keep the values and ask: "You changed the sender — the number and date were read for the old one. Keep them? [Keep] [Clear]". Clear the badge when the box is cleared.
+- **What I may be missing:** clearing may be the safe default when the new sender has its own layout; here both senders were the same company.
+
+### 5. The lane notice and the done card still count and name things differently from what happens
+- **Citation:** After the third Copperfield confirm: *"Quietly re-reading Copperfield Electrical documents you haven't opened, now that you have taught its layout — 0 of 2 done."*; same on Ironbridge. Ironbridge done card: "…will file themselves — **11 are waiting** that look just like this one" (18 then filed); Larkspur card "15 are waiting" (16 then filed). Review type panel: "2 taught fields" on senders I taught three.
+- **User-moment:** Reading the screen to predict what will happen next.
+- **Observed confusion:** I confirmed, it says I taught. The card says 11, the pile is 19. Small, but these are the sentences I use to trust the rest.
+- **Harm:** trust-eroded (mild).
+- **Class:** CONFUSION.
+- **Proposed alternative:** "…now that this sender files by itself — 0 of 2 done"; "19 are waiting — 11 look just like this one"; "3 taught fields".
+- **What I may be missing:** the re-read after a confirm may genuinely be "the layout" doing the reading; the card's 11 may be a stricter "look just like" count. Either way, say which.
+
+### 6. The document I'm looking at never files by itself, and nothing says so
+- **Citation:** Review, `IronbridgeFabrication_invoice_16.pdf` 97% (s80): "Nothing was flagged on this document — check the values and confirm to file it. / Ready to file" under the group head "Ironbridge Fabrication · 1 document · ✓ files by itself" — for 25 minutes. Same for Copperfield invoice_17, Larkspur invoice_14, Doc Sol 2603-1351-1.
+- **User-moment:** Waiting for the last one of a sender to go.
+- **Observed confusion:** Everything else from the sender filed; this one, which I happened to have open when the sender crossed the line, sat there until I pressed Confirm or File All.
+- **Harm:** slowed; "files by itself" over a document that doesn't.
+- **Class:** QUESTION.
+- **Proposed alternative:** "Ready to file — it won't file itself while you have it open; press Confirm or move on and it goes with the next batch" (and then actually go with the next batch).
+- **What I may be missing:** not filing the document under my cursor is probably deliberate and kind; it only needs to be said, and to catch up later.
+
+### 7. Holds print twice after a Reprocess, and still look like debug text
+- **Citation:** `CopperfieldElectrical_invoice_19.pdf` after "Reprocess 19" (s24): *"Read differently after learning — was '23-04-2026', now '02-04-2026'. Please check which is right. Read differently after learning — was '23-04-2026', now '02-04-2026'. Please check which is right. Use "23-04-2026" Keep "02-04-2026""* — red monospace, two tiny grey buttons. After Use/Keep the headline "Needs a quick check — 1 field was flagged by a formatting check." stays until Confirm.
+- **User-moment:** Reading the hold for the second time in one night.
+- **Observed confusion:** I read it twice looking for the difference between the two sentences; there isn't one. The INVOICE DATE badge above it says "High · 94%" on a wrong value.
+- **Harm:** cosmetic → slowed.
+- **Class:** PREFERENCE.
+- **Proposed alternative:** One sentence; normal app buttons sized like the others; drop the "High" badge while a hold is on the field; clear the headline when the hold is answered.
+- **What I may be missing:** the doubling may be the two roads (re-read and Reprocess) each leaving their note — which is also the sign they now agree.
+
+### 8. The strip forgets, and Home has two words for one thing
+- **Citation:** Strip at 05:15 (s49): "✓ Just now · 14 filed themselves ▾ ✓ 8 min ago · 15 filed themselves ▾" — the "↩ 9 put back" and "9 filed themselves · put back" chips from 15 minutes earlier are gone, though the 9 were still in the queue. Home (s83): "4 senders file by themselves after your confirmations." / "2 suppliers have graduated to fully automatic filing · learned 4 layouts." Audit: rows "scope_sweep_offered / scope_sweep_auto_accepted / reprocess_holds" with an empty CATEGORY and target "scope".
+- **User-moment:** Coming back to the strip to find my put-back chip; reading Home.
+- **Observed confusion:** Where did the put-back record go? Are "senders" and "suppliers" the same four? What "graduated" means I can guess; I wouldn't say it.
+- **Harm:** cosmetic.
+- **Class:** PREFERENCE.
+- **Proposed alternative:** Keep a chip while any of its documents is still in the queue; one word ("senders"); "2 senders now file everything by themselves"; Audit rows in plain words ("Offered to file 1 document", "Re-read 13 documents and kept the holds").
+- **What I may be missing:** the strip may cap at three chips by design; the Audit rows may be for the owner, not me.
+
+*(Copy notes, not cards: "manually mapped value differs from the usual format for this field — please verify" on right values (Ironbridge invoice_08, Doc Sol 2603-0668-1) — "manually mapped" isn't my language and the value was fine; "Are you sure? That looks like a DATE, not a Invoice Number"; the wizard summary shows "Invoice Date INV-29597" with no mark that I overrode a warning; the empty `Copperfield-Electrical\Unknown-Year\Unknown-Month` and `Ticket-Type\2026\January` folders stay on disk after the repairs; the import screen still said "All 22 scans from this folder have been brought in" while showing the Copperfield Processed folder.)*
+
+---
+
+## Warnings truth table
+
+| Action | Warning (verbatim) | What happened | Truthful? |
+|---|---|---|---|
+| Wizard date step holding "INV-29597" | ⚠ That doesn't read like a date. If the box caught the wrong text, redraw it — or type the Invoice Date below. [Use it anyway] [Redraw value ●] | I pressed Use anyway → filed to Unknown-Year (my choice) | Yes — and the right button leads now |
+| Wizard number step holding a date | ⚠ Are you sure? That looks like a DATE, not a Invoice Number — the Invoice Date is its own field. | Same | Yes |
+| Wizard fragment name, at issuer + at Save | "DOCUMENT" is part of DOCUMENT SOLUTIONS… Filing as "DOCUMENT" would start a second folder. Use "DOCUMENT SOLUTIONS" / Keep "DOCUMENT" anyway | Use at Save → filed under DOCUMENT SOLUTIONS | Yes, twice |
+| Reprocess N from sender | Re-read all 19 documents … A value that reads differently from before is kept for you to check — the previous value is one click away. | 5 holds kept, right value in Use; 0 filed | **Yes (new)** |
+| Single-doc Reprocess on a held doc | *(no dialog)* | Hold kept | — |
+| Send back (Search) | Send this document back to the Review queue? It stays filed until you re-confirm it. | Back in queue; file replaced on re-confirm | Yes |
+| Put back (chip) | *(no warning)* → toast Put 9 documents back in the Review queue. | Stayed through a hand confirm + a hand correction; **filed by File All Ready** | Half |
+| File All Ready (no ready docs) | toast: Nothing is ready to file by itself — 9 you put back are waiting for your Confirm, and the rest are waiting on a check or a missing detail. | Nothing filed | Yes |
+| File All Ready (2 ready) | File 2 ready documents (of 19 in the Review queue)? Not included — they stay in the queue: • 9 you put back — each waits for your own Confirm • 7 flagged … • 1 missing … | **Filed 11 incl. the 9 put back** | **No** |
+| Review Use "Ticket Type" + Confirm | *(nothing)* | Filed under Ticket-Type\2026\January | No warning |
+| Sender retyped after that | ⚠ Worksheet Number and Worksheet Date were read using the previous supplier's learned positions, so they have been cleared. Check them before you confirm. [Undo — put them back] | Values wiped; Undo restored both | Yes (jargon) |
+| Offer bar "1 reprocessed document read clean and is ready to file — File 1 / Review them / Not now" | — | Filed itself 1.5 s after my next confirm | Half — it didn't wait for an answer |
+| Re-import a Processed folder | This folder holds the original scans of 9 documents you have already filed. Importing it again would create duplicates. Import it anyway? | Cancelled → "COULDN'T START", nothing imported | Yes |
+| Delete one (Review) | Delete "Print-Tracker.H7R5326676.pdf"? It goes to the app's recycle bin — you can restore it from Search. | In bin; Restore returned it to the queue | Yes |
+| Delete All Review | Delete ALL 21 document(s) in the Review queue? They go to the app's recycle bin… Files on disk are kept. Confirmed and deferred documents are NOT affected. | Not executed (read, cancelled) | Reads true |
+| Empty bin (Search) | Permanently delete all 1 document in the recycle bin, including their PDF files? This cannot be undone. Your original scans in the Processed folder are not touched. | App copy gone; original still in `Doc sol\Processed` | Yes |
+| Split (1 page) | This document is only one page — there's nothing to split. | Nothing | Yes |
+
+---
+
+## FILED-DOCS TABLE (73 on disk = 73 in the app's list; 32 by me incl. 11 via File All Ready, 41 "filed itself", 0 auto at import. Copperfield/Ironbridge/Larkspur checked against my page-truth sheets; Doc Sol against tonight's header renders `r20_truth_ds_*.png`. Wrong at some point: **2**, both my deliberate probes (the swapped teach; Use "Ticket Type"). Held correctly with a wrong value shown: **6**. Wrong filed by the app: **0**. Wrong now: **0**.)
+
+| # | original scan | sender folder | year/month | filed name | how filed | page check |
+|---|---|---|---|---|---|---|
+| 2 | CopperfieldElectrical_invoice_01.pdf | Copperfield-Electrical | 2026/November | Invoice.23-11-2026.INV-29597.pdf | me (wizard) | **WRONG AT FIRST (my deliberate repeat of the round-19 slip, two warnings waved through): filed `Unknown-Year/Unknown-Month/Invoice.23112026.pdf`. Sent back + re-taught → correct now** (page INV-29597 23-11-2026 OK) |
+| 1 | CopperfieldElectrical_invoice_02.pdf | Copperfield-Electrical | 2026/December | Invoice.17-12-2026.INV-41557.pdf | filed itself → put back → File All Ready | OK |
+| 10 | CopperfieldElectrical_invoice_03.pdf | Copperfield-Electrical | 2026/July | Invoice.21-07-2026.INV-16033.pdf | filed itself → put back → File All Ready | OK |
+| 4 | CopperfieldElectrical_invoice_04.pdf | Copperfield-Electrical | 2026/January | Invoice.15-01-2026.INV-83936.pdf | filed itself → put back → File All Ready | OK |
+| 5 | CopperfieldElectrical_invoice_05.pdf | Copperfield-Electrical | 2026/December | Invoice.03-12-2026.INV-62751.pdf | me | **HELD with 17-02-2026 shown and Use "03-12-2026" offered; Use, then Confirm** (OK) |
+| 6 | CopperfieldElectrical_invoice_06.pdf | Copperfield-Electrical | 2026/August | Invoice.09-08-2026.INV-80744.pdf | filed itself → put back → File All Ready | OK |
+| 7 | CopperfieldElectrical_invoice_07.pdf | Copperfield-Electrical | 2026/October | Invoice.12-10-2026.INV-26339.pdf | me | **HELD with 02-10-2026 shown and Use "12-10-2026" offered; Use, then Confirm** (OK) |
+| 3 | CopperfieldElectrical_invoice_08.pdf | Copperfield-Electrical | 2026/March | Invoice.11-03-2026.INV-28333.pdf | filed itself → put back → File All Ready | OK |
+| 9 | CopperfieldElectrical_invoice_09.pdf | Copperfield-Electrical | 2026/July | Invoice.13-07-2026.INV-37516.pdf | me | **HELD with 03-07-2026 shown and Use "13-07-2026" offered; Use, then Confirm** (OK) |
+| 8 | CopperfieldElectrical_invoice_10.pdf | Copperfield-Electrical | 2026/September | Invoice.25-09-2026.INV-73127.pdf | filed itself → put back → File All Ready | OK |
+| 11 | CopperfieldElectrical_invoice_11.pdf | Copperfield-Electrical | 2026/October | Invoice.22-10-2026.INV-39435.pdf | filed itself → put back → File All Ready | OK |
+| 20 | CopperfieldElectrical_invoice_13.pdf | Copperfield-Electrical | 2026/November | Invoice.14-11-2026.INV-12110.pdf | me | OK |
+| 13 | CopperfieldElectrical_invoice_15.pdf | Copperfield-Electrical | 2026/March | Invoice.21-03-2026.INV-28873.pdf | filed itself → put back → File All Ready | OK |
+| 16 | CopperfieldElectrical_invoice_16.pdf | Copperfield-Electrical | 2026/November | Invoice.03-11-2026.INV-29273.pdf | me | **HELD with 13-11-2026 shown (page 03/11/2026) under "Read from your new box — confirm once." — no right value offered; corrected by hand** (OK) |
+| 17 | CopperfieldElectrical_invoice_17.pdf | Copperfield-Electrical | 2026/January | Invoice.18-01-2026.INV-20948.pdf | me | OK ("Ready to file" that never filed itself) |
+| 18 | CopperfieldElectrical_invoice_18.pdf | Copperfield-Electrical | 2026/April | Invoice.18-04-2026.INV-94023.pdf | me | OK |
+| 19 | CopperfieldElectrical_invoice_19.pdf | Copperfield-Electrical | 2026/April | Invoice.23-04-2026.INV-35864.pdf | me | **HELD with 02-04-2026 shown and Use "23-04-2026" offered; Use, then Confirm** (OK) |
+| 14 | CopperfieldElectrical_invoice_20.pdf | Copperfield-Electrical | 2026/October | Invoice.15-10-2026.INV-75373.pdf | filed itself → put back → File All Ready | OK |
+| 65 | Worksheet.04-02-2026.2602-0128-1.pdf | DOCUMENT-SOLUTIONS | 2026/February | Service-Worksheet.04-02-2026.2602-0128-1.pdf | me (wizard) | page 2602-0128-1 04/02/2026 OK |
+| 62 | Worksheet.05-05-2026.2605-0065-1.pdf | DOCUMENT-SOLUTIONS | 2026/May | Service-Worksheet.05-05-2026.2605-0065-1-DUPLICATE.pdf | filed itself | OK (copy) |
+| 61 | Worksheet.05-05-2026.4OU0-UU00.pdf | DOCUMENT-SOLUTIONS | 2026/May | Service-Worksheet.05-05-2026.2605-0065-1.pdf | filed itself | OK (copy) |
+| 63 | Worksheet.05-05-2026.Booking.pdf | DOCUMENT-SOLUTIONS | 2026/May | Service-Worksheet.05-05-2026.2605-0065-1-DUPLICATE-2.pdf | filed itself | OK (copy) |
+| 64 | Worksheet.12-01-2026.2601-0371-1-1.pdf | DOCUMENT-SOLUTIONS | 2026/January | Service-Worksheet.12-01-2026.2601-0371-1.pdf | me (wizard, Use at Save) | OK |
+| 68 | Worksheet.13-02-2026.2602-0527-1-1.pdf | DOCUMENT-SOLUTIONS | 2026/February | Service-Worksheet.13-02-2026.2602-0527-1.pdf | filed itself | OK |
+| 67 | Worksheet.14-01-2026.2601-0563-1-1.pdf | DOCUMENT-SOLUTIONS | 2026/January | Service-Worksheet.14-01-2026.2601-0563-1.pdf | me | **WRONG FOLDER AT FIRST (my deliberate Use "Ticket Type" + Confirm filed it under Ticket-Type/2026/January, no warning). Sent back, sender retyped (values wiped, Undo restored them) → correct now** (OK) |
+| 76 | Worksheet.16-03-2026.2603-0670-1.pdf | DOCUMENT-SOLUTIONS | 2026/March | Service-Worksheet.16-03-2026.2603-0670-1.pdf | me | OK |
+| 77 | Worksheet.17-04-2026.2604-0511-1-1.pdf | DOCUMENT-SOLUTIONS | 2026/April | Service-Worksheet.17-04-2026.2604-0511-1.pdf | filed itself (on Reprocess) | OK |
+| 73 | Worksheet.22-05-2026.2605-0805-1.pdf | DOCUMENT-SOLUTIONS | 2026/May | Service-Worksheet.22-05-2026.2605-0805-1.pdf | filed itself | OK |
+| 75 | Worksheet.22-05-2026.9605-0769-1.pdf | DOCUMENT-SOLUTIONS | 2026/May | Service-Worksheet.22-05-2026.2605-0769-1.pdf | filed itself (on Reprocess) | page 2605-0769-1 22/05/2026 OK (the filename's 9605 was the decoy) |
+| 80 | Worksheet.27-05-2026.2605-0849-1.pdf | DOCUMENT-SOLUTIONS | 2026/May | Service-Worksheet.27-05-2026.2605-0849-1.pdf | filed itself (on Reprocess) | OK |
+| 78 | Worksheet.31-03-2026.2603-1351-1.pdf | DOCUMENT-SOLUTIONS | 2026/March | Service-Worksheet.31-03-2026.2603-1351-1-DUPLICATE-3.pdf | filed itself (offer bar, 1.5 s) | OK (copy) |
+| 74 | Worksheet.31-03-2026.31032026-1.pdf | DOCUMENT-SOLUTIONS | 2026/March | Service-Worksheet.31-03-2026.2603-1351-1.pdf | filed itself (on Reprocess) | OK (copy) |
+| 82 | Worksheet.31-03-2026.31032026.pdf | DOCUMENT-SOLUTIONS | 2026/March | Service-Worksheet.31-03-2026.2603-1351-1-DUPLICATE-2.pdf | filed itself (on Reprocess) | OK (copy) |
+| 81 | Worksheet.31-03-2026.Booking.pdf | DOCUMENT-SOLUTIONS | 2026/March | Service-Worksheet.31-03-2026.2603-1351-1-DUPLICATE.pdf | filed itself (on Reprocess) | OK (copy) |
+| 27 | IronbridgeFabrication_invoice_01.pdf | Ironbridge-Fabrication | 2026/February | Invoice.06-02-2026.INV-80458.pdf | me (wizard) | OK |
+| 26 | IronbridgeFabrication_invoice_02.pdf | Ironbridge-Fabrication | 2026/October | Invoice.19-10-2026.INV-79039.pdf | filed itself (after 3 confirms) | OK |
+| 21 | IronbridgeFabrication_invoice_03.pdf | Ironbridge-Fabrication | 2026/November | Invoice.24-11-2026.INV-50998.pdf | filed itself | OK |
+| 29 | IronbridgeFabrication_invoice_04.pdf | Ironbridge-Fabrication | 2026/March | Invoice.25-03-2026.INV-73553.pdf | filed itself | OK |
+| 30 | IronbridgeFabrication_invoice_05.pdf | Ironbridge-Fabrication | 2026/February | Invoice.24-02-2026.INV-54958.pdf | filed itself | OK |
+| 28 | IronbridgeFabrication_invoice_06.pdf | Ironbridge-Fabrication | 2026/January | Invoice.28-01-2026.INV-19842.pdf | filed itself | OK |
+| 24 | IronbridgeFabrication_invoice_07.pdf | Ironbridge-Fabrication | 2026/February | Invoice.26-02-2026.INV-29130.pdf | filed itself | OK |
+| 23 | IronbridgeFabrication_invoice_08.pdf | Ironbridge-Fabrication | 2026/October | Invoice.06-10-2026.INV-86202.pdf | me | OK (held on "manually mapped value differs…", value right) |
+| 22 | IronbridgeFabrication_invoice_09.pdf | Ironbridge-Fabrication | 2026/April | Invoice.17-04-2026.INV-32871.pdf | filed itself | OK |
+| 25 | IronbridgeFabrication_invoice_10.pdf | Ironbridge-Fabrication | 2026/June | Invoice.08-06-2026.INV-56529.pdf | filed itself | OK |
+| 35 | IronbridgeFabrication_invoice_11.pdf | Ironbridge-Fabrication | 2026/December | Invoice.13-12-2026.INV-52418.pdf | filed itself | OK |
+| 37 | IronbridgeFabrication_invoice_12.pdf | Ironbridge-Fabrication | 2026/January | Invoice.25-01-2026.INV-92080.pdf | filed itself | OK |
+| 31 | IronbridgeFabrication_invoice_13.pdf | Ironbridge-Fabrication | 2026/March | Invoice.01-03-2026.INV-33875.pdf | filed itself | OK |
+| 39 | IronbridgeFabrication_invoice_14.pdf | Ironbridge-Fabrication | 2026/October | Invoice.10-10-2026.INV-49114.pdf | me | OK |
+| 40 | IronbridgeFabrication_invoice_15.pdf | Ironbridge-Fabrication | 2026/September | Invoice.15-09-2026.INV-97674.pdf | me | OK |
+| 38 | IronbridgeFabrication_invoice_16.pdf | Ironbridge-Fabrication | 2026/January | Invoice.10-01-2026.INV-64013.pdf | File All Ready | OK ("Ready to file" that never filed itself) |
+| 34 | IronbridgeFabrication_invoice_17.pdf | Ironbridge-Fabrication | 2026/December | Invoice.19-12-2026.INV-98275.pdf | filed itself | OK |
+| 33 | IronbridgeFabrication_invoice_18.pdf | Ironbridge-Fabrication | 2026/May | Invoice.17-05-2026.INV-38110.pdf | filed itself | OK |
+| 32 | IronbridgeFabrication_invoice_19.pdf | Ironbridge-Fabrication | 2026/June | Invoice.26-06-2026.INV-53350.pdf | filed itself | OK |
+| 36 | IronbridgeFabrication_invoice_20.pdf | Ironbridge-Fabrication | 2026/June | Invoice.06-06-2026.INV-47935.pdf | filed itself | OK |
+| 45 | LarkspurInteriors_invoice_01.pdf | Larkspur-Interiors | 2026/March | Invoice.19-03-2026.INV-19590.pdf | me (wizard) | OK |
+| 48 | LarkspurInteriors_invoice_02.pdf | Larkspur-Interiors | 2026/April | Invoice.02-04-2026.INV-95206.pdf | me | **HELD with 12-04-2026 shown and Use "02-04-2026" offered; Use, then Confirm** (OK) |
+| 41 | LarkspurInteriors_invoice_03.pdf | Larkspur-Interiors | 2026/December | Invoice.05-12-2026.INV-77475.pdf | filed itself | OK |
+| 47 | LarkspurInteriors_invoice_04.pdf | Larkspur-Interiors | 2026/January | Invoice.10-01-2026.INV-39546.pdf | filed itself | OK |
+| 43 | LarkspurInteriors_invoice_05.pdf | Larkspur-Interiors | 2026/August | Invoice.24-08-2026.INV-98548.pdf | filed itself | OK |
+| 46 | LarkspurInteriors_invoice_06.pdf | Larkspur-Interiors | 2026/August | Invoice.17-08-2026.INV-71770.pdf | filed itself | OK |
+| 42 | LarkspurInteriors_invoice_07.pdf | Larkspur-Interiors | 2026/April | Invoice.28-04-2026.INV-39602.pdf | filed itself | OK |
+| 49 | LarkspurInteriors_invoice_08.pdf | Larkspur-Interiors | 2026/April | Invoice.03-04-2026.INV-13355.pdf | filed itself | OK |
+| 50 | LarkspurInteriors_invoice_09.pdf | Larkspur-Interiors | 2026/November | Invoice.19-11-2026.INV-20421.pdf | filed itself | OK |
+| 44 | LarkspurInteriors_invoice_10.pdf | Larkspur-Interiors | 2026/January | Invoice.07-01-2026.INV-33129.pdf | filed itself | OK |
+| 53 | LarkspurInteriors_invoice_11.pdf | Larkspur-Interiors | 2026/September | Invoice.24-09-2026.INV-61852.pdf | filed itself | OK |
+| 59 | LarkspurInteriors_invoice_12.pdf | Larkspur-Interiors | 2026/July | Invoice.20-07-2026.INV-77208.pdf | me | OK |
+| 54 | LarkspurInteriors_invoice_13.pdf | Larkspur-Interiors | 2026/October | Invoice.11-10-2026.INV-76500.pdf | filed itself | OK |
+| 57 | LarkspurInteriors_invoice_14.pdf | Larkspur-Interiors | 2026/October | Invoice.15-10-2026.INV-39621.pdf | File All Ready | OK ("Ready to file" that never filed itself) |
+| 52 | LarkspurInteriors_invoice_15.pdf | Larkspur-Interiors | 2026/August | Invoice.16-08-2026.INV-84857.pdf | filed itself | OK |
+| 58 | LarkspurInteriors_invoice_16.pdf | Larkspur-Interiors | 2026/October | Invoice.24-10-2026.INV-19277.pdf | me | OK |
+| 51 | LarkspurInteriors_invoice_17.pdf | Larkspur-Interiors | 2026/April | Invoice.06-04-2026.INV-27826.pdf | filed itself | OK |
+| 56 | LarkspurInteriors_invoice_18.pdf | Larkspur-Interiors | 2026/September | Invoice.03-09-2026.INV-36285.pdf | filed itself | OK |
+| 55 | LarkspurInteriors_invoice_20.pdf | Larkspur-Interiors | 2026/July | Invoice.02-07-2026.INV-15073.pdf | filed itself | OK |
+
+Left in Review at the end (8): Copperfield invoice_14 + invoice_12 (held on right values — "Kept the read value…"); Larkspur invoice_19 (held, right value, "32/12/2026" note); Doc Sol 2603-0668-1 ("manually mapped value differs…", right), 2603-0667-1 ×2 ("taught box's edge cuts through…", right — page says 16/03/2026), 2601-0195-1 (Keep pressed, waiting for Confirm), the stamped Booking copy (no number/date). Print-Tracker deleted then permanently removed by my Empty bin; its original scan is still in `Doc sol\Processed`. Ghost folders on disk: `Copperfield-Electrical\Unknown-Year\Unknown-Month`, `Ticket-Type\2026\January`.
+
+---
+
+## What genuinely worked
+**Copperfield, the whole road, with my mistake in it.** Two warnings with the right button leading; the corrected re-teach re-read the pile by itself; five wrong dates, five holds, four of them with the right date one click away and the fifth at least stopped; "Reprocess 19" kept every hold and said it would; two confirms, nine filed, every one right. Then Ironbridge and Larkspur both waited for their two confirms and filed 29 between them with nothing wrong. The Audit screen finally says "Auto-filed (after your confirms)" and Home finally says "40 filed by themselves". That is the last three nights' headline fixed, and I watched it happen.
+
+## Top friction
+**Put back doesn't survive File All Ready.** The dialog lists the nine as "Not included — they stay in the queue", and they don't. Put back is the one brake I have on the app filing by itself; tonight the bulk button drove straight through it. Close behind: a one-click button in Review that files a sender under a name the wizard would have refused twice.
+
+## Would I keep using this after two weeks?
+**Yes.** 73 filed, none wrong, and for the first time the app caught every wrong read I could provoke and showed me the right value. I would put the documents back that I want to look at — and tonight I learned not to press File All Ready until I've been through them, which is exactly the rule the dialog told me I didn't need. Fix card 1 and card 2 and I'd stop opening the folder.
+
+## Humility
+- One simulated persona driving a script. **The two wrong filings tonight were mine on purpose:** I pressed "Use it anyway" past two clear warnings to reproduce round 19, and I pressed Use "Ticket Type" to see what the button would do. The app filed nothing wrong on its own.
+- My driver had a document open at the moment each sender crossed the line, which is why one "Ready to file" document per sender sat there; a person clicking around would hit the same thing, but perhaps less often.
+- I built the filed table and the "who filed it" column from the app's own records file, read-only; a customer sees only the Audit screen and the strip.
+- I didn't run SINGLE, IMPORT, IMPORT2 or the Nordwind type-split this round, so anything about those is unverified tonight.
+- The lane-hint wording ("now that you have taught its layout" after a confirm) may be tied to something I can't see from the screen; I report the words as they appeared.
+- I don't know whether the strip drops chips on a count or on a clock; I only know the put-back chips were gone while the documents were still in the queue.
+- Every native dialog tonight was logged and answered on purpose; no stray watcher was left running (checked before writing this).
+
