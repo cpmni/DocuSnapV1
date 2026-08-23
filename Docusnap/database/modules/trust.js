@@ -613,14 +613,32 @@ function fieldVerifiable(type, cls) {
 
 // ── DB-backed scope + doc gates ───────────────────────────────────────────────
 
+// Chris round 19 N2 (Oracle WRONG LAYER → here, 2026-08-23): Ironbridge filed 18 invoices on ZERO hand
+// confirms. The doc-TYPE-scoped `supplier_name` group held exactly two distinct names (Copperfield ×7 +
+// Ironbridge's OWN wizard confirm ×1) → classifyLearnedShape says `constant` at ≤2 distinct →
+// valueMatchesShape is set membership → every Ironbridge sibling "matched" the identity it had just
+// taught. One confirm self-licensed a whole pile through the `gs === ''` fallback; the badge (supplier-
+// scoped solid formats) said "2 more to file by itself". A COMPANY key is an IDENTITY, not a shape:
+// with this on it verifies ONLY against its supplier-scoped group (the type-wide fallback stays for
+// every other field). DARK: `trust_company_key_own_scope` / TRUST_COMPANY_KEY_OWN_SCOPE.
+function _companyKeyOwnScopeEnabled(db) {
+  const env = process.env.TRUST_COMPANY_KEY_OWN_SCOPE;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try { return require('./learning').getSetting(db, 'trust_company_key_own_scope', 'false') === 'true'; }
+  catch { return false; }
+}
 /** Map field_key -> {cls, sampleValues} for a scope, preferring the supplier-scoped format over the doc-type-scoped one. */
-function _scopeFormats(db, normSupplier, slug, cachedFormats) {
+function _scopeFormats(db, normSupplier, slug, cachedFormats, opts = {}) {
   const all = cachedFormats || require('./learning').getFieldFormats(db);   // single source; cache for batch
+  const ownScope = (opts.companyKeyOwnScope !== undefined) ? !!opts.companyKeyOwnScope : _companyKeyOwnScopeEnabled(db);
+  const companyKeys = ownScope ? new Set(require('./document_types').COMPANY_KEYS || ['supplier_name']) : null;
   const out = new Map();
   for (const g of all) {
     if (String(g.document_type || '').toLowerCase().trim() !== slug) continue;
     const gs = _norm(g.supplier_name);
     if (gs !== normSupplier && gs !== '') continue;          // supplier-scoped OR doc-type-scoped
+    if (gs === '' && companyKeys && companyKeys.has(g.field_key)) continue;   // r19 N2: an identity never borrows the type's names
     if (!out.has(g.field_key) || gs === normSupplier) {      // supplier-scoped wins
       out.set(g.field_key, { cls: classifyLearnedShape(g.sample_values), sampleValues: g.sample_values });
     }
@@ -1211,6 +1229,7 @@ module.exports = {
   _corrobLicensed,                 // exported for the declined census + pins — decision logic stays HERE
   _critFieldCorrobRelaxEnabled, _vacuousCorrectedToIgnore,   // exported so pins can't drift from the default
   _roleDisagreementRefuseEnabled, _pageFamilyDisagrees,      // r19 (d): the role-field disagreement refusal
+  _companyKeyOwnScopeEnabled, _scopeFormats,                 // r19 N2: a company key verifies only against its own scope
   validDate: _validDate, validIban: _validIban, validVatGb: _validVatGb,
   currencyDpConsistent: _currencyDpConsistent, currencyConsistentForField: _currencyConsistentForField, matchesTypePattern: _matchesTypePattern,
   scopeTrust, docTrustGate, isAutoFileEligible, autoFileEligibleIds,
