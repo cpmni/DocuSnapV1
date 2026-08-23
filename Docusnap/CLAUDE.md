@@ -21,7 +21,26 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-23 EVENING (live test on a FRESH wiped DB): **READ `HANDOVER_2026-08-23_EVENING.md` FIRST**
+## ⏭ LATEST — 2026-08-24 OVERNIGHT (autonomous: corroboration fix + a Chris round): **READ `HANDOVER_2026-08-24.md` FIRST**
+Branch `feat/teach-side-overnight`, **origin at `034a3ad`, 4 overnight commits AHEAD + LOCAL/NOT pushed** (owner
+reviews then pushes). Ran while the owner slept. **(1) `9c21ed6` the Pelican-565 corroboration fix** (Oracle
+SIGN-OFF-W/COND): the record discarded a genuine independent mapping/crop agreement when the winner was bare
+`anchor` (the full-page text/keyword-family reader) — fold bare anchor→keyword in the LOCAL `_corrob_bucket`
+(shared bucket untouched; fraud stays closed by same-family skip; `agree_strong` closes the r19-unmask seam so a
+bare-anchor line never masks a keyword-regex dissent). Kill `CORROB_ANCHOR_AS_KEYWORD=0`. 26 pins green; realdoc
+A/B +2 correct heals, 0 new wrong, M_type=0. Go-forward: held docs reprocess to heal. **(2) Chris full vet** →
+strong yes; fixed **#6** (`33a9f6b`, "anchor"→"label" copy) + **#3** (`670ffc7`, the orphaned-doc-while-twins-
+auto-file: below-floor+graduated hold panel now guides to Reprocess, not "lower the bar"; + honest presence
+comments — the desktop heartbeat is DEAD, presence is a leaky 60s beat, NOT a mid-edit guard) + **Card 2**
+(`81719c1`, the nudge pointed "tools rail" → repointed under "This document"). Chris re-verify: #6 + #3 FIXED live.
+**OWNER VET QUEUE (not built):** #1 Terms "NOT YET IN FORCE"/[SOLICITOR:] notes (legal, your domain) · #2
+first-batch-all-hold (the misfile-safety arc — biggest friction, biggest risk) · **#3-A** the ZERO-CLICK orphan
+fix (Oracle-signed DARK `sweep_retrigger_on_view_release` — re-trigger the quiet-reread LANE on doc-close only;
+has a window-close-mid-edit trade-off to weigh) · #4 hold-summary double-counts one field (needs below-threshold
+field-KEY plumbing from getReviewQueue) · #5/Card 1 OCR misses a printed date/banner issuer (the 007/oscar arc) ·
+Card 3 clipped teach-box commits an invalid date with no warning. Sandbox left running on CDP 9223.
+
+## (previous) 2026-08-23 EVENING (live test on a FRESH wiped DB): `HANDOVER_2026-08-23_EVENING.md`
 Branch `feat/teach-side-overnight`, **HEAD `0b62235`, 63 commits ahead, NOT pushed.** The owner wiped the live DB
 and ran a hands-on session; ONE commit built the fixes (all OFF byte-identical, Oracle-gated): **(1)** activity-strip
 UX (two-line chips, ✕/click-to-close, always-a-receipt File All incl. 0-filed; `reviewEvents` dedups `dropped`);
