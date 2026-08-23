@@ -4104,13 +4104,18 @@ class ExtractionEngine:
         INDEPENDENCE IS METHOD FAMILY, NEVER A WITNESS COUNT. Same-pixel agreement is worthless
         (Oracle 2026-08-03: 5:1 false:true; re-proved 2026-08-11 when two preps agreed on the wrong
         P1), so buckets come from `_crosscheck_witness_bucket` — the Oracle-ratified grouping that
-        already excludes the independence frauds (anchor_registration, bare `anchor` = the same
-        full-page line the keyword pass reads). A winner whose method is EXCLUDED from bucketing can
-        never claim `independent_agree` (its would-be corroborators may share its pixels) — but a
-        bucketed candidate DISAGREEING with it is still recorded, because that is information in
-        either direction. Caveat, stated: `template_fixed` buckets into the mapping family, so its
-        record reads as memory-vs-page rather than crop-vs-page — for a RECORD that is the honest
-        framing (the Oakhaven leak's stamped VAT vs the page's own printed VAT is exactly this row).
+        excludes the located-by-fiat fraud (anchor_registration) and the crosscheck flip. Caveat,
+        stated: `template_fixed` buckets into the mapping family, so its record reads as memory-vs-page
+        rather than crop-vs-page — for a RECORD that is the honest framing (the Oakhaven leak's stamped
+        VAT vs the page's own printed VAT is exactly this row).
+        BARE `anchor` (gary → Oracle SIGN-OFF-W/COND 2026-08-23): the shared bucket EXCLUDES it, which
+        for the LIVE reconcile is right, but in the RECORD that discarded a genuine crop/mapping winner's
+        corroboration by a different-recipe read (the Pelican 565 hold — mapping box + full-page line
+        both read PI/25/5450, recorded as `agree:[]`). Bare `anchor` is the full-page TEXT-LINE reader
+        (anchor.py:1309 — a raw line slice from the SAME page-text pass the keyword regex reads), never a
+        crop, so it belongs to the KEYWORD family. Folded there HERE ONLY (record-only): anchor+keyword
+        collapse to one family (same pixels → no false independence — the fraud stays closed by same-
+        family skip, not by exclusion), while anchor+mapping/crop correctly counts as two recipes.
 
         Kill: FIELD_CORROBORATION_EMIT=0 (metadata only, default on)."""
         if os.environ.get('FIELD_CORROBORATION_EMIT', '1') == '0':
@@ -4123,11 +4128,18 @@ class ExtractionEngine:
         # class) as "same family". Special-cased HERE ONLY: `_crosscheck_witness_bucket` itself is
         # shared with the LIVE crosscheck-outlier reconcile and must not be re-tuned by a record.
         _MEMORY_METHODS = ('template_anchor', 'template_identity', 'template_identity_corroborated')
+        # Bare `anchor` → the KEYWORD family (record-only; see the docstring). Isolated kill so the A/B
+        # census can measure just this reclassification: CORROB_ANCHOR_AS_KEYWORD=0 restores the old
+        # (excluded) record. The SHARED _crosscheck_witness_bucket is NOT touched (it must keep excluding
+        # bare `anchor` for the live crosscheck-outlier reconcile — pinned).
+        _anchor_as_kw = os.environ.get('CORROB_ANCHOR_AS_KEYWORD', '1') != '0'
 
         def _corrob_bucket(stage, method):
             m = str(method or '')
             if m.startswith('template_fixed') or m in _MEMORY_METHODS:
                 return ('memory', False)
+            if _anchor_as_kw and m == 'anchor':
+                return ('keyword', False)
             return _crosscheck_witness_bucket(stage, method)
 
         out = {}
@@ -4141,7 +4153,15 @@ class ExtractionEngine:
             method = str(data.get('method') or '')
             win_bucket = _corrob_bucket(None, method)
             win_family = win_bucket[0] if win_bucket else _method_family(method)
-            agree, disagree = set(), {}
+            # agree_strong = agreeing families whose agreement comes from a candidate OTHER than a
+            # reclassified bare `anchor`. Oracle 2026-08-23 (the r19-unmask seam): a bare-anchor LINE
+            # read is the same pixels as the keyword REGEX, so a bare-anchor agreement must NOT SUPPRESS a
+            # genuine keyword-regex DISAGREEMENT (mask a correct-Y regex dissent behind a common-mode
+            # box+line misread of X, then auto-file X with no shape gate). Bare anchor still counts toward
+            # `agree` (it genuinely corroborates a DIFFERENT-family mapping/crop winner — the 565 heal),
+            # but only a NON-anchor agreement collapses a family's disagreement (the existing agree-wins
+            # rule). With CORROB_ANCHOR_AS_KEYWORD off this is inert (anchor is excluded, never in agree).
+            agree, agree_strong, disagree = set(), set(), {}
             for c in (self._field_candidates.get(key) or []):
                 b = _corrob_bucket(c.get('stage'), c.get('method'))
                 if not b:
@@ -4155,15 +4175,19 @@ class ExtractionEngine:
                 if _corrob_values_agree(cv, val):
                     if win_bucket is not None:
                         agree.add(fam)
+                        if not (_anchor_as_kw and str(c.get('method') or '') == 'anchor'):
+                            agree_strong.add(fam)   # a genuine (non-bare-anchor) read agrees
                 else:
                     disagree.setdefault(fam, str(cv))
             out[key] = {
                 'winner_family': win_family,
                 'agree': sorted(agree),
-                # a family with two candidates, one agreeing and one not, counts as agreement —
-                # its differing read stays out of `disagree` so the record never contradicts itself
+                # a family with two candidates, one agreeing and one not, counts as agreement — its
+                # differing read stays out of `disagree` so the record never contradicts itself. BUT a
+                # bare-anchor-only agreement does NOT collapse a genuine keyword-regex dissent (Oracle
+                # 2026-08-23 r19-unmask seam): suppress by agree_STRONG, not agree.
                 'disagree': [{'family': f, 'value': v}
-                             for f, v in sorted(disagree.items()) if f not in agree],
+                             for f, v in sorted(disagree.items()) if f not in agree_strong],
                 'independent_agree': bool(agree),
             }
         return out

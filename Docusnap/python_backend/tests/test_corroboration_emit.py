@@ -220,4 +220,66 @@ assert _cl({"independent_agree": True, "winner_family": "crop", "agree": []}) is
 assert _cl(None) is False
 ok("engine._corrob_licensed decision mirrors trust.js on the canonical cases")
 
+# ── 14. BARE-ANCHOR → KEYWORD FAMILY (2026-08-23; gary → Oracle SIGN-OFF-W/COND) ──────────────
+# Bare `anchor` is the full-page TEXT-LINE reader (anchor.py:1309), the keyword family's pixels — not a
+# crop. The shared bucket EXCLUDES it; the RECORD folds it into keyword so a genuine crop/mapping winner's
+# corroboration by a different-recipe read is no longer discarded (the Pelican 565 hold). Kill:
+# CORROB_ANCHOR_AS_KEYWORD=0.
+# HEAL — an ANCHOR winner corroborated by an independent MAPPING crop (the doc-565 shape):
+res = {"invoice_number": {"value": "PI/25/5450", "method": "anchor", "confidence": 84}}
+cands = {"invoice_number": [cand("0.5_mapping", "template_mapping", "PI/25/5450"),
+                            cand("2_anchor", "anchor", "PI/25/5450")]}
+e = emit(res, cands)["invoice_number"]
+assert e["winner_family"] == "keyword" and e["agree"] == ["mapping"] \
+    and e["independent_agree"] is True and e["disagree"] == [], e
+ok("bare-anchor winner + independent mapping crop → licensed (the Pelican 565 heal)")
+
+# BEFORE/AFTER — with the reclassification OFF the same record is agree:[] (proves the pin needs the fix):
+os.environ["CORROB_ANCHOR_AS_KEYWORD"] = "0"
+try:
+    e0 = emit(res, cands)["invoice_number"]
+    assert e0["agree"] == [] and e0["independent_agree"] is False, e0
+    ok("…and OFF (CORROB_ANCHOR_AS_KEYWORD=0) it is agree:[] — the fix is what heals it")
+finally:
+    os.environ.pop("CORROB_ANCHOR_AS_KEYWORD", None)
+
+# REVERSE — a MAPPING winner corroborated by the bare-anchor line (anchor folds to keyword = real 2nd family):
+res = {"ref": {"value": "X-1", "method": "template_mapping", "confidence": 90}}
+e = emit(res, {"ref": [cand("2_anchor", "anchor", "X-1")]})["ref"]
+assert e["winner_family"] == "mapping" and e["agree"] == ["keyword"] and e["independent_agree"] is True, e
+ok("mapping winner + bare-anchor line → keyword-family corroboration (reverse heal)")
+
+# FRAUD STAYS CLOSED — bare-anchor winner + keyword-regex agreeing = SAME family now → no independence:
+res = {"ref": {"value": "PO-1", "method": "anchor", "confidence": 85}}
+e = emit(res, {"ref": [cand("1_keyword", "keyword", "PO-1")]})["ref"]
+assert e["independent_agree"] is False and e["agree"] == [], e
+ok("bare-anchor winner + keyword-regex agree = same family (fold) → still no independence (fraud closed)")
+
+# THE r19-UNMASK SEAM (Oracle 2026-08-23) — a mapping winner where the bare-anchor LINE agrees but a
+# keyword-REGEX read DISAGREES must ROUTE TO REVIEW: the regex is the genuinely independent dissent, and a
+# bare-anchor same-line agreement must NOT suppress it (else X auto-files with no shape gate):
+res = {"ref": {"value": "X-1", "method": "template_mapping", "confidence": 90}}
+e = emit(res, {"ref": [cand("2_anchor", "anchor", "X-1"),
+                       cand("1_keyword", "keyword", "Y-9")]})["ref"]
+assert any(d["family"] == "keyword" for d in e["disagree"]), e
+assert _eng._corrob_licensed(e) is False, e
+ok("mapping winner + bare-anchor(X) agree + keyword-regex(Y) disagree → dissent kept, NOT licensed (r19 holds)")
+
+# CONTRAST — a NON-anchor within-family agree STILL suppresses that family's disagreement (existing rule
+# unchanged; the seam guard is bare-anchor-specific):
+res = {"ref": {"value": "X-1", "method": "template_mapping", "confidence": 90}}
+e = emit(res, {"ref": [cand("1_keyword", "keyword", "X-1"),
+                       cand("1_keyword", "keyword", "Y-9")]})["ref"]
+assert e["disagree"] == [] and e["agree"] == ["keyword"], e
+ok("a genuine keyword-regex agreement still collapses its family's disagreement (non-anchor unchanged)")
+
+# NARROWNESS — ONLY bare `anchor` is reclassified; anchor_registration stays an excluded winner, and the
+# SHARED bucket still returns None for bare anchor (nobody may hoist the fold into the shared function):
+res = {"ref": {"value": "PO-1", "method": "anchor_registration", "confidence": 85}}
+e = emit(res, {"ref": [cand("0.5_mapping", "template_mapping", "PO-1")]})["ref"]
+assert e["independent_agree"] is False, e
+ok("anchor_registration is NOT reclassified (only bare anchor) — stays an excluded winner")
+assert _eng._crosscheck_witness_bucket(None, "anchor") is None, "shared bucket must still EXCLUDE bare anchor"
+ok("the SHARED _crosscheck_witness_bucket still excludes bare anchor (live reconcile untouched)")
+
 print(f"\n{passed} checks passed")
