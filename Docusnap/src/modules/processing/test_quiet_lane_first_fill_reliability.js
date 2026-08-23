@@ -173,6 +173,15 @@ const fresh = (date, ref = 'INV-1', extra = {}) => ({ extractions: { supplier_na
   check('a CORROBORATED first-fill never holds, even on an unreliable field', !(ext(C2, 'invoice_date').validation_note || '').trim());
   corrobOk = false;
 
+  console.log('\n§4b N4 — the identity field is never held by the reliability hold');
+  const I1 = mk(SUP, { rows: [{ key: 'supplier_name', value: SUP, method: 'template_fixed' }, { key: 'invoice_number', value: 'INV-1' }, { key: 'invoice_date', value: '01-01-2026' }] });
+  const I2 = mk(SUP, { rows: [{ key: 'invoice_number', value: 'INV-2' }, { key: 'invoice_date', value: '02-02-2026' }] });   // issuer BLANK
+  perDoc = { [I1]: { extractions: { supplier_name: { value: 'DOCUMENT', method: 'template_fixed' }, invoice_number: { value: 'INV-1' }, invoice_date: { value: '01-01-2026' } } },
+             [I2]: { extractions: { supplier_name: { value: SUP, method: 'template_fixed' }, invoice_number: { value: 'INV-2' }, invoice_date: { value: '02-02-2026' } } } };
+  await run('teach');
+  check('an S3-C5 disagreement on supplier_name does NOT hold a sibling whose issuer was first-filled (identity has its own arbiters)', !(ext(I2, 'supplier_name').validation_note || '').includes('confirm once'));
+  check('…the S3-C5 note on the disagreeing issuer itself still lands', /Read differently after learning/.test(ext(I1, 'supplier_name').validation_note || ''));
+
   console.log('\n§5 K=1 trade-off pin');
   check('FIRST_FILL_UNRELIABLE_K is 1 — ONE witness holds (a first-fill is single-witness by definition; raise K on the census, never on a guess)', handler.FIRST_FILL_UNRELIABLE_K === 1);
   const K1 = mk(SUP, { date: '11-11-2026' }), K2 = mk(SUP, { date: null });

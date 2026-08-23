@@ -220,7 +220,8 @@ async function renderLearning(confirmed) {
                         : (lay ? `<div class="dash-card-note">Learned${lay.replace(/^ · learned/, '')}.</div>` : '');
     body.innerHTML = selfFiling > 0
       ? `<span class="n">${selfFiling}</span> ${selfFiling === 1 ? 'sender files' : 'senders file'} by ${selfFiling === 1 ? 'itself' : 'themselves'} after your confirmations.` + grad
-        + (autoFiledEver === 0 ? `<div class="dash-card-note">Nothing has filed by itself in the last 7 days yet.</div>` : '')
+        + (autoFiledEver === 0 ? `<div class="dash-card-note">Nothing has filed by itself in the last 7 days yet.</div>`
+           : (autoFiledEver > 0 ? `<div class="dash-card-note">${autoFiledEver} filed by ${autoFiledEver === 1 ? 'itself' : 'themselves'} in the last 7 days.</div>` : ''))   // Chris r19 N8: say the number, not only the zero
       : `No senders file by themselves yet — teach a layout and confirm a few of its documents${lay}.`;
     return;
   }

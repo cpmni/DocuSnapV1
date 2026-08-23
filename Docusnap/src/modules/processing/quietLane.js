@@ -356,7 +356,7 @@ function create(deps) {
       if (!chunk.length) { _finish(job, db); return; }
       staged = stageDocs(db, chunk, { auditMeta: { quiet: true } });
       if (!staged || !staged.tmpNames.length) { _finish(job, db); return; }
-      notify({ type: 'job_start', jobId: job.id, supplier: job.supplier, typeSlug: job.typeSlug, total: job.total, done: job.done.length });
+      notify({ type: 'job_start', jobId: job.id, supplier: job.supplier, typeSlug: job.typeSlug, total: job.total, done: job.done.length, reason: job.reason });   // r19 N8: the hint names the trigger
       _startPoll();
       await runShard({
         db, staged, label: 'quiet-reprocess',
@@ -465,7 +465,11 @@ function create(deps) {
     const dt = db.prepare('SELECT ref_field_key, date_field_key FROM document_types WHERE id = ?').get(doc.document_type_id) || {};
     const roleKeys = new Set(['supplier_name', dt.ref_field_key, dt.date_field_key].filter(Boolean));
     const req = db.prepare('SELECT key FROM fields WHERE document_type_id = ? AND enabled = 1 AND required = 1').all(doc.document_type_id)
-      .map(f => f.key).filter(k => roleKeys.has(k));
+      .map(f => f.key).filter(k => roleKeys.has(k))
+      // Chris r19 N4: the RELIABILITY hold never judges the identity field — a first-filled issuer is the
+      // template's identity seed, arbitrated by the near-match / letterhead / template-identity gates, and
+      // one deliberate fragment box held six correct DS issuer rows. The layout/ready "new box" holds keep it.
+      .filter(k => noteText !== RELIABILITY_NOTE || !COMPANY_KEYS.has(k));
     const before = Object.fromEntries((existing || []).map(r => [r.field_key, r]));
     const after = Object.fromEntries(db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(docId).map(r => [r.field_key, r]));
     const held = [];
@@ -486,6 +490,7 @@ function create(deps) {
   }
 
   const RELIABILITY_NOTE = 'The box that reads this field read it differently on another document from this sender — confirm once.';
+  const COMPANY_KEYS = new Set((() => { try { return require('../../../database/modules/document_types').COMPANY_KEYS || ['supplier_name']; } catch { return ['supplier_name']; } })());
   // A valued required ROLE field that reads EMPTY now — not restored (C3.6), but a witness that the
   // box cannot find the field on this sibling.
   function _lostReads(db, docId, existing) {

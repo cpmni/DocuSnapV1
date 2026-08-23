@@ -5763,12 +5763,19 @@ async function fileAllReady() {
   const _noType    = _parts.noType;
   const _missing   = _parts.missing;
   const _eligible  = _parts.ready.length;
+  // Chris r19 N6: put-back documents are waiting on YOU, not on a check — say so, and count them out
+  // of the flagged line (the classifier files them under 'flagged' so File All never sweeps them).
+  const _putBack   = _flagged.filter(d => d && d.put_back_at);
+  const _flaggedOnly = _flagged.length - _putBack.length;
   if (_eligible <= 0) {
-    showToast('Nothing is ready to file yet — every document in the queue is waiting on a check or a missing detail.', 'warn');
+    showToast(_putBack.length
+      ? `Nothing is ready to file by itself — ${_putBack.length} you put back ${_putBack.length === 1 ? 'is' : 'are'} waiting for your Confirm, and the rest are waiting on a check or a missing detail.`
+      : 'Nothing is ready to file yet — every document in the queue is waiting on a check or a missing detail.', 'warn');
     return;
   }
   const _heldLines = [];
-  if (_flagged.length) _heldLines.push(`${_flagged.length} flagged — waiting for you to check a value`);
+  if (_putBack.length) _heldLines.push(`${_putBack.length} you put back — each waits for your own Confirm`);
+  if (_flaggedOnly > 0) _heldLines.push(`${_flaggedOnly} flagged — waiting for you to check a value`);
   if (_noType.length)  _heldLines.push(`${_noType.length} with no document type yet`);
   if (_missing.length) _heldLines.push(`${_missing.length} missing a required detail (date, reference or sender)`);
   if (!confirm(
