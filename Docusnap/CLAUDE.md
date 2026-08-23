@@ -46,6 +46,17 @@ ran on the fixes. Headlines:
   the lane also re-reads the scope's OWNED-template held docs with `overall_confidence < scopeTrust().floor`
   (layout-arm guards + the C3.3 hold "Read after learning — confirm once."). **Cannot help an all-generic
   name (DS) — skipped + audited; tell the owner.** `_ownedTemplateRows` is the shared population query.
+- **ROUND 18 → the fix loop continued (one commit each, Oracle-gated):** A1 **a wrong date self-filed** (447: blank
+  at import, first-filled by the teach-time re-read, swept at the ready crossing) → `371ef2d` the FIRST-FILL
+  RELIABILITY hold (DARK `quiet_reread_first_fill_reliability_hold`): hold every first-fill at merge, release at
+  `_finish` unless the box proved unreliable in that job (K=1 `FIRST_FILL_UNRELIABLE_K`; witnesses = S3-C5 / loss /
+  engine yield); the "— confirm once." family now survives the READY arm (`_ownedTemplateRows`) and a same-value
+  Reprocess (`mergeReprocessRows`, `REPROCESS_CARRY_LANE_HOLD=0` kills); S3-C5 rows carry `corrected_to = was`.
+  A3 **Put back must stick** → `19e91b0`+`061ca82` mig 86 `documents.put_back_at` (stamped by every human "look
+  again" door — `deconfirmDocument`/requeue; the ONE predicate refuses `'put-back'`; a machine via is refused
+  pre-claim `PUT_BACK`; only a human claim clears; the auto accept files as "Auto-filed (after your confirms)").
+  A4 `7b8c8e1` the `confirm-review` IPC whitelist dropped `typeSplit`. A2/A6/5/7/copy `8b5ae1a`, A7 `615263c`.
+  Census `TESTING/_measure/first_fill_reliability_census.js`: DS 0 held, Copperfield held, K=1≈K=2.
 **Traps this session:** `core.autocrlf=true` → renderer.js etc. are CRLF on disk (tests slicing `
 }
 ` must
