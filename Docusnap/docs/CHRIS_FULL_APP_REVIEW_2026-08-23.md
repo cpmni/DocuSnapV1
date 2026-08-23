@@ -566,3 +566,18 @@ The same slip is caught on one road and filed on the other: a date the app *itse
 - My put-back test clicked the chip a second time once (it toggled the panel shut, not a second Put back); the stray-dialog watcher from round 18 did not recur — every native dialog tonight was logged and answered on purpose.
 - Ironbridge's 18-with-no-confirms happened once; Larkspur, taught the same way ten minutes later, waited as promised. I can describe the difference, not explain it.
 
+---
+
+## Round 19 TRIAGE + FIXES (2026-08-23 overnight, 04:00–04:40)
+Oracle consult on N1/N2/N3 (`docs/oracle_log.md`); one commit per item; widenings DARK; nothing pushed.
+| Card | Verdict | Fix (commit) |
+|---|---|---|
+| N1 four wrong dates via "Reprocess N" | SYSTEM (the manual road had no holds) + the REAL hole measured: the corroboration record called every date a "disagreement" (separator-blind compare), so the keyword family's correct read was invisible | `6b77f30` date-aware corroboration compare + the every-road `docTrustGate` refusal on a page-family disagreement (DARK `trust_role_disagreement_refuse`); `5979bdc` `rereadHolds.js` = ONE road: the manual batch + single-doc Reprocess write the lane's holds (DARK `reprocess_holds_as_lane`), C1 type-valid baseline (never offers 'INV-29273' on a date) |
+| N2 Ironbridge 18 on zero confirms | SYSTEM — the type-wide name group was `constant` at 2 names (Copperfield + Ironbridge's own wizard confirm) and a COMPANY key verified against it | `69a65de` a company key verifies only against its supplier-scoped group (DARK `trust_company_key_own_scope`); the badge and the gate now agree |
+| N3 re-teach re-read nothing; wizard "without a word" | (a) SYSTEM — the layout arm excluded every noted doc; (b) MISREAD — the s55 screenshot shows the amber "That doesn't read like a date" warning; the blue primary under it was pressed | `9dc7bf4` the layout arm re-reads noted docs (ready arm keeps the exclusion); the warning demotes "Looks right" to "Use it anyway" and makes Redraw the primary |
+| N4 "confirm once" ×6 on the issuer | BUG | `67aef42` the reliability hold never judges the identity field |
+| N5 Audit names Chris | BUG | `65ff83d` the machine via's audit row carries user_id null (the screen shows "Auto-filed (after your confirms)") |
+| N6 File All "nothing ready" over put-backs | copy | `67aef42` the toast/dialog count the put-back docs |
+| N7 holds look like debug text; "Change the type" | PREFERENCE | owner vet (styling) |
+| N8 Home / lane hint | copy | `67aef42` Home says "N filed by themselves in the last 7 days"; the hint names its trigger |
+
