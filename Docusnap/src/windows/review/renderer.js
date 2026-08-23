@@ -2685,7 +2685,7 @@ function renderCleanHoldReason(el, doc) {
       && (!doc.type_slug || !r.slug || r.slug === doc.type_slug));
     if (_senderGraduated && !_issuerEmpty && !_missingReq.length) {
       hint = 'Other documents from this sender now file themselves — this one was read before that. '
-           + 'Press Reprocess (in the tools rail) to re-read it, and it should file too.';
+           + 'Press Reprocess (below, under “This document”) to re-read it, and it should file too.';
     }
   } else {
     lead = 'Nothing was flagged on this document — check the values and confirm to file it.';
