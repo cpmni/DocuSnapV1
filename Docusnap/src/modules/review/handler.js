@@ -782,7 +782,11 @@ function register(ctx) {
         document_id: id, outcome: 'success', metadata: { type: doc.type_slug || null, status: doc.status || null } });
       // Publish desktop REVIEW presence so clients see "being reviewed by <name>" — only for a
       // review-able doc opened by a reviewer (NOT a read-only Search preview of a filed doc).
-      // A single heartbeat (TTL-expiring); the renderer refreshes it while the doc stays open.
+      // A single heartbeat with a 60s TTL. CORRECTED 2026-08-24 (was: "the renderer refreshes it while
+      // the doc stays open" — FALSE): the desktop renderer never calls review-heartbeat (no caller in
+      // src/), so after ~60s an open doc is no longer "being viewed" as far as the sweep is concerned.
+      // Presence is a LEAKY proxy for "being viewed" and carries NO unsaved-edit state — it must NOT be
+      // relied on as a mid-edit guarantee (Oracle 2026-08-24, the sweep-orphan review).
       if ((doc.status === 'needs_review' || doc.status === 'deferred') && (sess.role === 'admin' || sess.role === 'edit')) {
         presence.heartbeat(id, { key: _desktopKey(sess.id), username: sess.username, displayName: sess.displayName || sess.username });
       }
@@ -809,9 +813,11 @@ function register(ctx) {
     return require('../../services/dto').projectDocumentDetail(doc);
   });
 
-  // Renderer-driven presence refresh: the open Review window beats every ~25s so a desktop
-  // reviewer stays visible to clients past the 60s TTL while they work. Cheap in-process call;
-  // any signed-in reviewer, review-able doc only.
+  // review-heartbeat IPC — exposed so a client (or a future desktop wiring) can keep a reviewer
+  // visible to others past the 60s TTL. CORRECTED 2026-08-24 (was: "the open Review window beats every
+  // ~25s"): the DESKTOP renderer does NOT call this (no caller in src/); desktop presence is a single
+  // beat at document_open + a 60s TTL. Wiring a real ~25s heartbeat here would also keep a doc excluded
+  // from the sweep for as long as it's open — pair it with the doc-close re-trigger (the A arc) if you do.
   ipcMain.handle('review-heartbeat', (_e, id) => {
     try {
       const sess = requireLogin();

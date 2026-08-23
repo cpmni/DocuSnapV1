@@ -2674,6 +2674,19 @@ function renderCleanHoldReason(el, doc) {
       : (_missingReq.length
           ? `Fill in ${_missingReq.join(' and ')} — a document can't file until its required details are in, whatever the bar.`
           : `If documents like this are consistently right, lower the auto-file bar in Settings → Processing.`);
+    // D (Chris night-round #3, Oracle SIGN-OFF-W/COND): the ORPHAN — this doc read below the bar while
+    // its SENDER has since graduated (its siblings now file themselves). It was read BEFORE the layout
+    // was learned, so a re-read lifts it — "lower the bar" is the wrong advice here. Point at Reprocess
+    // (the fix Chris found only by luck). Fails safe: no scope-readiness / not graduated → generic hint
+    // stands. Kept off the empty-issuer / missing-required cases (their own hint is the real fix).
+    const _nrm = s => String(s || '').trim().toLowerCase();
+    const _senderGraduated = Array.isArray(_scopeReadiness) && _scopeReadiness.some(r =>
+      r && r.graduated && _nrm(r.supplier) === _nrm(doc.supplier_name)
+      && (!doc.type_slug || !r.slug || r.slug === doc.type_slug));
+    if (_senderGraduated && !_issuerEmpty && !_missingReq.length) {
+      hint = 'Other documents from this sender now file themselves — this one was read before that. '
+           + 'Press Reprocess (in the tools rail) to re-read it, and it should file too.';
+    }
   } else {
     lead = 'Nothing was flagged on this document — check the values and confirm to file it.';
     cue  = 'Ready to file';
