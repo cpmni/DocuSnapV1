@@ -3646,7 +3646,11 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   const noteHtml = isApplied
     ? `<div class="field-note corrected"><span class="corrected-badge" title="An OCR misread was auto-corrected to the spelling that recurs in your confirmed data">✓ auto-corrected</span> ${escHtml(note || '')}</div>`
     : (note || correctedTo)
-      ? `<div class="field-note">${escHtml(note || '')}${acceptHtml}${nameAcceptHtml}${issuerAcceptHtml}${brandingResolveHtml}${resolveHtml}</div>`
+      // When a ⑂ Resolve picker is available for this field, it is the ONLY answer offered (owner,
+      // 2026-08-24): the inline "Use …"/"Keep …" accept buttons truncate to unreadable stubs, and the
+      // picker shows every reading in full (with the suggestion merged in — see the click handler). So
+      // suppress the inline accept/keep pair on a resolvable field and render only Resolve.
+      ? `<div class="field-note">${escHtml(note || '')}${resolvable ? resolveHtml : `${acceptHtml}${nameAcceptHtml}${issuerAcceptHtml}${brandingResolveHtml}`}</div>`
       : '';
   // Anchor provenance: only for anchor-based extraction sources, and only when a
   // label was captured. Other methods (keyword, template, llm, manual) show nothing.
@@ -3971,7 +3975,14 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   // "⑂ Resolve" — open the disambiguation picker for this field's candidate readings.
   const resolveBtn = row.querySelector('.resolve-btn');
   if (resolveBtn) {
-    resolveBtn.addEventListener('click', () => openResolveOverlay(key, candidates, row, input));
+    // Resolve is now the ONLY answer on a resolvable field (the inline Use/Keep buttons were dropped —
+    // they truncate). So the suggested correction must be OFFERED INSIDE the picker: merge correctedTo
+    // (the suggestion) into the candidate list when the readings don't already carry it, at the top so
+    // it survives the overlay's top-3 slice. No page box → it renders as a list-only choice.
+    const merged = Array.isArray(candidates) ? candidates.slice() : [];
+    const _hasVal = (v) => merged.some(c => c && String(c.value).trim() === String(v).trim());
+    if (correctedTo && String(correctedTo).trim() && !_hasVal(correctedTo)) merged.unshift({ value: correctedTo, suggested: true });
+    resolveBtn.addEventListener('click', () => openResolveOverlay(key, merged, row, input));
   }
 
   // "Use '<name>'" — accept the branding-detected issuer. (A) Fills the value via the SAME path as the
