@@ -1971,3 +1971,41 @@ red; Python 307 green / 1 + 6 pre-existing.
 **Quick:** N4 SIGN OFF (pin: issuer first-fill not reliability-held, date is) · N5 SEND BACK (null `user_id` in the machine-via audit entry at reviewService.js:411; pin the row) · N6 count reason=='put-back' only · N8 reason→copy map; 7-day line from status+door.
 **BUILD + GATES (round 19, same night, 04:10–04:40):** (d) MEASURED on the r19 DB — all four wrong dates carried `disagree:[{keyword, <the right date>}]` AND so did every CORRECT date row (`17-12-2026` vs `17/12/2026`): `_cmp_norm` never folded date separators → no date was ever corroborated, real disagreements invisible. `6b77f30`: engine `_corrob_values_agree` (date fold, `FIELD_CORROBORATION_DATE_FOLD=0` kills) + `trust.docTrustGate` refusal `disagreeing-read:<role>` on a PAGE-family disagreement (DARK `trust_role_disagreement_refuse`; every road; fail-open without a record; pins + Review copy). **N2 hypothesis CONFIRMED** (exactly {Copperfield, Ironbridge} human-confirmed before 02:23:58) → `69a65de` DARK `trust_company_key_own_scope` in `_scopeFormats` (pin: the Ironbridge shape OFF eligible / ON refused; badge agrees). **N5 `65ff83d`** `user_id: null` on the machine-via audit entry (pinned). **P3 `9dc7bf4`** layout arm re-reads noted docs (ready arm keeps the exclusion; `REPROCESS_CARRY_LANE_HOLD=0` falls back); the wizard's wrong-kind-of-value warning (it DID render — s55 — Chris's driver clicked past it) now demotes "Looks right" to "Use it anyway". **P1 `5979bdc`** `rereadHolds.js` = ONE road (lane delegates; manual batch via 'manual' + release before `_currentBatchProcs` clears, per-(supplier|slug|field) stats; single-doc via 'manual-single' unconditional); C1 type-valid baseline pinned on the Copperfield chain (offers 03-11-2026, never 'INV-29273'); DARK `reprocess_holds_as_lane`; dialog defines "clean". **Realdoc arm (owner's copy):** OFF (fold=0, refuse=0) = 381/416, **M=1 (#413 sales_order date 04-08→24-08 — the leading-digit class)**; ON arm running at the time of writing. **OPEN — drift:** the same DB copy gave 389/416 M=0 at 00:11 and 381/416 M=1 at 04:20 under the same 89 mirrored env vars; 7 regressions (#15 'ILUTIONS', #17 null ref/date, #18 'NOCUMENT', #81 '41-02-2025', #212 'SE-ORD', #413) — bisect candidates: `72a75bd` (the JUNK suggestion kind, default ON inside `identity_suggest_canonical`, which the owner's copy has ON; the wide debris leg is DARK) — NOT resolved tonight; nothing pushed.
 **REALDOC ON ARM (fold + refusal + company own-scope, owner's copy): 338/416, M=1 (#413 NOT caught).** Attribution (`TESTING/_measure/rr_on_reasons_20260823.jsonl`): `unverifiable-value` 45 = the company-key own-scope rule (the owner's scopes lack 3 HUMAN name confirms — machine confirms excluded — the 08-19 starvation class; 10 % review cost → owner vet, not a flip) · `disagreeing-read` 1 (precise) · #413 `order_date` via `template_mapping` @97 with no page witness — the Oracle's "else" branch: the taught date box's leading-glyph clip (08-07 pad-window class) is the next arc. The Oracle's "realdoc byte-identical expected" for P2 was WRONG on this corpus — stated here so it is not re-assumed.
+
+---
+
+## 2026-08-24 — Batch-audit / "Quick check" grid for auto-filed docs (VET of bob/gary/eric consensus)
+
+**Verdict: SIGN OFF WITH CONDITIONS.** Premise holds (auto-filed docs leave the queue unseen; a thin
+orchestrator over the EXISTING `reviewService.confirm(allowRefile)` is the lowest-blast shape). **Host: a
+MODE inside the Review window, NOT a new window** (the confirm-with-holds handlers ~350 lines live in
+review/renderer.js; a standalone window forks a surface that has rotted 3×).
+
+**Two consensus claims traced FALSE:** (a) the `confirmed_via` "flips to human confirm → mass graduation"
+risk does NOT exist — `documents.confirm` never writes `confirmed_via`; a corrected auto-doc keeps
+`confirmed_via=auto`, so it stays out of the graduation window. (b) type-split (reviewService.js:303) is
+`!_via && !bulk`, not `!isRefile` — it is the orchestrator's `bulk:true` that suppresses it.
+
+**Owner requirement is MET, verified at mechanism:** re-file keeps machine `confirmed_via`; machine rows are
+excluded from learning by default (`learning_exclude_machine_confirms` ON, mig 70) — BUT the C2 carve-out
+(learning.js:1589 `isMachine = excludeMachine && machineVias.has(via) && corrected_value == null`) INCLUDES a
+row once `saveCorrections` writes a `corrections` row. So a grid correction reaches format/dominance/prefix/
+hints without entering graduation. Load-bearing + fragile → PIN A.
+
+**Seam the consensus missed — anchor-clear amplification:** `saveCorrections` clears the corrected field's
+learned anchor unless taught (learning.js:436). This grid fixes VALUE misreads at a CORRECT position; wiping
+the anchor per correction at batch scale degrades future extraction (opposite of the goal).
+
+**Blocking conditions:** (1) disallow document_type edits in the grid (route to Review) OR pass `bulk:false`
+to keep type-split live — never type edits with `bulk:true`; (2) skip `clearAnchors` for grid value-
+corrections (value not position errors) + a before/after anchor census, or gate behind a switch; (3) edge
+field-validation must REFUSE an invalid ref/date inline (prove with a bad-date test); (4) per-doc failures
+surface with a reason, never silent-skip; (5) preview resolves `stored_path` not `working_path` (auto-file
+nulls working_path); (6) `__global__` old-hint delete is a separate opt-in, default scope-only. Also:
+disallow ISSUER edits in v1 (route to Review) — near-duplicate-company risk.
+
+**Verification gate:** realdoc `M=0 AND M_type=0` OFF-vs-ON (RR_APP_ENV=1) on a live-DB copy + zero per-field
+accuracy drop. PIN A (getFieldFormats + dominant-snap reflect the correction on a machine-via doc with
+exclude ON — assert the READER output, not the corrections row); PIN B (issuer + type edits refused/routed);
+PIN C (invalid ref/date refused inline); PIN D (grid ev.ids-driven, corrected rows stay visible mid-session);
+PIN E (anchor-count census matches the accepted policy).

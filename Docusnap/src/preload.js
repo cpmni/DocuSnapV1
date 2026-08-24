@@ -477,6 +477,8 @@ contextBridge.exposeInMainWorld('docusnap', {
   getReviewEventDocs:    (eventId)   => ipcRenderer.invoke('get-review-event-docs', { eventId }),
   undoReviewEvent:       (eventId)   => ipcRenderer.invoke('review-event-undo', { eventId }),
   recordFileAllOutcome:  (payload)   => ipcRenderer.invoke('record-file-all-outcome', payload),   // File All kept-back receipt
+  getAutofiledGrid:      (eventId)   => ipcRenderer.invoke('get-autofiled-grid', { eventId }),        // batch-audit "Quick check" grid
+  batchAuditCorrect:     (payload)   => ipcRenderer.invoke('batch-audit-correct', payload),           // { eventId, edits:[{docId,fields}] }
   onQuietReprocess:    (cb) => ipcRenderer.on('quiet-reprocess', (_e, info) => cb(info)),   // Slice 3: the quiet re-read lane's progress (never reprocess-progress)
   onStuckCountChanged: (cb) => ipcRenderer.on('stuck-count-changed', (_e, n) => cb(n)),
   onProcessTrace:      (cb) => ipcRenderer.on('process-trace',    (_e, m) => cb(m)),

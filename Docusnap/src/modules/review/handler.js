@@ -167,6 +167,53 @@ function register(ctx) {
     // (eric/Oracle-verified). The renderer's twin 150ms was removed too. See reviewService.confirm.
   });
 
+  // ── Batch-audit / "Quick check" grid for auto-filed docs (2026-08-24) ─────────
+  // A post-filing confidence sweep: lay a just-filed BATCH out as a grid, correct any wrong reads, and
+  // re-file + re-learn each via the shared reviewService.confirm(allowRefile) — see
+  // src/services/batchAuditService.js and docs/oracle_log.md (SIGN-OFF-W/COND 2026-08-24). DARK by
+  // default (batch_audit_enabled); issuer + document_type edits are routed to full Review, value/date
+  // edits happen here. Anchor-preserve (value-not-position) is killable (BATCH_AUDIT_PRESERVE_ANCHORS).
+  let _valPatternsRawBA;
+  const _loadValPatternsRaw = () => {
+    if (_valPatternsRawBA === undefined) {
+      try { _valPatternsRawBA = JSON.parse(fs.readFileSync(ctx.resourcePath('config', 'keyword_patterns.json'), 'utf8')).validation_patterns || {}; }
+      catch (e) { logger?.warn?.('batch-audit validation patterns: ' + (e && e.message)); _valPatternsRawBA = {}; }
+    }
+    return _valPatternsRawBA;
+  };
+  const _batchAuditEnabled = () => process.env.BATCH_AUDIT_ENABLED === '1'
+    || (process.env.BATCH_AUDIT_ENABLED !== '0' && learning.getSetting(getDb(), 'batch_audit_enabled', 'false') === 'true');
+  const _batchAuditPreserveAnchors = () => process.env.BATCH_AUDIT_PRESERVE_ANCHORS !== '0'
+    && learning.getSetting(getDb(), 'batch_audit_preserve_anchors', 'true') !== 'false';
+  const batchAudit = require('../../services/batchAuditService').createBatchAuditService({
+    reviewService, documents, doctypes,
+    getEvent: (db, id) => { try { return require('../processing/handler').getReviewEvent(db, id); } catch { return null; } },
+    valPatterns: _loadValPatternsRaw,
+    preserveAnchors: _batchAuditPreserveAnchors,
+  });
+
+  // Grid read — event-id addressed (main resolves the ids; a renderer id-list is never trusted).
+  // PROJECTED values only (no on-disk paths / ocr_text). Admin/Edit. Preview is fetched separately
+  // via get-document-pages (which resolves stored_path server-side from the row).
+  ipcMain.handle('get-autofiled-grid', (_e, { eventId } = {}) => {
+    requireRole('admin', 'edit');
+    if (!_batchAuditEnabled()) return { ok: false, reason: 'disabled', rows: [] };
+    return batchAudit.buildGrid(getDb(), { eventId });
+  });
+
+  // Batch correct — loops reviewService.confirm(allowRefile,bulk) per CHANGED doc in main, cross-
+  // checking every docId against the event's ids, re-adding the confirm safety checkpoint the isRefile
+  // path bypasses (validate value / refuse issuer+type), and surfacing every non-success per doc.
+  ipcMain.handle('batch-audit-correct', async (_e, { eventId, edits } = {}) => {
+    const db = getDb();
+    if (!_batchAuditEnabled()) return { ok: false, reason: 'disabled', results: [], filed: 0 };
+    // Same high-value-write license recheck as confirm-review (F-01).
+    const licenseDenial = require('../licensing/handler').licenseDenied(db);
+    if (licenseDenial) return { ok: false, error: 'A valid license is required to file documents. Please re-activate ScanFinder.', ...licenseDenial };
+    const sess = requireRole('admin', 'edit');
+    return batchAudit.confirmBatch(db, { userId: sess.id, username: sess.username, role: sess.role }, { eventId, edits });
+  });
+
   // ── Validation patterns (shared source of truth for UI field validation) ─────
   // The Review window validates an edited field on blur (regex/type) using the
   // EXACT same `validation_patterns` the Python extraction qualification uses

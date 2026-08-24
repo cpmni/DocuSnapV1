@@ -397,7 +397,11 @@ function createReviewService(deps = {}) {
     // from confirmed status at read time) still flows and rolls back cleanly on undo, which is
     // what makes "Undo all" honest. learnTemplateOnCommit self-guards on confirmed_via.
     if (!_via) {
-      learning.saveCorrections(db, document_id, _learn.corrections || {}, supplier_name, document_type_slug, _learn.allValues, taught_fields || []);
+      // Batch-audit grid (2026-08-24): a VALUE-ONLY correction preserves the field's learned anchor
+      // (the read was wrong, not the position — Oracle Condition 2). Set ONLY via the server-side
+      // `internal` arg by batchAuditService; a renderer/client payload can never reach it.
+      const _preserveAllAnchors = !!(internal && internal.preserveAnchors);
+      learning.saveCorrections(db, document_id, _learn.corrections || {}, supplier_name, document_type_slug, _learn.allValues, taught_fields || [], { preserveAllAnchors: _preserveAllAnchors });
     }
 
     // Record the stored location. First-confirm already flipped status/confirmed_at/confirmed_by

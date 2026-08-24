@@ -872,6 +872,12 @@ let _reviewEvents = null;
 function recordReviewEvent(db, ev) {
   try { return _reviewEvents ? _reviewEvents.record(db, ev) : null; } catch { return null; }
 }
+// Read one ledger event (the AUTHORITATIVE id set for the batch-audit grid). Same instance/persisted
+// ring as get-review-event-docs; review/handler resolves ev.ids through this so a renderer id-list is
+// never trusted (the C5 rule). Null if the ledger is unavailable or the id is unknown.
+function getReviewEvent(db, id) {
+  try { return _reviewEvents ? _reviewEvents.get(db, id) : null; } catch { return null; }
+}
 let _templatesDirFn = null;   // ctx.templatesDir, set in register() — the auto-file door's template-file sync (Chris r15 card 2)
 function _broadcastActivity() {
   try {
@@ -5638,6 +5644,7 @@ function killAll() {
 module.exports = {
   register,
   recordReviewEvent,   // B1: the activity ledger's one writer (reviewService's class-fix door reaches it through review/handler)
+  getReviewEvent,      // batch-audit grid: resolve an event's authoritative id set from review/handler
   // Exposed so other entry points into the same pipeline (e.g. the
   // watch-folder handler) can reuse this setup/dispatch machinery instead
   // of duplicating it on a parallel import path.

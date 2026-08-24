@@ -327,7 +327,7 @@ function isNameLikeField(key, label) {
 }
 
 function saveCorrections(db, document_id, corrections,
-                         supplier_name, document_type, allValues, taughtFields = []) {
+                         supplier_name, document_type, allValues, taughtFields = [], opts = {}) {
   // The confirmed/edited supplier_name field (allValues.supplier_name) is the
   // identity the user just reviewed and accepted — the same source
   // _buildTemplateFields() uses for the template corpus. The `supplier_name`
@@ -342,6 +342,14 @@ function saveCorrections(db, document_id, corrections,
     (allValues && String(allValues.supplier_name || '').trim()) || supplier_name || '__global__'
   );
   const taught = new Set(taughtFields);
+  // Batch-audit / "Quick check" grid (2026-08-24, Oracle SIGN-OFF-W/COND Condition 2): the grid fixes
+  // VALUE misreads (I/1, O/0, slash-drop) where the anchor POSITION was CORRECT — the read was wrong,
+  // not the placement. The default clearAnchors-on-correct below assumes "corrected ⇒ the anchor was
+  // wrong", which is FALSE for that surface; wiping the scope's learned position per correction across a
+  // batch degrades future extraction (the opposite of the goal). When the caller marks the whole call
+  // value-only (server-side only — reviewService threads it from its INTERNAL arg, never a client
+  // payload), preserve every field's anchor. Killable via BATCH_AUDIT_PRESERVE_ANCHORS at the caller.
+  const _preserveAllAnchors = !!(opts && opts.preserveAllAnchors);
 
   const insertCorr = db.prepare(`
     INSERT INTO corrections
@@ -433,7 +441,7 @@ function saveCorrections(db, document_id, corrections,
         // supplier/template (the dominant lifecycle bug — not specific to one
         // document or field). Skipping the wipe here is what lets future
         // teachings accumulate via saveAnchor's usage_count/confidence upsert.
-        if (!taught.has(field_key)) {
+        if (!taught.has(field_key) && !_preserveAllAnchors) {
           clearAnchors(db, {
             supplier_name: effectiveSupplier,
             document_type: document_type || null,
