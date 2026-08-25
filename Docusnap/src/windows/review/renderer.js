@@ -132,7 +132,14 @@ function fieldValidationError(key, value) {
   // metric the backend credibility gate (anchor._pattern_coverage) and the dev-
   // inspector "rx %" badge use, so the on-blur warning, the badge and extraction
   // stay one definition (a colon-laden MAC scores ~18% → warns, never silently OK).
-  if (valKey === 'date' || valKey === 'currency' || valKey === 'currency_code') {
+  if (valKey === 'date') {
+    // Accept if EITHER the substring pattern matches OR the strict preclean parser accepts it. The
+    // latter clears the note for an OCR-spaced "15 / 12 / 2025" that files cleanly (the folder builder
+    // and the Confirm gate both preclean), so the field note AGREES with the button instead of showing
+    // a spurious "Not a valid date" while the doc still files (Chris 2026-08-25 re-verify Card A — the
+    // predicate-drift Oracle warned of). Only ADDS acceptance → never introduces a new false warning.
+    if (pats.some(re => re.test(v)) || _parseDrawnDate(v, _regionDateOrder || 'dmy') !== null) return null;
+  } else if (valKey === 'currency' || valKey === 'currency_code') {
     if (pats.some(re => re.test(v))) return null;
   } else {
     let best = 0;

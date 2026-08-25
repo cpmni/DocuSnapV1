@@ -103,8 +103,14 @@ console.log('\nTHE MIRROR MUST NOT GO STALE — the renderer still implements th
         /best = Math\.max\(best, m\[0\]\.length \/ v\.length\)/.test(r) && /best >= 0\.8/.test(r));
   check('renderer still sources the patterns from the shared config over IPC',
         /getValidationPatterns\(\)/.test(r));
-  check('date/currency still take the substring branch, not the coverage branch',
-        /valKey === 'date' \|\| valKey === 'currency' \|\| valKey === 'currency_code'/.test(r));
+  check('currency still takes the substring branch, not the coverage branch',
+        /valKey === 'currency' \|\| valKey === 'currency_code'/.test(r));
+  // Card A (Chris 2026-08-25 re-verify): the date field-note accepts whatever the folder builder can
+  // actually file — the substring pattern OR the preclean parser (_parseDrawnDate) — so an OCR-spaced
+  // "15 / 12 / 2025" no longer shows a spurious "Not a valid date" while the Confirm button files it.
+  // Still a substring/parse branch, NOT the >=0.8 coverage rule.
+  check('date note aligns with the preclean parser (Card A), not the coverage rule',
+        /valKey === 'date'/.test(r) && /_parseDrawnDate\(v, _regionDateOrder \|\| 'dmy'\)/.test(r));
 }
 
 console.log(fails ? `\n${fails} CHECK(S) FAILED\n` : '\nall validation-surface pins passed\n');
