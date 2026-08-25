@@ -109,6 +109,47 @@ def _ocr_equiv(a, b):
             and _levenshtein(a, b) == 1)
 
 
+# ── Suffix-canon SNAP (2026-08-24, Oracle SIGN-OFF-W/COND) ──────────────────────────────
+# The owner's class: a solid single-spelling scope reads its issuer/customer with a one-glyph
+# legal-suffix slip ("Bramblewood Joinery Lid" for the confirmed "…Ltd"). The STRONG name-repair
+# already produces "…Ltd" but engine.py's low_distinct demotion routes it to a "Suggested … [Resolve]"
+# hold. This re-admits a SILENT adopt for the ONE subset that can never change WHICH company it is:
+# the sole differing content token is the TRAILING token AND its canonical is a legal suffix
+# (Ltd/Inc/Plc/LLC/LLP/Co) reached by a <=1-edit slip — every other content token matches EXACTLY.
+# So the entity is pinned by the exact-match core; only the legal-suffix spelling moves.
+# REJECTED by construction: "Highfield Cars Ltd" vs "Highfield Care Ltd" (core token differs),
+# "Cox Ltd" vs "Fox Ltd" (core, not trailing-suffix), any multi-token or core _close repair (stays
+# in Review). A pure surface/case difference on identical norms (same entity) also adopts the
+# confirmed surface. A short CORE (acronym like "BP Ltd") is refused by the core-length floor so a
+# 1-char slip on a tiny name — where one glyph is a large fraction — never silently snaps.
+_SNAP_MIN_CORE_LEN = 6   # min combined alnum length of the NON-suffix ("core") tokens
+
+def name_snap_adopt(read, dominant, min_core_len=_SNAP_MIN_CORE_LEN):
+    """Return the confirmed `dominant` value to SILENTLY adopt for `read`, or None.
+    Identity-preserving by construction (see the block comment above): adopt only when read and
+    dominant share exactly the same content tokens except (a) surface/case on identical norms, or
+    (b) a single TRAILING token that is a <=1-edit slip of a canonical legal suffix. Pure; no I/O."""
+    r_toks = [t for t in str(read).split() if _is_content(t)]
+    d_toks = [t for t in str(dominant).split() if _is_content(t)]
+    if not r_toks or not d_toks or len(r_toks) != len(d_toks):
+        return None                                   # structural change => not a clean per-token repair
+    r_norms = [normalise_for_tokens(t) for t in r_toks]
+    d_norms = [normalise_for_tokens(t) for t in d_toks]
+    diff = [i for i in range(len(r_norms)) if r_norms[i] != d_norms[i]]
+    # the CORE = every content token except a trailing legal-suffix token
+    core_norms = d_norms[:-1] if (d_norms and d_norms[-1] in _LEGAL_SUFFIX_CANON) else d_norms
+    if sum(len(n) for n in core_norms) < min_core_len:
+        return None                                   # acronym / tiny name => never silent-snap
+    if not diff:
+        # same entity, differs only in surface/case/punctuation => adopt the confirmed surface
+        return dominant if str(dominant) != str(read) else None
+    if diff == [len(r_norms) - 1]:
+        last_r, last_d = r_norms[-1], d_norms[-1]
+        if last_d in _LEGAL_SUFFIX_CANON and _levenshtein(last_r, last_d) <= 1:
+            return dominant                           # trailing legal-suffix slip, exact core
+    return None                                       # a CORE token changed => different company, stay in Review
+
+
 def build_token_lexicon(value_counts, confirmed_count=None):
     """Build the positional canonical lexicon for ONE field group from confirmed
     history. `value_counts` = {confirmed_value: doc_count}; `confirmed_count` = total

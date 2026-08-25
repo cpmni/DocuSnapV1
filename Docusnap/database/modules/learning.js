@@ -1536,6 +1536,15 @@ function getFieldFormats(db, opts) {
       AND (e.extraction_method IS NULL
            OR e.extraction_method NOT LIKE '%+prefix\\_class\\_fix' ESCAPE '\\'
            OR c.corrected_value IS NOT NULL)
+      -- NAME SUFFIX-SNAP (2026-08-24), UNCONDITIONAL, same B7 family as the three clauses above: a value
+      -- the suffix-snap silently adopted (the scope's confirmed dominant spelling) may never count as
+      -- evidence FOR the dominant that produced it, or the snap manufactures the history it consumes.
+      -- New marker => no historic row carries it, so it ships unconditional; UNANCHORED (Oracle) so a
+      -- stacked method suffix cannot escape it, with the corrections carve-out so a later human edit
+      -- re-admits the document. (No backticks in this comment: it lives inside a JS template literal.)
+      AND (e.extraction_method IS NULL
+           OR e.extraction_method NOT LIKE '%+name\\_snap%' ESCAPE '\\'
+           OR c.corrected_value IS NOT NULL)
       ${_excludeRewriteMarkers(db) ? `
       -- SLICE 0 (gary → Oracle SIGN-OFF-W/COND, 2026-08-19; \`learning_exclude_rewrite_markers\`).
       -- THE HOLE: the engine writes SIX corpus-derived rewrite markers and this query excluded

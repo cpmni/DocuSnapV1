@@ -186,6 +186,20 @@ function _reconcileEnv(db) {
     // the evidence is strongest. WEAK-ONLY by construction: such a lexicon can suggest and force a
     // review, never silently rewrite.
     if (learning.getSetting(db, 'name_lexicon_low_distinct', 'false') === 'true') env.NAME_LEXICON_LOW_DISTINCT = '1';
+    // Name suffix-SNAP (2026-08-24, Oracle SIGN-OFF-W/COND): a solid single-value scope's one-glyph
+    // legal-suffix issuer/customer slip ("…Lid"→"…Ltd") silently adopts the confirmed spelling + auto-
+    // files, instead of holding a "Suggested … [Resolve]". DARK. It reads the low-distinct name lexicon,
+    // so the switch IMPLIES it (turning the snap on can never be inert for want of the lexicon).
+    if (learning.getSetting(db, 'name_dominant_snap', 'false') === 'true') {
+      env.NAME_DOMINANT_SNAP = '1';
+      env.NAME_LEXICON_LOW_DISTINCT = '1';
+    }
+    // UK company-registration boilerplate strip (iris/gary → Oracle, 2026-08-24). {vat, reg, …} leak
+    // into a supplier's branding fingerprint and hand a WRONG logo-collision supplier free own_ratio
+    // hits on any "VAT Reg …" line — defeating the logo-text abstain gate (doc 732 Oakhaven→Castellan
+    // @94). Stripped from _distinctive_tokens (banks + the Stage-0 tie-break, ONE rule). DARK; OFF is a
+    // byte-identical spawn.
+    if (learning.getSetting(db, 'branding_strip_reg_boilerplate', 'false') === 'true') env.BRANDING_STRIP_REG_BOILERPLATE = '1';
     // Graduation-licensed fuzzy geometry shed (gary → Oracle W/COND 2026-08-14). The owner's
     // Silverbeck class: a layout confirmed 91×/91 to one issuer whose scanned letterhead reads
     // garbled still carries "Company inferred… please confirm" on every sibling, because the strict

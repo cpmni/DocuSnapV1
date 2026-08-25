@@ -72,6 +72,8 @@ RECON_TOTAL_ADJUSTED_NOTE = ('adjusted to the total that balances against the li
 # format aggregates DIFFERENT suppliers and must never constrain them (see the fmt_entry fallback
 # in the Stage 4.5 loop). Mirrors COMPANY_KEYS in database/modules/document_types.js.
 _IDENTITY_FIELD_KEYS = frozenset({"supplier_name", "customer_name"})
+_NAME_SNAP_MIN_CONFIRMS = 5   # name suffix-snap: the scope's single dominant value needs >= this many
+                              # confirms to be "solid" (Oracle 2026-08-24; DARK NAME_DOMINANT_SNAP)
 
 # ── TEMPLATE_FIXED SEED vs a MISREAD MAPPING (2026-08-06; gary -> Oracle SIGN-OFF-W/COND C1..C7) ──
 # Stage 0 seeds a template's curated `fixed_value` for supplier_name at conf 95, method
@@ -9083,6 +9085,36 @@ class ExtractionEngine:
                     # `_close` accepts. So: suggestion + review, never a silent rewrite.
                     if strong and fmt_entry.get('low_distinct'):
                         strong = False
+                        # NAME SUFFIX-SNAP (2026-08-24, Oracle SIGN-OFF-W/COND, DARK NAME_DOMINANT_SNAP):
+                        # re-admit a CLEAN silent adopt for the identity-preserving subset ONLY — a
+                        # <=1-edit legal-suffix repair with an EXACT-match core, on a SOLID single-value
+                        # scope (>= _NAME_SNAP_MIN_CONFIRMS confirms), for the two identity name fields.
+                        # `repaired` IS the scope's confirmed dominant surface (every position is stable
+                        # in a low_distinct scope), so name_snap_adopt(val, repaired) adopts ONLY when the
+                        # sole content token the lexicon changed is the trailing legal suffix; a CORE
+                        # `_close` repair shows as a core diff and stays in Review (the Cars/Care, Cox/Fox
+                        # cases). Clean row (no validation_note / no corrected_to / not review-forced) so
+                        # trust.js auto-files it under this ONE switch alone. Env is the FIRST conjunct =>
+                        # OFF is byte-identical. Mutually exclusive with _adopt_confirmed_dominant (its
+                        # +confirmed_adopt marker is skipped). See docs/oracle_log.md 2026-08-24.
+                        if (os.environ.get('NAME_DOMINANT_SNAP') == '1'
+                                and repaired and repaired != str(val)
+                                and key in ('supplier_name', 'customer_name')
+                                and int((name_lex or {}).get('n_docs') or 0) >= _NAME_SNAP_MIN_CONFIRMS):
+                            _m_snap = str(data.get('method') or '')
+                            _snap_curated = any(x in _m_snap for x in
+                                                ('template_fixed', 'override', 'fixed', 'manual', '+confirmed_adopt', '+name_snap'))
+                            if not _snap_curated:
+                                _snap_val = name_match.name_snap_adopt(str(val), repaired)
+                                if _snap_val:
+                                    results[key] = {
+                                        **data,
+                                        'value':         _snap_val,
+                                        'display_value': _snap_val,
+                                        'was_corrected': True,
+                                        'method':        f"{data.get('method') or 'unknown'}+name_snap",
+                                    }
+                                    continue
                     if repaired and repaired != str(val):
                         if strong:
                             results[key] = {

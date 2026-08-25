@@ -111,6 +111,27 @@ _BRANDING_STOPWORDS = frozenset({
     "statement", "remittance", "receipt", "quote", "quotation", "worksheet",
     "credit", "debit", "advice", "proforma", "job", "copy", "original",
 })
+# UK company-registration boilerplate (iris/gary → Oracle SIGN-OFF-W/COND, 2026-08-24). Present on
+# essentially EVERY UK B2B letterhead of a given document generator, so it can NEVER distinguish one
+# supplier from another. A WRONG logo-collision supplier whose fingerprint carries {vat, reg} scores
+# free own_ratio hits on any "VAT Reg GB …" line, inflating it over _BRANDING_PRESENT_RATIO and
+# DEFEATING the logo-text abstain gate (doc 732: an Oakhaven note filed as Castellan @94; the
+# masthead-quadrant phash collided and vat/reg let the contradicted logo pick clear the present-bar).
+# NARROW DEFAULT (Oracle C3): only the pure-registration tokens that alone fix the demonstrated defeat.
+# DELIBERATELY EXCLUDED — 'england'/'wales' (real supplier names exist: "Wales Timber", "New England
+# Foods"), and legal suffixes 'ltd/limited/plc/llp' (not part of the defeat; the name arm already
+# strips them via _GENERIC_NAME_TOKENS). 'gb'/'co'/'no' need no listing — len<3 already drops them.
+# Widen ONLY on a zero-cost corpus result, via the env override, never by editing this default blind.
+_REG_BOILERPLATE = frozenset({"vat", "reg", "registered", "company"})
+
+def _reg_boilerplate_set():
+    """The active boilerplate set: the narrow default, or a comma-separated env override
+    (BRANDING_REG_BOILERPLATE_TOKENS) so england/wales/suffixes can be MEASURED on the corpus before
+    any widening. Read at call time (pytest-controllable)."""
+    raw = os.environ.get("BRANDING_REG_BOILERPLATE_TOKENS")
+    if raw:
+        return frozenset(t.strip().lower() for t in raw.split(",") if t.strip())
+    return _REG_BOILERPLATE
 # Shared branding-evidence constants (aliased by engine.py — ONE definition).
 # K: below this many distinctive words an identity is UNJUDGEABLE (fail-safe, never "absent").
 # PRESENT: own-ratio above this = the identity's own branding IS on the page.
@@ -126,10 +147,18 @@ def _distinctive_tokens(words):
     of 'invoice' and are systematically present in ~every invoice fingerprint, where they fake
     cross-supplier corroboration ('INV' word-boundary-matches inside every invoice number).
     Direction pinned: 'inverness' is NOT a prefix of any type word and survives."""
+    # DARK (BRANDING_STRIP_REG_BOILERPLATE): also drop UK registration boilerplate so it can never
+    # prop up a supplier the page does not actually name. Env read at call time (matches the
+    # _branding_banks style + keeps pytest monkeypatch controllable). OFF => branch skipped => the
+    # returned set is byte-identical to legacy, so every consumer (banks, Stage-0 tie-break, name arm,
+    # letterhead, alt-name) is unchanged.
+    _boiler = _reg_boilerplate_set() if os.environ.get("BRANDING_STRIP_REG_BOILERPLATE", "0") != "0" else None
     out = set()
     for w in words or ():
         wl = str(w or "").strip().lower()
         if len(wl) < 3 or wl in _BRANDING_STOPWORDS or wl in STOP_WORDS or wl in CALENDAR_WORDS:
+            continue
+        if _boiler is not None and wl in _boiler:
             continue
         if any(sw.startswith(wl) and len(wl) < len(sw) for sw in _BRANDING_STOPWORDS):
             continue
