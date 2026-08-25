@@ -105,11 +105,18 @@ const basePayload = (id, extra = {}) => ({
   check('date normalised for filing (Aug 03 2012 → 03-08-2012)', calls.commitAllValues.invoice_date === '03-08-2012');
   check('date normalised for learning (saveCorrections allValues)', calls.lastAllValues.invoice_date === '03-08-2012');
   check('date normalised in the correction record too', calls.lastCorrections.invoice_date.corrected_value === '03-08-2012');
+  // Unparseable DATE-ROLE value: REFUSED, never silently filed to Unknown Year/Month (Chris
+  // 2026-08-25 Card 1; gary + Oracle WRONG-LAYER → gate at the filing predicate). The OLD behaviour
+  // filed it as-typed and the folder builder substituted "Unknown Year"/"Unknown Month" with no
+  // signal; now the confirm is HELD with INVALID_DATE (pre-claim) and the doc is NOT filed. Gated on
+  // filing.normaliseDate — the exact parser the folder builder uses — so a value it CAN parse still
+  // files (proved by dNorm1 above) and only a would-file-to-Unknown value is refused.
   const dNorm2 = newDoc(db);
-  await svc.confirm(db, { username: 'sarah', role: 'admin' }, basePayload(dNorm2, {
+  const rBad = await svc.confirm(db, { username: 'sarah', role: 'admin' }, basePayload(dNorm2, {
     allValues: { supplier_name: 'Acme', invoice_number: 'INV-10', invoice_date: 'whenever' },
   }));
-  check('unparseable date left as typed, not dropped', calls.commitAllValues.invoice_date === 'whenever');
+  check('unparseable date-role value refused (INVALID_DATE)', rBad.ok === false && rBad.code === 'INVALID_DATE' && rBad.field === 'invoice_date');
+  check('  → the bad-date doc was NOT filed (held, pre-claim)', get(db, dNorm2).status !== 'confirmed' && get(db, dNorm2).stored_path === null);
 
   // ── ALREADY_FILED: a doc claimed by someone else (confirmed, no stored yet) ───
   const d3 = newDoc(db);

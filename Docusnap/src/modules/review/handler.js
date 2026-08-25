@@ -190,6 +190,9 @@ function register(ctx) {
     getEvent: (db, id) => { try { return require('../processing/handler').getReviewEvent(db, id); } catch { return null; } },
     valPatterns: _loadValPatternsRaw,
     preserveAnchors: _batchAuditPreserveAnchors,
+    // The canonical folder-date parser, so an invalid-date edit is refused on the SAME predicate as the
+    // confirm/filing gate (not the loose validation_patterns) — see batchAuditService.validateEdit.
+    normaliseDate: (v) => require('../filing/handler').normaliseDate(v),
   });
 
   // Grid read — event-id addressed (main resolves the ids; a renderer id-list is never trusted).
@@ -1151,6 +1154,15 @@ function register(ctx) {
     const targets = new Set();
     if (doc.working_path) targets.add(doc.working_path);   // the app-managed inbox copy
     if (doc.stored_path)  targets.add(doc.stored_path);    // the filed copy in the output tree
+    // The filed copy's XML sidecar lives in a `.metadata/` subfolder beside it (filing/handler.js
+    // writes `<basename>.xml` there). Purge deleted the PDF but LEFT the sidecar orphaned (Chris
+    // 2026-08-25 Card 7) — remove it too. App-owned (the filed output tree only, never the customer's
+    // source scan) and best-effort (existsSync-guarded below). The inbox working copy has no sidecar.
+    if (doc.stored_path) {
+      const ext = path.extname(doc.stored_path);
+      targets.add(path.join(path.dirname(doc.stored_path), '.metadata',
+        path.basename(doc.stored_path, ext) + '.xml'));
+    }
     for (const p of targets) {
       if (p && fs.existsSync(p)) { try { fs.unlinkSync(p); } catch (e) { console.warn('purge unlink:', p, e.message); } }
     }

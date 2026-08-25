@@ -10,6 +10,7 @@
  * Run: ELECTRON_RUN_AS_NODE=1 node_modules/.bin/electron src/services/test_batch_audit_correct.js
  */
 const { createBatchAuditService } = require('./batchAuditService');
+const { normaliseDate } = require('../modules/filing/handler');   // the REAL folder-date parser
 
 let pass = 0, fail = 0;
 const check = (name, cond) => { if (cond) { pass++; } else { fail++; console.error('  ✗ ' + name); } };
@@ -39,12 +40,16 @@ function makeDeps(docs, { preserve = true, confirmImpl } = {}) {
         { key: 'total_amount', type: 'currency' },
       ],
     }),
+    // id→slug map so confirmBatch can resolve the type when the doc row has no type_slug (the real
+    // getWithExtractions → getById SELECT * case). Card 3 pin below.
+    getAll: (db) => [{ id: 42, slug: 'invoice', name: 'Invoice' }],
   };
   const svc = createBatchAuditService({
     reviewService, documents, doctypes,
     getEvent: () => ({ id: 7, ids: Object.keys(docs).map(Number) }),
     valPatterns: () => ({ date: DATE_PATS }),
     preserveAnchors: () => preserve,
+    normaliseDate,   // gate invalid dates on the SAME predicate the folder builder uses
   });
   return { svc, confirmCalls };
 }
@@ -70,6 +75,25 @@ const doc = (id, over = {}) => ({
     check('happy: corrections = CHANGED field only', Object.keys(p.corrections).length === 1 && p.corrections.invoice_number.corrected_value === 'INV-999' && p.corrections.invoice_number.original_value === 'INV-100');
     check('happy: allValues is the FULL map', p.allValues.invoice_number === 'INV-999' && p.allValues.invoice_date === '01-02-2026' && p.allValues.total_amount === '10.00');
     check('happy: internal.preserveAnchors true (switch on)', confirmCalls[0].internal.preserveAnchors === true);
+  }
+
+  // ── Card 3: a doc row WITHOUT type_slug (the real getWithExtractions/getById case) still re-files
+  //    with its real type — slug resolved from document_type_id via doctypes.getAll, so the filename
+  //    keeps "Invoice", never falling back to the literal "Document". ─────────────────────────────
+  {
+    const noSlug = doc(5, { type_slug: undefined, document_type_id: 42 });
+    const { svc, confirmCalls } = makeDeps({ 5: noSlug });
+    const r = await svc.confirmBatch({}, { username: 'u' }, { eventId: 7, edits: [{ docId: 5, fields: { invoice_number: 'INV-999' } }] });
+    check('Card 3: no-type_slug doc still files', r.filed === 1 && r.results[0].ok);
+    check('Card 3: slug resolved from document_type_id', confirmCalls[0].payload.document_type_slug === 'invoice');
+  }
+  // Positive control: when document_type_id maps to nothing, slug stays null (no crash, confirm still
+  // called with null slug — the pre-fix behaviour for a genuinely typeless doc).
+  {
+    const orphan = doc(5, { type_slug: undefined, document_type_id: 999 });
+    const { svc, confirmCalls } = makeDeps({ 5: orphan });
+    const r = await svc.confirmBatch({}, { username: 'u' }, { eventId: 7, edits: [{ docId: 5, fields: { invoice_number: 'INV-999' } }] });
+    check('Card 3 control: unknown type_id → null slug, still files', r.filed === 1 && confirmCalls[0].payload.document_type_slug === null);
   }
 
   // ── PIN E-flag: preserveAnchors switch OFF is threaded ────────────────────────
@@ -101,6 +125,20 @@ const doc = (id, over = {}) => ({
     const r2 = await svc2.confirmBatch({}, { username: 'u' }, { eventId: 7, edits: [{ docId: 5, fields: { invoice_date: '15-03-2026' } }] });
     check('PIN C control: valid date filed', r2.filed === 1 && cc2.length === 1);
   }
+  // ── Card 1 fig-leaf (Oracle 2026-08-25): a clipped date "15/12/202" PASSES the loose
+  //    validation_patterns substring test (year \d{2,4}) but the folder builder can't parse it →
+  //    would re-file to Unknown Year/Month. With normaliseDate injected it is REFUSED. ────────────
+  {
+    const { svc, confirmCalls } = makeDeps({ 5: doc(5) });
+    const r = await svc.confirmBatch({}, { username: 'u' }, { eventId: 7, edits: [{ docId: 5, fields: { invoice_date: '15/12/202' } }] });
+    check('Card 1: clipped-year date refused (not the loose predicate)', r.results[0].reason === 'invalid-value' && r.results[0].field === 'invoice_date' && r.results[0].detail === 'invalid-date');
+    check('Card 1: confirm not called on clipped date', confirmCalls.length === 0);
+    // Negative control: an OCR-spaced date the folder builder's preclean handles must STILL file (no false-block).
+    const { svc: svc2, confirmCalls: cc2 } = makeDeps({ 5: doc(5) });
+    const r2 = await svc2.confirmBatch({}, { username: 'u' }, { eventId: 7, edits: [{ docId: 5, fields: { invoice_date: '15 / 12 / 2025' } }] });
+    check('Card 1 control: OCR-spaced date still files (no false-block)', r2.filed === 1 && cc2.length === 1);
+  }
+
   // Empty structural field refused (can't blank the filename's key parts).
   {
     const { svc } = makeDeps({ 5: doc(5) });

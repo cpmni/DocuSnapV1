@@ -5483,6 +5483,24 @@ async function _autoFileDoc(db, docId, folderPath, notifyMainWindow, logger) {
   for (const e of db.prepare('SELECT field_key, display_value, raw_value FROM extractions WHERE document_id = ?').all(docId)) {
     allValues[e.field_key] = e.display_value ?? e.raw_value;
   }
+  // SILENT-MISFILE GUARD (Chris 2026-08-25 Card 1; gary + Oracle). isAutoFileEligible does NOT parse
+  // the date, and at overall_confidence === 100 with strict_100_autofile off docTrustGate is skipped
+  // entirely — so a present-but-unparseable DATE-ROLE value (e.g. a clipped taught date, conf 100, no
+  // note) would auto-file to Company/Unknown Year/Unknown Month with no signal. Gate on the EXACT
+  // parser the folder builder uses (filing.normaliseDate), BEFORE the claim: hold the doc in Review
+  // with a note (which also FLAGS it, so it can't auto-file on a later pass either) rather than filing
+  // it to Unknown. Not switch-gated — a value the folder builder cannot render is never auto-fileable.
+  if (dtInfo.date_field_key) {
+    const _dv = allValues[dtInfo.date_field_key];
+    if (_dv != null && String(_dv).trim() !== '' && filing.normaliseDate(_dv) === null) {
+      try {
+        db.prepare('UPDATE extractions SET validation_note = ? WHERE document_id = ? AND field_key = ?')
+          .run('This date can’t be read as a real calendar date, so the document can’t be filed automatically — please correct it in Review.',
+               docId, dtInfo.date_field_key);
+      } catch (e) { logger?.warn?.(`[auto-file] date-hold note failed for docId=${docId}: ${e && e.message}`); }
+      return;   // stays needs_review (unclaimed) — surfaces in Review, never files to Unknown
+    }
+  }
   // Claim the doc BEFORE filing (atomic compare-and-set) so the 100% auto-file can't
   // double-file a doc a human confirmed in the gap since the status check above, and so it's
   // honestly attributed. If the claim doesn't land, someone else already took it — don't file.

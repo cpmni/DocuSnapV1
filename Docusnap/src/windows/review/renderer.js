@@ -899,8 +899,12 @@ function _baIsDirty(docId, key) {
   const e = _baEdits[docId]; return !!(e && Object.prototype.hasOwnProperty.call(e, key));
 }
 function _baFieldMeta(f) {
+  // Customer-facing: confidence + any human-readable validation note ONLY. The internal method code
+  // ("anchor_inline", "keyword") is dev jargon that means nothing to a normal user and leaked into the
+  // Cards view under every value (Chris 2026-08-25 Card 5) — dropped from both the card meta and the
+  // table cell's hover title, which share this helper.
   const conf = f.confidence == null ? '' : `${Math.round(f.confidence)}%`;
-  return [conf, f.method ? String(f.method) : '', f.note ? String(f.note).slice(0, 48) : ''].filter(Boolean).join(' · ');
+  return [conf, f.note ? String(f.note).slice(0, 48) : ''].filter(Boolean).join(' · ');
 }
 function _baConf(v) { return v == null ? '' : `${Math.round(v)}%`; }
 function _baVisibleRows() {
@@ -4787,6 +4791,32 @@ function validateConfirm() {
     markRequiredMissing(missing);
     btn.disabled = true;
     return;
+  }
+
+  // INVALID-DATE guard (Chris 2026-08-25 Card 1) — the interactive twin of the server refusal in
+  // reviewService.confirm. A present-but-unreadable DATE-ROLE value passes the empty-required check
+  // above (it is non-empty) yet the folder builder can't parse it, so it would file to
+  // "Unknown Year / Unknown Month" with no signal. Block confirm and say how to fix it — the same
+  // treatment an EMPTY required date already gets. Predicate = _parseDrawnDate (precleans + requires a
+  // 4-digit year, so it AGREES with filing.normaliseDate and never false-blocks an OCR-spaced
+  // "15 / 12 / 2025"); deliberately NOT fieldValidationError (that loose pattern misses the clipped
+  // "15/12/202"). The SERVER refusal is the authoritative class fix (covers File All and a stale
+  // renderer); this is early feedback so the button doesn't invite a click that would only be refused.
+  if (dateKey && fieldExists(dateKey)) {
+    const dInput = document.querySelector(`.field-input[data-key="${dateKey}"]`);
+    const dVal = dInput ? dInput.value.trim() : '';
+    if (dVal && _parseDrawnDate(dVal, _regionDateOrder || 'dmy') === null) {
+      if (note) {
+        note.innerHTML = `The <b>${escHtml(labelFor(dateKey))}</b> can’t be read as a real date, so this `
+          + 'document would be filed under an unknown date. Please correct it before filing.';
+        Object.assign(note.style, { display: '', color: 'var(--warn)', fontSize: '12px',
+          lineHeight: '1.4', padding: '6px 14px' });
+      }
+      if (issuerNote) issuerNote.style.display = 'none';
+      markRequiredMissing([dateKey]);
+      btn.disabled = true;
+      return;
+    }
   }
 
   // Required roles are all present. A blank Document Issuer is a WARN, not a block (the

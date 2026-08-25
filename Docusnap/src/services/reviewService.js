@@ -182,12 +182,28 @@ function createReviewService(deps = {}) {
       if (Array.isArray(dtInfo.fields)) for (const f of dtInfo.fields) if (f && f.type === 'date') dateKeys.add(f.key);
       if (dtInfo.date_field_key) dateKeys.add(dtInfo.date_field_key);
       for (const k of dateKeys) {
-        const norm = filing.normaliseDate(allValues[k]);
-        if (norm && norm !== allValues[k]) {
+        const rawDate = allValues[k];
+        const norm = filing.normaliseDate(rawDate);
+        if (norm && norm !== rawDate) {
           allValues[k] = norm;
           if (corrections && corrections[k] && corrections[k].corrected_value != null) {
             corrections[k].corrected_value = norm;
           }
+        } else if (k === dtInfo.date_field_key && rawDate != null && String(rawDate).trim() !== '' && norm === null) {
+          // SILENT-MISFILE GUARD (Chris 2026-08-25 Card 1; gary + Oracle WRONG-LAYER → gate at the
+          // FILING predicate, not the loose validation_patterns). A present-but-unparseable DATE-ROLE
+          // value files to Company/Unknown Year/Unknown Month with NO signal — commitDocument
+          // substitutes 'Unknown Year'/'Unknown Month' (filing/handler.js) and returns success. Refuse
+          // HERE, pre-claim (no status churn, no file movement), keyed on the EXACT parser the folder
+          // builder uses (filing.normaliseDate) so there is zero divergence and zero false-block: any
+          // value filing CAN parse — including an OCR-spaced "15 / 12 / 2025" the preclean handles —
+          // still files; only a value that WOULD land in Unknown is held. Covers every human door
+          // (interactive Confirm, File All Ready, /v1), which all funnel through here. Extends the
+          // existing empty-required-role block from EMPTY to UNPARSEABLE — the same harm (no year/month).
+          return fail('INVALID_DATE',
+            `The date “${String(rawDate).trim()}” isn’t one the app can file — it would be saved under `
+            + '“Unknown Year / Unknown Month”. Please correct the date, then file it.',
+            { field: k });
         }
       }
     }

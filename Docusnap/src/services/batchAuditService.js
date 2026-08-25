@@ -41,7 +41,7 @@ function _norm(v) { return String(v == null ? '' : v).trim(); }
 // arc); a human-typed ref carries no universal server-side format and confirm's prefix-outlier gate
 // already exempts human-typed values, so refs are accepted unless empty in a structural role. An empty
 // value in the date/ref STRUCTURAL role is refused (a re-file must not blank the filename's key parts).
-function validateEdit(fieldKey, fieldType, value, dtInfo, valPatterns) {
+function validateEdit(fieldKey, fieldType, value, dtInfo, valPatterns, normaliseDate) {
   const trimmed = _norm(value);
   const isDate = fieldType === 'date' || (dtInfo && fieldKey === dtInfo.date_field_key);
   const isRef  = dtInfo && fieldKey === dtInfo.ref_field_key;
@@ -50,10 +50,19 @@ function validateEdit(fieldKey, fieldType, value, dtInfo, valPatterns) {
     return { ok: true };  // clearing a non-structural field is allowed
   }
   if (isDate) {
-    const pats = (valPatterns && valPatterns.date) || [];
-    if (pats.length) {
-      const hit = pats.some(p => { try { return new RegExp(p, 'i').test(trimmed); } catch { return false; } });
-      if (!hit) return { ok: false, reason: 'invalid-date' };
+    // Gate on the EXACT parser the folder builder uses (filing.normaliseDate) when it is injected, NOT
+    // the loose validation_patterns substring test — the loose test passes a clipped "15/12/202" (year
+    // \d{2,4}) which then re-files to Company/Unknown Year/Unknown Month (Oracle 2026-08-25: this edge
+    // shared the same fig leaf as the confirm gate). Fall back to the pattern test only when no
+    // normaliser is supplied (keeps the standalone export usable).
+    if (typeof normaliseDate === 'function') {
+      if (normaliseDate(trimmed) === null) return { ok: false, reason: 'invalid-date' };
+    } else {
+      const pats = (valPatterns && valPatterns.date) || [];
+      if (pats.length) {
+        const hit = pats.some(p => { try { return new RegExp(p, 'i').test(trimmed); } catch { return false; } });
+        if (!hit) return { ok: false, reason: 'invalid-date' };
+      }
     }
   }
   return { ok: true };
@@ -74,12 +83,26 @@ function createBatchAuditService(deps) {
   const { reviewService, documents, doctypes, getEvent } = deps;
   const valPatterns = typeof deps.valPatterns === 'function' ? deps.valPatterns : () => (deps.valPatterns || {});
   const preserveAnchors = typeof deps.preserveAnchors === 'function' ? deps.preserveAnchors : () => !!deps.preserveAnchors;
+  // The canonical date parser the folder builder uses — injected so validateEdit gates on the SAME
+  // predicate as filing/reviewService (no fig-leaf loose pattern). Null → validateEdit falls back.
+  const normaliseDate = typeof deps.normaliseDate === 'function' ? deps.normaliseDate : null;
 
   // The two field keys the grid must NEVER re-file in place (route to full Review instead).
   const ROUTED_KEYS = new Set(['supplier_name', 'document_type', 'document_type_slug']);
 
   function _resolveDtInfo(db, doc) {
-    const slug = doc.type_slug || null;
+    let slug = doc.type_slug || null;
+    // getWithExtractions (→ documents.getById, SELECT *) does NOT join document_types, so the real-DB
+    // row carries no type_slug — resolve it from document_type_id or the re-file loses the doc's real
+    // type and reviewService.confirm's filename builder falls back to the literal "Document" (Chris
+    // 2026-08-25 Card 3: a corrected Invoice re-filed as "Document.<date>.<ref>.pdf"). The grid read
+    // (buildGrid → documents.getByIds) already carries type_slug; this makes the WRITE path agree.
+    if (!slug && doc.document_type_id != null && doctypes && typeof doctypes.getAll === 'function') {
+      try {
+        const t = (doctypes.getAll(db) || []).find(x => x && x.id === doc.document_type_id);
+        if (t) slug = t.slug || null;
+      } catch { /* leave slug null → dtInfo null (unchanged legacy behaviour) */ }
+    }
     if (!slug) return { slug: null, dtInfo: null };
     let dtInfo = null;
     try { dtInfo = doctypes.getWithFields(db, slug); } catch { dtInfo = null; }
@@ -169,7 +192,7 @@ function createBatchAuditService(deps) {
       let bad = null;
       for (const k of keys) {
         const fdef = dtInfo && Array.isArray(dtInfo.fields) ? dtInfo.fields.find(f => f.key === k) : null;
-        const vr = validateEdit(k, fdef && fdef.type, changed[k].corrected_value, dtInfo, _pats);
+        const vr = validateEdit(k, fdef && fdef.type, changed[k].corrected_value, dtInfo, _pats, normaliseDate);
         if (!vr.ok) { bad = { field: k, reason: vr.reason }; break; }
       }
       if (bad) { r.reason = 'invalid-value'; r.field = bad.field; r.detail = bad.reason; results.push(r); continue; }
