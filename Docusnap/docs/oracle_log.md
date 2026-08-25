@@ -2052,3 +2052,39 @@ construction, so neither trigger — the legal-suffix slip, the doc-732 reg-coll
    non-empty AND 100% correct.** The confirmed-corpus A/B proves "won't hurt"; only the held-set reprocess
    proves "will help". Empty held-set diff → keep DARK (no measured benefit, and name_snap would add
    silent-adopt surface for nothing).
+
+---
+
+## 2026-08-25 — First-batch letterhead sibling-fill (issuer_sibling_fill) — VET of gary's design
+
+**Problem:** a new supplier's first import of ~12 identical-layout invoices are each held "confirm the
+sender" (letterhead prefill); confirming one only helps docs imported AFTER it, so File All Ready offers 0.
+
+**VERDICT: SIGN OFF WITH CONDITIONS.** The layer is right (an on-confirm per-scope propagation service
+modelled on classFixService, not a page-wide rewrite); fail-toward-review posture right; the silent-
+auto-file seam is genuinely closed by the existing floor. Conditions (all implemented in `4aa5075`):
+- **C1 (BLOCKER) — the premise was wrong.** gary keyed the trigger on `suggested_supplier`, but the
+  shipped default is PREFILL mode (mig-77 forces `letterhead_prefill=true` for ALL installs), where the
+  engine writes `supplier_name=C @69, method='letterhead_prefill'` and NO `suggested_supplier`. So the
+  feature would be DEAD ON ARRIVAL and a suggest-mode test would hide it. Re-keyed to
+  `method=='letterhead_prefill'` + `display==C` + note. Fires ONLY when the human ACCEPTED the letterhead
+  (norm(confirmed C)==norm(prefilled read)); a CORRECTED confirm never propagates.
+- **C2 — same-layout guard (seam 4).** Two DISTINCT senders in one batch whose letterheads garble to the
+  same string (both template_id NULL) would otherwise misfile sender-2 under sender-1. Guard: adopt only
+  if the sibling's `logo_phash` is within a tight Hamming distance (4) of the confirmed doc's (identical
+  siblings ~0-2; distinct logos far; null → 64 → refused). "independent read" is common-mode OCR, not
+  corroboration — the phash IS the same-layout proof.
+- **C3 — capture pre-claim, thread in** (the LAST-effect hook must not re-read the resolved source row).
+- **C4 — no corrected_to (marker badge); raise FIELD confidence to clear below_threshold; leave
+  overall_confidence UNTOUCHED.** Seam 2 traced closed: below-floor refusal + (fresh sibling template_id
+  NULL → docTrustGate refusal at any sub-100 floor) means no sweep/corrob/import door files a filled
+  sibling silently — only the human File-All click. A future dev who recomputes overall on a note-clear
+  would open this door; C4 + the PRE-FILL pins guard it.
+- **C5 — the gate must run the LIVE config.** Unit pins seed letterhead_prefill rows (not
+  suggested_supplier). Plus a fresh-import Chris round (12 identical → confirm 1 → File All offers 11 →
+  zero wrong folders → Undo). The confirmed-corpus census is VACUOUS (0 suggested_supplier rows; mature
+  docs resolved), so the fresh-import fired-path IS the go/no-go, not a corpus census.
+- Seam 3 (graduation): keep the filled siblings COUNTABLE (already true for hand-confirms); the audit row
+  records applied count + source decision so a wrong graduation is traceable.
+No learning-exclusion (contrast classFix C2): each sibling's own letterhead already reads C, so the fill
+confirms its own evidence rather than overriding it.
