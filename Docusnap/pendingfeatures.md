@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-08-25 — FLIP DECISION for the two DARK detection arcs (RATIFIED, owner-gated, NOT flipped)
+Oracle ratify `docs/oracle_log.md` 2026-08-25 (`97f2da2`). Corpus A/B (realdoc, 1078 confirmed docs,
+OFF vs both ON) = byte-identical (would-file 1049=1049, M 11=11, 0 supplier changes) → proves NON-DESTRUCTION,
+NOT the heal (both arcs inert on the clean corpus; the triggers aren't in confirmed data).
+- **`branding_strip_reg_boilerplate` — SIGN OFF.** Cleared to flip **owner-manual per-DB now**
+  (`set-setting branding_strip_reg_boilerplate true`). Promote to a NEW-INSTALL DEFAULT (migration) only
+  after the held/misfiled reprocess shows doc-732 (Oakhaven→Castellan @94) now abstains/flags instead of filing.
+- **`name_dominant_snap` — SIGN OFF W/COND.** The LLC↔LLP valid-form-swap hole is CLOSED (`97f2da2`).
+  Owner-manual per-DB only; new-install default **deferred** until real `+name_snap` fires are eyeballed
+  correct on the held queue.
+- **THE MERGE GATE for any default-on:** a HELD/MISFILED reprocess diff (NOT the confirmed corpus) must be
+  non-empty AND 100% correct. Empty → keep DARK (no measured benefit; name_snap would add silent-adopt
+  surface for nothing). Census helper: `scratchpad/census_template_issuer.js` pattern + the rr_diff on dumps.
+
+---
+
 ## 2026-08-15 — SEPARATOR SHEETS: one GENERIC split-sheet, not numbered (owner idea)
 Owner: *"on the separator sheets, we don't need them by number. 1 generic sheet should be enough for
 the app to know to split."* Today's split-PDF flow (✂ Split-PDF in Review, `split-pdf` IPC → pypdf,
