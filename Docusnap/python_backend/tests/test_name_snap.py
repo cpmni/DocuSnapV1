@@ -40,6 +40,12 @@ check('REFUSE core swap with a long core (Foxglove/Coxglove)', snap("Coxglove Ho
 check('REFUSE a core _close repair (Brambiewood)', snap("Brambiewood Joinery Ltd", DOM) is None)
 check('REFUSE a core AND suffix change together', snap("Brambiewood Joinery Lid", DOM) is None)
 check('REFUSE a non-legal-suffix trailing change', snap("Bramblewood Joinery Lane", DOM) is None)
+# Oracle 2026-08-25: a VALID-FORM suffix SWAP is a DIFFERENT ENTITY, not a slip — the read's own trailing
+# token is itself a distinct canonical legal suffix (LLP vs LLC, both in canon and 1 edit apart). This is
+# the one hole the single-spelling confirmed-corpus A/B could not exercise; it RED-fails pre-fix.
+check('REFUSE valid-form swap LLP->LLC (distinct entity)', snap("Anderson Holdings LLP", "Anderson Holdings LLC") is None)
+check('REFUSE valid-form swap LLC->Ltd (distinct entity)', snap("Anderson Holdings LLC", "Anderson Holdings Ltd") is None)
+check('adopt STILL holds for a garble into a valid suffix (Lid->Ltd)', snap("Bramblewood Joinery Lid", DOM) == DOM)
 check('REFUSE differing token count', snap("Bramblewood Ltd", DOM) is None)
 check('no-op when already equal', snap(DOM, DOM) is None)
 

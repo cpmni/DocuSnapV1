@@ -109,7 +109,7 @@ def _ocr_equiv(a, b):
             and _levenshtein(a, b) == 1)
 
 
-# ── Suffix-canon SNAP (2026-08-24, Oracle SIGN-OFF-W/COND) ──────────────────────────────
+# ── Suffix-canon SNAP (built 2026-08-24; RATIFIED docs/oracle_log.md 2026-08-25 SIGN-OFF-W/COND) ──
 # The owner's class: a solid single-spelling scope reads its issuer/customer with a one-glyph
 # legal-suffix slip ("Bramblewood Joinery Lid" for the confirmed "…Ltd"). The STRONG name-repair
 # already produces "…Ltd" but engine.py's low_distinct demotion routes it to a "Suggested … [Resolve]"
@@ -145,8 +145,14 @@ def name_snap_adopt(read, dominant, min_core_len=_SNAP_MIN_CORE_LEN):
         return dominant if str(dominant) != str(read) else None
     if diff == [len(r_norms) - 1]:
         last_r, last_d = r_norms[-1], d_norms[-1]
+        # A VALID-FORM suffix SWAP is a DIFFERENT ENTITY, not a slip. If the read's own trailing token is
+        # itself a distinct canonical legal suffix (LLP vs LLC — both in canon and one edit apart), refuse:
+        # "Anderson LLP" (a real partnership) must never silently adopt the confirmed "Anderson LLC" (Oracle
+        # 2026-08-25 — the one name_snap hole the single-spelling confirmed-corpus A/B could not exercise).
+        if last_r in _LEGAL_SUFFIX_CANON and last_r != last_d:
+            return None
         if last_d in _LEGAL_SUFFIX_CANON and _levenshtein(last_r, last_d) <= 1:
-            return dominant                           # trailing legal-suffix slip, exact core
+            return dominant                           # trailing legal-suffix slip (e.g. Lid->Ltd), exact core
     return None                                       # a CORE token changed => different company, stay in Review
 
 

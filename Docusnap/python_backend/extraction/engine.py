@@ -9096,7 +9096,8 @@ class ExtractionEngine:
                         # cases). Clean row (no validation_note / no corrected_to / not review-forced) so
                         # trust.js auto-files it under this ONE switch alone. Env is the FIRST conjunct =>
                         # OFF is byte-identical. Mutually exclusive with _adopt_confirmed_dominant (its
-                        # +confirmed_adopt marker is skipped). See docs/oracle_log.md 2026-08-24.
+                        # +confirmed_adopt marker is skipped). RATIFIED docs/oracle_log.md 2026-08-25
+                        # (SIGN-OFF-W/COND: the valid-form suffix-swap LLP<->LLC hole closed in name_snap_adopt).
                         if (os.environ.get('NAME_DOMINANT_SNAP') == '1'
                                 and repaired and repaired != str(val)
                                 and key in ('supplier_name', 'customer_name')

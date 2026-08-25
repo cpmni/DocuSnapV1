@@ -111,7 +111,7 @@ _BRANDING_STOPWORDS = frozenset({
     "statement", "remittance", "receipt", "quote", "quotation", "worksheet",
     "credit", "debit", "advice", "proforma", "job", "copy", "original",
 })
-# UK company-registration boilerplate (iris/gary → Oracle SIGN-OFF-W/COND, 2026-08-24). Present on
+# UK company-registration boilerplate (iris/gary → Oracle SIGN OFF, RATIFIED docs/oracle_log.md 2026-08-25). Present on
 # essentially EVERY UK B2B letterhead of a given document generator, so it can NEVER distinguish one
 # supplier from another. A WRONG logo-collision supplier whose fingerprint carries {vat, reg} scores
 # free own_ratio hits on any "VAT Reg GB …" line, inflating it over _BRANDING_PRESENT_RATIO and

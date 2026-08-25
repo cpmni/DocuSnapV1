@@ -2009,3 +2009,46 @@ accuracy drop. PIN A (getFieldFormats + dominant-snap reflect the correction on 
 exclude ON — assert the READER output, not the corrections row); PIN B (issuer + type edits refused/routed);
 PIN C (invalid ref/date refused inline); PIN D (grid ev.ids-driven, corrected rows stay visible mid-session);
 PIN E (anchor-count census matches the accepted policy).
+
+---
+
+## 2026-08-25 — RATIFY the two DARK detection arcs (name_dominant_snap + branding_strip_reg_boilerplate)
+
+**Context:** both arcs were built the prior session with in-code comments citing "Oracle SIGN-OFF-W/COND
+2026-08-24" — but NO log entry existed (phantom citations). This is the real vet, requested by the owner
+("ratify the 2 DARK arcs"), backed by a corpus A/B.
+
+**Corpus A/B (realdoc_regression, RR_APP_ENV=1, live confirmed DB, 1078 docs; OFF vs BOTH arcs ON):**
+would-auto-file 1049=1049 (delta 0), M 11=11 (same docs), M_type 0, per-doc dump diff = 0 supplier changes,
+0 wouldFile flips, 0 +name_snap adoptions. **Both arcs COMPLETELY INERT on the confirmed corpus** — proves
+NON-DESTRUCTION, does NOT prove the heal (the confirmed corpus is single-spelling / correctly-identified by
+construction, so neither trigger — the legal-suffix slip, the doc-732 reg-collision — is present).
+
+**VERDICT: SIGN OFF WITH CONDITIONS — split the arcs (different risk class).**
+- **branding_strip_reg_boilerplate — SIGN OFF.** Fails toward review (worst case: abstain-to-review, never
+  a silent mis-pick — K-floor fail-safe traced through the immune path, present-bar, logo-text gate,
+  BRANDING_CONFLICT_GUARD, _branding_own_ratio, all return the abstain/absent direction at `_n==0`).
+  {vat,reg,registered,company} are genuinely newly-stripped (not pre-existing stopwords); the shared
+  `_distinctive_tokens` lands the strip at the doc-732 defeat point. 0/1078 identities changed. Residual
+  (small, honest): the strip also shrinks RIVAL banks and could newly-FLAG a correct supplier
+  (fail-to-review, not a misfile) — 0 on the corpus.
+- **name_dominant_snap — SIGN OFF WITH CONDITIONS.** It converts a REVIEW hold into a SILENT auto-file, the
+  one path the single-spelling corpus can't exercise. Containment is otherwise good (STRONG-repair-only,
+  exact core, passes `repaired` not a raw dominant, `+name_snap` excluded UNANCHORED from getFieldFormats so
+  the self-feed loop is closed). **THE HOLE Oracle found:** a VALID-FORM suffix swap — `llc` and `llp` are
+  both in `_LEGAL_SUFFIX_CANON` and one edit apart, so "Anderson LLP" (a distinct partnership) would silently
+  adopt confirmed "Anderson LLC". **FIXED this session:** `name_snap_adopt` now refuses when the read's own
+  trailing token is itself a distinct canonical legal suffix (`if last_r in _LEGAL_SUFFIX_CANON and
+  last_r != last_d: return None`); pinned in test_name_snap.py (LLP->LLC + LLC->Ltd refused, Lid->Ltd keep).
+
+**CONDITIONS:**
+1. name_snap: the valid-form-swap exclusion (DONE) is a BLOCKER before any flip.
+2. name_snap: owner-manual per-DB flip ONLY; new-install default deferred until real held-doc fires are
+   observed correct.
+3. branding: cleared to flip owner-manual now; promote to new-install default after doc-732 is confirmed to
+   abstain/flag on reprocess (not file Castellan @94).
+4. Flip SEPARATELY, branding first (disjoint stages; 0 interaction on the corpus).
+5. **Merge gate for default-on (either arc): a HELD/MISFILED reprocess diff (NOT the confirmed corpus) must be
+   non-empty AND 100% correct.** The confirmed-corpus A/B proves "won't hurt"; only the held-set reprocess
+   proves "will help". Empty held-set diff → keep DARK (no measured benefit, and name_snap would add
+   silent-adopt surface for nothing).
