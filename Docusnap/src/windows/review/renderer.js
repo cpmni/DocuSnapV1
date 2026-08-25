@@ -744,7 +744,13 @@ function _asRenderPanel() {
       ? `<div class="ap-kept">${(ev.dropped || []).slice(0, 8).map(d => `kept back — ${escHtml(typeof _sweepReason === 'function' ? _sweepReason(d.reason) : d.reason)} (#${d.docId})`).join('<br>')}${(ev.dropped || []).length > 8 ? `<br>… and ${(ev.dropped || []).length - 8} more` : ''}</div>` : '';
     const undo = ev.undoable ? `<button type="button" class="ap-btn" data-ap="undo" data-ev="${ev.id}" title="Puts these documents back in Review. The copies already written to your filing folder stay there and are replaced when you file them again.">Put back</button>` : '';
     const see = Number(ev.count) ? `<button type="button" class="ap-btn primary" data-ap="see" data-ev="${ev.id}">See them</button>` : '';
-    return `<div class="ap-row"><div class="ap-head"><span class="ap-when">${escHtml(_asRelTime(ev.at))}</span><span class="ap-line">${_asIcon(ev)} ${_asLineFull(ev)}</span><span class="ap-actions">${see}${undo}</span></div>${by}${kept}</div>`;
+    // Batch-audit "Quick check" (2026-08-24, DARK batch_audit_enabled): on any FILED batch — auto-filed,
+    // self-filed, OR human-approved (File All / File N / a run of individual Confirm & File, which the
+    // ledger merges into one approved|bulk chip). Catching a wrong value right after rapid confirming is
+    // the point (owner). Only while a doc is still around to check; opens the grid at THIS event id.
+    const qcheck = (_baOn && (ev.kind === 'auto_filed' || ev.kind === 'self_filed' || ev.kind === 'approved') && Number(ev.count))
+      ? `<button type="button" class="ap-btn" data-ap="qcheck" data-ev="${ev.id}" title="Open these filed documents in a grid to spot-check the read values and correct any mistakes.">Quick check</button>` : '';
+    return `<div class="ap-row"><div class="ap-head"><span class="ap-when">${escHtml(_asRelTime(ev.at))}</span><span class="ap-line">${_asIcon(ev)} ${_asLineFull(ev)}</span><span class="ap-actions">${see}${qcheck}${undo}</span></div>${by}${kept}</div>`;
   }).join('');
   panel.classList.add('open');
 }
@@ -836,6 +842,7 @@ async function initActivityStrip() {
     const b = e.target.closest('[data-ap]');
     if (b && b.dataset.ap === 'see')  { _asSeeThem(Number(b.dataset.ev)); return; }
     if (b && b.dataset.ap === 'undo') { _asPutBack(Number(b.dataset.ev)); return; }
+    if (b && b.dataset.ap === 'qcheck') { _baOpen(Number(b.dataset.ev)); return; }   // batch-audit grid
     _asClosePanel();   // the X (data-ap="close") or a bare click on the panel body
   });
   // C5: OBSERVE-ONLY click-outside (never stopPropagation/preventDefault — the ⊕ pick, drag-select and
@@ -850,6 +857,504 @@ async function initActivityStrip() {
   }, true);
 }
 initActivityStrip();
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Batch-audit "Quick check" grid — the FRONT-END for the auto-filed batch review
+// (2026-08-24). Backend: src/services/batchAuditService.js (Oracle SIGN-OFF-W/COND).
+// Lays a filed BATCH out as editable doc cards (values) beside a page preview; a
+// corrected value re-files + re-learns via the batch-audit-correct IPC. DARK: the
+// whole surface only arms when `batch_audit_enabled` is true (the IPCs ALSO refuse
+// when off, so a stale renderer can't reach the backend). Issuer + document type are
+// READ-ONLY here and routed to full Review (Oracle C1) — this fixes VALUE/date/ref
+// single-character misreads (I/1, O/0, slash-drop), never the identity/type.
+// ══════════════════════════════════════════════════════════════════════════════
+let _baOn = false, _baEvId = null, _baOrig = {}, _baEdits = {}, _baValPats = null, _baPrevDoc = null, _baBusy = false;
+let _baRows = [], _baView = 'cards', _baFType = '', _baFSup = '', _baColW = {}, _baResz = null;
+let _baZoom = 1, _baPanX = 0, _baPanY = 0, _baPan = null;
+const _BA_ROUTED = new Set(['supplier_name', 'document_type', 'document_type_slug']);
+
+(async function _baInit() {
+  try { _baOn = (await window.docusnap.getSetting('batch_audit_enabled')) === 'true'; } catch { _baOn = false; }
+})();
+
+function _baHumanize(key) {
+  return String(key || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+function _baIsDateKey(key) { return /(^|_)date($|_)/.test(String(key || '')); }
+function _baDateOk(v) {
+  const t = String(v == null ? '' : v).trim();
+  if (!t) return true;   // emptiness is the server's structural call (C3), not a format failure
+  const pats = (_baValPats && _baValPats.date) || [];
+  if (!pats.length) return true;
+  return pats.some(p => { try { return new RegExp(p, 'i').test(t); } catch { return false; } });
+}
+// Edits survive filter + view changes: the input's VALUE and dirty flag are always derived from
+// (edit ?? original), never from what a prior render left in the DOM.
+function _baVal(docId, key) {
+  const e = _baEdits[docId];
+  if (e && Object.prototype.hasOwnProperty.call(e, key)) return e[key];
+  const o = _baOrig[docId]; return o && o[key] != null ? o[key] : '';
+}
+function _baIsDirty(docId, key) {
+  const e = _baEdits[docId]; return !!(e && Object.prototype.hasOwnProperty.call(e, key));
+}
+function _baFieldMeta(f) {
+  const conf = f.confidence == null ? '' : `${Math.round(f.confidence)}%`;
+  return [conf, f.method ? String(f.method) : '', f.note ? String(f.note).slice(0, 48) : ''].filter(Boolean).join(' · ');
+}
+function _baConf(v) { return v == null ? '' : `${Math.round(v)}%`; }
+function _baVisibleRows() {
+  return (_baRows || []).filter(r =>
+    (!_baFType || r.type_slug === _baFType) && (!_baFSup || (r.supplier_name || '') === _baFSup));
+}
+
+function _baEnsureStyle() {
+  if (document.getElementById('ba-style')) return;
+  const s = document.createElement('style'); s.id = 'ba-style';
+  s.textContent = [
+    '#ba-overlay{position:fixed;inset:0;z-index:9000;display:none;background:rgba(0,0,0,.45)}',
+    '#ba-overlay.open{display:flex}',
+    '.ba-modal{margin:auto;width:96vw;height:94vh;max-width:2200px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,.35)}',
+    '.ba-modal.resizing{cursor:col-resize;user-select:none}',
+    '.ba-header{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border)}',
+    '.ba-header h2{margin:0;font-size:16px;font-weight:600;color:var(--text)}',
+    '.ba-sub{color:var(--muted);font-size:12.5px}',
+    '.ba-x{margin-left:auto;background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;border-radius:var(--r-sm);padding:4px 9px;line-height:1}',
+    '.ba-x:hover{background:var(--surface2);color:var(--text)}',
+    // filter bar
+    '.ba-filters{display:flex;align-items:center;gap:10px;padding:10px 18px;border-bottom:1px solid var(--border);background:var(--surface2)}',
+    '.ba-fl{color:var(--muted);font-size:12px}',
+    '.ba-sel{padding:6px 10px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);color:var(--text);font-size:12.5px;max-width:230px}',
+    '.ba-count{color:var(--muted);font-size:11.5px}',
+    '.ba-view-toggle{margin-left:auto;display:inline-flex;border:1px solid var(--border2);border-radius:var(--r-pill);overflow:hidden;background:var(--surface)}',
+    '.ba-vseg{padding:6px 14px;font-size:12.5px;color:var(--muted);cursor:pointer;background:none;border:none;line-height:1.4}',
+    '.ba-vseg.on{background:var(--accent);color:var(--on-accent,#fff)}',
+    '.ba-body{flex:1;display:flex;min-height:0}',
+    '.ba-grid{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:12px}',
+    // table mode: the GRID stops scrolling and the table WRAP fills it + scrolls both ways, so the
+    // horizontal scrollbar docks at the bottom of the visible pane (not the bottom of a tall table) and
+    // the sticky header/first-column ride the wrap's own scroll.
+    '.ba-grid.as-table{display:block;overflow:hidden;padding:14px}',
+    '.ba-preview{position:relative;width:40%;min-width:320px;border-left:1px solid var(--border);background:var(--doc-bg);display:flex;align-items:center;justify-content:center;overflow:hidden;padding:12px}',
+    '.ba-preview img{max-width:100%;max-height:100%;height:auto;border:1px solid var(--border2);background:#fff;border-radius:6px;transform-origin:center center;cursor:grab;will-change:transform}',
+    '.ba-preview.grabbing img{cursor:grabbing}',
+    '.ba-prev-empty{color:var(--muted);font-size:13px;margin:auto;text-align:center}',
+    '.ba-prev-hint{position:absolute;left:12px;bottom:12px;font-size:10.5px;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:var(--r-pill);padding:3px 10px;opacity:.75;pointer-events:none}',
+    '.ba-empty{color:var(--muted);font-size:13px;padding:24px;text-align:center}',
+    // cards
+    '.ba-card{border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;background:var(--surface)}',
+    '.ba-card.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}',
+    '.ba-card-head{display:flex;align-items:baseline;gap:10px;cursor:pointer;margin-bottom:9px}',
+    '.ba-fname{font-weight:600;color:var(--text);font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:48%}',
+    '.ba-issuer{color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.ba-issuer small{opacity:.7}',
+    '.ba-conf{margin-left:auto;color:var(--muted);font-size:11.5px;font-family:var(--mono,monospace);white-space:nowrap}',
+    '.ba-fields{display:grid;grid-template-columns:1fr 1fr;gap:9px 14px}',
+    '.ba-field{display:flex;flex-direction:column;gap:3px;min-width:0}',
+    '.ba-flabel{font-size:11px;color:var(--muted)}',
+    '.ba-input{padding:6px 8px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface2);color:var(--text);font-size:13px;font-family:var(--mono,monospace);min-width:0}',
+    '.ba-input:focus{outline:none;border-color:var(--accent);background:var(--surface)}',
+    '.ba-input.dirty{border-color:var(--warn);background:var(--accent-bg)}',
+    '.ba-input.bad{border-color:var(--err)}',
+    '.ba-fmeta{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.ba-ferr{font-size:11px;color:var(--err);min-height:0}',
+    '.ba-card-result{margin-top:9px;font-size:12px}',
+    '.ba-card-result[data-state=ok],.ba-tstatus[data-state=ok]{color:var(--ok)}',
+    '.ba-card-result[data-state=bad],.ba-tstatus[data-state=bad]{color:var(--err)}',
+    '.ba-card-result[data-state=warn],.ba-tstatus[data-state=warn]{color:var(--warn)}',
+    // table (stylish: borderless-until-hover value cells, sticky head + first col, zebra, hover, selected accent)
+    '.ba-tablewrap{height:100%;overflow:auto;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface)}',
+    '.ba-table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size:13px;color:var(--text)}',
+    '.ba-table th{position:sticky;top:0;z-index:2;background:var(--surface3);text-align:left;font-weight:600;font-size:11px;letter-spacing:.02em;text-transform:uppercase;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--border2);white-space:nowrap}',
+    '.ba-tvcol{min-width:150px}',
+    '.ba-col-resize{position:absolute;top:0;right:-3px;width:8px;height:100%;cursor:col-resize;z-index:5;touch-action:none;user-select:none}',
+    '.ba-col-resize:hover,.ba-col-resize.on{background:var(--accent);opacity:.35}',
+    '.ba-table td{padding:5px 8px;border-bottom:1px solid var(--border);vertical-align:middle}',
+    '.ba-table tbody tr:last-child td{border-bottom:none}',
+    '.ba-table tbody tr{background:var(--surface)}',
+    '.ba-table tbody tr:nth-child(even){background:var(--surface2)}',
+    '.ba-table tbody tr:hover{background:var(--accent-bg)}',
+    '.ba-table tbody tr.sel{background:var(--accent-bg);box-shadow:inset 3px 0 0 var(--accent)}',
+    '.ba-tsticky{position:sticky;left:0;z-index:1;background:inherit;min-width:180px;max-width:250px;box-shadow:1px 0 0 var(--border)}',
+    '.ba-table th.ba-tsticky{z-index:3;background:var(--surface3)}',
+    '.ba-tfname{display:block;font-weight:600;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:230px}',
+    '.ba-tissuer{color:var(--muted);font-size:12px;white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis}',
+    '.ba-tinput{width:100%;box-sizing:border-box;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--text);font-size:13px;font-family:var(--mono,monospace);padding:5px 7px}',
+    '.ba-tinput:hover{border-color:var(--border2);background:var(--surface)}',
+    '.ba-tinput:focus{outline:none;border-color:var(--accent);background:var(--surface)}',
+    '.ba-tinput.dirty{border-color:var(--warn);background:var(--accent-bg)}',
+    '.ba-tinput.bad{border-color:var(--err)}',
+    '.ba-tempty{color:var(--muted);text-align:center}',
+    '.ba-cchip{display:block;font-size:10px;color:var(--muted);margin-top:2px;font-family:var(--mono,monospace)}',
+    '.ba-tstatus{font-size:11px;white-space:nowrap;min-width:120px}',
+    // footer + buttons
+    '.ba-footer{display:flex;align-items:center;gap:14px;padding:12px 18px;border-top:1px solid var(--border)}',
+    '.ba-note{color:var(--muted);font-size:12px}',
+    '.ba-actions{margin-left:auto;display:flex;gap:10px;align-items:center}',
+    '.ba-btn{padding:8px 16px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface2);color:var(--text);font-size:13px;cursor:pointer}',
+    '.ba-btn:hover{background:var(--surface3)}',
+    '.ba-btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent,#fff)}',
+    '.ba-btn.primary:hover{background:var(--accent2)}',
+    '.ba-btn:disabled{opacity:.5;cursor:default}',
+  ].join('\n');
+  document.head.appendChild(s);
+}
+
+function _baBuildOverlay() {
+  let ov = document.getElementById('ba-overlay');
+  if (ov) return ov;
+  _baEnsureStyle();
+  ov = document.createElement('div'); ov.id = 'ba-overlay';
+  ov.innerHTML = ''
+    + '<div class="ba-modal" role="dialog" aria-modal="true" aria-label="Quick check">'
+    +   '<div class="ba-header"><h2>Quick check</h2><span class="ba-sub" id="ba-sub"></span>'
+    +     '<button type="button" class="ba-x" id="ba-x" title="Close" aria-label="Close">&#10005;</button></div>'
+    +   '<div class="ba-filters">'
+    +     '<span class="ba-fl">Show</span>'
+    +     '<select class="ba-sel" id="ba-ftype" aria-label="Filter by document type"><option value="">All types</option></select>'
+    +     '<select class="ba-sel" id="ba-fsup" aria-label="Filter by sender"><option value="">All senders</option></select>'
+    +     '<span class="ba-count" id="ba-count"></span>'
+    +     '<span class="ba-view-toggle" role="group" aria-label="View">'
+    +       '<button type="button" class="ba-vseg" id="ba-vcards" data-view="cards">Cards</button>'
+    +       '<button type="button" class="ba-vseg" id="ba-vtable" data-view="table">Table</button>'
+    +     '</span>'
+    +   '</div>'
+    +   '<div class="ba-body"><div class="ba-grid" id="ba-grid"></div>'
+    +     '<div class="ba-preview" id="ba-preview"><span class="ba-prev-empty">Select a document to preview it here.</span></div></div>'
+    +   '<div class="ba-footer">'
+    +     '<span class="ba-note">Issuer and document type are read-only here — open the document in Review to change those.</span>'
+    +     '<span class="ba-actions"><span class="ba-note" id="ba-dirty">No changes</span>'
+    +       '<button type="button" class="ba-btn" id="ba-cancel">Close</button>'
+    +       '<button type="button" class="ba-btn primary" id="ba-apply" disabled>Apply corrections</button></span>'
+    +   '</div>'
+    + '</div>';
+  document.body.appendChild(ov);
+  ov.addEventListener('click', (e) => { if (e.target === ov) _baClose(); });
+  ov.querySelector('#ba-x').addEventListener('click', _baClose);
+  ov.querySelector('#ba-cancel').addEventListener('click', _baClose);
+  ov.querySelector('#ba-apply').addEventListener('click', _baApply);
+  ov.querySelector('#ba-ftype').addEventListener('change', (e) => { _baFType = e.target.value; _baRender(); });
+  ov.querySelector('#ba-fsup').addEventListener('change', (e) => { _baFSup = e.target.value; _baRender(); });
+  ov.querySelector('.ba-view-toggle').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-view]'); if (!b || b.dataset.view === _baView) return;
+    _baView = b.dataset.view; try { localStorage.setItem('ba_view', _baView); } catch {}
+    _baRender();
+  });
+  const grid = ov.querySelector('#ba-grid');
+  grid.addEventListener('input', _baOnInput);
+  // select the doc (preview) on focus/click of its card OR table row — both carry data-doc.
+  grid.addEventListener('focusin', (e) => { const el = e.target.closest('[data-doc]'); if (el) _baSelect(Number(el.dataset.doc)); });
+  grid.addEventListener('click', (e) => { if (e.target.closest('.ba-input') || e.target.closest('.ba-col-resize')) return; const el = e.target.closest('[data-doc]'); if (el) _baSelect(Number(el.dataset.doc)); });
+  grid.addEventListener('blur', _baOnBlur, true);
+  grid.addEventListener('pointerdown', _baReszStart);   // draggable column resizers (table view)
+  const pv = ov.querySelector('#ba-preview');
+  pv.addEventListener('wheel', _baPrevWheel, { passive: false });   // scroll to zoom
+  pv.addEventListener('pointerdown', _baPrevDown);                  // drag to pan
+  pv.addEventListener('dblclick', _baResetPrev);                    // double-click to reset
+  document.addEventListener('keydown', _baEsc, true);
+  return ov;
+}
+
+// ── Preview pan + zoom (mirrors the Review window's cursor-anchored zoom) ──
+function _baApplyPrevTransform() {
+  const img = document.querySelector('#ba-preview img'); if (!img) return;
+  img.style.transform = `translate(${_baPanX}px, ${_baPanY}px) scale(${_baZoom})`;
+}
+function _baResetPrev() { _baZoom = 1; _baPanX = 0; _baPanY = 0; _baApplyPrevTransform(); }
+function _baPrevWheel(e) {
+  const pv = document.getElementById('ba-preview'); if (!pv || !pv.querySelector('img')) return;
+  e.preventDefault();
+  const rect = pv.getBoundingClientRect();
+  const cx = e.clientX - rect.left - rect.width / 2 - _baPanX;   // cursor offset from the img's transform centre
+  const cy = e.clientY - rect.top - rect.height / 2 - _baPanY;
+  const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+  const nz = Math.min(8, Math.max(1, _baZoom * factor));
+  const ratio = nz / _baZoom;
+  _baPanX -= cx * (ratio - 1); _baPanY -= cy * (ratio - 1); _baZoom = nz;
+  if (_baZoom <= 1.001) { _baZoom = 1; _baPanX = 0; _baPanY = 0; }   // snap back to fit
+  _baApplyPrevTransform();
+}
+function _baPrevDown(e) {
+  const pv = document.getElementById('ba-preview'); if (!pv || !pv.querySelector('img') || _baZoom <= 1) return;
+  e.preventDefault();
+  _baPan = { x: e.clientX, y: e.clientY, px: _baPanX, py: _baPanY };
+  pv.classList.add('grabbing');
+  document.addEventListener('pointermove', _baPrevMove);
+  document.addEventListener('pointerup', _baPrevUp, { once: true });
+}
+function _baPrevMove(e) {
+  if (!_baPan) return;
+  _baPanX = _baPan.px + (e.clientX - _baPan.x);
+  _baPanY = _baPan.py + (e.clientY - _baPan.y);
+  _baApplyPrevTransform();
+}
+function _baPrevUp() {
+  _baPan = null;
+  document.removeEventListener('pointermove', _baPrevMove);
+  document.getElementById('ba-preview')?.classList.remove('grabbing');
+}
+function _baEsc(e) {
+  if (e.key === 'Escape' && document.getElementById('ba-overlay')?.classList.contains('open') && !_baBusy) { _baClose(); e.stopPropagation(); }
+}
+
+// ── Draggable table columns — widths persist per field key across filter/view re-renders ──
+function _baReszStart(e) {
+  const grip = e.target.closest('.ba-col-resize'); if (!grip) return;
+  const th = grip.closest('th'); if (!th) return;
+  e.preventDefault();
+  _baResz = { key: grip.dataset.colkey, th, x: e.clientX, w: th.offsetWidth };
+  grip.classList.add('on');
+  document.querySelector('.ba-modal')?.classList.add('resizing');
+  document.addEventListener('pointermove', _baReszMove);
+  document.addEventListener('pointerup', _baReszEnd, { once: true });
+}
+function _baReszMove(e) {
+  if (!_baResz) return;
+  const w = Math.max(70, _baResz.w + (e.clientX - _baResz.x));
+  _baResz.th.style.width = w + 'px';
+  _baColW[_baResz.key] = w;
+}
+function _baReszEnd() {
+  document.removeEventListener('pointermove', _baReszMove);
+  document.querySelectorAll('.ba-col-resize.on').forEach(g => g.classList.remove('on'));
+  document.querySelector('.ba-modal')?.classList.remove('resizing');
+  _baResz = null;
+}
+
+// Build _baOrig for every fetched row (all keys, all rows) so edits are compared/preserved
+// regardless of the current filter or view.
+function _baIngest(rows) {
+  _baRows = rows || [];
+  _baOrig = {};
+  for (const r of _baRows) {
+    _baOrig[r.id] = {};
+    for (const f of (r.fields || [])) if (f.key && !_BA_ROUTED.has(f.key)) _baOrig[r.id][f.key] = f.value == null ? '' : String(f.value);
+  }
+}
+function _baPopulateFilters() {
+  const tsel = document.getElementById('ba-ftype'), ssel = document.getElementById('ba-fsup');
+  if (!tsel || !ssel) return;
+  const types = [...new Map(_baRows.filter(r => r.type_slug).map(r => [r.type_slug, r.type_name || r.type_slug])).entries()];
+  const sups = [...new Set(_baRows.map(r => r.supplier_name).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  tsel.innerHTML = '<option value="">All types</option>' + types.map(([slug, name]) => `<option value="${escHtml(slug)}">${escHtml(name)}</option>`).join('');
+  ssel.innerHTML = '<option value="">All senders</option>' + sups.map(n => `<option value="${escHtml(n)}">${escHtml(n)}</option>`).join('');
+  tsel.value = _baFType; ssel.value = _baFSup;
+}
+
+async function _baOpen(evId) {
+  if (!_baOn) { showToast('Quick check is turned off.', 'warn'); return; }
+  let res = null;
+  try { res = await window.docusnap.getAutofiledGrid(evId); } catch { res = null; }
+  if (!res || !res.ok) {
+    showToast(res && res.reason === 'disabled' ? 'Quick check is turned off.'
+      : res && res.reason === 'unknown-event' ? 'That batch is no longer available to check.'
+      : 'Could not open Quick check.', 'warn');
+    return;
+  }
+  if (!res.rows || !res.rows.length) { showToast('Nothing left to check in that batch.', 'info'); return; }
+  if (!_baValPats) { try { _baValPats = await window.docusnap.getValidationPatterns(); } catch { _baValPats = {}; } }
+  _baEvId = evId; _baEdits = {}; _baPrevDoc = null; _baFType = ''; _baFSup = ''; _baColW = {};
+  try { _baView = localStorage.getItem('ba_view') === 'cards' ? 'cards' : 'table'; } catch { _baView = 'table'; }   // table is the default view
+  try { _asClosePanel(); } catch {}
+  const ov = _baBuildOverlay();
+  const _filedWord = res.event && res.event.kind === 'approved' ? 'you filed' : 'filed automatically';
+  ov.querySelector('#ba-sub').textContent = `${res.rows.length} document${res.rows.length === 1 ? '' : 's'} ${_filedWord} — correct any wrong reads, then re-file.`;
+  _baIngest(res.rows);
+  _baPopulateFilters();
+  ov.classList.add('open');
+  _baRender();
+  const vis = _baVisibleRows();
+  if (vis[0]) _baSelect(vis[0].id);
+}
+
+// Master render — reads the current filter + view and lays the visible rows into #ba-grid.
+function _baRender() {
+  const grid = document.getElementById('ba-grid'); if (!grid) return;
+  const rows = _baVisibleRows();
+  grid.classList.toggle('as-table', _baView === 'table');
+  document.getElementById('ba-vcards')?.classList.toggle('on', _baView === 'cards');
+  document.getElementById('ba-vtable')?.classList.toggle('on', _baView === 'table');
+  if (_baView === 'table') _baRenderTable(rows); else _baRenderCards(rows);
+  const cnt = document.getElementById('ba-count');
+  if (cnt) cnt.textContent = rows.length === _baRows.length ? `${rows.length} document${rows.length === 1 ? '' : 's'}` : `${rows.length} of ${_baRows.length}`;
+  // keep the preview on the selected doc if it's still visible, else move to the first visible one
+  if (_baPrevDoc && rows.some(r => r.id === _baPrevDoc)) _baSyncSel();
+  else if (rows[0]) { _baPrevDoc = null; _baSelect(rows[0].id); }
+  _baUpdateDirty();
+}
+
+function _baRenderCards(rows) {
+  const grid = document.getElementById('ba-grid'); if (!grid) return;
+  if (!rows.length) { grid.innerHTML = '<div class="ba-empty">No documents match these filters.</div>'; return; }
+  grid.innerHTML = rows.map(r => {
+    const fields = (r.fields || []).filter(f => f.key && !_BA_ROUTED.has(f.key));
+    const cells = fields.map(f => {
+      const dirty = _baIsDirty(r.id, f.key) ? ' dirty' : '';
+      const meta = _baFieldMeta(f);
+      return '<label class="ba-field">'
+        + `<span class="ba-flabel">${escHtml(_baHumanize(f.key))}</span>`
+        + `<input class="ba-input${dirty}" type="text" spellcheck="false" data-doc="${r.id}" data-key="${escHtml(f.key)}" value="${escHtml(String(_baVal(r.id, f.key)))}">`
+        + `<span class="ba-fmeta" title="${escHtml(meta)}">${escHtml(meta)}</span>`
+        + '<span class="ba-ferr"></span></label>';
+    }).join('');
+    return `<div class="ba-card" data-doc="${r.id}">`
+      + '<div class="ba-card-head">'
+      +   `<span class="ba-fname" title="${escHtml(r.filename || '')}">${escHtml(r.filename || ('#' + r.id))}</span>`
+      +   `<span class="ba-issuer">${escHtml(r.supplier_name || '—')} <small>(issuer — edit in Review)</small></span>`
+      +   `<span class="ba-conf">${escHtml(_baConf(r.overall_confidence))}</span>`
+      + '</div>'
+      + `<div class="ba-fields">${cells || '<span class="ba-note">No editable fields on this document.</span>'}</div>`
+      + `<div class="ba-card-result" data-res="${r.id}"></div>`
+      + '</div>';
+  }).join('');
+}
+
+function _baRenderTable(rows) {
+  const grid = document.getElementById('ba-grid'); if (!grid) return;
+  if (!rows.length) { grid.innerHTML = '<div class="ba-empty">No documents match these filters.</div>'; return; }
+  // Columns = the union of non-routed field keys across the VISIBLE rows (first-appearance order).
+  const cols = [], seen = new Set(), fmap = {};
+  for (const r of rows) {
+    fmap[r.id] = {};
+    for (const f of (r.fields || [])) {
+      if (!f.key || _BA_ROUTED.has(f.key)) continue;
+      fmap[r.id][f.key] = f;
+      if (!seen.has(f.key)) { seen.add(f.key); cols.push(f.key); }
+    }
+  }
+  const thead = '<thead><tr><th class="ba-tsticky">Document</th><th>Issuer</th>'
+    + cols.map(k => {
+        const w = _baColW[k] ? ` style="width:${_baColW[k]}px"` : '';
+        return `<th class="ba-tvcol"${w}>${escHtml(_baHumanize(k))}<span class="ba-col-resize" data-colkey="${escHtml(k)}" title="Drag to resize this column"></span></th>`;
+      }).join('') + '<th>Status</th></tr></thead>';
+  const body = rows.map(r => {
+    const cells = cols.map(k => {
+      const f = fmap[r.id][k];
+      if (!f) return '<td class="ba-tempty ba-tvcol">—</td>';
+      const dirty = _baIsDirty(r.id, k) ? ' dirty' : '';
+      const conf = _baConf(f.confidence);
+      return `<td class="ba-tvcol"><input class="ba-input ba-tinput${dirty}" type="text" spellcheck="false" data-doc="${r.id}" data-key="${escHtml(k)}" value="${escHtml(String(_baVal(r.id, k)))}" title="${escHtml(_baFieldMeta(f))}">`
+        + `<span class="ba-ferr"></span>${conf ? `<span class="ba-cchip">${escHtml(conf)}</span>` : ''}</td>`;
+    }).join('');
+    return `<tr class="ba-trow" data-doc="${r.id}">`
+      + `<td class="ba-tsticky"><span class="ba-tfname" title="${escHtml(r.filename || '')}">${escHtml(r.filename || ('#' + r.id))}</span>${_baConf(r.overall_confidence) ? `<span class="ba-cchip">${escHtml(_baConf(r.overall_confidence))} confidence</span>` : ''}</td>`
+      + `<td class="ba-tissuer" title="Issuer — edit in Review">${escHtml(r.supplier_name || '—')}</td>`
+      + cells
+      + `<td class="ba-tstatus" data-res="${r.id}"></td>`
+      + '</tr>';
+  }).join('');
+  grid.innerHTML = `<div class="ba-tablewrap"><table class="ba-table">${thead}<tbody>${body}</tbody></table></div>`;
+}
+
+function _baOnInput(e) {
+  const inp = e.target.closest('.ba-input'); if (!inp) return;
+  const docId = Number(inp.dataset.doc), key = inp.dataset.key;
+  const val = inp.value;
+  const orig = (_baOrig[docId] || {})[key];
+  if (String(val) === String(orig == null ? '' : orig)) {
+    if (_baEdits[docId]) { delete _baEdits[docId][key]; if (!Object.keys(_baEdits[docId]).length) delete _baEdits[docId]; }
+    inp.classList.remove('dirty');
+  } else {
+    (_baEdits[docId] || (_baEdits[docId] = {}))[key] = val;
+    inp.classList.add('dirty');
+  }
+  _baUpdateDirty();
+}
+function _baOnBlur(e) {
+  const inp = e.target.closest && e.target.closest('.ba-input'); if (!inp) return;
+  const err = inp.parentElement.querySelector('.ba-ferr'); if (!err) return;
+  if (_baIsDateKey(inp.dataset.key) && !_baDateOk(inp.value)) {
+    inp.classList.add('bad'); err.textContent = 'Not a valid date — this will be refused.';
+  } else { inp.classList.remove('bad'); err.textContent = ''; }
+}
+
+function _baUpdateDirty() {
+  const n = Object.values(_baEdits).reduce((a, m) => a + Object.keys(m).length, 0);
+  const dirty = document.getElementById('ba-dirty'), apply = document.getElementById('ba-apply');
+  if (dirty) dirty.textContent = n ? `${n} change${n === 1 ? '' : 's'}` : 'No changes';
+  if (apply) apply.disabled = _baBusy || n === 0;
+}
+
+// Highlight the selected doc's card/row (no preview reload) — used after a re-render.
+function _baSyncSel() {
+  document.querySelectorAll('#ba-grid .ba-card, #ba-grid .ba-trow').forEach(el =>
+    el.classList.toggle('sel', Number(el.dataset.doc) === _baPrevDoc));
+}
+
+async function _baSelect(docId) {
+  if (!docId) return;
+  _baPrevDoc = docId;
+  _baSyncSel();
+  const pv = document.getElementById('ba-preview'); if (!pv) return;
+  pv.innerHTML = '<span class="ba-prev-empty">Loading preview…</span>';
+  let pages = [];
+  try { pages = await window.docusnap.getDocumentPages(docId, null, null); } catch { pages = []; }
+  if (_baPrevDoc !== docId) return;   // selection moved on while pages loaded
+  const src = Array.isArray(pages) && pages.length ? pages[0] : null;
+  _baZoom = 1; _baPanX = 0; _baPanY = 0;   // reset zoom/pan for the new document
+  pv.innerHTML = src
+    ? `<img src="${escHtml(String(src))}" alt="document preview"><span class="ba-prev-hint">Scroll to zoom · drag to pan · double-click to reset</span>`
+    : '<span class="ba-prev-empty">No preview available for this document.</span>';
+}
+
+async function _baApply() {
+  if (_baBusy) return;
+  const edits = Object.entries(_baEdits)
+    .map(([docId, fields]) => ({ docId: Number(docId), fields }))
+    .filter(e => e.docId && Object.keys(e.fields).length);
+  if (!edits.length) return;
+  _baBusy = true;
+  const apply = document.getElementById('ba-apply');
+  if (apply) { apply.disabled = true; apply.textContent = 'Filing…'; }
+  let r = null;
+  try { r = await window.docusnap.batchAuditCorrect({ eventId: _baEvId, edits }); } catch (e) { r = { ok: false, error: (e && e.message) || 'error' }; }
+  if (apply) apply.textContent = 'Apply corrections';
+  _baBusy = false;
+  if (!r || !r.ok) {
+    showToast('Nothing was re-filed — ' + ((r && (r.error || r.reason)) || 'the batch could not be reached') + '.', 'warn');
+    _baUpdateDirty();
+    return;
+  }
+  const filed = Number(r.filed) || 0;
+  const bad = (r.results || []).filter(x => !x.ok).length;
+  showToast(bad ? `Re-filed ${filed}; ${bad} need a look.` : `Re-filed ${filed} correction${filed === 1 ? '' : 's'}.`, bad ? 'warn' : 'info');
+  // Re-fetch the authoritative grid so successes show their new value and clear; problems stay visible.
+  try {
+    const fresh = await window.docusnap.getAutofiledGrid(_baEvId);
+    if (fresh && fresh.ok && fresh.rows && fresh.rows.length) {
+      _baEdits = {}; _baIngest(fresh.rows); _baPopulateFilters(); _baRender();
+      _baShowResults(r.results || []);   // stamp problem/success rows on the fresh markup
+    } else if (fresh && fresh.ok) {
+      showToast('All documents checked.', 'info'); _baClose(); return;   // batch emptied
+    } else {
+      _baShowResults(r.results || []);
+    }
+  } catch { _baShowResults(r.results || []); }
+  _baUpdateDirty();
+}
+
+function _baResultState(res) {
+  if (res.ok && res.reason !== 'no-change') return { s: 'ok', t: `✓ Re-filed${res.filed ? ' as ' + res.filed : ''}.` };
+  if (res.ok) return { s: '', t: '' };
+  if (res.reason === 'route-to-review') return { s: 'warn', t: 'Change the issuer or type in Review — not here.' };
+  if (res.reason === 'invalid-value') return { s: 'bad', t: `“${_baHumanize(res.field || '')}” is not valid (${res.detail || 'bad value'}) — fix it and apply again.` };
+  if (res.reason === 'not-in-batch' || res.reason === 'not-confirmed' || res.reason === 'not-found') return { s: 'warn', t: 'This document is no longer part of the batch.' };
+  return { s: 'bad', t: 'Could not re-file — ' + (res.reason || 'unknown') + '.' };
+}
+function _baShowResults(results) {
+  for (const res of (results || [])) {
+    const el = document.querySelector(`#ba-grid [data-res="${res.docId}"]`); if (!el) continue;
+    const { s, t } = _baResultState(res);
+    el.dataset.state = s; el.textContent = t;
+  }
+}
+
+function _baClose() {
+  const ov = document.getElementById('ba-overlay'); if (ov) ov.classList.remove('open');
+  // _baEsc stays bound (self-guards on .open) so Esc still works after a reopen.
+  _baEvId = null; _baEdits = {}; _baOrig = {}; _baRows = []; _baPrevDoc = null; _baFType = ''; _baFSup = ''; _baColW = {}; _baResz = null;
+  _baZoom = 1; _baPanX = 0; _baPanY = 0; _baPan = null;
+}
 
 document.getElementById('btn-start-reviewing')?.addEventListener('click', () => {
   const order = reviewDisplayOrder();
