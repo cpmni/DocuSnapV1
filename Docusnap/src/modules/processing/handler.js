@@ -3954,11 +3954,18 @@ function register(ctx) {
       try { r = require('../../services/classFixService').undoBatch(db, String(ev.undo.batchId), { actorName: (getCurrentUser() || {}).username || null, audit: logAudit, logger }); } catch (e) { r = { ok: false, reason: 'failed', message: e && e.message }; }
       if (r && r.ok) undone.push(...(ev.ids || [])); else refused.push(...(ev.ids || []));
       if (!(r && r.ok)) return { ok: false, reason: (r && r.reason) || 'failed', undone, refused };
+    } else if (ev.undo.type === 'issuerfill' && ev.undo.batchId) {
+      // #1 first-batch letterhead sibling-fill undo (2026-08-25). Restores the held state (note back,
+      // conf back, marker gone) on every still-queued filled sibling; a sibling filed since is left alone.
+      let r = null;
+      try { r = require('../../services/issuerSiblingFillService').undoBatch(db, String(ev.undo.batchId), { actorName: (getCurrentUser() || {}).username || null, audit: logAudit, logger }); } catch (e) { r = { ok: false, reason: 'failed', message: e && e.message }; }
+      if (r && r.ok) undone.push(...(ev.ids || [])); else refused.push(...(ev.ids || []));
+      if (!(r && r.ok)) return { ok: false, reason: (r && r.reason) || 'failed', undone, refused };
     } else {
       return { ok: false, reason: 'not-undoable', undone: [], refused: (ev.ids || []).slice() };
     }
     try {
-      if (undone.length) logAudit(db, { action: ev.undo.type === 'sweep' ? 'scope_sweep_undone' : 'class_fix_undone', target_type: 'scope', outcome: 'success',
+      if (undone.length) logAudit(db, { action: ev.undo.type === 'sweep' ? 'scope_sweep_undone' : ev.undo.type === 'issuerfill' ? 'issuer_sibling_fill_undone' : 'class_fix_undone', target_type: 'scope', outcome: 'success',
         metadata: { doc_ids: undone.join(','), refused_ids: refused.join(','), event_id: ev.id } });
     } catch { /* audit is best-effort */ }
     // card 7: the event stops offering Put back (full AND partial — the refused rows are non-sweep rows a

@@ -642,13 +642,13 @@ function _asRelTime(at) {
   const dt = new Date(Number(at)); const hh = String(dt.getHours()).padStart(2, '0'), mm = String(dt.getMinutes()).padStart(2, '0');
   return d < 2 * 86_400_000 ? `Yesterday ${hh}:${mm}` : `${dt.toLocaleDateString()} ${hh}:${mm}`;
 }
-function _asIcon(ev) { return ev.kind === 'put_back' ? '↩' : ev.kind === 'class_fix' ? '✎' : '✓'; }
+function _asIcon(ev) { return ev.kind === 'put_back' ? '↩' : (ev.kind === 'class_fix' || ev.kind === 'issuer_fill') ? '✎' : '✓'; }
 // Kind → an icon COLOUR class (green filed · amber put-back · accent fix) so the line reads at a glance
 // without painting the whole chip (bob: reserve colour, don't nag). A zero-filed approved is "kept back",
 // which reads as put-back tone (amber), not a green tick.
 function _asIconClass(ev) {
   if (ev.kind === 'put_back') return 'putback';
-  if (ev.kind === 'class_fix') return 'fix';
+  if (ev.kind === 'class_fix' || ev.kind === 'issuer_fill') return 'fix';
   if (ev.kind === 'approved' && (Number(ev.count) || 0) === 0) return 'putback';
   return 'filed';
 }
@@ -661,6 +661,7 @@ function _asShort(ev) {
     // A zero-filed File All is the run that most needs a receipt (Chris r5 card 2) — say "kept back", not "you filed 0".
     case 'approved':   return n === 0 && kept ? `Nothing filed — ${kept} kept back` : `You filed ${n}`;
     case 'class_fix':  return `${n} corrected`;
+    case 'issuer_fill': return `${n} more ready to file`;
     case 'put_back':   return `${n} put back`;
     default:           return `${n} document${s}`;
   }
@@ -691,6 +692,7 @@ function _asLine(ev) {
     case 'self_filed': return `${n} document${s}${sup ? ` from <b>${sup}</b>` : ''} filed themselves — they matched what you've confirmed`;
     case 'approved':   return ev.bulk ? `You filed ${n} in one go` : `You filed ${n}${sup ? ` from <b>${sup}</b>` : ''} in one go`;
     case 'class_fix':  return `${n} ${sup ? `<b>${sup}</b> ` : ''}document${s} ${n === 1 ? 'was' : 'were'} corrected to match your fix`;
+    case 'issuer_fill': return `${sup ? `<b>${sup}</b> filled in on ` : 'The sender was filled in on '}${n} more document${s} with this same letterhead — File All Ready now offers ${n === 1 ? 'it' : 'them'}`;
     case 'put_back':   return `${n} ${sup ? `<b>${sup}</b> ` : ''}document${s} ${n === 1 ? 'was' : 'were'} put back in Review — the filed copies stay in your folder until you file them again`;
     default:           return `${n} document${s}`;
   }
@@ -6166,8 +6168,20 @@ async function confirmCurrentDoc({ bulk = false, expectId = null, acknowledgePre
         renderClassFixBar();
       }
     } catch { /* the report must never affect the filing that already happened */ }
+    // #1 (issuer sibling-fill): tell the operator the identical siblings are now ready — a toast (the
+    // undo lives on the activity-strip chip that the confirm just recorded). The queue is refetched by
+    // the click handler AFTER it advances, so File All Ready sees the newly-ready siblings.
+    try {
+      const _if = result.issuerFill;
+      if (_if && Array.isArray(_if.docs) && _if.docs.length) {
+        const n = _if.docs.length;
+        showToast(`Filled the sender on ${n} more document${n === 1 ? '' : 's'} with this letterhead — `
+          + `File All Ready now offers ${n === 1 ? 'it' : 'them'}. You can undo from the activity strip.`, 'ok');
+      }
+    } catch { /* the report must never affect the filing that already happened */ }
   }
-  return { filed: true, filename: result.filename || null, filePath: result.filePath || null };
+  const _issuerFilled = (result.issuerFill && Array.isArray(result.issuerFill.docs)) ? result.issuerFill.docs.length : 0;
+  return { filed: true, filename: result.filename || null, filePath: result.filePath || null, issuerFilled: _issuerFilled };
 }
 
 // The human-readable tail of a filed path: the folders the operator's own Output Structure made
@@ -6347,6 +6361,10 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
   if (r.error) { showToast(r.error, 'err'); return; }
   updateTabCounts();
   advanceAfterAction(idx, _groupKey);
+  // #1 (issuer sibling-fill): the identical siblings were just pre-filled server-side, so their queue
+  // rows (below_threshold / issuer_blank / flag counts) are stale in memory — refetch so File All Ready
+  // and the queue colours reflect the newly-ready siblings immediately.
+  if (r.issuerFilled) { try { _refreshQueueFromBroadcast?.().catch(() => {}); } catch {} }
   // The finish line must MOVE as the operator works — a countdown that only updates on reopen is
   // worse than none (it reads as "nothing I did counted"). One cheap read-only call per confirm.
   refreshScopeReadiness().then(() => renderQueueList()).catch(() => {});

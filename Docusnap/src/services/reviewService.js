@@ -130,6 +130,19 @@ function createReviewService(deps = {}) {
       try { _readyBefore = readyProbe(db, (allValues && allValues.supplier_name) || supplier_name || null, document_type_slug || null); }
       catch { _readyBefore = null; }
     }
+    // #1 (issuer sibling-fill): capture the source doc's letterhead issuer READ + layout phash BEFORE the
+    // confirm resolves it (Oracle C3, 2026-08-25 — thread the pre-persist row; the LAST-effect hook must
+    // NOT re-read the now-resolved row). Human single confirms only; the service also gates OFF, but skip
+    // the query when it can't fire.
+    let _issuerFillSrc = null;
+    if (!_via && !bulk) {
+      try {
+        const _se = db.prepare(`SELECT display_value, extraction_method, validation_note FROM extractions
+                                  WHERE document_id = ? AND field_key = 'supplier_name'`).get(document_id);
+        if (_se) _issuerFillSrc = { method: _se.extraction_method || '', display: _se.display_value || '',
+                                    note: _se.validation_note || '', phash: (docRow && docRow.logo_phash) || null };
+      } catch { _issuerFillSrc = null; }
+    }
     // SECURITY (Stage 1 — H1/M12): the on-disk source paths are resolved SERVER-SIDE from the doc
     // row, NEVER from the payload (which carries field VALUES only). This mirrors the /v1 confirm
     // path (api/handler.js), which already reads folder_path/original_filename from the row. Without
@@ -680,6 +693,33 @@ function createReviewService(deps = {}) {
       } catch (e) { logger?.warn?.('class fix skipped: ' + (e && e.message)); }
     }
 
+    // ── THE FIRST-BATCH LETTERHEAD SIBLING-FILL (gary → Oracle S-O-W/COND, 2026-08-25) ────────────
+    // The operator confirmed a document and left its letterhead PREFILL unchanged (accepted "this
+    // letterhead IS the sender"). Fill the queued, SAME-LAYOUT siblings whose OWN letterhead read the
+    // same company, so File All Ready offers them — told afterwards with an undo. Same placement rules as
+    // the class fix above (LAST, its own `!_via`/`!bulk`, own transaction inside the service, fail-open).
+    // PRE-FILL only: the service never touches overall_confidence, so only the human File-All click files
+    // them (Oracle seam 2). Source row captured PRE-CLAIM above (C3), threaded in — never re-read here.
+    let _issuerFill = null;
+    if (!_via && !bulk && dtInfo && _issuerFillSrc) {
+      try {
+        _issuerFill = require('./issuerSiblingFillService').applyForConfirm(db, {
+          documentId: document_id, confirmedIssuer: confirmedSupplier, src: _issuerFillSrc,
+          typeSlug: document_type_slug || (dtInfo && dtInfo.slug) || null,
+          actorName, learning, audit,
+          presence: (() => { try { return require('./presenceService').shared(); } catch { return null; } })(),
+          logger,
+        });
+        if (_issuerFill && _issuerFill.batchId && Array.isArray(_issuerFill.docs) && _issuerFill.docs.length) {
+          try {
+            recordReviewEvent(db, { kind: 'issuer_fill', ids: _issuerFill.docs.map(d => d.id), approved: true,
+              scope: { supplier: confirmedSupplier, typeSlug: document_type_slug || (dtInfo && dtInfo.slug) || null },
+              undo: { type: 'issuerfill', batchId: _issuerFill.batchId } });
+          } catch { /* presentation only */ }
+        }
+      } catch (e) { logger?.warn?.('issuer sibling-fill skipped: ' + (e && e.message)); }
+    }
+
     // Slice 1 trigger (S1-C3): HUMAN confirms only — its own explicit `!_via` (same ruling as the
     // two guards above: never lean on a closed guard). A machine-filed doc (scope_sweep / auto_*)
     // never re-triggers, so the auto-accept cannot chain. `bulk` confirms DO trigger — File-All is
@@ -703,7 +743,8 @@ function createReviewService(deps = {}) {
       }
     }
 
-    return { ok: true, success: true, ...filingResult, ...(_classFix ? { classFix: _classFix } : {}) };
+    return { ok: true, success: true, ...filingResult, ...(_classFix ? { classFix: _classFix } : {}),
+             ...(_issuerFill ? { issuerFill: _issuerFill } : {}) };
   }
 
   // ── Defer / restore (status-guarded) ──────────────────────────────────────────
