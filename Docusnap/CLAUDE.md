@@ -21,7 +21,39 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-24 OVERNIGHT (autonomous: corroboration fix + a Chris round): **READ `HANDOVER_2026-08-24.md` FIRST**
+## ⏭ LATEST — 2026-08-25 (resumed after an accidental close: mid-task arcs + a full Chris fix loop): **READ `HANDOVER_2026-08-25.md` FIRST**
+Branch `feat/teach-side-overnight`, **origin at `034a3ad`, 13 commits AHEAD + LOCAL/NOT pushed** (owner reviews then
+pushes). The session was closed mid-commit; I read the 08-24 handover, committed the uncommitted mid-build work,
+then ran the loop Chris→fix→Chris→(recommendation)fix→Chris. **(1) Resumed + committed 3 DARK/OFF-inert arcs:**
+`c1d5c08` the Quick-check grid FRONT-END (UI half of `eef96bd`); `d687f31` two DARK detection arcs
+(`name_dominant_snap` — a ≤1-edit legal-suffix slip "…Lid"→"…Ltd" silent-adopts + auto-files; and
+`branding_strip_reg_boilerplate` — strip {vat,reg,registered,company} so a wrong logo-collision supplier can't win
+own_ratio on a "VAT Reg…" line, doc-732). **BOTH detection arcs are OWNER-VET-QUEUE — DARK, need corpus OFF==ON +
+Oracle before any flip.** **(2) Chris fix loop (3 rounds, `docs/CHRIS_FULL_APP_REVIEW_2026-08-25.md`):** round 1
+→ 7 cards, strong yes; rounds 2+3 verified fixes live, zero regressions. **FIXED (`200e68d`+`97d3527`):**
+- **Card 1 (HIGH) invalid-date SILENT MISFILE** — a present-but-unparseable date-ROLE value passed the
+  empty-required Confirm gate and filed to `Company/Unknown Year/Unknown Month` with no signal. **gary + Oracle
+  both WRONG-LAYER:** the renderer-only + `validation_patterns` idea was a FIG LEAF (looser than `filing.parseDate`
+  — passes "15/12/202","15/12/25",slash-ISO,full-month; false-blocks OCR-spaced). Fix gates on `filing.normaliseDate`
+  (the EXACT folder-builder parser) at EVERY door: `reviewService.confirm` (pre-claim refuse → interactive toast /
+  File-All skip / /v1), `_autoFileDoc` (hold → closes the conf-100/`strict_100_autofile`-off auto-file hole),
+  `batchAuditService.validateEdit` (aligned — was the same fig leaf), renderer `validateConfirm` (early pre-block via
+  `_parseDrawnDate`). Pins: `test_normalise_date_predicate.js` (16, both sides), `test_reviewservice.js` (refusal
+  replaces the old "left as typed" pin), `test_batch_audit_correct.js`.
+- **Card 3 (MOD-HIGH)** Quick-check re-file renamed `Invoice.…`→`Document.…` (`getWithExtractions`→`getById` SELECT *
+  has no `type_slug` → null slug → builder fell back to "Document"): resolve slug from `document_type_id` via
+  `doctypes.getAll`. **Card 5** Cards leaked dev codes (`_baFieldMeta` drops method). **Card 7** Empty bin orphaned
+  the `.metadata/*.xml` (`_purgeOne` removes it). **Card A** (round-2) OCR-spaced date showed a spurious "Not a valid
+  date" while filing fine — the on-blur `fieldValidationError` now accepts what `_parseDrawnDate` accepts (agrees with
+  button+builder; only relaxes).
+**Card-1 corpus gate NOT run** — the fixes are confirm/file-time only, don't touch the extraction/`isAutoFileEligible`
+READ path `realdoc_regression` measures (byte-identical by construction); predicate pinned 16/16. **OWNER VET QUEUE
+(not built):** the 2 DARK detection arcs · Card 2 Terms "NOT YET IN FORCE"/[SOLICITOR:] (legal) · Card 4
+letterhead-name-over-abstain (census+Oracle; same class as `branding_strip_reg_boilerplate`) · Card 6 stale
+queue-row refresh · grid↔activity-strip flip coupling · green-pill/red-note cosmetic pairing. **Sandbox LEFT RUNNING**
+CDP 9223 PID 19928 (`chris`/`plumber2026`, newest code).
+
+## (previous) 2026-08-24 OVERNIGHT (autonomous: corroboration fix + a Chris round): `HANDOVER_2026-08-24.md`
 Branch `feat/teach-side-overnight`, **origin at `034a3ad`, 4 overnight commits AHEAD + LOCAL/NOT pushed** (owner
 reviews then pushes). Ran while the owner slept. **(1) `9c21ed6` the Pelican-565 corroboration fix** (Oracle
 SIGN-OFF-W/COND): the record discarded a genuine independent mapping/crop agreement when the winner was bare
