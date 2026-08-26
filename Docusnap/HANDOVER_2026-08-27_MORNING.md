@@ -146,4 +146,38 @@ CDP **9223**, PID **3060**, `scratchpad/chris-sandbox/` (fresh DB, `userData\doc
   read `shape_families` variants.
 - The 08-25 realdoc arms took 22 min each; tonight's 1242-doc arms took ~23 min each (8 shards).
 
-## CHRIS ROUND — (appended below when his report landed)
+## CHRIS ROUND (2026-08-26 NIGHT / 08-27; fresh sandbox, CHRISBOT 472 docs; verbatim report in `docs/CHRIS_FULL_APP_REVIEW_2026-08-26.md`)
+**Numbers:** 472 in → **279 filed, 279 under the right company, 0 wrong type, 0 unknown-date folders, 149 filed by itself.**
+Cold batch 0/200 by itself → "File All Ready" filed 115 in one click (26 s, 0 wrong); **warm batch 116/200 by itself (58%;
+round 5 = 98)**; scanned 13/20; 20 exact duplicates all `-DUPLICATE`. **Every scary button told the truth** (truth-table in
+the report). Leak check: the owner's `Documents\Scan Finder` + live DB last written 21:18/21:10 — before the run; nothing
+left the sandbox. **Verdict: "Yes — I'd keep using it after two weeks, and pay."**
+**Tonight's features as he saw them:** Learning Repair selector = "the right idea… Wanted: this"; "Start fresh" warning honest,
+Undo worked, the next Harrowgate scan filed itself after Undo; the layout arm DID re-read siblings after his re-teach (owner
+test c — the re-slice question answered: it works, on grey copies it returned a different garble → card 5); the barcode field
+row was INVISIBLE when the page had no barcode (card 4) — **FIXED tonight** (an empty `barcode_none` row now renders; a
+barcode field can no longer be the Date role; `is_variable`); the console showed another sender's "worth a look" doc + said
+"Learned from 41" right after a forget (card 8) — **FIXED tonight** (exact-scope suspects; "41 filed · none still teaching").
+**OWNER VET QUEUE (his cards, NOT built — his suggestions never change code by themselves):**
+- **Card 1 HIGH (near-miss, held):** after he boxed OUR name as Document Issuer on a buyer-issued PO (your ruling: POs file
+  under the buyer), the app re-badged an Oakhaven delivery note, a Meadowvale credit note and a Castellan worksheet as
+  *Bramblewood purchase orders @95* with "Nothing looks wrong" + a live Confirm; held only because two lacked a PO number.
+  He notes Processing's "Stop a purchase-order layout claiming documents that say they are something else" showed ON
+  (`template_buyer_issued_type_scope`) yet didn't stop it → a detection arc for herald/gary (type-presence veto vs the
+  buyer-issued scope) — and the copy: never say "Nothing looks wrong" when the page heading disagrees with the chosen type.
+  His question for you: is a folder named after US intended for the POs we send out?
+- **Card 2 MOD-HIGH:** scanned Ironclad statement date read 24-06-2025 @ "High 94%" vs the page's 24-05-2025, no warning
+  (held only by other fields) — the leading-digit/month class; `trust_role_disagreement_refuse` is DARK.
+- **Card 3 MOD:** the Import results table says "Ready to file" on 13 Pelican rows whose reference read as the word "Date";
+  Review holds them all (File All was honest). Two screens, two verdicts.
+- **Card 5 MOD:** after the layout-arm re-read, siblings offered Use/Keep between two garbles the panel itself says aren't on
+  the page — don't offer Use/Keep when the page-check fails.
+- **Card 6 LOW-MOD:** invented senders ("Ticket Type", "DOCUMENT OLUTIONS", "Pelican Oiites Interiors") shown as groups with
+  "5 more to file by itself".
+- **Card 7 LOW:** stale panels (the blue "Nothing looks wrong" box after he corrected the type; the readout bar on an empty
+  queue; "All reviewed ✓" after Delete All).
+- **Settings, tab by tab (his admin hat):** Setup cluster clear (Files & filing "the most reassuring line in the app"; the
+  wizard's Regional-format step "best-explained screen"); **Processing = the wall of ~50 switches he'd never touch and can't
+  say aloud — wants a Recommended/Advanced split**; Learning: "Suppliers handled automatically" ticks = the one switch he'd use,
+  but "Clear ALL learning memory" / "Erase ALL data" sit on the same tab; Document Types shows `supplier_name` codes; Templates/
+  Audit/Search client/Licensing are "built for the person who built it". Terms still "WORKING DRAFT" (every round).

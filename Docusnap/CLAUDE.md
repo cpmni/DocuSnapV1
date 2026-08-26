@@ -40,8 +40,14 @@ BARCODES** — `barcode_inventory` (zxingcpp per OCR page, mig 91 `document_barc
 **OWNER DECISIONS (ranked in the handover):** flip F after the SFDEV live heal of 31901 · the three Learning-Repair UX
 defaults + whole-sender forget · flip the layout arm vs fund a quick-read pill · the barcode symbology/role/required Qs ·
 barry's sweep (PDF text layer — may the filed PDF differ from the original? · exact-dup skip · accountant export). **Chris's
-round** (CHRISBOT, fresh sandbox CDP 9223 PID 3060 with the new switches armed): report + triage in the handover foot and
-`docs/CHRIS_FULL_APP_REVIEW_2026-08-26.md`. Trap: `_fold_shape` makes every digits-only skeleton `#` — LENGTH-BLIND.
+round (CHRISBOT 472 docs, fresh sandbox CDP 9223 PID 3060, new switches armed): 279 filed, 0 wrong company, 0 wrong type,
+149 by itself (warm batch 116/200 vs 98 last round), every scary button truthful, "Start fresh"+Undo clear, verdict YES.**
+His two cards on tonight's code FIXED (`c…` follow-up: barcode row renders when none found + never the Date role; console
+exact-scope suspects + honest "N filed · none still teaching"). VET QUEUE: Card 1 HIGH — a buyer-issued-PO teach re-badged
+three other suppliers' papers as Bramblewood POs @95 with "Nothing looks wrong" (held; `template_buyer_issued_type_scope`
+was ON and didn't stop it → detection arc); Card 2 wrong date @94 no warning (scanned statement); Card 3 Import table
+"Ready" vs Review holding; Cards 5-7 + the Settings "Processing wall" (wants Recommended/Advanced). Report + triage:
+`docs/CHRIS_FULL_APP_REVIEW_2026-08-26.md` + the handover foot. Trap: `_fold_shape` makes every digits-only skeleton `#` — LENGTH-BLIND.
 
 ## (previous) 2026-08-26 NIGHT (identifier-registry arc + Chris R5 cards + switch inventory/flip): `HANDOVER_2026-08-26_NIGHT.md`
 Branch `feat/teach-side-overnight`, **HEAD `f2349f9`, commits LOCAL/NOT pushed** (owner reviews then pushes).

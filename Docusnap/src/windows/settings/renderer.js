@@ -5160,7 +5160,7 @@ function rpRenderScopes() {
     return `<div class="doctype-row rp-scope-row${active ? ' active' : ''}" data-sup="${_rpEsc(s.supplier_name)}" data-slug="${_rpEsc(s.document_type_slug)}" style="cursor:pointer; align-items:center; gap:10px; padding:8px 12px;">
       <div style="flex:1; min-width:0;">
         <div style="font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><strong>${_rpEsc(s.supplier_name || '(no sender recognised)')}</strong> <span style="color:var(--muted);">· ${_rpEsc(s.document_type_name || s.document_type_slug || 'untyped')}</span> ${badge}</div>
-        <div style="font-size:11px; color:var(--muted);">Learned from ${s.docs} document${s.docs === 1 ? '' : 's'} · last ${_rpWhen(s.last_confirmed)}${learned ? ' · ' + learned : ''}${s.logos ? ' · logo known' : ''}</div>
+        <div style="font-size:11px; color:var(--muted);">${s.excluded ? `${s.docs} filed · ${s.excluded === s.docs ? 'none' : s.teaching} still teaching` : `Learned from ${s.docs} document${s.docs === 1 ? '' : 's'}`} · last ${_rpWhen(s.last_confirmed)}${learned ? ' · ' + learned : ''}${s.logos ? ' · logo known' : ''}</div>
       </div>
       <div style="font-size:11px; white-space:nowrap;">${auto}</div>
     </div>`;
@@ -5176,11 +5176,16 @@ async function rpOpenScope(sup, slug) {
   document.getElementById('rp-supplier').value = sup || '';
   rpRenderScopes();
   await rpLoad();
-  // The typed picker is a CONTAINS filter ("Acme" would show "Pacmec Acme"); the console is exact.
+  // The typed picker is a CONTAINS filter ("Acme" would show "Pacmec Acme"); the console is exact — and
+  // the type-wide "worth a look" outliers of OTHER senders stay out of THIS sender's console (Chris r6
+  // card 8: "I clicked Harrowgate and got Silverbeck's papers").
   if (sup) {
+    const same = (d) => String(d.supplier_name || '').trim().toLowerCase() === String(sup).trim().toLowerCase();
     const before = _rpDocs.length;
-    _rpDocs = _rpDocs.filter(d => String(d.supplier_name || '').trim().toLowerCase() === String(sup).trim().toLowerCase() || (_rpSuspects[d.id]));
-    if (_rpDocs.length !== before) { document.getElementById('rp-count').textContent = `Learned from ${_rpDocs.length} document(s)`; rpRenderSuspectStrip(); rpRenderList(); }
+    _rpDocs = _rpDocs.filter(same);
+    for (const id of Object.keys(_rpSuspects)) { if (!_rpDocs.some(d => d.id === Number(id))) delete _rpSuspects[id]; }
+    if (_rpDocs.length !== before) { document.getElementById('rp-count').textContent = `Learned from ${_rpDocs.length} document(s)`; }
+    rpRenderSuspectStrip(); rpRenderList();
   }
   document.getElementById('rp-worklist').style.display = '';
   rpRenderConsoleHead();
@@ -5194,8 +5199,11 @@ function rpRenderConsoleHead() {
   document.getElementById('rp-console-title').textContent = `${_rpOpenScope.supplier_name || '(no sender recognised)'} · ${s.document_type_name || _rpOpenScope.document_type_slug}`;
   const t = s.trust || {};
   const why = t.autoFiles ? 'Files by itself.' : (t.text ? `${t.text}.` : 'Not filing by itself yet.');
+  const learnedTxt = s.excluded
+    ? `${s.docs} filed document${s.docs === 1 ? '' : 's'} — ${s.excluded === s.docs ? 'none of them teach any more (forgotten)' : `${s.teaching} still teaching, ${s.excluded} forgotten`}`
+    : `Learned from ${s.docs || 0} document${(s.docs || 0) === 1 ? '' : 's'}`;
   document.getElementById('rp-console-status').textContent =
-    `Learned from ${s.docs || 0} document${(s.docs || 0) === 1 ? '' : 's'}${s.last_confirmed ? `, last on ${_rpWhen(s.last_confirmed)}` : ''}. ${why}` +
+    `${learnedTxt}${s.last_confirmed ? `, last on ${_rpWhen(s.last_confirmed)}` : ''}. ${why}` +
     (s.templates ? ` ${s.templates} layout${s.templates === 1 ? '' : 's'} remembered.` : '') +
     ' Sending a document back is what un-teaches it.';
   document.getElementById('rp-fresh').style.display = (_rpForgetOn && _rpOpenScope.supplier_name) ? '' : 'none';

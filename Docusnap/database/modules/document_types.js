@@ -224,7 +224,8 @@ function _annotateFieldVariability(dt) {
       f.key === dt.date_field_key ||
       f.type === 'date' ||
       f.type === 'currency' ||
-      f.type === 'list'          // a list (e.g. serial numbers) is per-document by construction (2026-08-11)
+      f.type === 'list' ||       // a list (e.g. serial numbers) is per-document by construction (2026-08-11)
+      f.type === 'barcode'       // a decoded barcode is per-document too (2026-08-26) — never a frozen template value
     ) ? 1 : 0;
     // STRUCTURAL = Company / Date / Reference role: permanent, can't be deleted,
     // disabled, renamed or retyped (the value stays editable). Surfaced so the
@@ -413,7 +414,10 @@ function updateType(db, id, changes) {
       const row = db.prepare(
         'SELECT type FROM fields WHERE document_type_id = ? AND key = ? LIMIT 1'
       ).get(id, changes[role]);
-      if (!row || String(row.type || '').toLowerCase() === 'list') delete changes[role];
+      const _t = String((row && row.type) || '').toLowerCase();
+      // A BARCODE field may be the reference role (a decoded document ID is a clean, unique string) but
+      // never the DATE role — Chris r6 card 4 set one and got a queue row saying "Needs: Barcode".
+      if (!row || _t === 'list' || (role === 'date_field_key' && _t === 'barcode')) delete changes[role];
     }
   }
   const sets = Object.keys(changes)

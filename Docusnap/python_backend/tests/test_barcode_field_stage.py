@@ -87,10 +87,12 @@ r, _ = run(BC_URL)
 d = r.get('asset_tag') or {}
 check('value empty, unsupported note', not d.get('value') and 'web link' in str(d.get('validation_note')), d)
 
-print('4. no decode at all (barcodes=[]) → field absent/empty, no note')
+print('4. the decode ran and found nothing (barcodes=[]) → an EMPTY row that still renders, no note')
 r, _ = run([])
 d = r.get('asset_tag') or {}
 check('no value, no note', not d.get('value') and not d.get('validation_note'), d)
+check('the row EXISTS with method barcode_none (Chris r6 card 4: the field must not vanish)', d.get('method') == 'barcode_none', d)
+check('…and an absent barcode does not hold the document by itself (no note on that field)', not d.get('validation_note'))
 
 print('5. OWNERSHIP — a hint never fills a barcode field; the OCR line never becomes its value')
 r, _ = run([], hints=[{'supplier_name': 'ACME SUPPLIES LTD', 'document_type': 'invoice', 'field_key': 'asset_tag',

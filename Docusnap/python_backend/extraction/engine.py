@@ -7719,6 +7719,11 @@ class ExtractionEngine:
                 elif barcodes:
                     results[_bk] = {"value": "", "confidence": 0, "method": "barcode_unsupported",
                                     "validation_note": _BARCODE_UNSUPPORTED_NOTE}
+                else:
+                    # The decode RAN and found no symbol: write an EMPTY row (no note — an absent
+                    # barcode must not hold the doc) so the field still renders and says so, instead
+                    # of vanishing (Chris r6 card 4: "no Barcode row, nothing said whether it looked").
+                    results[_bk] = {"value": "", "confidence": 0, "method": "barcode_none"}
                 if isinstance(results.get(_bk), dict):
                     self._remember_candidates('1.5_barcode', {_bk: results[_bk]})
                     if self._trace:
