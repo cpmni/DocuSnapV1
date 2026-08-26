@@ -1,8 +1,9 @@
 # HANDOVER — 2026-08-27 MORNING (the autonomous overnight run of 2026-08-26 → 27)
 
-**Branch** `feat/teach-side-overnight` · **HEAD `8cb80ac`** · 3 commits tonight, LOCAL / NOT pushed (owner reviews then pushes):
+**Branch** `feat/teach-side-overnight` · **HEAD `d0d74fb`** · 5 commits tonight, LOCAL / NOT pushed (owner reviews then pushes):
 `9861d37` landmark box snap (+pin) · `c80e387` the three arcs (class F + Learning Repair v2 + barcodes/LIST, ALL DARK) ·
-`8cb80ac` two source-contract pins updated. Tracked tree clean. Pre-existing untracked cruft untouched (do NOT commit
+`8cb80ac` two source-contract pins updated · `df0c86b` docs · `d0d74fb` Chris's two cards on tonight's code fixed + his report/
+triage. Tracked tree clean. Pre-existing untracked cruft untouched (do NOT commit
 `TESTING/_measure/*`, old `HANDOVER_*`, `x`, `../Backup`, the 08-13 design doc, the stray scripts/tests listed by `git status`).
 
 The owner's brief for the night: finish the three pending items → redesign Learning Repair with the agents → check what a

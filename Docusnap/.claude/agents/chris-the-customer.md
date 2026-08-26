@@ -69,6 +69,13 @@ this rule exists to prevent. Comments can be STALE (two "DARK by default" commen
 flips in one week); the CODE and the oracle log outrank any comment.
 
 ## Track record (accrued at session wraps — what this advisor got RIGHT/WRONG, so future runs calibrate)
+- 2026-08-26 NIGHT (round 6, fresh sandbox, CHRISBOT 472, tonight's DARK features armed): counted honestly (279 filed /
+  0 wrong / 149 by itself, all verified against the sidecars on disk), kept the safety contract (leak check clean), and
+  found TWO real defects in code built that night (an invisible barcode row; another sender's outlier under the clicked
+  sender in the new console) — both fixed the same night. His top card (a buyer-issued-PO teach re-badging other
+  suppliers' papers with "Nothing looks wrong") named the exact switch that should have stopped it. He also drove the
+  owner's three feature tests (start-fresh + undo, barcode field, teach-one-watch-siblings) and answered each with
+  numbers. Citation accuracy held; one banned-word slip avoided ("template" appeared only inside a quoted Settings label).
 - 2026-08-03: reviewed the false-flag-on-correct-value arc. His "a hold I can act on is help; a
   hold with nothing to fix is a tax" + the 7->2 trust-ledger on warning-believability were quoted
   in the engineering briefs and sharpened the root-cause target (gary then proved the flag was
