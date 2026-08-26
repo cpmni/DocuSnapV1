@@ -56,6 +56,11 @@
     // guessType must NEVER return 'list' (pinned): auto-selecting it would silently change how a
     // field extracts; the operator chooses it deliberately.
     ['list', 'List (several values)', 'Several values on one document sharing the same label — each occurrence is collected, e.g. serial numbers.  e.g. NW-123; NW-456; NW-789'],
+    // BARCODE (2026-08-26, kill switch `barcode_field` — hidden from the dropdown while OFF; an
+    // EXISTING barcode-typed field still renders its label). The value is READ FROM THE BARCODE
+    // printed on the page (1D or QR) — there is no position to teach and no format to check: a
+    // decode is right or absent. guessType must NEVER return 'barcode' (same pin as 'list').
+    ['barcode', 'Barcode / QR code', 'Read from a barcode or QR code printed on the page — no box to draw, no format to check.  e.g. a tracking number, an asset tag, a supplier document ID'],
   ];
   const TYPE_TIP = Object.fromEntries(TYPE_OPTS.map(([v, , t]) => [v, t || '']));
   const tipFor = (v) => TYPE_TIP[v] || '';
@@ -218,8 +223,10 @@
     // set by the hosting window from the setting) — but an EXISTING list-typed field always
     // renders its own option, so turning the flag off never blanks a select.
     const listOn = (typeof window !== 'undefined' && window.__listFieldTypeOn) || current === 'list';
+    // 'barcode' likewise rides its own flag (window.__barcodeFieldOn ← the barcode_field setting).
+    const barcodeOn = (typeof window !== 'undefined' && window.__barcodeFieldOn) || current === 'barcode';
     const opts = TYPE_OPTS
-      .filter(([v]) => v !== 'list' || listOn)
+      .filter(([v]) => (v !== 'list' || listOn) && (v !== 'barcode' || barcodeOn))
       .map(([v, l, t]) =>
         `<option value="${v}"${v === current ? ' selected' : ''} title="${esc(t || '')}">${l}</option>`).join('');
     return `<select class="field-select dte-type"${disabled ? ' disabled' : ''} title="${esc(tipFor(current))}">${opts}</select>`;

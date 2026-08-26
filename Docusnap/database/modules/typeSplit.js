@@ -19,6 +19,10 @@
  * advisory, its worst case is one click). Pinned in test_type_split_gate.js.
  */
 
+// Learning Repair start-fresh predicate (mig 90): a stamped document is no longer "history" here either
+// ('' until stamped; test_learning_excluded_readers.js).
+const { learningExcludedSql } = require('./machine_vias');
+
 function checkTypeSplit(db, supplierName, documentTypeSlug, opts = {}) {
   const minConfirms = Number.isFinite(opts.minConfirms) ? opts.minConfirms : 3;
   const sup = String(supplierName || '').trim();
@@ -27,7 +31,7 @@ function checkTypeSplit(db, supplierName, documentTypeSlug, opts = {}) {
   const rows = db.prepare(`
     SELECT dt.slug AS slug, dt.name AS name, COUNT(*) AS n
       FROM documents d JOIN document_types dt ON dt.id = d.document_type_id
-     WHERE d.status = 'confirmed' AND LOWER(TRIM(d.supplier_name)) = LOWER(?)
+     WHERE d.status = 'confirmed'${learningExcludedSql(db)} AND LOWER(TRIM(d.supplier_name)) = LOWER(?)
      GROUP BY dt.slug, dt.name`).all(sup);
   const total = rows.reduce((a, r) => a + (r.n || 0), 0);
   if (total < minConfirms) return { split: false, reason: 'thin', count: total };

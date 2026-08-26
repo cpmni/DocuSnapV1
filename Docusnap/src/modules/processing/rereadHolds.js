@@ -29,6 +29,10 @@ const NOTES = {
   layout: 'Read from your new box — confirm once.',
   ready: 'Read after learning — confirm once.',
   manual: 'Read again at your request — confirm once.',
+  // Learning Repair "start fresh" (Oracle C5, 2026-08-26): a held doc re-read after its sender's
+  // learning was forgotten — unconditional first-fill hold, member of the "— confirm once." family
+  // so `_ownedTemplateRows`' NOT EXISTS keeps it out of later lane arms.
+  repair: 'Read again after a learning repair — confirm once.',
   reliability: RELIABILITY_NOTE,
 };
 const YIELD_RE = /^Kept the read value .* — (the taught|a taught) /;

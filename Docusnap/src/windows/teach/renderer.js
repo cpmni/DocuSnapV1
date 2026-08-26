@@ -397,8 +397,14 @@ function _collectTypeHeadingNames(types, extra){
 // the inverse-of-"teaching must never hurt" class. They are pulled from the capture flow HERE, at
 // teach time, with the reason on screen, rather than accepted and ignored.
 function _splitListFields(fields){
-  if (!window.__listFieldTypeOn) return { teach: fields, lists: [] };
-  const lists = fields.filter(f => String(f.type || '').toLowerCase() === 'list');
+  // BARCODE fields (2026-08-26) are pulled the same way: the decoded symbol is the only writer,
+  // so a taught box would be dead too. Tagged `auto` so the notice can say WHY per kind.
+  const lists = fields.filter(f => {
+    const t = String(f.type || '').toLowerCase();
+    if (t === 'list' && window.__listFieldTypeOn) { f.auto = 'list'; return true; }
+    if (t === 'barcode' && window.__barcodeFieldOn) { f.auto = 'barcode'; return true; }
+    return false;
+  });
   return { teach: fields.filter(f => !lists.includes(f)), lists };
 }
 
@@ -415,7 +421,9 @@ async function commitTypeChoice(){
       state.fields=_sp.teach; state.listFields=_sp.lists; }
     if (!state.fields.length){ toast('That type has no fields to teach.'); return false; }
     if (state.listFields.length){
-      toast(`${state.listFields.map(f=>f.label).join(', ')}: collected automatically by label — nothing to draw for ${state.listFields.length===1?'it':'them'}.`, 4200);
+      const _ls = state.listFields.filter(f => f.auto !== 'barcode'), _bs = state.listFields.filter(f => f.auto === 'barcode');
+      if (_ls.length) toast(`${_ls.map(f=>f.label).join(', ')}: collected automatically by label — nothing to draw for ${_ls.length===1?'it':'them'}.`, 4200);
+      if (_bs.length) toast(`${_bs.map(f=>f.label).join(', ')}: read from the barcode printed on the page — nothing to draw for ${_bs.length===1?'it':'them'}.`, 4200);
     }
     return true;
   }
@@ -1026,6 +1034,9 @@ try { D.getSetting?.('teach_typed_value_locate').then(v => { TYPED_LOCATE_ON = v
 // LIST field type (2026-08-11): unlocks 'List (several values)' in the shared doctype editor,
 // and marks list-typed fields as caption-collected in the capture step (no box teach).
 try { D.getSetting?.('list_field_scan').then(v => { window.__listFieldTypeOn = v === 'true'; }); } catch {}
+// BARCODE field type (2026-08-26): unlocks 'Barcode / QR code' in the shared doctype editor; a
+// barcode-typed field is read from the decoded symbol (no box teach) — the capture step marks it.
+try { D.getSetting?.('barcode_field').then(v => { window.__barcodeFieldOn = v === 'true'; }); } catch {}
 // Page words are cached per (page, straighten angle): the operator may type several fields on one
 // page, and a full-page OCR per field would be a visible stall for no new information.
 let _pageWordsCache = { key:null, res:null };

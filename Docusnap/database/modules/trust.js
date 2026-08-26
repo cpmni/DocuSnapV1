@@ -1,6 +1,9 @@
 'use strict';
 
 const path = require('path');
+// Learning Repair "start fresh" (mig 90): a stamped document leaves the graduation window + roster
+// exactly as it leaves getFieldFormats — '' until stamped (test_learning_excluded_readers.js).
+const { learningExcludedSql } = require('./machine_vias');
 
 /**
  * database/modules/trust.js
@@ -697,7 +700,7 @@ function scopeTrust(db, supplier, slug, opts = {}) {
   const _confirmedSql = (viaFilter) => `
     SELECT d.id, COALESCE(d.confirmed_at, '') AS ts FROM documents d
     JOIN document_types dt ON dt.id = d.document_type_id
-    WHERE d.status = 'confirmed' AND LOWER(TRIM(d.supplier_name)) = ? AND LOWER(dt.slug) = ?
+    WHERE d.status = 'confirmed' AND LOWER(TRIM(d.supplier_name)) = ? AND LOWER(dt.slug) = ?${learningExcludedSql(db)}
       ${viaFilter ? `AND COALESCE(d.confirmed_via, '') NOT IN (${require('./machine_vias').MACHINE_VIAS_SQL})` : ''}
     ORDER BY d.confirmed_at DESC, d.id DESC
   `;
@@ -1191,7 +1194,7 @@ function listGraduatedScopes(db) {
   const rows = db.prepare(`
     SELECT d.supplier_name AS supplier, dt.slug AS slug, dt.name AS doctype, COUNT(*) AS n
     FROM documents d JOIN document_types dt ON dt.id = d.document_type_id
-    WHERE d.status = 'confirmed' AND TRIM(COALESCE(d.supplier_name, '')) <> ''
+    WHERE d.status = 'confirmed' AND TRIM(COALESCE(d.supplier_name, '')) <> ''${learningExcludedSql(db)}
     GROUP BY LOWER(TRIM(d.supplier_name)), LOWER(dt.slug)
     HAVING n >= ?
   `).all(_configuredWindow(db));   // roster prefilter follows the same dial; scopeTrust re-checks each hit

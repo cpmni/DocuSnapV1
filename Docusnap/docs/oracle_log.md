@@ -2132,3 +2132,52 @@ disagreeing identity refused) + h (branding admits a logo-drifted genuine siblin
 fixture in the batch (a single-supplier round would pass green while the seam stayed open) + re-confirm the
 corpus-census vacuity after the mature re-check. Verdict: **Oracle earned his keep — caught a false premise,
 a reintroduced directional bug, and an "ONE source of truth" invariant breach the specialist pass missed.**
+
+## 2026-08-26 NIGHT — CLASS F "corroboration clears a verification-doubt note" (gary audit → built DARK) — SIGN OFF WITH CONDITIONS
+**Built:** `engine.py` class F in `_resolve_corroborated_notes` (env `CORROB_VERIFICATION_DOUBT_CLEAR`, setting
+`corrob_verification_doubt_clear`, DEFAULT OFF): clear + LIFT the field to 90 iff the note's mark ∈ the write-site
+constant allowlist (`_EDGE_CUT_NOTE`, `_FT_FALLTHROUGH_NOTE`, `_SHAPE_TRIM_NOTE`, `_REREAD_NOTE_HEAD`), ≥2 DISTINCT
+PAGE families agree with no dissent, an UN-NOTED ≥80 witness from a different page family, the learned shape passes,
+no pending corrected_to; never identity/names/human methods. The emit's family bucket hoisted to `_corrob_record_bucket`.
+**Verdict: SIGN OFF W/COND — GO on the core rule** (Q1 the bare-anchor second family is legitimate for a mapping
+winner; Q2 the clip class is structurally excluded — `_corrob_values_agree` has no prefix/containment fold, so
+`3190` vs `31901` lands in `disagree`). **Three seams found + closed the same night:**
+- **C1 skeleton + fail-closed:** `check_value` is the COARSE class only; require `shape_match_score == 1.0` on a
+  non-FREETEXT/non-CURRENCY class. **Found by the C1 pin itself:** `_fold_shape` collapses EVERY pure-digit skeleton
+  to `#` (length-blind) — so ALSO require the value's RAW skeleton to be a learned `shape_families` variant (no
+  families → refuse). Pinned (`3190` vs `#####` history → held).
+- **C2 totals stay with `_d2`/validator:** the edge-cut note is written for the currency leg too; refuse
+  `total_amount` + aliases + currency-TYPED fields. Pinned.
+- **C3 re-read mark:** the Stage-4.5 re-read adopted a CROP read while the winner kept its page-text method — for
+  that mark only a KEYWORD-family witness counts. Pinned both ways.
+- **C4 flip order:** `_reconcileEnv` arms F only when `corrob_note_recompute_fc` is ON (else a lifted field with a
+  stale −12 penalty = a mysterious empty hold). Enforced in code.
+- **C5 gate before ANY flip (owner):** realdoc OFF vs ON — M=0, M_type=0, zero per-field drop (EXPECTED VACUOUS on the
+  edge-cut class — the harness cannot bit-reproduce the live misread); the NON-vacuous arm = a held-queue census on the
+  owner's DB copy (docs whose note is an allowlisted mark → reprocess with F ON → eyeball every `cls=F` clear against
+  the PDF, 0 wrong); the SFDEV live heal of SuperStore 31901 (field 70→90, doc reaches Ready); a positive control
+  (a real clip from the `_EDGE_GUARD_FIRES` census stays held). Pins: `test_verification_doubt_clear.py` 39/39,
+  `test_corrob_note_resolve.py` 51/51, emit suites green.
+
+## 2026-08-26 NIGHT — LEARNING REPAIR "start fresh" (barry console + gary semantics) — SIGN OFF WITH CONDITIONS on the mechanism; rename/merge NOT tonight
+**Premise verified:** "re-read as a NEW doc WITHOUT un-filing" is achievable — every Python input enters via
+`buildTrainingArgs`; the only live-derived feed is `getFieldFormats` (transitively covers the prefix/dominant/
+lexicon/confirmed-count indexes). The old "Forget learning" was a HALF-forget (tables cleared, the live-derived model
+kept counting). **Rulings:** S×T is the right grain; stay-filed + stamp is the right default; forget never touches disk.
+**Built tonight (all DARK):** slice 0 — mig 90 `documents.learning_excluded_at` + ONE predicate
+`machine_vias.learningExcludedSql` threaded into every learning-feeding reader (17 sites + the type-ambiguity waiver
+counts; NEGATIVE list pinned: search/browse/counters/writers untouched; `_cleanupAutoMoneyFields` deliberately NOT
+threaded — a destructive startup guard, not a learning reader); slice 1 — `learningScopeService.listScopes`
+(documents ∪ every learning table, never `getMemoryInventory`) + the selector/console UI behind
+`learning_repair_console`; slice 2 — `learningRepairService.forgetScope` behind `learning_repair_forget`: snapshot →
+scope deletes → per-doc retract ONCE (C1: `learning_retracted_at` stamped while confirmed; `repairService`
+send-back/delete skip an already-retracted doc; restore never re-plants an excluded doc; a HUMAN confirm clears BOTH
+stamps in `confirmIfReviewable`) → owned templates removed with runtime `PRAGMA foreign_key_list` child enumeration
+(C2 fail-closed: a template whose confirmed docs include ANOTHER sender, or another type, is REFUSED and reported)
+→ exact-scope stamps (C3) → Undo = exact row restore by id incl. the `__global__` twins + identifier rows (C4) →
+lane reason `repair` with the unconditional "Read again after a learning repair — confirm once." hold (C5) →
+`<slug>.json` hygiene (C6). Pins: `test_learning_excluded_readers.js` 87/87, `test_learning_repair_service.js` 32/32
+(forget→send-back leaves S2's twin; shared template refused; cold scopeTrust with a graduated control; undo
+round-trip equality; human re-confirm clears; "Pacmec" untouched by "Acme").
+**Owner (not tonight):** whole-sender forget (logos/identifiers/accepted-issuer); rename/merge as its own arc; the
+three UX defaults (S×T vs sender; stay-filed vs back-to-Review; never move files + explicit Re-file).

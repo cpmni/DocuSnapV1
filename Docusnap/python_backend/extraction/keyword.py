@@ -1372,6 +1372,14 @@ def extract_fields(ocr_text: str, field_keys: list[str],
                     v = _post_label_value(raw_val, field_key, fp, role_caption, pk)
                     if v is None:
                         continue                      # a bad occurrence never poisons the rest
+                    # SEPARATOR COLLISION (reggie 2026-08-26): the store joins elements with '; ', so an
+                    # element that itself carries ';' (or a control char) would split into two on every
+                    # reader. REFUSE it — never escape or split — and count it in the trace.
+                    if ';' in v or any(ord(ch) < 32 or ord(ch) == 127 for ch in v):
+                        if trace:
+                            try: trace('list_element_refused', field=field_key, value=v[:80], reason='separator')
+                            except Exception: pass
+                        continue
                     k = v.strip().casefold()
                     if k in seen:
                         continue                      # exact dedupe, first-seen order (Oracle C5)

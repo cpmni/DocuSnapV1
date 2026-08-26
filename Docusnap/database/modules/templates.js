@@ -15,6 +15,7 @@ const brandingFp = require('./branding_fingerprint');
 const logoDetail = require('./logoDetail');   // 256-bit isolated-mark veto arithmetic (mig 47)
 const namePresence = require('./namePresence');   // per-supplier name-presence veto (Oracle 2026-07-24)
 const typePresence = require('./typePresence');    // per-template type-heading presence (Type Slice 1, 2026-07-28)
+const { learningExcludedSql } = require('./machine_vias');   // Learning Repair start-fresh predicate (mig 90; '' until stamped)
 const safe = (fn, dflt) => { try { return fn(); } catch { return dflt; } };
 
 // The stored templates.confirmed_count is bumped ONLY by templates.update(), which runs on the
@@ -111,7 +112,7 @@ function liveConfirmedCounts(db) {
   const m = new Map();
   try {
     for (const r of db.prepare(
-      "SELECT template_id, COUNT(*) c FROM documents WHERE status = 'confirmed' AND template_id IS NOT NULL GROUP BY template_id"
+      `SELECT template_id, COUNT(*) c FROM documents WHERE status = 'confirmed'${learningExcludedSql(db, '')} AND template_id IS NOT NULL GROUP BY template_id`
     ).all()) m.set(r.template_id, r.c);
   } catch {
     return null;   // no documents table / unreadable → caller keeps the stored column
@@ -145,7 +146,7 @@ function getAllWithLiveCounts(db) {
 // Live confirmed-doc count for ONE template (the detail view — same truth as the roster).
 function confirmedDocCount(db, templateId) {
   return db.prepare(
-    "SELECT COUNT(*) c FROM documents WHERE template_id = ? AND status = 'confirmed'"
+    `SELECT COUNT(*) c FROM documents WHERE template_id = ? AND status = 'confirmed'${learningExcludedSql(db, '')}`
   ).get(templateId).c;
 }
 
@@ -180,7 +181,7 @@ function getDominantSupplier(db, templateId, excludeDocId = null) {
     const rows = db.prepare(`
       SELECT supplier_name AS value, COUNT(*) AS n
       FROM documents
-      WHERE template_id = @tid AND status = 'confirmed'
+      WHERE template_id = @tid AND status = 'confirmed'${learningExcludedSql(db, '')}
         AND supplier_name IS NOT NULL AND TRIM(supplier_name) <> ''
         AND (@ex IS NULL OR id != @ex)
       GROUP BY supplier_name

@@ -818,6 +818,41 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Don't ask to double-check a value two independent readings already agree on</div>
+                <div class="threshold-sub">Some warnings only say "please check this" — the taught box's edge cut through the value, the value was read from the surrounding line, or it was tidied to the usual format. When two different ways of reading the page (the taught box, a located crop, the page text) independently read the same value, none of them was flagged, and the value matches this sender's usual format, that warning is released and the value counts as verified. Disagreements, unreadable dates, sender/type doubts and "not printed on this page" warnings are never released this way. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="verification-doubt-clear-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Read the barcodes printed on each page</div>
+                <div class="threshold-sub">Every barcode or QR code on a page is decoded when the document is read and remembered with it, so a search for a tracking number, an asset tag or a supplier's document ID finds the document even when that number is only printed as bars. Nothing on screen changes. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="barcode-inventory-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Allow "Barcode / QR code" fields</div>
+                <div class="threshold-sub">Adds a field type that is filled from a barcode printed on the page instead of being read as text — there is no box to draw and no format to check, because a barcode is either read correctly or not at all. When a page carries exactly one barcode the field is filled and the document waits for you to confirm it once; when it carries several, the field is left for you to pick. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="barcode-field-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Learning Repair: pick a sender from a list</div>
+                <div class="threshold-sub">Learning Repair lists every sender and document type Scan Finder has learned from — how many documents, when, whether it files by itself — and opens the repair view when you click one, instead of asking you to type the sender's name. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="learning-repair-console-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Learning Repair: allow "Start fresh with this sender"</div>
+                <div class="threshold-sub">Adds a button that forgets everything Scan Finder learned for one sender and document type — its layout, remembered values and taught positions — so the next document from that sender is read like a brand-new one. Filed documents stay where they are and simply stop teaching. Everything forgotten is saved first and can be undone. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="learning-repair-forget-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Learn only from documents a person confirmed</div>
                 <div class="threshold-sub">Documents ScanFinder filed automatically no longer count as evidence when it learns what a field usually looks like — only documents a person confirmed (or corrected) do. This stops an automatic filing of a misread value from teaching the misread back to the reader. Requires "Auto-file gate unification" to be on, so automatic filings are labelled. Off by default.</div>
               </div>
@@ -2257,7 +2292,25 @@
       <div class="section">
         <div class="section-title">Learning Repair</div>
         <p class="section-desc">Check the documents Scan Finder has learned from for a document type, and send anything that looks off back to Review. Nothing here is destructive — <strong>Send back to Review</strong> just puts a document in your Review list (confirm it there and it goes right back), and <strong>Delete</strong> goes to the recycle bin.</p>
-        <div class="row-flex" style="gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:4px;">
+        <!-- Learning Repair v2 SELECTOR (DARK `learning_repair_console`; barry + gary → Oracle 2026-08-26):
+             one row per sender × document type that holds any learning — click a row to open its console.
+             Hidden while the switch is off (the typed picker below stays the door). -->
+        <div id="rp-selector" style="display:none; margin-bottom:10px;">
+          <div class="row-flex" style="gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+            <input type="text" id="rp-scope-search" class="path-input" placeholder="Find a sender or document type…" spellcheck="false" style="max-width:320px;">
+            <div class="row-flex" id="rp-scope-filters" style="gap:6px; flex-wrap:wrap;">
+              <button class="btn rp-scope-chip active" data-filter="all" style="padding:3px 9px; font-size:11px;">All</button>
+              <button class="btn rp-scope-chip" data-filter="look" style="padding:3px 9px; font-size:11px;">Worth a look</button>
+              <button class="btn rp-scope-chip" data-filter="notauto" style="padding:3px 9px; font-size:11px;">Not filing by itself</button>
+              <button class="btn rp-scope-chip" data-filter="orphan" style="padding:3px 9px; font-size:11px;">Learning but no documents</button>
+              <button class="btn rp-scope-chip" data-filter="blank" style="padding:3px 9px; font-size:11px;">No sender recognised</button>
+            </div>
+            <button class="btn" id="rp-scope-refresh" style="padding:3px 10px; font-size:11px;">Refresh</button>
+            <span id="rp-scope-count" class="section-desc" style="margin:0;"></span>
+          </div>
+          <div id="rp-scope-list" style="max-height:300px; overflow:auto; border:1px solid var(--border); border-radius:10px;"></div>
+        </div>
+        <div class="row-flex" id="rp-picker-row" style="gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:4px;">
           <div style="display:flex; flex-direction:column; gap:4px; min-width:200px;">
             <label style="font-size:11px; color:var(--muted);">Document type</label>
             <select id="rp-doctype" class="field-select"></select>
@@ -2272,6 +2325,16 @@
       </div>
 
       <div class="section" id="rp-worklist" style="display:none;">
+        <!-- Console STATUS card (v2): one sentence, one reason — the same words the selector row shows. -->
+        <div id="rp-console-head" style="display:none; margin-bottom:14px; border:1px solid var(--border); border-radius:10px; padding:10px 12px; background:var(--surface2);">
+          <div id="rp-console-title" style="font-weight:600; margin-bottom:4px;"></div>
+          <div id="rp-console-status" class="section-desc" style="margin:0;"></div>
+          <div class="row-flex" style="gap:8px; margin-top:8px; flex-wrap:wrap; align-items:center;">
+            <button class="btn danger" id="rp-fresh" style="display:none;">Start fresh with this sender…</button>
+            <button class="btn" id="rp-fresh-undo" style="display:none;">Undo start fresh</button>
+            <span id="rp-fresh-msg" class="section-desc" style="margin:0;"></span>
+          </div>
+        </div>
         <div id="rp-suspects-strip" style="display:none; margin-bottom:14px; border:1px solid var(--warn); border-radius:10px; padding:10px 12px; background:var(--surface2);">
           <div style="font-weight:600; margin-bottom:6px;">A few documents worth a look</div>
           <div id="rp-suspects-list" style="font-size:12px;"></div>

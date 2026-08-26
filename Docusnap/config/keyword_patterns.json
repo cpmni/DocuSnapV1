@@ -802,6 +802,7 @@
     "reference_code": "-/.",
     "iban": "",
     "website": ":/.-_?=&",
-    "multiline_text": null
+    "multiline_text": null,
+    "barcode": null
   }
 }

@@ -535,6 +535,26 @@ def main():
 
             # Live page count, so the UI can flag a multi-page document while it processes.
             emit({"type": "file_pages", "filename": filepath.name, "pages": len(page_images)})
+            # BARCODE INVENTORY (2026-08-26, barry → gary design; kill switches BARCODE_INVENTORY /
+            # BARCODE_FIELD, both DEFAULT OFF): decode every symbol on the pages the OCR pass already
+            # rendered — ONE call per page, no second render, no OCR. TRI-STATE is load-bearing:
+            # `_bc is None` = no decode ran (dark, or --reextract rendered no pages) → the emit key is
+            # ABSENT and the handler keeps a doc's existing rows; `[]` = rendered, nothing found → rows
+            # cleared. The engine receives it either way (a barcode-typed field reads from it).
+            _bc = None
+            _bc_armed = (os.environ.get("BARCODE_INVENTORY", "0") != "0"
+                         or os.environ.get("BARCODE_FIELD", "0") != "0")
+            if _bc_armed and page_images:
+                try:
+                    import time as _time_mod
+                    from ocr.barcodes import decode_pages as _decode_barcodes
+                    _t_bc = _time_mod.time()
+                    _bc = _decode_barcodes(page_images)
+                    log(f"  Barcodes: {len(_bc)} decoded on {len(page_images)} page(s) "
+                        f"({int((_time_mod.time() - _t_bc) * 1000)} ms)")
+                except Exception as _bce:      # fail toward "no inventory" — never toward a crash
+                    log(f"  Barcodes: decode skipped ({_bce})", "warn")
+                    _bc = None
 
             if not ocr_text.strip():
                 raise ValueError("OCR returned no text — is the scan readable?")
@@ -974,6 +994,7 @@ def main():
                 cached_text     = global_cached_text,       # raw-frame witness text (deskew reprocess); None ⇒ engine falls back to ocr_text
                 raw_pages       = (_raw_pages or None),     # DESKEW_RAW_CROPS election substrate (Oracle 2026-08-05)
                 deskew_angles   = (_deskew_angles or None), # per-page cap input (C4)
+                barcodes        = _bc,                      # page barcode inventory (None ⇒ no decode ran)
             )
 
             # Pull out metadata keys before sanitising
@@ -1099,6 +1120,9 @@ def main():
                 # Self-discharged pin signal (absent when dark — byte-identical emit).
                 **({"supplier_pin_discharged": pin_discharged} if pin_discharged else {}),
                 "page_count":         len(page_images),
+                # Barcode inventory (slice A, BARCODE_INVENTORY): ABSENT when no decode ran (dark /
+                # no pages) so the handler keeps existing rows; a list (possibly []) replaces them.
+                **({"barcodes": _bc} if (os.environ.get("BARCODE_INVENTORY", "0") != "0" and _bc is not None) else {}),
                 "mode_used":          "fast",
                 "ocr_text":           ocr_text[:50000],
                 "extractions":        {

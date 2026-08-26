@@ -358,7 +358,11 @@ function create(deps) {
     markScopeActive(job.key, true);
     let staged = null;
     try {
-      const all = job.remaining || _candidates(db, job).map(r => ({ docId: r.id, folderPath: r.folder_path, filename: r.original_filename, via: r._via || null }));
+      // Learning Repair "start fresh" (Oracle C5, 2026-08-26): a job scheduled with reason 'repair'
+      // re-reads the sender's template-less held docs (the forget just un-bound them) under the
+      // unconditional `repair` hold, never the provisional teach hold.
+      const _repairVia = (job.reasons && job.reasons.has('repair')) ? 'repair' : null;
+      const all = job.remaining || _candidates(db, job).map(r => ({ docId: r.id, folderPath: r.folder_path, filename: r.original_filename, via: r._via || _repairVia || null }));
       const chunk = all.slice(0, CHUNK_CAP);
       job.remaining = all.slice(CHUNK_CAP);
       job.total = all.length + job.done.length + job.dropped.length;
@@ -443,7 +447,7 @@ function create(deps) {
     // holds 447. Corroborated first-fills (≥2 page families) never hold. DARK behind
     // `quiet_reread_first_fill_reliability_hold`; via layout/ready keep their unconditional hold.
     const _ffOn = (() => { try { return !!(firstFillReliability && firstFillReliability.enabled && firstFillReliability.enabled(db)); } catch { return false; } })();
-    if (nd.via === 'layout' || nd.via === 'ready') {
+    if (nd.via === 'layout' || nd.via === 'ready' || nd.via === 'repair') {
       try { const ff = _holds.holdFirstFills(db, nd.docId, nd.existing, _holds.NOTES[nd.via]); if (ff.length) job.changed.push({ docId: nd.docId, fields: ff, firstFill: true }); } catch {}
       if (_ffOn) { try { _holds.onDocMerged(db, job.holdsBatch, { docId: nd.docId, existing: nd.existing, via: 'witness-only', reliability: true, _changed: changed }); } catch {} }
     } else if (_ffOn) {

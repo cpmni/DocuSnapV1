@@ -1,6 +1,10 @@
 'use strict';
 
 const path = require('path');
+// Learning Repair start-fresh predicate (mig 90) — carried ONLY by getFieldValueSuggestions (the Review
+// type-ahead is a learning surface). search / the recovery browse lists / the counters / the writers
+// deliberately do NOT carry it: a stamped document stays filed, searchable and repairable.
+const { learningExcludedSql } = require('./machine_vias');
 
 // Best-effort single-row query — returns null instead of throwing (used to probe optional
 // schema like template_hidden_fields, migration 54, so an older DB / test fixture is unaffected).
@@ -152,7 +156,7 @@ function getFieldValueSuggestions(db, documentId, fieldKey) {
     JOIN documents d ON d.id = e.document_id
     WHERE d.document_type_id = (SELECT document_type_id FROM documents WHERE id = @docId)
       AND e.field_key = @fieldKey
-      AND d.status = 'confirmed'
+      AND d.status = 'confirmed'${learningExcludedSql(db)}
       AND d.id != @docId
     ORDER BY v COLLATE NOCASE
     LIMIT 500
@@ -613,6 +617,14 @@ function confirmIfReviewable(db, id, { stored_filename = null, stored_path = nul
   const _refileClear = (_hasRefileDeclined(db) && !confirmed_via && _putbackRefileEnabled(db))
     ? ",\n           refile_declined_at    = NULL,\n           putback_refiled_at    = CASE WHEN put_back_at IS NOT NULL THEN datetime('now') ELSE putback_refiled_at END"
     : '';
+  // Learning Repair "start fresh" (Oracle C1, 2026-08-26): a HUMAN confirm is the one act that returns a
+  // document to teaching — it clears BOTH the retract marker (learning_retracted_at, mig 53) and the
+  // exclusion stamp (learning_excluded_at, mig 90). Without this a forgotten doc a person re-checks
+  // and re-files would stay excluded forever (silent dead learning) and its next delete would skip
+  // the retract (residue). Machine confirms (via) never clear them. Column-guarded.
+  const _learnClear = (!confirmed_via && _hasLearningStamps(db))
+    ? ",\n           learning_retracted_at = NULL,\n           learning_excluded_at  = NULL"
+    : '';
   return db.prepare(`
     UPDATE documents
        SET status                = 'confirmed',
@@ -621,7 +633,7 @@ function confirmIfReviewable(db, id, { stored_filename = null, stored_path = nul
            ${hasVia ? 'confirmed_via = @confirmed_via,' : ''}
            stored_filename       = @stored_filename,
            stored_path           = @stored_path,
-           supplier_pin          = NULL${_hasPutBackAt(db) && !confirmed_via ? ',\n           put_back_at           = NULL' : ''}${_refileClear}
+           supplier_pin          = NULL${_hasPutBackAt(db) && !confirmed_via ? ',\n           put_back_at           = NULL' : ''}${_refileClear}${_learnClear}
      WHERE id = @id
        AND ( status IN ('needs_review','deferred')
           OR (status = 'confirmed' AND @allowRefile = 1) )
@@ -632,6 +644,21 @@ function confirmIfReviewable(db, id, { stored_filename = null, stored_path = nul
     allowRefile: allowRefile ? 1 : 0,
     ...(hasVia ? { confirmed_via } : {}),
   });
+}
+
+// Column-presence cache for the two learning stamps (learning_retracted_at mig 53 + learning_excluded_at
+// mig 90) — the human-confirm clear above is emitted only when BOTH exist (older fixtures: neither).
+const _learningStampsCache = new WeakMap();
+function _hasLearningStamps(db) {
+  let has = _learningStampsCache.get(db);
+  if (has === undefined) {
+    try {
+      const cols = new Set(db.prepare("SELECT name FROM pragma_table_info('documents')").all().map(r => r.name));
+      has = cols.has('learning_retracted_at') && cols.has('learning_excluded_at');
+    } catch { has = false; }
+    _learningStampsCache.set(db, has);
+  }
+  return has;
 }
 
 // Column-presence cache for documents.confirmed_via (mig 57) — WeakMap per DB handle so a
@@ -730,7 +757,13 @@ function search(db, { company, reference, dateFrom, dateTo,
       OR EXISTS (SELECT 1 FROM extractions e WHERE e.document_id = d.id
                  AND REPLACE(COALESCE(e.display_value, e.raw_value, ''), ',', '') LIKE @fullText)
       OR EXISTS (SELECT 1 FROM corrections c WHERE c.document_id = d.id
-                 AND REPLACE(COALESCE(c.corrected_value,''), ',', '') LIKE @fullText)
+                 AND REPLACE(COALESCE(c.corrected_value,''), ',', '') LIKE @fullText)${
+      // BARCODE INVENTORY (mig 91, DARK `barcode_inventory`): a value printed only as bars is found
+      // through its decode. Table-guarded so a pre-mig-91 fixture keeps the exact old SQL.
+      (() => { try { return require('./barcodes').hasTable(db); } catch { return false; } })()
+        ? `
+      OR EXISTS (SELECT 1 FROM document_barcodes b WHERE b.document_id = d.id
+                 AND REPLACE(COALESCE(b.value,''), ',', '') LIKE @fullText)` : ''}
     )`;
     params.fullText = `%${fullText.trim().replace(/,/g, '')}%`;
   }

@@ -15,6 +15,7 @@
 // + the Python twin test_type_presence_matcher.py.
 
 const namePresence = require('./namePresence');   // reuse its regex-safe [a-z0-9] token discipline + GENERIC set
+const { learningExcludedSql } = require('./machine_vias');   // Learning Repair start-fresh predicate (mig 90; '' until stamped)
 
 // Type-heading generic tokens = namePresence's corporate-suffix set PLUS 'note'/'document': a lone
 // "note"/"document" is NOT a type signal (the discriminating word in "delivery NOTE" / "purchase ORDER"
@@ -67,7 +68,7 @@ function templateTypeHeadingPresence(db, template) {
     out.tokens = tokens;
     if (!tokens.length) return out;                       // generic-only type name -> can't arm
     const rows = db.prepare(
-      "SELECT ocr_text FROM documents WHERE status = 'confirmed' AND template_id = @tid " +
+      "SELECT ocr_text FROM documents WHERE status = 'confirmed'" + learningExcludedSql(db, '') + " AND template_id = @tid " +
       "AND ocr_text IS NOT NULL AND LENGTH(TRIM(ocr_text)) > 0").all({ tid: template.id });
     const count = rows.length;
     if (!count) return out;

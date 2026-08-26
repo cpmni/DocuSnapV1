@@ -22,4 +22,48 @@ const MACHINE_VIAS_SQL = MACHINE_VIAS.map(v => `'${v}'`).join(', ');
 
 const MACHINE_VIAS_SET = new Set(MACHINE_VIAS);
 
-module.exports = { MACHINE_VIAS, MACHINE_VIAS_SQL, MACHINE_VIAS_SET };
+// ── LEARNING EXCLUSION (Learning Repair "start fresh", gary design → Oracle SIGN-OFF-W/COND
+// 2026-08-26). A confirmed document stamped `documents.learning_excluded_at` (mig 90) stays FILED
+// and SEARCHABLE but STOPS TEACHING: every learning-feeding reader of `status='confirmed'` rows
+// appends this fragment, so a forgotten sender×type is genuinely cold on its next import without
+// un-filing anything (the previous "Forget learning" cleared tables while the live-derived model —
+// getFieldFormats / scopeTrust / getDominantSupplier — kept counting the same docs: a HALF-forget).
+// This is a HARD predicate — distinct in KIND from the machine-via SOFT post-filter above and from
+// the `learning_retracted_at` restore MARKER (repairService) — housed here so ONE source-contract
+// test (test_learning_excluded_readers.js) enumerates both sentinel families.
+//
+// `alias` = the documents table alias in the caller's query ('d' almost everywhere). The fragment
+// is EMPTY (byte-identical SQL) when the column is absent (pre-mig-90 fixtures) or the switch is
+// off. Kill: env LEARNING_EXCLUDE_DOCS=0 (harness arms) or setting learning_exclude_docs='false' —
+// which RE-ADMITS stamped docs to learning; it does NOT undo a forget (the learning rows are gone).
+// Readers that must NOT carry it (pinned as a NEGATIVE list): search, dashboard/workflow counters,
+// the purge/rename WRITERS (they act on everything), the recycle bin.
+const _colCache = new WeakMap();
+function _hasLearningExcludedColumn(db) {
+  if (!db) return false;
+  let v = _colCache.get(db);
+  if (v === undefined) {
+    try { v = db.prepare("SELECT 1 FROM pragma_table_info('documents') WHERE name = 'learning_excluded_at'").get() != null; }
+    catch { v = false; }
+    _colCache.set(db, v);
+  }
+  return v;
+}
+function learningExcludeEnabled(db) {
+  const env = process.env.LEARNING_EXCLUDE_DOCS;
+  if (env === '0') return false;
+  if (env === '1') return true;
+  try {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'learning_exclude_docs'").get();
+    return !(row && String(row.value) === 'false');
+  } catch { return true; }
+}
+/** SQL fragment (leading ` AND …`) that drops learning-excluded documents from a learning reader. */
+function learningExcludedSql(db, alias = 'd') {
+  if (!_hasLearningExcludedColumn(db) || !learningExcludeEnabled(db)) return '';
+  const a = alias ? `${alias}.` : '';
+  return ` AND ${a}learning_excluded_at IS NULL`;
+}
+
+module.exports = { MACHINE_VIAS, MACHINE_VIAS_SQL, MACHINE_VIAS_SET,
+                   learningExcludedSql, learningExcludeEnabled, _hasLearningExcludedColumn };

@@ -16,6 +16,10 @@
  */
 
 const learning = require('../../database/modules/learning');
+// Learning Repair start-fresh predicate (mig 90): a stamped document neither shapes the "learned normal"
+// nor is judged against it ('' until stamped; test_learning_excluded_readers.js). The browse list itself
+// (documents.getConfirmedDocsForScope) still shows it — only the badges go quiet.
+const { learningExcludedSql } = require('../../database/modules/machine_vias');
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 // Perceptual-hash Hamming over two 16-hex (64-bit) strings. Returns 64 on any mismatch
@@ -384,7 +388,7 @@ function computeSuspects(db, { document_type_slug, supplier_name } = {}) {
   const docRows = db.prepare(`
     SELECT d.id, d.logo_phash, d.keyword_fingerprint, d.overall_confidence
     FROM documents d
-    WHERE d.status = 'confirmed'
+    WHERE d.status = 'confirmed'${learningExcludedSql(db)}
       AND d.document_type_id = (SELECT id FROM document_types WHERE slug = @dt)
   `).all({ dt });
 
@@ -396,7 +400,7 @@ function computeSuspects(db, { document_type_slug, supplier_name } = {}) {
     JOIN documents d ON d.id = e.document_id
     LEFT JOIN corrections c ON c.document_id = e.document_id AND c.field_key = e.field_key
     LEFT JOIN fields fld ON fld.document_type_id = d.document_type_id AND fld.key = e.field_key
-    WHERE d.status = 'confirmed'
+    WHERE d.status = 'confirmed'${learningExcludedSql(db)}
       AND d.document_type_id = (SELECT id FROM document_types WHERE slug = @dt)
       ${scoped ? "AND (@sn IS NULL OR d.supplier_name LIKE '%' || @sn || '%')" : ''}
   `).all(scoped ? { dt, sn } : { dt });

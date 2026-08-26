@@ -709,6 +709,16 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // Corroboration step 3, slice 3 (Oracle W/COND B1-B3 2026-08-13): name
                          // note demote — crop + keyword witnesses, guard-rejected dissenters.
                          ['name-demote-toggle', 'name_corrob_note_demote'],
+                         // Class F (gary audit 2026-08-26): verification-doubt note clear + field
+                         // lift on two-distinct-page-family agreement + learned-shape pass.
+                         ['verification-doubt-clear-toggle', 'corrob_verification_doubt_clear'],
+                         // Barcodes (2026-08-26, barry → gary design): the page inventory and the field type.
+                         ['barcode-inventory-toggle', 'barcode_inventory'],
+                         ['barcode-field-toggle', 'barcode_field'],
+                         // Learning Repair v2 (barry + gary → Oracle 2026-08-26): the selector/console
+                         // UI and the "start fresh" door (the service enforces the second one).
+                         ['learning-repair-console-toggle', 'learning_repair_console'],
+                         ['learning-repair-forget-toggle', 'learning_repair_forget'],
                          // Machine-feed arc slice 1 (Oracle W/COND C1-C6 2026-08-13): learning.js
                          // + templates.js read the key directly (setting-only, no env bridge).
                          ['machine-confirms-toggle', 'learning_exclude_machine_confirms'],
@@ -1590,6 +1600,8 @@ async function loadDocTypes() {
   // LIST field type gate: the shared editor offers 'List (several values)' only while
   // list_field_scan is armed (an existing list-typed field always keeps its option).
   try { window.__listFieldTypeOn = (await api.getSetting('list_field_scan')) === 'true'; } catch {}
+  // BARCODE field type gate (2026-08-26): 'Barcode / QR code' is offered only while barcode_field is armed.
+  try { window.__barcodeFieldOn = (await api.getSetting('barcode_field')) === 'true'; } catch {}
   allTypesWithFields = await api.getAllDocTypesAll();
   renderDocTypesList();
 }
@@ -4867,6 +4879,8 @@ async function repairInit() {
   document.getElementById('rp-delete').addEventListener('click', rpDelete);
   document.getElementById('rp-fine').addEventListener('click', rpDismiss);
   document.getElementById('rp-forget').addEventListener('click', rpForget);
+  // Learning Repair v2 (DARK `learning_repair_console`): the selector replaces the typed picker.
+  rpConsoleInit();
   document.querySelectorAll('#rp-filters .rp-chip').forEach(b => b.addEventListener('click', () => {
     _rpFilter = b.dataset.filter;
     document.querySelectorAll('#rp-filters .rp-chip').forEach(x => x.classList.toggle('active', x === b));
@@ -5079,6 +5093,145 @@ async function rpForget() {
   document.getElementById('rp-forget-msg').textContent = (r && r.ok)
     ? `Forgot ${s.anchors || 0} field position(s), ${s.hints || 0} hint(s), ${s.fieldRules || 0} rule(s).${r.backup ? ' Backup saved.' : ''} Reprocess this type's documents to relearn.`
     : ((r && r.error) || 'Could not forget the learning.');
+}
+
+// ── Learning Repair v2: the SELECTOR + CONSOLE + "start fresh" (barry UX + gary semantics → Oracle
+//    SIGN-OFF-W/COND C1–C6, 2026-08-26). DARK: `learning_repair_console` shows the selector in place
+//    of the typed picker; `learning_repair_forget` shows the start-fresh button (the service enforces
+//    the switch again — the renderer can never forget on its own). ──────────────────────────────────
+let _rpScopes = [], _rpScopeFilter = 'all', _rpScopeQuery = '', _rpConsoleOn = false, _rpForgetOn = false;
+let _rpOpenScope = null, _rpLastSnapshot = null;
+
+async function rpConsoleInit() {
+  try { _rpConsoleOn = (await api.getSetting('learning_repair_console')) === 'true'; } catch { _rpConsoleOn = false; }
+  try { _rpForgetOn = (await api.getSetting('learning_repair_forget')) === 'true'; } catch { _rpForgetOn = false; }
+  const sel = document.getElementById('rp-selector'), picker = document.getElementById('rp-picker-row');
+  if (!sel || !picker) return;
+  sel.style.display = _rpConsoleOn ? '' : 'none';
+  picker.style.display = _rpConsoleOn ? 'none' : '';
+  if (!_rpConsoleOn) return;
+  const q = document.getElementById('rp-scope-search');
+  q.addEventListener('input', () => { _rpScopeQuery = q.value.trim().toLowerCase(); rpRenderScopes(); });
+  document.querySelectorAll('#rp-scope-filters .rp-scope-chip').forEach(b => b.addEventListener('click', () => {
+    _rpScopeFilter = b.dataset.filter;
+    document.querySelectorAll('#rp-scope-filters .rp-scope-chip').forEach(x => x.classList.toggle('active', x === b));
+    rpRenderScopes();
+  }));
+  document.getElementById('rp-scope-refresh').addEventListener('click', rpLoadScopes);
+  document.getElementById('rp-fresh').addEventListener('click', rpStartFresh);
+  document.getElementById('rp-fresh-undo').addEventListener('click', rpUndoForget);
+  await rpLoadScopes();
+}
+
+async function rpLoadScopes() {
+  let r = null;
+  try { r = await api.learningScopes(); } catch (e) { r = { ok: false, error: e.message || String(e) }; }
+  _rpScopes = (r && r.scopes) || [];
+  document.getElementById('rp-scope-count').textContent = r && r.ok
+    ? `${_rpScopes.length} sender${_rpScopes.length === 1 ? '' : 's'} × type${_rpScopes.length === 1 ? '' : 's'} hold learning`
+    : (r && r.error) || 'Could not list what Scan Finder has learned.';
+  rpRenderScopes();
+}
+
+function _rpScopeMatches(s) {
+  if (_rpScopeQuery && !`${s.supplier_name} ${s.document_type_name || ''} ${s.document_type_slug}`.toLowerCase().includes(_rpScopeQuery)) return false;
+  switch (_rpScopeFilter) {
+    case 'look': return !!(s.suspects);
+    case 'notauto': return !(s.trust && s.trust.autoFiles) && s.docs > 0;
+    case 'orphan': return !!s.orphaned;
+    case 'blank': return !!s.blankIssuer;
+    default: return true;
+  }
+}
+function _rpWhen(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso); if (isNaN(d)) return String(iso).slice(0, 10);
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+}
+function rpRenderScopes() {
+  const el = document.getElementById('rp-scope-list'); if (!el) return;
+  const rows = _rpScopes.filter(_rpScopeMatches);
+  if (!rows.length) { el.innerHTML = '<div class="section-desc" style="padding:16px; text-align:center;">Nothing matches.</div>'; return; }
+  el.innerHTML = rows.map(s => {
+    const learned = (s.templates ? `${s.templates} layout${s.templates === 1 ? '' : 's'}` : '') ;
+    const auto = s.trust && s.trust.autoFiles ? '<span style="color:var(--ok);">Files by itself</span>' : `<span style="color:var(--muted);">${_rpEsc((s.trust && s.trust.text) || 'Not yet')}</span>`;
+    const badge = s.orphaned ? '<span style="font-size:10px; color:var(--warn);">learning, no documents</span>' : '';
+    const active = _rpOpenScope && _rpOpenScope.supplier_name === s.supplier_name && _rpOpenScope.document_type_slug === s.document_type_slug;
+    return `<div class="doctype-row rp-scope-row${active ? ' active' : ''}" data-sup="${_rpEsc(s.supplier_name)}" data-slug="${_rpEsc(s.document_type_slug)}" style="cursor:pointer; align-items:center; gap:10px; padding:8px 12px;">
+      <div style="flex:1; min-width:0;">
+        <div style="font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><strong>${_rpEsc(s.supplier_name || '(no sender recognised)')}</strong> <span style="color:var(--muted);">· ${_rpEsc(s.document_type_name || s.document_type_slug || 'untyped')}</span> ${badge}</div>
+        <div style="font-size:11px; color:var(--muted);">Learned from ${s.docs} document${s.docs === 1 ? '' : 's'} · last ${_rpWhen(s.last_confirmed)}${learned ? ' · ' + learned : ''}${s.logos ? ' · logo known' : ''}</div>
+      </div>
+      <div style="font-size:11px; white-space:nowrap;">${auto}</div>
+    </div>`;
+  }).join('');
+  el.querySelectorAll('.rp-scope-row').forEach(r => r.addEventListener('click', () => rpOpenScope(r.dataset.sup, r.dataset.slug)));
+}
+
+async function rpOpenScope(sup, slug) {
+  _rpOpenScope = { supplier_name: sup, document_type_slug: slug };
+  _rpLastSnapshot = null;
+  const sel = document.getElementById('rp-doctype');
+  if (sel && slug && [...sel.options].some(o => o.value === slug)) sel.value = slug;
+  document.getElementById('rp-supplier').value = sup || '';
+  rpRenderScopes();
+  await rpLoad();
+  // The typed picker is a CONTAINS filter ("Acme" would show "Pacmec Acme"); the console is exact.
+  if (sup) {
+    const before = _rpDocs.length;
+    _rpDocs = _rpDocs.filter(d => String(d.supplier_name || '').trim().toLowerCase() === String(sup).trim().toLowerCase() || (_rpSuspects[d.id]));
+    if (_rpDocs.length !== before) { document.getElementById('rp-count').textContent = `Learned from ${_rpDocs.length} document(s)`; rpRenderSuspectStrip(); rpRenderList(); }
+  }
+  document.getElementById('rp-worklist').style.display = '';
+  rpRenderConsoleHead();
+}
+
+function rpRenderConsoleHead() {
+  const head = document.getElementById('rp-console-head'); if (!head) return;
+  if (!_rpConsoleOn || !_rpOpenScope) { head.style.display = 'none'; return; }
+  const s = _rpScopes.find(x => x.supplier_name === _rpOpenScope.supplier_name && x.document_type_slug === _rpOpenScope.document_type_slug) || {};
+  head.style.display = '';
+  document.getElementById('rp-console-title').textContent = `${_rpOpenScope.supplier_name || '(no sender recognised)'} · ${s.document_type_name || _rpOpenScope.document_type_slug}`;
+  const t = s.trust || {};
+  const why = t.autoFiles ? 'Files by itself.' : (t.text ? `${t.text}.` : 'Not filing by itself yet.');
+  document.getElementById('rp-console-status').textContent =
+    `Learned from ${s.docs || 0} document${(s.docs || 0) === 1 ? '' : 's'}${s.last_confirmed ? `, last on ${_rpWhen(s.last_confirmed)}` : ''}. ${why}` +
+    (s.templates ? ` ${s.templates} layout${s.templates === 1 ? '' : 's'} remembered.` : '') +
+    ' Sending a document back is what un-teaches it.';
+  document.getElementById('rp-fresh').style.display = (_rpForgetOn && _rpOpenScope.supplier_name) ? '' : 'none';
+  document.getElementById('rp-fresh-undo').style.display = _rpLastSnapshot ? '' : 'none';
+  document.getElementById('rp-fresh-msg').textContent = '';
+}
+
+async function rpStartFresh() {
+  if (!_rpOpenScope || !_rpForgetOn) return;
+  const msg = document.getElementById('rp-fresh-msg');
+  let plan = null;
+  try { plan = await api.learningRepairDryRun(_rpOpenScope); } catch (e) { plan = { ok: false, error: e.message || String(e) }; }
+  if (!plan || !plan.ok) { msg.textContent = (plan && plan.error) || 'Could not work out what would be forgotten.'; return; }
+  if (!confirm(`Start fresh with ${_rpOpenScope.supplier_name} (${plan.typeName || _rpOpenScope.document_type_slug})?\n\n${plan.text}`)) return;
+  let r = null;
+  try { r = await api.learningRepairForget(_rpOpenScope); } catch (e) { r = { ok: false, error: e.message || String(e) }; }
+  if (!r || !r.ok) { msg.textContent = (r && r.error) || 'Nothing was changed.'; return; }
+  _rpLastSnapshot = r.snapshotPath || null;
+  const sm = r.summary || {};
+  msg.textContent = `Forgotten: ${sm.templates || 0} layout(s), ${(sm.hints || 0) + (sm.anchors || 0) + (sm.rules || 0)} remembered value(s)/position(s); ${sm.docsStamped || 0} filed document(s) stopped teaching.`
+    + (r.reread ? ' Waiting documents will be read again.' : ' Use Reprocess on any waiting documents.');
+  await rpLoadScopes();
+  rpRenderConsoleHead();
+  document.getElementById('rp-fresh-undo').style.display = _rpLastSnapshot ? '' : 'none';
+}
+
+async function rpUndoForget() {
+  if (!_rpLastSnapshot) return;
+  const msg = document.getElementById('rp-fresh-msg');
+  let r = null;
+  try { r = await api.learningRepairUndo({ snapshotPath: _rpLastSnapshot }); } catch (e) { r = { ok: false, error: e.message || String(e) }; }
+  if (!r || !r.ok) { msg.textContent = (r && r.error) || 'Could not undo.'; return; }
+  _rpLastSnapshot = null;
+  msg.textContent = 'Restored — the sender teaches again. Documents already read again keep their "confirm once" note.';
+  await rpLoadScopes();
+  rpRenderConsoleHead();
 }
 
 document.getElementById('lr-inv-refresh').addEventListener('click', loadMemoryInventory);

@@ -1,5 +1,11 @@
 'use strict';
 
+// Learning Repair "start fresh" (mig 90 documents.learning_excluded_at): the ONE hard predicate every
+// learning-feeding reader of status='confirmed' rows appends — '' (byte-identical SQL) until a document
+// is stamped. The purge/rename WRITERS below deliberately do NOT carry it: they act on everything.
+// Pinned per site in test_learning_excluded_readers.js.
+const { learningExcludedSql } = require('./machine_vias');
+
 // ── Extractions ───────────────────────────────────────────────────────────────
 
 function insertExtractions(db, document_id, rows) {
@@ -203,7 +209,7 @@ function findNearMatchIdentity(db, candidate, { minConfirms = 3, templateId = nu
     for (const r of db.prepare(`
       SELECT TRIM(supplier_name) AS v, COUNT(*) AS n
       FROM documents
-      WHERE status = 'confirmed' AND supplier_name IS NOT NULL AND TRIM(supplier_name) <> ''
+      WHERE status = 'confirmed' AND supplier_name IS NOT NULL AND TRIM(supplier_name) <> ''${learningExcludedSql(db, '')}
         ${hasVia ? `AND COALESCE(confirmed_via, '') NOT IN (${MACHINE_VIAS_SQL})` : ''}
       GROUP BY LOWER(TRIM(supplier_name))
     `).all()) {
@@ -1496,7 +1502,7 @@ function getFieldFormats(db, opts) {
                                AND c.id = (SELECT MAX(c2.id) FROM corrections c2
                                             WHERE c2.document_id = e.document_id
                                               AND c2.field_key  = e.field_key)` : ''}
-    WHERE d.status          = 'confirmed'
+    WHERE d.status          = 'confirmed'${learningExcludedSql(db)}
       AND (e.display_value IS NOT NULL OR c.corrected_value IS NOT NULL)
       -- Never learn from SHADOW reconciliation reads: they back the "verified" total check
       -- for fields the type doesn't define, and are unconfirmed by the user.
@@ -1911,7 +1917,7 @@ function getFieldValueHistory(db, { supplier_name, document_type, field_key } = 
     JOIN documents d ON d.id = e.document_id
     LEFT JOIN document_types dt ON dt.id = d.document_type_id
     LEFT JOIN corrections   c  ON c.document_id = e.document_id AND c.field_key = e.field_key
-    WHERE d.status = 'confirmed' AND e.field_key = ?
+    WHERE d.status = 'confirmed'${learningExcludedSql(db)} AND e.field_key = ?
       AND COALESCE(d.supplier_name, '') = COALESCE(?, '')
       AND COALESCE(dt.slug, '')         = COALESCE(?, '')
     GROUP BY value
@@ -1935,7 +1941,7 @@ function getPrefixModelForScope(db, supplier_name, document_type_slug, field_key
     JOIN documents d ON d.id = e.document_id
     LEFT JOIN document_types dt ON dt.id = d.document_type_id
     LEFT JOIN corrections   c  ON c.document_id = e.document_id AND c.field_key = e.field_key
-    WHERE d.status = 'confirmed' AND e.field_key = ?
+    WHERE d.status = 'confirmed'${learningExcludedSql(db)} AND e.field_key = ?
       AND COALESCE(d.supplier_name, '') = COALESCE(?, '')
       AND COALESCE(dt.slug, '')         = COALESCE(?, '')
       ${_excludeRewriteMarkers(db) ? `
@@ -1973,7 +1979,7 @@ function getDocumentsForFieldValue(db, { supplier_name, document_type, field_key
     JOIN documents d ON d.id = e.document_id
     LEFT JOIN document_types dt ON dt.id = d.document_type_id
     LEFT JOIN corrections   c  ON c.document_id = e.document_id AND c.field_key = e.field_key
-    WHERE d.status = 'confirmed' AND e.field_key = ?
+    WHERE d.status = 'confirmed'${learningExcludedSql(db)} AND e.field_key = ?
       AND COALESCE(d.supplier_name, '') = COALESCE(?, '')
       AND COALESCE(dt.slug, '')         = COALESCE(?, '')
       AND COALESCE(NULLIF(TRIM(c.corrected_value), ''), e.display_value) = ?

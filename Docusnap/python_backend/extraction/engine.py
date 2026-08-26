@@ -1822,6 +1822,65 @@ def _corrob_licensed(record) -> bool:
         return False
     return any(f in _CORROB_PAGE_FAMILIES for f in fams)
 
+
+# ── Class F: the "verification-doubt" note family (gary audit 2026-08-26, owner exhibit SuperStore
+# 31901). Notes that say "the value is PROBABLY right but I couldn't verify the fuller/other reading"
+# — written at ONE site each, hoisted here so the class-F allowlist below is the write-site constant
+# itself (a reword goes INERT, never wider — the classFixService CLEARABLE_NOTE_MARKS discipline).
+# DENY-BY-DEFAULT: disagreement / invalid-date / identity / type / Fix-A "not printed here" /
+# reconciliation / shape-mismatch notes are NEVER in this set. Names excluded at the arm (no shape rail).
+_SHAPE_TRIM_NOTE = 'trimmed to the expected format — please verify'
+_REREAD_NOTE_HEAD = 're-read from the page (was "'
+
+# ── BARCODE fields (2026-08-26, barry → gary design; DARK `BARCODE_FIELD`). The decode is the ONE
+# writer of a barcode-typed field; these notes hold the doc for a human glance (no learning yet —
+# correctness first). Deliberately NOT in the class-F allowlist above: a barcode read has one family.
+_BARCODE_CONFIRM_NOTE = 'Read from the barcode printed on this page — please confirm it once.'
+_BARCODE_SEVERAL_NOTE = 'Several barcodes on this page: {} — type the right one.'
+_BARCODE_UNSUPPORTED_NOTE = ("The barcode on this page doesn't hold a code (a web link or contact card) "
+                             "— type the value if there is one.")
+
+
+def _verification_doubt_note_marks():
+    """The class-F allowlist, resolved lazily (template_mapper's constants live in its module).
+    Each entry is (mark, match) where match ∈ {'exact', 'prefix'}."""
+    return (
+        (template_mapper._EDGE_CUT_NOTE, 'exact'),        # taught box edge cuts the value; fuller read unverified
+        (template_mapper._FT_FALLTHROUGH_NOTE, 'exact'),  # read from the surrounding line, not the taught box
+        (_SHAPE_TRIM_NOTE, 'exact'),                      # Stage-4.5 trimmed column-bleed to the learned shape
+        (_REREAD_NOTE_HEAD, 'prefix'),                    # Stage-4.5 re-read a garble from the page
+    )
+
+
+def _is_verification_doubt_note(note) -> bool:
+    n = str(note or "").strip()
+    if not n:
+        return False
+    for mark, how in _verification_doubt_note_marks():
+        if how == 'exact' and n == mark:
+            return True
+        if how == 'prefix' and n.startswith(mark):
+            return True
+    return False
+
+
+# The corroboration RECORD's family bucket (hoisted from _build_corroboration_emit so the class-F
+# witness check reads the ledger through the SAME lens the record was written with). Memory stamps
+# (template_fixed / template_identity*) are their own family; bare `anchor` folds into the KEYWORD
+# family (record-only, CORROB_ANCHOR_AS_KEYWORD, default on); everything else is the shared
+# _crosscheck_witness_bucket. The SHARED bucket is untouched (the live reconcile keeps excluding
+# bare anchor — pinned).
+_MEMORY_METHODS = ('template_anchor', 'template_identity', 'template_identity_corroborated')
+
+
+def _corrob_record_bucket(stage, method):
+    m = str(method or '')
+    if m.startswith('template_fixed') or m in _MEMORY_METHODS:
+        return ('memory', False)
+    if os.environ.get('CORROB_ANCHOR_AS_KEYWORD', '1') != '0' and m == 'anchor':
+        return ('keyword', False)
+    return _crosscheck_witness_bucket(stage, method)
+
 # Single-position glyph confusions of a digit (for the D snap-and-adopt + the B corrected_to check).
 # The CODE-STRUCTURAL separators '/' and '\\' are DELIBERATELY EXCLUDED (Oracle condition — treating a
 # printed separator as a confusable corrupts structured codes; the CODE_SEPARATOR / I->1 lesson). The
@@ -3569,7 +3628,11 @@ class ExtractionEngine:
         D_on = os.environ.get("SNAP_CONFUSABLE_CLEAN_AUTOFILE", "0") != "0"
         E_on = os.environ.get("NAME_CORROB_SUGGESTION_ADOPT", "0") != "0"
         P_on = os.environ.get("REF_PREFIX_CONFUSABLE_ADOPT", "0") != "0"
-        if not (A_on or B_on or C_on or D_on or E_on or P_on):
+        # F CORROB_VERIFICATION_DOUBT_CLEAR (gary audit 2026-08-26): ONE general rule for the
+        #   "please check/verify" doubt-note family — clear + LIFT to 90 iff >=2 distinct PAGE families
+        #   agree with an un-noted witness AND the value passes the learned shape. See the F arm.
+        F_on = os.environ.get("CORROB_VERIFICATION_DOUBT_CLEAR", "0") != "0"
+        if not (A_on or B_on or C_on or D_on or E_on or P_on or F_on):
             return False                                   # OFF ⇒ byte-identical
         from extraction import validator as _v
         try:
@@ -3760,7 +3823,157 @@ class ExtractionEngine:
                     if self._trace:
                         self._t("corrob_note_resolve", field=key, cls="E", value=repaired)
                 continue
+
+            # ── F: a VERIFICATION-DOUBT note on a value TWO independent page families agree on ──
+            # Owner exhibit (SuperStore 31901, 2026-08-26): template_mapping_edgecut=31901 AND
+            # keyword=31901, yet the edge-cut "fuller reading could not be verified" note held the doc
+            # @78 / the field @70. gary's audit: five such notes each lacked a rule — ONE general class
+            # retires the whack-a-mole. Every leg is in _try_verification_doubt_clear; a refused row
+            # keeps its note untouched (fail toward Review, pinned).
+            if F_on and _is_verification_doubt_note(note):
+                if self._try_verification_doubt_clear(key, data, rec, sup, slug, field_defs):
+                    changed = True
+                continue
         return changed
+
+    def _try_verification_doubt_clear(self, key, data, rec, sup, slug, field_defs=None):
+        """Class F licensing + apply (gary audit 2026-08-26 → the pendingfeatures.md:51 design).
+        Clear a VERIFICATION-DOUBT note ("the value is probably right but the fuller/other reading
+        could not be verified") and LIFT the field, iff ALL of:
+          (1) the note's mark ∈ _verification_doubt_note_marks() — the write-site constants (deny-by-
+              default: disagreement / invalid-date / identity / type / Fix-A "not printed here" /
+              reconciliation / shape-mismatch notes are never sweepable; a reword goes INERT);
+          (2) the record is _corrob_licensed AND >=2 DISTINCT PAGE families {mapping,crop,keyword}
+              agree on the committed value with NO dissent — memory/hint never make the pair (near-
+              circular), and the emit's same-family skip means a self-agreeing common-mode misread
+              can NEVER license (the owner's worry, answered structurally);
+          (3) an UN-NOTED ledger witness from a DIFFERENT page family, conf>=80, agrees (Oracle-B3:
+              a flagged @70 read never stands in as the second family) — read through the record's
+              own bucket (_corrob_record_bucket);
+          (4) the value passes the scope's LEARNED shape (no shape entry -> refuse; a scope that
+              can't state its shape doesn't get clears);
+          (5) any corrected_to is vacuous (== value): a pending alternative reading is doubt still
+              open, not resolved;
+          never the identity, never a name-like field (no shape rail), never a human/override method.
+        Apply: note + vacuous corrected_to + was_corrected popped; field confidence LIFTED to
+        _CROSSCHECK_CORROB_CONF — clearing the note alone is COSMETIC here because the edge-cut caps
+        the FIELD at 70 and trust.js weak-critical-field reads the field directly (70<88 → still
+        held); method "+corrob_verified"; provenance recorded additively on the record. Licensed on
+        FAMILY AGREEMENT alone, never value==dominant (a reference is unique per document)."""
+        try:
+            from extraction.value_quality import is_name_like_field
+            val = str(data.get("value") or "")
+            method = str(data.get("method") or "")
+            note = str(data.get("validation_note") or "").strip()
+            if not val or key == "supplier_name" or is_name_like_field(key):
+                return False
+            if any(m in method for m in ("override", "manual", "template_fixed")):
+                return False
+            # Oracle C2 (2026-08-26): TOTALS/money never — the edge-cut note is written for the
+            # currency leg too (template_mapper _EDGE_GUARD_VAL_TYPES includes 'currency'), and a
+            # taught total box drifted onto the NET row can be "agreed" by the keyword `Total` regex
+            # reading the same wrong line (a common-mode ROLE error the net-misread check would have
+            # caught had the note not made it abstain). Money stays with the validator + `_d2`.
+            if key == "total_amount" or key in (keyword.ROLE_KEY_ALIASES.get("total_amount") or ()):
+                return False
+            for fd in (field_defs or []):
+                if isinstance(fd, dict) and str(fd.get("key") or "") == key \
+                        and str(fd.get("type") or "").lower() in ("currency", "money", "amount"):
+                    return False
+            if not isinstance(rec, dict) or not _corrob_licensed(rec):
+                return False
+            fams = set(rec.get("agree") or [])
+            win_family = str(rec.get("winner_family") or "")
+            if win_family:
+                fams.add(win_family)
+            if len(fams & _CORROB_PAGE_FAMILIES) < 2:
+                return False
+            # Oracle C3: the Stage-4.5 RE-READ mark adopted a CROP re-read of the winner's region
+            # while the winner kept its original (page-text) method — a crop-family "witness" is
+            # then the same recipe on the same pixels. For that mark only a KEYWORD-family witness
+            # (the one pass the re-read did not use) counts.
+            reread_mark = note.startswith(_REREAD_NOTE_HEAD)
+            # (3) an un-noted, confident, DIFFERENT-page-family ledger witness
+            witness = None
+            for c in (self._field_candidates.get(key) or []):
+                b = _corrob_record_bucket(c.get("stage"), c.get("method"))
+                if not b:
+                    continue
+                fam = b[0]
+                if fam == win_family or fam not in _CORROB_PAGE_FAMILIES:
+                    continue
+                if reread_mark and fam != "keyword":
+                    continue
+                if c.get("noted"):
+                    continue
+                try:
+                    if int(c.get("confidence") or 0) < 80:
+                        continue
+                except (TypeError, ValueError):
+                    continue
+                cv = c.get("value")
+                if cv in (None, "") or not _corrob_values_agree(cv, val):
+                    continue
+                witness = c
+                wit_fam = fam
+                break
+            if witness is None:
+                return False
+            # (5) a pending alternative reading keeps the doubt open
+            ct = str(data.get("corrected_to") or "").strip()
+            if ct and ct != val:
+                return False
+            # (4) learned shape — Oracle C1: the COARSE class (check_value) is not enough — a clip
+            # '3190' passes a digits_only entry whose learned skeleton is '#####', and an edge-cut
+            # field never met the Stage-4.5 skeleton rail (noted fields are skipped there). Require
+            # the EXACT learned skeleton (shape_match_score == 1.0; 0.8 = column-bleed substring →
+            # refuse; 0.0 / no `shapes` → refuse) on a NON-freetext class. Fail-closed on no entry.
+            fmt_entry = self.format_class_index.get(
+                (sup.lower().strip(), slug.lower().strip(), key)) if sup else None
+            if not fmt_entry or format_anomaly_checker.check_value(val, fmt_entry) is not None:
+                return False
+            if str(fmt_entry.get("class") or "") in (format_anomaly_checker.FREETEXT,
+                                                     format_anomaly_checker.CURRENCY_LIKE):
+                return False
+            if format_anomaly_checker.shape_match_score(val, fmt_entry) != 1.0:
+                return False
+            # C1 LENGTH leg (found by the C1 pin itself): the fold behind `shapes` collapses EVERY
+            # pure-digit skeleton to '#' — length-blind — so '3190' scores 1.0 against a '#####'
+            # history. Require the value's RAW skeleton (group lengths + separator positions) to be
+            # a learned shape-FAMILY variant (built from the scope's value_counts). A scope with no
+            # families cannot state its lengths → refuse (fail-closed).
+            _variants = set()
+            for _fam in (fmt_entry.get("shape_families") or []):
+                _variants.update(_fam.get("variants") or [])
+                if _fam.get("shape"):
+                    _variants.add(_fam.get("shape"))
+            if not _variants or format_anomaly_checker.shape_signature(val) not in _variants:
+                return False
+            # apply
+            data.pop("validation_note", None)
+            data.pop("corrected_to", None)
+            data.pop("was_corrected", None)
+            try:
+                conf0 = int(data.get("confidence") or 0)
+            except (TypeError, ValueError):
+                conf0 = 0
+            data["confidence"] = max(conf0, _CROSSCHECK_CORROB_CONF)
+            data["method"] = method + "+corrob_verified"
+            rec["verification_note_cleared"] = {
+                "note":           note,
+                "witness_family": wit_fam,
+                "witness_method": witness.get("method"),
+                "witness_value":  witness.get("value"),
+                "lifted_from":    conf0,
+            }
+            self.log(f"  Corrob verify (F): {key} '{val}' — doubt note released, "
+                     f"{witness.get('method')} independently agrees (field {conf0}→{data['confidence']})")
+            if self._trace:
+                self._t("corrob_note_resolve", field=key, cls="F", value=val,
+                        witness=str(witness.get("method")))
+            return True
+        except Exception:
+            return False   # a lane failure must never break extraction (fail toward Review)
 
     def _try_prefix_confusable_adopt(self, key, data, rec_p, rec, sup, slug, page=""):
         """The P adopt lane's licensing + apply (reggie design → Oracle SIGN-OFF-W/COND 2026-08-16).
@@ -4146,20 +4359,14 @@ class ExtractionEngine:
         # most valuable disagreement (the frozen stamp contradicted by the page — the Oakhaven VAT
         # class) as "same family". Special-cased HERE ONLY: `_crosscheck_witness_bucket` itself is
         # shared with the LIVE crosscheck-outlier reconcile and must not be re-tuned by a record.
-        _MEMORY_METHODS = ('template_anchor', 'template_identity', 'template_identity_corroborated')
         # Bare `anchor` → the KEYWORD family (record-only; see the docstring). Isolated kill so the A/B
         # census can measure just this reclassification: CORROB_ANCHOR_AS_KEYWORD=0 restores the old
         # (excluded) record. The SHARED _crosscheck_witness_bucket is NOT touched (it must keep excluding
-        # bare `anchor` for the live crosscheck-outlier reconcile — pinned).
+        # bare `anchor` for the live crosscheck-outlier reconcile — pinned). The bucket itself is the
+        # module-level _corrob_record_bucket (hoisted 2026-08-26 so class F reads the ledger through
+        # the same lens; logic unchanged).
         _anchor_as_kw = os.environ.get('CORROB_ANCHOR_AS_KEYWORD', '1') != '0'
-
-        def _corrob_bucket(stage, method):
-            m = str(method or '')
-            if m.startswith('template_fixed') or m in _MEMORY_METHODS:
-                return ('memory', False)
-            if _anchor_as_kw and m == 'anchor':
-                return ('keyword', False)
-            return _crosscheck_witness_bucket(stage, method)
+        _corrob_bucket = _corrob_record_bucket
 
         out = {}
         for key, data in results.items():
@@ -6743,7 +6950,8 @@ class ExtractionEngine:
             'was_corrected':   True,
             'corrected_to':    adopted,
             'confidence':      min(data.get('confidence') or 0, _REREAD_CAP),
-            'validation_note': f're-read from the page (was "{garble}") — please verify',
+            # _REREAD_NOTE_HEAD is the class-F allowlist mark (write-site constant — keep in sync)
+            'validation_note': f'{_REREAD_NOTE_HEAD}{garble}") — please verify',
             'reread':          True,
         }
 
@@ -6776,7 +6984,8 @@ class ExtractionEngine:
                 cached_text: str | None = None,
                 date_field_key: str | None = None,
                 raw_pages: list | None = None,
-                deskew_angles: list | None = None) -> dict:
+                deskew_angles: list | None = None,
+                barcodes: list | None = None) -> dict:   # ocr/barcodes.decode_pages rows (None ⇒ no decode ran)
         """
         Run extraction pipeline according to current mode.
         Returns dict with field values + metadata keys prefixed with _.
@@ -6798,6 +7007,7 @@ class ExtractionEngine:
         self._rejected_reads = {}     # per-run: field -> [{method, value, reason}] — the ALWAYS-ON
                                       # anchor rejection recorder (slice-3 B1); D1 evidence + census
         self._list_field_keys = set()  # per-run; filled at Stage 1 when LIST_FIELD_SCAN is armed
+        self._barcode_field_keys = set()  # per-run; filled at Stage 1.5 when BARCODE_FIELD is armed
         results      = {}
         field_keys   = [f["key"] for f in field_defs]
         # Straighten-arc frame election (C1: computed ONCE, the SAME list feeds every crop
@@ -7471,7 +7681,52 @@ class ExtractionEngine:
                 _old = results.pop(_lk)
                 self.log(f"  List field '{_lk}': reclaimed scalar {_old.get('method')} read "
                          f"for the collect scan")
-        kw_results = keyword.extract_fields(ocr_text, field_keys, patterns_for_run,
+        # BARCODE fields (2026-08-26, kill switch BARCODE_FIELD, DEFAULT OFF; barry → gary design):
+        # a field the type declares as 'barcode' has exactly ONE writer — the page's decoded
+        # symbols (ocr/barcodes.decode_pages, threaded in by process_docs as `barcodes`) — never
+        # OCR. Exactly one distinct code-like decode -> the value @100 with a confirm-once note (a
+        # checksummed decode is right or absent; with NO learning yet the note holds every doc —
+        # correctness first, the auto-file licence is a later slice); several -> EMPTY + a note
+        # listing them (never first-wins); none -> empty. The key set drives the SAME ownership
+        # skips LIST fields use (mapping seed reclaim here, Stage 2 / 2.6 / 2.5b / 4.5 / hints
+        # below) so no OCR rung can overwrite or "repair" a decode. These keys are also kept OUT
+        # of the Stage-1 keyword scan: the human-readable digits under a bar must not become a
+        # keyword "read" that later disagrees with the decode. Empty when the flag is off or no
+        # decode ran (`barcodes is None`, e.g. --reextract renders no pages) -> byte-identical.
+        _barcode_field_keys = set()
+        if os.environ.get('BARCODE_FIELD', '0') != '0' and barcodes is not None:
+            _barcode_field_keys = {f.get('key') for f in (field_defs or [])
+                                   if f.get('key') and str(f.get('type') or '').lower() == 'barcode'}
+        self._barcode_field_keys = _barcode_field_keys
+        if _barcode_field_keys:
+            try:
+                from ocr.barcodes import candidates_for_field as _bc_cands
+                _bc_vals = _bc_cands(barcodes)
+            except Exception:
+                _bc_vals = []
+            for _bk in sorted(_barcode_field_keys):
+                if isinstance(results.get(_bk), dict):
+                    _old = results.pop(_bk)
+                    self.log(f"  Barcode field '{_bk}': reclaimed scalar {_old.get('method')} read")
+                if len(_bc_vals) == 1:
+                    results[_bk] = {"value": _bc_vals[0], "confidence": 100, "method": "barcode",
+                                    "validation_note": _BARCODE_CONFIRM_NOTE}
+                    self.log(f"  Stage 1.5: barcode field '{_bk}' <- '{_bc_vals[0]}' (decoded; confirm once)")
+                elif len(_bc_vals) > 1:
+                    results[_bk] = {"value": "", "confidence": 0, "method": "barcode_ambiguous",
+                                    "validation_note": _BARCODE_SEVERAL_NOTE.format(" · ".join(_bc_vals[:6]))}
+                    self.log(f"  Stage 1.5: barcode field '{_bk}' left EMPTY — {len(_bc_vals)} candidates")
+                elif barcodes:
+                    results[_bk] = {"value": "", "confidence": 0, "method": "barcode_unsupported",
+                                    "validation_note": _BARCODE_UNSUPPORTED_NOTE}
+                if isinstance(results.get(_bk), dict):
+                    self._remember_candidates('1.5_barcode', {_bk: results[_bk]})
+                    if self._trace:
+                        self._t("barcode_field", field=_bk, value=results[_bk].get("value"),
+                                candidates=len(_bc_vals))
+        kw_results = keyword.extract_fields(ocr_text,
+                                            [k for k in field_keys if k not in _barcode_field_keys],
+                                            patterns_for_run,
                                             caption_vocab=_caption_vocab,
                                             caption_guard_keys=_caption_guard_keys,
                                             trace=self._t,
@@ -7751,6 +8006,8 @@ class ExtractionEngine:
                 # writer does to a list field. Empty stays empty -> review (fail-toward-review).
                 if key in getattr(self, '_list_field_keys', ()):
                     continue
+                if key in getattr(self, '_barcode_field_keys', ()):
+                    continue                      # BARCODE ownership: the decode alone writes these
                 existing = results.get(key)
                 # Protect an admin-LOCKED fixed value from any NON-authoritative anchor
                 # read (incl. the supplier-identity rescue + credibility-gate paths
@@ -8548,6 +8805,8 @@ class ExtractionEngine:
                         continue                      # fill-empty-only — never displace
                     if key in getattr(self, '_list_field_keys', ()):
                         continue                      # LIST ownership: the collect scan alone writes these
+                    if key in getattr(self, '_barcode_field_keys', ()):
+                        continue                      # BARCODE ownership: the decode alone writes these
                     data = dict(data)
                     data["confidence"] = min(int(data.get("confidence") or 0), _LATE_RESCUE_CAP)
                     data["late_rescue"] = True        # provenance for trace; method string untouched
@@ -8700,6 +8959,8 @@ class ExtractionEngine:
                 # note (the separator-guard finding). Do not rely on length-mismatch masking.
                 if key in getattr(self, '_list_field_keys', ()):
                     continue
+                if key in getattr(self, '_barcode_field_keys', ()):
+                    continue                      # BARCODE ownership: never "repair" a checksummed decode
                 # Never rewrite a value the corpus has actually CONFIRMED (reggie): the count-weighted
                 # derive_template can force a position to a category, and try_correct would then
                 # SILENTLY (no flag) coerce a legitimate minority variant that OCR read correctly. If
@@ -8928,6 +9189,8 @@ class ExtractionEngine:
                 # shape learning is a later slice, deliberately.
                 if key in getattr(self, '_list_field_keys', ()):
                     continue
+                if key in getattr(self, '_barcode_field_keys', ()):
+                    continue                      # BARCODE ownership: a decode is checksummed or absent — no shape/charset rail
                 # ── EDGE-JUNK CLEANUP (name-like free-text) ── a real name never
                 # STARTS with "--«" / a stray symbol; strip OCR edge artefacts BEFORE
                 # the charset/format checks below so a cleaned value isn't needlessly
@@ -9286,7 +9549,7 @@ class ExtractionEngine:
                         results[key] = {
                             **data,
                             'value':           extracted,
-                            'validation_note': 'trimmed to the expected format — please verify',
+                            'validation_note': _SHAPE_TRIM_NOTE,   # class-F allowlist mark (write-site constant)
                         }
                         n_flagged += 1
                         format_anomaly_flagged = True
@@ -10255,6 +10518,11 @@ class ExtractionEngine:
         _lk = getattr(self, '_list_field_keys', None)
         if _lk:
             hints = [h for h in hints if (h or {}).get("field_key") not in _lk]
+        # BARCODE ownership (2026-08-26): a decode is per-document by nature — a hint would replay
+        # one document's barcode onto another.
+        _bk = getattr(self, '_barcode_field_keys', None)
+        if _bk:
+            hints = [h for h in hints if (h or {}).get("field_key") not in _bk]
 
         # Evidence-based variability: a field with >=2 DISTINCT confirmed values for
         # this supplier+type is variable IN FACT (e.g. a per-document customer name),

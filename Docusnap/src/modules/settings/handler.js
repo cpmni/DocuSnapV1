@@ -420,6 +420,87 @@ function register(ctx) {
     return { restored };
   });
 
+  // ── Learning Repair v2 — the SELECTOR + CONSOLE + "start fresh" (barry + gary → Oracle
+  //    SIGN-OFF-W/COND C1–C6, 2026-08-26). DARK: `learning_repair_console` (the UI) and
+  //    `learning_repair_forget` (the destructive door, enforced in the service). Admin only. ──────
+  const learningScopes = require('../../services/learningScopeService');
+  const learningRepair = require('../../services/learningRepairService');
+  const _snapshotDir = () => {
+    try { return require('path').join(require('electron').app.getPath('userData'), 'repair-snapshots'); }
+    catch { return require('path').join(require('os').tmpdir(), 'scanfinder-repair-snapshots'); }
+  };
+  // One row per sender × doc type that holds ANY learning (documents ∪ every learning table).
+  ipcMain.handle('learning-scopes', () => {
+    requireRole('admin');
+    const db = getDb();
+    try {
+      const scopes = learningScopes.listScopes(db);
+      // "Worth a look" badge: the SAME suspect detectors the console's document list uses, run ONCE
+      // per document type (never per scope) and attributed to each scope through the doc's sender.
+      try {
+        const repairSuspects = require('../../services/repairSuspects');
+        const bySlug = new Map();
+        for (const s of scopes) if (s.document_type_slug && !bySlug.has(s.document_type_slug)) bySlug.set(s.document_type_slug, null);
+        for (const slug of bySlug.keys()) {
+          let sus = null;
+          try { sus = repairSuspects.computeSuspects(db, { document_type_slug: slug }); } catch { sus = null; }
+          const ids = sus && sus.byId ? Object.keys(sus.byId).map(Number).filter(Number.isFinite) : [];
+          if (!ids.length) continue;
+          const ph = ids.map(() => '?').join(',');
+          const rows = db.prepare(`SELECT id, LOWER(TRIM(COALESCE(supplier_name, ''))) AS sup FROM documents WHERE id IN (${ph})`).all(...ids);
+          const counts = new Map();
+          for (const r of rows) counts.set(r.sup, (counts.get(r.sup) || 0) + 1);
+          for (const s of scopes) if (s.document_type_slug === slug) s.suspects = counts.get(String(s.supplier_name || '').trim().toLowerCase()) || 0;
+        }
+      } catch { /* badge only — never hide a scope */ }
+      return { ok: true, scopes };
+    } catch (e) { return { ok: false, error: e.message || String(e), scopes: [] }; }
+  });
+  // Read-only plan + the plain-English consequence sentence for one scope.
+  ipcMain.handle('learning-repair-dry-run', (_e, scope) => {
+    requireRole('admin');
+    try { return learningRepair.dryRun(getDb(), scope || {}); }
+    catch (e) { return { ok: false, error: e.message || String(e) }; }
+  });
+  // The forget itself: snapshot → retract once → scope deletes → owned templates → exclusion stamps.
+  // Then the quiet lane re-reads the sender's now template-less held docs under the `repair` hold
+  // (falls back honestly when the lane is off — the console says "use Reprocess").
+  ipcMain.handle('learning-repair-forget', (_e, scope) => {
+    const sess = requireRole('admin');
+    const db = getDb();
+    const s = scope || {};
+    const res = learningRepair.forgetScope(db, { username: sess.username, displayName: sess.displayName }, s,
+      { snapshotDir: _snapshotDir(), templatesDir: (() => { try { return ctx.templatesDir ? ctx.templatesDir() : null; } catch { return null; } })() });
+    try {
+      logAudit(db, { action: 'learning_repair_forget', action_category: 'processing', target_type: 'document_type',
+        outcome: res.ok ? 'success' : 'failure',
+        metadata: { supplier: s.supplier_name || null, type: s.document_type_slug || null, ...(res.summary || {}), snapshot: res.snapshotPath ? require('path').basename(res.snapshotPath) : null } });
+    } catch {}
+    let reread = false;
+    if (res.ok) {
+      try { reread = !!require('../processing/handler').scheduleQuietReread(db, { supplier: s.supplier_name, typeSlug: s.document_type_slug, reason: 'repair' }); } catch { reread = false; }
+      try { notifyAllWindows('review-count-changed', require('../../../database/modules/documents').getReviewCount(db)); } catch {}
+    }
+    return { ...res, reread };
+  });
+  ipcMain.handle('learning-repair-undo', (_e, { snapshotPath } = {}) => {
+    requireRole('admin');
+    const db = getDb();
+    // Only a snapshot INSIDE the app's snapshot dir may be restored (never an arbitrary path).
+    const dir = _snapshotDir();
+    const p = String(snapshotPath || '');
+    const inside = (() => { try { const path = require('path'); const r = path.resolve(p); return r.startsWith(path.resolve(dir) + path.sep); } catch { return false; } })();
+    if (!inside) return { ok: false, error: 'Unknown snapshot.' };
+    const res = learningRepair.undoForget(db, p);
+    try { logAudit(db, { action: 'learning_repair_undo', action_category: 'processing', target_type: 'document_type',
+      outcome: res.ok ? 'success' : 'failure', metadata: { ...(res.scope || {}), ...(res.summary || {}) } }); } catch {}
+    return res;
+  });
+  ipcMain.handle('learning-repair-snapshots', () => {
+    requireRole('admin');
+    return { snapshots: learningRepair.listSnapshots(_snapshotDir()) };
+  });
+
   // ── Learning Repair (browse + preview + suspects + send-to-review) ───────────
   const repairSuspects = require('../../services/repairSuspects');
   ipcMain.handle('repair-overview', (_e, scope) => {

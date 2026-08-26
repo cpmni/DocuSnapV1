@@ -388,6 +388,33 @@ function _reconcileEnv(db) {
     if (learning.getSetting(db, 'name_corrob_note_demote', 'false') === 'true') {
       env.NAME_CORROB_NOTE_DEMOTE = '1';
     }
+    // CLASS F — verification-doubt note clear (gary audit 2026-08-26, owner exhibit SuperStore 31901):
+    // ONE general rule for the "please check/verify" doubt-note family (taught-box edge cut, read-from-
+    // the-surrounding-line, Stage-4.5 trim/re-read). Cleared + the FIELD lifted to 90 iff two DISTINCT
+    // page families agree with an un-noted witness AND the value passes the learned shape; deny-by-
+    // default allowlist of write-site constants. Default OFF, byte-identical off. Env wins both ways
+    // for harness arms.
+    // Oracle C4 (flip order): F may only arm where the fc recompute is ON — otherwise the field
+    // lifts to 90 but the stale −12 format penalty keeps the doc below-floor with NO note (the
+    // "mysterious empty hold"). Enforced here rather than documented: a switch that needs another
+    // switch is a switch that silently does the wrong thing.
+    if (env.CORROB_VERIFICATION_DOUBT_CLEAR == null
+        && learning.getSetting(db, 'corrob_verification_doubt_clear', 'false') === 'true'
+        && learning.getSetting(db, 'corrob_note_recompute_fc', 'false') === 'true') {
+      env.CORROB_VERIFICATION_DOUBT_CLEAR = '1';
+    }
+    // BARCODES (2026-08-26, barry → gary design; both DEFAULT OFF, byte-identical off):
+    //   barcode_inventory — decode every symbol on the OCR-rendered pages (ocr/barcodes.py) and
+    //     persist them (document_barcodes, mig 91) for full-text search; no customer UI.
+    //   barcode_field — a field typed 'barcode' is filled from the decode alone (Stage 1.5; every
+    //     OCR rung skips it), held with a confirm-once note (no learning yet).
+    // Env wins both ways for harness arms.
+    if (env.BARCODE_INVENTORY == null && learning.getSetting(db, 'barcode_inventory', 'false') === 'true') {
+      env.BARCODE_INVENTORY = '1';
+    }
+    if (env.BARCODE_FIELD == null && learning.getSetting(db, 'barcode_field', 'false') === 'true') {
+      env.BARCODE_FIELD = '1';
+    }
     // CREDIT-NOTE SIGN COHERENCE (Oracle 2026-08-07, slice C — DETECTION only). The app has no
     // representation of a signed money value: the readers strip a leading '-' at BOTH sites
     // (anchor.py + keyword.py), so a -£160.32 CREDIT commits as a +£160.32 CHARGE and files silently.
@@ -2773,6 +2800,15 @@ function register(ctx) {
       _preserveAck ? 1 : 0,
       docId
     );
+    // BARCODE INVENTORY (2026-08-26, DARK `barcode_inventory`): the emit key is TRI-STATE — absent
+    // (dark / no pages rendered) keeps the doc's existing rows; a list (possibly []) replaces them.
+    // Inside the SAME transaction as the extraction rows so a rollback never leaves half a doc.
+    const _bcRows = Object.prototype.hasOwnProperty.call(result || {}, 'barcodes') ? result.barcodes : undefined;
+    const _replaceBarcodes = () => {
+      if (_bcRows === undefined) return;
+      try { require('../../../database/modules/barcodes').replaceDocumentBarcodes(db, docId, _bcRows); }
+      catch (e) { try { ctx.logger?.warn?.(`[barcodes] replace failed for doc ${docId}: ${e.message}`); } catch {} }
+    };
     if (_expect) {
       // The lane's guarded merge: status + fingerprint re-checked and the rows + document written in
       // ONE transaction, so nothing can land between the check and the write (S3-C1).
@@ -2787,6 +2823,7 @@ function register(ctx) {
         }
         learning.deleteExtractions(db, docId);
         learning.insertExtractions(db, docId, mergedRows);
+        _replaceBarcodes();
         _updateDoc();
         return null;
       })();
@@ -2798,6 +2835,7 @@ function register(ctx) {
       db.transaction(() => {
         learning.deleteExtractions(db, docId);
         learning.insertExtractions(db, docId, mergedRows);
+        _replaceBarcodes();
       })();
       _updateDoc();
     }
@@ -3923,16 +3961,19 @@ function register(ctx) {
       try {
         // the sender's OTHER-type templates (owned: frozen supplier or sample doc is the sender's) and
         // their LIVE confirmed counts — the same "unsupported" the matcher judges (<2, any via)
+        // Learning-excluded docs (Learning Repair "start fresh", mig 90) never count as SUPPORT for a
+        // rival-type template — the same shared predicate every learning reader carries.
+        const _lex = require('../../../database/modules/machine_vias').learningExcludedSql;
         const rivals = db.prepare(`
           SELECT t.id, t.document_type_slug AS slug,
-                 (SELECT COUNT(*) FROM documents d WHERE d.template_id = t.id AND d.status = 'confirmed') AS n
+                 (SELECT COUNT(*) FROM documents d WHERE d.template_id = t.id AND d.status = 'confirmed'${_lex(db, 'd')}) AS n
             FROM templates t
            WHERE LOWER(COALESCE(t.document_type_slug, '')) <> ?
              AND (EXISTS (SELECT 1 FROM template_fields tf WHERE tf.template_id = t.id AND tf.field_key = 'supplier_name'
                             AND LOWER(TRIM(COALESCE(tf.fixed_value, ''))) = ?)
                   OR EXISTS (SELECT 1 FROM documents sd WHERE sd.id = t.sample_document_id
                             AND LOWER(TRIM(COALESCE(sd.supplier_name, ''))) = ?)
-                  OR EXISTS (SELECT 1 FROM documents cd WHERE cd.template_id = t.id AND cd.status = 'confirmed'
+                  OR EXISTS (SELECT 1 FROM documents cd WHERE cd.template_id = t.id AND cd.status = 'confirmed'${_lex(db, 'cd')}
                             AND LOWER(TRIM(COALESCE(cd.supplier_name, ''))) = ?))`).all(slug, sup.toLowerCase(), sup.toLowerCase(), sup.toLowerCase());
         const bySlug = new Map();
         for (const r of rivals) bySlug.set(r.slug, Math.max(bySlug.get(r.slug) || 0, Number(r.n) || 0));
@@ -5392,6 +5433,13 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
       suggested_supplier: data.suggested_supplier || null,   // branding cross-check → "Use '<name>'" button
     }));
     learning.insertExtractions(db, docId, rows);
+  }
+  // BARCODE INVENTORY (2026-08-26, DARK `barcode_inventory`): persist the page decodes the emit
+  // carried (tri-state: key absent ⇒ nothing written). Best-effort — a barcode row must never fail
+  // an import.
+  if (docId && Object.prototype.hasOwnProperty.call(msg || {}, 'barcodes')) {
+    try { require('../../../database/modules/barcodes').replaceDocumentBarcodes(db, docId, msg.barcodes); }
+    catch (e) { try { logger?.warn?.(`[barcodes] persist failed for doc ${docId}: ${e.message}`); } catch {} }
   }
 
   msg.db_id = docId;

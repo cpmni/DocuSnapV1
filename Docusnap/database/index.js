@@ -2098,6 +2098,49 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 89 applied: default-ON position_teach_nudge + issuer_sibling_fill + issuer_suggest_on_blank_confirm (identifier_registry stays DARK)');
   }
 
+  // Migration 90 (2026-08-26, Learning Repair "start fresh" — gary design → Oracle SIGN-OFF-W/COND):
+  // documents.learning_excluded_at. A confirmed document carrying this stamp stays FILED and
+  // SEARCHABLE but STOPS TEACHING — every learning-feeding reader appends the ONE shared predicate
+  // (machine_vias.learningExcludedSql), so a forgotten sender×type is genuinely cold on its next
+  // import without un-filing anything. Nullable, no default, nothing stamps it until the DARK
+  // `learning_repair_forget` door is armed ⇒ inert by construction on every existing install.
+  if (!applied.has(90)) {
+    try {
+      if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'learning_excluded_at')) {
+        db.exec('ALTER TABLE documents ADD COLUMN learning_excluded_at TEXT');
+      }
+    } catch (e) { console.warn(`  migration 90 (learning_excluded_at): ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (90)').run();
+    console.log('JS migration 90 applied: documents.learning_excluded_at (Learning Repair start-fresh stamp; inert until stamped)');
+  }
+
+  // Migration 91 (2026-08-26, barcode inventory — barry → gary design, DARK `barcode_inventory`):
+  // document_barcodes = every 1D/2D symbol decoded on a document's pages at import/reprocess
+  // (ocr/barcodes.py over the OCR-rendered pages; separator-sheet SFSEP payloads excluded). One row
+  // per (page, symbology, value) with its normalised box. Feeds full-text search (a bar-only value
+  // finds its document) and, later, the barcode field's teach pills. Cascade on document delete.
+  // A TABLE, not a JSON column: indexable by value, per-row box, and a JSON LIKE would false-hit
+  // on keys. Nothing writes it until the switch is on ⇒ inert on every existing install.
+  if (!applied.has(91)) {
+    try {
+      db.exec(`CREATE TABLE IF NOT EXISTS document_barcodes (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        document_id  INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+        page         INTEGER NOT NULL DEFAULT 0,
+        symbology    TEXT    NOT NULL,
+        value        TEXT    NOT NULL,
+        x_norm       REAL, y_norm REAL, w_norm REAL, h_norm REAL,
+        orientation  INTEGER,
+        content_type TEXT,
+        created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+      )`);
+      db.exec('CREATE INDEX IF NOT EXISTS idx_document_barcodes_doc ON document_barcodes(document_id)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_document_barcodes_value ON document_barcodes(value)');
+    } catch (e) { console.warn(`  migration 91 (document_barcodes): ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (91)').run();
+    console.log('JS migration 91 applied: document_barcodes (barcode inventory; inert until barcode_inventory is on)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

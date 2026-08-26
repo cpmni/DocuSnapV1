@@ -27,6 +27,7 @@
  */
 const brandingFp = require('./branding_fingerprint');
 const templates  = require('./templates');
+const { learningExcludedSql } = require('./machine_vias');   // Learning Repair start-fresh predicate (mig 90; '' until stamped)
 
 const SURFACE_JACCARD   = 0.60;   // surface a cluster for admin review
 const AUTO_JACCARD      = 0.75;   // strong enough to PRE-SELECT for merge (admin still confirms)
@@ -235,7 +236,7 @@ function planBackfill(db, opts = {}) {
   const docs = db.prepare(
     "SELECT d.id, d.keyword_fingerprint, dt.slug AS slug FROM documents d " +
     "JOIN document_types dt ON dt.id = d.document_type_id " +
-    "WHERE d.status = 'confirmed' AND d.template_id IS NULL AND dt.slug IS NOT NULL AND TRIM(dt.slug) <> ''"
+    "WHERE d.status = 'confirmed'" + learningExcludedSql(db) + " AND d.template_id IS NULL AND dt.slug IS NOT NULL AND TRIM(dt.slug) <> ''"
   ).all();
   const plan = [];
   for (const d of docs) {

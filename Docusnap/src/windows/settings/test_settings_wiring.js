@@ -139,6 +139,13 @@ const BRIDGES = [
   ['recon-demote-toggle', 'recon_total_note_demote', 'RECON_TOTAL_NOTE_DEMOTE'],
   // Corroboration step 3, slice 3 (Oracle W/COND B1-B3 2026-08-13): name note demote.
   ['name-demote-toggle', 'name_corrob_note_demote', 'NAME_CORROB_NOTE_DEMOTE'],
+  // Class F (gary audit 2026-08-26): the verification-doubt note clear — one general rule for the
+  // "please check/verify" family; two distinct page families + un-noted witness + learned shape.
+  ['verification-doubt-clear-toggle', 'corrob_verification_doubt_clear', 'CORROB_VERIFICATION_DOUBT_CLEAR'],
+  // Barcodes (2026-08-26, barry → gary design): the page inventory (mig 91 store + search) and the
+  // 'barcode' field type (Stage 1.5, decode-only writer). Both DEFAULT OFF.
+  ['barcode-inventory-toggle', 'barcode_inventory', 'BARCODE_INVENTORY'],
+  ['barcode-field-toggle', 'barcode_field', 'BARCODE_FIELD'],
   // ── Corroboration-driven auto-file resolution (2026-08-15 held-queue arc, mig 69). Five
   //    extraction arms bridged through _reconcileEnv; each DEFAULT OFF. ──
   ['ref-dominant-format-demote-toggle', 'ref_dominant_format_note_demote', 'REF_DOMINANT_FORMAT_NOTE_DEMOTE'],
@@ -210,6 +217,11 @@ const SETTING_SWITCHES = [
   // harness arms); critfield_corrob_floor_relax is additionally nested under corroboration_autofile.
   ['critfield-corrob-relax-toggle', 'critfield_corrob_floor_relax', 'database/modules/trust.js'],
   ['vacuous-corrected-ignore-toggle', 'vacuous_corrected_to_ignore', 'database/modules/trust.js'],
+  // Learning Repair v2 (barry + gary → Oracle SIGN-OFF-W/COND 2026-08-26): the console UI reads its
+  // own key in the settings renderer; the destructive "start fresh" door is enforced in the service
+  // (never the renderer) — a UI that could forget without the service's gate is the failure this pins.
+  ['learning-repair-console-toggle', 'learning_repair_console', 'src/windows/settings/renderer.js'],
+  ['learning-repair-forget-toggle', 'learning_repair_forget', 'src/services/learningRepairService.js'],
 ];
 for (const [id, key, consumer] of SETTING_SWITCHES) {
   let src = '';

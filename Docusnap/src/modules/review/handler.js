@@ -6,6 +6,10 @@
  */
 
 const os = require('os');
+// Learning Repair start-fresh predicate (mig 90): the three confirmed-scope readers here (the hold-reason
+// counts + the template freeze judgement) must agree with getFieldFormats / scopeTrust, so a stamped
+// document leaves them too ('' until stamped; test_learning_excluded_readers.js).
+const { learningExcludedSql } = require('../../../database/modules/machine_vias');
 
 // ── Deferred source-file move (confirm/commit path) ──────────────────────────
 // commitDocument copies the original scan to its filed location immediately,
@@ -542,7 +546,7 @@ function register(ctx) {
         if (stale.length && stale.length === noted.length && String(doc.supplier_name || '').trim()) {
           const n = db.prepare(`SELECT COUNT(*) AS n FROM documents
              WHERE status = 'confirmed' AND document_type_id = ?
-               AND LOWER(TRIM(supplier_name)) = LOWER(TRIM(?))`).get(doc.document_type_id, doc.supplier_name).n;
+               AND LOWER(TRIM(supplier_name)) = LOWER(TRIM(?))${learningExcludedSql(db, '')}`).get(doc.document_type_id, doc.supplier_name).n;
           if (n > 0) { out.kind = 'stale-layout-note'; out.field = stale[0].field_key; out.scopeConfirms = n; }
         }
       } catch { /* advisory — never break the reason panel */ }
@@ -553,7 +557,7 @@ function register(ctx) {
         if (dt && String(doc.supplier_name || '').trim()) {
           const n = db.prepare(`SELECT COUNT(*) AS n FROM documents
              WHERE status = 'confirmed' AND document_type_id = ?
-               AND LOWER(TRIM(supplier_name)) = LOWER(TRIM(?))`).get(dt.id, doc.supplier_name).n;
+               AND LOWER(TRIM(supplier_name)) = LOWER(TRIM(?))${learningExcludedSql(db, '')}`).get(dt.id, doc.supplier_name).n;
           const need = require('../../../database/modules/learning').FORMAT_SOLID_MIN;
           if (n < need) { out.scopeConfirms = n; out.confirmsNeeded = need; }
         }
@@ -1786,7 +1790,7 @@ function _fieldsWithMultipleConfirmedValues(db, dtInfo, opts = {}) {
       FROM extractions e
       JOIN documents d ON d.id = e.document_id
       LEFT JOIN corrections c ON c.document_id = e.document_id AND c.field_key = e.field_key
-      WHERE d.status = 'confirmed' AND d.document_type_id = ?
+      WHERE d.status = 'confirmed'${learningExcludedSql(db)} AND d.document_type_id = ?
         AND TRIM(COALESCE(c.corrected_value, e.display_value)) != ''
       GROUP BY e.field_key
     `).all(dtInfo.id);

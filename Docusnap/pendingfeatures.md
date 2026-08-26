@@ -6,7 +6,57 @@
 
 ---
 
-## 2026-08-26 — TARGETED field re-slice after a ⊕ box teach (skip the full re-OCR) — owner idea
+## 2026-08-26 NIGHT — follow-ups from the overnight build (all owner-vet; nothing here is built)
+- **Barcode field B2 — LEARN at confirm** (symbology + length-set + prefix per (sender,type,field); a new small
+  table, never `supplier_hints`/`field_anchors`) so a barcode field can AUTO-FILE — tonight's slice B holds every
+  doc with a confirm-once note by design. **B3** teach pills (click a decoded barcode on the page in ⊕/Teach).
+  **B4** barcode ↔ OCR-ref corroboration as a NEW family in `_corrob_record_bucket` + `trust._corrobLicensed`
+  (census first — Oracle C1 pattern: a new family moves auto-file both ways). reggie's rules ready to build:
+  `validation_patterns` keys (barcode_gtin/sscc/gsin/code39/text), GS1 mod-10 twins (Py+JS), a GS1 AI tokenizer
+  (`gs1.py`/`gs1.js`, `TextMode.Plain` for FNC1), HRI witness via `_page_presence_corroborated` + a case-preserving
+  confusable sibling. Owner Q: which symbologies do customers print? may a barcode be the ref/filename role? ever
+  `required`?
+- **LIST field residuals (audited 2026-08-26):** a caption ABOVE a vertical COLUMN reads element 1 only (the
+  collector is per-line label→value); no count witness; search indexes the joined string (no per-element snippet);
+  chips UI + long-format CSV export + repeated `<Value>` XML elements (barry). Tonight shipped only the `;`
+  separator refusal at the writer + the renderer split narrowed to `;`.
+- **Learning Repair v2 LATER sections (barry, Oracle-trimmed):** the remembered-values editor (dominant/hints/
+  corrections per field with rename/forget via the existing Review IPCs; the sender name ONLY through
+  `renameSupplier`), the layouts canvas (reuse `redrawTplCanvas` read-only + "Fix where it reads" deep-link to the
+  wizard — never a second box editor), rename/merge as its own arc (`renameSupplier` misses field_rules /
+  identifiers / templates.name / accepted-issuer / graduation_optout; collision → MERGE routes into the irreversible
+  `templates.mergeInto`), a WHOLE-SENDER forget (logos + identifiers + accepted-issuer), "Recently forgotten" list
+  from the snapshots, the Learning tab's raw inventory table → SFDEV-only. Owner Qs: S×T vs whole sender; stay-filed
+  vs back-to-Review after a forget; never move files + an explicit "Re-file N" button.
+- **Barry's expected-feature sweep (2026-08-26, ranked):** 1 searchable-PDF text layer on the FILED copy (L2,
+  must — every peer does it; invisible-text overlay via pypdf from the `image_to_data` word boxes; owner Q: may the
+  filed PDF differ from the original bytes, given originals are kept?) · 2 barcode (built A+B tonight) · 3 exact-
+  duplicate skip at import (SHA-256 of the original bytes; L1 quick win; stops `-DUPLICATE` breeding) · 4 export /
+  accountant pack (CSV of a search's fields + copy-the-PDFs; saved search on Home; owner Q: Xero/Sage/QuickBooks
+  column set) · 5 supplier/customer LIST IMPORT as a witness (seeds the gazetteer + identifier registry day one;
+  a list match is a witness never a trump) · 6 LIST finish. Rejected/deferred with reasons in the round notes:
+  email-in, print driver (Send-To shortcut + drag-drop instead), tags, retention, handwriting, TWAIN.
+
+## 2026-08-26 — ONE general "corroboration clears a verification-doubt note" rule (class F) — ✅ BUILT DARK 2026-08-26 NIGHT
+**Built** (`CORROB_VERIFICATION_DOUBT_CLEAR` / `corrob_verification_doubt_clear`, DEFAULT OFF; Oracle SIGN-OFF-W/COND,
+`docs/oracle_log.md` 2026-08-26 NIGHT): allowlist of write-site constants, ≥2 distinct page families + un-noted
+witness, exact learned skeleton (+ the length leg the pin found), totals/currency refused, re-read mark needs a
+keyword witness, flip-order guard in `_reconcileEnv`. 39 pins. **OWED before flip (owner): the C5 gate** — the
+held-queue census on a DB copy (docs whose note is an allowlisted mark → reprocess with F ON → eyeball every `cls=F`
+clear), the SFDEV live heal of SuperStore 31901, the clip positive control. The audited entry below is kept for the
+record.
+
+## 2026-08-26 — TARGETED field re-slice after a ⊕ box teach (skip the full re-OCR) — owner idea — ⚠ ADVISORS: WRONG LAYER (2026-08-26 NIGHT)
+**gary + oscar (independent, converged):** the premise is partly STALE — on a reprocess the full-page OCR is ALREADY
+skipped (cached `ocr_text`, `handler.js:4125`); what re-runs is render + every crop stage + Stage 2/4/4.5, so a
+field-only read saves ~2-3× per sibling (≈3-5 s → 1-2.5 s), not 10× (the page-wide word pass + render + spawn are the
+floor). And a field-only WRITE poisons the `rereadHolds` baseline (the later full read sees the value already stored →
+no first-fill hold, no S3-C5 = the Oracle C3.3 misfile re-opened), has ONE family (never corroborates → never heals a
+note → "nothing cleared"), and bypasses the on-page identity test. **Ruling: WRONG LAYER for the filing road.** Smallest
+honest slice = a SUGGESTION-ONLY "quick read" pill (no DB write; Review offers "Use") — build only AFTER a timing
+measurement of one lane job over the Pelican/DOC-SOL siblings vs a `--field-read` pass. **The cheaper lever already
+exists: flip the Oracle-signed layout arm `quiet_reread_on_layout` (DARK) after its own Chris round** — armed in
+tonight's Chris sandbox for that evidence. Owner decision.
 **Owner:** *"when a doc is taught and lands in review, after a couple of commits some linger. If I draw a
 box round a value, are we auto-reslicing the other docs in that group? A 'Reprocess all X' clears the queue
 but it seems unnecessary to re-OCR the whole doc."*
@@ -29,7 +79,10 @@ join), `documents.working_path`/`ocr_text`. Advisor+Oracle before build. NOT bui
 
 ---
 
-## 2026-08-26 — Manual-landmark boxes don't SNAP to the words (owner-spotted)
+## 2026-08-26 — Manual-landmark boxes don't SNAP to the words (owner-spotted) — ✅ SHIPPED `9861d37`
+**Shipped 2026-08-26 NIGHT:** `addLandmarkFromRect` now runs the shared `BoxSnap.snapBoxToWords` under the
+same `template_box_word_snap` gate as the mapping path, fail-closed to the drawn box; pinned in
+`test_settings_wiring.js`. (Entry kept for the record; remove on the next sweep.)
 **Symptom (screenshot):** Settings → Templates → "Manual landmarks (advanced)" on the SuperStore sample —
 the drawn landmark boxes (Rate / Bill / INVOICE / Discount / Quantity) sit LOOSE/offset from the printed
 words rather than snapping tight to them. The owner: *"the boxes don't snap to the values as expected."*

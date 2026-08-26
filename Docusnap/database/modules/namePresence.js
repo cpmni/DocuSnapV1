@@ -12,6 +12,10 @@
 // test_name_presence.js. See engine._template_identity_corroborated (the port source) + templates.js
 // identifyByFingerprint (the wire site).
 
+// Learning Repair start-fresh predicate (mig 90): a stamped document no longer votes in the ratio
+// ('' until stamped; test_learning_excluded_readers.js). machine_vias has no requires — cycle-safe.
+const { learningExcludedSql } = require('./machine_vias');
+
 // ── Oracle C2: EXACT port of engine._template_identity_corroborated (python_backend/extraction/
 // engine.py:745-766). The Python uses PLAIN value.lower() + re.findall(r"[a-z0-9]+", ...) — NOT
 // text_normalise — so parity means the raw regex here too. This generic set is the Python set at
@@ -53,7 +57,7 @@ function supplierNamePresenceRatio(db, supplier) {
   if (!supplier) return { ratio: 0, count: 0 };
   try {
     const rows = db.prepare(
-      "SELECT ocr_text FROM documents WHERE status = 'confirmed' AND supplier_name = @sup " +
+      "SELECT ocr_text FROM documents WHERE status = 'confirmed'" + learningExcludedSql(db, '') + " AND supplier_name = @sup " +
       "AND ocr_text IS NOT NULL AND LENGTH(TRIM(ocr_text)) > 0").all({ sup: supplier });
     const count = rows.length;
     if (!count) return { ratio: 0, count: 0 };

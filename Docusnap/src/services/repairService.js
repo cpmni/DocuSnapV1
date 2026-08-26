@@ -43,15 +43,36 @@ const learning = require('../../database/modules/learning');
 const NOTE_PREFIX = 'Sent back from Learning Repair';
 const GENERIC_NOTE = NOTE_PREFIX + ' — please re-check this document before filing.';
 
+// Oracle C1 (2026-08-26): has this document's confirm-planted learning ALREADY been retracted while
+// it stayed confirmed (forgetScope)? `learning_retracted_at` (mig 53) is the proof marker every
+// retract door writes and every human re-confirm clears. Column-tolerant (older fixtures ⇒ false).
+function _retractedAlready(db, docId) {
+  try {
+    const row = db.prepare('SELECT learning_retracted_at, status FROM documents WHERE id = ?').get(docId);
+    return !!(row && row.status === 'confirmed' && row.learning_retracted_at);
+  } catch { return false; }
+}
+function _learningExcluded(db, docId) {
+  try {
+    const row = db.prepare('SELECT learning_excluded_at FROM documents WHERE id = ?').get(docId);
+    return !!(row && row.learning_excluded_at);
+  } catch { return false; }
+}
+
 function sendBackToReview(db, docId, { suspects, source } = {}) {
   // Chris round 17 card 8: every Search send-back said "Sent back from Learning Repair" — name the real door.
   const _prefix = source === 'search' ? 'Sent back from Search' : NOTE_PREFIX;
   const run = db.transaction(() => {
+    // Oracle C1 (Learning Repair "start fresh", 2026-08-26): a doc whose plants were ALREADY retracted
+    // (forgetScope stamps learning_retracted_at while the doc stays confirmed) must not be retracted
+    // AGAIN here — retractOne DELETES at usage<=1, so a double retract would take another sender's
+    // `__global__` twin down with it. The stamp is the proof; a human re-confirm clears it.
+    const _pre = _retractedAlready(db, docId);
     const r = documents.deconfirmDocument(db, docId);
     if (!r.changes) return { ok: false, error: 'not-confirmed' };
 
-    const un = learning.retractConfirmHints(db, docId);
-    try { learning.retractSupplierIdentifiers(db, docId); } catch { /* DARK/inert; never block a deconfirm */ }
+    const un = _pre ? { decremented: 0, deleted: 0, skipped: 'already-retracted' } : learning.retractConfirmHints(db, docId);
+    if (!_pre) { try { learning.retractSupplierIdentifiers(db, docId); } catch { /* DARK/inert; never block a deconfirm */ } }
 
     // C4: latest-row-wins per field — value-preserving for legacy rows pre-dating the
     // confirm-time display sync, and NEVER re-poisoning from an older cycle's row.
@@ -117,9 +138,13 @@ function deleteToRecycleBin(db, docId) {
     if (!doc) return { ok: false, changes: 0 };
     let unplanted = null;
     if (doc.status === 'confirmed') {
-      unplanted = learning.retractConfirmHints(db, docId);
-      try { learning.retractSupplierIdentifiers(db, docId); } catch { /* DARK/inert; never block a soft-delete */ }
-      db.prepare("UPDATE documents SET learning_retracted_at = datetime('now') WHERE id = ?").run(docId);
+      if (_retractedAlready(db, docId)) {
+        unplanted = { decremented: 0, deleted: 0, skipped: 'already-retracted' };   // Oracle C1: never twice
+      } else {
+        unplanted = learning.retractConfirmHints(db, docId);
+        try { learning.retractSupplierIdentifiers(db, docId); } catch { /* DARK/inert; never block a soft-delete */ }
+        db.prepare("UPDATE documents SET learning_retracted_at = datetime('now') WHERE id = ?").run(docId);
+      }
     }
     const r = documents.softDelete(db, docId);
     return { ok: r.changes > 0, changes: r.changes, unplanted };
@@ -134,10 +159,15 @@ function restoreFromRecycleBin(db, docId) {
     if (!r.changes) return { ok: false, changes: 0 };
     const after = db.prepare('SELECT status FROM documents WHERE id = ?').get(docId);
     let replanted = null;
-    if (before && before.learning_retracted_at && after && after.status === 'confirmed') {
+    // Oracle C1 (2026-08-26): a LEARNING-EXCLUDED doc (Learning Repair "start fresh") must not re-plant
+    // on restore — it is filed but no longer teaches; its marker stays so a later delete never
+    // retracts twice. Only a clean delete→restore round-trips.
+    if (before && before.learning_retracted_at && after && after.status === 'confirmed' && !_learningExcluded(db, docId)) {
       replanted = learning.replantConfirmHints(db, docId);   // only when the delete PROVABLY retracted
+      db.prepare('UPDATE documents SET learning_retracted_at = NULL WHERE id = ?').run(docId);
+    } else if (!_learningExcluded(db, docId)) {
+      db.prepare('UPDATE documents SET learning_retracted_at = NULL WHERE id = ?').run(docId);
     }
-    db.prepare('UPDATE documents SET learning_retracted_at = NULL WHERE id = ?').run(docId);
     return { ok: true, changes: r.changes, replanted };
   });
   return run();

@@ -115,4 +115,12 @@ r = keyword.extract_fields("nothing here\n", ["serials"], PATS, list_keys={"seri
 assert "serials" not in r, r
 ok("no occurrences -> no result — the field stays empty for Review")
 
+# ── 10. SEPARATOR COLLISION (reggie 2026-08-26): an element carrying the store separator is REFUSED ─
+# The store joins with '; ', so 'AB;12' would read back as two elements on every reader. Refused at the
+# ONE writer (never escaped, never split); its siblings survive; the renderer splits on ';' only.
+page4 = "Serial No: NW-1\nSerial No: AB;12\nSerial No: NW-2\n"
+r = keyword.extract_fields(page4, ["serials"], PATS, list_keys={"serials"})
+assert r["serials"]["value"] == "NW-1; NW-2", r
+ok("an element containing ';' is refused; the other occurrences still collect")
+
 print(f"\n{passed} checks passed")

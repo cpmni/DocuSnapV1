@@ -117,7 +117,9 @@ function fieldValidationError(key, value) {
   // >=0.8 coverage rule below would fail on the separators; that is the exact defect the
   // reverted 2026-08-10 serial_list field-level pattern had). Warn-only, like every check here.
   if (def && String(def.type || '').toLowerCase() === 'list') {
-    const parts = v.split(/[;,]/).map(s => s.trim());
+    // Split on the STORE separator only (reggie 2026-08-26): a comma inside an element ("Unit 4, Bay 2")
+    // is data, not a separator — the old `[;,]` was wider than the store and flagged it as an empty entry.
+    const parts = v.split(/;/).map(s => s.trim());
     if (parts.some(s => !s)) return 'This list has an empty entry — remove a stray separator';
     if (parts.some(s => !/[A-Za-z0-9]/.test(s))) return 'A list entry has no letters or digits';
     return null;
@@ -1471,8 +1473,11 @@ window.__drawConcurrentAnchor = false;
 // LIST field type (2026-08-11): when armed, a ⊕ teach on a list-typed field is refused with the
 // reason (the scan owns the field; a stored box would be dead). OFF = the ⊕ behaves as ever.
 window.__listFieldScanOn = false;
+window.__barcodeFieldOn = false;   // BARCODE field type (2026-08-26): ⊕ refused on barcode-typed fields when armed
 (async () => {
   try { window.__listFieldScanOn = (await window.docusnap.getSetting('list_field_scan')) === 'true'; }
+  catch { /* stays false */ }
+  try { window.__barcodeFieldOn = (await window.docusnap.getSetting('barcode_field')) === 'true'; }
   catch { /* stays false */ }
 })();
 
@@ -4433,6 +4438,12 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     const _def = (fieldDefs || []).find(f => f.key === key);
     if (_def && String(_def.type || '').toLowerCase() === 'list' && window.__listFieldScanOn) {
       showToast(`${labelFor(key)} is a List field — it's collected by finding its label everywhere on the page, so there's no position to teach. Edit the value directly, or adjust its label in Settings → Learning.`, 'warn');
+      return;
+    }
+    // A BARCODE field is read from the decoded symbol (2026-08-26): a taught box would never be
+    // consulted either — same refusal, same reason, at teach time.
+    if (_def && String(_def.type || '').toLowerCase() === 'barcode' && window.__barcodeFieldOn) {
+      showToast(`${labelFor(key)} is a Barcode field — it's read from the barcode printed on the page, so there's no position to teach. Edit the value directly if the read is wrong.`, 'warn');
       return;
     }
     if (activeField === key) cancelZoneMode();
