@@ -21,7 +21,43 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-25 (resumed after an accidental close: mid-task arcs + a full Chris fix loop): **READ `HANDOVER_2026-08-25.md` FIRST**
+## ⏭ LATEST — 2026-08-26 NIGHT (identifier-registry arc + Chris R5 cards + switch inventory/flip): **READ `HANDOVER_2026-08-26_NIGHT.md` FIRST**
+Branch `feat/teach-side-overnight`, **HEAD `f2349f9`, commits LOCAL/NOT pushed** (owner reviews then pushes).
+**⏭ THE FRESH SESSION IS TO BUILD THREE FEATURES — top of queue in the handover:** (1) **CLASS F** — one general
+"corroboration clears a verification-doubt note" rule (gary-AUDITED, NOT built; edge-cut 31901 exhibit; the rule
+must LIFT the field to 90 not just pop the note; allowlist + ≥2-distinct-family + shape-pass + deny-by-default
+seam; `pendingfeatures.md:51`); (2) **LANDMARK BOX SNAP** — ✅ BUILT this session, UNCOMMITTED in
+`settings/renderer.js addLandmarkFromRect` — just add a pin + commit, don't rebuild; (3) **TARGETED FIELD
+RE-SLICE** after a ⊕ teach — DESIGN-STAGE (needs advisor+Oracle). Shipped this session: Chris R5 cards 1-6
+(`position_teach_nudge`+`issuer_suggest_on_blank_confirm` now DEFAULT-ON via **mig 89**, live DB flipped),
+row-badge→classify(), quiet-lane 2 workers, and the **supplier hard-identifier registry slices 1a+1b DARK**
+(`identifier_registry` — learn VAT/company-no at confirm, match→suggested_supplier; Oracle SIGN-OFF-W/COND, do
+NOT flip until a REAL-customer-VAT corpus + M=0 + Oracle ratify — the synthetic corpus can't test checksum
+precision). Switch inventory: only 6 DARK remain. `d811cce`=features, `f2349f9`=mig 89.
+
+## (previous) 2026-08-26 DAY (resumed a mid-task C2 revision → Oracle re-vet → gate met): `HANDOVER_2026-08-26.md`
+Branch `feat/teach-side-overnight`. The prior session left a half-finished, un-vetted WIDENING of the
+`issuer_sibling_fill` **C2** safety on disk. That session finished + gated it (folded into commit `d811cce`).
+- **The correction (`issuerSiblingFillService.js`):** the mid-task widening (logo≤13 OR `keywordOverlap≥0.60`)
+  was buggy (dead keyword arm: `_KW_MIN=KEYWORD_THRESHOLD=75` vs a 0..1 fraction; un-threaded fingerprint) AND
+  changed an Oracle-signed safety with no re-vet. **Oracle re-vet = SEND BACK → corrected in place:** the
+  keyword arm now uses the app's ONE same-template comparator `brandingFp.convergesByBranding(src,sib,0.80)`
+  (distinctive tokens, ≥3 shared floor, SYMMETRIC ratio) — NOT raw `keywordOverlap` (which the premise falsely
+  claimed "mirrors handler.js:1635"; that 0.60 is an AND-guard on top of logo≤13, and raw overlap re-opens the
+  two-senders-same-garble collision: asymmetric + name-token inflated). Logo arm stays ≤13. Added a
+  mature-sibling identity re-check (`supplierNamesDisjoint(C, establishedIdentity(...))`). `reviewService.js`
+  now threads the parsed `keyword_fingerprint` array into the pre-claim `src` capture.
+- **GATE MET (owner may flip DARK→on):** census **0 / 1,250,932** cross-supplier convergences on the owner's
+  1668-doc backup (87.1% same-supplier); PIN h2 with a measured RED-on-old(1.00/0.83 admit)/GREEN-on-new
+  (0.375/0.625 refuse) proof; Chris R4 Saltmarsh fired 0→17; Chris R5 full 452-doc CHRISBOT run = 215 filed,
+  **0 wrong-company misfiles**, every bad read HELD (leak-checked: nothing left the sandbox).
+- **Also fixed Chris Card 6** (`renderer.js`): the Put-back tooltip/dialog said "copies already written to your
+  filing folder" on an in-Review sibling-fill/class-fix undo where NOTHING was filed — now kind-aware.
+- **Vet queue (Chris R4/R5, NONE safety, NOT built):** Card 1 draw-a-box-nudge (typing teaches identity not
+  field POSITION — Pelican 41-blank pileup) · Card 2 buyer-issued-PO steer · Card 3 cold-batch expectation ·
+  Card 4 no-sender Unknown-Company scatter · draft Terms (legal). **`issuer_sibling_fill` stays DARK.**
+
+## (previous) 2026-08-25 (resumed after an accidental close: mid-task arcs + a full Chris fix loop): **READ `HANDOVER_2026-08-25.md` FIRST**
 Branch `feat/teach-side-overnight`, **origin at `034a3ad`, 13 commits AHEAD + LOCAL/NOT pushed** (owner reviews then
 pushes). The session was closed mid-commit; I read the 08-24 handover, committed the uncommitted mid-build work,
 then ran the loop Chris→fix→Chris→(recommendation)fix→Chris. **(1) Resumed + committed 3 DARK/OFF-inert arcs:**
