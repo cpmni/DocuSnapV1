@@ -32,5 +32,25 @@ check('the auto-filed view hides the review action block (Delete All Review cann
       + 'a wrong count over a confirmed list — Oracle A1)',
       /reviewActions\.style\.display = _viewingAutoFiled \? 'none' : 'flex';/.test(renderer));
 
+// The row badge routes through the ONE readiness classifier (window.ReviewReadiness.classify) so it
+// can never wear a green "Looks good" over a doc Home / File All would HOLD (untyped, blank required
+// detail, flagged). Pinned on the source: the classify() call, the green-only-when-ready severity,
+// and the no-type / blank-issuer blocker copy that the old local-signal badge had no leg for.
+{
+  const start = renderer.indexOf('function buildQueueItem(');
+  const end = renderer.indexOf('\nfunction ', start + 1);
+  const body = start > -1 ? renderer.slice(start, end > -1 ? end : undefined) : '';
+  check('buildQueueItem asks window.ReviewReadiness.classify (the same verdict as Home / File All)',
+        /window\.ReviewReadiness\.classify\(doc, \{ valuedOnly: !!window\.__farValuedOnly \}\)/.test(body));
+  check('green is reserved for a truly-ready row (any not-ready reason → orange, never green)',
+        /const notReady\s*=\s*_cls !== 'ready';/.test(body)
+        && /else if \(notReady\)\s*sev = 'mid';/.test(body)
+        && /else if \(conf != null\)\s*sev = 'high';/.test(body));
+  check('an untyped or blank-issuer row names its real blocker (no type / Document Issuer)',
+        /No document type — can’t file yet/.test(body)
+        && /'Needs: a document type'/.test(body)
+        && /'Needs: Document Issuer'/.test(body));
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nAll queue-badge copy pins passed');
 process.exit(fails ? 1 : 0);

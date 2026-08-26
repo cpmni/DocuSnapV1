@@ -3061,6 +3061,23 @@ class ExtractionEngine:
         established-after-N-confirmations fallback. Empty/None → no change (byte-identical)."""
         self.accepted_issuers = {self._accept_norm(n) for n in (names or []) if str(n or "").strip()}
 
+    def set_supplier_identifiers(self, rows) -> None:
+        """Load the supplier hard-identifier registry (slice 1b MATCH, DARK). rows = learned
+        {supplier_name, kind, value_norm} — built into a reverse lookup (kind, value_norm) -> set of
+        suppliers, so a VAT read off a blank-issuer page can SUGGEST the sender. Empty/None → no map
+        (byte-identical: the suggest arm at :9704 is a no-op without it)."""
+        reg = {}
+        for r in (rows or []):
+            try:
+                kind = str(r.get("kind") or "").strip()
+                vn   = str(r.get("value_norm") or "").strip()
+                sup  = str(r.get("supplier_name") or "").strip()
+            except AttributeError:
+                continue
+            if kind and vn and sup:
+                reg.setdefault((kind, vn), set()).add(sup)
+        self._id_registry = reg
+
     def set_identity_conflict(self, on: bool):
         """Enable the ACTIVE text-led supplier-identity conflict flag (default OFF, opt-in). When
         on, a CONFLICT (the issuer-band letterhead reads a DIFFERENT known supplier than the
@@ -9685,6 +9702,35 @@ class ExtractionEngine:
                     "Couldn't confirm which company sent this — the logo matched another company "
                     "but the page text doesn't agree. Please set the correct company.")
             results["_needs_review"] = True
+
+        # ── IDENTIFIER-REGISTRY ISSUER SUGGESTION (slice 1b, DARK — no map unless armed) ───────────
+        # When the issuer is BLANK and the learned registry is loaded, read this page's issuer-region
+        # VATs and reverse-look-up the registry: a checksum-valid HEADER VAT that maps to EXACTLY ONE
+        # learned supplier SUGGESTS that sender. SUGGEST-ONLY (fill-empty, no value, review-bound), so
+        # an empty issuer stays held for the human — it NEVER writes a value, never enters the
+        # corroboration/auto-file math (Oracle C1). company_no/phone/footer never suggest alone (C4).
+        # The note carries "confirm the correct company" so the renderer's isBrandingFlag already arms
+        # the "Use 'X'" button, WITHOUT a false letterhead-read claim (Oracle C3). Placed BEFORE the
+        # cold letterhead read below so a warm hard-identifier hit is preferred; both stay fill-empty.
+        if getattr(self, "_id_registry", None) \
+                and not (isinstance(results.get("supplier_name"), dict) and results["supplier_name"].get("value")):
+            try:
+                from extraction import identifier_extract as _idx
+                _idsup = _idx.match_issuer(self._id_registry, ocr_text)
+                if _idsup:
+                    _ifld = results.get("supplier_name")
+                    if not isinstance(_ifld, dict):
+                        _ifld = {"value": None, "confidence": 0, "method": "identifier_suggest"}
+                        results["supplier_name"] = _ifld
+                    if not _ifld.get("suggested_supplier"):
+                        _ifld["suggested_supplier"] = _idsup
+                        _ifld["validation_note"] = (
+                            f"A VAT number on this page is registered to '{_idsup}' — "
+                            "please confirm the correct company.")
+                        results["_needs_review"] = True
+                        self.log(f"  Identifier-registry issuer suggestion: '{_idsup}' (VAT match)")
+            except Exception as _e:                        # a suggestion must never break an extraction
+                self.log(f"  Identifier issuer suggest skipped: {_e}")
 
         # ── LETTERHEAD ISSUER SUGGESTION (2026-07-20, DEFAULT OFF: LETTERHEAD_ISSUER=1 to arm) ───
         # THE COLD-START HOLE. field_patterns.supplier_name finds the issuer only by a CAPTION

@@ -220,6 +220,7 @@ def main():
     parser.add_argument("--field-rules-file", default=None)
     parser.add_argument("--accepted-names-file", default=None)
     parser.add_argument("--accepted-issuers-file", default=None)
+    parser.add_argument("--identifiers-file", default=None)   # slice 1b: supplier hard-identifier registry (DARK)
     parser.add_argument("--enhance-file",   default=None)
     # Parallel processing: when Electron runs a bounded worker pool, each worker
     # gets an explicit JSON list of the filenames (within --folder) it owns, so
@@ -364,6 +365,7 @@ def main():
     field_rules    = load_json_arg(None, args.field_rules_file) or []
     accepted_names = load_json_arg(None, args.accepted_names_file) or []
     accepted_issuers = load_json_arg(None, args.accepted_issuers_file) or []
+    supplier_identifiers = load_json_arg(None, args.identifiers_file) or []   # slice 1b registry (DARK; [] ⇒ inert)
     enhance_params = load_json_arg(None, args.enhance_file)   or None
     reprocess_manifest = load_json_arg(None, args.reprocess_manifest) or {}
 
@@ -412,6 +414,10 @@ def main():
     # the identity-conflict "Issuer is correct" button (skips the conflict flag). Empty → no change.
     if accepted_issuers:
         engine.set_accepted_issuers(accepted_issuers)
+    # Supplier hard-identifier registry (slice 1b MATCH, DARK): reverse-lookup a matched issuer VAT to
+    # SUGGEST the sender on a blank-issuer doc. Empty list ⇒ no-op (byte-identical).
+    if supplier_identifiers:
+        engine.set_supplier_identifiers(supplier_identifiers)
 
     # Text-led supplier-identity conflict flag (off unless --identity-conflict; flag-only).
     if args.identity_conflict:

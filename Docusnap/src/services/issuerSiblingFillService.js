@@ -44,11 +44,28 @@
  */
 
 const templates = require('../../database/modules/templates');
+const brandingFp = require('../../database/modules/branding_fingerprint');
 
 const MARKER = '+issuer_sibling_fill';
 const CAP = 30;                        // a first batch can be large; cap the sweep honestly
-const _SAME_LAYOUT_PHASH_DIST = 4;     // C2: tight — genuine same-batch siblings ~0-2; distinct senders far
+// C2 (WIDENED 2026-08-25, Oracle SEND-BACK-then-corrected — see docs/oracle_log.md 2026-08-25 retry vet):
+// the original tight logo phash (<=4) is a BROKEN same-layout proof on real scans — a supplier's OWN
+// identical invoices spread 0-28 (project_logo_hash_unreliable), so <=4 rejects most genuine siblings and
+// the feature barely fires. Admit on a close LOGO (the app's related-logo band) OR a BRANDING-fingerprint
+// convergence — but the second arm MUST be the app's ONE same-template comparator (branding_fingerprint.js
+// convergesByBranding: DISTINCTIVE tokens only, >=3 shared floor, SYMMETRIC ratio), NOT raw keywordOverlap.
+// WHY (Oracle): raw keywordOverlap is (i) asymmetric (a short garbled sibling that is a subset of the source
+// scores 1.0 — the exact directional bug symmetricDistinctiveOverlap kills) and (ii) undiscriminating — in a
+// two-senders-garble-to-the-same-name collision the fingerprints share the garbled NAME tokens by
+// construction, so the only separating signal is the NON-name distinctive boilerplate. distinctiveTokens +
+// the >=3 shared floor + symmetric 0.80 force that signal to be exercised (0% cross-supplier false-match on
+// the 9-supplier corpus). A second, weaker "same template" comparator in an identity-propagating path would
+// also violate branding_fingerprint.js's "ONE source of truth" invariant.
+const _SAME_LAYOUT_PHASH_DIST = 13;    // the app's "related logo" reuse band
+const _BRANDING_MIN = 0.80;            // convergesByBranding threshold — the app's link/reuse figure
 const _FILL_CONF = 90;                 // clears any reasonable field threshold; overall_confidence untouched
+
+function _parseKwfp(v) { try { const a = typeof v === 'string' ? JSON.parse(v) : v; return Array.isArray(a) ? a : null; } catch { return null; } }
 
 const _batches = new Map();
 let _batchSeq = 0;
@@ -81,13 +98,14 @@ function applyForConfirm(db, opts) {
   if (!_enabled(db, learning)) return null;               // OFF => nothing read, nothing written
   if (!documentId || !C || !src) return null;
   if (!_sourceAcceptedLetterhead(src, C)) return null;   // C1: only a human-accepted letterhead
-  if (!src.phash) return null;                           // C2: no source layout signature => can't prove sameness
+  // C2: need at least ONE usable layout signature on the source (a logo phash OR a keyword fingerprint).
+  if (!src.phash && !(src.keyword_fingerprint && src.keyword_fingerprint.length)) return null;
 
   // Candidate siblings: QUEUED letterhead holds, not this doc, not workflow-locked / put-back / presence-open.
   let rows;
   try {
     rows = db.prepare(`
-      SELECT d.id, d.original_filename, d.logo_phash, d.template_id, d.document_type_id,
+      SELECT d.id, d.original_filename, d.logo_phash, d.keyword_fingerprint, d.template_id, d.document_type_id,
              e.display_value, e.confidence, e.validation_note, e.extraction_method, e.corrected_to,
              COALESCE((SELECT f.confidence_threshold FROM fields f
                         WHERE f.document_type_id = d.document_type_id AND f.key = 'supplier_name'), 70) AS thr
@@ -112,8 +130,17 @@ function applyForConfirm(db, opts) {
     if (take.length >= CAP) break;
     if (_norm(r.display_value) !== _norm(C)) continue;              // its OWN letterhead must read C
     if (String(r.corrected_to || '').trim()) continue;             // a pending human suggestion — leave it
-    if (!r.logo_phash) continue;                                   // C2: no sibling signature => refuse (held)
-    if (templates.hammingDistance(src.phash, r.logo_phash) > _SAME_LAYOUT_PHASH_DIST) continue;   // C2: different layout
+    // C2: admit on a close LOGO or a BRANDING-fingerprint convergence (OR). A different company has a
+    // diverging distinctive-token fingerprint AND a far logo => neither arm fires => refused (held). A
+    // sibling with NEITHER usable signature => refused. The string leg above already pins WHICH company it
+    // reads. The branding arm is convergesByBranding (distinctive tokens, >=3 shared floor, SYMMETRIC ratio)
+    // — the app's ONE same-template comparator — NOT raw keywordOverlap (asymmetric + name-token inflated;
+    // it would admit the two-senders-same-garble collision this guard exists to refuse). See the constants.
+    const _sibKw = _parseKwfp(r.keyword_fingerprint);
+    const _phClose = !!(src.phash && r.logo_phash && templates.hammingDistance(src.phash, r.logo_phash) <= _SAME_LAYOUT_PHASH_DIST);
+    const _brClose = !!(src.keyword_fingerprint && src.keyword_fingerprint.length && _sibKw
+                        && brandingFp.convergesByBranding(src.keyword_fingerprint, _sibKw, _BRANDING_MIN));
+    if (!_phClose && !_brClose) continue;
     // Template guard: NULL (first contact — the common case) is fine; a mature sibling that matched a
     // template must NOT be a buyer-issued or identity-unconfirmed one. Can't verify => refuse (fail-safe).
     if (r.template_id) {
@@ -121,6 +148,14 @@ function applyForConfirm(db, opts) {
       try { t = db.prepare('SELECT buyer_issued, identity_unconfirmed FROM templates WHERE id = ?').get(r.template_id); }
       catch { continue; }
       if (!t || t.buyer_issued || t.identity_unconfirmed) continue;
+      // Identity re-check (Oracle SEND-BACK cond 2): generic template-reuse gets a downstream
+      // supplierNamesDisjoint check; sibling-fill has none, so a mature template with a CONFIRMED identity
+      // that DISAGREES with C (its held doc's letterhead garble-reads C) must NOT be filled with C — that
+      // would override the template's own established identity. Self-exclude this doc from the identity read.
+      try {
+        const ident = templates.establishedIdentity(db, r.template_id, r.id);
+        if (ident && templates.supplierNamesDisjoint(C, ident)) continue;
+      } catch { continue; }
     }
     take.push(r);
   }

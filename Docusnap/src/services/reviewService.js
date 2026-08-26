@@ -139,8 +139,13 @@ function createReviewService(deps = {}) {
       try {
         const _se = db.prepare(`SELECT display_value, extraction_method, validation_note FROM extractions
                                   WHERE document_id = ? AND field_key = 'supplier_name'`).get(document_id);
+        // keyword_fingerprint is stored as TEXT/JSON on the row; thread it as a parsed ARRAY so the service's
+        // keyword-overlap arm (Oracle-revised C2) can compare it directly (never re-read the resolved row).
+        let _srcKwfp = null;
+        try { const _v = docRow && docRow.keyword_fingerprint; const _a = typeof _v === 'string' ? JSON.parse(_v) : _v; _srcKwfp = Array.isArray(_a) ? _a : null; } catch { _srcKwfp = null; }
         if (_se) _issuerFillSrc = { method: _se.extraction_method || '', display: _se.display_value || '',
-                                    note: _se.validation_note || '', phash: (docRow && docRow.logo_phash) || null };
+                                    note: _se.validation_note || '', phash: (docRow && docRow.logo_phash) || null,
+                                    keyword_fingerprint: _srcKwfp };
       } catch { _issuerFillSrc = null; }
     }
     // SECURITY (Stage 1 — H1/M12): the on-disk source paths are resolved SERVER-SIDE from the doc
@@ -431,6 +436,14 @@ function createReviewService(deps = {}) {
       // `internal` arg by batchAuditService; a renderer/client payload can never reach it.
       const _preserveAllAnchors = !!(internal && internal.preserveAnchors);
       learning.saveCorrections(db, document_id, _learn.corrections || {}, supplier_name, document_type_slug, _learn.allValues, taught_fields || [], { preserveAllAnchors: _preserveAllAnchors });
+      // Supplier hard-identifier registry (slice 1a, DARK `identifier_registry`): learn the issuer's
+      // stable identifiers (VAT / company_no) from the confirmed doc's page text — issuer-region +
+      // name-gated inside saveSupplierIdentifiers (Oracle C2). OFF ⇒ no-op; fail-open (a learn miss
+      // must never fail an already-completed confirm).
+      try {
+        const _ocr = (db.prepare('SELECT ocr_text FROM documents WHERE id = ?').get(document_id) || {}).ocr_text;
+        if (_ocr && confirmedSupplier) learning.saveSupplierIdentifiers(db, { supplierName: confirmedSupplier, ocrText: _ocr, documentId: document_id });
+      } catch (e) { logger?.warn?.('identifier learn skipped: ' + (e && e.message)); }
     }
 
     // Record the stored location. First-confirm already flipped status/confirmed_at/confirmed_by
@@ -720,6 +733,27 @@ function createReviewService(deps = {}) {
       } catch (e) { logger?.warn?.('issuer sibling-fill skipped: ' + (e && e.message)); }
     }
 
+    // ── CARD 1 (Chris R5) — THE POSITION-TEACH NUDGE (eric → Oracle SIGN-OFF-W/COND, 2026-08-26) ──
+    // A human typed a filing field from scratch (empty → value) that the app has NO learned POSITION
+    // for on this sender's layout → the value fixed THIS document but not the next 40 (typing teaches
+    // the value, a box teaches WHERE). Return a one-time nudge to DRAW a box; NEVER synthesise a
+    // position from a typed value (the standing 2026-08-10 WRONG-LAYER ruling). Same placement rules
+    // as the two hooks above (LAST, its own `!_via`/`!bulk`, fail-open, DARK). The service reads BOTH
+    // the field_anchor and the Stage-0.5 mapping/fixed_value scope (by template id, not supplier) so a
+    // wizard-taught field is never nagged. Value-blind by construction: it returns only field labels.
+    let _positionHint = null;
+    if (!_via && !bulk && dtInfo) {
+      try {
+        let _tplForHint = null;
+        try { _tplForHint = (documents.getById(db, document_id) || {}).template_id || null; } catch { _tplForHint = null; }
+        _positionHint = require('./positionTeachHintService').applyForConfirm(db, {
+          documentId: document_id, corrections: corrections || {}, taughtFields: taught_fields || [],
+          supplierName: confirmedSupplier, typeSlug: document_type_slug || (dtInfo && dtInfo.slug) || null,
+          dtInfo, templateId: _tplForHint, learning, audit, logger,
+        });
+      } catch (e) { logger?.warn?.('position-teach nudge skipped: ' + (e && e.message)); }
+    }
+
     // Slice 1 trigger (S1-C3): HUMAN confirms only — its own explicit `!_via` (same ruling as the
     // two guards above: never lean on a closed guard). A machine-filed doc (scope_sweep / auto_*)
     // never re-triggers, so the auto-accept cannot chain. `bulk` confirms DO trigger — File-All is
@@ -744,7 +778,7 @@ function createReviewService(deps = {}) {
     }
 
     return { ok: true, success: true, ...filingResult, ...(_classFix ? { classFix: _classFix } : {}),
-             ...(_issuerFill ? { issuerFill: _issuerFill } : {}) };
+             ...(_issuerFill ? { issuerFill: _issuerFill } : {}), ...(_positionHint ? { positionHint: _positionHint } : {}) };
   }
 
   // ── Defer / restore (status-guarded) ──────────────────────────────────────────

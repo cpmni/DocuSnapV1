@@ -229,7 +229,11 @@ const lane = quietLane.create({
     allValues: { supplier_name: 'Acme', invoice_number: 'INV-1', invoice_date: '01-06-2026' }, supplier_name: 'Acme', document_type: 'Invoice', document_type_slug: 'invoice' });
   check('the taught confirm succeeded', r && r.ok);
   await sleep(400);
-  check('the lane spawned ONE worker with the below-normal marker in its env', procs.length === 1);
+  // Up to _quietLaneWorkers (default 2) demoted workers — bounded by processing_concurrency/cores, so a
+  // low-core box still runs one. The exact formula is pinned on the source at §B5; here we assert it is a
+  // bounded set (never a hardcoded single worker, never an unbounded fan-out) and both siblings are still
+  // covered (233/235 below). extraEnv carries the below-normal marker (Python self-demote pinned at §B5).
+  check('the lane spawned a BOUNDED demoted worker set (1-worker lane was slow)', procs.length >= 1 && procs.length <= 2);
   check('s1 (blank) was re-read: values filled, template stamped', row(s1, 'invoice_number')?.display_value === 'INV-N' && docRow(s1).template_id === 7);
   check('...a FILL is not a "changed read" — no hold note', !row(s1, 'invoice_number')?.validation_note);
   check('s2 re-read to the SAME reference — no hold note', row(s2, 'invoice_number')?.display_value === 'INV-2' && !row(s2, 'invoice_number')?.validation_note);
@@ -340,7 +344,13 @@ const lane = quietLane.create({
         /preempt\('single-reprocess'\)/.test(src) && /preempt\('reprocess-batch'\)/.test(src) && (src.match(/preempt\('import'\)/g) || []).length >= 2);
   check('the lane is invisible to _anyProcessingBusy (the foreground is never refused by it)',
         /function _anyProcessingBusy\(\) \{ return _currentBatchProcs\.length > 0 \|\| _singleReprocessActive; \}/.test(src));
-  check('the lane runs the SAME thread cap as every other read (S3-C4)', /threadCap: _reprocessThreadCap\(db\),\s+\/\/ S3-C4/.test(src));
+  check('the lane runs the SAME thread cap on EVERY shard as every other read (S3-C4)',
+        /const cap = _reprocessThreadCap\(db\);\s+\/\/ S3-C4/.test(src) && /threadCap: cap,/.test(src));
+  check('the lane may split into a few workers, bounded by _quietLaneWorkers (owner: 1-worker lane is slow)',
+        /const nShards = Math\.min\(_quietLaneWorkers\(db\), staged\.tmpNames\.length\)/.test(src)
+        && /partitionRoundRobin\(staged\.tmpNames, nShards\)/.test(src));
+  check('_quietLaneWorkers is bounded by processing_concurrency so nShards*cap stays ≈ cores (no oversubscribe)',
+        /return Math\.max\(1, Math\.min\(want, conc, cores\)\);/.test(src));
   check('quit tears the lane down (no orphaned quiet worker)', /function killAll\(\) \{\s*try \{ _quietLaneImpl && _quietLaneImpl\.shutdown\(\); \}/.test(src));
   check('the lane never routes through _reprocessOffer / reprocess-progress (code, not prose)',
         !/_reprocessOffer\s*[=.(]/.test(lanesrc) && !/['"]reprocess-progress['"]/.test(lanesrc));

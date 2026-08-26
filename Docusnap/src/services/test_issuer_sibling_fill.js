@@ -28,13 +28,13 @@ function fresh() {
 }
 // A HELD first-contact doc: needs_review, template_id NULL, a letterhead-prefill supplier_name @69 + note.
 function seedHeld(db, { display = C, phash = 'aaaaaaaaaaaaaaaa', method = 'letterhead_prefill', note = NOTE,
-                        status = 'needs_review', putBack = false, overall = 72 } = {}) {
+                        status = 'needs_review', putBack = false, overall = 72, kwfp = null } = {}) {
   const inv = doctypes.getWithFields(db, 'invoice');
   const r = db.prepare(`INSERT INTO documents
       (document_type_id, original_filename, folder_path, status, supplier_name, doc_date, reference_number,
-       overall_confidence, logo_phash, put_back_at)
-    VALUES (?, 'inv.pdf', 'C:/in', ?, ?, '01-02-2026', 'INV-1', ?, ?, ?)`)
-    .run(inv.id, status, display, overall, phash, putBack ? new Date().toISOString() : null);
+       overall_confidence, logo_phash, keyword_fingerprint, put_back_at)
+    VALUES (?, 'inv.pdf', 'C:/in', ?, ?, '01-02-2026', 'INV-1', ?, ?, ?, ?)`)
+    .run(inv.id, status, display, overall, phash, kwfp ? JSON.stringify(kwfp) : null, putBack ? new Date().toISOString() : null);
   const docId = r.lastInsertRowid;
   db.prepare(`INSERT INTO extractions (document_id, field_key, raw_value, display_value, confidence, extraction_method, validation_note, was_corrected)
               VALUES (?, 'supplier_name', ?, ?, 69, ?, ?, 0)`).run(docId, display, display, method, note || null);
@@ -117,6 +117,86 @@ const deps = () => ({ learning, audit: () => {}, actorName: 'sarah' });
   const noph = seedHeld(db, { phash: null });
   svc.applyForConfirm(db, { documentId: source, confirmedIssuer: C, src, typeSlug: 'invoice', ...deps() });
   check('PIN e: null-phash sibling REFUSED', sup(db, noph).validation_note != null);
+  db.close();
+})();
+
+// ── PIN h: the BRANDING arm rescues a LOGO-DRIFTED genuine sibling (Oracle C2 OR-leg) ───────────
+// A supplier's own second invoice: near-identical distinctive branding fingerprint, but its scanned logo
+// drifted past the phash band (0-28 same-supplier spread). convergesByBranding (ratio 1.0, shared >= 3)
+// admits it; the logo arm alone would have wrongly refused it.
+(function () {
+  process.env.ISSUER_SIBLING_FILL = '1'; svc._reset();
+  const db = fresh();
+  const FP = ['saltmarsh', 'seafoods', 'harbour', 'quayside', 'belfast'];             // 5 distinctive tokens
+  const srcKw = { method: 'letterhead_prefill', display: C, note: NOTE, phash: 'aaaaaaaaaaaaaaaa', keyword_fingerprint: FP };
+  const source  = seedHeld(db, { kwfp: FP });
+  const drifted = seedHeld(db, { phash: '5555555555555555', kwfp: FP });              // logo dist 64 (>13); branding ratio 1.0
+  const weakBr  = seedHeld(db, { phash: '5555555555555555', kwfp: ['alpha', 'beta', 'gamma', 'delta'] });  // far logo + 0 shared distinctive
+  const r = svc.applyForConfirm(db, { documentId: source, confirmedIssuer: C, src: srcKw, typeSlug: 'invoice', ...deps() });
+  check('PIN h: branding-convergence admits the logo-drifted genuine sibling', !!(r && r.docs && r.docs.some(d => d.id === drifted)));
+  check('PIN h: branding arm fires alone (only the converging sibling filled)', !!(r && r.docs && r.docs.length === 1));
+  check('PIN h: far-logo NON-converging sibling REFUSED (control)', sup(db, weakBr).validation_note != null && sup(db, weakBr).confidence === 69);
+  db.close();
+})();
+
+// ── PIN h2: THE COLLISION (Oracle SEND-BACK mandated gate) — two senders garble to the SAME string C, ─
+// different logos. Their fingerprints share only the garbled NAME + generic company boilerplate. Raw
+// keywordOverlap>=0.60 ADMITTED these (the subset sibling scored 1.0 directionally, the boilerplate one
+// 0.83) — misfiling sender-2 under sender-1. convergesByBranding (symmetric ratio, >=3 distinctive floor)
+// REFUSES both while still admitting the genuine same-supplier sibling. RED on the old raw-0.60 code.
+(function () {
+  process.env.ISSUER_SIBLING_FILL = '1'; svc._reset();
+  const db = fresh();
+  const CC = 'Acme Plumbing Ltd';
+  const srcFP = ['acme', 'plumbing', 'ltd', 'vat', 'tel', 'email', 'northgate', 'depot'];   // 8 distinctive
+  const srcKw = { method: 'letterhead_prefill', display: CC, note: NOTE, phash: 'aaaaaaaaaaaaaaaa', keyword_fingerprint: srcFP };
+  const source = seedHeld(db, { display: CC, kwfp: srcFP });
+  // genuine same-supplier sibling: near-identical fingerprint, drifted logo => branding admits.
+  const genuine = seedHeld(db, { display: CC, phash: '5555555555555555', kwfp: srcFP });
+  // COLLISION A — a DIFFERENT sender, degraded OCR => SHORT fingerprint that is a SUBSET of the source
+  // (old keywordOverlap = 3/3 = 1.0 => admitted). ratio here = 3/8 = 0.375 => refused.
+  const collSubset = seedHeld(db, { display: CC, phash: '5555555555555555', kwfp: ['acme', 'plumbing', 'ltd'] });
+  // COLLISION B — a DIFFERENT sender sharing name + generic boilerplate only (old overlap = 5/6 = 0.83 =>
+  // admitted). shared distinctive = 5, ratio = 5/8 = 0.625 => refused.
+  const collBoiler = seedHeld(db, { display: CC, phash: '5555555555555555', kwfp: ['acme', 'plumbing', 'ltd', 'vat', 'tel', 'fax'] });
+  const r = svc.applyForConfirm(db, { documentId: source, confirmedIssuer: CC, src: srcKw, typeSlug: 'invoice', ...deps() });
+  check('PIN h2: genuine same-supplier sibling ADMITTED', !!(r && r.docs && r.docs.some(d => d.id === genuine)));
+  check('PIN h2: ONLY the genuine sibling filled (both collisions refused)', !!(r && r.docs && r.docs.length === 1));
+  check('PIN h2: subset-fingerprint collision REFUSED (kills the directional-1.0 bug)', sup(db, collSubset).validation_note != null && sup(db, collSubset).confidence === 69);
+  check('PIN h2: name+boilerplate collision REFUSED (kills the name-token inflation)', sup(db, collBoiler).validation_note != null && sup(db, collBoiler).confidence === 69);
+  db.close();
+})();
+
+// ── PIN h3: a MATURE sibling whose template identity DISAGREES with C is refused (Oracle cond 2) ──────
+(function () {
+  process.env.ISSUER_SIBLING_FILL = '1'; svc._reset();
+  const db = fresh();
+  const FP = ['saltmarsh', 'seafoods', 'harbour', 'quayside', 'belfast'];
+  const srcKw = { method: 'letterhead_prefill', display: C, note: NOTE, phash: 'aaaaaaaaaaaaaaaa', keyword_fingerprint: FP };
+  const source = seedHeld(db, { kwfp: FP });
+  // a sibling whose OWN letterhead garble-reads C, layout converges — BUT it is linked to a mature template
+  // whose confirmed identity is a DIFFERENT company. Filling it with C would override that identity.
+  const inv = doctypes.getWithFields(db, 'invoice');
+  const t = db.prepare(`INSERT INTO templates (name, slug, document_type_slug) VALUES ('Bramblewood Joinery Ltd', 'bramblewood-joinery-inv', 'invoice')`).run();
+  const matureSib = seedHeld(db, { kwfp: FP });
+  db.prepare('UPDATE documents SET template_id = ? WHERE id = ?').run(t.lastInsertRowid, matureSib);
+  // a confirmed doc under that template establishes its identity as Bramblewood.
+  const conf = db.prepare(`INSERT INTO documents (document_type_id, original_filename, folder_path, status, supplier_name, template_id) VALUES (?, 'b.pdf', 'C:/in', 'confirmed', 'Bramblewood Joinery Ltd', ?)`).run(inv.id, t.lastInsertRowid);
+  db.prepare(`INSERT INTO extractions (document_id, field_key, display_value, confidence, extraction_method, was_corrected) VALUES (?, 'supplier_name', 'Bramblewood Joinery Ltd', 95, 'keyword', 0)`).run(conf.lastInsertRowid);
+  const r = svc.applyForConfirm(db, { documentId: source, confirmedIssuer: C, src: srcKw, typeSlug: 'invoice', ...deps() });
+  check('PIN h3: mature sibling with a DISAGREEING template identity REFUSED', sup(db, matureSib).validation_note != null && sup(db, matureSib).confidence === 69);
+  db.close();
+})();
+
+// ── PIN i: a source with NEITHER signature (no phash, no kwfp) fires nothing (C2 source guard) ──
+(function () {
+  process.env.ISSUER_SIBLING_FILL = '1'; svc._reset();
+  const db = fresh();
+  const noSigSrc = { method: 'letterhead_prefill', display: C, note: NOTE, phash: null, keyword_fingerprint: null };
+  const source = seedHeld(db, { phash: null });
+  const sib    = seedHeld(db, { kwfp: ['invoice number', 'total due'] });
+  const r = svc.applyForConfirm(db, { documentId: source, confirmedIssuer: C, src: noSigSrc, typeSlug: 'invoice', ...deps() });
+  check('PIN i: no source layout proof (no phash AND no kwfp) => refused', r === null && sup(db, sib).validation_note != null);
   db.close();
 })();
 

@@ -1522,6 +1522,17 @@ function buildTrainingArgs(db, configPath, logger = null) {
   try { allAcceptedIssuers = learning.getAcceptedIssuers(db); }
   catch (e) { logger?.warn?.(`[training] accepted issuers load failed: ${e && e.message}`); }
   const acceptedIssuersFile = writeTempJson('acceptedissuers', allAcceptedIssuers);
+  // Supplier hard-identifier registry (slice 1b MATCH, DARK `identifier_registry`): the learned
+  // {supplier,kind,value_norm} rows the engine reverse-looks-up to SUGGEST an issuer from a matched
+  // VAT/company number. Loaded ONLY when armed — an un-armed install writes [] → the engine no-ops
+  // (byte-identical). Table-guarded for older DBs.
+  let allIdentifiers = [];
+  try {
+    const _idOn = process.env.IDENTIFIER_REGISTRY === '1'
+      || (process.env.IDENTIFIER_REGISTRY !== '0' && learning.getSetting(db, 'identifier_registry', 'false') === 'true');
+    if (_idOn) allIdentifiers = learning.getAllSupplierIdentifiers(db);
+  } catch (e) { logger?.warn?.(`[training] identifier registry load failed: ${e && e.message}`); }
+  const identifiersFile = writeTempJson('identifiers', allIdentifiers);
   const cfgFile       = configPath();
 
   // Registration-invariant anchoring ("register, then read"): ON unless an admin
@@ -1582,6 +1593,7 @@ function buildTrainingArgs(db, configPath, logger = null) {
     '--field-rules-file', fieldRulesFile,
     '--accepted-names-file', acceptedNamesFile,
     '--accepted-issuers-file', acceptedIssuersFile,
+    '--identifiers-file', identifiersFile,
     '--config-file',    cfgFile,
   ];
   if (registrationOn) args.push('--registration');
@@ -1616,7 +1628,7 @@ function buildTrainingArgs(db, configPath, logger = null) {
 
   return {
     args,
-    tempFiles: [fieldsFile, hintsFile, anchorsFile, logosFile, dtFile, formatsFile, templatesFile, overridesFile, fieldRulesFile, acceptedNamesFile, acceptedIssuersFile],
+    tempFiles: [fieldsFile, hintsFile, anchorsFile, logosFile, dtFile, formatsFile, templatesFile, overridesFile, fieldRulesFile, acceptedNamesFile, acceptedIssuersFile, identifiersFile],
   };
 }
 
@@ -1804,6 +1816,31 @@ function _reprocessThreadCap(db) {
   if (!Number.isFinite(conc)) conc = 1;
   conc = Math.max(1, Math.min(10, conc));
   return Math.max(1, Math.floor(cores / conc));
+}
+
+// How many concurrent Python workers the QUIET background re-read lane may use. The lane was ONE
+// worker by design (invisible-by-design), and on a 16-core box configured at concurrency 10 that is
+// one process at OMP_THREAD_LIMIT=1 — a single core crawling a 40-doc chunk (owner: "it is quite
+// slow"). The ONLY safe speed lever is the shard COUNT: the per-shard OMP cap stays
+// _reprocessThreadCap UNCHANGED (the S3-C4 identity rule — every doc reads under the identical
+// threading whether the lane runs 1 worker or several, so no boundary glyph flips and no phantom
+// "read differently" holds). The count is bounded by the configured processing_concurrency so total
+// threads (nShards * cap) stay ≈ cores — never oversubscribed past a foreground batch — and every
+// shard is still demoted BELOW_NORMAL and pre-empted together. Default 2; env QUIET_REREAD_WORKERS
+// wins (pins); setting quiet_reread_workers is the product truth.
+function _quietLaneWorkers(db) {
+  const env = process.env.QUIET_REREAD_WORKERS;
+  let want = env != null ? parseInt(env, 10) : NaN;
+  const learning = require('../../../database/modules/learning');
+  if (!Number.isFinite(want)) {
+    try { want = parseInt(learning.getSetting(db, 'quiet_reread_workers', '2'), 10); } catch { want = 2; }
+  }
+  if (!Number.isFinite(want)) want = 2;
+  const cores = os.cpus().length || 1;
+  let conc = parseInt(learning.getSetting(db, 'processing_concurrency', String(defaultConcurrency())), 10);
+  if (!Number.isFinite(conc)) conc = 1;
+  conc = Math.max(1, Math.min(10, conc));
+  return Math.max(1, Math.min(want, conc, cores));
 }
 
 function register(ctx) {
@@ -3772,14 +3809,27 @@ function register(ctx) {
         cleanup: () => { try { fs.rmSync(tmpDir, { recursive: true }); } catch {} cleanupFiles([manifestFile, ...tempFiles]); },
       };
     },
-    runShard: ({ db, staged, label, extraEnv, track, onFileDone }) => _runReprocessShard({
-      db, tmpDir: staged.tmpDir, shard: staged.tmpNames, manifestFile: staged.manifestFile,
-      trainingArgs: staged.trainingArgs, reprMode: staged.reprMode, diagOn: staged.diagOn,
-      deskewAll: false, deskewMinAngle: 0.2,
-      threadCap: _reprocessThreadCap(db),          // S3-C4: the identity rule — same cap as every other read
-      label, extraEnv, track, onFileDone,
-      onMsg: () => {},                              // never the reprocess-progress channel
-    }),
+    runShard: ({ db, staged, label, extraEnv, track, onFileDone }) => {
+      // Split the chunk across a few concurrent workers (owner: the 1-worker lane "is quite slow").
+      // The per-shard OMP cap is _reprocessThreadCap UNCHANGED — every doc reads under the identical
+      // threading whether the lane runs 1 worker or several (S3-C4: no boundary glyph flips → no
+      // phantom "read differently" holds). Shard COUNT is the only lever, bounded by
+      // _quietLaneWorkers so nShards * cap stays ≈ cores. Every shard is track()ed → demoted
+      // BELOW_NORMAL and killed together by preempt(); Promise.all resolves only when ALL finish, so
+      // the caller's cleanup/defer logic is unchanged. Round-robin partition ⇒ no doc in two shards,
+      // and the synchronous per-doc merge gate serialises the two streams on the event loop.
+      const cap = _reprocessThreadCap(db);         // S3-C4: identical cap on every shard
+      const nShards = Math.min(_quietLaneWorkers(db), staged.tmpNames.length);
+      const shards = nShards > 1 ? partitionRoundRobin(staged.tmpNames, nShards) : [staged.tmpNames];
+      return Promise.all(shards.map(shard => _runReprocessShard({
+        db, tmpDir: staged.tmpDir, shard, manifestFile: staged.manifestFile,
+        trainingArgs: staged.trainingArgs, reprMode: staged.reprMode, diagOn: staged.diagOn,
+        deskewAll: false, deskewMinAngle: 0.2,
+        threadCap: cap,
+        label, extraEnv, track, onFileDone,
+        onMsg: () => {},                           // never the reprocess-progress channel
+      })));
+    },
     applyResult: (db, docId, existing, msg, filename, opts) => applyReprocessResult(db, docId, existing, msg, filename, _diagEnabled(db), opts),
     presence: require('../../services/presenceService').shared(),
     extractionsFingerprint: require('../../services/sweepPredicate').extractionsFingerprint,

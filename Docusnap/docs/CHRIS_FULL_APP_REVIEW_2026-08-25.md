@@ -105,3 +105,137 @@ a bug. Owner may tidy the pairing if desired; low value.
 zero regressions.** Commits `200e68d` (Cards 1/3/5/7) + `97d3527` (Card A). **Owner vet queue (not built):**
 Card 2 (draft Terms — legal), Card 4 (letterhead-name-over-abstain detection arc — census+Oracle), Card 6
 (stale queue-row refresh), the grid↔activity-strip flip coupling, and the green-pill/red-note cosmetic pairing.
+
+---
+
+## Round 4 (2026-08-25 later) — issuer_sibling_fill C2-widening GATE (Oracle SEND-BACK-then-corrected)
+
+**Sandbox conditions:** fresh install (create-admin first-run), CDP 9223 PID 17244, mig 87, `issuer_sibling_fill`
+armed (setting + env `ISSUER_SIBLING_FILL=1`) + `review_activity_strip` on. Corpus = Demo Docs (Saltmarsh
+Seafoods + Thornbury Fasteners imported). This round is the fired-path half of Oracle's flip gate for the
+CORRECTED C2 (logo≤13 OR `convergesByBranding(0.80)` + mature-sibling identity re-check). The collision-safety
+half was measured separately (real-data census, below).
+
+**Collision-seam census (owner's real 1668-doc / 11-supplier backup, `convergesByBranding@0.80`):**
+CROSS-supplier pairs **0 / 1,250,932 converge (0.000%)** — a garble-collision cannot slip the branding arm.
+SAME-supplier pairs **87.1% converge** — genuine siblings admit strongly. (Plus unit PIN h2 + the measured
+RED-on-old-raw-0.60 / GREEN-on-convergesByBranding proof.)
+
+**Verdict: strong YES, zero misfiles across two suppliers.** 0→17 filed in one click; the safety watch held
+both ways (Saltmarsh confirm never touched Thornbury, incl. 3 look-alike-badge Thornbury docs the sweep
+refused). Undo/Put-back clean; every scary-button warning true. NEW finding cards (owner-vet queue, NOT built):
+Card 4 one identical Saltmarsh sibling left behind (the coverage cost of the tightened bar — safe, fail-toward-
+review, one extra confirm) · Card 6 the sibling-chip "Put back" tooltip talks about filed files when nothing
+filed yet (copy) · Card 3 queue counts don't reconcile ("N more to file by itself") · Card 5 activity chips go
+stale/stack · Card 7 "needs a quick check" on a doc File-All then files. Card 1 (draft Terms) + Card 2
+(look-alike badge pre-fills wrong sender, held+flagged — the `branding_strip_reg_boilerplate`/Card-4 class)
+recur from prior rounds. NONE is a safety regression from the C2 change.
+
+### Chris's report (verbatim)
+
+**TL;DR (3 lines):**
+1. **The headline fix works, and it's the best thing I've seen from this app.** I confirmed ONE Saltmarsh invoice, accepting the name at the top, and 18 identical ones sorted themselves — "File All Ready" went from offering **zero** to filing **17** in one click, all into the right Saltmarsh folders.
+2. **It didn't misfile a single thing across two suppliers.** When I mixed in a second company (Thornbury), confirming Saltmarsh never touched a Thornbury paper, and confirming Thornbury never touched a Saltmarsh one. Every scary button's warning told the truth, and Undo cleanly put things back.
+3. **The remaining problems are trust/polish, not safety:** my legal agreement still shows unfinished "draft, not yet in force / [SOLICITOR:]" notes; a look-alike company badge pre-filled the WRONG sender on 3 papers (caught and held, but unnerving); and a few counts on screen don't add up.
+
+Note on method: I'm one made-up office manager, not a room of testers. I drove the real sandbox app and photographed every step. One thing I couldn't do the normal way — the "Browse" button for the output folder opens a Windows picker my helper can't click — so I set the output folder to the sandbox the same way the Settings screen would. Everything else is exactly what a customer clicks.
+
+**Walkthrough:** Made the admin login (`chris`); recovery-code screen makes you tick "I have saved this code" before Continue lights up. Setup wizard + tour in plain English. Home showed "WHERE YOUR FILES GO" + "You're all caught up". Imported 20 Saltmarsh invoices — every one held **"The letterhead reads 'Saltmarsh Seafoods' — filled in for you, but please confirm it's the sender, not the customer, before filing."**, File All Ready offered **0**. Confirmed ONE (accepted, no retype) → blue chip **"18 more ready to file — Just now · Saltmarsh Seafoods"**, 18 flipped from "Check". File All Ready dialog **"File 17 ready documents (of 19)… 1 flagged, 1 missing a required detail"** → filed 17, chip **"You filed 17 · 2 kept back"**. All landed under `Saltmarsh-Seafoods\2026\<Month>\Invoice.<date>.<INV>.pdf`; sender saved as **Saltmarsh Seafoods**, NOT the Bill-To (Kingfisher). One identical Saltmarsh invoice left behind still asking to confirm the sender. Imported Thornbury too — 3 Thornbury papers pre-filled sender **"Saltmarsh Seafoods"** (look-alike round-"SS"/hexagon-"TF" badges) but each held + flagged **"Matched by logo only — the page text doesn't confirm this company. Please check."** Confirmed a Thornbury → **"16 more ready to file · Thornbury Fasteners"**; cross-company safety held both ways; the chip's **"Put back"** cleanly returned the 16.
+
+**Finding cards (ranked by harm):**
+- **Card 1 (HIGH, trust) — Terms still show "WORKING DRAFT — … NOT YET IN FORCE" + "[SOLICITOR: confirm the enforceable contracting-party identity…]".** First legal thing a paying customer signs; reads unfinished. QUESTION (won't edit legal wording) — finish/remove the internal banner + [SOLICITOR:] notes before selling.
+- **Card 2 (MEDIUM, trust; safety held) — a look-alike badge pre-filled the WRONG sender on 3 Thornbury papers** ("Saltmarsh Seafoods" with "Matched by logo only — the page text doesn't confirm this company. Please check."). Caught, held, refused by the sweep — nothing misfiled. Proposed: when badge-only AND page text disagrees, leave sender **blank** rather than a confident wrong name (keep the hold+warning).
+- **Card 3 (MEDIUM, slowed/trust) — counts don't add up:** "Saltmarsh Seafoods — 20 documents · 20 need a look · 5 more to file by itself". One honest line instead.
+- **Card 4 (LOW/MED, slowed) — one identical invoice left behind while its 18 twins swept** (SaltmarshSeafoods_invoice_18, "Check · 69%", same layout). Sweep it too if same sender+layout, or say why it's singled out.
+- **Card 5 (LOW, trust) — the "what just happened" chips stack + go stale** ("18 more ready" stayed after only 17 filed / 2 kept back). Retire/fold a superseded chip.
+- **Card 6 (LOW, trust) — "Put back" tooltip talks about filed files when nothing was filed yet:** "The copies already written to your filing folder stay there and are replaced when you file them again." For a not-yet-filed sweep, say "Nothing has been filed yet."
+- **Card 7 (LOW, trust) — "Needs a quick check" on a paper File All then files** without me checking (three shown details all "High"). Reserve "needs a quick check" for things that actually block filing.
+
+**Warnings truth-table:** Delete one (row-vs-open note) ✅ · Delete All Review ✅ · Restore all ✅ · Empty bin (original scan survives in Processed) ✅ · File All Ready ✅ · Reprocess N ✅ · Reprocess all (honest it may auto-file, points at Undo) ✅. Every warning told the truth.
+
+**Safety watch (must NEVER happen — it didn't):** Saltmarsh+Thornbury imported together; confirming Saltmarsh filled only Saltmarsh siblings, confirming Thornbury filled only Thornbury; the 3 look-alike-badge papers were held+flagged+refused by the sweep at every step. Final: 19 under Saltmarsh-Seafoods, 1 under Thornbury-Fasteners — not one paper crossed companies.
+
+**What worked / verdict:** the batch-filing chore (confirm the sender on twelve identical invoices one by one for nothing) is gone — one confirm, 18 followed, one honest click filed 17, undoable. Delete/Empty-bin warnings the most honest in the app (tell you the original scans are safe). **"Would I keep + pay after two weeks? Yes"** — the chore that made him consider going back to lever-arch folders is solved, 20 invoices across two suppliers filed with zero misfiles, everything visible + undoable; wants the draft Terms finished before paying. Humility: one made-up office manager, not a room of testers; the output-folder Browse picker couldn't be clicked by the driver (set the folder the Settings way).
+
+---
+
+## Round 5 (2026-08-25 overnight) — FULL run-through on the CHRISBOT battery (452 scans)
+
+**Sandbox conditions:** fresh install (create-admin first-run), CDP 9223 PID 8924, mig 87, `issuer_sibling_fill`
++ `review_activity_strip` + `batch_audit_enabled` armed, `ISSUER_SIBLING_FILL=1`. Corpus = the owner's
+**CHRISBOT** battery copied into the sandbox: SINGLE (10, teach set) · IMPORT (200, cold first batch) ·
+IMPORT2 (200, warm) · SCANNED (10) · SCANNED_HARD (10, degraded) · DOC SOL (22, variety). Owner asleep;
+autonomous overnight run (~67 min, 203 tool calls).
+
+**LEAK CHECK (main session, verified independently):** owner's real `Documents\Scan Finder` = 10,759 files
+but **0 written in the last 8h**; all 430 sandbox `Output` files (215 docs + .metadata) stayed in the
+sandbox. Chris caught the setup wizard defaulting the output to the owner's real `Documents\Scan Finder`
+and corrected it to the sandbox BEFORE any doc filed — no leak.
+
+**Note on the sibling-fill feature (main session interpretation):** Chris TAUGHT the suppliers first (from
+SINGLE), so by IMPORT time they were KNOWN suppliers — their issuer read via template/anchor, NOT the
+`letterhead_prefill` hold the sibling-fill triggers on. So his "confirming one didn't offer the 20 siblings"
+is the feature's trigger scenario being BYPASSED by teach-first, not a regression — the no-teach Saltmarsh
+round (Round 4) fired it perfectly (0→17). The feature is scoped to a NEW, untaught supplier's first batch.
+
+**Verdict: strong YES, zero wrong-company misfiles across 215 filed docs; every bad/degraded read HELD, not
+filed.** Numbers: IMPORT cold **0/200** auto-file (all held, identity still right on ~172/200) → ~98/200 after
+graduating a few suppliers; **IMPORT2 warm 98/200 (49%)** untouched; SCANNED 5/10; SCANNED_HARD 4/10 (all
+correct, the 3 bad reads — "Pelican Oiites", blank Ironclad, ref-less Veltrix — HELD); DOC SOL 0/22 (17
+correctly typed). Final: 215 filed (107 fully auto · 34 graduated-sweep · 74 hand-confirmed), 236 in Review.
+
+### Chris's report (verbatim)
+
+**TL;DR:** set up from scratch, taught 10 suppliers, threw a 200-doc batch, a second 200-doc batch, degraded
+scans, and oddball worksheets at it. Across 215 filed docs, **not one landed under the wrong company, and
+every garbled/degraded read was held, not filed silently.** Costly friction: the first big batch filed
+nothing itself (0/200) until a few of each supplier were confirmed — then it caught fire (batch 2 filed
+98/200 untouched). One table-layout supplier (Pelican) piled up 41 unread docs because typing the fix
+doesn't teach the app where to look next time.
+
+**The numbers (measured):** IMPORT cold 0/200 (0%); after File-All + ~20 confirms ~98/200; IMPORT2 warm
+98/200 (49%); SCANNED 5/10 (identity 9/10); SCANNED_HARD 4/10 all correct; DOC SOL 0/22 (17 typed "Service
+Worksheet"). Final tally 215 filed / 236 in Review: 107 fully automatic, 34 swept on graduation, 74 hand.
+5 "easy" suppliers (Oakhaven/Nordwind/Harrowgate ~43 each, Veltrix 42, Castellan 36) near hands-off; 5
+"hard/odd" (Pelican, Meadowvale, Quillstone, Ironclad, Silverbeck) stuck at 1 each. The "confirm one,
+siblings follow" helper did NOT offer 20 siblings on the FIRST confirm; the sweep arrived at "a few confirms."
+
+**Safety watch — CLEAN:** 206/206 filed docs matched their true sender (machine-checked); no silent wrong
+values (two "$"-bearing refs like `VXS$33215` are genuinely printed); degraded scans never misfiled (Pelican
+"Oiites", blank Ironclad, ref-less Veltrix all HELD); no Unknown Year/Month folders. Only off-note: 3
+Castellan worksheets Chris himself bulk-confirmed with no sender landed in an honest "Unknown-Company" bucket
+(warned each time).
+
+**Warnings truth-table:** Delete one ✅ · Delete All Review ✅ · Empty Bin (original scan verified still on
+disk after) ✅ · File All Ready ✅ · Reprocess all ✅ · Split 1-page ("nothing to split") ✅. Every
+destructive warning told the truth.
+
+**Verifies:** FIXED/BETTER — auto-file bar now defaults 90 (was 100, filed nothing); activity strip shows
+"✓ 98 filed automatically" receipts. STILL PRESENT — Terms "WORKING DRAFT … NOT YET IN FORCE" + [SOLICITOR:].
+
+**Finding cards (ranked):**
+- **Card 1 (MOD-HIGH) — typing a fix files THIS doc but silently doesn't teach the next 40.** Pelican's
+  fields sit in a table → app read nothing; Chris TYPED the values + filed; the next 41 Pelican docs came in
+  blank again (typing teaches identity, not field POSITION — only drawing a box does). Nudge: "Filed. To read
+  this on future documents from this sender too, draw a box (⊕) — typing fixes only this one."
+- **Card 2 (MOD) — buyer-issued PO shows MY company at the top; no steer.** A Quillstone PO on Bramblewood
+  (buyer) letterhead → sender left blank, 3/20 auto-attached to Bramblewood. Offer: "This looks like an order
+  you sent — file it under the supplier, Quillstone?"
+- **Card 3 (MOD) — first big batch filed nothing by itself (0/200); everything waited.** Expectation gap
+  (batch 2 then filed 98/200). Set the expectation after the first File-All (not more-aggressive filing).
+- **Card 4 (MOD) — can Confirm & File with no sender → docs scatter into "Unknown-Company".** 3 plainly-
+  Castellan docs landed alone. Offer "These look like Castellan — file them there?" (keep the warning).
+- **Card 5 (LOW) — "Add 'Quotation'" opens a form with the name blank** (should pre-fill "Quotation").
+- **Card 6 (LOW) — practice run leaked a stale hint** ("Read 'INV-1042'…") onto the next sample. Clear per-
+  field hint on advance. (Practice-run only.)
+- **Card 7 (LOW/trust, VERIFY still-present) — draft Terms "NOT YET IN FORCE" + [SOLICITOR:] notes** at the
+  acceptance gate. Owner's legal domain.
+
+**What worked:** the honesty of the destructive warnings (Empty Bin's "original scans not touched" verifiably
+true), zero wrong-company misfiles across 215 docs, every bad OCR read held not filed. **Top friction:** the
+Pelican hard-layout pile-up (Card 1). **Two-week verdict: Yes — would keep + pay.** Wants the draw-a-box
+nudge, a PO steer, and finished Terms. **Humility:** single simulated persona, not a user test; his fiddly
+coordinate-drawing made him TYPE several teaches a human would DRAW — Card 1 is "the app allows a shortcut
+that doesn't scale," not "can't be taught"; the Unknown-Company scatter was his own bulk-confirm; couldn't
+test the approval Mailbox end-to-end (needs a second user/PC). Caught + corrected the wizard's real-folder
+default before any filing.

@@ -2176,8 +2176,96 @@ function findDuplicateSupplierPairs(db, { minDocs = 1 } = {}) {
   return out;
 }
 
+// ── SUPPLIER HARD-IDENTIFIER REGISTRY (slice 1a; reggie+gary → Oracle SIGN-OFF-W/COND 2026-08-26) ──
+// Learn a supplier's stable identity keys (VAT / company_no / phone) at confirm, from the ISSUER region
+// only, and ONLY when the confirmed supplier's own name is co-located in that region (C2: the name gate
+// that substitutes for the missing "is-this-the-issuer" check a raw number has none of — it closes the
+// buyer-issued case, where a Bramblewood letterhead confirmed as Quillstone would otherwise learn the
+// wrong VAT). DARK behind `identifier_registry` (env IDENTIFIER_REGISTRY wins) — OFF ⇒ no rows, inert.
+// Slice 1a LEARNS ONLY; nothing consumes the registry until slice 1b wires the match (kept out of the
+// auto-file corroboration-licensing math — Oracle C1).
+const _ID_GENERIC = new Set(('ltd limited plc llp inc co company the and services service group holdings '
+  + 'uk gb solutions systems trading international global supplies supply').split(' '));
+function _identifierRegistryOn(db) {
+  const env = process.env.IDENTIFIER_REGISTRY;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try { return getSetting(db, 'identifier_registry', 'false') === 'true'; } catch { return false; }
+}
+function _distinctiveTokens(name) {
+  return String(name || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/)
+    .filter(t => t.length >= 4 && !_ID_GENERIC.has(t));
+}
+function _headerText(ocrText) {
+  const lines = String(ocrText == null ? '' : ocrText).split('\n');
+  let firstRec = null;
+  for (let i = 0; i < lines.length; i++) {
+    if (/\b(?:bill\s*to|ship\s*to|sold\s*to|deliver(?:ed)?\s*to|invoice\s*to|customer|client)\b/i.test(lines[i])) { firstRec = i; break; }
+  }
+  const end = Math.min(firstRec == null ? 8 : firstRec, 8);
+  return lines.slice(0, Math.max(1, end)).join(' ').toLowerCase();
+}
+// The (supplier, ocrText) → learned identifier rows this confirm plants. Returns {learned}.
+function saveSupplierIdentifiers(db, { supplierName, ocrText, documentId } = {}) {
+  if (!_identifierRegistryOn(db)) return { learned: 0 };
+  const scope = normalizeSupplierName(String(supplierName || '').trim());
+  if (!scope || !ocrText) return { learned: 0 };
+  const toks = _distinctiveTokens(supplierName);
+  const htext = _headerText(ocrText);
+  const nameInHeader = toks.length ? toks.some(t => htext.includes(t)) : false;
+  if (!nameInHeader) return { learned: 0 };   // C2 name-gate — no self-name in the header ⇒ never learn
+  let ids;
+  try { ids = require('./identifierExtract').extractIdentifiers(ocrText); } catch { return { learned: 0 }; }
+  const up = db.prepare(`INSERT INTO supplier_identifiers (supplier_name, kind, value_norm, source_doc_id, issuer_region)
+      VALUES (@s, @k, @v, @d, 'header')
+      ON CONFLICT(supplier_name, kind, value_norm)
+      DO UPDATE SET times_seen = times_seen + 1, last_seen = datetime('now'), source_doc_id = @d`);
+  let learned = 0;
+  for (const idn of ids) {
+    if (idn.position.region !== 'header') continue;     // slice 1a: top-band-only learn (footer deferred, Oracle C2)
+    up.run({ s: scope, k: idn.kind, v: idn.value_norm, d: documentId || null });
+    learned++;
+  }
+  return { learned };
+}
+// Inverse (deconfirm): re-derive this doc's learned identifiers and decrement/delete them — mirrors
+// retractConfirmHints. Idempotent by construction; a row at times_seen<=1 is deleted.
+function retractSupplierIdentifiers(db, documentId) {
+  if (!_identifierRegistryOn(db)) return { decremented: 0, deleted: 0 };
+  let doc;
+  try { doc = db.prepare('SELECT supplier_name, ocr_text FROM documents WHERE id = ?').get(documentId); } catch { doc = null; }
+  if (!doc) return { decremented: 0, deleted: 0 };
+  const scope = normalizeSupplierName(String(doc.supplier_name || '').trim());
+  if (!scope || !doc.ocr_text) return { decremented: 0, deleted: 0 };
+  let ids;
+  try { ids = require('./identifierExtract').extractIdentifiers(doc.ocr_text); } catch { return { decremented: 0, deleted: 0 }; }
+  const pick = db.prepare('SELECT id, times_seen FROM supplier_identifiers WHERE supplier_name = ? AND kind = ? AND value_norm = ?');
+  const del = db.prepare('DELETE FROM supplier_identifiers WHERE id = ?');
+  const dec = db.prepare("UPDATE supplier_identifiers SET times_seen = times_seen - 1, last_seen = datetime('now') WHERE id = ?");
+  let decremented = 0, deleted = 0;
+  for (const idn of ids) {
+    if (idn.position.region !== 'header') continue;
+    const row = pick.get(scope, idn.kind, idn.value_norm);
+    if (!row) continue;
+    if ((row.times_seen || 0) <= 1) { del.run(row.id); deleted++; }
+    else { dec.run(row.id); decremented++; }
+  }
+  return { decremented, deleted };
+}
+
+// The learned registry, for the slice-1b MATCH path (threaded to Python as --identifiers-file). Only
+// meaningful rows (times_seen>=1). Table-guarded so an older DB / fixture returns []. The caller gates
+// the LOAD on the DARK switch, so an un-armed install ships an empty file (engine no-ops → inert).
+function getAllSupplierIdentifiers(db) {
+  try {
+    if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='supplier_identifiers'").get()) return [];
+    return db.prepare('SELECT supplier_name, kind, value_norm, times_seen FROM supplier_identifiers WHERE times_seen >= 1').all();
+  } catch { return []; }
+}
+
 module.exports = {
   FORMAT_SOLID_MIN, persistConfirmedValues,
+  saveSupplierIdentifiers, retractSupplierIdentifiers, getAllSupplierIdentifiers,
   insertExtractions, deleteExtractions,
   getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue, getPrefixModelForScope,
   getSupplierScopeCounts, renameSupplier, findDuplicateSupplierPairs,

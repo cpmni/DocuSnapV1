@@ -2088,3 +2088,47 @@ auto-file seam is genuinely closed by the existing floor. Conditions (all implem
   records applied count + source decision so a wrong graduation is traceable.
 No learning-exclusion (contrast classFix C2): each sibling's own letterhead already reads C, so the fill
 confirms its own evidence rather than overriding it.
+
+## 2026-08-25 (retry vet) — issuer_sibling_fill C2 WIDENING (phash 4→13 OR keyword) — SEND BACK → corrected
+
+**Context:** after the sign-off above, C2's same-layout proof was WIDENED (uncommitted) from tight logo phash
+≤4 to `phash ≤13 OR keywordOverlap(src,sib) ≥0.60`. Rationale (correct): on real scans a supplier's OWN
+identical invoices spread logo-phash 0–28 (`project_logo_hash_unreliable`), so ≤4 rejects most genuine
+siblings and the feature barely fires. The code comment claimed "Oracle REVISED" but no log entry existed —
+so it was re-vetted here. (First spawn died on a transient network error; clean retry.)
+
+**VERDICT: SEND BACK — then corrected in place (all conditions implemented + gated).** The widening is
+warranted (≤4 genuinely too tight) but the KEYWORD arm as built was wrong. Oracle catches:
+- **Premise false.** The comment claimed it mirrors `handler.js:1633-1635`, but that `keywordOverlap≥0.60`
+  is an AND-guard that only runs ON TOP of a logo already ≤13 (the over-merge guard for the 7-13 band) —
+  never a standalone OR that fires on a far/absent logo. The app's ACTUAL logo-independent same-template
+  arm is `findByBrandingFingerprint` @0.80 over DISTINCTIVE tokens (≥3 shared floor, SYMMETRIC ratio) via
+  `branding_fingerprint.js` — explicitly the "ONE source of truth" comparator. The widening introduced a
+  SECOND, weaker same-template comparator in an identity-PROPAGATING path (violates that invariant).
+- **Re-opens the collision seam in the weakest form.** In the two-senders-garble-to-the-same-string case
+  the fingerprints share the garbled NAME tokens by construction, and the string leg is satisfied by
+  construction — so the whole burden falls on C2. Raw `keywordOverlap` is (i) ASYMMETRIC (denominator =
+  sibling length → a short garbled subset sibling scores 1.0 — the exact directional bug
+  `symmetricDistinctiveOverlap` kills) and (ii) undiscriminating (no distinctiveness filter, no shared
+  floor). Admit also CLEARS the note → a wrong admit is a human File-All rubber-stamp, not a held doc.
+- **Ruling (a FIX, not obstruction):** keep the OR + logo arm at 13, but replace the keyword arm with
+  `brandingFp.convergesByBranding(src, sib, 0.80)`. Strictly better on both axes — recovers genuine
+  siblings AND rejects the collisions.
+
+**Conditions — all IMPLEMENTED (uncommitted, feature stays DARK):**
+1. Keyword arm → `brandingFp.convergesByBranding(src.keyword_fingerprint, sibKw, 0.80)`; `_KW_MIN` deleted;
+   the false "mirrors 1633-1635" comment corrected.
+2. Mature-sibling identity re-check: in the `template_id` branch, also refuse when
+   `supplierNamesDisjoint(C, establishedIdentity(db, template_id, r.id))` — sibling-fill must not fill a
+   mature FOREIGN template's held doc with C (generic reuse gets a downstream re-check; this path had none).
+3. Comment/log integrity: this entry (the code no longer wears an unearned "Oracle REVISED" label).
+
+**Gate — the adversarial collision pin is RED on old raw-0.60, GREEN after convergesByBranding (proven,
+not asserted):** measured on the real modules — GENUINE old_admit=T/new_admit=T; COLLISION subset
+old=1.000→admit / new ratio=0.375→refuse; COLLISION boiler old=0.833→admit / new ratio=0.625→refuse.
+Pinned in `test_issuer_sibling_fill.js` PIN h2 (genuine admitted, both collisions refused) + h3 (mature
+disagreeing identity refused) + h (branding admits a logo-drifted genuine sibling). Whole suite green.
+**STILL OWED before a DARK→on flip (owner):** the fresh-import fired-path Chris round WITH a collision
+fixture in the batch (a single-supplier round would pass green while the seam stayed open) + re-confirm the
+corpus-census vacuity after the mature re-check. Verdict: **Oracle earned his keep — caught a false premise,
+a reintroduced directional bug, and an "ONE source of truth" invariant breach the specialist pass missed.**

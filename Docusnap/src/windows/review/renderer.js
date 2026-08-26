@@ -751,7 +751,7 @@ function _asRenderPanel() {
       ? `<div class="ap-sub">${senders.sort((a, b) => b[1] - a[1]).map(([k, v]) => `${escHtml(k)} ${v}`).join(' · ')}</div>` : '';
     const kept = (ev.dropped || []).length
       ? `<div class="ap-kept">${(ev.dropped || []).slice(0, 8).map(d => `kept back — ${escHtml(typeof _sweepReason === 'function' ? _sweepReason(d.reason) : d.reason)} (#${d.docId})`).join('<br>')}${(ev.dropped || []).length > 8 ? `<br>… and ${(ev.dropped || []).length - 8} more` : ''}</div>` : '';
-    const undo = ev.undoable ? `<button type="button" class="ap-btn" data-ap="undo" data-ev="${ev.id}" title="Puts these documents back in Review. The copies already written to your filing folder stay there and are replaced when you file them again.">Put back</button>` : '';
+    const undo = ev.undoable ? `<button type="button" class="ap-btn" data-ap="undo" data-ev="${ev.id}" title="Puts these documents back in Review. ${_putBackBody(ev)}">Put back</button>` : '';
     const see = Number(ev.count) ? `<button type="button" class="ap-btn primary" data-ap="see" data-ev="${ev.id}">See them</button>` : '';
     // Batch-audit "Quick check" (2026-08-24, DARK batch_audit_enabled): on any FILED batch — auto-filed,
     // self-filed, OR human-approved (File All / File N / a run of individual Confirm & File, which the
@@ -797,13 +797,23 @@ async function _asSeeThem(evId) {
   if (queue.length) selectDoc(queue[0]);
   refreshAutoCommittedBar();
 }
+// Card 6 (Chris 2026-08-25): the Put-back copy must match what actually happened. A FILED batch
+// (auto/self/approved) wrote copies to the filing folder, so those stay until you re-file. An in-Review
+// edit — the issuer sender-sweep (issuer_fill) or a class fix — filed NOTHING to disk, so telling the user
+// "the copies already written to your filing folder" there made Chris fear stray files from an undo.
+const _FILED_KINDS = new Set(['auto_filed', 'self_filed', 'approved']);
+function _putBackBody(ev) {
+  return _FILED_KINDS.has(ev && ev.kind)
+    ? 'The copies already written to your filing folder stay there and are replaced when you file them again.'
+    : 'Nothing has been filed to your folders yet — this only returns them to Review.';
+}
 async function _asPutBack(evId) {
   const ev = _asEvents.find(e => e.id === evId); if (!ev) return;
   const n = Number(ev.count) || 0;
   // C7: a big revert is a one-click action — name the number before it happens
   if (n > 25 && !confirm(`Put ${n} documents back in Review?
 
-The copies already written to your filing folder stay there and are replaced when you file them again.`)) return;
+${_putBackBody(ev)}`)) return;
   let r = null;
   try { r = await window.docusnap.undoReviewEvent?.(evId); } catch {}
   const undone = (r && Array.isArray(r.undone)) ? r.undone.length : 0, refused = (r && Array.isArray(r.refused)) ? r.refused.length : 0;
@@ -1543,7 +1553,7 @@ let _catalogOpening   = false;    // set SYNCHRONOUSLY on launch so a double-cli
 // pre-existing caller) keeps the auto-select tail. The untyped-document notice passes its own,
 // because auto-selecting a brand-new type on a doc that was extracted without it blanks every field
 // on screen — see _addDetectedType (Oracle C3).
-function openNewTypeModal(_onCreated) {
+function openNewTypeModal(_onCreated, _initialName) {
   if (_newTypeModalOpen || !isAdmin) return;
   if (!window.DocTypeEditor || typeof window.DocTypeEditor.create !== 'function') {
     _newTypeToast('The document-type editor didn’t load. Try reopening the Review window.');
@@ -1595,6 +1605,7 @@ function openNewTypeModal(_onCreated) {
   try {
     ctl = window.DocTypeEditor.create(host, {
       mode: 'create', api: window.docusnap,
+      initialName: _initialName || '',   // Chris R5 card 5: pre-fill the name when we know the type (e.g. "Add 'Quotation'")
       // Use the `ready` arg the editor passes — it fires onValidityChange SYNCHRONOUSLY
       // during create(), before `ctl` is assigned, so `ctl.isReady()` here would NPE.
       onValidityChange: (ready) => { create.disabled = committing || !ready; },
@@ -2026,44 +2037,56 @@ function buildQueueItem(doc) {
   //   red    = critically low overall confidence (<40) — existing critical state.
   //   green  = otherwise clean.
   const conf    = doc.overall_confidence;
-  const flagged = isFlagged(doc);
-  // A required field (the Date/Reference role, or a custom Required field) that read
-  // EMPTY blocks Confirm even at high confidence — so a row must NOT wear a green
-  // "Looks good" while being un-fileable. missing_required_labels (from
-  // getReviewQueue) mirrors the confirm gate; we lead the row with that blocker.
+  // ONE readiness verdict — the SAME window.ReviewReadiness.classify() that Home's "N ready to file"
+  // and the File All dialog use. A row must NEVER wear a green "Looks good" while classify() would HOLD
+  // it: an untyped doc ('noType'), a blank required detail — Date/Reference/Issuer — ('missing'), or a
+  // flagged read ('flagged') are all "not ready" and colour as attention, not clean. Before this, the
+  // badge computed its own severity from local signals and had NO type/issuer-blank leg, so an untyped
+  // or blank-issuer doc could show green — the two-readiness-notions class reviewReadiness.js was built
+  // to kill (the Home split + File All were unified; this row badge was the one surface left behind).
+  // valuedOnly mirrors the File All / Home call so all three agree. Defensive fallback to the old local
+  // signals if the classifier script isn't loaded (it always is in Review).
+  const _cls = (window.ReviewReadiness && window.ReviewReadiness.classify)
+    ? window.ReviewReadiness.classify(doc, { valuedOnly: !!window.__farValuedOnly })
+    : (isFlagged(doc) ? 'flagged' : ((doc.missing_required_labels || '').trim() ? 'missing' : 'ready'));
+  const noType     = _cls === 'noType';
+  const blocked    = _cls === 'missing';   // a required detail (Date / Reference / Issuer) read empty
+  const notReady   = _cls !== 'ready';
   const missingReq = (doc.missing_required_labels || '').split(',').map(s => s.trim()).filter(Boolean);
-  const blocked    = missingReq.length > 0;
   let sev = '';   // '', 'high'(green), 'mid'(orange), 'low'(red)
-  if (conf != null) {
-    if (conf < 40)               sev = 'low';
-    else if (flagged || blocked) sev = 'mid';
-    else                         sev = 'high';
-  } else if (blocked || flagged) {
-    sev = 'mid';   // no overall score yet, but we already know it needs attention
-  }
+  if (conf != null && conf < 40)  sev = 'low';     // critically low overall — independent top-priority signal
+  else if (notReady)              sev = 'mid';      // any not-ready reason → attention (orange), never green
+  else if (conf != null)          sev = 'high';     // truly ready + scored → clean green (ready-but-unscored → no badge)
   if (sev === 'low')      el.classList.add('qi-conf-low');
   else if (sev === 'mid') el.classList.add('qi-conf-mid');
   if (currentDoc && doc.id === currentDoc.id) el.classList.add('active');
-  // Human-readable reason on hover: green = clean, orange = needs a check
-  // (low confidence and/or a format flag), red = critically low confidence.
+  // Human-readable reason on hover: green = clean/ready, orange = held (no type / missing detail /
+  // flagged), red = critically low confidence.
   const sevWord = sev === 'low'  ? 'Low confidence'
+                : noType         ? 'No document type — can’t file yet'
                 : blocked        ? 'Missing a required field — can’t file yet'
                 : sev === 'mid'  ? 'Needs a quick check'
                 :                  'Looks good';
-  // HONEST BADGE: a flagged / un-fileable doc must NOT wear a reassuring "100%" — the overall
-  // score ignores the flagged field (e.g. a branding-conflict issuer capped at 69), so a bare
-  // "100%" contradicts the warning beside it. For the orange (mid) state show the review word,
-  // not the number; genuinely-low (red) keeps its honest number; clean (green) is unchanged.
+  // HONEST BADGE: a held / un-fileable doc must NOT wear a reassuring "100%" — the overall score can
+  // ignore the held reason (e.g. a branding-conflict issuer capped at 69, or an empty required role),
+  // so a bare "100%" would contradict the warning beside it. For the orange (mid) state show the review
+  // word, not the number; genuinely-low (red) keeps its honest number; clean (green) is unchanged.
   const confBadge = conf == null ? '' :
     sev === 'mid'
-      ? `<span class="conf-badge mid" style="flex-shrink:0;" title="${sevWord} — overall ${conf}%, but a field needs a look">Check</span>`
+      ? `<span class="conf-badge mid" style="flex-shrink:0;" title="${sevWord} — overall ${conf}%, but this can’t file yet">Check</span>`
       : `<span class="conf-badge ${sev}" style="flex-shrink:0;" title="${sevWord} — ${conf}% confidence${sev === 'high' && doc.status !== 'confirmed' ? ' · waiting for your OK' : ''}">${conf}%</span>`;
-  // Lead with the actual blocker (the missing field), not the reassuring score.
-  const blockerLine = blocked
+  // Lead with the concrete blocker: the missing type, the missing field(s), or a blank issuer.
+  const _blockerText = noType
+    ? 'Needs: a document type'
+    : blocked
+      ? (missingReq.length
+          ? `Needs: ${missingReq[0]}${missingReq.length > 1 ? ` +${missingReq.length - 1} more` : ''}`
+          : 'Needs: Document Issuer')   // classify()='missing' via issuer_blank with no required-label list
+      : '';
+  const blockerLine = _blockerText
     ? `<div class="qi-blocker" title="Can’t be filed until this is filled in"
            style="color:var(--warn); font-size:11px; font-weight:600; margin-top:2px; display:flex; align-items:center; gap:4px;">`
-      + `<span aria-hidden="true">⚠</span>Needs: ${escHtml(missingReq[0])}`
-      + `${missingReq.length > 1 ? ` +${missingReq.length - 1} more` : ''}</div>`
+      + `<span aria-hidden="true">⚠</span>${escHtml(_blockerText)}</div>`
     : '';
   // Put-back marker (mig 87, Oracle W/COND cond 4): a put-back doc is a visible class BEFORE any File All
   // click. A refileable one (still clears the strict predicate) says it WILL re-file; a held one says it
@@ -3041,15 +3064,22 @@ function updateAcknowledgeButton() {
 // auto_file_threshold 100. Read once per window; the panel is advisory, so a stale value
 // after a settings change costs nothing but a reopen.
 let _autoFileCfg = { enabled: true, threshold: 100 };
+// Card 4 (Chris R5), DARK: the blank-issuer "these look like X?" offer at Confirm & File. Default OFF
+// (setting issuer_suggest_on_blank_confirm) — needs the corpus census (does the suggested name match
+// the confirmed supplier on the owner's backup?) + Oracle ratify before any flip. OFF ⇒ the confirm
+// door is byte-identical (the bare "file anyway → Unknown Company" dialog).
+let _issuerBlankOfferOn = false;
 async function loadAutoFileConfig() {
   try {
-    const [en, thr] = await Promise.all([
+    const [en, thr, blankOffer] = await Promise.all([
       window.docusnap.getSetting('auto_file_full_confidence'),
       window.docusnap.getSetting('auto_file_threshold'),
+      window.docusnap.getSetting('issuer_suggest_on_blank_confirm'),
     ]);
     _autoFileCfg.enabled = String(en ?? 'true') !== 'false';
     const n = parseInt(thr ?? '100', 10);
     _autoFileCfg.threshold = Number.isFinite(n) && n >= 1 ? n : 100;
+    _issuerBlankOfferOn = String(blankOffer ?? 'false') === 'true';
   } catch { /* keep the backend-mirroring defaults */ }
 }
 
@@ -3248,7 +3278,7 @@ async function _addDetectedType(detName) {
   else {
     _newTypeToast(`“${detName}” isn't one of the ready-made types — create it here, then the `
                 + `document will be read again.`);
-    openNewTypeModal(afterAdd);
+    openNewTypeModal(afterAdd, detName);   // card 5: pre-fill the name we already detected
   }
 }
 
@@ -5985,6 +6015,49 @@ function cleanSupplierName(name) {
 
 function extractLabel(text) { return window.AnchorLabel.extractLabel(text); }
 
+// Card 4 (Chris R5, DARK): a 3-way choice at the blank-issuer Confirm & File door — file under the
+// engine's corroborated letterhead name, keep it Unknown, or go back. Native confirm() can only do
+// two, and the honest "Unknown Company" must stay a first-class choice (never a silent auto-fill —
+// the safety that HELD a wrong badge-only name stays). Returns 'adopt' | 'unknown' | 'cancel'.
+function showIssuerBlankChoice(name) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => { if (done) return; done = true; document.removeEventListener('keydown', onKey, true); ov.remove(); resolve(v); };
+    const ov = document.createElement('div');
+    ov.setAttribute('data-help-ignore', '');   // help-mode must not swallow clicks inside the modal
+    Object.assign(ov.style, { position: 'fixed', inset: '0', background: 'rgba(8,10,15,.72)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '99999', padding: '24px' });
+    const box = document.createElement('div');
+    Object.assign(box.style, { width: 'min(460px,94vw)', background: 'var(--surface)', border: '1px solid var(--border2)',
+      borderRadius: '12px', padding: '20px', boxShadow: '0 18px 50px rgba(0,0,0,.5)', color: 'var(--text)' });
+    const h = document.createElement('div');
+    h.textContent = 'This document has no Document Issuer';
+    Object.assign(h.style, { fontSize: '15px', fontWeight: '600', marginBottom: '10px' });
+    const p = document.createElement('div');
+    p.style.cssText = 'font-size:13px;line-height:1.5;color:var(--muted);margin-bottom:16px';
+    p.innerHTML = `The page looks like it's from <strong></strong>. File it under that company so this `
+                + `sender is learned — or file it under “Unknown Company”.`;
+    p.querySelector('strong').textContent = name;   // textContent = XSS-safe for the detected name
+    const foot = document.createElement('div');
+    Object.assign(foot.style, { display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' });
+    const back = document.createElement('button'); back.className = 'btn'; back.textContent = 'Go back'; back.style.marginRight = 'auto';
+    const unknown = document.createElement('button'); unknown.className = 'btn'; unknown.textContent = 'File as Unknown Company';
+    const adopt = document.createElement('button'); adopt.className = 'btn'; adopt.textContent = `File under “${name}”`;
+    Object.assign(adopt.style, { background: 'var(--accent)', borderColor: 'var(--accent)', color: 'var(--bg)', fontWeight: '500' });
+    back.onclick = () => finish('cancel');
+    unknown.onclick = () => finish('unknown');
+    adopt.onclick = () => finish('adopt');
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); finish('cancel'); } };
+    document.addEventListener('keydown', onKey, true);
+    ov.addEventListener('click', (e) => { if (e.target === ov) finish('cancel'); });
+    foot.append(back, unknown, adopt);
+    box.append(h, p, foot);
+    ov.append(box);
+    document.body.append(ov);
+    adopt.focus();
+  });
+}
+
 // ── Confirm ───────────────────────────────────────────────────────────────────
 // Confirm + file the CURRENT document. Shared by the single Confirm button and
 // the bulk "File All Ready" action so both go through the exact same path.
@@ -6029,10 +6102,40 @@ async function confirmCurrentDoc({ bulk = false, expectId = null, acknowledgePre
       // Generic Document: blank issuer is DESIGNED (files under 'General') — no dialog in
       // single mode, or the one-keystroke promise dies on every generic doc. The inline
       // issuer note already names the consequence. Bulk stays unchanged (fails toward review).
-      if (selectedTypeSlug !== 'general_document'
-          && !confirm('Document Issuer is blank.\n\nThis document will be filed under "Unknown Company" and '
+      if (selectedTypeSlug !== 'general_document') {
+        // Card 4 (DARK): if the engine carried a corroborated letterhead name it couldn't safely
+        // adopt (a branding-provenance suggestion — the seam), offer to file under it instead of
+        // scattering to "Unknown Company". A non-branding suggestion (or none — Path B) never fires,
+        // so the honest Unknown Company stays the outcome there. Never a silent auto-fill.
+        let _offer = { offer: false };
+        if (_issuerBlankOfferOn && window.IssuerBlankOffer) {
+          // The suggestion AND its provenance note live on the FULL doc (getDocumentWithExtractions),
+          // which renderFields captured as `_lastRenderedDoc`. `currentDoc` is the QUEUE STUB — it has
+          // no `extractions` array, only the `issuer_suggested` SCALAR (which carries no note, so it
+          // can't clear the branding-provenance gate — Oracle's seam). Read the full doc when it is the
+          // doc being confirmed; otherwise make no offer (falls through to the plain dialog — safe).
+          // Card 4 is single-mode only (bulk returned above), where the doc is open ⇒ _lastRenderedDoc
+          // matches. [Fixed 2026-08-26 after the Chris round found the offer read the empty stub.]
+          const _fullDoc = (_lastRenderedDoc && currentDoc && _lastRenderedDoc.id === currentDoc.id) ? _lastRenderedDoc : null;
+          const _ext = (_fullDoc?.extractions || []).find(e => e.field_key === issuerKey);
+          _offer = window.IssuerBlankOffer.issuerOfferForBlank({
+            issuerValue: allValues[issuerKey], suggestedSupplier: _ext?.suggested_supplier, note: _ext?.validation_note });
+        }
+        if (_offer.offer) {
+          const choice = await showIssuerBlankChoice(_offer.name);
+          if (choice === 'cancel') return { cancelled: true };
+          if (choice === 'adopt') {
+            // Adopt for BOTH filing and learning: this doc files under <name>, and the confirm keys
+            // hints/anchors/logo on it so the next document from this sender resolves by learned
+            // identity. Mirror a typed correction (empty → value) so reviewService.saveCorrections runs.
+            allValues[issuerKey] = _offer.name;
+            corrections[issuerKey] = { original_value: '', corrected_value: _offer.name };
+          }
+          // choice === 'unknown' → fall through and file blank under "Unknown Company" (unchanged).
+        } else if (!confirm('Document Issuer is blank.\n\nThis document will be filed under "Unknown Company" and '
                  + 'the app won’t learn this sender. File it anyway?')) {
-        return { cancelled: true };
+          return { cancelled: true };
+        }
       }
     }
   }
@@ -6177,6 +6280,22 @@ async function confirmCurrentDoc({ bulk = false, expectId = null, acknowledgePre
         const n = _if.docs.length;
         showToast(`Filled the sender on ${n} more document${n === 1 ? '' : 's'} with this letterhead — `
           + `File All Ready now offers ${n === 1 ? 'it' : 'them'}. You can undo from the activity strip.`, 'ok');
+      }
+    } catch { /* the report must never affect the filing that already happened */ }
+    // Card 1 (DARK): the operator TYPED a field the app couldn't read, and typing teaches the value,
+    // not WHERE it sits — so the next documents from this sender read it blank too. Nudge (once per
+    // sender) to DRAW a box, which teaches the position. Soft/optional wording: a value typed from
+    // memory may not be on the page at all, and the nudge must never read as "you did it wrong".
+    try {
+      const _ph = result.positionHint;
+      if (_ph && Array.isArray(_ph.fields) && _ph.fields.length) {
+        const _labels = _ph.fields.map(f => f.label).filter(Boolean);
+        const _one = _labels.length === 1;
+        const _list = _labels.length > 2 ? `${_labels.slice(0, 2).join(', ')} and more` : _labels.join(' and ');
+        const _who = _ph.supplier ? ` from ${_ph.supplier}` : '';
+        showToast(`Filed. Typing fixed ${_one ? 'this' : 'these'} on this document only — future documents${_who} `
+          + `will read ${_list} blank too. If ${_one ? 'it sits' : 'they sit'} in the same place each time, draw a box `
+          + `(⊕) around ${_one ? 'it' : 'one'} to teach Scan Finder where, and it reads ${_one ? 'it' : 'them'} automatically.`, 'info');
       }
     } catch { /* the report must never affect the filing that already happened */ }
   }
@@ -6649,6 +6768,28 @@ async function fileAllReady() {
         { warn: true });
     }
   } catch { /* the summary must never affect the filing that already happened */ }
+  // Card 3 (Chris R5): the FIRST File All on a fresh install can correctly file 0 — new senders need a
+  // few confirms before they graduate — and that reads as "broken." Say why ONCE, only when the holds
+  // are genuine COLD-START (senders queued, below the confirm bar, not merely missing a field / a
+  // template). Two independent brakes stop it nagging: a persisted one-shot flag, and the cold-start
+  // content gate itself (inert the moment any sender graduates → _scopeReadiness reports ready). This
+  // is an EXPECTATION line, not a filing change — it never touches the auto-file predicate.
+  try {
+    if (skipped > 0) {
+      const _seen = await window.docusnap.getSetting?.('fileall_coldstart_hint_seen');
+      if (!_seen) {
+        try { await refreshScopeReadiness(); } catch { /* read the state we have */ }
+        const _coldStart = Array.isArray(_scopeReadiness) && _scopeReadiness.some(s =>
+          s && !s.ready && !s.needsTemplate && Number(s.queued || 0) > 0
+            && Number(s.confirms || 0) < Number(s.needed || 0));
+        if (_coldStart) {
+          appendTeachMessage('New senders need a few confirms before they file themselves — the '
+            + 'next batch will file more on its own.');
+          try { await window.docusnap.setSetting?.('fileall_coldstart_hint_seen', '1'); } catch { /* best-effort */ }
+        }
+      }
+    }
+  } catch { /* advisory — never affect the filing that already happened */ }
 }
 document.getElementById('btn-file-all-review')?.addEventListener('click', fileAllReady);
 

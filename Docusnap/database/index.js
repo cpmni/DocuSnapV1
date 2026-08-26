@@ -2054,6 +2054,32 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 87 applied: documents.refile_declined_at + putback_refiled_at (put-back re-file via File All, DARK)');
   }
 
+  // supplier_identifiers (slice 1a of the identifier-registry arc; reggie+gary → Oracle SIGN-OFF-W/COND
+  // 2026-08-26). A per-supplier registry of STABLE HARD IDENTIFIERS (VAT number, company registration
+  // number, phone) learned at confirm from the ISSUER region — used LATER (slice 1b) to corroborate who
+  // a future document is from. Additive + INERT: no rows unless the DARK `identifier_registry` switch is
+  // armed AND a human confirm learns one, so an un-armed install is byte-identical. UNIQUE(supplier,kind,
+  // value_norm) dedups; the (kind,value_norm) index is the reverse-lookup the match path will use.
+  if (!applied.has(88)) {
+    if (!tableExists(db, 'supplier_identifiers')) {
+      db.exec(`CREATE TABLE supplier_identifiers (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        supplier_name TEXT    NOT NULL,
+        kind          TEXT    NOT NULL,          -- 'vat' | 'company_no' | 'phone'
+        value_norm    TEXT    NOT NULL,          -- canonical compare key (identifierExtract normalisation)
+        source_doc_id INTEGER,
+        issuer_region TEXT,                      -- 'header' | 'footer' (audit; never 'body')
+        first_seen    TEXT    NOT NULL DEFAULT (datetime('now')),
+        last_seen     TEXT    NOT NULL DEFAULT (datetime('now')),
+        times_seen    INTEGER NOT NULL DEFAULT 1,
+        UNIQUE(supplier_name, kind, value_norm)
+      )`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_supplier_identifiers_lookup ON supplier_identifiers(kind, value_norm)`);
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (88)').run();
+    console.log('JS migration 88 applied: supplier_identifiers (hard-identifier registry, DARK/inert)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

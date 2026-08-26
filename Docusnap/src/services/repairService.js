@@ -51,6 +51,7 @@ function sendBackToReview(db, docId, { suspects, source } = {}) {
     if (!r.changes) return { ok: false, error: 'not-confirmed' };
 
     const un = learning.retractConfirmHints(db, docId);
+    try { learning.retractSupplierIdentifiers(db, docId); } catch { /* DARK/inert; never block a deconfirm */ }
 
     // C4: latest-row-wins per field — value-preserving for legacy rows pre-dating the
     // confirm-time display sync, and NEVER re-poisoning from an older cycle's row.
@@ -117,6 +118,7 @@ function deleteToRecycleBin(db, docId) {
     let unplanted = null;
     if (doc.status === 'confirmed') {
       unplanted = learning.retractConfirmHints(db, docId);
+      try { learning.retractSupplierIdentifiers(db, docId); } catch { /* DARK/inert; never block a soft-delete */ }
       db.prepare("UPDATE documents SET learning_retracted_at = datetime('now') WHERE id = ?").run(docId);
     }
     const r = documents.softDelete(db, docId);

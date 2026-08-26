@@ -236,7 +236,11 @@
     let destroyed  = false;
 
     // create-mode draft state
-    let name = '';
+    // Seed the name from the caller when it opened the editor for a KNOWN type (Chris R5 card 5:
+    // "Add 'Quotation'" opened a blank form). The input stays fully editable via the sync listener;
+    // seeding here (before seedCreate, which doesn't touch name) also lets isReady()/Create enable
+    // immediately. Absent → '' exactly as before.
+    let name = (mode === 'create' && opts.initialName) ? String(opts.initialName) : '';
     let fields = [];                   // [{label, key?, type, locked?}]
     let refKey = '';
     let dateKey = '';
