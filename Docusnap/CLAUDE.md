@@ -21,7 +21,29 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-26 NIGHT (identifier-registry arc + Chris R5 cards + switch inventory/flip): **READ `HANDOVER_2026-08-26_NIGHT.md` FIRST**
+## ⏭ LATEST — 2026-08-27 MORNING (the autonomous overnight run): **READ `HANDOVER_2026-08-27_MORNING.md` FIRST**
+Branch `feat/teach-side-overnight`, **HEAD `8cb80ac`, 3 commits LOCAL/NOT pushed** (owner reviews then pushes). Built while
+the owner slept, every switch DARK (default OFF), each advisor→Oracle→pins→gate: **(1) CLASS F** the general
+"corroboration clears a please-check note" rule (`corrob_verification_doubt_clear`; Oracle C1-C4 in code; **corpus gate
+PASSED NON-VACUOUSLY on the owner's DB: 24 edge-cut notes cleared, all 24 correct — the SuperStore 3190x class — would-file
+1168→1192, 0 wrong gained, M 12 unchanged**; flip order enforced: `corrob_note_recompute_fc` first); **(2) landmark box snap**
+committed `9861d37` (+pin); **(3) targeted field re-slice → gary+oscar: WRONG LAYER** (full-page OCR already cached on a
+reprocess; a field-only write poisons the re-read holds; cheaper lever = flip `quiet_reread_on_layout`); **(4) LEARNING
+REPAIR v2** — the old forget was a HALF-forget (the live-derived model kept counting): mig 90 `documents.learning_excluded_at`
++ ONE predicate `machine_vias.learningExcludedSql` in 17 readers (default ON, inert until stamped) · `learningScopeService`
+selector (`learning_repair_console`) · `learningRepairService.forgetScope` + exact-row Undo (`learning_repair_forget`; C1
+retract-once stamps, C2 shared-template refusal, C5 lane reason `repair`) — a HUMAN confirm clears both stamps; **(5)
+BARCODES** — `barcode_inventory` (zxingcpp per OCR page, mig 91 `document_barcodes`, search) + `barcode_field` (a
+"Barcode / QR code" field type whose ONE writer is the decode, Stage 1.5, LIST-style ownership skips, confirm-once note);
+**(6) LIST field audited = properly implemented for inline repeated captions** (column layout = element 1 only, documented);
+`;` in an element now refused. **Full suite: every red is pre-existing except two source pins updated (`8cb80ac`).**
+**OWNER DECISIONS (ranked in the handover):** flip F after the SFDEV live heal of 31901 · the three Learning-Repair UX
+defaults + whole-sender forget · flip the layout arm vs fund a quick-read pill · the barcode symbology/role/required Qs ·
+barry's sweep (PDF text layer — may the filed PDF differ from the original? · exact-dup skip · accountant export). **Chris's
+round** (CHRISBOT, fresh sandbox CDP 9223 PID 3060 with the new switches armed): report + triage in the handover foot and
+`docs/CHRIS_FULL_APP_REVIEW_2026-08-26.md`. Trap: `_fold_shape` makes every digits-only skeleton `#` — LENGTH-BLIND.
+
+## (previous) 2026-08-26 NIGHT (identifier-registry arc + Chris R5 cards + switch inventory/flip): `HANDOVER_2026-08-26_NIGHT.md`
 Branch `feat/teach-side-overnight`, **HEAD `f2349f9`, commits LOCAL/NOT pushed** (owner reviews then pushes).
 **⏭ THE FRESH SESSION IS TO BUILD THREE FEATURES — top of queue in the handover:** (1) **CLASS F** — one general
 "corroboration clears a verification-doubt note" rule (gary-AUDITED, NOT built; edge-cut 31901 exhibit; the rule
