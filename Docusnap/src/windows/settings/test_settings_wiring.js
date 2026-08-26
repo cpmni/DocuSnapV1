@@ -218,5 +218,20 @@ for (const [id, key, consumer] of SETTING_SWITCHES) {
         ids.has(id) && js.includes(`'${id}'`) && js.includes(`'${key}'`) && src.includes(`'${key}'`));
 }
 
+// Landmark box word-snap (owner 2026-08-26): a hand-drawn MANUAL landmark box must run the SAME
+// shared BoxSnap tighten the mapping-box draw path runs, under the same TPL_SNAP_ON gate — else a
+// landmark stores loose and registration re-locates by a loose word box. Pinned on the function
+// body (not a regex over the whole file) so the mapping path's own snap can't satisfy it.
+{
+  const start = js.indexOf('async function addLandmarkFromRect(');
+  const push = start >= 0 ? js.indexOf('tplLandmarkDraft.push(', start) : -1;
+  const body = (start >= 0 && push > start) ? js.slice(start, push) : '';
+  check('addLandmarkFromRect word-snaps the drawn landmark via the shared BoxSnap (TPL_SNAP_ON-gated)',
+        body.includes('window.BoxSnap.snapBoxToWords') && body.includes('TPL_SNAP_ON'));
+  const pushed = push > 0 ? js.slice(push, push + 400) : '';
+  check('the pushed landmark stores the SNAPPED box, not the raw drawn norm',
+        /x_norm:\s*box\.x_norm/.test(pushed) && !/x_norm:\s*norm\.x_norm/.test(pushed));
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nAll settings-wiring pins passed');
 process.exit(fails ? 1 : 0);

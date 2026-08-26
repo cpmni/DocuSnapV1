@@ -3246,9 +3246,25 @@ async function addLandmarkFromRect(rect, norm) {
   } catch (e) { console.warn('landmark OCR failed:', e.message); }
   text = text.replace(/\s+/g, ' ').trim();
   if (!text) { landmarkMsg("Couldn't read text there — draw a tighter box around printed words.", 'warn'); redrawTplCanvas(); return; }
+  // Word-snap the hand-drawn box to the printed words so the stored/displayed landmark is TIGHT
+  // (owner 2026-08-26: mapping boxes snap since 2026-08-10, landmark boxes didn't). Same shared
+  // BoxSnap + the same `template_box_word_snap` gate (TPL_SNAP_ON); fail-closed to the drawn box.
+  // Frame-safe: landmarks are drawn Straighten-OFF (the UI enforces it), so tplImg is the RAW page
+  // and the snapped coords are already in the stored raw frame — no back-transform / re-stamp needed.
+  let box = { x_norm: norm.x_norm, y_norm: norm.y_norm, w_norm: norm.w_norm, h_norm: norm.h_norm };
+  if (TPL_SNAP_ON && window.BoxSnap && tplImg && tplImg.naturalWidth) {
+    try {
+      const res = await window.BoxSnap.snapBoxToWords(
+        { x: box.x_norm, y: box.y_norm, w: box.w_norm, h: box.h_norm },
+        { natW: tplImg.naturalWidth, natH: tplImg.naturalHeight,
+          cropB64: window.BoxSnap.makeNativeCropper(tplImg),
+          ocrRegionBoxes: (b64) => api.ocrRegionBoxes(b64) });
+      if (res && res.box) box = { x_norm: res.box.x, y_norm: res.box.y, w_norm: res.box.w, h_norm: res.box.h };
+    } catch { /* snapping is an improvement, never a requirement — keep the drawn box */ }
+  }
   tplLandmarkDraft.push({
     label_text: text,
-    x_norm: norm.x_norm, y_norm: norm.y_norm, w_norm: norm.w_norm, h_norm: norm.h_norm,
+    x_norm: box.x_norm, y_norm: box.y_norm, w_norm: box.w_norm, h_norm: box.h_norm,
     ocr_conf: 95, page_number: tplCurrentPage,   // admin-asserted landmark (high trust)
   });
   landmarkMsg(`Added "${text}".`, 'ok');
