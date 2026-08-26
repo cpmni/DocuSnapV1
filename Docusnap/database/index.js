@@ -2080,6 +2080,24 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 88 applied: supplier_identifiers (hard-identifier registry, DARK/inert)');
   }
 
+  // New-install DEFAULT-ON for the three VERIFIED 2026-08-26 review switches (owner decision + their
+  // gates met): position_teach_nudge (Chris-verified), issuer_sibling_fill (census 0/1.25M + zero
+  // misfile), issuer_suggest_on_blank_confirm (wiring verified end-to-end + persisted census clean).
+  // INSERT OR IGNORE so an existing owner choice is never overwritten (seeds 'true' only on a fresh
+  // DB). DELIBERATELY EXCLUDES `identifier_registry` (Oracle SIGN-OFF-WITH-CONDITIONS — needs the
+  // realdoc M=0 + real-customer-VAT census + Oracle ratify before it may default) and the per-DB-only
+  // detection arcs whose new-install default was ruled DEFERRED (name_dominant_snap, branding_strip_
+  // reg_boilerplate) — those stay off-by-default for new installs until their held/misfiled reprocess
+  // gate is eyeballed. Mirrors the mig-70/80/81/82 default-flip pattern.
+  if (!applied.has(89)) {
+    const _seed = db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, 'true')");
+    for (const k of ['position_teach_nudge', 'issuer_sibling_fill', 'issuer_suggest_on_blank_confirm']) {
+      try { _seed.run(k); } catch (e) { console.warn(`  migration 89 (${k}): ${e.message}`); }
+    }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (89)').run();
+    console.log('JS migration 89 applied: default-ON position_teach_nudge + issuer_sibling_fill + issuer_suggest_on_blank_confirm (identifier_registry stays DARK)');
+  }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the
