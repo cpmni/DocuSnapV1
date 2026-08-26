@@ -170,8 +170,10 @@ const run = async (reason) => { staged.length = 0; lane.schedule(db, { supplier:
   const sr = fs.readFileSync(path.join(ROOT, 'src', 'windows', 'settings', 'renderer.js'), 'utf8');
   check('Settings surfaces the toggle and binds it to the setting', /id="quiet-reread-on-ready-templated-toggle"/.test(sh) && /\['quiet-reread-on-ready-templated-toggle', 'quiet_reread_on_ready_templated'\]/.test(sr));
   const ql = fs.readFileSync(path.join(__dirname, 'quietLane.js'), 'utf8');
+  // 2026-08-26: the hold family gained the Learning Repair `repair` member (Oracle C5) — the C3.3 hold
+  // line now reads `layout || ready || repair`; either form satisfies, the first two must stay.
   check('the ready arm fires only inside a job whose reasons carry ready, and the C3.3 hold covers via layout OR ready',
-        /if \(job\.reasons && job\.reasons\.has\('ready'\)\) \{/.test(ql) && /if \(nd\.via === 'layout' \|\| nd\.via === 'ready'\) \{/.test(ql));
+        /if \(job\.reasons && job\.reasons\.has\('ready'\)\) \{/.test(ql) && /if \(nd\.via === 'layout' \|\| nd\.via === 'ready'( \|\| nd\.via === 'repair')?\) \{/.test(ql));
 
   lane.shutdown();
   console.log(fails ? `\nFAILED: ${fails}` : '\nALL PASS');

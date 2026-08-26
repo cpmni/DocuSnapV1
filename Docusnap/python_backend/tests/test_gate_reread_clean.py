@@ -73,8 +73,11 @@ check("call site pops reread_clean and continues BEFORE the n_flagged/format_ano
       j > -1 and "continue" in eng[j:j + 1400]
       and eng.find("n_flagged += 1", j) > eng.find("continue", j))
 k = eng.find("self.log(f\"  Stage 4.5: re-read '{garble}' -> '{adopted}' (review-bound)\")")
+# The note's head lives in the module constant _REREAD_NOTE_HEAD since 2026-08-26 (it doubles as the
+# class-F allowlist mark — the write site and the allowlist share ONE literal); either form satisfies.
 check("the review-bound path is INTACT (cap + note still emitted for 1-2-edit repairs)",
-      k > -1 and "_REREAD_CAP" in eng[k:k + 700] and "re-read from the page" in eng[k:k + 700])
+      k > -1 and "_REREAD_CAP" in eng[k:k + 700]
+      and ("re-read from the page" in eng[k:k + 700] or "_REREAD_NOTE_HEAD" in eng[k:k + 700]))
 
 print(f"\n{fails} FAILED" if fails else "\nAll gate-reread clean-accept checks passed")
 sys.exit(1 if fails else 0)
