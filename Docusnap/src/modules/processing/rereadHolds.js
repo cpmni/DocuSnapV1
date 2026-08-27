@@ -87,6 +87,11 @@ function create(deps = {}) {
       const now = after[key] && String(after[key].display_value || '').trim();
       if (!was || !now) continue;                               // a fill (or a loss) is not a changed read
       if (_norm(was) === _norm(now)) continue;
+      // OWNER 2026-08-27 ("it is asking me to check an invalid date against a real date"): a baseline that
+      // fails the field's own TYPE — a clipped '0-02-2025' — is not a value a human can choose, so a fresh
+      // TYPE-VALID read replacing it is a FILL, not a changed read: no S3-C5 sentence, no offer (holdFirstFills
+      // treats the junk-date baseline as empty and applies the via's confirm-once hold instead).
+      if (isDate && !_validDate(was) && _validDate(now)) continue;
       const note = `Read differently after learning — was '${was}', now '${now}'. Please check which is right.`;
       const prior = String(after[key].validation_note || '').trim();
       // Chris round 20 card 7: a Reprocess that re-reads the SAME value carries the earlier hold
@@ -115,7 +120,10 @@ function create(deps = {}) {
     for (const key of keys) {
       const was = before[key] && String(before[key].display_value || '').trim();
       const now = after[key] && String(after[key].display_value || '').trim();
-      if (was || !now) continue;                                 // not a first-fill
+      // A type-INVALID earlier date ('0-02-2025') counts as EMPTY: the valid read is the field's first real fill
+      // (the S3-C5 sibling above deliberately stays silent on it — owner 2026-08-27).
+      const wasJunkDate = !!was && ti.isDateKey(key) && !_validDate(was);
+      if ((was && !wasJunkDate) || !now) continue;               // not a first-fill
       let ok = false;
       try { ok = !!corroborated(after[key].corroboration); } catch { ok = false; }
       if (ok) continue;                                          // ≥2 page families — the fill stands

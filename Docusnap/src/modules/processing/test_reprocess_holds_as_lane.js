@@ -80,8 +80,26 @@ const dX = mk(CF, [{ key: 'supplier_name', value: CF }, { key: 'invoice_number',
 existing = snapshot(dX);
 setRows(dX, base(CF, 'INV-1', '05-05-2026'));
 holds.onDocMerged(db, holds.newBatch(), { docId: dX, existing, via: 'manual', reliability: true });
-check("a junk display AND a junk corrected_to on a date row: the note still fires (baseline falls back to the display) but NO type-invalid value is written as the offer (corrected_to stays empty — never 'INV-9999')",
-      /Read differently/.test(ext(dX, 'invoice_date').validation_note || '') && !String(ext(dX, 'invoice_date').corrected_to || '').trim());
+// CHANGED 2026-08-27 (owner: "it is asking me to check an invalid date against a real date"): a junk baseline is
+// nothing a human can choose, so the S3-C5 sentence no longer fires; the valid read counts as a FIRST FILL and the
+// via's confirm-once hold applies instead. The offer stays empty either way (never 'INV-9999').
+check("a junk display AND a junk corrected_to on a date row: NO 'Read differently' sentence, NO offer, the first-fill hold applies instead",
+      !/Read differently/.test(ext(dX, 'invoice_date').validation_note || '') && !String(ext(dX, 'invoice_date').corrected_to || '').trim()
+      && /confirm once/.test(ext(dX, 'invoice_date').validation_note || ''));
+
+console.log("\n§1c the owner's exhibit (Silverbeck 0047-4): a clipped '0-02-2025' healed to '10-02-2025' is a fill, not a disagreement");
+const dS = mk('Silverbeck Cleaning Supplies', [{ key: 'supplier_name', value: 'Silverbeck Cleaning Supplies' }, { key: 'invoice_number', value: 'SB-ORD52836' }, { key: 'invoice_date', value: '0-02-2025' }]);
+existing = snapshot(dS);
+setRows(dS, [{ key: 'supplier_name', value: 'Silverbeck Cleaning Supplies' }, { key: 'invoice_number', value: 'SB-ORD52836' }, { key: 'invoice_date', value: '10-02-2025' }]);
+r = holds.onDocMerged(db, holds.newBatch(), { docId: dS, existing, via: 'manual-single' });
+check("no 'Read differently — was 0-02-2025' sentence", !/Read differently/.test(ext(dS, 'invoice_date').validation_note || ''));
+check("the valid date is held as a FIRST FILL with the honest confirm-once note", /Read again at your request — confirm once\./.test(ext(dS, 'invoice_date').validation_note || '') && r.firstFills.some(h => h.key === 'invoice_date'));
+check("no one-click offer of the junk value", !String(ext(dS, 'invoice_date').corrected_to || '').trim());
+check("control: a VALID old date vs a different valid new date still fires the disagreement",
+      (() => { const dV = mk('Silverbeck Cleaning Supplies', [{ key: 'supplier_name', value: 'Silverbeck Cleaning Supplies' }, { key: 'invoice_number', value: 'SB-1' }, { key: 'invoice_date', value: '09-02-2025' }]);
+               const exV = snapshot(dV); setRows(dV, [{ key: 'supplier_name', value: 'Silverbeck Cleaning Supplies' }, { key: 'invoice_number', value: 'SB-1' }, { key: 'invoice_date', value: '10-02-2025' }]);
+               holds.onDocMerged(db, holds.newBatch(), { docId: dV, existing: exV, via: 'manual-single' });
+               return /Read differently after learning — was '09-02-2025', now '10-02-2025'/.test(ext(dV, 'invoice_date').validation_note || '') && ext(dV, 'invoice_date').corrected_to === '09-02-2025'; })());
 
 console.log('\n§1b r20 card 2 — the identity never gets a one-click Use of its old read');
 const dI = mk(CF, base('Ticket Type', 'INV-7', '07-07-2026'));

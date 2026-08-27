@@ -110,6 +110,72 @@ join a base row as a unit. **Result (real pipeline, switch ON):** 1707/1706/1713
 remaining line reads below agreement at every level — the true residual), 1719 → none (the page prints no serial lines — checked
 by eye). **Owner: re-import once more to get these** (no restart — Python is spawned fresh per import; the JS side is unchanged).
 
+## 2e. Owner's second re-import + the straighten question
+**Second re-import (docs 1725–1744, 20 worksheets, all filed at 100): 34 of 37 printed serial lines collected (92%; the first
+batch was ~83%)**; 0012 now the correct 7-digit; 0022 3/3; the residual = 0021 1/2, 0025 1/2, 0027 2/3 (the remaining line reads
+below two-level agreement at every level → refused, not guessed); 0030 prints none.
+**"Do they read on a straightened doc?" — measured (`probe_straighten.py`, the app's own `_apply_skew_rotation` on three of the
+owner's scans):** the pass RUNS on the straighten road (a tilted page past the floor is re-OCR'd from the rotated bitmap through
+the same function) and the serials mostly survive the resampling: 1727 2/2 at 0.6°/1.5°/3.0°; 1738 (detected skew 1.2°) 3/3 at
+0.6° and 3.0°, 2/3 at 1.5°; 1732 2/2 at 0.6°, 1/2 at 1.5°, 0/2 at 3.0° — the 2× LANCZOS/bicubic resample softens 1-px grey strokes,
+so at larger angles some values fall under agreement and are refused. **Caveat:** Straighten on a LEVEL page (detected 0.0°) takes
+the deskew×cache fast path → no re-OCR → no serials (the re-read door again). Residual lever: a 5th level or a light-pass read of
+the un-resampled bitmap — not built.
+
+## 2f. The SLOT LADDER (owner: "the third Serial No: line is readable by a box draw but only two were detected")
+The ⊕ crop reader (`region_core.process`: greyscale + upscale, PSM 7/6, no hard threshold) is a DIFFERENT recipe and read every
+empty slot on the residual docs (`probe_slot_ladder.py`). Built: a recovered light row ending in a caption with an empty slot and
+at least one REFUSED level candidate on that spot → crop the slot → read with the same shared ladder → accept ONLY on normalised
+agreement with a refused candidate (two recipes agree). Result: 0021-2 2/2, 0027-2 3/3, 0025-2 1/2 (the ladder's `T-9802341` is a
+partial → refused). Pins §3f. Second re-import expectation: 36/37.
+
+## 2g. Review toolbar in a narrow window (`cddac8a`)
+Owner: "the buttons float over each other when the window size is reduced". `#doc-toolbar` never shrank/clipped → it painted over the
+fields header. Wrapping is not allowed (the strip/readout/hint bars anchor to `--doc-head-h: 46px`), so: one clipped line
+(nowrap + overflow hidden), the filename yields first, and a container query on `#doc-panel` collapses the button WORDS
+(`<span class="lbl">`, kept by `updateDeskewBtn`'s rewrite) below ~700 px. Pin `test_toolbar_narrow.js`. Reopen Review to load.
+
+## 2h. Activity panel actions in three fixed columns (owner: "give each button its own column with the permanent ones to the right")
+`.ap-actions` is now a 3-column grid `[Put back | See them | Quick check]`; a slot the row lacks renders an invisible same-label
+BUTTON (`.ap-ghost`, `visibility:hidden; pointer-events:none`) so widths match and the permanent two never slide. Pin
+`test_activity_actions_columns.js`. Reopen Review to load. **Then "no real formatting on the text":** each row is now a
+`[time | body | actions]` grid — mono time column, headline split at its first " — " into WHAT (bold) and WHY (muted) with the
+strip's coloured icon, sender counts as pills with a bold count, kept-back as an amber-barred note (theme tokens only; pins in
+the same file).
+Also (`a6d1ec1`): the census showed `GB 774 774 2093` — a shifted re-read of a base word beside it slipped the box dedupe → the
+adjacent-duplicate guard (same cleaned text on the same row within one width; degenerate slivers excluded so the clean word
+replaces them); the census now records `light_replaced` and classifies OFF-line violations as explained (sliver) / unexplained.
+
+## 2i. The Pelican "doesn't appear on this page" exhibit → a real engine bug (Gate-C v2 never saw the sender)
+Owner: doc 0045-3 (id 1616) printed `PI/26/9687`, the box read it, yet the note said it "doesn't appear on this page as
+written". Facts: the full-page OCR carried `P1/26/9687` (a 1 for the I) in both places; the box ALSO read `P1/…` and the
+history-backed correction made it `PI/…` (139/140 Pelican invoices are `PI/`); Gate C then flagged the corrected value against
+the page text. The tolerant leg (`filing_sanity_page_match_v2`, ON) should have withheld — traces added to its silent exits
+showed `leg=exit why=unbacked dominant=null`: **the gate runs at `engine.py:~9748` and `results["_supplier_name"]` is written
+at ~9896, so `_page_match_v2` always got an EMPTY supplier and the prefix-index lookup missed — in production, always** (the
+pin fed the mirror itself: the dead-guard trap). Fix (commit after `39eeb9f`): the call site passes the resolved
+`supplier_name`/`document_slug`; fallback = the supplier FIELD's value; `test_filing_sanity_page_match.py` §2b pins the
+production shape with a pre-fix control. Verified live: reprocess of 1616 → `filing_sanity_v2 leg=confusable page_form=
+P1/26/9687 dominant=PI` → note cleared, conf 98. Also the note now names the page form ("— the page reads it as 'P1/26/9687' —",
+`_nearest_confusable_page_token`, MARK kept for its three consumers). **Realdoc restarted after this** so both light arms run
+the same engine.
+
+## 2j. Activity panel design pass (`39eeb9f`) + Chris's copy cards (owner-vet, NOT applied)
+Design lens applied (one 20 px line unit, icon + text rails, sans right-aligned time, one tinted primary, borderless chips,
+sticky titled header, 1120 px cap, actions under the body below ~780 px). **Chris cards for the owner:** (1) two verbs for one
+event ("filed automatically" vs "filed themselves") → one verb + the reason after the dash; (2) "(matched 100 %)" is a number
+with nothing to attach to → drop it; (3) Put back missing on auto-filed rows reads as "can't be undone" → a quiet Put back that
+explains, or "Put back (expired)"; (4) See them vs Quick check → "Open them" / "Check they're right"; (5) import rows want
+"N more from this batch are waiting in Review"; (6) primary colour only on the newest row; the single-sender pill repeats the
+headline. He would trust the panel "provisionally".
+
+## 2k. "Read differently — was '0-02-2025', now '10-02-2025'" (owner: "asking me to check an invalid date against a real date")
+`rereadHolds.holdChangedReads`' baseline fell back to the old DISPLAY value even when it failed the field's own type (a clipped
+date). Now a type-invalid old DATE vs a valid new one is a FILL: no S3-C5 sentence, no offer; `holdFirstFills` treats the junk
+date as empty and applies the via's confirm-once hold ("Read again at your request — confirm once."). The old pin that asserted
+the sentence fires on a junk baseline (Oracle P1 C1, 2026-08-23) was rewritten to the owner's rule; a control pins that a VALID
+old date vs a different valid new date still fires with the offer. Ref roles unchanged (no validity predicate).
+
 ## 3. The light-text GATES (Oracle 6–8) — [PENDING at write time; filled below when the runs land]
 - **Realdoc OFF vs ON at `OCR_RENDER_DPI=200`** (the harness NEVER mirrors `_ocrDpiEnv` — Oracle caught it: my first run was at
   300, killed; `run_rr_light200.cmd` exports + echoes the DPI): M, M_type, would-file, per-template counts, supplier/method/
