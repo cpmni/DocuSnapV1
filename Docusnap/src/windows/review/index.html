@@ -337,11 +337,27 @@
       padding: 5px 10px; box-shadow: 0 1px 4px rgba(0,0,0,.2); pointer-events: none;
       text-align: center; white-space: normal; display: none;
     }
+    /* NARROW WINDOW (owner 2026-08-27: "the review window buttons float over each other when the window size is
+       reduced"): the toolbar row must stay ONE line (the activity strip / readout / hint bars anchor to its 46 px
+       bottom through --doc-head-h) and must never paint past its own panel — so it CLIPS (overflow hidden), the
+       filename gives way first (flex-basis 40px), and below ~700 px of panel width the button WORDS collapse to their
+       glyphs (container query on #doc-panel; the labels are <span class="lbl">, kept by renderer.js when it rewrites
+       the Straighten button). */
+    #doc-panel { container-type: inline-size; }
     #doc-toolbar {
       display: flex; align-items: center; gap: 8px; padding: 7px 12px;
       border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0;
+      flex-wrap: nowrap; overflow: hidden; min-width: 0;
     }
-    .doc-name { font-family: var(--mono); font-size: 11px; color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .doc-name { font-family: var(--mono); font-size: 11px; color: var(--muted); flex: 1 1 40px; min-width: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    @container (max-width: 700px) {
+      #doc-toolbar { gap: 5px; padding: 6px 8px; }
+      #doc-toolbar .doc-nav-btn { padding: 4px 7px; }
+      #doc-toolbar .doc-nav-btn .lbl, #zoom-level, #btn-zoom-reset, #deskew-angle { display: none; }
+    }
+    @container (max-width: 480px) {
+      #doc-toolbar .doc-name { display: none; }
+    }
     .doc-nav-btn {
       padding: 4px 10px; border-radius: 5px; border: 1px solid var(--border2);
       background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; flex-shrink: 0;
@@ -1102,12 +1118,12 @@
           <button class="doc-nav-btn" id="btn-zoom-in" title="Zoom in">&#43;</button>
           <button class="doc-nav-btn" id="btn-zoom-reset" title="Reset zoom &amp; pan">Reset</button>
         </div>
-        <button class="doc-nav-btn" id="btn-page-prev" data-help-key="pages">&#8249; Prev</button>
-        <span id="page-indicator" style="font-size:11px; color:var(--muted);">—</span>
-        <button class="doc-nav-btn" id="btn-page-next" data-help-key="pages">Next &#8250;</button>
-        <button class="doc-nav-btn" id="btn-deskew" data-help-key="deskew" title="Straighten a tilted scan so drawn boxes line up with the text (display only — the filed file is unchanged)"><svg class="straighten-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18"/><path d="M5 17l9-4"/><path d="M4 11a8 8 0 0 1 15.5-1"/><path d="M19.5 10l.8-4M19.5 10l-3.6-1.6"/></svg> Straighten</button>
+        <button class="doc-nav-btn" id="btn-page-prev" data-help-key="pages">&#8249; <span class="lbl">Prev</span></button>
+        <span id="page-indicator" style="font-size:11px; color:var(--muted); white-space:nowrap;">—</span>
+        <button class="doc-nav-btn" id="btn-page-next" data-help-key="pages"><span class="lbl">Next</span> &#8250;</button>
+        <button class="doc-nav-btn" id="btn-deskew" data-help-key="deskew" title="Straighten a tilted scan so drawn boxes line up with the text (display only — the filed file is unchanged)"><svg class="straighten-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18"/><path d="M5 17l9-4"/><path d="M4 11a8 8 0 0 1 15.5-1"/><path d="M19.5 10l.8-4M19.5 10l-3.6-1.6"/></svg> <span class="lbl">Straighten</span></button>
         <span id="deskew-angle" style="font-size:11px; color:var(--muted);"></span>
-        <button class="doc-nav-btn" id="btn-print-doc" style="display:none" title="Print this document on your printer — your printer's own dialog opens so you pick tray, sides and copies"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> Print</button>
+        <button class="doc-nav-btn" id="btn-print-doc" style="display:none" title="Print this document on your printer — your printer's own dialog opens so you pick tray, sides and copies"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> <span class="lbl">Print</span></button>
       </div>
 
       <button class="btn" id="btn-acknowledge" data-help-key="acknowledge" style="display:none" title="This document was flagged for review. Mark it reviewed so File All Ready can include it.">&#10003; Mark Reviewed</button>

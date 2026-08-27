@@ -2540,7 +2540,9 @@ function updateDeskewBtn() {
   if (!btn) return;
   const straightened = deskewEnabled && !wizard.active && !!deskewPageAngle;
   btn.classList.toggle('active', straightened);
-  btn.innerHTML = straightened ? '&#8734; Straightened' : '&#8734; Straighten';
+  // The word rides a <span class="lbl"> so the narrow-window container query (index.html #doc-toolbar) can
+  // collapse the button to its glyph — this rewrite must keep the wrapper the markup ships with.
+  btn.innerHTML = straightened ? '&#8734; <span class="lbl">Straightened</span>' : '&#8734; <span class="lbl">Straighten</span>';
   if (lbl) lbl.textContent = straightened ? `${deskewPageAngle > 0 ? '+' : ''}${deskewPageAngle.toFixed(1)}°` : '';
 }
 
