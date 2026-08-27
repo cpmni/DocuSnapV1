@@ -240,7 +240,7 @@ def _light_levels() -> list:
     return list(_LIGHT_LEVELS_DEFAULT)
 
 
-def _merge_light_levels(per_level) -> list:
+def _merge_light_levels(per_level, rejected_out=None) -> list:
     """per_level = [(level, candidate words)] → ONE word list. Candidates from different levels on the same spot are
     ONE word (centre inside / IoA > 0.5 either way). Per spot the STRING read by the most levels wins (tie → the
     higher best confidence) and its best-confidence tuple is returned. A DIGIT-bearing string needs ≥ 2 agreeing
@@ -280,13 +280,15 @@ def _merge_light_levels(per_level) -> list:
         key, e = max(by_str.items(), key=lambda kv: (len(kv[1]["levels"]), kv[1]["best"][5]))
         digits = any(ch.isdigit() for ch in key)
         support = len(e["levels"])
-        if digits and support < 2:
-            continue
         # SUPPORT-SCALED FLOOR: a digit string agreed by THREE OR MORE levels may stand at ≥ 70 (doc 1707's second
         # serial read 'CT-2903961' at 73 / 77 / 78 on three levels and was lost to the flat 80); two levels still
         # need 80 (the one-level garble class carried 80–86, and a two-level pair at 61/70 was genuinely ambiguous).
         floor = (_LIGHT_MIN_CONF_DIGIT if support < 3 else _LIGHT_MIN_CONF_DIGIT_AGREED) if digits else _LIGHT_MIN_CONF
-        if e["best"][5] < floor:
+        if (digits and support < 2) or e["best"][5] < floor:
+            # a REFUSED digit spot keeps its candidate strings for the slot ladder (a second RECIPE — the ⊕ crop
+            # reader — may agree with one of them; see _light_slot_ladder). Alpha refusals are not retried.
+            if digits and rejected_out is not None:
+                rejected_out.append({"box": g["box"], "by_key": {k: v["best"] for k, v in by_str.items()}})
             continue
         best = e["best"]
         cleaned = _light_clean_text(best[4])
@@ -327,10 +329,76 @@ def _light_text_pass(img, base, med_h, dpi=None) -> list:
         per_level.append((level, _light_survivors(light, base, med_h, img.size[0], light_img, min_conf=0, min_conf_digit=0)))
     if not per_level:
         return []
-    kept = _merge_light_levels(per_level)
+    rejected = []
+    kept = _merge_light_levels(per_level, rejected_out=rejected)
     if len(kept) > max(_LIGHT_CAP_ABS, _LIGHT_CAP_FRAC * len(base)):
         return []
+    if kept and rejected:
+        kept = kept + _light_slot_ladder(g, kept, rejected, med_h, img.size[0])
     return kept
+
+
+# ── THE SLOT LADDER (owner's observation 2026-08-27: "in Review the third Serial No: line is readable by a box draw,
+# but only two were detected on import"). The ⊕ / draw-box reader (ocr.region_core.process — greyscale + LANCZOS
+# upscale, PSM 7/6, NO hard threshold) read every value slot the four-level pass had refused on the owner's residual
+# docs: 'CT-8668378', 'CT-3913688' (exactly the strings the levels had seen below agreement) and 'T-9802341' (a
+# partial). So: for each recovered light ROW that ends in a caption ('… No:') with NOTHING to its right, crop the
+# value slot as an operator would and read it with that SAME shared ladder — and accept the read ONLY when it
+# agrees (normalised) with one of the level candidates the merge refused on that spot. Two independent RECIPES
+# agreeing is the evidence; a ladder read with no level candidate to agree with (or a partial like 'T-9802341')
+# adds nothing. One small crop OCR per empty caption slot; never runs when the pass is OFF.
+_SLOT_SPAN_MEDH = 28      # value slot width to the right of the caption, in med_h units (~450 px at 200 DPI)
+
+
+def _slot_ladder_read(crop) -> str:
+    """The ⊕ / draw-box reader on a greyscale crop — ONE shared recipe (region_core.process), so the pass reads a
+    slot exactly as the operator's box would. Monkeypatched in the pins."""
+    try:
+        from ocr import region_core
+    except ImportError:
+        import region_core   # embeddable-python sibling import (see region.py)
+    try:
+        return str((region_core.process(crop) or {}).get("text") or "").strip()
+    except Exception:
+        return ""
+
+
+def _light_slot_ladder(g, kept, rejected, med_h, page_w) -> list:
+    added = []
+    _, cap, band = _row_params(med_h)
+    for lr in _build_rows(kept, med_h):
+        ws = sorted(lr["words"], key=lambda w: w[0])
+        last = ws[-1]
+        if not last[4].endswith(":"):
+            continue                                   # not a caption row
+        top = min(w[1] for w in ws); bot = max(w[1] + w[3] for w in ws)
+        x0 = last[0] + last[2] + 3
+        x1 = min(page_w, x0 + int(_SLOT_SPAN_MEDH * med_h))
+        if x1 - x0 < 4 * med_h:
+            continue
+        cands = [r for r in rejected
+                 if x0 <= r["box"][0] + r["box"][2] / 2.0 <= x1
+                 and top - band <= r["box"][1] + r["box"][3] / 2.0 <= bot + band]
+        if not cands:
+            continue                                   # nothing the levels ever saw there — no second witness possible
+        try:
+            crop = g.crop((x0, max(0, top - 6), x1, bot + 6))
+        except Exception:
+            continue
+        txt = _slot_ladder_read(crop)
+        if not txt or " " in txt or len(txt) > 32:
+            continue
+        key = _light_agree_key(txt)
+        if not key or not any(ch.isdigit() for ch in key):
+            continue
+        for r in cands:
+            best = r["by_key"].get(key)
+            if best is None:
+                continue
+            cleaned = _light_clean_text(best[4])
+            added.append(best if cleaned == best[4] else (best[0], best[1], best[2], best[3], cleaned, best[5]))
+            break
+    return added
 
 
 def _with_dpi(cfg: str, dpi) -> str:

@@ -297,6 +297,43 @@ tD, woD, _ = run(imgD, BASE_D, light=[grown(w) for w in BASE_D] + LD, on=True)
 check("(D) the light line stays together on ONE row (with or without the qty '1')", any(l.startswith("Serial No: CT-9999544") for l in tD.split("\n")), repr(tD))
 check("(D) base rows unchanged (Keypad… / Intruder… intact)", all(any(l.startswith(s) for l in tD.split("\n")) for s in ("Keypad Prox Reader", "Intruder Alarm")))
 
+print("\n§3f the slot ladder: an empty caption slot is re-read with the ⊕ crop reader and accepted only on agreement with a refused level candidate")
+_ladder_calls = []
+def _fake_ladder(crop):
+    _ladder_calls.append(crop.size)
+    return _ladder_script.pop(0) if _ladder_script else ""
+_orig_ladder = T._slot_ladder_read
+T._slot_ladder_read = _fake_ladder
+try:
+    CAP1 = [(172, 922, 72, 14, "Serial", 96), (259, 924, 33, 14, "No:", 93)]     # row 1: refused candidate CT-3913688 (one level @86)
+    CAP2 = [(172, 1002, 72, 14, "Serial", 96), (259, 1004, 33, 14, "No:", 93)]   # row 2: refused candidate CT-9802341 (29 / 78)
+    CAP3 = [(172, 1082, 72, 14, "Serial", 96), (259, 1084, 33, 14, "No:", 93)]   # row 3: NO level candidate at all
+    V1 = (309, 924, 123, 16, "CT-3913688", 86); V1b = (309, 924, 123, 16, "CT-3913668", 59)
+    V2a = (309, 1004, 123, 16, "CT-9802341", 29); V2b = (309, 1004, 123, 16, "CT-9802341", 78)
+    imgF = page(stripes=[w[:4] for w in CAP1 + CAP2 + CAP3] + [V1[:4], V2a[:4]])
+    per_callF = [
+        [grown(w) for w in BASE] + CAP1 + CAP2 + CAP3 + [V1b, V2a],
+        [grown(w) for w in BASE] + CAP1 + CAP2 + CAP3 + [V1, V2b],
+        [grown(w) for w in BASE] + CAP1 + CAP2 + CAP3,
+        [grown(w) for w in BASE] + CAP1 + CAP2 + CAP3,
+    ]
+    _ladder_script = ["CT-3913688", "T-9802341"]        # slot 1 agrees with a refused candidate; slot 2 is a partial
+    tF, woF, _ = run(imgF, BASE, light=per_callF, on=True)
+    gotF = {w[4]: w for w in woF.get("light_words", [])}
+    check("the ladder was asked for exactly the two slots that had refused candidates (row 3 has none → not asked)", len(_ladder_calls) == 2, str(_ladder_calls))
+    check("slot 1: the ladder read agrees with the refused level candidate → added at that candidate's box/conf", "CT-3913688" in gotF and gotF["CT-3913688"][5] == 86, str(gotF))
+    check("slot 1: the code sits on its caption row", any(l.startswith("Serial No: CT-3913688") for l in tF.split("\n")), repr(tF))
+    check("slot 2: a partial ladder read ('T-9802341') agrees with nothing → nothing added", "CT-9802341" not in gotF and "T-9802341" not in gotF)
+    check("slot 3: an empty slot with no level candidate is never re-read (no invented value)", not any(l.startswith("Serial No: ") and l != "Serial No:" for l in tF.split("\n")[-3:]) )
+    _ladder_calls.clear(); _ladder_script = ["CT-8051702"]
+    _t_full, _wo_full, _ = run(img3, BASE, light=light3, on=True)
+    check("a row whose value the levels already read is never re-read", len(_ladder_calls) == 0)
+    _ladder_calls.clear(); _ladder_script = ["CT-3913688"]
+    run(imgF, BASE, light=per_callF, on=False)
+    check("OFF: the ladder is never called", len(_ladder_calls) == 0)
+finally:
+    T._slot_ladder_read = _orig_ladder
+
 print("\n§3c the threshold level: fixed 200, env-tunable within 100–250 only")
 os.environ.pop("OCR_LIGHT_TEXT_THRESHOLD", None)
 check("unset ⇒ 200", T._light_threshold() == 200)
