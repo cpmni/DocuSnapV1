@@ -133,6 +133,12 @@ drive the live Review window.)
   **flip `template_buyer_issued_letterhead_scope`?** — after RESULTS + the fired-path round; its cost on your DB is measured at
   zero (conditions 3–5). `quiet_reread_on_layout` is ALREADY ON on your live DB (morning decision 3's cheaper lever).
 - Card 6 grouping half; Card 2 needs nothing from you (the switch is on live).
+- **Evening (List field):** (1) tick *required* on Document Issuer / Date / Reference for Service Worksheet — until then every
+  Castellan worksheet holds at overall 81 (RESULTS above); (2) the OCR text-loss arc for the scanned worksheets' "Serial No:"
+  lines (007/oscar) — the caption teach cannot collect what the page text lacks; (3) the system fix for "an unread optional
+  field sinks the score" (Oracle); (4) the help-system plan's eleven decisions D1–D11 in
+  `docs/designs/HELP_SYSTEM_REBUILD_PLAN_2026-08-27.md` §12 — D11 (you approve the voice on Quick start + Teach first) gates
+  the writing.
 
 ## Traps (new today)
 - `Start-Process powershell -File <path with a space>` silently dies — quote the path INSIDE the argument (`"-File", "`"C:\GIT Projects\…`""`).
