@@ -42,7 +42,13 @@ THIN_IDX = {('veltrix automotive parts', 'sales_order', 'sales_order_number'):
 
 
 def run_gate(value, page_line, *, key='invoice_number', sup='Pelican Office Interiors',
-             slug='invoice', idx=None, v2=True, extra_lines=()):
+             slug='invoice', idx=None, v2=True, extra_lines=(), scope='mirror'):
+    """scope: how the gate learns its (supplier, slug) —
+         'mirror'  = results['_supplier_name'/'_document_slug'] (the ORIGINAL pin shape — which the production
+                     call order never provides: extract() writes those AFTER this gate runs);
+         'caller'  = passed by the caller as supplier_name/document_slug (the production shape since 2026-08-27);
+         'field'   = neither — only the supplier FIELD's value is on results (the fallback);
+         'none'    = nothing at all (the pre-fix production shape — leg 2 must miss)."""
     os.environ['FILING_VALUE_SANITY_FLAGS'] = '1'
     if v2:
         os.environ['FILING_SANITY_PAGE_MATCH_V2'] = '1'
@@ -51,11 +57,18 @@ def run_gate(value, page_line, *, key='invoice_number', sup='Pelican Office Inte
     fake = types.SimpleNamespace(prefix_index=idx or {}, _trace=False,
                                  _t=lambda *a, **k: None, log=lambda *a, **k: None)
     fake._page_match_v2 = lambda *a, **k: engine.ExtractionEngine._page_match_v2(fake, *a, **k)
-    results = {'_supplier_name': sup, '_document_slug': slug,
-               key: {'value': value, 'method': 'template_mapping', 'confidence': 95}}
+    results = {key: {'value': value, 'method': 'template_mapping', 'confidence': 95}}
+    kw = {}
+    if scope == 'mirror':
+        results['_supplier_name'] = sup; results['_document_slug'] = slug
+    elif scope == 'caller':
+        kw = {'supplier_name': sup, 'document_slug': slug}
+    elif scope == 'field':
+        results['supplier_name'] = {'value': sup, 'method': 'template_fixed', 'confidence': 95}
+        results['_document_slug'] = slug
     page = '\n'.join([PAD, page_line, *extra_lines, PAD])
     try:
-        engine.ExtractionEngine._flag_filing_value_sanity(fake, results, key, [], page)
+        engine.ExtractionEngine._flag_filing_value_sanity(fake, results, key, [], page, **kw)
     finally:
         os.environ.pop('FILING_VALUE_SANITY_FLAGS', None)
         os.environ.pop('FILING_SANITY_PAGE_MATCH_V2', None)
@@ -75,6 +88,21 @@ check('doc-191 split shape flags with v2 OFF',
 print('2. Heals (v2 ON)')
 check('doc-337: backed 1/I page form → flag withheld',
       run_gate('PI/26/9910', 'Invoice Number P1/26/9910', idx=PELICAN_IDX) is None)
+
+print("2b. THE PRODUCTION SCOPE SHAPE (2026-08-27, the owner's Pelican 'PI/26/9687' exhibit): extract() writes")
+print("    results['_supplier_name'] AFTER this gate runs, so the mirror shape above is not what production sees.")
+check("pre-fix production shape (no scope at all) → leg 2 MISSES and the flag stays (the defect, pinned as the control)",
+      run_gate('PI/26/9910', 'Invoice Number P1/26/9910', idx=PELICAN_IDX, scope='none') is not None)
+check("caller-passed scope (the production shape now) → flag withheld",
+      run_gate('PI/26/9910', 'Invoice Number P1/26/9910', idx=PELICAN_IDX, scope='caller') is None)
+check("supplier FIELD value fallback (no mirror, no caller scope) → flag withheld",
+      run_gate('PI/26/9910', 'Invoice Number P1/26/9910', idx=PELICAN_IDX, scope='field') is None)
+_esrc = open(os.path.join(os.path.dirname(__file__), '..', 'extraction', 'engine.py'), encoding='utf-8').read()
+check("extract() passes its resolved scope into the gate (source pin)",
+      'self._flag_filing_value_sanity(results, ref_field_key, date_field_keys, ocr_text,\n'
+      '                                       supplier_name=supplier_name, document_slug=document_slug)' in _esrc)
+check("the note names the page form when one exists",
+      "the page reads it as 'P1/26/9910'" in (run_gate('PI/26/9910', 'Invoice Number P1/26/9910', scope='none') or ''))
 check('doc-204: backed $/S page form "VX$22033" → flag withheld (the A1 projection keeps the $)',
       run_gate('VXS22033', 'Order No VX$22033', key='sales_order_number',
                sup='Veltrix Automotive Parts', slug='sales_order', idx=VELTRIX_IDX) is None)

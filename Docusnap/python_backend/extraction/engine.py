@@ -6058,7 +6058,8 @@ class ExtractionEngine:
                 except Exception: pass
             return False   # judgment failure keeps the v1 verdict — fail toward the flag
 
-    def _flag_filing_value_sanity(self, results, ref_field_key, date_field_keys, ocr_text):
+    def _flag_filing_value_sanity(self, results, ref_field_key, date_field_keys, ocr_text,
+                                  supplier_name=None, document_slug=None):
         """FILING_VALUE_SANITY_FLAGS (kill switch, DEFAULT OFF — Chris round 3, 2026-08-09).
 
         THE DEFECT, verified on disk: of 18 auto-filed documents, four carried a value that is
@@ -6135,10 +6136,17 @@ class ExtractionEngine:
                     # v2 re-tests absence with (1) sepless same-line joins and (2) a prefix-region
                     # backed-confusable tolerance; see _page_match_v2. FLAG-ONLY either way.
                     if _absent and os.environ.get('FILING_SANITY_PAGE_MATCH_V2', '0') != '0':
-                        _absent = not self._page_match_v2(
-                            page, rv, ref_field_key,
-                            str(results.get('_supplier_name') or ''),
-                            str(results.get('_document_slug') or ''))
+                        # THE SCOPE KEY (2026-08-27, the Pelican 'PI/26/9687' exhibit): this gate runs BEFORE
+                        # extract() writes results['_supplier_name'] (line ~9896), so reading it here handed
+                        # leg 2 an EMPTY supplier — the index lookup missed and the backed one-glyph tolerance
+                        # never fired in production (trace: leg=exit why=unbacked dominant=null on a scope
+                        # with 139/140 'PI/…' confirms). Take the caller's resolved scope like the other
+                        # prefix readers do, then the supplier FIELD's value, then the late mirror.
+                        _sup_v = results.get('supplier_name')
+                        _sup = (supplier_name or results.get('_supplier_name')
+                                or (_sup_v.get('value') if isinstance(_sup_v, dict) else None) or '')
+                        _slug = document_slug or results.get('_document_slug') or ''
+                        _absent = not self._page_match_v2(page, rv, ref_field_key, str(_sup), str(_slug))
                     if _absent:
                         # Say what the page DID read (owner 2026-08-27: "the text is literally there on the page —
                         # how can the software claim it isn't?"): the page pass had 'P1/26/9687' where the box read
@@ -9745,7 +9753,8 @@ class ExtractionEngine:
         # folder, so it must see whatever the reconciles above finally settled on. Flag-only — it
         # never edits or replaces a value, it just refuses to let a non-reference-shaped reference
         # or a year that is not printed on the page file itself silently.
-        self._flag_filing_value_sanity(results, ref_field_key, date_field_keys, ocr_text)
+        self._flag_filing_value_sanity(results, ref_field_key, date_field_keys, ocr_text,
+                                       supplier_name=supplier_name, document_slug=document_slug)
         # THE PAGE'S OWN WORDING IS NOT A VALUE (CAPTION_VALUE_REFUSE, default OFF — 2026-08-09 NIGHT).
         # Measured against what is actually PRINTED on 200 documents: `account_no` is committed on 40
         # pages that carry no account number at all (the job reference next to it wins), and `serials`
