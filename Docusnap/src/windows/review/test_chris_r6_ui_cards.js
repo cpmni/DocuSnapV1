@@ -86,9 +86,9 @@ console.log('Card 6 — "N more to file by itself" only for a sender someone has
 console.log('Card 7 — stale panels');
 {
   const s = renderer.indexOf('currentDoc.document_type_id      = dt ? (dt.id ?? null) : null;');
-  const body = s > -1 ? renderer.slice(s, s + 700) : '';
+  const body = s > -1 ? renderer.slice(s, s + 1400) : '';
   check('a TYPE change drops the loaded hold verdict before the reason panel repaints',
-        /_holdVerdict = null;[\s\S]{0,40}try \{ renderReviewReason\(currentDoc\); \} catch \{\}/.test(body));
+        /_holdVerdict = null;[\s\S]{0,80}try \{ renderReviewReason\(currentDoc\); \} catch \{\}/.test(body));
 }
 {
   const s = renderer.indexOf("input.addEventListener('blur', () => {");
@@ -104,8 +104,25 @@ console.log('Card 7 — stale panels');
         /_queueEmptyMsg = `Queue cleared — \$\{res\.deleted\} in the recycle bin`;/.test(body));
   check('…and the panel one-shot whenever nothing stays open (not only when the open doc was queued)',
         /if \(hadCurrent\) currentDoc = null;\s*if \(!currentDoc\) _placeholderMsg = _clearedMsg;/.test(body));
-  check('renderQueueList consumes the list one-shot, default "✓ All reviewed"',
-        /empty\.textContent = _queueEmptyMsg \|\| '✓ All reviewed';\s*_queueEmptyMsg = null;/.test(renderer));
+  // Chris r7 (attempt 4) "NOT FIXED as seen": a ONE-SHOT was consumed by the handler's own render and the
+  // delete's IPC-driven refresh painted the default again. STICKY now: nothing nulls the messages on use;
+  // only the non-empty branch (the queue refilled — e.g. Restore all) retires them.
+  check('renderQueueList shows the list message without consuming it (sticky)',
+        /empty\.textContent = _queueEmptyMsg \|\| '✓ All reviewed';(?![\s\S]{0,40}_queueEmptyMsg = null;)/.test(renderer));
+  check('the NON-EMPTY branch retires BOTH cause-aware messages',
+        /empty\.style\.display = 'none';\s*_queueEmptyMsg\s*= null;[^\n]*\n\s*_placeholderMsg = null;\s*setQueueWrapVisible\(true\);/.test(renderer));
+  check('clearDocPanel shows the panel message without consuming it (sticky)',
+        /ph\.textContent\s*= _placeholderMsg \|\| 'All documents reviewed ✓';(?![\s\S]{0,40}_placeholderMsg\s*= null;)/.test(renderer));
+}
+{
+  // Chris r7 new card A: a re-typed 91% worksheet read "Ready to file" over "please fill in Invoice Date…".
+  check('a TYPE change marks the panel state unsaved (beside dropping the verdict)',
+        /_holdVerdict = null;\s*_typeChangedUnsaved = true;\s*try \{ renderReviewReason\(currentDoc\); \} catch \{\}/.test(renderer));
+  check('renderCleanHoldReason leads with the NEUTRAL "Type changed to X — check the fields" copy while unsaved, before any verdict/threshold copy',
+        /const v = _holdVerdict;[\s\S]{0,200}if \(_typeChangedUnsaved\) \{[\s\S]{0,700}Type changed to <strong>[\s\S]{0,400}Waiting for your check[\s\S]{0,300}return;\s*\}/.test(renderer)
+        && renderer.indexOf('if (_typeChangedUnsaved) {') < renderer.indexOf("v.kind === 'put-back'"));
+  check('a document (re)load retires the unsaved-type-change lead',
+        /_holdVerdict = null;\s*_typeChangedUnsaved = false;/.test(renderer));
 }
 {
   const s = renderer.indexOf('function clearDocPanel()');

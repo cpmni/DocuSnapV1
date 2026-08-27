@@ -14,7 +14,7 @@ migration **87**, so a restart applies 88–91 (all inert until a switch is on).
 | **3 MOD** Import table "Ready to file" on 13 rows Review holds | **FIXED** | The chip keyed on the ENGINE's `needs_review` (= required-empty OR a field under its per-field threshold; the "Date" ref sat at exactly 70 with a "please verify" note → not flagged) while Review/File All ask `trust.isAutoFileEligible` (→ `flagged`). | `_handleFileMessage` asks the predicate over the persisted rows and carries `review_hold` as a SEPARATE field (`needs_review` untouched — the T1 gate-unify seam); `addTableRow` keys the chip on either. |
 | **5 MOD** Use/Keep between two garbles the page-check refuses | **FIXED** | S3-C5 note + Gate-C absent mark on the same row; the offered value was not on the page either. | When the note carries the Gate-C mark AND the offered value fails a sepless page check (stricter than Gate C → can only HIDE), the pair becomes "Neither reading appears on this page — draw the box again (⊕) or type the value from the page." Fail-open otherwise. |
 | **6 LOW-MOD** invented senders promising "5 more to file by itself" | **FIXED (promise half)** | `_senderReadinessLabel` counted down for a sender with `confirms` = 0 (the gate's own count). | Nothing rendered when every pending scope has 0 confirms. The "Sender not identified (guess: X)" grouping half stays owner-vet (`pendingfeatures.md`). |
-| **7 LOW** stale panels | **FIXED** | The fetched hold verdict described the doc as LOADED; `clearDocPanel` never hid the ⊕ read-back / Teach card; Delete All only set the panel one-shot when the open doc was queued and the LIST text was hard-coded. | Type change / settled different issuer → `_holdVerdict = null` + repaint; Delete All → "Queue cleared — N in the recycle bin" (list one-shot, unconditional) + the panel one-shot whenever nothing stays open; `clearDocPanel` → `hideAnchorReadout()` + `renderTeachCta(null)`. |
+| **7 LOW** stale panels | **FIXED (Chris r7c: (a)(b)(d) as seen; (c) re-fixed after his "NOT FIXED")** | The fetched hold verdict described the doc as LOADED; `clearDocPanel` never hid the ⊕ read-back / Teach card; Delete All's messages were ONE-SHOTS — the delete's IPC `review-count-changed` refresh re-rendered AFTER the handler's own render, consumed them and painted "✓ All reviewed" again (Chris saw exactly that with 233). | Type change / settled different issuer → `_holdVerdict = null` + repaint — and a type change now shows a NEUTRAL lead ("Type changed to X — check the fields below…", Chris r7c card A) instead of "Ready to file" re-derived from the old type's confidence; Delete All → "Queue cleared — N in the recycle bin" (list + panel messages now STICKY until the queue refills); `clearDocPanel` → `hideAnchorReadout()` + `renderTeachCta(null)`. |
 
 ## Pins (all green) + suites
 - NEW `src/windows/review/test_chris_r6_ui_cards.js` (cards 3/5/6/7 source contracts, CRLF-safe) · NEW
@@ -82,8 +82,12 @@ Settings → Processing row "Only recognise a purchase-order layout you send out
   sender; `extractions.raw_value null`, method `manual`) — round 6 had `raw_value "Bramblewood Joinery Ltd" @95 template_fixed`
   on all three. Then IMPORT (200): **21 docs badged Bramblewood = the 21 Quillstone POs (Bramblewood letterhead), all template 1
   / purchase_order; 0 inbound documents bound to template 1; 0 supplier rows reading Bramblewood on a non-Quillstone paper.**
-  **Chris's narrative is MISSING: every Chris spawn today died on API/network errors (ENOTFOUND ×3, one lost transcript) —
-  the round-7 section in `docs/CHRIS_FULL_APP_REVIEW_2026-08-26.md` is MY verification (DB + read-only CDP), not his prose.**
+  **Chris's narrative for the fired path is MISSING (his first three spawns died on API/network errors — ENOTFOUND ×3, one
+  lost transcript) — the round-7 table in `docs/CHRIS_FULL_APP_REVIEW_2026-08-26.md` is MY verification (DB + read-only CDP).
+  His FOURTH attempt (round 7c, verbatim in the same doc) watched cards 7 + 5 as seen: card 7 BETTER-BUT → (a)(b)(d) fixed,
+  (c) "✓ All reviewed" after Delete All 233 NOT FIXED → root cause (one-shot messages consumed before the IPC re-render)
+  found and re-fixed sticky + pinned; his new card A ("Ready to file" over "please fill in…" after a type change) fixed with
+  a neutral lead; cards A2/B/C/D/E → `pendingfeatures.md`. Card 5 never arose (0/233 carried the note pair).**
 - **Live (CDP, read-only) verification of the other cards on the same sandbox** (`chris-driver\verify_r7.js`): **Card 3** —
   the 200-doc IMPORT results table shows "Confirm to file →" on all 200 rows, zero "Ready to file" over a doc Review holds
   (the "Date" garble class did not reproduce: Chris typed the Pelican values instead of drawing boxes). **Card 6** — the

@@ -1531,9 +1531,11 @@ document.getElementById('doctype-select').addEventListener('change', (e) => {
     // Chris round 6 card 7: the fetched hold verdict described the document as it was LOADED
     // (its old type + sender) — re-rendering with it after a type change kept "Nothing looks
     // wrong — this is only the second document from Bramblewood…" on a delivery note the user
-    // had just re-typed. The verdict is stale by definition once the type changes; drop it so
-    // the panel falls back to the type-neutral copy until the next load re-fetches it.
+    // had just re-typed. The verdict is stale by definition once the type changes; drop it, and
+    // (Chris r7 card A) mark the change so the panel shows a NEUTRAL lead instead of re-deriving
+    // "Ready to file" from the old type's confidence while the new type's fields sit empty.
     _holdVerdict = null;
+    _typeChangedUnsaved = true;
     try { renderReviewReason(currentDoc); } catch {}
   }
   // Re-render fields preserving current input values
@@ -1876,11 +1878,13 @@ function renderQueueList() {
     // `#queue-empty { display:none }`, so this message NEVER showed (Chris card 2;
     // verified live). The text is re-set per tab because the deferred branch
     // overwrites the shared element (the latent copy-clobber both advisors named).
-    // Cause-aware (Chris r6 card 7): a Delete All empties the queue without reviewing
-    // anything — the one-shot `_queueEmptyMsg` says so; the reviewed-it-all default otherwise.
+    // Cause-aware (Chris r6 card 7, r7 "NOT FIXED as seen"): a Delete All empties the queue without
+    // reviewing anything — `_queueEmptyMsg` says so. STICKY, not one-shot: the delete's IPC
+    // `review-count-changed` refresh re-renders this branch again AFTER the handler's own render, so a
+    // one-shot was consumed by the first paint and the default came back on the second. The message
+    // holds until the queue is non-empty again (the branch below resets it — a restore refills the queue).
     empty.style.display = 'block';
     empty.textContent = _queueEmptyMsg || '✓ All reviewed';
-    _queueEmptyMsg = null;
     reviewActions.style.display = 'none';
     const vb0 = document.getElementById('queue-view-bar');
     if (vb0) vb0.style.display = 'none';
@@ -1889,6 +1893,8 @@ function renderQueueList() {
     return;
   }
   empty.style.display = 'none';
+  _queueEmptyMsg  = null;   // the queue is non-empty again — the cause-aware empty messages retire here
+  _placeholderMsg = null;
   setQueueWrapVisible(true);
   // The whole left action block (Skip/Defer · File All · Delete All) is shown on
   // the review tab; the destructive "Delete All Review" stays admin-only (also
@@ -3114,6 +3120,11 @@ async function loadAutoFileConfig() {
 // The REAL verdict for the doc on screen, fetched alongside it (null until it arrives, and null
 // for a doc the predicate can't judge). Populated by loadHoldReason below.
 let _holdVerdict = null;
+// Chris r7 new card A: after a TYPE change the fetched verdict is stale AND the readiness copy below can't
+// be re-derived honestly from the old type's confidence (a 91% worksheet re-typed to Invoice read "Ready to
+// file" over "please fill in Invoice Date and Invoice Number"). While this is set the panel shows a neutral
+// "type changed — check the fields" lead; the next document load (or a saved confirm) clears it.
+let _typeChangedUnsaved = false;
 
 // Plain-English name for the field a gate refused on, using the on-screen label where we have one.
 function _holdFieldLabel(key) {
@@ -3133,6 +3144,16 @@ function renderCleanHoldReason(el, doc) {
   // "Ready to file" — asserting readiness for a document the predicate had refused. Never invent
   // a reason when the authoritative one is available.
   const v = _holdVerdict;
+  // Chris r7 card A: an UNSAVED type change — say so, name what the new type needs, promise nothing.
+  if (_typeChangedUnsaved) {
+    const _typeName = (allDocTypes.find(t => t.slug === selectedTypeSlug) || {}).name || 'the new type';
+    el.classList.add('rr-calm');
+    el.innerHTML = `<div class="rr-lead">Type changed to <strong>${escHtml(_typeName)}</strong> — check the fields below; a field the new type needs may be empty. The app re-checks this document when you confirm.</div>`
+                 + `<div class="rr-cues"><span class="rr-cue info">Waiting for your check</span></div>`
+                 + `<div class="rr-hint">Switching the type back restores what was read under it.</div>`;
+    el.hidden = false;
+    return;
+  }
   // Chris round 18 A3: the user put this one back — say so, and say what ends the hold.
   if (v && !v.eligible && v.kind === 'put-back') {
     el.classList.add('rr-calm');
@@ -3678,6 +3699,7 @@ function renderFields(doc) {
   // safe interim for the fraction of a second before the real answer arrives. The verdict is
   // cleared first so a stale one from the previous document can't be shown against this one.
   _holdVerdict = null;
+  _typeChangedUnsaved = false;   // a (re)load shows the saved state — the unsaved-type-change lead retires
   if (doc && doc.id && (doc.status === 'needs_review' || doc.status === 'deferred')) {
     const _forDoc = doc.id;
     Promise.resolve(window.docusnap.getAutoFileReason?.(doc.id)).then((v) => {
@@ -8863,8 +8885,9 @@ function clearDocPanel() {
   // Per-cause placeholder (Chris r5 card 6): "All documents reviewed ✓" was shown for EVERY
   // road to an empty queue — including a Delete All, which is not a review. Callers with a
   // different truth pass it; the reviewed-it-all default stays for everyone else.
+  // STICKY (Chris r7): the delete road's message must survive the IPC-driven re-render that follows
+  // the handler's own render; renderQueueList's non-empty branch retires it when the queue refills.
   ph.textContent   = _placeholderMsg || 'All documents reviewed ✓';
-  _placeholderMsg  = null;
   document.getElementById('doc-name').textContent = '—';
   document.getElementById('fields-scroll').innerHTML = '';
   document.getElementById('doctype-select').value = '';

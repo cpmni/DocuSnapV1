@@ -22,6 +22,18 @@
   `letterhead`) as a REVIEW NOTE — "This layout's letterhead isn't on this page — read without it" — today the reason is
   stderr + a trace event only, and the Review "Template available" pill (JS logo/presence, whole-page) can contradict a
   Python decline; the pill/graduation roads should read the same predicate Python uses.
+- **Chris round 7c new cards (2026-08-27, owner-vet):** **A2** a TYPE change in the Review dropdown is PERSISTED without a
+  confirm (the row regroups at once; moving away and back shows the new type with its fields "Not found" until the type is
+  switched back) — say so once, or offer an Undo beside the dropdown (the "Ready to file" contradiction half is FIXED: a
+  neutral "Type changed to X — check the fields" lead). **B** overtyping a HIGH-confidence issuer read (Castellan @95)
+  offers "Apply 'X' to 20 & re-read" for a name printed on none of them — keep the offer for a BLANK sender; for a
+  high-confidence read ask "This page seems to say 'Castellan…'. Use 'X' for this one only, or for the 20 others too?"
+  (`offerIssuerRipple`; the re-read's page checks are the safety today). **C** the "Teach this document" card says "We
+  recognise this sender but haven't learned this layout yet" beside a "Sender not identified" row — key the copy off the
+  blank-sender case ("We don't know this sender yet — teach it once, or type the company name"). **D** after Delete All the
+  right column keeps the binned document's (disabled) Reprocess / bin / Confirm buttons and the sender button — hide them
+  with the panel (`clearDocPanel`). **E** with a drawn/typed sender in the box the blue box still says "The Document Issuer
+  box is still empty… Read at 0%" until confirm (the blur path repaints only on a DIFFERENT settled issuer).
 - **Card 6, second half — group machine-guessed senders under "Sender not identified (guess: X)"** (the r4 Card 3
   "N more to file by itself" WORDING question is still open too). Built today: the countdown badge renders NOTHING for a
   sender whose every pending scope has `confirms` = 0 (`_senderReadinessLabel`). The GROUPING change (queue header +

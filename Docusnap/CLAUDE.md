@@ -39,8 +39,10 @@ diffs/1242 docs; 0 empty bands / 0 <0.75 among the 113 PO docs; **realdoc OFF vs
 (`done_ids ""` vs r6 `"4,2"`), Reprocess did not re-badge, IMPORT 200 → 0 inbound docs on the PO template** — flip = owner's call.
 **Card 3** the Import chip asks the ONE predicate (`review_hold`; engine `needs_review` = required-empty OR field<70 ≠
 `isAutoFileEligible`). **Card 5** no Use/Keep when the page vouches for neither value. **Card 6** no countdown at 0 confirms.
-**Card 7** stale verdict dropped on type/issuer change; Delete All → "Queue cleared — N in the recycle bin"; empty panel clears
-⊕/Teach. **Card 2** verified: `trust_role_disagreement_refuse` is ON live, was OFF in his sandbox — no code. Pins:
+**Card 7** stale verdict dropped on type/issuer change; Delete All → "Queue cleared — N in the recycle bin" (STICKY messages —
+Chris r7c caught the one-shot being consumed before the delete's IPC re-render); empty panel clears ⊕/Teach; an unsaved type
+change shows a neutral "Type changed to X — check the fields" lead (his card A). Chris r7c: card 7 (a)(b)(d) FIXED as seen,
+(c) re-fixed; new vet cards A2/B/C/D/E in `pendingfeatures.md`. **Card 2** verified: `trust_role_disagreement_refuse` is ON live, was OFF in his sandbox — no code. Pins:
 `test_chris_r6_ui_cards.js`, `test_buyer_issued_letterhead_scope.py` 43, `test_buyer_issued_scope.js` §4 (28), wiring rows.
 Live app still the 08-26 21:02 instance (DB at mig 87 → restart applies 88–91). **Traps:** quote `-File` paths inside the
 `Start-Process` argument; a dropped advisor resumes via SendMessage; a detached suite reads pins mid-edit (version-skew reds).
