@@ -22,7 +22,7 @@ touches that area — read the pointed-to doc BEFORE working in it:
   ➜AN there). Read the matching block before changing one of those files.
 
 ## ⏭ LATEST — 2026-08-27 MORNING (the autonomous overnight run): **READ `HANDOVER_2026-08-27_MORNING.md` FIRST**
-Branch `feat/teach-side-overnight`, **HEAD `d0d74fb`, 5 commits LOCAL/NOT pushed** (owner reviews then pushes). Built while
+Branch `feat/teach-side-overnight`, **HEAD `b0e94f4` (+ the handover docs commit), 7 commits LOCAL/NOT pushed** (owner reviews then pushes). Built while
 the owner slept, every switch DARK (default OFF), each advisor→Oracle→pins→gate: **(1) CLASS F** the general
 "corroboration clears a please-check note" rule (`corrob_verification_doubt_clear`; Oracle C1-C4 in code; **corpus gate
 PASSED NON-VACUOUSLY on the owner's DB: 24 edge-cut notes cleared, all 24 correct — the SuperStore 3190x class — would-file
