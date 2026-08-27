@@ -46,6 +46,30 @@ migration **87**, so a restart applies 88–91 (all inert until a switch is on).
 | `template_buyer_issued_letterhead_scope` | `TEMPLATE_BUYER_ISSUED_LETTERHEAD_SCOPE` | OFF | a `buyer_issued` template's text arms score the letterhead band only (Python via `_reconcileEnv`; JS `templates.js` reads the key directly, env wins both directions); honour-path heal |
 Settings → Processing row "Only recognise a purchase-order layout you send out by its letterhead" (beside the type-scope row).
 
+## LIST field — TEACH ITS CAPTION (built ~14:30, owner-directed live; commit after the flips)
+**Trigger:** the owner created a List field (`serial_number` "Serial Number") on Service Worksheet, opened Teach, and
+"didn't see the new field" — `_splitListFields` pulled List fields from the draw flow BY DESIGN (a box would be dead) with a
+4-second toast. **Owner spec (verbatim):** "the teach feature should capture 1 value and the label should be drawn. when
+processing in future, every iteration of that keyword should allow the corresponding value to populate the list … The label
+should be, if it isn't already there, added to the keywords for the field of that doc type … Teach should display all the
+captured values on the taught doc and displayed before confirmation."
+**Built (wizard):** a List field stays teachable (`auto='list'`); the banner says "drag over ONE of the values — I'll read the
+caption beside it"; `autoLabel` finds the caption; the confirm panel says "Check the caption I found for …" and previews every
+value that caption collects on the page (`_listPreviewValues` — a JS twin of the inline collector: whitespace-tolerant
+caption, word-boundary for a single word, value = what follows on the line, caption punctuation stripped, cut at a column
+break, deduped); no caption → warning + "Looks right" demoted to "Save without a caption", Redraw label promoted. At save:
+NEW IPC `teach-list-caption` (review/handler.js; Admin+Edit; the field must exist on the type AND be type list; a value-shaped
+"caption" refused) → `addLabelOverride({exclusive:0, template_id:0})` = an ADDITIVE, doc-type-wide keyword, INSERT OR IGNORE =
+"if it isn't already there"; `merge_label_overrides` CREATES the keyword entry for a custom key, so the collector then scans
+for it; no Stage-0.5 mapping is stored for the field; the taught document files with all the previewed values joined "; ".
+Preload `teachListCaption`. Pin `src/windows/teach/test_teach_auto_field_rows.js` (source contracts + a behavioural test of
+the preview helper on the Castellan worksheet text: "Serial No" → both serials; "Serial Number" → nothing).
+**For your field:** the worksheets print "Serial No:" — the field label "Serial Number" alone would never match
+(`_label_pattern` = `serial\s*number`); teaching one value in the wizard now writes "Serial No" as its keyword. Until you
+re-teach, add "Serial No" under Settings → Learning → Keyword label overrides for `serial_number`.
+**Needs an app restart** to load the new wizard/preload/handler code (the app was started 13:35 on the older code).
+**Follow-up (`pendingfeatures.md`):** the Review ⊕ road for a List field (still refuses with "nothing to draw").
+
 ## ⚡ LIVE FLIPS — 2026-08-27 13:35 (owner: "please flip the switches and start the app")
 The live app (still the 08-26 21:02 instance) and the sandbox were already closed. With no app running, SEVEN switches were
 set `true` on `%APPDATA%\ScanFinder\docusnap.db` by a direct `settings` UPSERT (so NO `setting_changed` audit rows exist for

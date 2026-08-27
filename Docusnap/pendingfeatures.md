@@ -74,6 +74,18 @@ overlay instead of drawing (the inventory has the boxes). Size ≈ engine 40 lin
   (`gs1.py`/`gs1.js`, `TextMode.Plain` for FNC1), HRI witness via `_page_presence_corroborated` + a case-preserving
   confusable sibling. Owner Q: which symbologies do customers print? may a barcode be the ref/filename role? ever
   `required`?
+- **LIST field — TEACH ITS CAPTION: ✅ BUILT in the WIZARD 2026-08-27 (owner spec: "capture 1 value and the label is
+  drawn; every iteration of that keyword populates the list; the label is added, if not already there, to the keywords
+  for the field of that doc type; teach displays all the captured values before confirmation").** The wizard keeps a
+  List field teachable; one value box → the caption beside it (`autoLabel`) → the confirm panel previews every value the
+  caption collects on the page (`_listPreviewValues`, a JS twin of the inline collector) → "Looks right" → at save
+  `teach-list-caption` (Admin+Edit, list-typed only) writes the caption as an ADDITIVE doc-type-wide override
+  (`field_label_overrides`, template_id 0; `merge_label_overrides` CREATES the keyword entry for a custom key) and the taught
+  doc files with all the previewed values; no box is stored. Pin `test_teach_auto_field_rows.js`.
+  **FOLLOW-UP (not built): the Review ⊕ road for a List field** — today ⊕ still refuses a List field with "nothing to
+  draw"; give it the same caption teach (stage the caption in the ⊕ readout, write via `teach-list-caption` at confirm,
+  show the collected values). Also: the preview is the inline (same-line) shape only — a caption ABOVE a column previews
+  element 1, like the collector.
 - **LIST field residuals (audited 2026-08-26):** a caption ABOVE a vertical COLUMN reads element 1 only (the
   collector is per-line label→value); no count witness; search indexes the joined string (no per-element snippet);
   chips UI + long-format CSV export + repeated `<Value>` XML elements (barry). Tonight shipped only the `;`

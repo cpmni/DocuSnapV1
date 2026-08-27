@@ -1354,6 +1354,38 @@ function register(ctx) {
   // current document's reviewed values into a managed template (creating one,
   // or refreshing an existing one matched by logo), using the same field-
   // building logic confirm-review used to run unconditionally.
+  // TEACH A LIST FIELD = TEACH ITS CAPTION (owner 2026-08-27: "the teach feature should capture 1 value
+  // and the label should be drawn; when processing in future, every iteration of that keyword should
+  // allow the corresponding value to populate the list … the label should be, if it isn't already
+  // there, added to the keywords for the field of that doc type"). A List field is collected by its
+  // LABEL (keyword.py collect=True), so a taught box would be dead — but the caption beside the box is
+  // exactly the keyword the collector needs. This door writes that caption as a doc-type-wide,
+  // ADDITIVE label override (template_id 0, exclusive 0 — never replaces the bank, never scoped to one
+  // sender: the owner's "for the field of that doc type"). Server-side checks: the field must exist on
+  // the type AND be type 'list' (the renderer can't turn this into a general override writer); the
+  // caption must be a printed label, not a value (≤ 40 chars, ≥ 1 letter, no pure code). INSERT OR
+  // IGNORE inside addLabelOverride = "if it isn't already there". Teach-gated (admin OR edit), unlike the
+  // admin-only Settings door — the wizard is an Admin+Edit surface.
+  ipcMain.handle('teach-list-caption', (_e, payload) => {
+    requireRole('admin', 'edit');
+    const { document_type_slug, field_key, label } = payload || {};
+    const slug = String(document_type_slug || '').trim(), key = String(field_key || '').trim();
+    const cap = String(label || '').replace(/\s+/g, ' ').trim().replace(/[\s:.\-–|]+$/, '').trim();
+    if (!slug || !key || !cap) return { success: false, error: 'Missing document type, field or caption.' };
+    if (cap.length > 40 || !/[A-Za-z]/.test(cap) || /^[A-Z0-9][A-Z0-9\-\/]{4,}$/.test(cap)) {
+      return { success: false, error: 'That does not look like a printed caption.' };
+    }
+    const db = getDb();
+    const dtInfo = doctypes.getWithFields(db, slug);
+    const fld = dtInfo && (dtInfo.fields || []).find(f => f.key === key);
+    if (!fld) return { success: false, error: 'That field is not on this document type.' };
+    if (String(fld.type || '').toLowerCase() !== 'list') return { success: false, error: 'Only a List field takes a caption this way.' };
+    const labelOverrides = require('../../../database/modules/label_overrides');
+    const r = labelOverrides.addLabelOverride(db, { doc_type_slug: slug, field_key: key, label: cap, exclusive: 0, template_id: 0 });
+    if (!r || !r.ok) return { success: false, error: 'Could not save the caption.' };
+    return { success: true, inserted: !!r.inserted, label: cap };
+  });
+
   ipcMain.handle('promote-to-template', async (_e, payload) => {
     requireRole('admin', 'edit');
     const { document_id, allValues, document_type_slug, supplier_name } = payload || {};

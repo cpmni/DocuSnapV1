@@ -439,6 +439,9 @@ contextBridge.exposeInMainWorld('docusnap', {
   // ── Advanced (Settings tab) — keyword label overrides ───────────────────────
   getLabelOverrides:   ()        => ipcRenderer.invoke('get-label-overrides'),
   addLabelOverride:    (data)    => ipcRenderer.invoke('add-label-override', data),
+  // Teach a LIST field = teach its caption (owner 2026-08-27): the wizard/⊕ write the printed caption
+  // beside the drawn value as a doc-type-wide keyword for that field (Admin+Edit gated, list-typed only).
+  teachListCaption:    (data)    => ipcRenderer.invoke('teach-list-caption', data),
   addLabelOverrides:   (data)    => ipcRenderer.invoke('add-label-overrides', data),
   diagTeach:           (data)    => ipcRenderer.send('diag-teach', data),
   deleteLabelOverride: (id)      => ipcRenderer.invoke('delete-label-override', id),

@@ -397,15 +397,47 @@ function _collectTypeHeadingNames(types, extra){
 // the inverse-of-"teaching must never hurt" class. They are pulled from the capture flow HERE, at
 // teach time, with the reason on screen, rather than accepted and ignored.
 function _splitListFields(fields){
-  // BARCODE fields (2026-08-26) are pulled the same way: the decoded symbol is the only writer,
-  // so a taught box would be dead too. Tagged `auto` so the notice can say WHY per kind.
+  // BARCODE fields (2026-08-26) are pulled: the decoded symbol is the only writer, so a taught box
+  // would be dead. Tagged `auto` so the notice can say WHY.
+  // LIST fields are NO LONGER pulled (owner 2026-08-27: "the teach feature should capture 1 value and
+  // the label should be drawn; when processing in future, every iteration of that keyword should allow
+  // the corresponding value to populate the list"). A List field is taught by its CAPTION: the operator
+  // boxes ONE value, the wizard reads the printed caption beside it, and that caption is written as a
+  // doc-type-wide keyword for the field (teach-list-caption) — no box is stored (it would be dead; the
+  // scan owns the field). Tagged `auto='list'` so the confirm panel and doCommit take the caption road.
   const lists = fields.filter(f => {
     const t = String(f.type || '').toLowerCase();
-    if (t === 'list' && window.__listFieldTypeOn) { f.auto = 'list'; return true; }
+    if (t === 'list' && window.__listFieldTypeOn) { f.auto = 'list'; return false; }
     if (t === 'barcode' && window.__barcodeFieldOn) { f.auto = 'barcode'; return true; }
     return false;
   });
   return { teach: fields.filter(f => !lists.includes(f)), lists };
+}
+// A LIST field in the teach flow (caption teach) — see _splitListFields.
+function isListField(f){ return !!f && f.auto === 'list'; }
+// PREVIEW the values a caption would collect on THIS page — a JS twin of keyword.py's inline collect
+// (label pattern whitespace-tolerant + word-boundary for a single word; the value is what follows the
+// caption on the same line, caption punctuation stripped, cut at a column break; dedupe first-seen).
+// Preview only: the real collector (with its per-element validation) runs when the app processes.
+function _listPreviewValues(caption, ocrText){
+  const words = String(caption || '').toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  const esc_ = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const body = words.map(esc_).join('\\s*');
+  const re = (words.length === 1 && /^[a-z]+$/.test(words[0]))
+    ? new RegExp('(?<![a-z0-9])' + body + '(?![a-z0-9])(.*)$', 'i')
+    : new RegExp(body + '(.*)$', 'i');
+  const out = [], seen = new Set();
+  for (const line of String(ocrText || '').split('\n')) {
+    const m = re.exec(line);
+    if (!m) continue;
+    let v = String(m[1] || '').replace(/^[.\s:|\-–]+/, '');
+    v = v.split(/\s{3,}| · |\t/)[0].trim();
+    if (!v || v.length > 80) continue;
+    if (seen.has(v)) continue;
+    seen.add(v); out.push(v);
+  }
+  return out;
 }
 
 async function commitTypeChoice(){
@@ -893,7 +925,10 @@ function setValueBanner(f){
     ? `Drag a rectangle right over the company name — anywhere it's printed, including the footer. There's no label for this one; the company is recognised by its name.`
     // TRUTH FIX (Chris-lens spec 2026-08-11): the label is auto-found and merely CHECKED — the
     // old "you'll mark its label" promised work that never happens.
-    : `Drag a rectangle right over the value on the page (not the label next to it). I'll read it back before anything is saved.`;
+    : (isListField(f)
+        // LIST field (owner 2026-08-27): the CAPTION is what gets taught — one value box finds it.
+        ? `This is a list: drag a rectangle over ONE of the values (not its caption). I'll read the caption printed beside it, and from then on every "${f.label}" caption on this kind of document fills the list.`
+        : `Drag a rectangle right over the value on the page (not the label next to it). I'll read it back before anything is saved.`);
 }
 function promptField(){
   const f=curField(); if(!f) return;
@@ -1417,6 +1452,10 @@ function showValueConfirm(f, r){
   if (issuer){
     setPrompt('Check the company name', f.label);
     $('rg-sub').textContent = `This is how the sender will be filed. No label for this one — the name itself is what's recognised.`;
+  } else if (isListField(f)){
+    // LIST field (owner 2026-08-27): the CAPTION is the teaching — the box only found it.
+    setPrompt('Check the caption I found for', f.label);
+    $('rg-sub').textContent = `The blue box is the printed caption. It becomes a keyword for ${f.label} on every ${state.docTypeName || 'document of this type'}: wherever it appears, the value beside it joins the list. The green box is just the one value you pointed at.`;
   } else if (typed){
     setPrompt('Check the label I found for', f.label);
     $('rg-sub').textContent = `The value is the one you typed. The blue box is the printed label that keeps this field findable when the page shifts.`;
@@ -1508,9 +1547,34 @@ function showValueConfirm(f, r){
   // mapped a FAILED check to the success message. Asked here instead, while the operator is still
   // looking at the name, and patched into this panel when it comes back.
   if (issuer) _warnOnIssuerValue(f, r);
+  // LIST field (owner 2026-08-27, "teach should display all the captured values on the taught doc
+  // before confirmation"): show what the caption collects on THIS page, and require a clean caption —
+  // a list without its caption teaches nothing (the spot is never stored), so "Looks right" is demoted
+  // to a quiet "Save without a caption" and Redraw label becomes the primary.
+  let _listVals = null;
+  if (isListField(f)) {
+    const _top = $('rg-confirm-top');
+    const _line = document.createElement('div');
+    _line.id = 'rb-list-preview'; _line.style.cssText = 'margin-top:6px;font-size:12.5px';
+    if (hasLabel) {
+      _listVals = _listPreviewValues(r.anchor_text, (state.doc && state.doc.ocr_text) || '');
+      if (!_listVals.length && r.value) _listVals = [String(r.value)];
+      _line.innerHTML = `<span class="muted">On this page "${esc(r.anchor_text)}" collects ${_listVals.length} value${_listVals.length === 1 ? '' : 's'}:</span> `
+        + _listVals.slice(0, 12).map(v => `<span class="lab mono">${esc(v)}</span>`).join(' · ')
+        + (_listVals.length > 12 ? ` <span class="muted">… +${_listVals.length - 12}</span>` : '');
+    } else {
+      _line.innerHTML = `<span style="color:var(--warn);font-weight:600">⚠ A list is taught by its caption — I couldn't read one beside your box. Use "Redraw label" to box the printed caption (e.g. "Serial No"), or type it in Settings → Learning → Keyword label overrides.</span>`;
+      const _yes = $('rb-yes');
+      if (_yes) { _yes.classList.remove('primary'); _yes.classList.add('ghost', 'quiet'); _yes.textContent = 'Save without a caption'; }
+      const _rl = $('rb-redraw-label');
+      if (_rl) { _rl.classList.remove('ghost', 'quiet'); _rl.classList.add('primary'); }
+    }
+    if (_top) _top.appendChild(_line);
+  }
   onConfirm('rb-yes', ()=>{
     if (issuer) return finishIssuerField(f);
     if (suspicious) r.anchor_text = null;   // junk never persists — position-only
+    if (isListField(f)) { r.listCaption = hasLabel ? r.anchor_text : null; r.listValues = _listVals || (r.value ? [String(r.value)] : []); }
     r.status='done'; drawMode='value'; advanceField();
   });
   onConfirm('rb-redraw', ()=>{ delete state.results[f.key]; promptField(); });
@@ -1889,7 +1953,13 @@ async function doCommit(){
   const next=$('btn-next'); next.disabled=true; next.textContent='Saving…';
   try{
     const allValues={};
-    for (const f of state.fields){ const r=state.results[f.key]; if(r&&r.value) allValues[f.key]=r.value; }
+    for (const f of state.fields){
+      const r=state.results[f.key]; if(!r) continue;
+      // LIST field: the taught document files with EVERY value its caption collected on the page
+      // (the preview the operator confirmed), joined the way the collector joins them.
+      if (isListField(f) && Array.isArray(r.listValues) && r.listValues.length) { allValues[f.key] = r.listValues.join('; '); continue; }
+      if (r.value) allValues[f.key]=r.value;
+    }
     // The issuer the operator SEES in the wizard wins over the document row's first-pass read: the
     // row still carries the cold letterhead prefill (owner 2026-08-22: a template was named
     // "DOCUMENT OLUTIONS" from a 69% misread while the corrected "DOCUMENT SOLUTIONS" went into the
@@ -1944,6 +2014,18 @@ async function doCommit(){
     });
     if (!promo||!promo.success){ throw new Error((promo&&promo.error)||'Could not create the template.'); }
     const templateId=promo.templateId;
+    // 2-list) LIST fields: write the taught CAPTION as a doc-type-wide keyword for the field (owner
+    // 2026-08-27: "the label should be, if it isn't already there, added to the keywords for the
+    // field of that doc type"). Server-side gated + list-typed only (teach-list-caption). Advisory on
+    // failure — the document still files with the values the operator confirmed.
+    for (const f of state.fields){
+      const r=state.results[f.key]; if(!isListField(f)||!r||r.status!=='done'||!r.listCaption) continue;
+      try{
+        const res = D.teachListCaption ? await D.teachListCaption({ document_type_slug: state.docTypeSlug, field_key: f.key, label: r.listCaption }) : null;
+        if (!res || !res.success) toast(`${f.label}: the caption "${r.listCaption}" wasn't saved as a keyword${res && res.error ? ' — ' + res.error : ''}. Add it in Settings → Learning → Keyword label overrides.`, 6000);
+        else if (!res.inserted) toast(`${f.label}: "${res.label}" was already one of its keywords.`, 3500);
+      }catch(e){ console.warn('teach-list-caption failed:', e); }
+    }
     // 2a) save locked fixed values (admin override — survives confirmed-history rebuilds)
     let warnLandmarks=false;
     for (const f of state.fields){
@@ -1963,6 +2045,7 @@ async function doCommit(){
     // 2b) save a Stage 0.5 mapping per captured (non-fixed) field
     for (const f of state.fields){
       const r=state.results[f.key]; if(!r||r.status==='skip'||r.status==='fixed'||!r.target) continue;
+      if (isListField(f)) continue;   // a LIST field stores NO box (dead — the scan owns it); its caption was written above
       // No anchor: the issuer is POSITION-ONLY, so its "anchor" box is the target itself —
       // never a synthesised box to the LEFT, which would be phantom geometry the mapper
       // could try to relocate against. Label-less mappings are supported (template_mapper.py).

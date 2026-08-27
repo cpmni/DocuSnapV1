@@ -44,6 +44,12 @@ Chris r7c caught the one-shot being consumed before the delete's IPC re-render);
 change shows a neutral "Type changed to X — check the fields" lead (his card A). Chris r7c: card 7 (a)(b)(d) FIXED as seen,
 (c) re-fixed; new vet cards A2/B/C/D/E in `pendingfeatures.md`. **Card 2** verified: `trust_role_disagreement_refuse` is ON live, was OFF in his sandbox — no code. Pins:
 `test_chris_r6_ui_cards.js`, `test_buyer_issued_letterhead_scope.py` 43, `test_buyer_issued_scope.js` §4 (28), wiring rows.
+**LIST FIELD = TEACH ITS CAPTION (built ~14:30, owner spec):** the wizard keeps a List field teachable; one value box → the
+caption beside it → a preview of every value that caption collects on the page → at save the NEW IPC `teach-list-caption`
+(Admin+Edit, list-typed only) writes it as an ADDITIVE doc-type-wide `field_label_overrides` row ("if it isn't already there");
+no box stored; the taught doc files with all the previewed values. A List field's LABEL alone ("Serial Number") never matches
+a printed "Serial No:" — the caption teach is what makes it collect. ⊕ in Review still refuses List fields → follow-up
+(`pendingfeatures.md`). Pin `test_teach_auto_field_rows.js`. NEEDS an app restart (the app started 13:35 on older code).
 **LIVE FLIPS 13:35 (owner: "flip the switches and start the app"):** `corrob_verification_doubt_clear`, `learning_exclude_docs`,
 `learning_repair_console`, `learning_repair_forget`, `barcode_inventory`, `barcode_field`, `template_buyer_issued_letterhead_scope`
 set `true` on the live DB by direct UPSERT (no audit rows — see the handover); app restarted on CDP 9222, **DB at mig 91** (mig 89
