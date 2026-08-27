@@ -44,7 +44,11 @@ Chris r7c caught the one-shot being consumed before the delete's IPC re-render);
 change shows a neutral "Type changed to X — check the fields" lead (his card A). Chris r7c: card 7 (a)(b)(d) FIXED as seen,
 (c) re-fixed; new vet cards A2/B/C/D/E in `pendingfeatures.md`. **Card 2** verified: `trust_role_disagreement_refuse` is ON live, was OFF in his sandbox — no code. Pins:
 `test_chris_r6_ui_cards.js`, `test_buyer_issued_letterhead_scope.py` 43, `test_buyer_issued_scope.js` §4 (28), wiring rows.
-Live app still the 08-26 21:02 instance (DB at mig 87 → restart applies 88–91). **Traps:** quote `-File` paths inside the
+**LIVE FLIPS 13:35 (owner: "flip the switches and start the app"):** `corrob_verification_doubt_clear`, `learning_exclude_docs`,
+`learning_repair_console`, `learning_repair_forget`, `barcode_inventory`, `barcode_field`, `template_buyer_issued_letterhead_scope`
+set `true` on the live DB by direct UPSERT (no audit rows — see the handover); app restarted on CDP 9222, **DB at mig 91** (mig 89
+also defaulted `issuer_sibling_fill` + `position_teach_nudge` + `issuer_suggest_on_blank_confirm` ON). Owner still owes the class-F
+live heal check (Reprocess SuperStore 31901 with SFDEV trace → `corrob_note_resolve cls=F`). **Traps:** quote `-File` paths inside the
 `Start-Process` argument; a dropped advisor resumes via SendMessage; a detached suite reads pins mid-edit (version-skew reds).
 
 ## (previous) 2026-08-27 MORNING (the autonomous overnight run): `HANDOVER_2026-08-27_MORNING.md`

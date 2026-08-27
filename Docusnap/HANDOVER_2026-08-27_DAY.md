@@ -46,6 +46,23 @@ migration **87**, so a restart applies 88–91 (all inert until a switch is on).
 | `template_buyer_issued_letterhead_scope` | `TEMPLATE_BUYER_ISSUED_LETTERHEAD_SCOPE` | OFF | a `buyer_issued` template's text arms score the letterhead band only (Python via `_reconcileEnv`; JS `templates.js` reads the key directly, env wins both directions); honour-path heal |
 Settings → Processing row "Only recognise a purchase-order layout you send out by its letterhead" (beside the type-scope row).
 
+## ⚡ LIVE FLIPS — 2026-08-27 13:35 (owner: "please flip the switches and start the app")
+The live app (still the 08-26 21:02 instance) and the sandbox were already closed. With no app running, SEVEN switches were
+set `true` on `%APPDATA%\ScanFinder\docusnap.db` by a direct `settings` UPSERT (so NO `setting_changed` audit rows exist for
+them — the flip is recorded here instead): `corrob_verification_doubt_clear` (class F; prerequisite `corrob_note_recompute_fc`
+was already true) · `learning_exclude_docs` · `learning_repair_console` · `learning_repair_forget` · `barcode_inventory` ·
+`barcode_field` · `template_buyer_issued_letterhead_scope`. Then `npm start -- --remote-debugging-port=9222` (detached,
+`scratchpad\launch_live.ps1`, log `scratchpad\live_app.log`): CDP 9222 up in 5 s; **migrations 88–91 applied** — note mig 89
+also defaulted `position_teach_nudge` + `issuer_sibling_fill` + `issuer_suggest_on_blank_confirm` ON (the 08-26 NIGHT
+migration; `identifier_registry` stays DARK). Read-back: DB at **91**, all seven `true`, `document_barcodes` +
+`supplier_identifiers` tables present, `documents.learning_excluded_at` present.
+**NOT flipped (older vet-queue arcs, unchanged):** `name_dominant_snap`, `branding_strip_reg_boilerplate` (08-25 detection
+arcs, need corpus OFF==ON + Oracle), `identifier_registry` (needs a real-customer-VAT corpus), `trust_company_key_own_scope`
+(holds 45 of your docs), `template_fixed_debris_wide`, `type_ambiguity_ripple`, `review_group_by_letterhead`.
+**Owner post-flip check still owed (Oracle C5(e) for class F):** open Review with SFDEV trace on, Reprocess the SuperStore
+31901 doc → expect `corrob_note_resolve cls=F`, invoice_number 70→90, the doc reaches Ready. (Needs your login — I cannot
+drive the live Review window.)
+
 ## Owner decisions (carried from the morning handover + today)
 - The morning list stands (class F flip after the SFDEV live heal; Learning Repair defaults; barcode Qs; barry's sweep). New:
   **flip `template_buyer_issued_letterhead_scope`?** — after RESULTS + the fired-path round; its cost on your DB is measured at
