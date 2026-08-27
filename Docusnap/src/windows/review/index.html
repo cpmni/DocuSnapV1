@@ -292,43 +292,68 @@
     .as-chip .as-when { color: var(--muted); }
     .as-chip .as-caret { color: var(--muted); font-size: 9px; margin-left: 3px; }
     .as-chip.as-recent { flex-direction: row; align-items: center; color: var(--muted); font-style: italic; }
-    #activity-panel { display: none; position: absolute; top: var(--doc-head-h); left: 8px; right: 8px; z-index: 8; max-height: 46%; overflow: auto;
-      background: var(--surface); border: 1px solid var(--border2); border-radius: var(--r); box-shadow: 0 6px 22px rgba(0,0,0,.25); padding: 30px 12px 10px; font-size: 12.5px; }
+    /* ACTIVITY PANEL LAYOUT (design pass 2026-08-27, owner: "it still looks a little unbalanced"): ONE 20 px line
+       unit for everything on a row's first line (time, icon, headline, buttons); TWO vertical rails — an icon rail
+       and a text rail the headline, pills and kept-back share; the time a right-aligned sans margin note; ONE
+       tinted primary (the strip's own open-chip look) instead of a column of saturated blocks; borderless chips;
+       a sticky titled header; the panel capped at 1120 px; below ~780 px of panel width the actions drop under
+       the body and still end flush right. Theme tokens only. */
+    #activity-panel { display: none; position: absolute; top: var(--doc-head-h); left: 8px; right: 8px; max-width: 1120px; box-sizing: border-box;
+      z-index: 8; max-height: 46%; overflow: auto; container-type: inline-size;
+      background: var(--surface); border: 1px solid var(--border2); border-radius: var(--r); box-shadow: 0 6px 22px rgba(0,0,0,.25);
+      padding: 0 14px 6px; font-size: 12.5px; }
     #activity-panel.open { display: block; }
-    /* C5-safe close affordance: a real X + a click on the panel body (not the action buttons) closes it —
-       both handled by the ONE delegated #activity-panel listener via data-ap; the capture-phase outside-click
-       closer and Esc handler are untouched (no stopPropagation/preventDefault). */
-    .ap-close { position: absolute; top: 6px; right: 8px; width: 24px; height: 24px; line-height: 22px; text-align: center; font-size: 14px;
-      border: 1px solid var(--border2); border-radius: var(--r-sm); background: var(--surface2); color: var(--muted); cursor: pointer; }
-    .ap-close:hover { border-color: var(--accent); color: var(--text); }
+    /* HEADER BAND — the X gets a companion and a job; sticky so it never scrolls away with the rows. C5-safe: the
+       X + a click on the panel body both close via the ONE delegated #activity-panel listener (data-ap); the
+       capture-phase outside-click closer and Esc handler are untouched. */
+    .ap-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 0 6px; margin-bottom: 2px; background: var(--surface); border-bottom: 1px solid var(--border); }
+    .ap-title { font-size: 11.5px; font-weight: 600; letter-spacing: .01em; color: var(--muted); }
+    .ap-close { position: static; width: 22px; height: 22px; line-height: 20px; padding: 0; text-align: center; font-size: 13px;
+      border: 1px solid transparent; border-radius: var(--r-sm); background: transparent; color: var(--muted); cursor: pointer; }
+    .ap-close:hover { background: var(--surface2); border-color: var(--border2); color: var(--text); }
     /* DISTINCT SECTIONS (owner 2026-08-27: "there is no real formatting on the text — make each section distinctive"):
        a row is [time | headline + sender chips + kept-back note | actions]. Time = small mono column; headline =
        WHAT happened in bold with the WHY after the dash in muted; senders = pills with a bold count; kept-back =
        an amber-barred note. Every colour is a theme token. */
-    .ap-row { display: grid; grid-template-columns: 78px minmax(0, 1fr) auto; gap: 2px 12px; align-items: start; padding: 9px 0; border-top: 1px solid var(--border); }
-    .ap-row:first-child { border-top: 0; }
-    .ap-when { color: var(--muted); font-size: 11px; font-family: var(--mono); white-space: nowrap; padding-top: 3px; }
-    .ap-body { min-width: 0; }
-    .ap-line { font-size: 13px; line-height: 1.35; color: var(--text); }
-    .ap-line .ap-ico { font-weight: 700; margin-right: 2px; }
+    /* ROW — [time 92 | body | actions]; every element on the first line is one 20 px band */
+    .ap-row { display: grid; grid-template-columns: 92px minmax(0, 1fr) auto; column-gap: 14px; row-gap: 0; align-items: start;
+      padding: 10px 0; border-top: 1px solid var(--border); }
+    .ap-head + .ap-row { border-top: 0; }
+    .ap-when { color: var(--muted); font-size: 11px; font-family: inherit; font-variant-numeric: tabular-nums; line-height: 20px;
+      text-align: right; white-space: nowrap; padding-top: 0; }
+    .ap-body { min-width: 0; position: relative; padding-left: 18px; }          /* 18px = the icon rail */
+    .ap-line { font-size: 13.5px; line-height: 20px; color: var(--text); }
+    .ap-line .ap-ico { position: absolute; left: 0; top: 0; width: 14px; line-height: 20px; text-align: center; font-size: 13px; font-weight: 700; margin: 0; }
     .ap-line .ap-ico.filed { color: var(--ok); }
     .ap-line .ap-ico.putback { color: var(--warn); }
     .ap-line .ap-ico.fix { color: var(--accent); }
     .ap-what { font-weight: 600; }
-    .ap-why { color: var(--muted); font-weight: 400; }
-    .ap-chip { display: inline-block; padding: 1px 8px; font-size: 11px; color: var(--muted); background: var(--surface2);
-      border: 1px solid var(--border); border-radius: var(--r-pill); white-space: nowrap; line-height: 1.5; }
-    .ap-chip b { color: var(--text); font-weight: 600; margin-left: 1px; }
+    .ap-why { color: var(--muted); font-weight: 400; font-size: 12px; }
+    .ap-chip { display: inline-block; padding: 0 8px; font-size: 11.5px; line-height: 20px; color: var(--muted); background: var(--surface2);
+      border: 0; border-radius: var(--r-pill); white-space: nowrap; }
+    .ap-chip b { color: var(--text); font-weight: 600; margin-left: 2px; font-variant-numeric: tabular-nums; }
     /* THREE FIXED SLOTS (owner 2026-08-27: "give each button its own column with the permanent ones to the right"):
        [Put back | See them | Quick check]. A row that lacks a button renders an INVISIBLE placeholder of the same
        element and label in that slot, so the permanent two never slide and every row's columns line up. */
-    .ap-actions { display: grid; grid-template-columns: repeat(3, max-content); gap: 6px; flex-shrink: 0; align-items: center; }
-    .ap-btn { padding: 2px 9px; font-size: 11px; border: 1px solid var(--border2); border-radius: var(--r-sm); background: var(--surface2); color: var(--text); cursor: pointer; }
+    /* ACTIONS — three fixed slots + ghost unchanged; quiet outlines and ONE tinted primary (the strip's .as-chip.open
+       look). Primary text is --text, not --accent: --accent on --accent-bg is ~3.9:1 in the Light theme, under AA at 11.5px. */
+    .ap-actions { display: grid; grid-template-columns: repeat(3, max-content); gap: 6px; align-items: center; justify-content: end; }
+    .ap-btn { height: 20px; line-height: 18px; padding: 0 9px; font-size: 11.5px; white-space: nowrap; border: 1px solid var(--border2);
+      border-radius: var(--r-sm); background: transparent; color: var(--text); cursor: pointer; }
+    .ap-btn:hover { background: var(--surface2); }
+    .ap-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
     .ap-btn.ap-ghost { visibility: hidden; pointer-events: none; }
-    .ap-btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+    .ap-btn.primary { background: var(--accent-bg); border-color: var(--accent); color: var(--text); font-weight: 600; }
+    .ap-btn.primary:hover { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
     .ap-btn[disabled] { opacity: .5; cursor: default; }
-    .ap-sub { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 4px 5px; }
-    .ap-kept { margin-top: 6px; font-size: 11px; color: var(--warn); border-left: 2px solid var(--warn); padding-left: 8px; line-height: 1.45; }
+    .ap-sub { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px 6px; }
+    .ap-kept { margin-top: 6px; font-size: 11.5px; line-height: 1.45; color: var(--warn); border-left: 2px solid var(--warn); padding-left: 8px; }
+    /* NARROW (~700px pane): actions drop under the body — still three slots, still ending flush right */
+    @container (max-width: 780px) {
+      .ap-row { grid-template-columns: 92px minmax(0, 1fr); }
+      .ap-actions { grid-column: 2; margin-top: 8px; }
+    }
     /* Mark Reviewed floats at the top-left of the preview pane. Anchored to
        #doc-panel (which does NOT scroll — only #doc-viewer does), so it stays
        put while the document image scrolls beneath it. Shown only for flagged

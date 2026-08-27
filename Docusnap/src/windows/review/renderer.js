@@ -743,7 +743,10 @@ function _asRenderPanel() {
   const rows = _asOpenId === 'recent' ? _asEvents : _asEvents.filter(e => e.id === _asOpenId);
   if (!rows.length) { _asClosePanel(); return; }
   // A visible X (data-ap="close") + a click on the panel body both close via the ONE delegated listener.
-  const closeX = `<button type="button" class="ap-close" data-ap="close" aria-label="Close" title="Close">&#10005;</button>`;
+  // Sticky titled header (design pass 2026-08-27): the X gets a companion and a job. A click on the title behaves
+  // exactly like a body click (the delegated listener closes on any non-see/undo/qcheck target).
+  const closeX = `<div class="ap-head"><span class="ap-title">${_asOpenId === 'recent' ? 'Recent activity' : 'This batch'}</span>`
+    + `<button type="button" class="ap-close" data-ap="close" aria-label="Close" title="Close">&#10005;</button></div>`;
   panel.innerHTML = closeX + rows.map(ev => {
     // r18 card 5: a bulk "you filed N" names its senders even when there is only one — that IS the receipt.
     // A zero-filed File All merges a placeholder ('—': 0) sender: drop empty/placeholder rows so the

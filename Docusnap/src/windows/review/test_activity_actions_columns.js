@@ -32,8 +32,15 @@ check("3. 'Quick check' falls back to its ghost", /: _apGhost\('Quick check'\);/
 check('3. no slot falls back to an empty string any more', !/data-ap="see"[^\n]*\n?[^\n]*: '';/.test(js));
 
 console.log('\n4. distinct sections (owner: "no real formatting on the text")');
-check('4. a row is a [time | body | actions] grid', /\.ap-row \{[^}]*display: grid;[^}]*grid-template-columns: 78px minmax\(0, 1fr\) auto/.test(html));
-check('4. the time is a small mono column', /\.ap-when \{[^}]*font-family: var\(--mono\)/.test(html));
+check('4. a row is a [time | body | actions] grid', /\.ap-row \{[^}]*display: grid;[^}]*grid-template-columns: 92px minmax\(0, 1fr\) auto/.test(html));
+check('4. the time is a right-aligned sans margin note on the 20px line unit', /\.ap-when \{[^}]*font-family: inherit;[^}]*line-height: 20px;[^}]*text-align: right/.test(html));
+console.log('\n5. design pass (one line unit, two rails, one tinted primary, sticky titled header)');
+check('5. the body carries the icon rail (18px) and the icon sits on it absolutely', /\.ap-body \{[^}]*padding-left: 18px/.test(html) && /\.ap-line \.ap-ico \{[^}]*position: absolute; left: 0; top: 0; width: 14px; line-height: 20px/.test(html));
+check('5. headline, chips and buttons share the 20px line unit', /\.ap-line \{[^}]*line-height: 20px/.test(html) && /\.ap-chip \{[^}]*line-height: 20px/.test(html) && /\.ap-btn \{[^}]*height: 20px; line-height: 18px/.test(html));
+check('5. the primary is a TINT with --text (not a saturated block)', /\.ap-btn\.primary \{[^}]*background: var\(--accent-bg\);[^}]*color: var\(--text\)/.test(html));
+check('5. chips are fill only (no border)', /\.ap-chip \{[^}]*border: 0;/.test(html));
+check('5. a sticky titled header replaces the floating X', /\.ap-head \{[^}]*position: sticky; top: 0/.test(html) && /<div class="ap-head"><span class="ap-title">\$\{_asOpenId === 'recent' \? 'Recent activity' : 'This batch'\}<\/span>/.test(js));
+check('5. the panel is capped and is its own container; narrow rows drop the actions under the body', /#activity-panel \{[^}]*max-width: 1120px;[^}]*container-type: inline-size/.test(html) && /@container \(max-width: 780px\) \{\s*\.ap-row \{ grid-template-columns: 92px minmax\(0, 1fr\); \}\s*\.ap-actions \{ grid-column: 2; margin-top: 8px; \}/.test(html));
 check('4. the headline is split into WHAT (bold) and WHY (muted) at the first dash', /const _full = _asLineFull\(ev\), _cut = _full\.indexOf\(' — '\);/.test(js) && /\.ap-what \{ font-weight: 600; \}/.test(html) && /\.ap-why \{ color: var\(--muted\)/.test(html));
 check('4. the headline icon carries the strip\'s colour class', /<span class="ap-ico \$\{_asIconClass\(ev\)\}">\$\{_asIcon\(ev\)\}<\/span>/.test(js) && /\.ap-line \.ap-ico\.filed \{ color: var\(--ok\); \}/.test(html));
 check('4. sender counts render as chips with a bold count', /<span class="ap-chip">\$\{escHtml\(k\)\} <b>\$\{v\}<\/b><\/span>/.test(js) && /\.ap-chip \{[^}]*border-radius: var\(--r-pill\)/.test(html));

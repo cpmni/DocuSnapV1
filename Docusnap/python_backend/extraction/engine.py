@@ -1919,6 +1919,22 @@ _FILING_SANITY_ABSENT_MARK = "doesn't appear on this page as written"
 _FILING_SANITY_ABSENT_NOTE = ("'{}' " + _FILING_SANITY_ABSENT_MARK
                               + " — please check the reference before filing.")
 
+
+def _nearest_confusable_page_token(page, rv) -> str:
+    """The first whole page token that is a ONE-glyph confusable of `rv` — 'P1/26/9687' for 'PI/26/9687' — so the
+    Gate-C note can say what the page actually read instead of flatly denying the value. '' when none."""
+    try:
+        rv = str(rv or '').strip()
+        if len(rv) < 4:
+            return ''
+        for t in re.split(r'\s+', str(page or '')):
+            t = t.strip('.,;:()[]{}"\'')
+            if t and len(t) == len(rv) and t.casefold() != rv.casefold() and _one_confusable_diff(t, rv):
+                return t
+    except Exception:
+        pass
+    return ''
+
 # OCR-confusable equivalence classes for CODE-PREFIX positions, one class per printed-glyph family.
 # EXPLICIT (not derived) so the adopt surface is exactly what was reviewed — the pin test asserts
 # these sets verbatim AND that every _CONFUSE_TO_DIGIT pair is covered, so an ocr_corrector map edit
@@ -6004,9 +6020,15 @@ class ExtractionEngine:
             # leg 2 — backed-confusable, prefix region only
             rec_p = ocr_corrector.lookup_prefix(self.prefix_index, key, sup, slug)
             if not _prefix_dominant_backed(rec_p):
+                if self._trace:       # observability (2026-08-27, the Pelican PI/P1 exhibit): name the exit
+                    self._t('filing_sanity_v2', field=key, value=rv, leg='exit', why='unbacked',
+                            dominant=(rec_p or {}).get('dominant'), counts=(rec_p or {}).get('counts'))
                 return False
             dom = str(rec_p.get('dominant'))
             if ocr_corrector.code_prefix(rv) != dom:
+                if self._trace:
+                    self._t('filing_sanity_v2', field=key, value=rv, leg='exit', why='prefix-mismatch',
+                            dominant=dom, read_prefix=ocr_corrector.code_prefix(rv))
                 return False
             plen = len(_strip_all(dom))             # dominant is pure alpha — projections agree
             for joined, n in windows:
@@ -6027,8 +6049,13 @@ class ExtractionEngine:
                 self.log(f"  Filing sanity v2: page carries '{joined}' — a backed one-glyph "
                          f"({a}/{b}) form of '{rv}' (dominant '{dom}') — flag withheld")
                 return True
+            if self._trace:
+                self._t('filing_sanity_v2', field=key, value=rv, leg='exit', why='no-one-glyph-window', dominant=dom)
             return False
-        except Exception:
+        except Exception as _e:
+            if self._trace:       # a judgment failure keeps the v1 verdict — but it must be SEEN, not silent
+                try: self._t('filing_sanity_v2', field=key, value=rv, leg='exit', why='error', error=str(_e)[:160])
+                except Exception: pass
             return False   # judgment failure keeps the v1 verdict — fail toward the flag
 
     def _flag_filing_value_sanity(self, results, ref_field_key, date_field_keys, ocr_text):
@@ -6113,8 +6140,16 @@ class ExtractionEngine:
                             str(results.get('_supplier_name') or ''),
                             str(results.get('_document_slug') or ''))
                     if _absent:
-                        if _note(ref_field_key, _FILING_SANITY_ABSENT_NOTE.format(rv)):
-                            self._t('filing_sanity_ref_absent', field=ref_field_key, value=rv)
+                        # Say what the page DID read (owner 2026-08-27: "the text is literally there on the page —
+                        # how can the software claim it isn't?"): the page pass had 'P1/26/9687' where the box read
+                        # 'PI/26/9687'. Naming the page form turns a contradiction into a one-glance I/1 question.
+                        # The MARK stays intact (three consumers match it as a substring).
+                        _near = _nearest_confusable_page_token(page, rv)
+                        _txt = (f"'{rv}' {_FILING_SANITY_ABSENT_MARK} — the page reads it as '{_near}' — "
+                                f"please check the reference before filing.") if _near \
+                            else _FILING_SANITY_ABSENT_NOTE.format(rv)
+                        if _note(ref_field_key, _txt):
+                            self._t('filing_sanity_ref_absent', field=ref_field_key, value=rv, page_form=_near or None)
                             self.log(f"  Filing sanity: {ref_field_key} '{rv}' not printed on the "
                                      f"page as a whole token — flagged for review")
 
