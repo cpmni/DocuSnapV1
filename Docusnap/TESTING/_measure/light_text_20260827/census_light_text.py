@@ -100,8 +100,18 @@ with open(OUT, 'w', encoding='utf-8') as out:
         rung2 = sum(1 for w in added if w[3] >= 1.8 * med_h and w[1] <= 0.30 * H)
         others = other_supplier(added_lines, sup)
         digit_words = [w for w in added if any(ch.isdigit() for ch in w[4])]
+        replaced = [(w[4], w[3]) for w in (wo_on.get('light_replaced') or [])]
+        rep_txt = set(t for t, _h in replaced)
+        # a violation is EXPLAINED when every token the OFF line lost is a replaced degenerate sliver
+        unexplained = []
+        for l in missing:
+            best = max(on_lines, key=lambda m: sum(1 for tok in l.split() if tok in m.split()), default='')
+            lost = [tok for tok in l.split() if tok not in best.split()]
+            if any(tok not in rep_txt for tok in lost):
+                unexplained.append(l)
         rec = {
             'id': did, 'status': status, 'supplier': sup, 'type': slug, 'base_words': len(base_set), 'med_h': med_h,
+            'light_replaced': replaced, 'viol_unexplained': unexplained[:3], 'viol_unexplained_n': len(unexplained),
             'added': len(added), 'added_words': [(w[4], round(w[5]), round(w[3] / med_h, 2), round(w[1] / H, 3)) for w in added],
             'added_lines': added_lines[:12], 'off_lines_missing': len(missing), 'missing_sample': missing[:3],
             'into_base_rows': into_base, 'col_breaks_lost': lost, 'band_len_off': len(band_off), 'band_len_on': len(band_on),

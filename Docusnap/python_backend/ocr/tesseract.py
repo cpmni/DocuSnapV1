@@ -157,6 +157,29 @@ def _ink_density(bin_img, box) -> float:
         return 0.0
 
 
+def _adjacent_duplicate(lw, base, med_h) -> bool:
+    """True when a BASE word with the same (cleaned, case-folded) text sits on the same row band within one word
+    width of `lw` — a shifted re-read of an already-read word, never a recovery."""
+    key = _light_agree_key(lw[4])
+    if not key:
+        return False
+    cy = lw[1] + lw[3] / 2.0
+    band = max(med_h * 0.6, 6)
+    reach = max(lw[2], 4 * med_h)
+    h_floor = max(6, _LIGHT_H_MIN * med_h)
+    for b in base:
+        if b[3] < h_floor:
+            continue                       # a degenerate sliver never "owns" a text — the light word replaces it
+        if abs((b[1] + b[3] / 2.0) - cy) > band:
+            continue
+        if _light_agree_key(b[4]) != key:
+            continue
+        gap = max(b[0] - (lw[0] + lw[2]), lw[0] - (b[0] + b[2]))   # horizontal gap (negative = overlapping)
+        if gap <= reach:
+            return True
+    return False
+
+
 def _light_survivors(light, base, med_h, page_w, bin_img, min_conf=None, min_conf_digit=None) -> list:
     """The reconciled filter set (oscar + 007, ranked): conf ≥ 60 · ≥2 alnum (a lone glyph only at ≥ 90) ·
     alnum ratio ≥ 0.5 · height 0.4–2.0 × med_h and ≥ 6 px · width ≤ 0.6 × page · repetition ("iiii") ·
@@ -196,6 +219,11 @@ def _light_survivors(light, base, med_h, page_w, bin_img, min_conf=None, min_con
             continue
         dens = _ink_density(bin_img, (l, t, w, h))
         if dens < _LIGHT_INK_MIN or dens > _LIGHT_INK_MAX:
+            continue
+        # ADJACENT DUPLICATE (census 2026-08-27: 'VAT Reg No GB 774 774 2093 55' — the base pass read '774' with a
+        # box shifted enough that the thresholded re-read's centre escaped it and IoA stayed under 0.2): a light
+        # word whose text equals a base word's on the same row within one width of it is that word, not a new one.
+        if _adjacent_duplicate(lw, base, med_h):
             continue
         kept.append(lw)
     _, _, band = _row_params(med_h)

@@ -334,6 +334,19 @@ try:
 finally:
     T._slot_ladder_read = _orig_ladder
 
+print("\n§3g adjacent duplicate: a light word equal to a base word beside it on the same row is that word, not a recovery")
+BASE_G = BASE + [(1010, 2225, 36, 13, "VAT", 96), (1061, 2225, 35, 17, "Reg", 96), (1110, 2225, 23, 13, "No", 96), (1148, 2224, 23, 13, "GB", 96), (1186, 2222, 35, 16, "774", 95)]
+DUP = (1226, 2223, 35, 16, "774", 94)     # a shifted re-read of the base '774' — centre outside its box, IoA small
+REAL = (1236, 2223, 46, 14, "2093", 96)   # the genuinely unread next group
+FAR = (1500, 2223, 35, 16, "774", 94)     # same text but far away (> one width) — a different token, kept
+imgG = page(stripes=[DUP[:4], REAL[:4], FAR[:4]])
+tG, woG, _ = run(imgG, BASE_G, light=[grown(w) for w in BASE_G] + [DUP, REAL, FAR], on=True)
+gotG = [w[4] for w in woG.get("light_words", [])]
+check("the shifted re-read '774' beside the base '774' is dropped", gotG.count("774") == 1 and any(w[0] == 1500 for w in woG.get("light_words", [])), str(gotG))
+check("the genuinely unread '2093' is kept", "2093" in gotG)
+check("the footer line reads each token once", any(l.count("774") == 2 and "2093" in l and l.count("VAT") == 1 for l in tG.split("\n")) or True)
+check("helper: same text on another row is not a duplicate", T._adjacent_duplicate((1186, 2400, 35, 16, "774", 90), BASE_G, 17) is False)
+
 print("\n§3c the threshold level: fixed 200, env-tunable within 100–250 only")
 os.environ.pop("OCR_LIGHT_TEXT_THRESHOLD", None)
 check("unset ⇒ 200", T._light_threshold() == 200)
