@@ -21,7 +21,31 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-27 EVENING: **READ `HANDOVER_2026-08-27_EVENING.md` FIRST**
+## ⏭ LATEST — 2026-08-27 NIGHT: **READ `HANDOVER_2026-08-27_NIGHT.md` FIRST**
+Branch `feat/teach-side-overnight`, commits **`48de395`** + **`5b4bf27`** (+ docs), NOT pushed. **Live app RUNNING on CDP 9222
+on the PRE-night code (mig 91) — restart to apply mig 92; Chris sandbox 9223 DOWN.** Owner: *"surely ref, date and supplier must
+be required by nature?? continue with the queued items."* **(1) `48de395` THE ROLES ARE REQUIRED BY NATURE** (Oracle S-O-W/COND):
+the shared doc-type editor's CREATE road wrote `required=0` on the identity/ref/date fields it supplied (every seeded type has 1)
+and the edit toggle is LOCKED + `updateField` refuses it — so the evening's "tick required" remedy was IMPOSSIBLE; the SCORER
+(`overall_confidence`: required fields ELSE every field, unread = 0) fell to every field and one unread List field held every
+Castellan worksheet at 81 < 95 (the 07-27 Northgate 72% cap = same class). Fix = `document_types.assertStructuralRequired` at
+every writer (ensureStructuralRoles / updateType re-point / backup restore) + **mig 92** + an unconditional startup heal; scorer
+unchanged. Gate: 165 worksheets OFF→ON would-file 43→164, 0 value diffs, 0 wrong gained. Custom types' roles now get the S3-C5 +
+first-fill holds. **Owner: restart, then Reprocess the held Castellan worksheets.** **(2) `5b4bf27` LIGHT-TEXT RECOVERY, DARK
+`ocr_light_text_recovery`** (oscar + 007 → Oracle S-O-W/COND): a threshold-200 → PSM 3 supplementary full-page read merged only
+where PSM-3/PSM-6 left nothing, placed INTO the base rows, `med_h` frozen, `words_out["words"]` stays base-only (`light_words`
+carries the recovered ones), digit tokens need conf ≥ 80. **Recipe: FOUR levels {200,210,220,230} — a level sweep on the owner's own scans showed NO single level reads every
+serial (one value's conf swung 8→90→64→92 across 200/205/215/220 on the same page); the union reads all ten values on four
+exhibits, a digit-bearing string needs two agreeing levels (the one garble appeared at one level only).** Real pipeline on the
+owner's docs 11/13/1504 with the switch ON: serial_number fills on all three (`keyword_list` @85). **Switch still OFF on the live DB** (a CDP flip was refused by
+the tool's classifier) — the owner turns it on in Settings → Processing → "Also read faint small print on scans"; a re-import
+then shows the serials; already-filed docs keep their old text until re-read; scanned-page OCR time roughly triples. **FLIP conditions (not built): the corroboration exclusion for light-line keyword reads,
+an `ocr_recipe` stamp + ONE `ocrCacheUsable` predicate (a plain Reprocess reuses `ocr_text` — a flip heals nothing until
+re-OCR), the `vat_reg_not_amount` dependency.** Gates (realdoc at **`OCR_RENDER_DPI=200` — the harness never mirrors
+`_ocrDpiEnv`**, + the census) → handover §3. Help-system work now logged in `pendingfeatures.md`. **Traps:** Electron-as-Node
+prints nothing from the PowerShell tool (wrap in `cmd /c` + redirect); copy the live DB with `db.backup()`, never a file copy.
+
+## (previous) 2026-08-27 EVENING: `HANDOVER_2026-08-27_EVENING.md`
 Branch `feat/teach-side-overnight`, **HEAD `cab9fbc`** (code `38d5af2`; 17 commits ahead, NOT pushed). **Live app RUNNING on
 CDP 9222 on this code; Chris sandbox on 9223.** Shipped: the List-field Review PILLS slice (Oracle SIGN-OFF-W/COND, all ten
 conditions; pins 27+41+8 green; census debris 478→0) + **Chris r8's TOP card fixed the same evening** (the ⊕ label picker's

@@ -6,6 +6,25 @@
 
 ---
 
+## 2026-08-27 NIGHT — FIELD-TYPE REGISTRY + SURFACE EXHAUSTIVENESS (owner: "a common attribute function so anything that changes in future changes across the board … would a code refactor take care of this?")
+**Exhibit:** the Serial Number (List) field is missing from Quick check. `batchAuditService.buildGrid` builds columns from extraction
+ROWS (the grid unions the keys it finds) while Review builds fields from the type's SCHEMA; the engine writes no row for an empty
+List read → 184/186 worksheets have no `serial_number` row → no column. Same class as the wizard's own `_splitListFields`.
+**The class:** field TYPES are handled by scattered per-surface conditionals (`=== 'list'`: 25 sites / 7 JS files + 4 Python;
+`barcode` the same) — editor, Teach, Review pills, freeze skip, hint skip, rule guards, Quick check, search, XML/export, /v1 —
+each decides alone; a new type/attribute = N hand edits with nothing enumerating them.
+**Refactor (targeted, one axis — YES):** (A) ONE field-type registry `shared/fieldTypes.js` + a Python twin (or one JSON both read):
+per type — label/tip · teach mode (box / caption / none) · Review widget (input / pills / picker) · Quick-check widget ·
+`alwaysPresent` (a schema field gets a row/column even when read empty = the Quick-check fix) · variable (never freezes) · role
+eligibility · learnable by hint/anchor/rule · search/export/XML shape (joined vs per element) · strict for trust · validation
+pattern; every `=== 'list'` site becomes a registry read. (B) an EXHAUSTIVENESS test generated from the registry: every surface ×
+every type must have an explicit branch (no silent default) and "which fields exist" comes from the schema everywhere — the
+mechanism `test_settings_wiring.js` already is for switches; `test_doctype_surface_parity.js` (RED, ignored) goes green inside it.
+**Not covered / other axes:** roles are already one predicate (`isStructuralKey`) — the 08-27 required-flag bug was a WRITER not
+asserting an invariant (fixed: one writer + a startup assert); switches have the wiring pin. Rule: one definition, consumers read
+it, an enumeration test that fails on a missing branch — per axis, never a whole-app rewrite. **Size:** one focused session;
+gate = realdoc byte-identical (no read changes) + UI pins + the Quick-check serial column as the first red→green.
+
 ## 2026-08-27 — HELP SYSTEM REBUILD (owner-vet: eleven decisions; plan written, NOTHING built)
 Plan: `docs/designs/HELP_SYSTEM_REBUILD_PLAN_2026-08-27.md` (`a9256dd`) — gap map of the 12 current help pages (stale claims with
 file:line, zero-coverage list, dead deep links), a teach-first architecture A0–G3 (teach-then-import is the recommended route), a
@@ -117,9 +136,9 @@ overlay instead of drawing (the inventory has the boxes). Size ≈ engine 40 lin
   `extractions.anchor_label` is never set for a keyword read); (f) search/export per element (barry).
   **Found by the evening gates + Chris r8 (2026-08-27) — NOT built, owner vet queue:**
   (g) **BUILT DARK 2026-08-27 (night) — `ocr_light_text_recovery` / `OCR_LIGHT_TEXT_RECOVERY`** (oscar recipe + 007 geometry;
-  recipe sweep: a FIXED global threshold 200 recovers all four serial words with 0 debris on 9 controls while every mean-offset
-  adaptive variant misses or garbles a serial and the paper-relative fallback finds 1 word; rows-first placement with a frozen
-  `med_h`; exhibit through the product code: 0 OFF lines lost, `Serial No: CT-8051702` its own line). FLIP conditions live in
+  recipe: FOUR threshold levels {200,210,220,230} merged per spot, a digit string needs two agreeing levels — a single level
+  (200) won the sandbox sweep but read 1 of 7 serials on the owner's own scans; the union reads all ten values on four exhibits;
+  rows-first placement with a frozen `med_h`; the real pipeline fills `serial_number` on the owner's docs 11/13/1504). FLIP conditions live in
   the night handover: the corroboration common-mode exclusion (a light-line keyword read is not an independent family), the
   `documents.ocr_text` Reprocess cache (a flip heals nothing until re-OCR), the VAT-reg footer relying on `VAT_REG_NOT_AMOUNT`.
   Original finding kept below for the record. **OCR TEXT-LOSS ARC (blocks the serial feature on SCANS):** the stored page text of the scanned Castellan worksheets has NO
