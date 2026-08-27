@@ -715,6 +715,7 @@
   <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
   <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M19 14l.8 2 .2.8.8.2 2 .8-2 .8-.8.2-.2.8-.8 2-.8-2-.2-.8-2-.8 2-.8.8-.2.2-.8z"/></symbol>
+  <symbol id="i-export" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></symbol>
 </svg>
 
 <div id="app">
@@ -767,6 +768,9 @@
       </button>
       <button class="rail-item" id="btn-teach" data-help-key="teach">
         <svg class="ico" aria-hidden="true"><use href="#i-teach"/></svg><span>Teach</span>
+      </button>
+      <button class="rail-item" id="btn-export" data-help-key="export">
+        <svg class="ico" aria-hidden="true"><use href="#i-export"/></svg><span>Export</span>
       </button>
       <button class="rail-item" id="btn-settings" data-help-key="settings">
         <svg class="ico" aria-hidden="true"><use href="#i-settings"/></svg><span>Settings</span>
@@ -997,6 +1001,18 @@
               <div class="backup-body" id="dash-backup-body">&hellip;</div>
               <button class="dash-btn" id="dash-backup-now">
                 Back up now <svg class="ico ico-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+              </button>
+            </div>
+
+            <!-- Export data (admin only) -->
+            <div class="dash-card" id="dash-export" data-help-key="export" style="display:none;">
+              <div class="dash-card-head">
+                <svg class="ico ico-sm" aria-hidden="true"><use href="#i-export"/></svg>
+                <span>Export data</span>
+              </div>
+              <div class="dash-export-body" id="dash-export-body">Pull your filed documents into a spreadsheet — pick suppliers, types and fields, then save as a CSV (for Excel, accounts software or a database) or JSON.</div>
+              <button class="dash-btn primary" id="dash-export-now">
+                Export data <svg class="ico ico-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg>
               </button>
             </div>
 

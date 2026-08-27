@@ -122,6 +122,11 @@ contextBridge.exposeInMainWorld('docusnap', {
   onNavigateToSection:          (cb)         => ipcRenderer.on('navigate-to-section', (_e, s) => cb(s)),
   openSearchWindow:    (q)      => ipcRenderer.send('open-search-window', q),
   openSearchWindowAt:  (view)   => ipcRenderer.send('open-search-window-at', view),
+  openExportWindow:    ()       => ipcRenderer.send('open-export-window'),
+  // Export-data window IPC (admin; read-only pull of confirmed doc data)
+  exportOptions:       ()        => ipcRenderer.invoke('export-options'),
+  exportPreview:       (payload) => ipcRenderer.invoke('export-preview', payload),
+  exportRun:           (payload) => ipcRenderer.invoke('export-run', payload),
   getSearchTarget:     ()       => ipcRenderer.invoke('get-search-target'),
   getSearchViewTarget: ()       => ipcRenderer.invoke('get-search-view-target'),
   onSearchSetQuery:    (cb)     => ipcRenderer.on('search-set-query', (_e, q) => cb(q)),

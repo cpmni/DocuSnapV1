@@ -105,6 +105,7 @@ const apiModule            = require('./modules/api/handler');
 const workflowModule       = require('./modules/workflow/handler');
 const tutorialModule       = require('./modules/tutorial/handler');
 const printModule          = require('./modules/print/handler');
+const exportModule         = require('./modules/export/handler');
 
 // ── DB ────────────────────────────────────────────────────────────────────────
 let _db = null;
@@ -499,8 +500,8 @@ function launchStartupWindow() {
 // click its toolbar button to bring it back. Non-modal keeps the main window usable, and
 // createWindow() already restores + focuses the existing window when its button is clicked
 // again. (A future window can still opt INTO modal by being a CHILD_WINDOW not listed here.)
-const CHILD_WINDOWS   = new Set(['review', 'settings', 'search', 'teach', 'dev-inspector', 'welcome', 'tutorial', 'stamped-viewer']);
-const NON_MODAL_CHILD = new Set(['dev-inspector', 'review', 'settings', 'search', 'teach', 'welcome', 'tutorial', 'stamped-viewer']);
+const CHILD_WINDOWS   = new Set(['review', 'settings', 'search', 'teach', 'export', 'dev-inspector', 'welcome', 'tutorial', 'stamped-viewer']);
+const NON_MODAL_CHILD = new Set(['dev-inspector', 'review', 'settings', 'search', 'teach', 'export', 'welcome', 'tutorial', 'stamped-viewer']);
 // Top-level "primary" windows that hide to the tray on a user close (the app then
 // fully quits ONLY via tray Exit). Their programmatic transitions destroy them
 // via destroyWindow(). Child windows close normally.
@@ -525,7 +526,7 @@ const PRIMARY_WINDOWS = new Set(['login', 'license', 'onboarding', 'main']);
 // Kill switch: CHILD_DOCK=0 restores the old minimizable:false behaviour exactly.
 const CHILD_DOCK_TITLES = {
   'review': 'Review', 'settings': 'Settings', 'search': 'Search',
-  'teach': 'Teach a document', 'dev-inspector': 'Dev inspector',
+  'teach': 'Teach a document', 'export': 'Export data', 'dev-inspector': 'Dev inspector',
   'welcome': 'Welcome', 'tutorial': 'Practice run', 'stamped-viewer': 'Stamped copy',
 };
 const dockedChildren = new Set();
@@ -1410,6 +1411,7 @@ app.whenReady().then(() => {
   // print-available). Kill switch: setting printing_enabled (default OFF). See
   // modules/print/handler.js.
   printModule.register(ctx);
+  exportModule.register(ctx);
   tutorialModule.register(ctx);
 
   // Diagnostics lifecycle (all gated on consent INSIDE telemetry → inert until opt-in;
@@ -1818,6 +1820,13 @@ app.whenReady().then(() => {
     const v = pendingSearchView;
     pendingSearchView = null;
     return v;
+  });
+
+  // Export-data window (Home → "Export data"). Admin-only — a bulk egress of business
+  // data, matching the settings-backup / audit-log exporters. Non-modal child.
+  ipcMain.on('open-export-window', () => {
+    if (!authModule.hasRole('admin')) return;
+    createWindow('export', { width: 1120, height: 780, minWidth: 900, minHeight: 600 });
   });
 
   // All IPC handlers are registered — now serialize the startup windows: the

@@ -1331,6 +1331,14 @@ document.getElementById('btn-search')?.addEventListener('click', () => {
   window.docusnap.openSearchWindow();
 });
 
+// ── Export button (nav rail + Home "Export data" card) ─────────────────────────
+document.getElementById('btn-export')?.addEventListener('click', () => {
+  window.docusnap.openExportWindow();
+});
+document.getElementById('dash-export-now')?.addEventListener('click', () => {
+  window.docusnap.openExportWindow();
+});
+
 // Processing mode (Fast/Smart) was collapsed to a single mode — the two were identical
 // after the AI-mode removal — so the topbar mode badge and the "Switch to Fast Mode?"
 // suggestion toast are gone. The backend still stores `processing_mode` (default 'smart')
@@ -1560,6 +1568,13 @@ function applyCurrentUser(user) {
   // silent dead control).
   const btnOpenOut = document.getElementById('dash-open-output');
   if (btnOpenOut) btnOpenOut.style.display = (user.role === 'readonly') ? 'none' : '';
+  // Export is a bulk egress of business data — Admin only, like Settings/Backup
+  // (the open-export-window IPC + every export IPC enforce admin server-side; the
+  // nav item + Home card start hidden and are revealed here so the chrome is honest).
+  const btnExportNav = document.getElementById('btn-export');
+  if (btnExportNav) btnExportNav.style.display = (user.role === 'admin') ? '' : 'none';
+  const dashExport = document.getElementById('dash-export');
+  if (dashExport) dashExport.style.display = (user.role === 'admin') ? '' : 'none';
   refreshDashboard();   // reflect role in the dashboard's Open Review visibility
 }
 
