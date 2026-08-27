@@ -166,6 +166,10 @@ overlay instead of drawing (the inventory has the boxes). Size ≈ engine 40 lin
   collector is per-line label→value); no count witness; search indexes the joined string (no per-element snippet);
   chips UI + long-format CSV export + repeated `<Value>` XML elements (barry). Tonight shipped only the `;`
   separator refusal at the writer + the renderer split narrowed to `;`.
+- **MEMORY INVENTORY click-to-browse — BUILT 2026-08-27 night2 (`d2cf9fe`):** Settings → Learning is now a READ-ONLY
+  click-to-browse scope list → detail (reuses `learning-scopes {suspects:false}` + `get-learning-recovery`); the typed
+  search + cleanup tools + raw table are preserved under an "Advanced" disclosure; deep-link `rpOpenScope` into Repair.
+  See `HANDOVER_2026-08-27_NIGHT2.md`. STILL DEFERRED = the v2 sections below.
 - **Learning Repair v2 LATER sections (barry, Oracle-trimmed):** the remembered-values editor (dominant/hints/
   corrections per field with rename/forget via the existing Review IPCs; the sender name ONLY through
   `renameSupplier`), the layouts canvas (reuse `redrawTplCanvas` read-only + "Fix where it reads" deep-link to the
@@ -178,8 +182,10 @@ overlay instead of drawing (the inventory has the boxes). Size ≈ engine 40 lin
   must — every peer does it; invisible-text overlay via pypdf from the `image_to_data` word boxes; owner Q: may the
   filed PDF differ from the original bytes, given originals are kept?) · 2 barcode (built A+B tonight) · 3 exact-
   duplicate skip at import (SHA-256 of the original bytes; L1 quick win; stops `-DUPLICATE` breeding) · 4 export /
-  accountant pack (CSV of a search's fields + copy-the-PDFs; saved search on Home; owner Q: Xero/Sage/QuickBooks
-  column set) · 5 supplier/customer LIST IMPORT as a witness (seeds the gazetteer + identifier registry day one;
+  accountant pack — **the EXPORT TOOL is BUILT 2026-08-27 night2 (`ce4c7f5`): Home → Export data → suppliers/types/
+  fields → CSV (BOM, formula-safe) / real .xlsx (dependency-free `src/lib/xlsxWriter.js`, inlineStr = reference numbers
+  survive) / JSON. STILL DEFERRED: column presets (owner Q: Xero/Sage/QuickBooks column maps), copy-the-PDFs alongside,
+  List long-format (one row per element).** · 5 supplier/customer LIST IMPORT as a witness (seeds the gazetteer + identifier registry day one;
   a list match is a witness never a trump) · 6 LIST finish. Rejected/deferred with reasons in the round notes:
   email-in, print driver (Send-To shortcut + drag-drop instead), tags, retention, handwriting, TWAIN.
 

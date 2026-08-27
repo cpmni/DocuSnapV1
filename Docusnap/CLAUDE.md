@@ -21,8 +21,17 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-27 NIGHT: **READ `HANDOVER_2026-08-27_NIGHT.md` FIRST — its §7 is the OWNER'S NIGHT PROMPT (export
-feature + memory-inventory rebuild) to run next, after closing the light-text realdoc gate (§3).**
+## ⏭ LATEST — 2026-08-27 NIGHT2: **READ `HANDOVER_2026-08-27_NIGHT2.md` FIRST.** The owner's §7 night prompt is BUILT —
+2 commits `ce4c7f5` (EXPORT: Home "Export data" → CSV/`.xlsx`/JSON of confirmed doc data; new dependency-free
+`src/lib/xlsxWriter.js` so the 4-dep tree + licence gate stay untouched) + `d2cf9fe` (MEMORY INVENTORY: Settings →
+Learning is now READ-ONLY click-to-browse, typed tools preserved under "Advanced"), NOT pushed. barry+bob+eric → Oracle
+SIGN-OFF-W/COND, all conditions applied; 4 pins green. **OWNER MORNING: (1) log back in — I accidentally killed the live
+app with a broad `Stop-Process -Name electron` and RESTARTED it on 9222 (now on this code + the 3 pending fixes);
+(2) OPEN A REAL `.xlsx` IN EXCEL — the hand-rolled writer's pin is a Node unzip that does NOT certify Excel; (3) render-
+smoke both screens (I couldn't drive past the live login).** Deferred (`pendingfeatures.md`): export presets/PDF-copy/
+long-format; the Learning Repair v2 editor+canvas. Prior:
+## (previous) 2026-08-27 NIGHT: **`HANDOVER_2026-08-27_NIGHT.md` — its §7 was the OWNER'S NIGHT PROMPT (export
+feature + memory-inventory rebuild), now BUILT above; §3 light-text realdoc gate still open.**
 Branch `feat/teach-side-overnight`, 14 code commits `48de395` … `a62edbd` (+ docs), NOT pushed. **Live app RUNNING on CDP 9222
 on `5b4bf27` (mig 92 applied 20:26; owner turned `ocr_light_text_recovery` ON ~20:45) — the last three main-process fixes need a
 restart; Chris sandbox 9223 DOWN.** Late finds: **Gate-C v2 never saw the sender** (`5f66276`; the gate ran before
