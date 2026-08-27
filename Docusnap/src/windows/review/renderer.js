@@ -753,15 +753,19 @@ function _asRenderPanel() {
       ? `<div class="ap-sub">${senders.sort((a, b) => b[1] - a[1]).map(([k, v]) => `${escHtml(k)} ${v}`).join(' · ')}</div>` : '';
     const kept = (ev.dropped || []).length
       ? `<div class="ap-kept">${(ev.dropped || []).slice(0, 8).map(d => `kept back — ${escHtml(typeof _sweepReason === 'function' ? _sweepReason(d.reason) : d.reason)} (#${d.docId})`).join('<br>')}${(ev.dropped || []).length > 8 ? `<br>… and ${(ev.dropped || []).length - 8} more` : ''}</div>` : '';
-    const undo = ev.undoable ? `<button type="button" class="ap-btn" data-ap="undo" data-ev="${ev.id}" title="Puts these documents back in Review. ${_putBackBody(ev)}">Put back</button>` : '';
-    const see = Number(ev.count) ? `<button type="button" class="ap-btn primary" data-ap="see" data-ev="${ev.id}">See them</button>` : '';
+    // THREE FIXED SLOTS (owner 2026-08-27): [Put back | See them | Quick check]. A slot the row lacks renders an
+    // INVISIBLE placeholder of the SAME element and label (so the same width) — the permanent two never slide and
+    // every row's columns line up (index.html .ap-actions grid / .ap-ghost).
+    const _apGhost = (label) => `<button type="button" class="ap-btn ap-ghost" disabled tabindex="-1" aria-hidden="true">${label}</button>`;
+    const undo = ev.undoable ? `<button type="button" class="ap-btn" data-ap="undo" data-ev="${ev.id}" title="Puts these documents back in Review. ${_putBackBody(ev)}">Put back</button>` : _apGhost('Put back');
+    const see = Number(ev.count) ? `<button type="button" class="ap-btn primary" data-ap="see" data-ev="${ev.id}">See them</button>` : _apGhost('See them');
     // Batch-audit "Quick check" (2026-08-24, DARK batch_audit_enabled): on any FILED batch — auto-filed,
     // self-filed, OR human-approved (File All / File N / a run of individual Confirm & File, which the
     // ledger merges into one approved|bulk chip). Catching a wrong value right after rapid confirming is
     // the point (owner). Only while a doc is still around to check; opens the grid at THIS event id.
     const qcheck = (_baOn && (ev.kind === 'auto_filed' || ev.kind === 'self_filed' || ev.kind === 'approved') && Number(ev.count))
-      ? `<button type="button" class="ap-btn" data-ap="qcheck" data-ev="${ev.id}" title="Open these filed documents in a grid to spot-check the read values and correct any mistakes.">Quick check</button>` : '';
-    return `<div class="ap-row"><div class="ap-head"><span class="ap-when">${escHtml(_asRelTime(ev.at))}</span><span class="ap-line">${_asIcon(ev)} ${_asLineFull(ev)}</span><span class="ap-actions">${see}${qcheck}${undo}</span></div>${by}${kept}</div>`;
+      ? `<button type="button" class="ap-btn" data-ap="qcheck" data-ev="${ev.id}" title="Open these filed documents in a grid to spot-check the read values and correct any mistakes.">Quick check</button>` : _apGhost('Quick check');
+    return `<div class="ap-row"><div class="ap-head"><span class="ap-when">${escHtml(_asRelTime(ev.at))}</span><span class="ap-line">${_asIcon(ev)} ${_asLineFull(ev)}</span><span class="ap-actions">${undo}${see}${qcheck}</span></div>${by}${kept}</div>`;
   }).join('');
   panel.classList.add('open');
 }

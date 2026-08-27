@@ -306,8 +306,12 @@
     .ap-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
     .ap-when { color: var(--muted); font-size: 11px; }
     .ap-line { flex: 1 1 auto; min-width: 0; }
-    .ap-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    /* THREE FIXED SLOTS (owner 2026-08-27: "give each button its own column with the permanent ones to the right"):
+       [Put back | See them | Quick check]. A row that lacks a button renders an INVISIBLE placeholder of the same
+       element and label in that slot, so the permanent two never slide and every row's columns line up. */
+    .ap-actions { display: grid; grid-template-columns: repeat(3, max-content); gap: 6px; flex-shrink: 0; align-items: center; }
     .ap-btn { padding: 2px 9px; font-size: 11px; border: 1px solid var(--border2); border-radius: var(--r-sm); background: var(--surface2); color: var(--text); cursor: pointer; }
+    .ap-btn.ap-ghost { visibility: hidden; pointer-events: none; }
     .ap-btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
     .ap-btn[disabled] { opacity: .5; cursor: default; }
     .ap-sub { margin-top: 3px; font-size: 11px; color: var(--muted); }
