@@ -31,5 +31,15 @@ check("3. 'See them' falls back to its ghost", /: _apGhost\('See them'\);/.test(
 check("3. 'Quick check' falls back to its ghost", /: _apGhost\('Quick check'\);/.test(js));
 check('3. no slot falls back to an empty string any more', !/data-ap="see"[^\n]*\n?[^\n]*: '';/.test(js));
 
+console.log('\n4. distinct sections (owner: "no real formatting on the text")');
+check('4. a row is a [time | body | actions] grid', /\.ap-row \{[^}]*display: grid;[^}]*grid-template-columns: 78px minmax\(0, 1fr\) auto/.test(html));
+check('4. the time is a small mono column', /\.ap-when \{[^}]*font-family: var\(--mono\)/.test(html));
+check('4. the headline is split into WHAT (bold) and WHY (muted) at the first dash', /const _full = _asLineFull\(ev\), _cut = _full\.indexOf\(' — '\);/.test(js) && /\.ap-what \{ font-weight: 600; \}/.test(html) && /\.ap-why \{ color: var\(--muted\)/.test(html));
+check('4. the headline icon carries the strip\'s colour class', /<span class="ap-ico \$\{_asIconClass\(ev\)\}">\$\{_asIcon\(ev\)\}<\/span>/.test(js) && /\.ap-line \.ap-ico\.filed \{ color: var\(--ok\); \}/.test(html));
+check('4. sender counts render as chips with a bold count', /<span class="ap-chip">\$\{escHtml\(k\)\} <b>\$\{v\}<\/b><\/span>/.test(js) && /\.ap-chip \{[^}]*border-radius: var\(--r-pill\)/.test(html));
+check('4. kept-back is an amber-barred note', /\.ap-kept \{[^}]*border-left: 2px solid var\(--warn\)/.test(html));
+check('4. the row markup is time / body(line, chips, kept) / actions', /<div class="ap-row"><div class="ap-when">[\s\S]*?<\/div><div class="ap-body"><div class="ap-line">\$\{line\}<\/div>\$\{by\}\$\{kept\}<\/div><span class="ap-actions">/.test(js));
+check('4. no theme-foreign colour literals in the panel styles', !/\.ap-(row|when|line|what|why|chip|kept|sub) \{[^}]*#[0-9a-f]{3,6}/i.test(html));
+
 console.log(fails ? `\n${fails} FAILED` : '\nAll activity-actions column pins passed');
 process.exit(fails ? 1 : 0);

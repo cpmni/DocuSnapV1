@@ -749,10 +749,17 @@ function _asRenderPanel() {
     // A zero-filed File All merges a placeholder ('—': 0) sender: drop empty/placeholder rows so the
     // breakdown only ever names real recipients.
     const senders = ev.bySender ? Object.entries(ev.bySender).filter(([k, v]) => k && k !== '—' && Number(v) > 0) : [];
+    // DISTINCT SECTIONS (owner 2026-08-27: "no real formatting on the text — make each section distinctive"): the
+    // sender counts are CHIPS (name + bold count), not a dot-joined sentence.
     const by = senders.length
-      ? `<div class="ap-sub">${senders.sort((a, b) => b[1] - a[1]).map(([k, v]) => `${escHtml(k)} ${v}`).join(' · ')}</div>` : '';
+      ? `<div class="ap-sub">${senders.sort((a, b) => b[1] - a[1]).map(([k, v]) => `<span class="ap-chip">${escHtml(k)} <b>${v}</b></span>`).join('')}</div>` : '';
     const kept = (ev.dropped || []).length
       ? `<div class="ap-kept">${(ev.dropped || []).slice(0, 8).map(d => `kept back — ${escHtml(typeof _sweepReason === 'function' ? _sweepReason(d.reason) : d.reason)} (#${d.docId})`).join('<br>')}${(ev.dropped || []).length > 8 ? `<br>… and ${(ev.dropped || []).length - 8} more` : ''}</div>` : '';
+    // The headline splits at its first " — " into WHAT happened (bold) and WHY (muted): "2 documents from X filed
+    // themselves" / "— they matched what you've confirmed". A put-back note appended by _asLineFull rides the WHY.
+    const _full = _asLineFull(ev), _cut = _full.indexOf(' — ');
+    const what = _cut < 0 ? _full : _full.slice(0, _cut), why = _cut < 0 ? '' : _full.slice(_cut);
+    const line = `<span class="ap-ico ${_asIconClass(ev)}">${_asIcon(ev)}</span> <span class="ap-what">${what}</span>${why ? `<span class="ap-why">${why}</span>` : ''}`;
     // THREE FIXED SLOTS (owner 2026-08-27): [Put back | See them | Quick check]. A slot the row lacks renders an
     // INVISIBLE placeholder of the SAME element and label (so the same width) — the permanent two never slide and
     // every row's columns line up (index.html .ap-actions grid / .ap-ghost).
@@ -765,7 +772,8 @@ function _asRenderPanel() {
     // the point (owner). Only while a doc is still around to check; opens the grid at THIS event id.
     const qcheck = (_baOn && (ev.kind === 'auto_filed' || ev.kind === 'self_filed' || ev.kind === 'approved') && Number(ev.count))
       ? `<button type="button" class="ap-btn" data-ap="qcheck" data-ev="${ev.id}" title="Open these filed documents in a grid to spot-check the read values and correct any mistakes.">Quick check</button>` : _apGhost('Quick check');
-    return `<div class="ap-row"><div class="ap-head"><span class="ap-when">${escHtml(_asRelTime(ev.at))}</span><span class="ap-line">${_asIcon(ev)} ${_asLineFull(ev)}</span><span class="ap-actions">${undo}${see}${qcheck}</span></div>${by}${kept}</div>`;
+    // Row = a 3-column grid: [time | headline + chips + kept-back | actions] (index.html .ap-row).
+    return `<div class="ap-row"><div class="ap-when">${escHtml(_asRelTime(ev.at))}</div><div class="ap-body"><div class="ap-line">${line}</div>${by}${kept}</div><span class="ap-actions">${undo}${see}${qcheck}</span></div>`;
   }).join('');
   panel.classList.add('open');
 }

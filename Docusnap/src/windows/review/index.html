@@ -301,11 +301,24 @@
     .ap-close { position: absolute; top: 6px; right: 8px; width: 24px; height: 24px; line-height: 22px; text-align: center; font-size: 14px;
       border: 1px solid var(--border2); border-radius: var(--r-sm); background: var(--surface2); color: var(--muted); cursor: pointer; }
     .ap-close:hover { border-color: var(--accent); color: var(--text); }
-    .ap-row { padding: 6px 0; border-top: 1px solid var(--border); }
+    /* DISTINCT SECTIONS (owner 2026-08-27: "there is no real formatting on the text — make each section distinctive"):
+       a row is [time | headline + sender chips + kept-back note | actions]. Time = small mono column; headline =
+       WHAT happened in bold with the WHY after the dash in muted; senders = pills with a bold count; kept-back =
+       an amber-barred note. Every colour is a theme token. */
+    .ap-row { display: grid; grid-template-columns: 78px minmax(0, 1fr) auto; gap: 2px 12px; align-items: start; padding: 9px 0; border-top: 1px solid var(--border); }
     .ap-row:first-child { border-top: 0; }
-    .ap-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-    .ap-when { color: var(--muted); font-size: 11px; }
-    .ap-line { flex: 1 1 auto; min-width: 0; }
+    .ap-when { color: var(--muted); font-size: 11px; font-family: var(--mono); white-space: nowrap; padding-top: 3px; }
+    .ap-body { min-width: 0; }
+    .ap-line { font-size: 13px; line-height: 1.35; color: var(--text); }
+    .ap-line .ap-ico { font-weight: 700; margin-right: 2px; }
+    .ap-line .ap-ico.filed { color: var(--ok); }
+    .ap-line .ap-ico.putback { color: var(--warn); }
+    .ap-line .ap-ico.fix { color: var(--accent); }
+    .ap-what { font-weight: 600; }
+    .ap-why { color: var(--muted); font-weight: 400; }
+    .ap-chip { display: inline-block; padding: 1px 8px; font-size: 11px; color: var(--muted); background: var(--surface2);
+      border: 1px solid var(--border); border-radius: var(--r-pill); white-space: nowrap; line-height: 1.5; }
+    .ap-chip b { color: var(--text); font-weight: 600; margin-left: 1px; }
     /* THREE FIXED SLOTS (owner 2026-08-27: "give each button its own column with the permanent ones to the right"):
        [Put back | See them | Quick check]. A row that lacks a button renders an INVISIBLE placeholder of the same
        element and label in that slot, so the permanent two never slide and every row's columns line up. */
@@ -314,8 +327,8 @@
     .ap-btn.ap-ghost { visibility: hidden; pointer-events: none; }
     .ap-btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
     .ap-btn[disabled] { opacity: .5; cursor: default; }
-    .ap-sub { margin-top: 3px; font-size: 11px; color: var(--muted); }
-    .ap-kept { margin-top: 3px; font-size: 11px; color: var(--warn); }
+    .ap-sub { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 4px 5px; }
+    .ap-kept { margin-top: 6px; font-size: 11px; color: var(--warn); border-left: 2px solid var(--warn); padding-left: 8px; line-height: 1.45; }
     /* Mark Reviewed floats at the top-left of the preview pane. Anchored to
        #doc-panel (which does NOT scroll — only #doc-viewer does), so it stays
        put while the document image scrolls beneath it. Shown only for flagged
