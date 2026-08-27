@@ -2207,9 +2207,14 @@ fixture admitted + matches its own PO under ON, never claims the inbound paper; 
 HITS not the guard; the empty-band trade-off (guard admits, honour path declines) — `test_buyer_issued_letterhead_scope.py`
 43/43; JS §4 28/28 (`test_buyer_issued_scope.js`); `test_identity_on_page.py` unchanged green. (3) arm C = the live-DB
 arm: the owner's DB holds exactly ONE PO-ref template (t8 Bramblewood, config A, 113 bound confirmed docs, already
-marked) — realdoc OFF vs ON running (`rr_lh_*`; numbers in the 08-27 DAY handover). (4) refactor gate — 0 fingerprint
+marked) — realdoc OFF vs ON **MET: byte-identical on all 1242 docs** (would-file 1168→1168, 0 wrong gained, 0 supplier
+changes, per-template counts identical incl. t8 113→113; both arms type 100 / supplier 99.8 / ref 99.0 / date 99.0 / total
+100; regressions 28/26 silent = pre-existing) — `rr_lh_*`, diff `TESTING/_measure/r6fix_20260827/rr_diff_lh.js`. (4) refactor gate — 0 fingerprint
 diffs across 1242 confirmed docs (`fp_gate_census.py`). (5) empty-band census — 0 empty bands, 0 below 0.75 among the
-113 PO docs. (6) fired path on a fresh Chris sandbox with the switch ON — owed (next Chris round). (7) next slice:
+113 PO docs. (6) fired path on a fresh Chris sandbox with the switch ON — **MET** (round 7, DB-verified): after the same Bramblewood
+teach the lane job selected nobody (`done_ids ""` vs round 6 `"4,2"`); two Reprocess presses on the Oakhaven note + the
+Castellan/Meadowvale confirms show a BLANK supplier before the human typed it (`raw_value null`, `original_value ""`) — no
+`template_fixed` stamp; IMPORT 200 → 21 Bramblewood-badged docs = the 21 Quillstone POs, 0 inbound docs on the PO template. (7) next slice:
 surface `sticky_binding_declined` as a review note ("This layout's letterhead isn't on this page") — pendingfeatures.
 **Residuals named (gary):** the mark seam (outbound non-PO layouts unprotected); the logo arm's whole-page text gate on a
 phash collision; band OCR variance across siblings (→ Review, never a wrong company).

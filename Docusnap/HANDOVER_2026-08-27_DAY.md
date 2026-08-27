@@ -1,7 +1,7 @@
 # HANDOVER — 2026-08-27 DAY (Chris round 6 fixes: cards 1/3/5/6/7 built, card 2 verified)
 
-**Branch** `feat/teach-side-overnight` · resumed from `HANDOVER_2026-08-27_MORNING.md` (HEAD `6787291`, 7 commits ahead of
-origin, NOT pushed — owner reviews then pushes). Owner's instruction this session: "read the handover and continue … continue
+**Branch** `feat/teach-side-overnight` · resumed from `HANDOVER_2026-08-27_MORNING.md` (`6787291`) · **this session's code
+commit `d6c1f17`** (+ the docs commits that follow it) · 8+ commits ahead of origin, NOT pushed — owner reviews then pushes. Owner's instruction this session: "read the handover and continue … continue
 with chris's fixes". Every behaviour change is DARK (default OFF); every card's fix is pinned; the advisor→Oracle gate ran on
 the one detection arc. **Nothing was flipped on the live DB. The live app is still the 21:02 (08-26) instance** — DB at
 migration **87**, so a restart applies 88–91 (all inert until a switch is on).
@@ -67,5 +67,28 @@ Settings → Processing row "Only recognise a purchase-order layout you send out
   `reprocess_manifest`) **+ `test_buyer_issued_letterhead_scope.py` caught MID-EDIT by the detached run (version skew: its BAD line was
   the §8 check corrected two minutes later; re-run 43/43)**; **pytest 307 passed / 1 failed = the documented `test_identity_fusion`**.
   ZERO new reds.
-- Realdoc OFF vs ON (`stress_test/out/rr_lh_{off,on}.md`, diff `TESTING/_measure/r6fix_20260827/rr_diff_lh.js`): _pending_
-- Fired-path Chris round: _pending_
+- **Realdoc OFF vs ON — BYTE-IDENTICAL on all 1242 docs** (`RR_APP_ENV=1`, 99 app vars mirrored, the owner's live DB = the
+  Oracle's "arm C" since its only PO-ref template is already marked; 09:40–11:10; `stress_test/out/rr_lh_{off,on}.{md,jsonl}`,
+  diff `TESTING/_measure/r6fix_20260827/rr_diff_lh.js`): identical 1242 / changed 0 · would-file **1168 → 1168** (gained –, lost –)
+  · wrong values gained on ref/date **0** · supplier changed **0** · supplier method changed **0** · per-template match counts
+  differing **none** (Bramblewood t8: 113 → 113) · both arms: type 100.0 %, supplier 99.8 % (1240/1242), ref 99.0 %, date
+  99.0 %, total 100.0 %; regressions 28 / 26 silent = the known pre-existing classes (Harrowgate GT-poison #31–48, #331, #1092…).
+  → Oracle conditions 3 + 5 met: the owner's own POs keep every recognition; nothing else moves.
+- **Fired path (Oracle condition 6) — MET on the real pipeline** (fresh sandbox, every switch armed incl.
+  `template_buyer_issued_letterhead_scope`; Chris round 7, verified from the sandbox DB `probe_r7*.out`): Chris re-taught the
+  Bramblewood PO exactly as in round 6 (09:14:58 → template 1 `buyer_issued=1`). The quiet-lane job for Bramblewood/purchase_order
+  8 s later selected **nobody** (`done_ids ""` — round 6: `"4,2"`). He pressed Reprocess on the Oakhaven delivery note TWICE
+  (09:20, 09:24) and on the Castellan worksheet: the supplier stayed **blank** (`corrections.original_value ""` → his typed
+  sender; `extractions.raw_value null`, method `manual`) — round 6 had `raw_value "Bramblewood Joinery Ltd" @95 template_fixed`
+  on all three. Then IMPORT (200): **21 docs badged Bramblewood = the 21 Quillstone POs (Bramblewood letterhead), all template 1
+  / purchase_order; 0 inbound documents bound to template 1; 0 supplier rows reading Bramblewood on a non-Quillstone paper.**
+  **Chris's narrative is MISSING: every Chris spawn today died on API/network errors (ENOTFOUND ×3, one lost transcript) —
+  the round-7 section in `docs/CHRIS_FULL_APP_REVIEW_2026-08-26.md` is MY verification (DB + read-only CDP), not his prose.**
+- **Live (CDP, read-only) verification of the other cards on the same sandbox** (`chris-driver\verify_r7.js`): **Card 3** —
+  the 200-doc IMPORT results table shows "Confirm to file →" on all 200 rows, zero "Ready to file" over a doc Review holds
+  (the "Date" garble class did not reproduce: Chris typed the Pelican values instead of drawing boxes). **Card 6** — the
+  "N more to file by itself" badge appears ONLY under the five senders confirmed today (each "2 more"); nothing under
+  Nordwind / Harrowgate / Veltrix / "Sender not identified" (0 confirms). **Card 2** — NOT reproducible on a fresh sandbox:
+  the round-6 mis-read came from "Remembered positions" of a taught Ironclad layout; here the Statement preset had to be added
+  first and the scan reads only customer + total. The remedy switch is ON on your live DB; the record-level verification stands.
+  **Card 7** — source-pinned only today (needs a human-driven interaction round).

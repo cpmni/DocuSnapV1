@@ -22,7 +22,8 @@ touches that area — read the pointed-to doc BEFORE working in it:
   ➜AN there). Read the matching block before changing one of those files.
 
 ## ⏭ LATEST — 2026-08-27 DAY (Chris round 6 fixes): **READ `HANDOVER_2026-08-27_DAY.md` FIRST**
-Branch `feat/teach-side-overnight`, resumed from `6787291` (7 commits ahead of origin, NOT pushed — owner reviews then pushes).
+Branch `feat/teach-side-overnight`, resumed from `6787291`; **code commit `d6c1f17`** (+ docs commits after it; 8+ commits
+ahead of origin, NOT pushed — owner reviews then pushes).
 Owner: "read the handover and continue … continue with chris's fixes". **Built + pinned (every behaviour change DARK):**
 **Card 1 HIGH** = a `buyer_issued` PO template (fingerprint = the OWNER's name+address) won the WHOLE-PAGE text arm at 7/9 on
 three other suppliers' papers (those words print in every BILL TO block; doc 6 untyped — "GOODS DELIVERY NOTE" is one extra
@@ -32,8 +33,10 @@ Reprocess) → **`template_buyer_issued_letterhead_scope`**: a marked template i
 `branding_fingerprint.headerBandText`) in `_match_by_keywords`, the rescue arm, the JS mirror (`findByKeywordFingerprint` →
 lane selector + wizard/graduation-link/reextract roads), plus a go-forward HEAL on the engine honour path
 (`sticky_binding_declined reason='letterhead'`). **Oracle SEND BACK → corrected:** `_identity_refuses` stays WHOLE-PAGE
-(configuration B — a PO taught with the counterparty as issuer — prints its identity below the band). Gates: refactor 0
-diffs/1242 docs; 0 empty bands / 0 <0.75 among the 113 PO docs; realdoc OFF/ON + Chris fired-path round → handover RESULTS.
+(configuration B — a PO taught with the counterparty as issuer — prints its identity below the band). Gates ALL MET: refactor 0
+diffs/1242 docs; 0 empty bands / 0 <0.75 among the 113 PO docs; **realdoc OFF vs ON byte-identical on 1242 docs (would-file
+1168→1168, 0 wrong gained, per-template counts identical)**; **fired path on a fresh Chris sandbox: the lane selected nobody
+(`done_ids ""` vs r6 `"4,2"`), Reprocess did not re-badge, IMPORT 200 → 0 inbound docs on the PO template** — flip = owner's call.
 **Card 3** the Import chip asks the ONE predicate (`review_hold`; engine `needs_review` = required-empty OR field<70 ≠
 `isAutoFileEligible`). **Card 5** no Use/Keep when the page vouches for neither value. **Card 6** no countdown at 0 confirms.
 **Card 7** stale verdict dropped on type/issuer change; Delete All → "Queue cleared — N in the recycle bin"; empty panel clears
