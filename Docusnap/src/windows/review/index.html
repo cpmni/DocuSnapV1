@@ -631,6 +631,9 @@
     .field-note.corrected { color: var(--muted); }
     /* Total reconciled against subtotal + tax/shipping/discount — a positive, green note. */
     .field-note.verified { color: var(--ok); }
+    /* Chris r6 card 5: neither the read nor the offered value is printed on the page — a plain
+       hint in place of the Use/Keep pair (no button for a value the page never vouched for). */
+    .field-note-hint { display: block; color: var(--muted); font-family: var(--sans); margin-top: 2px; }
     /* Two independent method families read the same value (owner principle 2026-08-11). */
     .field-note.corroborated { color: var(--ok); }
     .corrected-badge { display: inline-block; font-family: var(--sans); font-size: 9px;

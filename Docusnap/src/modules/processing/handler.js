@@ -180,6 +180,9 @@ function _reconcileEnv(db) {
     // (templates.markBuyerIssued), refused here in the TEXT arm only, and only against a trusted
     // title of a different type.
     if (learning.getSetting(db, 'template_buyer_issued_type_scope', 'false') === 'true') env.TEMPLATE_BUYER_ISSUED_TYPE_SCOPE = '1';
+    // Buyer-issued LETTERHEAD scope (2026-08-27, Chris r6 card 1): a marked template's text arms score the
+    // letterhead band only (template_matcher; the JS mirror in templates.js reads the same key directly).
+    if (learning.getSetting(db, 'template_buyer_issued_letterhead_scope', 'false') === 'true') env.TEMPLATE_BUYER_ISSUED_LETTERHEAD_SCOPE = '1';
     // Name lexicon from a LOW-DISTINCT scope (B5, 2026-08-13). format_anomaly_checker discarded
     // every name scope whose confirmed history is one or two DISTINCT values — measured as 33 of
     // 36 scopes on this install — so the shipped name repair was structurally inert exactly where
@@ -5441,6 +5444,24 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
     try { require('../../../database/modules/barcodes').replaceDocumentBarcodes(db, docId, msg.barcodes); }
     catch (e) { try { logger?.warn?.(`[barcodes] persist failed for doc ${docId}: ${e.message}`); } catch {} }
   }
+
+  // ONE CLASSIFIER FOR THE IMPORT TABLE (Chris round 6 card 3, 2026-08-27). The results row used
+  // to key its chip on the ENGINE's `needs_review` alone (validator.needs_review = a required field
+  // empty OR any field under its per-field threshold) — a NARROWER question than the filing
+  // predicate Review and File All ask (`trust.isAutoFileEligible`: a validation note, a pending
+  // corrected_to, the floor, put-back…). So 13 Pelican rows whose reference read as the word
+  // "Date" @70 with a "please verify" note said "Ready to file" while Review held every one of
+  // them ('flagged'). Ask the predicate over the rows just persisted and carry its verdict as a
+  // SEPARATE field: `needs_review` is left untouched (the T1 gate-unify seam above reads it), so
+  // this can only ever move a chip toward "Confirm to file", never toward "Ready". Best-effort —
+  // the row must never fail an import.
+  msg.review_hold = null;
+  try {
+    const trust = require('../../../database/modules/trust');
+    const row = documents.getById(db, docId);
+    const v = row ? trust.isAutoFileEligible(db, row) : null;
+    if (v && !v.eligible) msg.review_hold = v.reason || 'held';
+  } catch {}
 
   msg.db_id = docId;
 

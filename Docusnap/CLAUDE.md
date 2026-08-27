@@ -21,7 +21,28 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-27 MORNING (the autonomous overnight run): **READ `HANDOVER_2026-08-27_MORNING.md` FIRST**
+## ⏭ LATEST — 2026-08-27 DAY (Chris round 6 fixes): **READ `HANDOVER_2026-08-27_DAY.md` FIRST**
+Branch `feat/teach-side-overnight`, resumed from `6787291` (7 commits ahead of origin, NOT pushed — owner reviews then pushes).
+Owner: "read the handover and continue … continue with chris's fixes". **Built + pinned (every behaviour change DARK):**
+**Card 1 HIGH** = a `buyer_issued` PO template (fingerprint = the OWNER's name+address) won the WHOLE-PAGE text arm at 7/9 on
+three other suppliers' papers (those words print in every BILL TO block; doc 6 untyped — "GOODS DELIVERY NOTE" is one extra
+real word → no trusted heading → the type-scope guard had nothing to refuse on; roads = the quiet lane's kw selector + a single
+Reprocess) → **`template_buyer_issued_letterhead_scope`**: a marked template is recognised by TEXT only over the LETTERHEAD band
+(`template_matcher.header_band_text` = the fingerprint harvest's own truncation, ONE helper; JS twin
+`branding_fingerprint.headerBandText`) in `_match_by_keywords`, the rescue arm, the JS mirror (`findByKeywordFingerprint` →
+lane selector + wizard/graduation-link/reextract roads), plus a go-forward HEAL on the engine honour path
+(`sticky_binding_declined reason='letterhead'`). **Oracle SEND BACK → corrected:** `_identity_refuses` stays WHOLE-PAGE
+(configuration B — a PO taught with the counterparty as issuer — prints its identity below the band). Gates: refactor 0
+diffs/1242 docs; 0 empty bands / 0 <0.75 among the 113 PO docs; realdoc OFF/ON + Chris fired-path round → handover RESULTS.
+**Card 3** the Import chip asks the ONE predicate (`review_hold`; engine `needs_review` = required-empty OR field<70 ≠
+`isAutoFileEligible`). **Card 5** no Use/Keep when the page vouches for neither value. **Card 6** no countdown at 0 confirms.
+**Card 7** stale verdict dropped on type/issuer change; Delete All → "Queue cleared — N in the recycle bin"; empty panel clears
+⊕/Teach. **Card 2** verified: `trust_role_disagreement_refuse` is ON live, was OFF in his sandbox — no code. Pins:
+`test_chris_r6_ui_cards.js`, `test_buyer_issued_letterhead_scope.py` 43, `test_buyer_issued_scope.js` §4 (28), wiring rows.
+Live app still the 08-26 21:02 instance (DB at mig 87 → restart applies 88–91). **Traps:** quote `-File` paths inside the
+`Start-Process` argument; a dropped advisor resumes via SendMessage; a detached suite reads pins mid-edit (version-skew reds).
+
+## (previous) 2026-08-27 MORNING (the autonomous overnight run): `HANDOVER_2026-08-27_MORNING.md`
 Branch `feat/teach-side-overnight`, **HEAD `b0e94f4` (+ the handover docs commit), 7 commits LOCAL/NOT pushed** (owner reviews then pushes). Built while
 the owner slept, every switch DARK (default OFF), each advisor→Oracle→pins→gate: **(1) CLASS F** the general
 "corroboration clears a please-check note" rule (`corrob_verification_doubt_clear`; Oracle C1-C4 in code; **corpus gate

@@ -86,5 +86,89 @@ console.log('\n3. wiring');
         /template_buyer_issued_type_scope[\s\S]{0,80}TEMPLATE_BUYER_ISSUED_TYPE_SCOPE = '1'/.test(ph));
 }
 
+// ── 4. LETTERHEAD SCOPE — the JS mirror (2026-08-27, Chris round 6 card 1; gary → Oracle) ──────────
+// The same class through the JS keyword arm: the quiet lane's selector (arm c′) and the three
+// identifyByFingerprint roads (wizard save target, graduation link, reextract re-pin) scored a marked
+// template over the WHOLE page. With `template_buyer_issued_letterhead_scope` on, a marked row scores
+// over brandingFp.headerBandText only. Real sandbox texts; template 3's real fingerprint.
+console.log('\n4. letterhead scope — the JS keyword mirror (findByKeywordFingerprint / identifyByFingerprint)');
+{
+  const brandingFp = require('./branding_fingerprint');
+  const DOC6 = ['Oakhaven Electrical Wholesale', '19 Conduit Row · Ampfield, AM4 7GB · VAT Reg GB 660 1173 45',
+    'GOODS DELIVERY NOTE', 'Despatch Ref OED/29786', 'Delivery Date    22-01-2026', 'Your PO    PO-46500',
+    'CUSTOMER    DELIVER TO', 'Bramblewood Joinery Ltd    Bramblewood Joinery Ltd', 'Unit 4, Sawpit Lane    Unit 4, Sawpit Lane',
+    'Draymarket, DM2 6QF    Draymarket, DM2 6QF', 'Description    Qty'].join('\n');
+  const DOC7 = ['Bramblewood Joinery Ltd    PURCHASE ORDER', 'Unit 4, Sawpit Lane · Draymarket, DM2 6QF',
+    'Tel 01632 962130 VAT Reg No GB 512 8846 27', 'Purchase Order No PO-65220', 'Order Date    06-03-2026',
+    'SUPPLIER    DELIVER TO', 'Quillstone Print & Packaging    Bramblewood Joinery Ltd', 'Pressworks, 51 Galley Street    Unit 4, Sawpit Lane',
+    'Inkerton, IK9 4YS    Draymarket, DM2 6QF'].join('\n');
+  const T3_FP = ['Bramblewood', 'Joinery', 'Ltd', 'PURCHASE', 'Unit', 'Sawpit', 'Lane', 'Draymarket', 'Tel'];
+
+  check('headerBandText: doc 6 = lines 0-5 (cut before "CUSTOMER    DELIVER TO") — the same string the Python pin asserts',
+        brandingFp.headerBandText(DOC6) === DOC6.split('\n').slice(0, 6).join(' '));
+  check('headerBandText: doc 7 = lines 0-4 (cut before "SUPPLIER    DELIVER TO")',
+        brandingFp.headerBandText(DOC7) === DOC7.split('\n').slice(0, 5).join(' '));
+  {
+    const py = fs.readFileSync(path.join(REPO, 'python_backend', 'extraction', 'template_matcher.py'), 'utf8');
+    const m = /_HEADER_RECIPIENT_MARKERS = \(([^)]*)\)/.exec(py);
+    const pyMarkers = m ? m[1].split(',').map(s => s.trim().replace(/^'|'$/g, '')).filter(Boolean) : null;
+    check('the recipient markers are the SAME list on both sides (read from the .py source)',
+          !!pyMarkers && JSON.stringify(pyMarkers) === JSON.stringify(brandingFp.HEADER_RECIPIENT_MARKERS));
+    check('the counterparty regex is the same word-boundary supplier|vendor on both sides',
+          /_cpty_re = re\.compile\(r'\\b\(\?:supplier\|vendor\)\\b', re\.IGNORECASE\)/.test(py)
+          && /\/\\b\(\?:supplier\|vendor\)\\b\/i/.test(fs.readFileSync(path.join(REPO, 'database', 'modules', 'branding_fingerprint.js'), 'utf8')));
+  }
+
+  const db = freshDb();
+  const t3 = templates.create(db, { name: 'Bramblewood Joinery Ltd', document_type_slug: 'purchase_order', keyword_fingerprint: T3_FP });
+  templates.markBuyerIssued(db, t3, { ref_field_key: 'po_number' });
+  const plain = templates.create(db, { name: 'Plain twin', document_type_slug: 'invoice', keyword_fingerprint: T3_FP });
+  const setScope = (v) => db.prepare("INSERT INTO settings (key, value) VALUES ('template_buyer_issued_letterhead_scope', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(v);
+  delete process.env.TEMPLATE_BUYER_ISSUED_LETTERHEAD_SCOPE;
+
+  setScope('false');
+  const off6 = templates.findByKeywordFingerprint(db, DOC6, 75, 'purchase_order');
+  check('OFF (positive control): the marked template SELECTS doc 6 at 7/9 = 77', !!off6 && off6.template.id === t3 && off6.confidence === 77);
+  check('OFF: identifyByFingerprint names it too (the wizard / graduation-link / reextract road)',
+        (() => { const r = templates.identifyByFingerprint(db, { logo_phash: null, ocr_text: DOC6, document_type_slug: 'purchase_order' }); return !!r && r.template.id === t3; })());
+
+  setScope('true');
+  check('ON: doc 6 is NOT selected (no fingerprint word in its letterhead band)', templates.findByKeywordFingerprint(db, DOC6, 75, 'purchase_order') === null);
+  check('ON: identifyByFingerprint → null on doc 6',
+        templates.identifyByFingerprint(db, { logo_phash: null, ocr_text: DOC6, document_type_slug: 'purchase_order' }) === null);
+  const on7 = templates.findByKeywordFingerprint(db, DOC7, 75, 'purchase_order');
+  check('ON: the owner\'s own PO still selects at 100', !!on7 && on7.template.id === t3 && on7.confidence === 100);
+  const onPlain = templates.findByKeywordFingerprint(db, DOC6, 75, 'invoice');
+  check('ON: an UNMARKED twin still scores the whole page (byte-identical for unmarked rows)', !!onPlain && onPlain.template.id === plain && onPlain.confidence === 77);
+
+  process.env.TEMPLATE_BUYER_ISSUED_LETTERHEAD_SCOPE = '0';
+  check('env =0 wins over the setting (harness arms): doc 6 selects again',
+        (() => { const r = templates.findByKeywordFingerprint(db, DOC6, 75, 'purchase_order'); return !!r && r.template.id === t3; })());
+  setScope('false');
+  process.env.TEMPLATE_BUYER_ISSUED_LETTERHEAD_SCOPE = '1';
+  check('env =1 wins over the setting: doc 6 refused', templates.findByKeywordFingerprint(db, DOC6, 75, 'purchase_order') === null);
+  delete process.env.TEMPLATE_BUYER_ISSUED_LETTERHEAD_SCOPE;
+  db.close();
+
+  {
+    // A fixture table WITHOUT the buyer_issued column (pre-migration-66 shape): whole page, never a throw.
+    const raw = new Database(':memory:');
+    raw.exec("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT); CREATE TABLE templates (id INTEGER PRIMARY KEY, name TEXT, slug TEXT, document_type_slug TEXT, keyword_fingerprint TEXT)");
+    raw.prepare("INSERT INTO settings VALUES ('template_buyer_issued_letterhead_scope', 'true')").run();
+    raw.prepare("INSERT INTO templates (name, slug, document_type_slug, keyword_fingerprint) VALUES ('B', 'b', 'purchase_order', ?)").run(JSON.stringify(T3_FP));
+    let r = null, threw = false;
+    try { r = templates.findByKeywordFingerprint(raw, DOC6, 75, 'purchase_order'); } catch { threw = true; }
+    check('no buyer_issued column: no throw, whole-page scoring (nothing to scope)', !threw && !!r && r.confidence === 77);
+    raw.close();
+  }
+  const tsrc = fs.readFileSync(path.join(REPO, 'database', 'modules', 'templates.js'), 'utf8');
+  check('templates.js reads the ONE setting key (env wins both directions)',
+        /getSetting\(db, 'template_buyer_issued_letterhead_scope', 'false'\) === 'true'/.test(tsrc)
+        && /TEMPLATE_BUYER_ISSUED_LETTERHEAD_SCOPE === '1'/.test(tsrc) && /TEMPLATE_BUYER_ISSUED_LETTERHEAD_SCOPE === '0'/.test(tsrc));
+  const ph = fs.readFileSync(path.join(REPO, 'src', 'modules', 'processing', 'handler.js'), 'utf8');
+  check('the Python arm is bridged from the same setting',
+        /template_buyer_issued_letterhead_scope[\s\S]{0,80}TEMPLATE_BUYER_ISSUED_LETTERHEAD_SCOPE = '1'/.test(ph));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

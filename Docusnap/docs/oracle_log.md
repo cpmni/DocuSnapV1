@@ -2181,3 +2181,35 @@ lane reason `repair` with the unconditional "Read again after a learning repair 
 round-trip equality; human re-confirm clears; "Pacmec" untouched by "Acme").
 **Owner (not tonight):** whole-sender forget (logos/identifiers/accepted-issuer); rename/merge as its own arc; the
 three UX defaults (S×T vs sender; stay-filed vs back-to-Review; never move files + explicit Re-file).
+
+## 2026-08-27 — BUYER-ISSUED LETTERHEAD SCOPE (Chris round 6 card 1; gary design) — SEND BACK on ONE touch point → corrected; NO-GO on a live flip until the gate
+**Exhibit (verified at source, Chris sandbox):** template 3 (Bramblewood PO, `buyer_issued=1`, 0 confirms) claimed an
+Oakhaven delivery note, a Meadowvale credit note and a Castellan worksheet as Bramblewood POs @95 `template_fixed`
+through the WHOLE-PAGE text arm (7/9 fingerprint hits — the owner's name+address sit in every BILL TO block); logo phashes
+far apart; doc 6 untyped ("GOODS DELIVERY NOTE" = one extra real word → not a heading) so the type-scope guard had
+nothing to refuse on; two roads (the quiet lane's kw selector arm c′ + the single Reprocess).
+**Premise:** "a buyer-issued layout may only be RECOGNISED by text in the letterhead band" — HOLDS and is monotone
+(hits(band) ⊆ hits(page); `header_band_text` IS the harvest truncation). `buyer_issued` (PO-ref types) is the right
+key for the hits lever, the WRONG key for the identity-presence test: the mark says "PO-shaped", not "identity =
+letterhead" — configuration B (a PO taught with the COUNTERPARTY as issuer, the founding fixture of
+`TEMPLATE_IDENTITY_ON_PAGE`, test_identity_on_page QUILLSTONE) prints its identity BELOW the band and would be refused
+on its own paper. Band-scoping `_identity_refuses` also split-brained JS (`nameBearingButAbsent` whole-page) vs Python.
+**Corrected in place:** `_identity_refuses` reverted to whole-page for every template; the go-forward HEAL moved to the
+engine honour path (`engine.py` after the identity-guard decline): a marked binding is declined when
+`_keyword_hit_ratio(known, header_band)` < KEYWORD_THRESHOLD (`sticky_binding_declined reason='letterhead'`) — the
+same evidence the recognition lever uses; config-B-safe, wordmark-safe; abstains without a fingerprint. Touch points
+kept: `_match_by_keywords` hits over the band for marked templates (after the type-scope guard, whose text is pinned);
+the same-type rescue arm band-scoped; JS mirror `findByKeywordFingerprint` (the lane selector + the wizard save-target /
+graduation LINK / reextract roads via `identifyByFingerprint`) with `_hasBuyerIssued` column tolerance; V1 rival pin
+untouched (V2 already chrome-band). DARK: `template_buyer_issued_letterhead_scope` / `TEMPLATE_BUYER_ISSUED_LETTERHEAD_SCOPE`.
+**Conditions → status:** (1) redesign touch point 3 — DONE (above). (2) pins that can go red — config-B marked
+fixture admitted + matches its own PO under ON, never claims the inbound paper; the exhibit's marked template refused by
+HITS not the guard; the empty-band trade-off (guard admits, honour path declines) — `test_buyer_issued_letterhead_scope.py`
+43/43; JS §4 28/28 (`test_buyer_issued_scope.js`); `test_identity_on_page.py` unchanged green. (3) arm C = the live-DB
+arm: the owner's DB holds exactly ONE PO-ref template (t8 Bramblewood, config A, 113 bound confirmed docs, already
+marked) — realdoc OFF vs ON running (`rr_lh_*`; numbers in the 08-27 DAY handover). (4) refactor gate — 0 fingerprint
+diffs across 1242 confirmed docs (`fp_gate_census.py`). (5) empty-band census — 0 empty bands, 0 below 0.75 among the
+113 PO docs. (6) fired path on a fresh Chris sandbox with the switch ON — owed (next Chris round). (7) next slice:
+surface `sticky_binding_declined` as a review note ("This layout's letterhead isn't on this page") — pendingfeatures.
+**Residuals named (gary):** the mark seam (outbound non-PO layouts unprotected); the logo arm's whole-page text gate on a
+phash collision; band OCR variance across siblings (→ Review, never a wrong company).

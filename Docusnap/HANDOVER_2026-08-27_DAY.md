@@ -1,0 +1,71 @@
+# HANDOVER — 2026-08-27 DAY (Chris round 6 fixes: cards 1/3/5/6/7 built, card 2 verified)
+
+**Branch** `feat/teach-side-overnight` · resumed from `HANDOVER_2026-08-27_MORNING.md` (HEAD `6787291`, 7 commits ahead of
+origin, NOT pushed — owner reviews then pushes). Owner's instruction this session: "read the handover and continue … continue
+with chris's fixes". Every behaviour change is DARK (default OFF); every card's fix is pinned; the advisor→Oracle gate ran on
+the one detection arc. **Nothing was flipped on the live DB. The live app is still the 21:02 (08-26) instance** — DB at
+migration **87**, so a restart applies 88–91 (all inert until a switch is on).
+
+## What the cards turned out to be (all verified at source in the Chris sandbox DB + shot108)
+| Card | Verdict | Mechanism (FACT) | Fix |
+|---|---|---|---|
+| **1 HIGH** buyer-issued PO teach re-badged 3 suppliers' papers as Bramblewood POs @95 | **BUILT DARK** `template_buyer_issued_letterhead_scope` (gary → Oracle SEND BACK on one touch point → corrected; log `docs/oracle_log.md` 2026-08-27) | Template 3 (`buyer_issued=1`, fingerprint = the owner's name+address) won the WHOLE-PAGE text arm at 7/9 on docs 2/4/6 — those words print in every BILL TO block. Logo hashes far apart (not the logo arm). Doc 6 was UNTYPED at import ("GOODS DELIVERY NOTE" has one extra real word → `_segment_is_heading` False → no trusted heading) so the type-scope guard had nothing to refuse on. Two roads: the quiet lane's kw-selector arm c′ (`quiet_reread_kw_select`, `done_ids "4,2"` 8 s after the teach) + Chris's single Reprocess of doc 6. | A marked template is recognised by TEXT only over the LETTERHEAD band (`header_band_text` — the fingerprint harvest's own truncation, now ONE helper for both): `_match_by_keywords` hits + the same-type rescue arm (Python), `findByKeywordFingerprint` (JS mirror: the lane selector + wizard save-target / graduation-link / reextract roads via `identifyByFingerprint`), and a go-forward HEAL on the engine honour path (a stale binding is declined when the band-hit ratio < 0.75 — `sticky_binding_declined reason='letterhead'`). `_identity_refuses` stays WHOLE-PAGE (the Oracle's send-back: configuration B — a PO taught with the counterparty as issuer — prints its identity below the band). Owner ruling unchanged: POs you send file under your own name. |
+| **2 MOD-HIGH** wrong date 24-06 @ High 94%, no warning | **VERIFIED, no code** | shot108 confirms; the stored record (doc 428) holds the keyword read 24-05 @94 with the crop family dissenting "_\| 24-06-20" — the record captured the disagreement; the designed remedy `trust_role_disagreement_refuse` ("the page reads X two ways") was OFF in the sandbox and is **already ON on your live DB**. | Arm it in the next sandbox (`arm_sandbox_r7.js`). The "_\| 24-06-20" → "24-06-2025 @94" salvage is the leading-digit/month date class already in your accuracy queue. |
+| **3 MOD** Import table "Ready to file" on 13 rows Review holds | **FIXED** | The chip keyed on the ENGINE's `needs_review` (= required-empty OR a field under its per-field threshold; the "Date" ref sat at exactly 70 with a "please verify" note → not flagged) while Review/File All ask `trust.isAutoFileEligible` (→ `flagged`). | `_handleFileMessage` asks the predicate over the persisted rows and carries `review_hold` as a SEPARATE field (`needs_review` untouched — the T1 gate-unify seam); `addTableRow` keys the chip on either. |
+| **5 MOD** Use/Keep between two garbles the page-check refuses | **FIXED** | S3-C5 note + Gate-C absent mark on the same row; the offered value was not on the page either. | When the note carries the Gate-C mark AND the offered value fails a sepless page check (stricter than Gate C → can only HIDE), the pair becomes "Neither reading appears on this page — draw the box again (⊕) or type the value from the page." Fail-open otherwise. |
+| **6 LOW-MOD** invented senders promising "5 more to file by itself" | **FIXED (promise half)** | `_senderReadinessLabel` counted down for a sender with `confirms` = 0 (the gate's own count). | Nothing rendered when every pending scope has 0 confirms. The "Sender not identified (guess: X)" grouping half stays owner-vet (`pendingfeatures.md`). |
+| **7 LOW** stale panels | **FIXED** | The fetched hold verdict described the doc as LOADED; `clearDocPanel` never hid the ⊕ read-back / Teach card; Delete All only set the panel one-shot when the open doc was queued and the LIST text was hard-coded. | Type change / settled different issuer → `_holdVerdict = null` + repaint; Delete All → "Queue cleared — N in the recycle bin" (list one-shot, unconditional) + the panel one-shot whenever nothing stays open; `clearDocPanel` → `hideAnchorReadout()` + `renderTeachCta(null)`. |
+
+## Pins (all green) + suites
+- NEW `src/windows/review/test_chris_r6_ui_cards.js` (cards 3/5/6/7 source contracts, CRLF-safe) · NEW
+  `python_backend/tests/test_buyer_issued_letterhead_scope.py` 43/43 (real sandbox texts + template-3 fingerprint: band ==
+  harvest incl. the counterparty kill-switch; OFF positive control 7/9 = 77; ON refusals; the owner's own PO 9/9; unmarked
+  control byte-identical; config-B admitted + matches its own PO under ON; honour-path predicate; empty-band trade-off; source
+  contracts incl. the untouched type-scope guard + V1 rival pin) · `database/modules/test_buyer_issued_scope.js` §4 13→28
+  (JS mirror OFF/ON, env both directions, fixture table without the column, markers/regex parity read from the .py source,
+  `identifyByFingerprint` road) · `test_settings_wiring.js` BRIDGES + SETTING_SWITCHES rows.
+- Re-run green: `test_chris_r5_ui_cards`, `test_hold_reason_truthful`, `test_queue_badge_copy`, `test_import_autofile_gate`,
+  `test_quiet_lane`, `test_quiet_lane_layout`, `test_seed_support_prune`, `test_template_type_scoped_match`,
+  `test_fingerprint_hygiene`; Python `test_template_matcher`, `test_identity_on_page`, `test_buyer_issued_issuer_guard`.
+- Full suite: see RESULTS below.
+
+## Oracle gate for the Card 1 switch (conditions → status)
+1. Redesign `_identity_refuses` touch point — DONE (whole-page kept; heal on the honour path).
+2. Pins that can go red (config B) — DONE (43/43 + 28/28).
+3. Corpus arm with every PO-ref template marked — the owner's DB holds exactly ONE PO-ref template (t8 Bramblewood, config A,
+   113 bound confirmed docs, already marked) → the live-DB OFF-vs-ON arm IS that arm. RESULTS below.
+4. Fingerprint-refactor gate — **0 diffs across 1242 confirmed docs** (`TESTING/_measure/r6fix_20260827/fp_gate_census.py`).
+5. Empty-band census — **0 empty bands, 0 below 0.75 among the 113 PO docs**.
+6. Fired path on a fresh Chris sandbox, switch ON (teach the Bramblewood PO → docs 2/4/6 must NOT be re-badged; doc 7 → template
+   @95; the lane must not select 2/4/6) — see RESULTS / next round.
+7. Next slice: surface `sticky_binding_declined` as a review note (`pendingfeatures.md`).
+
+## Switch (new today; absent = off)
+| setting | env | default | what |
+|---|---|---|---|
+| `template_buyer_issued_letterhead_scope` | `TEMPLATE_BUYER_ISSUED_LETTERHEAD_SCOPE` | OFF | a `buyer_issued` template's text arms score the letterhead band only (Python via `_reconcileEnv`; JS `templates.js` reads the key directly, env wins both directions); honour-path heal |
+Settings → Processing row "Only recognise a purchase-order layout you send out by its letterhead" (beside the type-scope row).
+
+## Owner decisions (carried from the morning handover + today)
+- The morning list stands (class F flip after the SFDEV live heal; Learning Repair defaults; barcode Qs; barry's sweep). New:
+  **flip `template_buyer_issued_letterhead_scope`?** — after RESULTS + the fired-path round; its cost on your DB is measured at
+  zero (conditions 3–5). `quiet_reread_on_layout` is ALREADY ON on your live DB (morning decision 3's cheaper lever).
+- Card 6 grouping half; Card 2 needs nothing from you (the switch is on live).
+
+## Traps (new today)
+- `Start-Process powershell -File <path with a space>` silently dies — quote the path INSIDE the argument (`"-File", "`"C:\GIT Projects\…`""`).
+- The realdoc harness spawns Python with `{...process.env, ...appEnv}` — an env var the live DB's `_reconcileEnv` does not set
+  passes through from the shell (how the OFF/ON arms are pinned); `RR_DB=<copy>` retargets the harness.
+- The realdoc `RR_DUMP` row now carries `tmpl` (matched template id) — a per-template match count is diffable.
+- A background agent can die on an API drop mid-report — resume it with SendMessage (context intact) rather than re-spawning.
+
+## RESULTS (filled at the end of the session)
+- Full suite (09:40–09:50, `TESTING/_measure/r6fix_20260827/full_suite.ps1`; log in the session scratchpad `suite/suite.log`):
+  **JS 275 files / 5 red — exactly the five documented pre-existing** (`test_authoritative_anchor`, `test_document_types_aliases`,
+  `test_v1_contract`, `test_doctype_surface_parity`, `test_teach_multipage`); **Python script-style 265 / 7 red = the six documented**
+  (`anchor_crop_crosscheck`, `label_overrides`, `template_rescue`, `engine_detail_thread`, `network_field_authority`,
+  `reprocess_manifest`) **+ `test_buyer_issued_letterhead_scope.py` caught MID-EDIT by the detached run (version skew: its BAD line was
+  the §8 check corrected two minutes later; re-run 43/43)**; **pytest 307 passed / 1 failed = the documented `test_identity_fusion`**.
+  ZERO new reds.
+- Realdoc OFF vs ON (`stress_test/out/rr_lh_{off,on}.md`, diff `TESTING/_measure/r6fix_20260827/rr_diff_lh.js`): _pending_
+- Fired-path Chris round: _pending_

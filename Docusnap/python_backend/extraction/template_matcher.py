@@ -587,6 +587,16 @@ _HOLD_PENDING_IDENTITY = os.environ.get('TEMPLATE_IDENTITY_HOLD_SIBLINGS', '0') 
 # marked `buyer_issued` (migration 66) may not win a TEXT arm on a document whose own trusted title
 # declares a different type. DEFAULT OFF; see _match_by_keywords for the full reasoning.
 _BUYER_ISSUED_TYPE_SCOPE = os.environ.get('TEMPLATE_BUYER_ISSUED_TYPE_SCOPE', '0') != '0'
+# BUYER-ISSUED LETTERHEAD SCOPE (2026-08-27, Chris round 6 card 1; gary design → Oracle). The type-scope
+# guard above keys on the doc's TYPE and is disarmed whenever no trusted title exists — a "GOODS DELIVERY
+# NOTE" heading (one extra real word) or an inline "CREDIT NOTE" — and it can never reach a same-type
+# inbound paper. The class is about WHERE the identity is printed: a buyer-issued layout's fingerprint is
+# the owner's own name + address, which sit in the BILL TO / DELIVER TO block of every paper the business
+# RECEIVES. With this on, every TEXT-arm haystack for a `buyer_issued` template is the page's LETTERHEAD
+# BAND (`header_band_text` — the exact truncation that harvested the fingerprint) instead of the whole
+# page: hits(band) ⊆ hits(page), so a marked template's score can only FALL (match → no match); unmarked
+# templates and the logo arm are byte-identical. DEFAULT OFF.
+_BUYER_ISSUED_LETTERHEAD_SCOPE = os.environ.get('TEMPLATE_BUYER_ISSUED_LETTERHEAD_SCOPE', '0') != '0'
 # The identity field keys, mirroring database/modules/document_types.COMPANY_KEYS (migration 44:
 # customer_name was unlinked from identity, so this is deliberately ONE key).
 _COMPANY_KEYS = ('supplier_name',)
@@ -745,6 +755,14 @@ def _identity_refuses(cand, ocr_text) -> bool:
     identity = _template_identity(cand)
     if not identity:
         return False                                  # unjudgeable -> today's behaviour
+    # NOT band-scoped for a buyer-issued template (Oracle SEND BACK 2026-08-27, corrected): the mark says
+    # "PO-shaped", not "the identity is the letterhead". Configuration B — an owner-issued PO taught with
+    # the COUNTERPARTY as issuer (the founding fixture of this guard, test_identity_on_page QUILLSTONE:
+    # fingerprint = the Bramblewood letterhead, 'Quillstone' printed only after "SUPPLIER") — would be
+    # refused on its own paper by a band-scoped presence test. Recognition is band-scoped in the text
+    # arms (hits ⊆ page, config-B-safe: the letterhead words hit the band of every such PO); the
+    # go-forward heal of a stale binding lives on the engine's honour path (the same band-hit evidence),
+    # never here. This guard keeps its whole-page presence test for every template.
     stats = (cand or {}).get('supplier_prints_name') or {}
     try:
         ratio = float(stats.get('ratio') or 0)
@@ -787,6 +805,9 @@ def identify_template(page_image, ocr_text: str, templates: list,
         return None
 
     ocr_lower  = ocr_text.lower()
+    # Letterhead-band haystack for buyer-issued templates (the same-type rescue arm below; see
+    # _match_by_keywords for the class). None when the scope is off → whole page, byte-identical.
+    band_lower = header_band_text(ocr_text).lower() if _BUYER_ISSUED_LETTERHEAD_SCOPE else None
     logo_phash = None
     # LOGO_REFUSE_FALLTHROUGH (default ON): when the type-blind logo arm locks a WRONG-TYPE same-letterhead
     # sibling, capture the refuse + the supplier the logo locked (dist<=6), then FALL THROUGH to the
@@ -1115,8 +1136,11 @@ def identify_template(page_image, ocr_text: str, templates: list,
         _arm_templates = _kept
 
     if detected_slug and title_trusted:
+        # (letterhead scope: a buyer-issued template's overlap is judged over the band — a customer's
+        # PO sent TO the owner is the same TYPE with the owner's words in its SUPPLIER block.)
         _same_type = sorted(
-            ((t, _keyword_hit_ratio(t, ocr_lower)) for t in _arm_templates
+            ((t, _keyword_hit_ratio(t, band_lower if (band_lower is not None and t.get('buyer_issued')) else ocr_lower))
+             for t in _arm_templates
              if (t.get('document_type_slug') or '') == detected_slug),
             key=lambda x: -x[1])
         if _same_type and _same_type[0][1] >= RESCUE_KEYWORD_OVERLAP:
@@ -1255,10 +1279,44 @@ def extract_with_template(ocr_text: str, template: dict) -> dict:
     return results
 
 
+_HEADER_RECIPIENT_MARKERS = ('bill to', 'ship to', 'invoice to', 'sold to', 'customer')
+
+
+def header_band_text(ocr_text: str, max_lines: int = 20) -> str:
+    """The LETTERHEAD BAND of a page: its first `max_lines` reading lines, cut BEFORE the first line
+    that opens the per-document counterparty block, joined by single spaces. ONE definition, two
+    consumers — the fingerprint harvest below (this is the exact truncation it has always used) and
+    the buyer-issued text-arm scope (TEMPLATE_BUYER_ISSUED_LETTERHEAD_SCOPE) — so "what the
+    harvest saw" and "what the match scores" can never drift apart.
+      - a RECIPIENT marker ("Bill To", "Ship To", "Invoice To", "Sold To", "Customer") is a
+        SUBSTRING test (the original rule; "customer" also cuts "Customer No." captions);
+      - R3 COUNTERPARTY MARKERS for BUYER-ISSUED docs (herald→Oracle SIGN-OFF-W/COND 2026-08-01;
+        kill FINGERPRINT_COUNTERPARTY_MARKERS=0). A purchase order introduces its counterparty
+        with "Supplier :" / "Vendor :" — neither was a marker, so the harvest sailed past into
+        the per-document counterparty name, which then entered the template's PERMANENT identity
+        ('Halcyon Leisure Group' inside the Vellum PO template — the doc-259 deadlock's poison).
+        WORD-BOUNDARY regex, not substring (Oracle's load-bearing sharpening: the existing tuple
+        is substring-matched, and 'supplier' as a substring would truncate an "Office Suppliers
+        Direct" letterhead at line 1 — a shorter fingerprint is safe, a gutted one is not).
+        Harvest-side only, never retroactive — R1's intersect heals frozen fingerprints.
+    Empty text → ''. A page whose FIRST line already carries a marker yields '' (no band)."""
+    _cpty_re = re.compile(r'\b(?:supplier|vendor)\b', re.IGNORECASE) \
+        if os.environ.get('FINGERPRINT_COUNTERPARTY_MARKERS', '1') != '0' else None
+    header_lines = []
+    for line in (ocr_text or '').split('\n')[:max_lines]:
+        low = line.lower()
+        if any(m in low for m in _HEADER_RECIPIENT_MARKERS):
+            break  # stop before the per-document recipient/customer block
+        if _cpty_re is not None and _cpty_re.search(line):
+            break  # buyer-issued counterparty block ("Supplier : <name>") — same rule
+        header_lines.append(line)
+    return ' '.join(header_lines)
+
+
 def extract_keyword_fingerprint(ocr_text: str, max_words: int = 10) -> list:
     """
     Extract distinctive keywords from the document header for template
-    identification. Only looks at the first 20 lines.
+    identification. Only looks at the first 20 lines (see header_band_text).
 
     This fingerprint becomes part of a template's permanent identity
     (persisted and reused for every future match), so per-document VARIABLE
@@ -1282,27 +1340,7 @@ def extract_keyword_fingerprint(ocr_text: str, max_words: int = 10) -> list:
     the stable branding/header words above it while dropping the volatile block
     — layout-independent and reusable.
     """
-    RECIPIENT_MARKERS = ('bill to', 'ship to', 'invoice to', 'sold to', 'customer')
-    # R3 COUNTERPARTY MARKERS for BUYER-ISSUED docs (herald→Oracle SIGN-OFF-W/COND 2026-08-01;
-    # kill FINGERPRINT_COUNTERPARTY_MARKERS=0). A purchase order introduces its counterparty
-    # with "Supplier :" / "Vendor :" — neither was a marker, so the harvest sailed past into
-    # the per-document counterparty name, which then entered the template's PERMANENT identity
-    # ('Halcyon Leisure Group' inside the Vellum PO template — the doc-259 deadlock's poison).
-    # WORD-BOUNDARY regex, not substring (Oracle's load-bearing sharpening: the existing tuple
-    # is substring-matched, and 'supplier' as a substring would truncate an "Office Suppliers
-    # Direct" letterhead at line 1 — a shorter fingerprint is safe, a gutted one is not).
-    # Harvest-side only, never retroactive — R1's intersect heals frozen fingerprints.
-    _CPTY_RE = re.compile(r'\b(?:supplier|vendor)\b', re.IGNORECASE) \
-        if os.environ.get('FINGERPRINT_COUNTERPARTY_MARKERS', '1') != '0' else None
-    header_lines = []
-    for line in ocr_text.split('\n')[:20]:
-        low = line.lower()
-        if any(m in low for m in RECIPIENT_MARKERS):
-            break  # stop before the per-document recipient/customer block
-        if _CPTY_RE is not None and _CPTY_RE.search(line):
-            break  # buyer-issued counterparty block ("Supplier : <name>") — same rule
-        header_lines.append(line)
-    header_text = ' '.join(header_lines)
+    header_text = header_band_text(ocr_text)
     # FINGERPRINT_HYGIENE (slice 3 of the distinctive-token train, 2026-07-20): a ref-prefix
     # fragment is NOT branding. The token regex splits "INV-76642" at '-', so 'INV' reaches the
     # digit filter digit-free and enters ~every invoice template's permanent identity, where it
@@ -1618,6 +1656,7 @@ def _match_by_keywords(ocr_text: str, templates: list, detected_slug: str | None
     misfile class the word-boundary guard below prevents). detected_slug=None → slug_match=0 for all →
     pure order/confirmed tie-break, and the existing keyword-tie pins stay green."""
     ocr_lower  = ocr_text.lower()
+    band_lower = header_band_text(ocr_text).lower() if _BUYER_ISSUED_LETTERHEAD_SCOPE else None   # letterhead scope (below)
     best       = None
     best_key   = None
     scored     = []                                        # (template, score) for every hits>0 template
@@ -1643,6 +1682,15 @@ def _match_by_keywords(ocr_text: str, templates: list, detected_slug: str | None
                 and title_trusted and detected_slug
                 and (t.get('document_type_slug') or '') != detected_slug):
             continue
+        # BUYER-ISSUED LETTERHEAD SCOPE (TEMPLATE_BUYER_ISSUED_LETTERHEAD_SCOPE, DEFAULT OFF — Chris round 6
+        # card 1, 2026-08-27): three suppliers' papers (a delivery note, a credit note, a worksheet) were
+        # claimed at 80% by the owner's own PO layout — its fingerprint is the owner's name + address,
+        # printed in the BILL TO block of every inbound page, and the type guard above had no trusted title
+        # to refuse on. A marked template is scored over the LETTERHEAD BAND only (the harvest's own
+        # truncation, header_band_text), where an inbound paper carries the SUPPLIER's words and never the
+        # buyer's: hits fall to ~1/10 → below the bar; an empty band → hits 0 → never scored (the F1-C1
+        # "return None" contract, never a tie-break winner). Unmarked templates: the whole page, as before.
+        hay = band_lower if (band_lower is not None and t.get('buyer_issued')) else ocr_lower
         # Word-boundary match — mirrors _label_pattern's single-word collision
         # guard (the proven Stage-1 fix). Plain substring containment let a
         # short distinctive keyword like "LTD" or "REF" score a hit by sheer
@@ -1652,7 +1700,7 @@ def _match_by_keywords(ocr_text: str, templates: list, detected_slug: str | None
         # fall back to keywords because they have no usable logo.
         hits = sum(
             1 for kw in keywords
-            if re.search(r'(?<![a-z0-9])' + re.escape(kw.lower()) + r'(?![a-z0-9])', ocr_lower)
+            if re.search(r'(?<![a-z0-9])' + re.escape(kw.lower()) + r'(?![a-z0-9])', hay)
         )
         if hits == 0:
             continue                                       # no keyword hit -> never wins (the "return None"

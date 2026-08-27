@@ -6,6 +6,37 @@
 
 ---
 
+## 2026-08-27 — Chris round 6 leftovers (owner-vet; the fixed cards are in `docs/CHRIS_FULL_APP_REVIEW_2026-08-26.md` TRIAGE)
+- **Card 1 residuals (gary's named seams; the letterhead-scope arc `template_buyer_issued_letterhead_scope` is BUILT
+  DARK):** (1) **the mark seam** — only PO-ref types are ever `buyer_issued` (`templates.markBuyerIssued`), so the
+  owner's OTHER outbound layouts (sales orders / invoices / quotes THEY send, same letterhead, same poisoned
+  fingerprint) are protected by neither this arc nor the type guard; an own-company mark (widening `buyer_issued` to
+  "self-issued") would be covered by the arc for free — needs a census of the owner's outbound types first.
+  (2) **the logo arm's text gate is whole-page too** (`engine.py _branding_own_ratio`, banks keyed by supplier not
+  template): on a genuine phash collision with the owner's letterhead the owner's branding is on every inbound page →
+  'accept'. Not this exhibit (phashes far apart); its own slice. (3) **band OCR variance** — a sibling whose first
+  recipient/counterparty marker lands earlier than the sample's can score below 0.75 → Review (never a wrong company);
+  measured by the realdoc per-template match count OFF == ON. (4) A template fingerprint harvested BEFORE the 08-01
+  counterparty markers may hold the sample's counterparty name → its own POs dip → Review; R1 intersect heals on confirm.
+  (5) **Oracle condition 7 (next slice):** surface `sticky_binding_declined` (both reasons: identity not on the page /
+  `letterhead`) as a REVIEW NOTE — "This layout's letterhead isn't on this page — read without it" — today the reason is
+  stderr + a trace event only, and the Review "Template available" pill (JS logo/presence, whole-page) can contradict a
+  Python decline; the pill/graduation roads should read the same predicate Python uses.
+- **Card 6, second half — group machine-guessed senders under "Sender not identified (guess: X)"** (the r4 Card 3
+  "N more to file by itself" WORDING question is still open too). Built today: the countdown badge renders NOTHING for a
+  sender whose every pending scope has `confirms` = 0 (`_senderReadinessLabel`). The GROUPING change (queue header +
+  `groupQueueBySender`) is a bigger UX decision — a guessed name still files as a folder if confirmed as-is.
+- **Card 2 follow-through:** `trust_role_disagreement_refuse` is ON on the owner's live DB but was OFF in the Chris
+  sandbox; arm it in `arm_sandbox.js` for the next round so the "the page reads X two ways" hold is exercised. The
+  "_| 24-06-20" crop read salvaged to "24-06-2025 @94" is the leading-digit/month date class (owner accuracy queue).
+- **"Also noticed" (uncarded, copy):** the sender-confirm question is labelled "Needs a quick check — 1 field was
+  flagged by a formatting check" (it is an "is this the sender, not the customer?" question); before a type is chosen
+  the field labels read INVOICE DATE / INVOICE NUMBER on a delivery note (the default type's labels) — consider
+  role-neutral labels ("Date" / "Reference") until a type is set; "Fields read by: Unknown".
+- **Settings (Chris, every round):** the Processing "wall" of ~50 switches → a Recommended/Advanced split; move
+  "Clear ALL learning memory" / "Erase ALL data" off the Learning tab (beside the per-sender ticks) under Advanced;
+  hide the `supplier_name`-style key codes in Document Types for non-SFDEV users; Terms still "WORKING DRAFT".
+
 ## 2026-08-26 NIGHT — follow-ups from the overnight build (all owner-vet; nothing here is built)
 - **Barcode field B2 — LEARN at confirm** (symbology + length-set + prefix per (sender,type,field); a new small
   table, never `supplier_hints`/`field_anchors`) so a barcode field can AUTO-FILE — tonight's slice B holds every

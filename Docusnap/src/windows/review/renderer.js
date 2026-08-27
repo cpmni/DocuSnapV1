@@ -1528,6 +1528,12 @@ document.getElementById('doctype-select').addEventListener('change', (e) => {
     // Q4a (Chris round 14 card 5, Oracle C4a.5): the "This looks like a <type> — Add it" card keys on
     // document_type_id and stayed on screen after a type was chosen. Follow the choice and re-render.
     currentDoc.document_type_id      = dt ? (dt.id ?? null) : null;
+    // Chris round 6 card 7: the fetched hold verdict described the document as it was LOADED
+    // (its old type + sender) — re-rendering with it after a type change kept "Nothing looks
+    // wrong — this is only the second document from Bramblewood…" on a delivery note the user
+    // had just re-typed. The verdict is stale by definition once the type changes; drop it so
+    // the panel falls back to the type-neutral copy until the next load re-fetches it.
+    _holdVerdict = null;
     try { renderReviewReason(currentDoc); } catch {}
   }
   // Re-render fields preserving current input values
@@ -1870,8 +1876,11 @@ function renderQueueList() {
     // `#queue-empty { display:none }`, so this message NEVER showed (Chris card 2;
     // verified live). The text is re-set per tab because the deferred branch
     // overwrites the shared element (the latent copy-clobber both advisors named).
+    // Cause-aware (Chris r6 card 7): a Delete All empties the queue without reviewing
+    // anything — the one-shot `_queueEmptyMsg` says so; the reviewed-it-all default otherwise.
     empty.style.display = 'block';
-    empty.textContent = '✓ All reviewed';
+    empty.textContent = _queueEmptyMsg || '✓ All reviewed';
+    _queueEmptyMsg = null;
     reviewActions.style.display = 'none';
     const vb0 = document.getElementById('queue-view-bar');
     if (vb0) vb0.style.display = 'none';
@@ -1966,6 +1975,11 @@ function _senderReadinessLabel(supplier) {
     return `<span class="qgh-ready" title="This sender is learned, but no layout has been saved for it yet — teach one of its documents (or wait for the next confirm to re-read them) and they can file themselves.">`
          + `learned · needs a layout</span>`;
   }
+  // Chris round 6 card 6: a sender NOBODY has confirmed yet is a machine GUESS ("Ticket Type",
+  // "DOCUMENT OLUTIONS") — a countdown under it reads as "on its way to filing under that name".
+  // `confirms` is the gate's own count (the learned issuer group), so 0 across every pending scope
+  // means no human has ever vouched for this sender: render nothing rather than a promise.
+  if (pending.every(r => !(Number(r.confirms) > 0))) return '';
   // One countdown per (sender, type). Name the type only when this sender has more than one
   // pending — otherwise the sender's own name is context enough.
   const bits = pending
@@ -4132,10 +4146,22 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   // correctedTo !== val: a vacuous pair (legacy rows) must not offer "Use X" / "Keep X" with the
   // SAME string on both buttons — it renders as a plain note instead.
   const _btnVal = (s) => { const t = String(s ?? ''); return escHtml(t.length > 18 ? t.slice(0, 17) + '…' : t); };
-  const acceptHtml = (correctedTo && correctedTo !== val && !isApplied)
+  // Chris round 6 card 5: after a re-teach the siblings re-read themselves and offered
+  // `Use "ss-oo9e275" · Keep "ss-onnea275"` under a note that ALSO said the current value
+  // "doesn't appear on this page as written" — two garbles, and a Use button for a value the
+  // page-check never vouched for. When the page-check has refused the CURRENT value and the
+  // OFFERED value is not printed either (sepless projection over the stored page text), neither
+  // button is an answer: say so and point at the box. Fail-open — no page text, or the offered
+  // value IS on the page, keeps today's buttons.
+  const _neitherOnPage = !!correctedTo && correctedTo !== val && !isApplied
+    && /doesn't appear on this page as written/i.test(String(note || ''))
+    && !_valueOnPageSepless(correctedTo, currentDoc && currentDoc.ocr_text);
+  const acceptHtml = (correctedTo && correctedTo !== val && !isApplied && !_neitherOnPage)
     ? ` <button type="button" class="accept-btn" data-key="${key}" title="Replace the value with ${escHtml(correctedTo)} — saved when you confirm">Use “${_btnVal(correctedTo)}”</button>`
       + ` <button type="button" class="keep-btn" data-key="${key}" title="Keep the value as it is and hide this note">${String(val ?? '').trim() ? `Keep “${_btnVal(val)}”` : 'Leave as is'}</button>`
-    : '';
+    : (_neitherOnPage
+        ? ` <span class="field-note-hint">Neither reading appears on this page — draw the box again (⊕) or type the value from the page.</span>`
+        : '');
   // "This name is correct" — for a NAME field flagged by the wordness/truncation signal
   // (a legitimate acronym-bearing company like "Cloud VPS" reads low on the character
   // model). One click marks the exact value as an accepted name so the flag never fires
@@ -4307,6 +4333,16 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     // old-supplier-scoped reads (anchor/template/hint); keyword/typed values are kept. No-op if
     // unchanged or the same supplier.
     if (key === 'supplier_name') { _refreshTaughtForType().catch(() => {}); _clearSuspectReadsForNewIssuer(); _resolveFieldVisibility(); }
+    // Chris r6 card 7: a settled DIFFERENT issuer makes the loaded hold verdict stale (it named the
+    // old sender: "…only the second document from Bramblewood…") and the "Change what's read from
+    // X's documents" label — drop the verdict, repaint the reason panel + the label. Same-value
+    // blur: no-op (the verdict still describes this document).
+    if (key === 'supplier_name' && currentDoc
+        && input.value.trim().toLowerCase() !== String(currentDoc.supplier_name || '').trim().toLowerCase()) {
+      _holdVerdict = null;
+      try { renderReviewReason(currentDoc); } catch {}
+      try { _updateSenderFieldsBtn(); } catch {}
+    }
     // TYPED-CORRECTION DOORWAY (Chris r12 #1): the correction ripple used to open ONLY from the
     // "Use 'X'" branding button — but the cold-start prefill note replaced the branding note, so the
     // natural fix (typing the real name over "Cleaning" and pressing Enter) never offered "Apply to
@@ -7388,12 +7424,15 @@ document.getElementById('btn-delete-all-review').addEventListener('click', async
   if (!res?.success) { showToast(res?.error || 'Delete failed.', 'err'); return; }
   const hadCurrent = queue.some(d => d.id === currentDoc?.id);
   queue = [];
-  if (hadCurrent) {
-    currentDoc = null;
-    // A delete is not a review — the emptied panel says what actually happened (Chris r5).
-    // Set the one-shot BEFORE renderQueueList: its empty branch performs the clear.
-    _placeholderMsg = `Queue cleared — ${res.deleted} document${res.deleted === 1 ? '' : 's'} moved to the recycle bin. You can bring them back from Search → Recycle bin.`;
-  }
+  // A delete is not a review — the emptied panel AND the emptied list say what actually happened
+  // (Chris r5 card 6, r6 card 7: "✓ All reviewed — All documents reviewed ✓" after binning 167).
+  // Both one-shots are set BEFORE renderQueueList (its empty branch consumes them), and set
+  // whether or not the open document was in the queue — the LIST text is about the queue, and
+  // the panel is cleared whenever nothing is left open.
+  const _clearedMsg = `Queue cleared — ${res.deleted} document${res.deleted === 1 ? '' : 's'} moved to the recycle bin. You can bring them back from Search → Recycle bin.`;
+  _queueEmptyMsg = `Queue cleared — ${res.deleted} in the recycle bin`;
+  if (hadCurrent) currentDoc = null;
+  if (!currentDoc) _placeholderMsg = _clearedMsg;
   updateTabCounts();
   renderQueueList();
   window.docusnap.notifyReviewComplete();
@@ -7586,6 +7625,18 @@ async function offerIssuerRipple(srcDocId, name, row) {
 // "Saltmarsh Seafoods" on a Copperfield invoice. Mirrors the engine's identity text-first rule:
 // abstain ONLY on POSITIVE disagreement — require a real body of page text, then check the name's
 // distinctive tokens; too little text (or a name with no distinctive token) → fail-open (show).
+// Card 5 (Chris round 6): is a CODE-like value printed on the page, judged the lenient way — casefold
+// and drop every non-alphanumeric character on both sides (the engine's "sepless" projection), then
+// substring. STRICTER than the engine's Gate-C page-check (which also tolerates one OCR-confusable
+// glyph), so it can only ever HIDE a shortcut button for a value Gate C might still accept — never
+// show one for a value Gate C refused. Fail-open on missing text or an empty value.
+function _valueOnPageSepless(value, pageText) {
+  const proj = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const v = proj(value), p = proj(pageText);
+  if (!v || !p) return true;
+  return p.includes(v);
+}
+
 function _supplierNameOnPage(name, pageText) {
   const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
   const page = norm(pageText);
@@ -8796,8 +8847,14 @@ document.getElementById('split-ranges-input').addEventListener('keydown', (e) =>
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 let _placeholderMsg = null;   // one-shot override for the cleared-panel message (cause-aware)
+let _queueEmptyMsg  = null;   // one-shot override for the emptied-LIST message (renderQueueList)
 function clearDocPanel() {
   _clearPreviewState();
+  // Chris r6 card 7 (shot77): after the last document filed, the empty panel still carried the
+  // previous document's ⊕ read-back bar ("✓ The label to the left: Balance Due → 4,142.35") and
+  // its "Teach this document" card. Both are per-document aids — clear them with the panel.
+  try { hideAnchorReadout(); } catch {}
+  try { renderTeachCta(null); } catch {}
   const _rsBtn = document.getElementById('btn-reprocess-supplier');
   if (_rsBtn) _rsBtn.style.display = 'none';   // cleared panel → no open doc → hide per-sender reprocess
   docImgWrap.style.display = 'none';

@@ -7153,6 +7153,28 @@ class ExtractionEngine:
                     self._t('sticky_binding_declined', template_id=_fb_id,
                             identity=template_matcher._template_identity(known))
                     known = None
+                # BUYER-ISSUED LETTERHEAD SCOPE — the go-forward HEAL (Oracle SEND BACK → redesign,
+                # 2026-08-27; Chris round 6 card 1). A stale binding to a `buyer_issued` layout (the
+                # owner's own PO template, claimed onto three other suppliers' papers through the
+                # whole-page text arm) must be declined on reprocess by the SAME evidence the
+                # recognition lever now uses — the template's fingerprint hits over the LETTERHEAD
+                # BAND — never by band-scoping the identity guard above (config B: a PO taught with the
+                # counterparty as issuer prints that identity below the band and would be refused on its
+                # own paper). Config-B-safe (the letterhead words hit the band of every such PO),
+                # wordmark-safe (no dependence on the guard's abstain), heals docs 2/4/6. Abstains when
+                # the template has no fingerprint to judge by. Inert while the switch is off.
+                if (known and template_matcher._BUYER_ISSUED_LETTERHEAD_SCOPE and known.get('buyer_issued')
+                        and (known.get('keyword_fingerprint') or [])):
+                    _band_ratio = template_matcher._keyword_hit_ratio(
+                        known, template_matcher.header_band_text(ocr_text).lower())
+                    if _band_ratio < template_matcher.KEYWORD_THRESHOLD:
+                        self.log(f"  Stage 0: NOT honouring {_fb_id} — a buyer-issued layout whose words "
+                                 f"are not in this page's letterhead band ({_band_ratio:.2f} < "
+                                 f"{template_matcher.KEYWORD_THRESHOLD}); re-identifying instead")
+                        self._t('sticky_binding_declined', template_id=_fb_id,
+                                identity=template_matcher._template_identity(known),
+                                reason='letterhead', band_ratio=round(_band_ratio, 2))
+                        known = None
                 if known:
                     _fb_method = 'pinned_id' if pinned_template_id is not None else 'known_id'
                     match = {'template': known, 'confidence': 0, 'method': _fb_method}

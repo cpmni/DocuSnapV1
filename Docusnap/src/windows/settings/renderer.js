@@ -843,6 +843,11 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // order the business ISSUED stops claiming inbound documents whose own
                          // printed title says they are something else.
                          ['buyer-issued-scope-toggle', 'template_buyer_issued_type_scope'],
+                         // Buyer-issued LETTERHEAD scope (2026-08-27, Chris round 6 card 1): the same
+                         // layout is recognised by TEXT only when the owner's name sits in the letterhead
+                         // band — never from the Bill-to block. Read by template_matcher (bridged) AND by
+                         // templates.findByKeywordFingerprint (the quiet lane's selector) directly.
+                         ['buyer-issued-letterhead-toggle', 'template_buyer_issued_letterhead_scope'],
                          // Name lexicon from a low-distinct scope (B5, 2026-08-13): the shipped
                          // name repair never saw the scopes with ONE dominant confirmed name.
                          // Suggest-and-review only — it can never silently rewrite a company name.

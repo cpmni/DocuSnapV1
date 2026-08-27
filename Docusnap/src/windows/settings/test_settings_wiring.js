@@ -86,6 +86,9 @@ const BRIDGES = [
   // Buyer-issued type scope (slice 2, 2026-08-13): the mark is written in JS
   // (templates.markBuyerIssued) and acted on in template_matcher's TEXT arm.
   ['buyer-issued-scope-toggle', 'template_buyer_issued_type_scope', 'TEMPLATE_BUYER_ISSUED_TYPE_SCOPE'],
+  // Buyer-issued LETTERHEAD scope (2026-08-27, Chris round 6 card 1): the text arms of a marked template
+  // score the letterhead band only. Python side bridged here; the JS mirror is pinned in SETTING_SWITCHES.
+  ['buyer-issued-letterhead-toggle', 'template_buyer_issued_letterhead_scope', 'TEMPLATE_BUYER_ISSUED_LETTERHEAD_SCOPE'],
   // Name lexicon from a low-distinct scope (B5, 2026-08-13): weak-only by construction.
   ['name-lex-low-distinct-toggle', 'name_lexicon_low_distinct', 'NAME_LEXICON_LOW_DISTINCT'],
   ['shadow-attrib-toggle',      'reconcile_shadow_attribution', 'RECONCILE_SHADOW_ATTRIBUTION'],
@@ -186,6 +189,10 @@ const SETTING_SWITCHES = [
   // side MARKS a template pending (templates.js) and the bridge below arms the Python stamp that
   // acts on the mark. Listed here against the JS reader; the env bridge is pinned in BRIDGES.
   ['identity-hold-siblings-toggle', 'template_identity_hold_siblings', 'database/modules/templates.js'],
+  // Buyer-issued LETTERHEAD scope (2026-08-27): TWO consumers of one key by design — templates.js reads it
+  // directly for the JS keyword mirror (the quiet lane's selector + identifyByFingerprint's three roads);
+  // the env bridge for the Python arm is pinned in BRIDGES.
+  ['buyer-issued-letterhead-toggle', 'template_buyer_issued_letterhead_scope', 'database/modules/templates.js'],
   ['shadow-row-skip-toggle', 'trust_shadow_row_skip', 'database/modules/trust.js'],
   // Machine-feed arc slice 1 (Oracle W/COND C1-C6, 2026-08-13): learning.js reads the key
   // directly (the shadow-row-skip C5 pattern); templates.js reads it for the C1 template leg.

@@ -1160,8 +1160,12 @@ function addTableRow(msg) {
   if (msg.db_id != null) tr.dataset.docId = String(msg.db_id);   // so auto-file can flip it to "Filed"
   // The row tint plus a per-row status chip make the outcome plain at a glance,
   // while the table stays compact: Company, Date, Reference, Status.
+  // ONE classifier with Review (Chris round 6 card 3): `review_hold` is the filing predicate's own
+  // refusal reason, computed by the main process over the rows it just persisted — the engine's
+  // `needs_review` alone said "Ready to file" on rows Review then held for a "please verify" note.
+  const _held = !!msg.needs_review || !!msg.review_hold;
   if (!msg.success)        tr.classList.add('row-err');
-  else if (msg.needs_review) tr.classList.add('row-review');
+  else if (_held)          tr.classList.add('row-review');
 
   // Resolve Date + Reference by the doc type's STRUCTURAL keys (date_field_key /
   // ref_field_key) so sales orders, POs and custom types populate too — not just
@@ -1178,7 +1182,7 @@ function addTableRow(msg) {
   let statusCell;
   if (!msg.success) {
     statusCell = `<span class="badge err" title="${escHtml(msg.error || 'Processing error')}">Error</span>`;
-  } else if (msg.needs_review) {
+  } else if (_held) {
     statusCell = _userCanReview
       ? `<button type="button" class="badge warn row-review-link" title="Not filed yet — click to open Review, check the details and Confirm & File it">Confirm to file →</button>`
       : `<span class="badge warn" title="This document needs review before it can be filed">Needs review</span>`;

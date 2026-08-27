@@ -100,6 +100,28 @@ function nameCorroboratedByText(supplierName, supplierFingerprints, ocrText) {
   return { judgeable: true, corroborated: matched.length > 0, matched };
 }
 
+/**
+ * The LETTERHEAD BAND of a page — JS twin of template_matcher.header_band_text (2026-08-27): the
+ * first `maxLines` reading lines, cut BEFORE the first line that opens the per-document counterparty
+ * block, joined by single spaces. Same rules as the Python harvest: a RECIPIENT marker ("bill to",
+ * "ship to", "invoice to", "sold to", "customer") is a substring test; the buyer-issued COUNTERPARTY
+ * marker (word-boundary "supplier"/"vendor") applies unless FINGERPRINT_COUNTERPARTY_MARKERS=0.
+ * Consumer: templates.findByKeywordFingerprint's buyer-issued scope (the quiet lane's selector) —
+ * so "what the harvest saw" and "what the JS mirror scores" cannot drift. Keep in sync with Python.
+ */
+const HEADER_RECIPIENT_MARKERS = ['bill to', 'ship to', 'invoice to', 'sold to', 'customer'];
+function headerBandText(ocrText, maxLines = 20) {
+  const cpty = process.env.FINGERPRINT_COUNTERPARTY_MARKERS !== '0' ? /\b(?:supplier|vendor)\b/i : null;
+  const out = [];
+  for (const line of String(ocrText || '').split('\n').slice(0, maxLines)) {
+    const low = line.toLowerCase();
+    if (HEADER_RECIPIENT_MARKERS.some(m => low.includes(m))) break;
+    if (cpty && cpty.test(line)) break;
+    out.push(line);
+  }
+  return out.join(' ');
+}
+
 module.exports = {
   BRANDING_STOPWORDS,
   DISTINCTIVE_MIN,
@@ -107,4 +129,6 @@ module.exports = {
   symmetricDistinctiveOverlap,
   convergesByBranding,
   nameCorroboratedByText,
+  headerBandText,
+  HEADER_RECIPIENT_MARKERS,
 };

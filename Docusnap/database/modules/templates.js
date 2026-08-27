@@ -661,25 +661,46 @@ function findByLogoHash(db, phash, threshold = 13, document_type_slug = null) {
 // keyword matcher SELECTS; identity is assigned only by the Python pipeline's matcher.
 const KEYWORD_THRESHOLD = 75;
 
+// BUYER-ISSUED LETTERHEAD SCOPE (2026-08-27, Chris round 6 card 1 — the JS twin of the Python arm in
+// template_matcher._match_by_keywords). A template marked `buyer_issued` carries the OWNER's own name +
+// address as its fingerprint, and those words print in the BILL TO block of every paper the business
+// receives — so the whole-page scan SELECTED three other suppliers' papers for a re-read (the quiet
+// lane's arm c′) and the same arm names that layout on the wizard save-target / graduation-link /
+// reextract roads (identifyByFingerprint). When the setting is on, a marked row is scored over the
+// LETTERHEAD band only (brandingFp.headerBandText — the harvest's own truncation); unmarked rows and
+// OFF are byte-identical. Env wins both directions (harness arms); the setting is the product switch.
+function _letterheadScopeOn(db) {
+  if (process.env.TEMPLATE_BUYER_ISSUED_LETTERHEAD_SCOPE === '1') return true;
+  if (process.env.TEMPLATE_BUYER_ISSUED_LETTERHEAD_SCOPE === '0') return false;
+  try { return require('./learning').getSetting(db, 'template_buyer_issued_letterhead_scope', 'false') === 'true'; }
+  catch { return false; }
+}
+
 function findByKeywordFingerprint(db, ocrText, threshold = KEYWORD_THRESHOLD, document_type_slug = null) {
   if (!ocrText) return null;
   const ocrLower = ocrText.toLowerCase();
+  // Letterhead scope (see _letterheadScopeOn): the band is computed once per call; the buyer_issued
+  // column is selected only where migration 66 has run (a fixture table without it scores whole-page).
+  const scopeOn   = _letterheadScopeOn(db);
+  const bandLower = scopeOn ? brandingFp.headerBandText(ocrText).toLowerCase() : null;
+  const cols      = (scopeOn && _hasBuyerIssued(db)) ? 'id, name, keyword_fingerprint, buyer_issued' : 'id, name, keyword_fingerprint';
   // Same optional TYPE SCOPING as findByLogoHash — a same-letterhead sibling of a
   // different type must not match here either (its keyword fingerprint is identical).
   const rows = document_type_slug
     ? db.prepare(
-        "SELECT id, name, keyword_fingerprint FROM templates WHERE keyword_fingerprint IS NOT NULL AND LOWER(COALESCE(document_type_slug, '')) = LOWER(?)"
+        `SELECT ${cols} FROM templates WHERE keyword_fingerprint IS NOT NULL AND LOWER(COALESCE(document_type_slug, '')) = LOWER(?)`
       ).all(document_type_slug)
-    : db.prepare('SELECT id, name, keyword_fingerprint FROM templates WHERE keyword_fingerprint IS NOT NULL').all();
+    : db.prepare(`SELECT ${cols} FROM templates WHERE keyword_fingerprint IS NOT NULL`).all();
 
   let best = null, bestScore = 0;
   for (const t of rows) {
     const keywords = _parseJson(t.keyword_fingerprint, []);
     if (!keywords.length) continue;
+    const hay = (bandLower !== null && t.buyer_issued) ? bandLower : ocrLower;
     let hits = 0;
     for (const kw of keywords) {
       const esc = kw.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      if (new RegExp(`(?<![a-z0-9])${esc}(?![a-z0-9])`).test(ocrLower)) hits++;
+      if (new RegExp(`(?<![a-z0-9])${esc}(?![a-z0-9])`).test(hay)) hits++;
     }
     const score = hits / keywords.length;
     if (score > bestScore) {

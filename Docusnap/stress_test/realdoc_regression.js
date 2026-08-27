@@ -346,6 +346,9 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
           // both arms while its EVIDENCE moved (hint@85 -> template_fixed@95) — the dump must see it.
           supConf: (supEx && typeof supEx === 'object' && supEx.confidence != null) ? supEx.confidence : null,
           supMethod: (supEx && typeof supEx === 'object' && (supEx.method || supEx.extraction_method)) || null,
+          // matched template id (2026-08-27, letterhead-scope arm): a per-TEMPLATE match count OFF vs ON
+          // shows a lost recognition of the owner's own layout before it shows as an accuracy drop.
+          tmpl: (m.template_id != null ? m.template_id : null),
         }) + '\n');
       } catch {}
     }
