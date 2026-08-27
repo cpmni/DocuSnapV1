@@ -46,14 +46,20 @@ console.log('2. the confirm panel: caption copy, the value PREVIEW, and a captio
         /else if \(isListField\(f\)\)\{[\s\S]{0,200}setPrompt\('Check the caption I found for', f\.label\);/.test(body)
         && body.indexOf("else if (isListField(f)){") < body.indexOf('} else if (typed){'));
   check('the preview line lists every value the caption collects on THIS page (from the document\'s stored text)',
-        /_listVals = _listPreviewValues\(r\.anchor_text, \(state\.doc && state\.doc\.ocr_text\) \|\| ''\);/.test(body)
+        // 2026-08-27 pm (Chris r8 card 1): the caption is NORMALISED + a generic tail EXTENDED before the preview,
+        // and the previewed caption is the one stored (`r.anchor_text = _cap`) — the preview and the keyword agree.
+        /_listVals = _listPreviewValues\(_cap, _ocr\);/.test(body)
+        && /LC\.cleanCaption\(r\.anchor_text\)/.test(body) && /LC\.extendCaption\(_cap, r\.value, _ocr\)/.test(body)
+        && /r\.anchor_text = _cap;/.test(body)
         && /collects \$\{_listVals\.length\} value/.test(body));
+  check('a caption that is still a generic tail ("No") is never offered: warning names it, "Looks right" demoted',
+        /_capOk = !!_cap && !_generic;/.test(body) && /on its own that would match every/.test(body));
   check('no caption → warning + "Looks right" demoted to "Save without a caption", Redraw label promoted',
         /A list is taught by its caption — I couldn't read one beside your box/.test(body)
         && /_yes\.textContent = 'Save without a caption'/.test(body)
         && /_rl\.classList\.add\('primary'\)/.test(body));
   check('"Looks right" stores the caption + the previewed values on the result',
-        /if \(isListField\(f\)\) \{ r\.listCaption = hasLabel \? r\.anchor_text : null; r\.listValues = _listVals \|\| \(r\.value \? \[String\(r\.value\)\] : \[\]\); \}/.test(body));
+        /if \(isListField\(f\)\) \{ r\.listCaption = _capOk \? r\.anchor_text : null; r\.listValues = _listVals \|\| \(r\.value \? \[String\(r\.value\)\] : \[\]\); \}/.test(body));
 }
 
 console.log('3. the preview helper behaves like the collector (whitespace-tolerant caption, value after it, dedupe)');
@@ -129,14 +135,20 @@ console.log('7. the Review ⊕ road teaches a List field the same way (owner: "t
         /\} else if \(_isListFieldKey\(fieldKey\)\) \{\s*delete pendingAnchors\[fieldKey\];[\s\S]{0,300}a list is taught by its[\s\S]{0,40}<strong>caption<\/strong>/.test(rv));
   {
     const s = rv.indexOf('function _stageListCaption(fieldKey, detected, text) {');
-    const body = s > -1 ? rv.slice(s, s + 2600) : '';
+    const body = s > -1 ? rv.slice(s, rv.indexOf('function _splitListValue(', s)) : '';   // the whole function (it grew with the merge rule)
     check('_stageListCaption stages a CAPTION record (no box geometry) keyed to the doc type',
           /pendingAnchors\[fieldKey\] = \{ listCaption: caption, field_key: fieldKey,\s*document_type: selectedTypeSlug \|\| currentDoc\?\.type_slug/.test(body));
-    check('…fills the field with EVERY value the caption collects on the page (shared preview) and records the correction',
+    // 2026-08-27 pm (Oracle cond 4): the fill MERGES (current ∪ (preview − (original − current))) and writes through the
+    // store's `input` event — the row listener is the ONE `corrections` writer; a direct write here is the old defect.
+    check('…fills the field with EVERY value the caption collects on the page (shared preview), merged, via the store input event',
           /window\.ListCaption\.previewValues\(caption, \(currentDoc && currentDoc\.ocr_text\) \|\| ''\)/.test(body)
-          && /input\.value = list\.join\('; '\);/.test(body) && /corrections\[fieldKey\] = \{ original_value: input\.dataset\.original, corrected_value: input\.value \};/.test(body));
-    check('…and tells the user on the bar: caption, count, values, and that every future occurrence fills the list',
-          /collects <strong>\$\{list\.length\}<\/strong> value/.test(body) && /every "\$\{escHtml\(caption\)\}" on future documents fills this list/.test(body));
+          && /input\.value = list\.join\('; '\);/.test(body) && /_listUnion\(current, _listMinus\(preview, removed\)\)/.test(body)
+          && /input\.dispatchEvent\(new Event\('input', \{ bubbles: true \}\)\);/.test(body) && !/corrections\[fieldKey\] =/.test(body));
+    check('…and tells the user on the bar: caption, count, values, and an HONEST forward promise (Chris r8 card 4)',
+          /collects <strong>\$\{preview\.length\}<\/strong> value/.test(body) && /I'll look for "\$\{escHtml\(caption\)\}" on future/.test(body)
+          && !/on future documents fills this list/.test(body));
+    check('a generic tail caption ("No") is extended from the page or refused with the reason — never staged',
+          /LC\.isGenericCaption/.test(body) && /LC\.extendCaption\(caption, text,/.test(body) && /on its own that would match every/.test(body));
     check('a suspicious / type-heading / fallback caption stages nothing (fail toward "draw again")',
           /const clean = caption && !labelLooksSuspicious\(caption\) && !labelIsTypeHeading\(caption\);[\s\S]{0,80}if \(!clean\) \{\s*delete pendingAnchors\[fieldKey\];/.test(body));
   }

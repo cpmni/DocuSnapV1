@@ -4299,18 +4299,33 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
          style="background:none; border:none; padding:0; font-size:11px; color:var(--muted); text-decoration:underline; cursor:pointer;"
          title="If this sender's documents never carry this field, switch it off so it stops showing here">Never on these documents?</button></div>`
     : '';
+  // LIST field (2026-08-27, panel + Oracle): the store input stays (hidden) as the ONE value confirm
+  // reads and the ONE `corrections` writer; a pills view sits over it with per-element edit / remove
+  // (+ put back), "+ One it missed" (= the ⊕ teach) and an "Edit as text" escape. Learning from a pill
+  // edit is THIS DOCUMENT ONLY — the caption teach is the only future-facing lever (Oracle cond 8/9).
+  const _isList = _isListFieldKey(key);
+  const _pickTitle = _isList
+    ? 'Point to a value the list missed — draw a box round it (with its caption just left of or above it). Scan Finder adds it here and learns the caption for every future document of this type.'
+    : 'Teach this field — only if it\'s showing the WRONG value. Draw a box round the correct value; Scan Finder pins that position and reads it on every future document from this supplier. A field already reading correctly doesn\'t need teaching.';
   row.innerHTML = `
     <div class="field-row-header">
       ${_dotSpan}
       <span class="field-row-label" data-key="${key}"${_issuerHint}>${escHtml(labelFor(key))}</span>
       ${confLabel}
     </div>
-    <div class="field-input-wrap">
-      <input type="text" class="field-input ${low ? 'low-conf' : ''}"
+    <div class="field-input-wrap${_isList ? ' list-mode' : ''}">
+      <input type="text" class="field-input ${low ? 'low-conf' : ''}${_isList ? ' list-store' : ''}"
              data-key="${key}" data-original="${escHtml(val)}" data-method="${escHtml(method || '')}"
-             value="${escHtml(val)}" placeholder="Not found">
-      <button class="pick-btn" data-key="${key}" title="Teach this field — only if it's showing the WRONG value. Draw a box round the correct value; Scan Finder pins that position and reads it on every future document from this supplier. A field already reading correctly doesn't need teaching.">&#8853;</button>
-    </div>
+             value="${escHtml(val)}" placeholder="Not found">${_isList ? `
+      <div class="list-chips" data-key="${key}" title="Each entry read for this list — click one to edit it, ✕ to drop one that isn't on this document"></div>` : ''}
+      <button class="pick-btn" data-key="${key}" title="${escHtml(_pickTitle)}">&#8853;</button>
+    </div>${_isList ? `
+    <div class="list-tools" data-key="${key}">
+      <span class="list-receipt"></span>
+      <button type="button" class="list-tool-btn list-add-btn" title="Draw a box round a value the list missed">+ One it missed</button>
+      <button type="button" class="list-tool-btn list-text-btn" title="Edit the whole list as text — entries separated by ;">Edit as text</button>
+      <button type="button" class="list-tool-btn list-undo-btn" hidden title="Put the list back exactly as it was read">Undo changes</button>
+    </div>` : ''}
     ${classFixHtml}${noteHtml}${anchorHtml}${corrobHtml}${neverHtml}
   `;
   row.querySelector('.never-here-btn')?.addEventListener('click', () => openSenderFieldEditor(key));
@@ -4324,6 +4339,7 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     } else {
       delete corrections[key];
     }
+    if (_isList) _renderListChips(row);   // the pills are a view over the store — repaint on every write
     // The operator has taken this field over, so the issuer-change suppression must let go —
     // otherwise the next repaint would blank what they just typed. Their edit is now recorded
     // in `corrections` in the ordinary way, including a deliberate clear back to empty.
@@ -4505,6 +4521,7 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     if (activeField === key) cancelZoneMode();
     else enterZoneMode(key, labelFor(key));
   });
+  if (_isList) _wireListRow(row, key);   // pills view + tools over the (hidden) store input
 
   // Accept the suggested correction: copy it into the editable input and fire
   // the normal 'input' event so it flows through the SAME path as a manual edit
@@ -5414,6 +5431,12 @@ function _hasMultilineRule(key) {
 }
 
 function showFieldRuleMenu(e, input, key) {
+  // LIST fields (Oracle cond 5, 2026-08-27): the cleanup-rule toolkit is a SCALAR tool — "keep only the
+  // main value" / a leading-trailing strip rule would gut an 'A; B; C' store (and the rule would then
+  // apply to every future list read of this sender). The pills carry per-element edit/remove instead;
+  // the native menu (copy/paste) is left alone. The server (`save-field-rule`) and the engine's
+  // field_rules loop refuse a list key too, so this early return is not the only guard.
+  if (_isListFieldKey(key)) { closeFieldRuleMenu(); return; }
   e.preventDefault();
   closeFieldRuleMenu();
   const value = input.value || '';
@@ -7684,7 +7707,27 @@ function _isListFieldKey(key) {
   return !!d && String(d.type || '').toLowerCase() === 'list' && !!window.__listFieldScanOn;
 }
 function _stageListCaption(fieldKey, detected, text) {
-  const caption = (detected && !detected.fallback) ? sanitizeAnchorLabel(detected.anchor_label || '') : '';
+  const LC = window.ListCaption || {};
+  const _clean = LC.cleanCaption || ((s) => String(s || '').trim());
+  // The label picker returns the token NEAREST the value ("No" out of "Serial No:") — right for an
+  // anchor, wrong for a caption keyword. Chris r8 card 1: "No" stored doc-type-wide matched "JOB SHEET NO
+  // CJB-9791" on the next worksheet and filed the job number as the serial at "1 found". So: normalise
+  // exactly as the IPC will store it, extend a generic tail to the phrase printed left of the value on
+  // THIS page ("Serial No"), and refuse to stage a caption that is still generic — with the reason.
+  let caption = _clean((detected && !detected.fallback) ? sanitizeAnchorLabel(detected.anchor_label || '') : '');
+  const _generic = (s) => !!(LC.isGenericCaption && LC.isGenericCaption(s));
+  if (caption && _generic(caption) && LC.extendCaption) {
+    const ext = LC.extendCaption(caption, text, (currentDoc && currentDoc.ocr_text) || '');
+    if (ext) caption = ext;
+  }
+  if (caption && _generic(caption)) {
+    delete pendingAnchors[fieldKey];
+    showTeachMessage(`&#9888; I read <span class="ar-val">${escHtml(text)}</span> but the caption beside it reads only `
+                   + `<strong>"${escHtml(caption)}"</strong> — on its own that would match every "${escHtml(caption)}" on the page `
+                   + `(a job sheet number, a VAT reg no…). Draw the box so the full caption (e.g. "Serial ${escHtml(caption)}") sits just `
+                   + `left of the value, or add the full caption in Settings → Learning → Keyword label overrides.`, { warn: true });
+    return;
+  }
   const clean = caption && !labelLooksSuspicious(caption) && !labelIsTypeHeading(caption);
   if (!clean) {
     delete pendingAnchors[fieldKey];
@@ -7697,18 +7740,205 @@ function _stageListCaption(fieldKey, detected, text) {
                                document_type: selectedTypeSlug || currentDoc?.type_slug || currentDoc?.document_type_slug || null };
   const vals = (window.ListCaption && window.ListCaption.previewValues)
     ? window.ListCaption.previewValues(caption, (currentDoc && currentDoc.ocr_text) || '') : [];
-  const list = vals.length ? vals : [String(text || '').trim()].filter(Boolean);
+  // The drawn value is explicit evidence — it joins the preview even when the caption regex missed
+  // its line (a "+ One it missed" click must always land the value the user pointed at).
+  const drawn = String(text || '').trim();
+  const preview = _listUnion(vals, (drawn && !drawn.includes(';')) ? [drawn] : []);
   const input = document.querySelector(`.field-input[data-key="${fieldKey}"]`);
-  if (input && list.length) {
+  let list = preview;
+  if (input && preview.length) {
+    // MERGE RULE (panel consensus + Oracle cond 4, 2026-08-27): current ∪ (preview − (original − current)).
+    // A ⊕ teach ADDS what the caption collects; it never resurrects an element the user already
+    // removed on this document (original − current), and never drops an element they typed or kept.
+    const original = _splitListValue(input.dataset.original);
+    const current  = _splitListValue(input.value);
+    const removed  = _listMinus(original, current);
+    list = _listUnion(current, _listMinus(preview, removed));
     input.value = list.join('; ');
-    corrections[fieldKey] = { original_value: input.dataset.original, corrected_value: input.value };
-    try { validateConfirm(); } catch {}
+    // The row's `input` listener is the ONE writer of `corrections` (+ clears warnings, re-validates,
+    // repaints the pills) — never write corrections here.
+    input.dispatchEvent(new Event('input', { bubbles: true }));
   }
   const typeName = (allDocTypes.find(t => t.slug === (selectedTypeSlug || currentDoc?.type_slug)) || {}).name || 'this document type';
-  showTeachMessage(`&#10003; Caption <strong>${escHtml(caption)}</strong> collects <strong>${list.length}</strong> value${list.length === 1 ? '' : 's'} on this page: `
-                 + `<span class="ar-val">${escHtml(list.slice(0, 12).join('; '))}${list.length > 12 ? ' …' : ''}</span>. `
-                 + `Saved as a keyword for <strong>${escHtml(labelFor(fieldKey))}</strong> on every ${escHtml(typeName)} when you confirm — `
-                 + `every "${escHtml(caption)}" on future documents fills this list.`);
+  // Chris r8 card 4: the old promise ("every X … fills this" on every future document) claimed more than
+  // the next worksheet delivered — say what will be TRIED and keep the eye on the row.
+  showTeachMessage(`&#10003; Caption <strong>${escHtml(caption)}</strong> collects <strong>${preview.length}</strong> value${preview.length === 1 ? '' : 's'} on this page: `
+                 + `<span class="ar-val">${escHtml(preview.slice(0, 12).join('; '))}${preview.length > 12 ? ' …' : ''}</span>. `
+                 + `Saved as a caption for <strong>${escHtml(labelFor(fieldKey))}</strong> on every ${escHtml(typeName)} when you confirm — `
+                 + `I'll look for "${escHtml(caption)}" on future ${escHtml(typeName)}s and fill this list from it. Always glance at it before filing.`);
+}
+// LIST value helpers — the store is 'A; B; C' (split on the store separator ONLY; a comma inside an
+// element is data). Set operations casefold, keep first-seen order and the first-seen spelling.
+function _splitListValue(s) {
+  return String(s ?? '').split(';').map(x => x.trim()).filter(Boolean);
+}
+function _listUnion(a, b) {
+  const out = [], seen = new Set();
+  for (const v of [...(a || []), ...(b || [])]) {
+    const k = String(v).trim().toLowerCase();
+    if (!k || seen.has(k)) continue;
+    seen.add(k); out.push(String(v).trim());
+  }
+  return out;
+}
+function _listMinus(a, b) {
+  const drop = new Set((b || []).map(v => String(v).trim().toLowerCase()));
+  return (a || []).filter(v => !drop.has(String(v).trim().toLowerCase()));
+}
+
+// ── LIST pills — a VIEW over the hidden store input (appendFieldRow, list rows) ─────────────────
+// Every mutation goes through _setListValue → the store's `input` event → the row listener (the ONE
+// `corrections` writer) → _renderListChips. Removed entries stay visible greyed with a put-back so a
+// mis-click is one click to undo; "Undo changes" restores data-original. Nothing here persists —
+// confirm reads the store like any other field; a pill edit teaches nothing beyond this document.
+function _setListValue(row, vals) {
+  const input = row.querySelector('.field-input');
+  if (!input) return;
+  input.value = _listUnion(vals, []).join('; ');
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+function _listRowState(row) {
+  return row._listState || (row._listState = { removed: [], editing: null });
+}
+function _renderListChips(row) {
+  const input = row.querySelector('.field-input');
+  const box   = row.querySelector('.list-chips');
+  if (!input || !box) return;
+  const st   = _listRowState(row);
+  const vals = _splitListValue(input.value);
+  const origSet = new Set(_splitListValue(input.dataset.original).map(v => v.toLowerCase()));
+  // A value the user typed back in (or put back) is no longer "removed".
+  st.removed = st.removed.filter(r => !vals.some(v => v.toLowerCase() === r.v.toLowerCase()));
+  box.innerHTML = '';
+  if (!vals.length && !st.removed.length) {
+    const e = document.createElement('span');
+    e.className = 'list-empty';
+    e.textContent = (input.dataset.method === 'keyword_list') ? 'Nothing found for this list' : 'No entries';
+    box.appendChild(e);
+  }
+  vals.forEach((v, i) => {
+    const chip = document.createElement('span');
+    chip.className = 'list-chip' + (origSet.has(v.toLowerCase()) ? '' : ' edited');
+    const valEl = document.createElement('span');
+    valEl.className = 'list-chip-val';
+    valEl.textContent = v;
+    valEl.title = origSet.has(v.toLowerCase()) ? `${v} — click to edit` : `${v} — edited on this document; click to edit again`;
+    valEl.addEventListener('click', () => _editListChip(row, i));
+    const x = document.createElement('button');
+    x.type = 'button'; x.className = 'list-chip-x'; x.textContent = '✕';
+    x.title = 'Remove this entry — it is not on this document (you can put it back)';
+    x.addEventListener('click', (e) => {
+      e.stopPropagation();
+      st.removed.push({ v, idx: i });
+      const next = vals.slice(); next.splice(i, 1);
+      _setListValue(row, next);
+    });
+    chip.append(valEl, x);
+    box.appendChild(chip);
+  });
+  st.removed.forEach((r, ri) => {
+    const chip = document.createElement('span');
+    chip.className = 'list-chip removed';
+    const valEl = document.createElement('span');
+    valEl.className = 'list-chip-val'; valEl.textContent = r.v; valEl.title = `${r.v} — removed`;
+    const back = document.createElement('button');
+    back.type = 'button'; back.className = 'list-chip-back'; back.textContent = '↺';
+    back.title = 'Put this entry back';
+    back.addEventListener('click', (e) => {
+      e.stopPropagation();
+      st.removed.splice(ri, 1);
+      const cur = _splitListValue(input.value);
+      cur.splice(Math.min(r.idx, cur.length), 0, r.v);
+      _setListValue(row, cur);
+    });
+    chip.append(valEl, back);
+    box.appendChild(chip);
+  });
+  // Receipt + undo. The caption is NOT named here: the stored row carries no verified caption
+  // (extractions.anchor_label is never set for a keyword read) — "N found" is what we can vouch for.
+  const receipt = row.querySelector('.list-receipt');
+  if (receipt) {
+    const n = vals.length;
+    const found = (input.dataset.method === 'keyword_list')
+      ? `${n} found on this document` : `${n} ${n === 1 ? 'entry' : 'entries'}`;
+    receipt.textContent = found + (st.removed.length ? ` · ${st.removed.length} removed` : '');
+  }
+  // Chris r8 card 3: on a list that STARTED EMPTY, "Undo changes" = wipe everything the user pointed out —
+  // there is nothing to undo back TO, so the link is not offered (✕ + ↺ cover a single entry). When there
+  // was a read, the label says what it restores and how many.
+  const undo = row.querySelector('.list-undo-btn');
+  if (undo) {
+    const origVals = _splitListValue(input.dataset.original);
+    undo.hidden = (input.value === input.dataset.original) || !origVals.length;
+    undo.textContent = `Undo all my changes (back to the ${origVals.length} read)`;
+    undo.title = `Put the list back exactly as it was read — ${origVals.length} ${origVals.length === 1 ? 'entry' : 'entries'}; your edits and removals on this document are dropped`;
+  }
+}
+function _editListChip(row, i) {
+  const input = row.querySelector('.field-input');
+  const box   = row.querySelector('.list-chips');
+  if (!input || !box) return;
+  const st = _listRowState(row);
+  if (st.editing) return;                       // one editor at a time
+  const vals = _splitListValue(input.value);
+  const chip = box.querySelectorAll('.list-chip:not(.removed)')[i];
+  if (!chip || vals[i] == null) return;
+  const was = vals[i];
+  const ed = document.createElement('input');
+  ed.type = 'text'; ed.className = 'list-chip-edit'; ed.value = was;
+  ed.setAttribute('data-help-ignore', '');
+  ed.style.width = Math.max(110, Math.min(360, was.length * 8 + 24)) + 'px';
+  chip.replaceWith(ed);
+  st.editing = ed;
+  let done = false;
+  const finish = (commit) => {
+    if (done) return;
+    done = true; st.editing = null;
+    const nv = ed.value.trim();
+    if (!commit || nv === was) { _renderListChips(row); return; }
+    if (nv.includes(';')) {
+      // The store separator can never live inside an entry (reggie 2026-08-26) — same refusal as the
+      // collector; keep the value as it was and say why.
+      // Chris r8 card 6: warn without marking the STORE invalid — the red would spread to every pill
+      // through the sibling combinator and read as "you've broken both of these".
+      setFieldWarning(row, null, 'An entry can\'t contain ";" — that\'s the separator between entries');
+      _renderListChips(row); return;
+    }
+    clearFieldWarning(row, input);
+    const next = vals.slice();
+    if (!nv) next.splice(i, 1); else next[i] = nv;
+    _setListValue(row, next);
+  };
+  ed.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter')  { e.preventDefault(); finish(true); }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); }
+  });
+  ed.addEventListener('blur', () => finish(true));
+  requestAnimationFrame(() => { try { ed.focus(); ed.select(); } catch {} });
+}
+function _wireListRow(row, key) {
+  const wrap  = row.querySelector('.field-input-wrap');
+  const input = row.querySelector('.field-input');
+  if (!wrap || !input) return;
+  row.classList.add('list-row');
+  row.querySelector('.list-add-btn')?.addEventListener('click', () => {
+    // Same door as the ⊕ — the caption is detected beside the drawn value and staged as a teach.
+    row.querySelector('.pick-btn')?.click();
+  });
+  const textBtn = row.querySelector('.list-text-btn');
+  textBtn?.addEventListener('click', () => {
+    const on = wrap.classList.toggle('list-text-mode');
+    textBtn.textContent = on ? 'Show as list' : 'Edit as text';
+    if (on) { try { input.focus(); } catch {} }
+    else _renderListChips(row);
+  });
+  row.querySelector('.list-undo-btn')?.addEventListener('click', () => {
+    _listRowState(row).removed = [];
+    clearFieldWarning(row, input);
+    input.value = input.dataset.original;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  _renderListChips(row);
 }
 
 function _valueOnPageSepless(value, pageText) {

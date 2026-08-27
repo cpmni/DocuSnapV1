@@ -727,7 +727,52 @@
       display: flex; align-items: center; justify-content: center; transition: all .15s;
     }
     .pick-btn:hover   { border-color: var(--accent); color: var(--accent); }
-    .pick-btn.picking { border-color: var(--accent); background: var(--accent-bg); color: var(--accent2); }
+    .pick-btn.picking { border-color: var(--accent); background: var(--accent2); color: var(--on-accent, #fff); }
+
+    /* ── LIST field pills (2026-08-27, panel + Oracle) ──
+       The <input class="field-input list-store"> stays the ONE store confirm reads (allValues) and the
+       ONE `corrections` writer (its input listener); the pills are a VIEW over it. State classes on
+       the store (corrected / required-missing / invalid / low-conf / zone-active) reach the pills via
+       the sibling combinator — no JS sync. "Edit as text" flips the wrap into .list-text-mode. */
+    .field-input-wrap.list-mode .field-input.list-store { display: none; }
+    .field-input-wrap.list-mode.list-text-mode .field-input.list-store { display: block; }
+    .field-input-wrap.list-mode.list-text-mode .list-chips { display: none; }
+    .list-chips {
+      flex: 1; min-width: 0; min-height: 28px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+      padding: 3px 6px; border: 1px solid var(--border2); border-radius: 6px; background: var(--surface);
+    }
+    .field-input.corrected ~ .list-chips { border-color: var(--warn); }
+    .field-input.low-conf ~ .list-chips,
+    .field-input.required-missing ~ .list-chips,
+    .field-input.invalid ~ .list-chips { border-color: var(--err); background: var(--err-bg); }
+    .field-input.zone-active ~ .list-chips { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(79,142,247,.25); background: var(--accent-bg); }
+    .list-chip {
+      display: inline-flex; align-items: center; gap: 2px; max-width: 100%;
+      padding: 1px 3px 1px 7px; border-radius: 999px; border: 1px solid var(--border2);
+      background: var(--surface2); color: var(--text); font-family: var(--mono); font-size: 11px; line-height: 1.5;
+    }
+    .list-chip-val { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
+    .list-chip-val:hover { text-decoration: underline dotted; }
+    .list-chip.edited  { border-color: var(--warn); }
+    .list-chip.removed { opacity: .6; border-style: dashed; }
+    .list-chip.removed .list-chip-val { text-decoration: line-through; cursor: default; }
+    .list-chip-x, .list-chip-back {
+      border: none; background: none; padding: 0 3px; line-height: 1; font-size: 11px; color: var(--muted); cursor: pointer;
+    }
+    .list-chip-x:hover    { color: var(--err); }
+    .list-chip-back:hover { color: var(--ok); }
+    .list-chip-edit {
+      font-family: var(--mono); font-size: 11px; min-width: 110px; padding: 1px 6px;
+      border: 1px solid var(--accent); border-radius: 999px; background: var(--surface); color: var(--text);
+    }
+    .list-empty { font-size: 11px; color: var(--muted); font-style: italic; }
+    .list-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 3px; font-size: 10.5px; color: var(--muted); }
+    .list-tool-btn {
+      background: none; border: none; padding: 0; font-family: var(--sans); font-size: 10.5px;
+      color: var(--accent2); text-decoration: underline; cursor: pointer;
+    }
+    .list-tool-btn:hover { color: var(--accent); }
+    .list-tool-btn[hidden] { display: none; }
 
     /* ── Action bar ── */
     #action-bar { display: flex; gap: 6px; padding: 10px 14px; border-top: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }

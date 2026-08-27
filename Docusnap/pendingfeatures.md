@@ -87,8 +87,39 @@ overlay instead of drawing (the inventory has the boxes). Size ≈ engine 40 lin
   value the caption collects on the page (`shared/listCaption.js`, the ONE preview both windows use) + the bar says so → at
   confirm the record routes to `teach-list-caption` (never `saveFieldAnchor`). No caption read → nothing staged, the bar says
   a list is taught by its caption. Residual: the preview is the inline (same-line) shape only — a caption ABOVE a column
-  previews element 1, like the collector. NEXT (owner ask, in the advisor brainstorm 2026-08-27 pm): chips display of the
-  detected values in Review + a per-element "problem" flow + what a correction teaches.
+  previews element 1, like the collector.
+  **✅ REVIEW PILLS (built 2026-08-27 pm; panel barry/gary/reggie/eric/bob/Chris-lens → Oracle SIGN-OFF-W/COND, log
+  `docs/oracle_log.md`):** the list field's text box is now a PILLS view over the (hidden) store input — click a pill to edit
+  it, ✕ removes it (stays greyed with ↺ put back), "+ One it missed" = the ⊕ caption teach (merge rule current ∪ (preview −
+  (original − current)) — never resurrects a removed entry, never drops a typed one), "Edit as text", "Undo changes", receipt
+  "N found on this document". Learning from a pill edit is THIS DOCUMENT ONLY (no hint — `saveCorrections`/`replantConfirmHints`
+  skip a list-typed field); the caption teach is the only future-facing lever. Guards: the right-click cleanup toolkit,
+  `save-field-rule` and the engine field_rules loop all refuse a list key. Collector: union across TAUGHT captions in page
+  order, caption tail bound (collect-only, `LIST_CAPTION_TAIL_BOUND`), digit gate for a list of codes + caption-vocab arm
+  (`LIST_ELEMENT_DIGIT_GATE`), longest caption wins per line, own-label-only seed for a list-typed ref-role field.
+  **Residuals / deferred (named, not hidden):** (a) a taught caption and the field's OWN-LABEL seed do NOT union (Oracle
+  cond 1 = override-only; synthetic mixed "Serial No"/"Serial Number" pages score 8/60 until both are taught — teach both, or
+  a follow-up unions the own-label seed for list-typed fields); (b) a caption ABOVE a column still yields element 1 (header-row
+  pages: 0/60 exact either arm — a column collector is its own arc); (c) no count witness / no within-document shape
+  consensus (an amber "looks different" edge on an odd pill — a non-note channel so it never blocks filing; census first);
+  (d) trust: `docTrustGate` may hold a list field on a graduated sender via the none/constant/code classes and one corrected
+  serial counts as a scope correction — trust-count exemption + `getFieldFormats` element split = slice 2 (census first,
+  Oracle-flagged); (e) the receipt never names the caption (the stored row carries no verified caption —
+  `extractions.anchor_label` is never set for a keyword read); (f) search/export per element (barry).
+  **Found by the evening gates + Chris r8 (2026-08-27) — NOT built, owner vet queue:**
+  (g) **OCR TEXT-LOSS ARC (blocks the serial feature on SCANS):** the stored page text of the scanned Castellan worksheets has NO
+  "Serial No: …" lines (live docs 11/13/1504; sandbox doc 217 vs the born-digital doc 2 of the SAME PDF, which has both) — the
+  OCR / visual-row rebuild (`ocr/tesseract.py`) drops the small lines under each item row (only "i"/"cd" debris survives). Same
+  class as the 08-22 "type banner dropped from page text on 105/416" census. 007/oscar arc: render the item band, compare raw
+  tesseract vs the rebuilt rows, find where the line dies. Until then a caption teach collects nothing on scanned worksheets.
+  (h) **AN UNREAD OPTIONAL FIELD HOLDS A GRADUATED TYPE:** `validator.overall_confidence` scores EVERY field when the type has no
+  required fields and counts an expected-but-empty one as 0 — adding the List field to Service Worksheet sank every Castellan
+  worksheet to overall 81 < floor 95 (realdoc: 96/96 would-file → held; `rr_ids_consensus2.jsonl`). Owner remedy now: mark the
+  three structural roles *required* on that type. System fix (Oracle): when nothing is required, score the structural roles;
+  never score an optional List field's absence (its collector is fail-toward-empty by design).
+  (i) **within-document shape consensus exhibit** (Chris r8 card 2): `Serial No:    T-8325384` (OCR misread, no "C") sat beside
+  `CT-8116138` with no mark — the deferred (c) above now has its exhibit.
+  (j) "Never on these documents?" link copy reads as a riddle (Chris r8 card 5) → "This field isn't on these documents — hide it".
 - **LIST field residuals (audited 2026-08-26):** a caption ABOVE a vertical COLUMN reads element 1 only (the
   collector is per-line label→value); no count witness; search indexes the joined string (no per-element snippet);
   chips UI + long-format CSV export + repeated `<Value>` XML elements (barry). Tonight shipped only the `;`

@@ -50,11 +50,26 @@ caption beside it → a preview of every value that caption collects on the page
 no box stored; the taught doc files with all the previewed values. A List field's LABEL alone ("Serial Number") never matches
 a printed "Serial No:" — the caption teach is what makes it collect. The Review ⊕ road does the same (a `{listCaption}`
 record in `pendingAnchors` → `teach-list-caption` at confirm; the field is filled with every value the caption collects,
-`shared/listCaption.js` = the ONE preview). Pin `test_teach_auto_field_rows.js` (34). App restarted 14:32 for the wizard;
-the ⊕ road needs ANOTHER restart. NEXT (brainstorm with all advisors → Oracle, then build): chips display of the detected
-values in Review + a per-element "problem" flow + what a correction teaches. QUEUED after that (owner): a complete HELP
-SYSTEM overhaul plan (teach-then-import is now the recommended route; quick start; plain speak; screenshot markers) + a Help
-button on the Home screen menu.
+`shared/listCaption.js` = the ONE preview). Pin `test_teach_auto_field_rows.js` (34). **REVIEW PILLS (pm; panel barry/gary/
+reggie/eric/bob/Chris-lens → Oracle SIGN-OFF-W/COND, all ten conditions built):** a List field's box in Review is now PILLS over
+the hidden store input (the ONE value confirm reads / the ONE `corrections` writer; every mutation dispatches its `input`
+event; state reaches the pills via CSS sibling combinators) — click-to-edit, ✕ with ↺ put-back, "+ One it missed" = the ⊕
+caption teach (merge rule current ∪ (preview − (original − current))), "Edit as text", "Undo changes", "N found on this
+document". A pill edit teaches THIS DOCUMENT ONLY (no hint — `_isListTypedField` skips in `saveCorrections` +
+`replantConfirmHints`); three guards refuse a field RULE on a list key (`showFieldRuleMenu`, `save-field-rule`, engine
+field_rules). Collector: union across TAUGHT captions in page order, collect-only tail bound (`LIST_CAPTION_TAIL_BOUND`),
+code digit gate + caption-vocab arm (`LIST_ELEMENT_DIGIT_GATE`), LONGEST CAPTION WINS PER LINE, own-label-only seed for a
+list-typed ref-role field. Pins `test_list_field_scan.py` 27 · `test_list_field_pills.js` 34 · `test_list_field_learning_skip.js`
+8; census: one taught caption debris 478→0, no shape loses a serial. Residual: a taught caption + the own-label seed do NOT
+union (teach both spellings). **Chris r8 → FIXED same evening:** the ⊕ label picker's nearest token ("No") became a doc-type
+keyword and filed the JOB number as the serial → ONE `cleanCaption` shared by ⊕/wizard/IPC, a generic tail is EXTENDED to the
+page phrase ("Serial No") or REFUSED on all three roads. **TWO FINDINGS FOR THE OWNER (not code):** (1) your scanned Castellan
+worksheets' page text has NO "Serial No:" lines (OCR row-rebuild loss; the born-digital twin has them) → caption teach collects
+nothing on scans → OCR arc queued; (2) adding the List field to Service Worksheet (no required fields → every field scored,
+unread = 0) sank every Castellan worksheet to overall 81 < floor 95 → **all 96 now HOLD; remedy = tick *required* on
+Issuer/Date/Reference for that type** (system fix → Oracle). **App must be restarted for the pills.** QUEUED (owner): a complete HELP SYSTEM overhaul plan
+(teach-then-import is now the recommended route; quick start; plain speak; screenshot markers) + a Help button on the Home
+screen menu.
 **LIVE FLIPS 13:35 (owner: "flip the switches and start the app"):** `corrob_verification_doubt_clear`, `learning_exclude_docs`,
 `learning_repair_console`, `learning_repair_forget`, `barcode_inventory`, `barcode_field`, `template_buyer_issued_letterhead_scope`
 set `true` on the live DB by direct UPSERT (no audit rows — see the handover); app restarted on CDP 9222, **DB at mig 91** (mig 89
@@ -909,7 +924,9 @@ Key pieces:
   `reviewService`), doc-types, presence ("Currently being reviewed by <name>"), workflow routes, enroll/CA.
   DTO projection returns ONLY the frozen contract fields (never `stored_path`/`folder_path`/`working_path`).
 - **Managed 2-tier TLS** (`certService.js`, node-forge) — a CA signs a server cert; the client pins the CA.
-- **Mailbox/approval workflow** — present but HIDDEN pre-release behind `WORKFLOW_FEATURE_ENABLED=false`.
+- **Mailbox/approval workflow** — LIVE since 2026-08-02 (`entitlementService.js` `WORKFLOW_FEATURE_ENABLED = true`, still
+  entitlement-gated by the add-on); only the Settings `#wf-section` tab stays hidden. (Corrected 2026-08-27 — bob caught the
+  stale "hidden pre-release" line during the help-plan review.)
 - **TOTP MFA** (client-only) + **/v1 session revocation** on admin deactivate/role-change/password-reset.
 
 ⚠ Security invariants (preserve): real TLS verification, NO silent self-signed bypass in the client UI;

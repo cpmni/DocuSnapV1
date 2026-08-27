@@ -2218,3 +2218,53 @@ Castellan/Meadowvale confirms show a BLANK supplier before the human typed it (`
 surface `sticky_binding_declined` as a review note ("This layout's letterhead isn't on this page") — pendingfeatures.
 **Residuals named (gary):** the mark seam (outbound non-PO layouts unprotected); the logo arm's whole-page text gate on a
 phash collision; band OCR variance across siblings (→ Review, never a wrong company).
+
+## 2026-08-27 pm — LIST FIELD REVIEW PILLS (owner ask; panel barry/gary/reggie/eric/bob/Chris-lens) — SIGN OFF WITH CONDITIONS → BUILT
+**Owner ask (verbatim intent):** "a text display of the detected values … with the option to state if there is a problem …
+maybe 9 are good but 1 is bad … should it let them manually edit … should there be an option to do something that would
+enhance teaching of this field in future". **Panel consensus:** pills as a VIEW over the hidden store input (the ONE value
+confirm reads, the ONE `corrections` writer); per-pill edit / ✕ with put-back / "+ One it missed" (= the ⊕ caption teach);
+NO dialog taxonomy (a wrong pill is just edited — Chris-lens: "state a problem" is a form nobody fills); "Edit as text"
+escape; learning = this document only + the caption teach (the only future-facing lever — a per-element correction has
+no scope-wide meaning: the OTHER documents print OTHER serials).
+**Verdict: SIGN OFF WITH CONDITIONS.** (1) union across OVERRIDE (taught) captions only, page order — never the generic
+bank; (2) the caption tail bound `(?![a-z])` ONLY under `collect=True`, shipped TOGETHER with the union (alone it trades a
+visible debris pill for an invisible miss); (3) a digit gate for a list of CODES (inferred 'alphanumeric') + the known-
+caption vocab armed for list keys, own switch `LIST_ELEMENT_DIGIT_GATE` DEFAULT ON, not coupled to `REF_ROLE_DIGIT_GATE`;
+documented trade = a digitless serial in a `*_number` list; (4) the ⊕ merge rule current ∪ (preview − (original − current))
+through the store's `input` event, never `corrections` directly; (5) three guards, one classifier (field TYPE on the slug-
+keyed type): `showFieldRuleMenu` early return + `save-field-rule` refusal + the engine field_rules skip (a `remove_text`
+rule on one serial would truncate every future list; `keep_block` collapses it to one token); (6) drop the generic ref bank
+for a list-typed ref-role field in `seed_field_labels` (a "Reference No" seed would collect the job reference as an
+element — the digit gate cannot touch it); (7) `saveCorrections` + `replantConfirmHints` skip a list-typed field (a hint
+would replant THIS document's serials onto the next); (8) no hold from this slice (a shape-consensus flag rides a non-note
+channel, census first); (9) no trust exemption now (`docTrustGate` none/constant/code classes + the field-agnostic
+correction count = slice 2, census first); (10) gate: pins both directions with positive controls, realdoc `RR_APP_ENV=1`
+M=0 with the accuracy table unchanged, a generated serial-page census OFF vs ON, a live control on the owner's worksheets,
+a Chris round for the copy.
+**Conditions → status:** all ten BUILT/pinned — `test_list_field_scan.py` 11→27 checks (union/page order, override-vs-plain
+precedence both ways, tail bound ON/OFF + scalar byte-identity + the pairing pin, digit gate ON/OFF + non-code key + the
+trade, vocab arm ON/OFF, seed bank ON/OFF, longest-caption-per-line + control), `test_list_field_pills.js` 34 (listCaption
+twin, renderer/CSS/handler/engine/learning source contracts), `test_list_field_learning_skip.js` 8 (DB round-trip both
+writers + positive controls + fail-open). **Found while pinning, closed:** a taught caption that is a word-PREFIX of
+another ("Model" / "Model No") reads the longer caption's tail as a value on the shared line → LONGEST CAPTION WINS PER
+LINE (recorded from raw hits before the gates, so a refused long read still owns its line). **Census** (synthetic
+worksheets, the app's real seed+merge bank, identical page sets both arms, 360 pages × 6 shapes): with one taught caption
+debris 478 → **0**, missed 674 → 674 (the same 60 header-row element-1 residual + 418 plural lines until the plural caption
+is taught); with three taught captions exact 300/360 both arms, debris 60 → **0**, missed 60 → 60; no shape loses a real
+serial under ON. Two premise traps caught by the pins themselves: "Serial No" does NOT prefix-match "Serial Number"
+("Nu" ≠ "No") and the pre-existing short-value (2-char) + ALL-CAPS guards refuse on every path — controls re-chosen so no
+pin is vacuous. Realdoc + live control + Chris copy round: see `HANDOVER_2026-08-27_DAY.md` RESULTS.
+**Residuals named:** own-label seed vs taught caption do not union (cond 1's letter; synthetic mixed pages 8/60 until both
+are taught); caption-above-column = element 1; no count witness; the receipt cannot name the caption (no verified caption
+on the stored row); trust slice 2.
+**Post-round addendum (Chris r8 + the realdoc gate, same evening):** (1) the ⊕ label picker returns the token NEAREST the
+value, so a value-only box stored the caption **"No"** doc-type-wide and the twin's reprocess collected the JOB SHEET number
+as the serial at "1 found"; the Review preview had used "No:" (multi-word branch) → preview ≠ store. FIXED inside the slice
+(no new switch — it only REFUSES/EXTENDS what a teach may store): ONE `cleanCaption` for ⊕ / wizard / IPC; a generic tail
+(`no|nos|number|num|nº|#|ref|reference|id|code|date|qty|quantity`) is extended to the phrase printed left of the drawn value
+on the page or refused with the reason; server-side refusal too. Pinned (`test_list_field_pills.js` 41, teach pins). (2) The
+realdoc "regression" (96 Castellan worksheets would-file → held) is NOT the collector: an unread optional field on a type
+with no required fields scores 0 in `overall_confidence` → 81 < floor 95. Owner remedy = mark the roles required; a system
+fix is queued for a separate vet (cond 9 stands — no trust change shipped). (3) The scanned worksheets' page text lacks the
+"Serial No:" lines entirely (OCR/row-rebuild loss; the born-digital twin has them) — an OCR arc, not this slice.

@@ -421,6 +421,19 @@ _DATE_ROLE_CAPTIONS = ["Date"]
 # (see the party branch in seed_field_labels below).
 SEED_FREE_TEXT_ENABLED = True
 
+# LIST collect precision (Oracle SIGN-OFF-W/COND 2026-08-27, conds 2 + 3; brainstorm barry/gary/reggie/eric/
+# bob/Chris). Both live ONLY inside the list collect path, so a scalar field is byte-identical whatever they say.
+#   LIST_CAPTION_TAIL_BOUND (default ON): a taught caption gets a letter-only tail bound in collect mode —
+#     "Serial No" no longer fires on "Serial Nos: A" (which yielded the debris element "s: A"); "Serial No1234"
+#     still matches. Ships TOGETHER with the union across taught captions (extract_fields) — alone it would
+#     trade a visible debris pill for an invisible miss.
+#   LIST_ELEMENT_DIGIT_GATE (default ON): a list of CODES (inferred validation 'alphanumeric') refuses an
+#     element with fewer than two digits in one run — "Model" / "Qty" / a header word read to the right of a
+#     caption on a header row — and arms the known-caption vocab for list keys. Documented trade: a digitless
+#     serial in a *_number field. Own switch, deliberately NOT coupled to REF_ROLE_DIGIT_GATE.
+LIST_CAPTION_TAIL_BOUND  = os.environ.get('LIST_CAPTION_TAIL_BOUND', '1') != '0'
+LIST_ELEMENT_DIGIT_GATE  = os.environ.get('LIST_ELEMENT_DIGIT_GATE', '1') != '0'
+
 
 def seed_field_labels(patterns: dict, field_defs: "list | None") -> dict:
     """RC1 (2026-07-10): make a CUSTOM ref/date field attemptable at Stage 1 from its OWN DB label
@@ -509,6 +522,13 @@ def seed_field_labels(patterns: dict, field_defs: "list | None") -> dict:
             continue
         label = str((f or {}).get("label") or "").strip()
         forms = _DATE_ROLE_CAPTIONS if role == "date" else _REF_ROLE_CAPTIONS
+        # LIST-typed ref-role field (Oracle cond 6, 2026-08-27): seed its OWN label only. The generic ref
+        # bank ("Reference No" / "Ref") on a `serial_number` LIST would collect the page's JOB REFERENCE
+        # as an element before any caption is taught — the false-element source the digit gate cannot
+        # touch (a reference has digits). Gated on the list scan so OFF is byte-identical.
+        if (role == "alphanumeric" and str((f or {}).get("type") or "").lower() == "list"
+                and os.environ.get("LIST_FIELD_SCAN", "0") != "0"):
+            forms = []
         labels, seen = [], set()
         for lab in ([label] + list(forms) if label else list(forms)):
             low = lab.strip().lower()
@@ -1349,29 +1369,48 @@ def extract_fields(ocr_text: str, field_keys: list[str],
         # G3b: arm the known-caption VALUE guard for this field (name-like/party, customer-side —
         # the engine already excluded supplier_name from caption_guard_keys). Pass the vocab so a
         # caption-valued candidate dies at generation; None (unarmed / kill switch off) = unchanged.
+        # LIST keys also arm the caption vocab (Oracle cond 3, 2026-08-27): a candidate element that IS a
+        # known caption ("Model", a run caption on a header row) dies at generation and falls through —
+        # the same G3b guard the name-like fields use; rides the LIST_ELEMENT_DIGIT_GATE switch.
         _cap_guard = (caption_vocab if (KNOWN_CAPTION_GUARD_ENABLED and caption_vocab
-                                        and field_key in (caption_guard_keys or ())) else None)
+                                        and (field_key in (caption_guard_keys or ())
+                                             or (LIST_ELEMENT_DIGIT_GATE and list_keys and field_key in list_keys))) else None)
 
         # ── LIST fields: collect EVERY accepted occurrence of the label ──────────────────
         if list_keys and field_key in list_keys:
-            elements, seen = [], set()
-            _won_label = None
-            for label in labels:
-                is_override = False
-                if isinstance(label, dict):
-                    label_text = label["text"]
-                    label_dirs = label.get("directions", dirs)
-                    is_override = bool(label.get("override"))
-                else:
-                    label_text = label
-                    label_dirs = dirs
-                for raw_val, _dir in _search_for_label(
+            # UNION ACROSS TAUGHT CAPTIONS (Oracle cond 1, 2026-08-27; owner: "every iteration of that
+            # keyword should allow the corresponding value to populate the list"). The taught (override)
+            # captions of a list field are ALL collected — a second caption taught on a missed occurrence
+            # is real, not a dead instruction — and their elements are ordered by PAGE LINE (the pills
+            # must match the paper, not the caption order). PLAIN labels keep the pinned first-wins
+            # (test_list_field_scan #8): once any override yielded, no plain/seeded/generic label appends;
+            # with no override yield, plain labels run first-wins as before. Dedupe stays exact casefold,
+            # first-seen (Oracle C5). `label` records EVERY contributing caption (the receipt must never
+            # invent provenance). LIST_ELEMENT_DIGIT_GATE (own switch, default ON): a list of codes whose
+            # inferred validation is 'alphanumeric' refuses an element with fewer than two digits in one run
+            # ("Model", "Qty", a header word) — the documented trade is a digitless serial in a *_number key.
+            elements, seen, _order = [], set(), []
+            _won_labels = []
+            _digit_gate = (LIST_ELEMENT_DIGIT_GATE and _infer_validation(field_key) == 'alphanumeric')
+            _cands, _label_seq, _hit_len = [], [], {}   # accepted (v, line, caption_len, caption) · caption order · longest caption that HIT a line
+
+            def _collect_label(label_text, label_dirs):
+                got = 0
+                _ln = len(label_text)
+                for raw_val, _dir, _li in _search_for_label(
                         lines, label_text, label_dirs, role_caption=role_caption,
                         caption_guard=_cap_guard, vat_role=(pk == 'vat_tax'),
                         trace=trace, collect=True):
+                    if _li is not None and _ln > _hit_len.get(_li, -1):
+                        _hit_len[_li] = _ln           # recorded BEFORE the gates: a refused long read still owns its line
                     v = _post_label_value(raw_val, field_key, fp, role_caption, pk)
                     if v is None:
                         continue                      # a bad occurrence never poisons the rest
+                    if _digit_gate and not re.search(r'\d\S*\d', v):
+                        if trace:
+                            try: trace('list_element_refused', field=field_key, value=v[:80], reason='digit_gate')
+                            except Exception: pass
+                        continue
                     # SEPARATOR COLLISION (reggie 2026-08-26): the store joins elements with '; ', so an
                     # element that itself carries ';' (or a control char) would split into two on every
                     # reader. REFUSE it — never escape or split — and count it in the trace.
@@ -1380,23 +1419,54 @@ def extract_fields(ocr_text: str, field_keys: list[str],
                             try: trace('list_element_refused', field=field_key, value=v[:80], reason='separator')
                             except Exception: pass
                         continue
-                    k = v.strip().casefold()
-                    if k in seen:
-                        continue                      # exact dedupe, first-seen order (Oracle C5)
-                    seen.add(k)
-                    elements.append(v.strip())
-                # Mirror the scalar break: the first label that yields ANY element owns the
-                # field — a later generic label must not append strays onto a taught caption's
-                # clean list.
-                if elements:
-                    _won_label = label_text
-                    break
+                    _cands.append((v.strip(), _li, _ln, label_text))
+                    got += 1
+                if got and label_text not in _label_seq:
+                    _label_seq.append(label_text)
+                return got
+
+            _override_labels = [(l["text"], l.get("directions", dirs)) for l in labels
+                                if isinstance(l, dict) and l.get("override")]
+            _plain_labels = [((l["text"], l.get("directions", dirs)) if isinstance(l, dict) else (l, dirs))
+                             for l in labels if not (isinstance(l, dict) and l.get("override"))]
+            for label_text, label_dirs in _override_labels:
+                _collect_label(label_text, label_dirs)
+            if not _cands:
+                # Mirror the scalar break: the first PLAIN label that yields ANY element owns the
+                # field — a later generic label must not append strays onto a clean list.
+                for label_text, label_dirs in _plain_labels:
+                    if _collect_label(label_text, label_dirs):
+                        break
+            # LONGEST CAPTION WINS PER LINE (2026-08-27, found while pinning the union): when one taught
+            # caption is a word-prefix of another ("Model" / "Model No"), the shorter one ALSO fires on the
+            # longer one's line and reads the longer caption's tail as a value ("No: NW-2"). Per page line,
+            # only the elements of the LONGEST caption that HIT that line survive. Captions that never share
+            # a line are untouched, so a single-caption field is byte-identical.
+            _kept_labels = set()
+            for v, li, ln, lt in _cands:
+                if li is not None and ln < _hit_len.get(li, ln):
+                    if trace:
+                        try: trace('list_element_refused', field=field_key, value=v[:80], reason='shorter_caption_on_line')
+                        except Exception: pass
+                    continue
+                k = v.casefold()
+                if k in seen:
+                    continue                          # exact dedupe, first-seen order (Oracle C5)
+                seen.add(k)
+                elements.append(v)
+                _order.append(li)
+                _kept_labels.add(lt)
+            _won_labels = [lt for lt in _label_seq if lt in _kept_labels]
             if elements:
+                if len(_won_labels) > 1:
+                    # page order across captions (stable: ties keep first-seen)
+                    _idx = sorted(range(len(elements)), key=lambda j: (_order[j], j))
+                    elements = [elements[j] for j in _idx]
                 results[field_key] = {
                     "value":      "; ".join(elements),
                     "confidence": min(95, base_conf + 5),
                     "method":     "keyword_list",
-                    "label":      _won_label,
+                    "label":      " | ".join(_won_labels) if len(_won_labels) > 1 else (_won_labels[0] if _won_labels else None),
                 }
             continue                                  # a list field never runs the scalar loop
 
@@ -1927,6 +1997,13 @@ def _search_for_label(lines: list[str], label: str,
     pattern = _label_pattern(label)
     if pattern is None:
         return [] if collect else None
+    # LIST collect only (Oracle cond 2, 2026-08-27): a caption TAIL BOUNDARY. A multi-word caption
+    # pattern has no trailing bound, so "Serial No" also fires on "Serial Nos: A" and yields the
+    # debris element "s: A" (the colon guard needs 2+ letters). Letter-only lookahead: "Serial No1234"
+    # (digit-glued) still matches; "Serial Nos"/"Serial Number" do not — the accepted loss (a plural
+    # caption must be taught as printed). NEVER on the scalar path (shipped label precedence stays).
+    if collect and LIST_CAPTION_TAIL_BOUND:
+        pattern = re.compile(pattern.pattern + r'(?![a-z])')
 
     _hits = [] if collect else None
     _is_bare_total = label.strip().lower() == 'total'
@@ -2057,7 +2134,7 @@ def _search_for_label(lines: list[str], label: str,
                     and not _is_label_line(after)
                     and not re.search(r'[A-Za-z]{2,}\s*:', after)):
                 if collect:
-                    _hits.append((after, "right"))
+                    _hits.append((after, "right", i))   # i = the caption's line: page order for the union (Oracle 2026-08-27)
                     continue          # next occurrence of the label — list mode wants them all
                 return after, "right"
 
@@ -2084,7 +2161,7 @@ def _search_for_label(lines: list[str], label: str,
                         and not _is_label_line(candidate)
                         and not re.search(r'[A-Za-z]{2,}\s*:', candidate)):
                     if collect:
-                        _hits.append((candidate, "below"))
+                        _hits.append((candidate, "below", i))
                         _below_hit = True
                         break     # one value per occurrence; move on to the next occurrence
                     return candidate, "below"
@@ -2097,7 +2174,7 @@ def _search_for_label(lines: list[str], label: str,
                 candidate = lines[j].strip()
                 if candidate and not _is_label_line(candidate):
                     if collect:
-                        _hits.append((candidate, "above"))
+                        _hits.append((candidate, "above", i))
                         break
                     return candidate, "above"
 

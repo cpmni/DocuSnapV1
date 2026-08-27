@@ -4863,6 +4863,22 @@ function register(ctx) {
   ipcMain.handle('save-field-rule', (_e, data) => {
     requireRole('admin', 'edit');
     const learning = require('../../../database/modules/learning');
+    // LIST ownership (Oracle cond 5, 2026-08-27): a field rule on a LIST key is a poison — `remove_text`
+    // on one serial truncates every future list at it, `keep_block` collapses the list to one token.
+    // Refused HERE by the field's TYPE (the same classifier the renderer menu and the engine skip use),
+    // so a renderer that forgets the menu guard can't mint one. Fail-open on a lookup error (a rule on
+    // a scalar key must keep working).
+    try {
+      const d = data || {};
+      if (d.document_type && d.field_key) {
+        const dt = require('../../../database/modules/document_types').getWithFields(getDb(), String(d.document_type));
+        const f = dt && (dt.fields || []).find(x => x.key === d.field_key);
+        if (f && String(f.type || '').toLowerCase() === 'list') {
+          logger?.warn?.(`save-field-rule: refused on LIST field ${d.field_key} (${d.document_type}) — the caption scan owns it`);
+          return { refused: 'list-field' };
+        }
+      }
+    } catch (e) { logger?.warn?.(`save-field-rule: type check failed (rule saved as before): ${e && e.message}`); }
     try { learning.saveFieldRule(getDb(), data || {}); } catch (e) { logger?.warn?.(`save-field-rule: ${e && e.message}`); }
     return true;
   });

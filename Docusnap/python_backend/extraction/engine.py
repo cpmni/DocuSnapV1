@@ -7684,11 +7684,13 @@ class ExtractionEngine:
             if f.get('key') and f.get('key') != 'supplier_name'
             and (value_quality.is_name_like_field(f.get('key'))
                  or (patterns_for_run.get('field_patterns', {}).get(f.get('key')) or {}).get('role_caption') == 'party')}
-        # LIST fields (2026-08-11, kill switch LIST_FIELD_SCAN, DEFAULT OFF): fields the type
-        # declares as 'list' are collected by the label scan — every occurrence, deduped, joined
-        # '; '. The set also drives the ownership skips at the mapping/anchor/hint stages (a list
-        # is caption-collected; one taught box structurally cannot hold N occurrences — the live
-        # serials teach committed its own caption 23 times proving it). Empty when the flag is
+        # LIST fields (2026-08-11, kill switch LIST_FIELD_SCAN — env default OFF; the app bridges the
+        # `list_field_scan` setting, which is ON for NEW installs via the ON_BY_DEFAULT migration
+        # list in database/index.js and was flipped ON on the owner's live DB 2026-08-27): fields the
+        # type declares as 'list' are collected by the label scan — every occurrence, deduped, joined
+        # '; '. The set also drives the ownership skips at the mapping/anchor/hint/field-rule stages
+        # (a list is caption-collected; one taught box structurally cannot hold N occurrences — the
+        # live serials teach committed its own caption 23 times proving it). Empty when the flag is
         # off -> byte-identical.
         _list_field_keys = set()
         if os.environ.get('LIST_FIELD_SCAN', '0') != '0':
@@ -9151,6 +9153,12 @@ class ExtractionEngine:
             _val_pats = self.patterns.get("validation_patterns") or {}
             for key, data in list(results.items()):
                 if key.startswith('_') or not isinstance(data, dict):
+                    continue
+                # LIST ownership (Oracle cond 5, 2026-08-27): a field rule on a LIST key is a poison —
+                # `remove_text` on one serial truncates every future list at that serial and after it,
+                # `keep_block` collapses the whole list to one token. The scan owns the field; the
+                # renderer menu + the save door refuse list keys too (three layers, one classifier).
+                if key in getattr(self, '_list_field_keys', ()):
                     continue
                 val = data.get('value')
                 if not isinstance(val, str) or not val:

@@ -1554,19 +1554,33 @@ function showValueConfirm(f, r){
   // before confirmation"): show what the caption collects on THIS page, and require a clean caption —
   // a list without its caption teaches nothing (the spot is never stored), so "Looks right" is demoted
   // to a quiet "Save without a caption" and Redraw label becomes the primary.
-  let _listVals = null;
+  let _listVals = null, _capOk = false;
   if (isListField(f)) {
     const _top = $('rg-confirm-top');
     const _line = document.createElement('div');
     _line.id = 'rb-list-preview'; _line.style.cssText = 'margin-top:6px;font-size:12.5px';
-    if (hasLabel) {
-      _listVals = _listPreviewValues(r.anchor_text, (state.doc && state.doc.ocr_text) || '');
+    // Chris r8 card 1 (same rule as the Review ⊕ road and the `teach-list-caption` IPC — shared/listCaption.js):
+    // the label picker returns the token NEAREST the value ("No" out of "Serial No:"). Normalise the caption
+    // exactly as it will be stored, extend a generic tail to the phrase printed left of the value on THIS
+    // page, and never offer a caption that is still generic — it would collect every "…No …" on every page.
+    const LC = (typeof window !== 'undefined' && window.ListCaption) || null;
+    const _ocr = (state.doc && state.doc.ocr_text) || '';
+    let _cap = hasLabel ? (LC && LC.cleanCaption ? LC.cleanCaption(r.anchor_text) : String(r.anchor_text || '').trim()) : '';
+    let _generic = !!(_cap && LC && LC.isGenericCaption && LC.isGenericCaption(_cap));
+    if (_generic && LC && LC.extendCaption) { const _ext = LC.extendCaption(_cap, r.value, _ocr); if (_ext) { _cap = _ext; _generic = false; } }
+    _capOk = !!_cap && !_generic;
+    if (_capOk) {
+      r.anchor_text = _cap;                 // the stored caption IS the previewed caption
+      _listVals = _listPreviewValues(_cap, _ocr);
       if (!_listVals.length && r.value) _listVals = [String(r.value)];
-      _line.innerHTML = `<span class="muted">On this page "${esc(r.anchor_text)}" collects ${_listVals.length} value${_listVals.length === 1 ? '' : 's'}:</span> `
+      _line.innerHTML = `<span class="muted">On this page "${esc(_cap)}" collects ${_listVals.length} value${_listVals.length === 1 ? '' : 's'}:</span> `
         + _listVals.slice(0, 12).map(v => `<span class="lab mono">${esc(v)}</span>`).join(' · ')
-        + (_listVals.length > 12 ? ` <span class="muted">… +${_listVals.length - 12}</span>` : '');
+        + (_listVals.length > 12 ? ` <span class="muted">… +${_listVals.length - 12}</span>` : '')
+        + ` <span class="muted">— check they are all serials before you continue.</span>`;
     } else {
-      _line.innerHTML = `<span style="color:var(--warn);font-weight:600">⚠ A list is taught by its caption — I couldn't read one beside your box. Use "Redraw label" to box the printed caption (e.g. "Serial No"), or type it in Settings → Learning → Keyword label overrides.</span>`;
+      _line.innerHTML = _generic
+        ? `<span style="color:var(--warn);font-weight:600">⚠ The caption beside your box reads only "${esc(_cap)}" — on its own that would match every "${esc(_cap)}" on the page (a job sheet number, a VAT reg no…). Use "Redraw label" to box the full caption (e.g. "Serial ${esc(_cap)}"), or type it in Settings → Learning → Keyword label overrides.</span>`
+        : `<span style="color:var(--warn);font-weight:600">⚠ A list is taught by its caption — I couldn't read one beside your box. Use "Redraw label" to box the printed caption (e.g. "Serial No"), or type it in Settings → Learning → Keyword label overrides.</span>`;
       const _yes = $('rb-yes');
       if (_yes) { _yes.classList.remove('primary'); _yes.classList.add('ghost', 'quiet'); _yes.textContent = 'Save without a caption'; }
       const _rl = $('rb-redraw-label');
@@ -1577,7 +1591,7 @@ function showValueConfirm(f, r){
   onConfirm('rb-yes', ()=>{
     if (issuer) return finishIssuerField(f);
     if (suspicious) r.anchor_text = null;   // junk never persists — position-only
-    if (isListField(f)) { r.listCaption = hasLabel ? r.anchor_text : null; r.listValues = _listVals || (r.value ? [String(r.value)] : []); }
+    if (isListField(f)) { r.listCaption = _capOk ? r.anchor_text : null; r.listValues = _listVals || (r.value ? [String(r.value)] : []); }
     r.status='done'; drawMode='value'; advanceField();
   });
   onConfirm('rb-redraw', ()=>{ delete state.results[f.key]; promptField(); });

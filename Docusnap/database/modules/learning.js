@@ -425,12 +425,14 @@ function saveCorrections(db, document_id, corrections,
         insertManualExtraction.run({ document_id, field_key, corrected_value: String(corrected_value) });
       }
       if (corrected_value) {
-        upsertHint.run({
+        // LIST ownership (Oracle cond 7): a corrected list ('A; C') is this document's serial set — never a hint.
+        const _listKey = _isListTypedField(db, document_type, field_key);
+        if (!_listKey) upsertHint.run({
           supplier_name: effectiveSupplier, document_type: document_type || null,
           field_key, hint_value: corrected_value,
         });
         // Also save as global
-        if (effectiveSupplier !== '__global__') {
+        if (!_listKey && effectiveSupplier !== '__global__') {
           upsertHint.run({
             supplier_name: '__global__', document_type: document_type || null,
             field_key, hint_value: corrected_value,
@@ -473,6 +475,8 @@ function saveCorrections(db, document_id, corrections,
           if (field_key === 'supplier_name' && !isPlausibleSupplierName(val)) {
             continue;
           }
+          // LIST ownership (Oracle cond 7): a confirmed list is per-document — never a hint.
+          if (_isListTypedField(db, document_type, field_key)) continue;
           upsertHint.run({
             supplier_name: effectiveSupplier,
             document_type: document_type || null,
@@ -570,6 +574,21 @@ function retractConfirmHints(db, document_id) {
 // documents.learning_retracted_at proves the delete actually retracted — a blind re-plant on a
 // pre-feature deletion double-counts forever (pinned). Round trip pinned: retract∘replant ==
 // identity on supplier_hints (modulo last_seen).
+// LIST-typed field? (Oracle cond 7, 2026-08-27). A List field's value is per-document by nature
+// ('A; B; C' — one document's serial set); a hint row for it is the stored-but-never-consulted class
+// (engine.py filters list keys at read) and a live replay hazard the moment that read filter moves.
+// ONE classifier: the field's TYPE on its document type. Fail-open: any lookup failure → false → the
+// plant happens exactly as today.
+function _isListTypedField(db, docTypeSlug, fieldKey) {
+  try {
+    if (!docTypeSlug || !fieldKey) return false;
+    const r = db.prepare(`
+      SELECT f.type FROM fields f JOIN document_types dt ON dt.id = f.document_type_id
+       WHERE LOWER(dt.slug) = LOWER(?) AND f.key = ? LIMIT 1`).get(String(docTypeSlug), String(fieldKey));
+    return !!r && String(r.type || '').toLowerCase() === 'list';
+  } catch { return false; }
+}
+
 function replantConfirmHints(db, document_id) {
   const doc = db.prepare(`
     SELECT d.supplier_name, dt.slug AS type_slug
@@ -595,6 +614,7 @@ function replantConfirmHints(db, document_id) {
   }
   for (const [field, v] of latest) {
     if (!v) continue;
+    if (_isListTypedField(db, dt, field)) continue;   // LIST ownership (Oracle cond 7): mirrors saveCorrections' skip
     plantOne(eff, field, v);
     if (eff !== '__global__') plantOne('__global__', field, v);
   }
@@ -605,6 +625,7 @@ function replantConfirmHints(db, document_id) {
     const v = String(r.display_value || '').trim();
     if (!v) continue;
     if (r.field_key === 'supplier_name' && !isPlausibleSupplierName(v)) continue;
+    if (_isListTypedField(db, dt, r.field_key)) continue;   // LIST ownership (Oracle cond 7)
     plantOne(eff, r.field_key, v);
   }
   return { planted };

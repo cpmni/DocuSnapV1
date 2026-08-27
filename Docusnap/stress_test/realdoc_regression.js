@@ -154,8 +154,16 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
                                 JOIN document_types dt ON dt.id = f.document_type_id`).all()) {
     (typeFieldKeys[r.slug] || (typeFieldKeys[r.slug] = [])).push(r.key);
   }
-  const conf = db.prepare(`SELECT d.id, d.supplier_name, d.reference_number, d.doc_date, d.original_filename, d.stored_path, d.working_path, d.template_id, dt.slug type_slug
+  let conf = db.prepare(`SELECT d.id, d.supplier_name, d.reference_number, d.doc_date, d.original_filename, d.stored_path, d.working_path, d.template_id, dt.slug type_slug
     FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id WHERE d.status = 'confirmed'`).all();
+  // RR_IDS=11,13,300 — reprocess ONLY these confirmed docs (a targeted "why is this held" question in
+  // minutes). The DB is untouched, so scope trust / formats / templates are the REAL state — unlike
+  // demoting the other docs on a copy, which silently un-graduates every scope (2026-08-27 lesson).
+  if (process.env.RR_IDS) {
+    const _ids = new Set(String(process.env.RR_IDS).split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n)));
+    conf = conf.filter(d => _ids.has(d.id));
+    console.log(`    [ids] RR_IDS — ${conf.length} of the confirmed docs selected (${[..._ids].join(',')})`);
+  }
   const exByDoc = {};
   for (const e of db.prepare(`SELECT e.document_id, e.field_key, e.display_value FROM extractions e JOIN documents d ON d.id = e.document_id WHERE d.status = 'confirmed'`).all())
     (exByDoc[e.document_id] || (exByDoc[e.document_id] = {}))[e.field_key] = e.display_value;
@@ -330,7 +338,10 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
     if (process.env.RR_CONSENSUS) {
       try {
         const _cf = (k, ok) => { if (!k) return null; const e = m.extractions && m.extractions[k]; return { key: k, val: ef(m, k), conf: (e && typeof e === 'object') ? e.confidence : null, note: (e && typeof e === 'object') ? (e.validation_note || null) : null, method: (e && typeof e === 'object') ? (e.method || e.extraction_method || null) : null, correct: ok }; };
-        fs.appendFileSync(process.env.RR_CONSENSUS, JSON.stringify({ id: g.id, type: g.type_slug, wouldFile, reason: afReason, ref: _cf(rk, s.ref), date: _cf(dk, s.date) }) + '\n');
+        // 2026-08-27: `overall` + a compact per-field [value, conf, method, note] map, so a "below-floor" reason can
+        // be traced to the field that dragged the document under its scope floor (the List-field census).
+        const _fieldsCompact = Object.fromEntries(Object.entries(m.extractions || {}).map(([k, e]) => [k, [e && e.value, e && e.confidence, e && e.method, (e && e.validation_note) || null]]));
+        fs.appendFileSync(process.env.RR_CONSENSUS, JSON.stringify({ id: g.id, type: g.type_slug, wouldFile, reason: afReason, overall: m.overall_confidence, ref: _cf(rk, s.ref), date: _cf(dk, s.date), fields: _fieldsCompact }) + '\n');
       } catch {}
     }
     if (wouldFile) autoFiledN++;

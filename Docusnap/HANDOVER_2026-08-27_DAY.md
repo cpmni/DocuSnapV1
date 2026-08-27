@@ -75,8 +75,41 @@ value the caption collects on the page (`src/windows/shared/listCaption.js previ
 use; the teach renderer delegates to it) and says so on the ⊕ bar; at confirm the record routes to `teach-list-caption`
 (never `saveFieldAnchor`); no caption read → nothing staged + "a list is taught by its caption". The old ⊕ refusal toast
 for List fields is gone (barcode's stays). Pin `test_teach_auto_field_rows.js` §7 (34 checks).
-**Next (owner ask, brainstorm running with barry/gary/reggie/eric/bob/Chris-lens → Oracle):** a chips display of the
-detected values in Review + a per-element "problem" flow + what a correction should teach (`scratchpad/list_review_brief.md`).
+## LIST field — REVIEW PILLS (built ~16:30–18:00; panel → Oracle SIGN-OFF-W/COND, `docs/oracle_log.md` "2026-08-27 pm")
+**Owner ask:** "a text display of the detected values … with the option to state if there is a problem … maybe 9 are good
+but 1 is bad … let them manually edit? … something that would enhance teaching of this field in future?" — all six advisors
++ the Chris lens agreed (`scratchpad/list_review_panel.md`), the Oracle signed with ten conditions, all built.
+**What you will see on a List field in Review:** the text box is replaced by PILLS — one per entry read. Click a pill to edit
+it in place (Enter commits, Escape cancels; ";" refused with the reason); ✕ removes it — it stays greyed with ↺ "put back";
+"+ One it missed" opens the same ⊕ box-draw (the caption beside the value is learned for every future document of this type,
+and the field fills with everything that caption collects — never resurrecting an entry you removed, never dropping one you
+typed); "Edit as text" shows the plain `A; B; C` box; "Undo changes" restores the read; the receipt says "N found on this
+document". Confirm reads the same store as before (nothing new to persist). **What it teaches:** a pill edit teaches NOTHING
+beyond this document (no hint, no rule, no anchor — a wrong serial has no scope-wide meaning); the caption teach is the only
+future-facing lever. No dialog taxonomy ("state a problem" is a form nobody fills — Chris lens).
+**Collector changes (Python, all inside the LIST collect path — scalar reads byte-identical by construction):** union across
+TAUGHT captions in page order (`label` names each); caption tail bound `(?![a-z])` collect-only (`LIST_CAPTION_TAIL_BOUND`,
+default ON) — ships together with the union; digit gate for a list of CODES + the known-caption vocab armed for list keys
+(`LIST_ELEMENT_DIGIT_GATE`, default ON; trade = a digitless serial in a `*_number` list); LONGEST CAPTION WINS PER LINE
+(found while pinning: "Model" + "Model No" both taught → the short one read "No: NW-2"); a list-typed ref-role field seeds
+its OWN label only (the generic "Reference No" bank would collect the job reference). **Guards (one classifier = the field
+TYPE on the slug-keyed type):** right-click cleanup toolkit early-return, `save-field-rule` → `{refused:'list-field'}`, the
+engine field_rules skip; `saveCorrections` + `replantConfirmHints` never hint a list field.
+**Files:** `keyword.py` (flags + `_search_for_label` collect bound + the list loop + `seed_field_labels` + `_cap_guard`),
+`engine.py` (field_rules skip + comment), `learning.js` (`_isListTypedField` + 4 skips), `processing/handler.js`
+(`save-field-rule`), `shared/listCaption.js` (tail bound, 4-space column cut, casefold dedupe), `review/renderer.js`
+(`appendFieldRow` list row + `_renderListChips/_editListChip/_wireListRow/_setListValue`, `_stageListCaption` merge rule,
+`showFieldRuleMenu`, list helpers), `review/index.html` (pill CSS via sibling combinators — no JS state sync).
+**Pins (all green):** `python_backend/tests/test_list_field_scan.py` 11→27 · NEW `src/windows/review/test_list_field_pills.js`
+34 · NEW `database/modules/test_list_field_learning_skip.js` 8 (Electron-as-Node). Neighbours green: `test_known_caption_guard`,
+`test_custom_field_seeding`, `test_account_no_captions`, `test_teach_auto_field_rows` (re-run below).
+**Census** (`scratchpad/list_census.py`, real seed+merge bank, identical 360 pages both arms): one taught caption → debris
+478 → 0, missed unchanged 674 (60 = caption-above-column element-1 residual + 418 plural lines until "Serial Nos" is taught);
+three taught → exact 300/360 both arms, debris 60 → 0. **No shape loses a real serial under ON.**
+**Residuals (named in `pendingfeatures.md`):** a taught caption and the field's own-label seed do not union (Oracle cond 1's
+letter — teach both spellings, or a follow-up unions the own-label seed); caption-above-column = element 1; no count
+witness; the receipt never names the caption; trust slice 2 (`docTrustGate` classes + the field-agnostic correction count).
+**Needs the app restarted** (renderer + Python + handler changes).
 
 ## ⚡ LIVE FLIPS — 2026-08-27 13:35 (owner: "please flip the switches and start the app")
 The live app (still the 08-26 21:02 instance) and the sandbox were already closed. With no app running, SEVEN switches were
@@ -107,6 +140,46 @@ drive the live Review window.)
   passes through from the shell (how the OFF/ON arms are pinned); `RR_DB=<copy>` retargets the harness.
 - The realdoc `RR_DUMP` row now carries `tmpl` (matched template id) — a per-template match count is diffable.
 - A background agent can die on an API drop mid-report — resume it with SendMessage (context intact) rather than re-spawning.
+
+## RESULTS — LIST REVIEW SLICE (evening; the three gates + what they found)
+- **Pins:** `test_list_field_scan.py` 27/27 · `test_list_field_pills.js` 41/41 (now incl. the shared caption helpers + the IPC
+  refusal) · `test_list_field_learning_skip.js` 8/8 · `test_teach_auto_field_rows.js` green (updated to the merge + caption
+  contracts) · `test_chris_r6_ui_cards`, `test_chris_r5_ui_cards`, `test_settings_wiring`, Python `test_known_caption_guard`,
+  `test_custom_field_seeding`, `test_account_no_captions` green.
+- **Census** (real seed+merge bank, identical 360 synthetic pages both arms): one taught caption debris 478 → 0, missed
+  unchanged; three taught captions exact 300/360 both arms, debris 60 → 0. No shape loses a real serial under ON.
+- **Realdoc `RR_APP_ENV=1` on your live DB (16:22–17:02, `stress_test/out/rr_list.*`, 1636 confirmed docs — your DB grew by
+  394 since the 11:09 baseline):** type 100 / supplier 99.9 / ref 99.2 / date 99.1 / total 100; M_type 0; the 14 "would-file
+  a wrong value" rows are the documented pre-existing classes (Harrowgate GT-poison #31–48, #136, #331, #614, #1092) plus two
+  NEW-doc instances of the leading-digit date class (#1410, #1453). **Per-doc diff on the 1242 shared ids
+  (`TESTING/_measure/r6fix_20260827/rr_diff_list.js`): supplier / method / template identical except #368 (template_fixed 95 →
+  hint 90, a DB-state change); would-file flipped true→false on 98 docs — ALL `service_worksheet`: 96 Castellan + 2 DOCUMENT
+  SOLUTIONS.** NOT the collector: traced with a new `RR_IDS` filter (harness, live DB read-only, trust intact —
+  `scratchpad/rr_ids_consensus2.jsonl`): the reprocessed Castellan worksheet reads issuer 95 / date 98 / reference 98, has NO
+  `serial_number` read, and **overall = 81 → `below-floor`** (Castellan floor 95). Mechanism (`validator.overall_confidence`):
+  Service Worksheet has NO required fields, so EVERY field is scored and the unread List field counts **0**. The two DS docs are
+  'recent-correction' floor 100 (your correction today). **⇒ Since you added the List field (~12:46) every Castellan
+  worksheet import HOLDS.** Not new to lists — any optional field the engine cannot read does this on a type with no
+  required fields — but the List field is the first optional field you have put on a graduated type.
+  **Cheap remedy (your call, Settings → Document Types → Service Worksheet): tick *required* on Document Issuer / Date /
+  Reference** — the score then uses those three and an unread serial list no longer sinks the document. System-level fix
+  (score only structural roles when nothing is required; or never score an optional List field's absence) → Oracle, queued.
+- **Why the collector finds nothing on your worksheets:** the stored page text of your scanned Castellan worksheets (docs 11,
+  13, 1504 — the `-8.pdf` scan variants) contains NO "Serial No:" lines; the sandbox holds the same PDF twice — the
+  born-digital import (doc 2) has `Serial No: CT-8051702` / `CT-8813265`, the scanned import (doc 217) has neither (only
+  "i"/"cd" debris on the item rows). The OCR / visual-row rebuild drops those small lines → the caption teach cannot collect
+  them on scans. **The 08-22 "printed line dropped from page text" class again — its own arc (007/oscar), in
+  `pendingfeatures.md`.**
+- **Chris round 8** (`docs/CHRIS_FULL_APP_REVIEW_2026-08-26.md` foot): pills "genuinely good and safe"; **TOP card = the twin's
+  reprocess put the JOB number in the serial list at "1 found" / 100%** → root cause = the ⊕ label picker's nearest-token
+  caption **"No"** stored doc-type-wide + the preview/store disagreement ("No:" previewed one line, "No" matched "JOB SHEET
+  NO") → **FIXED tonight:** ONE `cleanCaption` shared by ⊕ / wizard / IPC; a generic tail is EXTENDED to the phrase printed
+  left of the drawn value on the page ("Serial No") or REFUSED with the reason on all three roads; the preview shows the
+  debris a bad caption would collect. Cards 3 (Undo = wipe on an empty read), 4 (over-promise), 6 (";" outlined both pills)
+  FIXED; card 2 (a misread serial with no flag) = the deferred within-document shape consensus, exhibit recorded; card 5
+  ("Never on these documents?") = pre-existing copy → pendingfeatures.
+- **Sandbox debris:** override id 57 `serial_number` = "No" on the sandbox DB (Chris's teach) — sandbox only; the fix refuses
+  it from now on. Your live DB's overrides are "Serial No" + "Serial No." (yours, 12:46 + 13:35) — fine.
 
 ## RESULTS (filled at the end of the session)
 - Full suite (09:40–09:50, `TESTING/_measure/r6fix_20260827/full_suite.ps1`; log in the session scratchpad `suite/suite.log`):

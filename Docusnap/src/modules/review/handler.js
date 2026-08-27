@@ -1370,10 +1370,18 @@ function register(ctx) {
     requireRole('admin', 'edit');
     const { document_type_slug, field_key, label } = payload || {};
     const slug = String(document_type_slug || '').trim(), key = String(field_key || '').trim();
-    const cap = String(label || '').replace(/\s+/g, ' ').trim().replace(/[\s:.\-–|]+$/, '').trim();
+    // ONE normaliser with the two windows (shared/listCaption.js) — the preview and the store agree.
+    const LC = require('../../windows/shared/listCaption.js');
+    const cap = LC.cleanCaption(label);
     if (!slug || !key || !cap) return { success: false, error: 'Missing document type, field or caption.' };
     if (cap.length > 40 || !/[A-Za-z]/.test(cap) || /^[A-Z0-9][A-Z0-9\-\/]{4,}$/.test(cap)) {
       return { success: false, error: 'That does not look like a printed caption.' };
+    }
+    // Chris r8 card 1: a bare tail ("No", "Number", "Ref", "#") as a doc-type-wide keyword collects every
+    // "…No …" on every future page — the job sheet number became the serial. Refused server-side too, so
+    // no road (⊕, wizard, a future client) can mint one.
+    if (LC.isGenericCaption(cap)) {
+      return { success: false, error: `"${cap}" on its own would match every "${cap}" on a page — teach the full caption (e.g. "Serial ${cap}").`, generic: true };
     }
     const db = getDb();
     const dtInfo = doctypes.getWithFields(db, slug);
