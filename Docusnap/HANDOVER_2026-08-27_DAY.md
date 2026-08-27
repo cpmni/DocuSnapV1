@@ -68,7 +68,15 @@ the preview helper on the Castellan worksheet text: "Serial No" → both serials
 (`_label_pattern` = `serial\s*number`); teaching one value in the wizard now writes "Serial No" as its keyword. Until you
 re-teach, add "Serial No" under Settings → Learning → Keyword label overrides for `serial_number`.
 **Needs an app restart** to load the new wizard/preload/handler code (the app was started 13:35 on the older code).
-**Follow-up (`pendingfeatures.md`):** the Review ⊕ road for a List field (still refuses with "nothing to draw").
+**The Review ⊕ road (built ~15:00, owner: "the review ⊕ button should also teach a list caption … I would like it to
+show them all so the user can see it is doing its job"):** ⊕ on a List field boxes ONE value → `_stageListCaption` stages a
+`{listCaption}` record in `pendingAnchors` (every reset / unsaved-changes guard applies for free), fills the field with EVERY
+value the caption collects on the page (`src/windows/shared/listCaption.js previewValues` — the ONE preview both windows
+use; the teach renderer delegates to it) and says so on the ⊕ bar; at confirm the record routes to `teach-list-caption`
+(never `saveFieldAnchor`); no caption read → nothing staged + "a list is taught by its caption". The old ⊕ refusal toast
+for List fields is gone (barcode's stays). Pin `test_teach_auto_field_rows.js` §7 (34 checks).
+**Next (owner ask, brainstorm running with barry/gary/reggie/eric/bob/Chris-lens → Oracle):** a chips display of the
+detected values in Review + a per-element "problem" flow + what a correction should teach (`scratchpad/list_review_brief.md`).
 
 ## ⚡ LIVE FLIPS — 2026-08-27 13:35 (owner: "please flip the switches and start the app")
 The live app (still the 08-26 21:02 instance) and the sandbox were already closed. With no app running, SEVEN switches were

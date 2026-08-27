@@ -82,10 +82,13 @@ overlay instead of drawing (the inventory has the boxes). Size ≈ engine 40 lin
   `teach-list-caption` (Admin+Edit, list-typed only) writes the caption as an ADDITIVE doc-type-wide override
   (`field_label_overrides`, template_id 0; `merge_label_overrides` CREATES the keyword entry for a custom key) and the taught
   doc files with all the previewed values; no box is stored. Pin `test_teach_auto_field_rows.js`.
-  **FOLLOW-UP (not built): the Review ⊕ road for a List field** — today ⊕ still refuses a List field with "nothing to
-  draw"; give it the same caption teach (stage the caption in the ⊕ readout, write via `teach-list-caption` at confirm,
-  show the collected values). Also: the preview is the inline (same-line) shape only — a caption ABOVE a column previews
-  element 1, like the collector.
+  **✅ The Review ⊕ road too (built ~15:00):** ⊕ on a List field boxes ONE value → the caption beside it is staged as a
+  `{listCaption}` record in `pendingAnchors` (so every reset / unsaved-changes guard applies) → the field is filled with EVERY
+  value the caption collects on the page (`shared/listCaption.js`, the ONE preview both windows use) + the bar says so → at
+  confirm the record routes to `teach-list-caption` (never `saveFieldAnchor`). No caption read → nothing staged, the bar says
+  a list is taught by its caption. Residual: the preview is the inline (same-line) shape only — a caption ABOVE a column
+  previews element 1, like the collector. NEXT (owner ask, in the advisor brainstorm 2026-08-27 pm): chips display of the
+  detected values in Review + a per-element "problem" flow + what a correction teaches.
 - **LIST field residuals (audited 2026-08-26):** a caption ABOVE a vertical COLUMN reads element 1 only (the
   collector is per-line label→value); no count witness; search indexes the joined string (no per-element snippet);
   chips UI + long-format CSV export + repeated `<Value>` XML elements (barry). Tonight shipped only the `;`

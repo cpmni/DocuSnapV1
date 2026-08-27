@@ -420,6 +420,9 @@ function isListField(f){ return !!f && f.auto === 'list'; }
 // caption on the same line, caption punctuation stripped, cut at a column break; dedupe first-seen).
 // Preview only: the real collector (with its per-element validation) runs when the app processes.
 function _listPreviewValues(caption, ocrText){
+  // ONE implementation, shared with the Review ⊕ path (shared/listCaption.js); the body below is the
+  // fallback for a window that did not load the shared script (and the pin's evaluable copy).
+  if (typeof window !== 'undefined' && window.ListCaption && window.ListCaption.previewValues) return window.ListCaption.previewValues(caption, ocrText);
   const words = String(caption || '').toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return [];
   const esc_ = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

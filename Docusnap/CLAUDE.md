@@ -48,8 +48,13 @@ change shows a neutral "Type changed to X — check the fields" lead (his card A
 caption beside it → a preview of every value that caption collects on the page → at save the NEW IPC `teach-list-caption`
 (Admin+Edit, list-typed only) writes it as an ADDITIVE doc-type-wide `field_label_overrides` row ("if it isn't already there");
 no box stored; the taught doc files with all the previewed values. A List field's LABEL alone ("Serial Number") never matches
-a printed "Serial No:" — the caption teach is what makes it collect. ⊕ in Review still refuses List fields → follow-up
-(`pendingfeatures.md`). Pin `test_teach_auto_field_rows.js`. NEEDS an app restart (the app started 13:35 on older code).
+a printed "Serial No:" — the caption teach is what makes it collect. The Review ⊕ road does the same (a `{listCaption}`
+record in `pendingAnchors` → `teach-list-caption` at confirm; the field is filled with every value the caption collects,
+`shared/listCaption.js` = the ONE preview). Pin `test_teach_auto_field_rows.js` (34). App restarted 14:32 for the wizard;
+the ⊕ road needs ANOTHER restart. NEXT (brainstorm with all advisors → Oracle, then build): chips display of the detected
+values in Review + a per-element "problem" flow + what a correction teaches. QUEUED after that (owner): a complete HELP
+SYSTEM overhaul plan (teach-then-import is now the recommended route; quick start; plain speak; screenshot markers) + a Help
+button on the Home screen menu.
 **LIVE FLIPS 13:35 (owner: "flip the switches and start the app"):** `corrob_verification_doubt_clear`, `learning_exclude_docs`,
 `learning_repair_console`, `learning_repair_forget`, `barcode_inventory`, `barcode_field`, `template_buyer_issued_letterhead_scope`
 set `true` on the live DB by direct UPSERT (no audit rows — see the handover); app restarted on CDP 9222, **DB at mig 91** (mig 89

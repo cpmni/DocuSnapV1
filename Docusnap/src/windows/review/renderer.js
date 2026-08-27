@@ -4494,10 +4494,8 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     // never consulted — a dead operator instruction. Refuse AT TEACH TIME with the reason, rather
     // than accept the draw and silently ignore it.
     const _def = (fieldDefs || []).find(f => f.key === key);
-    if (_def && String(_def.type || '').toLowerCase() === 'list' && window.__listFieldScanOn) {
-      showToast(`${labelFor(key)} is a List field — it's collected by finding its label everywhere on the page, so there's no position to teach. Edit the value directly, or adjust its label in Settings → Learning.`, 'warn');
-      return;
-    }
+    // A LIST field IS teachable since 2026-08-27 — by its CAPTION, not a position (owner spec): the
+    // drawn box finds the caption; see _stageListCaption. (The old refusal toast is gone.)
     // A BARCODE field is read from the decoded symbol (2026-08-26): a taught box would never be
     // consulted either — same refusal, same reason, at teach time.
     if (_def && String(_def.type || '').toLowerCase() === 'barcode' && window.__barcodeFieldOn) {
@@ -5277,9 +5275,19 @@ async function runZoneOcr(rect, fieldKey) {
           // questions are now asked, and the answer goes on the PERSISTENT bar rather than a toast
           // the next call destroys. Warning only: the teach stays staged and nothing is blocked.
           await speakIssuerTeach(fieldKey, text);
+        } else if (_isListFieldKey(fieldKey)) {
+          // LIST field ⊕ (owner 2026-08-27): the box's job was to find the CAPTION. Stage the caption
+          // (a doc-type-wide keyword at confirm — never a dead box), fill the field with EVERY value
+          // that caption collects on this page, and say so on the bar so the user sees it working.
+          _stageListCaption(fieldKey, detected, text);
         } else {
           showAnchorReadout(detected, text);   // show which anchor was picked + the Left/Above toggle
         }
+      } else if (_isListFieldKey(fieldKey)) {
+        delete pendingAnchors[fieldKey];   // no caption read → nothing to teach for a list (a box would be dead)
+        showTeachMessage(`&#9888; I read <span class="ar-val">${escHtml(text)}</span> but no caption beside it — a list is taught by its `
+                       + `<strong>caption</strong> (e.g. "Serial No"). Draw again with the caption just left of or above the value, `
+                       + `or add the caption in Settings → Learning → Keyword label overrides.`, { warn: true });
       } else {
         // NO ANCHOR CONTEXT — previously silent. The value WAS read and staged, so say so; only the
         // label capture came back empty, which is a weaker outcome, not a failure.
@@ -6281,6 +6289,18 @@ async function confirmCurrentDoc({ bulk = false, expectId = null, acknowledgePre
     const taughtSupplier = cleanSupplierName(allValues.supplier_name || currentDoc?.supplier_name);
     for (const fk of taughtKeys) {
       try {
+        // LIST field ⊕ (owner 2026-08-27): the staged record is a CAPTION, not a box — it becomes an
+        // additive doc-type-wide keyword for the field ("if it isn't already there"); no anchor is saved.
+        if (pendingAnchors[fk] && pendingAnchors[fk].listCaption) {
+          const _lc = pendingAnchors[fk];
+          const _res = await window.docusnap.teachListCaption?.({
+            document_type_slug: _lc.document_type || selectedTypeSlug || currentDoc?.type_slug || null,
+            field_key: fk, label: _lc.listCaption });
+          if (!bulk && (!_res || !_res.success)) {
+            try { showToast(`Filed, but "${_lc.listCaption}" wasn't saved as a keyword for ${labelFor(fk)}${_res && _res.error ? ' — ' + _res.error : ''}. Add it in Settings → Learning → Keyword label overrides.`, 'err'); } catch {}
+          }
+          continue;
+        }
         // template_id: lets the taught-label→keyword write scope to the TEMPLATE the doc matched
         // (migration 62) — null when the doc has none, and the handler then skips that write.
         await window.docusnap.saveFieldAnchor({ ...pendingAnchors[fk], supplier_name: taughtSupplier,
@@ -7652,6 +7672,45 @@ async function offerIssuerRipple(srcDocId, name, row) {
 // substring. STRICTER than the engine's Gate-C page-check (which also tolerates one OCR-confusable
 // glyph), so it can only ever HIDE a shortcut button for a value Gate C might still accept — never
 // show one for a value Gate C refused. Fail-open on missing text or an empty value.
+// ── LIST field ⊕ = teach its CAPTION (owner 2026-08-27) ──────────────────────────────────────────
+// "the review ⊕ button should also teach a list caption … when I highlighted the 1st serial no it only
+// displayed that serial, not the other detected values. I would like it to show them all so the user can
+// see it is doing its job." A List field is collected by its caption (keyword.py collect=True), so the
+// drawn box's job is to FIND the caption; the caption is staged as a doc-type-wide keyword (written at
+// confirm through teach-list-caption, Admin+Edit, list-typed only) and the field is filled with every
+// value the caption collects on THIS page (shared/listCaption.js — the inline-collector twin).
+function _isListFieldKey(key) {
+  const d = (fieldDefs || []).find(f => f.key === key);
+  return !!d && String(d.type || '').toLowerCase() === 'list' && !!window.__listFieldScanOn;
+}
+function _stageListCaption(fieldKey, detected, text) {
+  const caption = (detected && !detected.fallback) ? sanitizeAnchorLabel(detected.anchor_label || '') : '';
+  const clean = caption && !labelLooksSuspicious(caption) && !labelIsTypeHeading(caption);
+  if (!clean) {
+    delete pendingAnchors[fieldKey];
+    showTeachMessage(`&#9888; I read <span class="ar-val">${escHtml(text)}</span> but couldn't read a clean caption beside it — a list is taught by its `
+                   + `<strong>caption</strong> (e.g. "Serial No"). Draw again with the caption just left of or above the value, `
+                   + `or add the caption in Settings → Learning → Keyword label overrides.`, { warn: true });
+    return;
+  }
+  pendingAnchors[fieldKey] = { listCaption: caption, field_key: fieldKey,
+                               document_type: selectedTypeSlug || currentDoc?.type_slug || currentDoc?.document_type_slug || null };
+  const vals = (window.ListCaption && window.ListCaption.previewValues)
+    ? window.ListCaption.previewValues(caption, (currentDoc && currentDoc.ocr_text) || '') : [];
+  const list = vals.length ? vals : [String(text || '').trim()].filter(Boolean);
+  const input = document.querySelector(`.field-input[data-key="${fieldKey}"]`);
+  if (input && list.length) {
+    input.value = list.join('; ');
+    corrections[fieldKey] = { original_value: input.dataset.original, corrected_value: input.value };
+    try { validateConfirm(); } catch {}
+  }
+  const typeName = (allDocTypes.find(t => t.slug === (selectedTypeSlug || currentDoc?.type_slug)) || {}).name || 'this document type';
+  showTeachMessage(`&#10003; Caption <strong>${escHtml(caption)}</strong> collects <strong>${list.length}</strong> value${list.length === 1 ? '' : 's'} on this page: `
+                 + `<span class="ar-val">${escHtml(list.slice(0, 12).join('; '))}${list.length > 12 ? ' …' : ''}</span>. `
+                 + `Saved as a keyword for <strong>${escHtml(labelFor(fieldKey))}</strong> on every ${escHtml(typeName)} when you confirm — `
+                 + `every "${escHtml(caption)}" on future documents fills this list.`);
+}
+
 function _valueOnPageSepless(value, pageText) {
   const proj = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
   const v = proj(value), p = proj(pageText);

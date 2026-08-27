@@ -113,5 +113,46 @@ console.log('6. the rail still SHOWS pulled (barcode) fields, muted, with the re
   check('index.html styles the auto row', /\.fieldrow\.auto\{cursor:default\}/.test(html) && /\.dot\.auto\{/.test(html));
 }
 
+console.log('7. the Review ⊕ road teaches a List field the same way (owner: "the review ⊕ button should also teach a list caption … show them all")');
+{
+  const rv = rd('src/windows/review/renderer.js');
+  const rhtml = rd('src/windows/review/index.html');
+  const shared = rd('src/windows/shared/listCaption.js');
+  check('the old ⊕ refusal for a List field is GONE (barcode refusal kept)',
+        !/is a List field — it's collected by finding its label everywhere on the page, so there's no position to teach/.test(rv)
+        && /is a Barcode field — it's read from the barcode printed on the page/.test(rv));
+  check('_isListFieldKey keys off the field type + the list scan switch',
+        /function _isListFieldKey\(key\) \{[\s\S]{0,200}=== 'list' && !!window\.__listFieldScanOn;/.test(rv));
+  check('the ⊕ completion routes a List field to _stageListCaption (after the issuer branch, before the anchor readout)',
+        /\} else if \(_isListFieldKey\(fieldKey\)\) \{[\s\S]{0,400}_stageListCaption\(fieldKey, detected, text\);[\s\S]{0,60}\} else \{\s*showAnchorReadout\(detected, text\);/.test(rv));
+  check('a List draw with no caption stages NOTHING and says a list is taught by its caption',
+        /\} else if \(_isListFieldKey\(fieldKey\)\) \{\s*delete pendingAnchors\[fieldKey\];[\s\S]{0,300}a list is taught by its[\s\S]{0,40}<strong>caption<\/strong>/.test(rv));
+  {
+    const s = rv.indexOf('function _stageListCaption(fieldKey, detected, text) {');
+    const body = s > -1 ? rv.slice(s, s + 2600) : '';
+    check('_stageListCaption stages a CAPTION record (no box geometry) keyed to the doc type',
+          /pendingAnchors\[fieldKey\] = \{ listCaption: caption, field_key: fieldKey,\s*document_type: selectedTypeSlug \|\| currentDoc\?\.type_slug/.test(body));
+    check('…fills the field with EVERY value the caption collects on the page (shared preview) and records the correction',
+          /window\.ListCaption\.previewValues\(caption, \(currentDoc && currentDoc\.ocr_text\) \|\| ''\)/.test(body)
+          && /input\.value = list\.join\('; '\);/.test(body) && /corrections\[fieldKey\] = \{ original_value: input\.dataset\.original, corrected_value: input\.value \};/.test(body));
+    check('…and tells the user on the bar: caption, count, values, and that every future occurrence fills the list',
+          /collects <strong>\$\{list\.length\}<\/strong> value/.test(body) && /every "\$\{escHtml\(caption\)\}" on future documents fills this list/.test(body));
+    check('a suspicious / type-heading / fallback caption stages nothing (fail toward "draw again")',
+          /const clean = caption && !labelLooksSuspicious\(caption\) && !labelIsTypeHeading\(caption\);[\s\S]{0,80}if \(!clean\) \{\s*delete pendingAnchors\[fieldKey\];/.test(body));
+  }
+  check('the confirm commit routes a listCaption record to teachListCaption and never to saveFieldAnchor',
+        /if \(pendingAnchors\[fk\] && pendingAnchors\[fk\]\.listCaption\) \{[\s\S]{0,500}window\.docusnap\.teachListCaption\?\.\(\{[\s\S]{0,200}label: _lc\.listCaption \}\);[\s\S]{0,500}continue;\s*\}[\s\S]{0,400}saveFieldAnchor\(\{ \.\.\.pendingAnchors\[fk\]/.test(rv));
+  check('both windows load the ONE shared preview (review + teach index.html); the teach helper delegates to it',
+        /<script src="\.\.\/shared\/listCaption\.js"><\/script>/.test(rhtml) && /<script src="\.\.\/shared\/listCaption\.js"><\/script>/.test(html)
+        && /if \(typeof window !== 'undefined' && window\.ListCaption && window\.ListCaption\.previewValues\) return window\.ListCaption\.previewValues\(caption, ocrText\);/.test(js));
+  {
+    // The shared module is the source of truth — run the same behavioural cases against IT.
+    const api = new Function('module', 'window', shared + '; return module.exports;')({ exports: {} }, undefined);
+    const PAGE = 'Castellan Security Systems\nSERVICE WORKSHEET\nSerial No: CT-8051702\nIP Dome Camera 4MP    1\nSerial No: CT-8813265\nSerial  No : CT-8051702\n';
+    check('shared previewValues: "Serial No" → both serials, deduped', JSON.stringify(api.previewValues('Serial No', PAGE)) === JSON.stringify(['CT-8051702', 'CT-8813265']));
+    check('shared previewValues: the field LABEL "Serial Number" collects nothing on a page printing "Serial No"', api.previewValues('Serial Number', PAGE).length === 0);
+  }
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nall green');
 process.exit(fails ? 1 : 0);
