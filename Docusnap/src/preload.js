@@ -435,7 +435,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   repairDeconfirm:     (id, opts) => ipcRenderer.invoke('repair-deconfirm', id, opts),
   repairDelete:        (id)      => ipcRenderer.invoke('repair-delete', id),
   // Learning Repair v2 (2026-08-26): the scope selector + console + "start fresh" (DARK)
-  learningScopes:        ()       => ipcRenderer.invoke('learning-scopes'),
+  learningScopes:        (opts)   => ipcRenderer.invoke('learning-scopes', opts),
   learningRepairDryRun:  (scope)  => ipcRenderer.invoke('learning-repair-dry-run', scope),
   learningRepairForget:  (scope)  => ipcRenderer.invoke('learning-repair-forget', scope),
   learningRepairUndo:    (p)      => ipcRenderer.invoke('learning-repair-undo', p),

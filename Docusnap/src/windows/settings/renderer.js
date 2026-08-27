@@ -29,7 +29,7 @@ document.querySelectorAll('.tab').forEach(btn => {
     // Learning Recovery + Keyword Label Overrides live under the Learning tab; the
     // Audit log lives under the Audit tab; the Search client API lives under the
     // Search client tab — load each lazily on show.
-    if (btn.dataset.tab === 'learning') { loadMemoryInventory(); loadGraduationRoster(); }
+    if (btn.dataset.tab === 'learning') { loadScopeBrowse(); loadMemoryInventory(); loadGraduationRoster(); }
     if (btn.dataset.tab === 'repair') repairInit();
     if (btn.dataset.tab === 'audit' && !auditState.loaded) loadAudit();
     if (btn.dataset.tab === 'searchclient') initClientApiSection();
@@ -4636,6 +4636,149 @@ async function loadMemoryInventory() {
       `<td>${escHtml(r.last_seen || '—')}</td>`;
     tbody.appendChild(tr);
   }
+}
+
+// ── Learned memory inventory: click-to-browse (READ-ONLY) ─────────────────────
+// Mirrors the Learning Repair selector but never mutates — the cleanup tools stay
+// in the Advanced disclosure below + the Learning Repair tab. Reuses the existing
+// admin IPCs learning-scopes ({suspects:false} to skip the per-type phash cost —
+// this view has no "worth a look" filter) + get-learning-recovery. ONE delegated
+// click listener + a wire-once guard so re-showing the Learning tab (the tab
+// handler re-runs the lazy-init on every show) can never stack handlers.
+let _lrScopes = [], _lrFilter = 'all', _lrQuery = '', _lrBrowseWired = false, _lrOpenScope = null;
+
+async function loadScopeBrowse() {
+  const list = document.getElementById('lr-scope-list');
+  if (!list) return;
+  if (!_lrBrowseWired) {
+    _lrBrowseWired = true;
+    const q = document.getElementById('lr-browse-search');
+    if (q) q.addEventListener('input', () => { _lrQuery = q.value.trim().toLowerCase(); lrRenderScopes(); });
+    document.querySelectorAll('#lr-browse-filters .lr-browse-chip').forEach(b => b.addEventListener('click', () => {
+      _lrFilter = b.dataset.filter;
+      document.querySelectorAll('#lr-browse-filters .lr-browse-chip').forEach(x => x.classList.toggle('active', x === b));
+      lrRenderScopes();
+    }));
+    document.getElementById('lr-browse-refresh')?.addEventListener('click', loadScopeBrowse);
+    // Event DELEGATION: one listener on the static container; rows re-render freely.
+    list.addEventListener('click', (e) => {
+      const row = e.target.closest('.lr-scope-row');
+      if (row) lrBrowseOpen(row.dataset.sup, row.dataset.slug);
+    });
+  }
+  let r = null;
+  try { r = await api.learningScopes({ suspects: false }); } catch (e) { r = { ok: false, error: e.message || String(e) }; }
+  _lrScopes = (r && r.scopes) || [];
+  const cnt = document.getElementById('lr-browse-count');
+  if (cnt) cnt.textContent = r && r.ok
+    ? `${_lrScopes.length} sender${_lrScopes.length === 1 ? '' : 's'} × type${_lrScopes.length === 1 ? '' : 's'} hold learning`
+    : ((r && r.error) || 'Could not list learned memory.');
+  lrRenderScopes();
+}
+
+function _lrScopeMatches(s) {
+  if (_lrQuery && !`${s.supplier_name || ''} ${s.document_type_name || ''} ${s.document_type_slug || ''}`.toLowerCase().includes(_lrQuery)) return false;
+  switch (_lrFilter) {
+    case 'notauto': return !(s.trust && s.trust.autoFiles) && s.docs > 0;
+    case 'orphan': return !!s.orphaned;
+    case 'blank': return !!s.blankIssuer;
+    default: return true;
+  }
+}
+function _lrWhen(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return isNaN(d) ? String(iso).slice(0, 10) : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function lrRenderScopes() {
+  const el = document.getElementById('lr-scope-list'); if (!el) return;
+  const rows = _lrScopes.filter(_lrScopeMatches);
+  if (!rows.length) { el.innerHTML = '<div class="section-desc" style="padding:16px; text-align:center;">Nothing matches.</div>'; return; }
+  el.innerHTML = rows.map(s => {
+    const learned = s.learned ? `${s.learned} learned item${s.learned === 1 ? '' : 's'}` : (s.logos ? 'logo known' : '');
+    const auto = s.trust && s.trust.autoFiles
+      ? '<span style="color:var(--ok);">Files by itself</span>'
+      : `<span style="color:var(--muted);">${escHtml((s.trust && s.trust.text) || 'Not yet')}</span>`;
+    const badge = s.orphaned ? ' <span style="font-size:10px; color:var(--warn);">learning, no documents</span>' : '';
+    const active = _lrOpenScope && _lrOpenScope.sup === s.supplier_name && _lrOpenScope.slug === s.document_type_slug;
+    return `<div class="doctype-row lr-scope-row${active ? ' active' : ''}" data-sup="${escHtml(s.supplier_name || '')}" data-slug="${escHtml(s.document_type_slug || '')}" style="cursor:pointer; align-items:center; gap:10px; padding:8px 12px;">
+      <div style="flex:1; min-width:0;">
+        <div style="font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><strong>${escHtml(s.supplier_name || '(no sender recognised)')}</strong> <span style="color:var(--muted);">· ${escHtml(s.document_type_name || s.document_type_slug || 'untyped')}</span>${badge}</div>
+        <div style="font-size:11px; color:var(--muted);">${s.docs ? `${s.docs} document${s.docs === 1 ? '' : 's'}` : 'no documents'} · last ${_lrWhen(s.last_confirmed)}${learned ? ' · ' + learned : ''}</div>
+      </div>
+      <div style="font-size:11px; white-space:nowrap;">${auto}</div>
+    </div>`;
+  }).join('');
+}
+
+async function lrBrowseOpen(sup, slug) {
+  _lrOpenScope = { sup, slug };
+  lrRenderScopes();
+  const empty = document.getElementById('lr-browse-empty');
+  const host = document.getElementById('lr-browse-detail');
+  if (!host) return;
+  if (empty) empty.style.display = 'none';
+  host.style.display = '';
+  host.innerHTML = '<div class="section-desc">Loading…</div>';
+  let data = null;
+  try { data = await api.getLearningRecovery({ supplier_name: sup, document_type: slug || null }); }
+  catch (e) { host.innerHTML = `<div class="section-desc">Could not load: ${escHtml(e.message || e)}</div>`; return; }
+  const scope = _lrScopes.find(x => x.supplier_name === sup && x.document_type_slug === slug) || {};
+  host.innerHTML = lrBrowseDetailHtml(sup, slug, scope, data || {});
+  // Pre-fill the Advanced typed tools so "clean this sender" is one click away.
+  const sIn = document.getElementById('lr-supplier'); if (sIn) sIn.value = sup || '';
+  const dSel = document.getElementById('lr-doctype'); if (dSel && slug && [...dSel.options].some(o => o.value === slug)) dSel.value = slug;
+  host.querySelector('[data-lr-repair]')?.addEventListener('click', () => lrOpenInRepair(sup, slug));
+  host.querySelector('[data-lr-advanced]')?.addEventListener('click', () => {
+    const adv = document.getElementById('lr-advanced-tools');
+    if (adv) { adv.open = true; adv.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    if (typeof runLearningSearch === 'function') runLearningSearch();
+  });
+}
+
+function lrBrowseDetailHtml(sup, slug, scope, data) {
+  const d = (data && data.detail) || {};
+  const templates = (data && data.templates) || [];
+  const esc = escHtml;
+  const out = [];
+  const t = scope.trust || {};
+  const autoTxt = t.autoFiles ? 'Files new documents by itself.' : (t.text ? t.text + '.' : 'Not filing by itself yet.');
+  out.push(`<div class="section-title" style="margin-top:0;">${esc(sup || '(no sender recognised)')} <span style="color:var(--muted); font-weight:400;">· ${esc(scope.document_type_name || slug || 'untyped')}</span></div>`);
+  out.push(`<div class="section-desc" style="margin-bottom:10px;">${scope.docs ? `Learned from ${scope.docs} document${scope.docs === 1 ? '' : 's'}` : 'No documents behind this learning'}${scope.last_confirmed ? `, last on ${_lrWhen(scope.last_confirmed)}` : ''}. ${esc(autoTxt)}</div>`);
+
+  const grp = (title, items) => { if (items.length) { out.push(`<div class="section-title sub" style="margin-top:12px;">${title}</div><div style="font-family:var(--mono); font-size:11px; line-height:1.8;">${items.join('')}</div>`); } };
+  grp('Remembered values (fill-in hints)', (d.hints || []).map(h => `<div>${esc(h.field_key)} = &ldquo;${esc(h.hint_value)}&rdquo; <span style="color:var(--muted);">(used ${h.usage_count || 0}×)</span></div>`));
+  grp('Past corrections', (d.corrections || []).map(c => `<div>${esc(c.field_key)}: &ldquo;${esc(c.original_value || '')}&rdquo; → &ldquo;${esc(c.corrected_value)}&rdquo; <span style="color:var(--muted);">${esc((c.corrected_at || '').slice(0, 10))}</span></div>`));
+  grp('Where it reads (taught positions)', (d.anchors || []).map(a => `<div>${esc(a.field_key)} ← &ldquo;${esc(a.anchor_label)}&rdquo; (${esc(a.direction)}) <span style="color:var(--muted);">used ${a.usage_count || 0}×</span></div>`));
+  grp('Cleanup rules', (d.rules || []).map(r => `<div>${esc(r.field_key)} — ${esc(r.rule_type === 'keep_block' ? 'keep only the main value' : ('remove &ldquo;' + (r.created_from || r.token_norm || '') + '&rdquo;'))}</div>`));
+  const recog = (d.logos || []).map(l => `<div>logo fingerprint <span style="color:var(--muted);">(matched ${l.match_count || 0}×)</span></div>`)
+    .concat(templates.map(tp => `<div>layout &ldquo;${esc(tp.name)}&rdquo; <span style="color:var(--muted);">(${esc(tp.document_type_slug || '—')}, confirmed ${tp.confirmed_count || 0}×)</span></div>`));
+  grp('How this sender is recognised', recog);
+
+  if (!(d.hints || []).length && !(d.corrections || []).length && !(d.anchors || []).length && !(d.rules || []).length && !recog.length) {
+    out.push('<div class="section-desc">Nothing detailed is stored for this sender yet.</div>');
+  }
+  out.push(`<div class="row-flex" style="gap:8px; margin-top:16px; flex-wrap:wrap;">
+    <button class="btn" data-lr-repair>Open in Learning Repair →</button>
+    <button class="btn" data-lr-advanced>Clean this sender&rsquo;s learning ↓</button>
+  </div>`);
+  return out.join('');
+}
+
+// Deep-link into the Learning Repair tab AND load this scope (not a bare tab
+// switch — that would land on the empty typed box, the friction we're removing).
+// Works whether or not the Repair console switch is on (rpOpenScope loads via
+// the typed-picker path, which is not console-gated).
+async function lrOpenInRepair(sup, slug) {
+  const tabBtn = document.querySelector('.tab[data-tab="repair"]');
+  if (!tabBtn) return;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  tabBtn.classList.add('active');
+  const panel = document.getElementById('panel-repair'); if (panel) panel.classList.add('active');
+  try { await repairInit(); } catch (e) { console.warn('repairInit failed', e); }
+  try { await rpOpenScope(sup, slug); } catch (e) { console.warn('rpOpenScope failed', e); }
 }
 
 function renderLearningSummary(summary) {

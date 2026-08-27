@@ -430,14 +430,16 @@ function register(ctx) {
     catch { return require('path').join(require('os').tmpdir(), 'scanfinder-repair-snapshots'); }
   };
   // One row per sender × doc type that holds ANY learning (documents ∪ every learning table).
-  ipcMain.handle('learning-scopes', () => {
+  ipcMain.handle('learning-scopes', (_e, opts) => {
     requireRole('admin');
     const db = getDb();
     try {
       const scopes = learningScopes.listScopes(db);
       // "Worth a look" badge: the SAME suspect detectors the console's document list uses, run ONCE
       // per document type (never per scope) and attributed to each scope through the doc's sender.
-      try {
+      // The read-only memory-inventory browse passes { suspects:false } to skip this per-type phash
+      // cost (it has no "worth a look" filter); the argless Repair-console call is UNCHANGED.
+      if (!opts || opts.suspects !== false) try {
         const repairSuspects = require('../../services/repairSuspects');
         const bySlug = new Map();
         for (const s of scopes) if (s.document_type_slug && !bySlug.has(s.document_type_slug)) bySlug.set(s.document_type_slug, null);

@@ -2170,6 +2170,39 @@
         <div id="lo-list" class="section-desc"></div>
       </div>
 
+      <!-- ══ Learned memory inventory — click-to-browse (read-only) ══ -->
+      <div class="section" id="lr-browse-section">
+        <div class="section-title">Learned memory inventory</div>
+        <p class="section-desc">
+          Browse everything Scan Finder has learned, sender by sender — click a row to see the values,
+          spellings and positions it remembers. This is a read-only view; to correct or forget
+          something, use <strong>Learning Repair</strong> or the advanced tools below.
+        </p>
+        <div class="row-flex" style="gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+          <input type="text" id="lr-browse-search" class="path-input" placeholder="Find a sender or document type…" spellcheck="false" style="max-width:320px;">
+          <div class="row-flex" id="lr-browse-filters" style="gap:6px; flex-wrap:wrap;">
+            <button class="btn lr-browse-chip active" data-filter="all" style="padding:3px 9px; font-size:11px;">All</button>
+            <button class="btn lr-browse-chip" data-filter="notauto" style="padding:3px 9px; font-size:11px;">Not filing by itself</button>
+            <button class="btn lr-browse-chip" data-filter="orphan" style="padding:3px 9px; font-size:11px;">Learning but no documents</button>
+            <button class="btn lr-browse-chip" data-filter="blank" style="padding:3px 9px; font-size:11px;">No sender recognised</button>
+          </div>
+          <button class="btn" id="lr-browse-refresh" style="padding:3px 10px; font-size:11px;">Refresh</button>
+          <span id="lr-browse-count" class="section-desc" style="margin:0;"></span>
+        </div>
+        <div style="display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap;">
+          <div id="lr-scope-list" style="flex:1 1 300px; min-width:280px; max-height:460px; overflow:auto; border:1px solid var(--border); border-radius:10px;"></div>
+          <div style="flex:2 1 360px; min-width:320px;">
+            <div id="lr-browse-empty" class="section-desc" style="padding:30px 12px; text-align:center; border:1px dashed var(--border); border-radius:10px;">Select a sender on the left to see what Scan Finder remembers about it.</div>
+            <div id="lr-browse-detail" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ Advanced: the former typed Recovery search + cleanup tools + full table (preserved) ══ -->
+      <details class="section" id="lr-advanced-tools" style="margin-top:4px;">
+        <summary style="cursor:pointer; font-weight:600; color:var(--muted);">Advanced — search &amp; clean a specific supplier</summary>
+        <div style="margin-top:12px;">
+
       <!-- ── Learning Recovery ── -->
       <div class="section">
         <div class="section-title">Learning Recovery</div>
@@ -2298,6 +2331,9 @@
       <div class="section" id="lr-empty" style="display:none;">
         <p class="section-desc">No learned data found for this supplier / document type.</p>
       </div>
+
+        </div>
+      </details>
 
     </div>
 
