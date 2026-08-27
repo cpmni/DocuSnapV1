@@ -6,6 +6,21 @@
 
 ---
 
+## 2026-08-27 — BARCODE ANCHOR: pick the right code by POSITION (owner: "when a doc has multiple codes I'd like to anchor the correct one to a point on the page so that one is always found" — "add to the list")
+**Today:** the decoder already records every symbol's page box (`x/y/w/h_norm`, the anchor-crop frame; stored in
+`document_barcodes`), but Stage 1.5 (`engine.py` ~7719-7750) picks by COUNT only — one code-like decode → the field @100 +
+confirm-once; several → EMPTY + "Several barcodes on this page: A · B · C — type the right one" (`barcode_ambiguous`); ⊕ is
+refused on a barcode field (`review/renderer.js` ~4503) and the wizard pulls it from the draw list (`teach/renderer.js
+_splitListFields`) because a box would never have been consulted.
+**Design (small; own switch riding `barcode_field`; gary → Oracle first):** (1) TEACH — allow ⊕ / the wizard box on a
+barcode-typed field; store the box as the field's anchor REGION per sender × type (`field_anchors`, marker label
+`__barcode__`, no new table); teach-time read-back from the inventory: "✓ Code128 INV-… sits in your box" (no OCR).
+(2) READ — at Stage 1.5, with ≥2 code-like decodes and a taught region, take the decode whose box overlaps the region
+(same drift tolerance the registration path gives anchors) → value @100 + confirm-once (auto-file later via B2 learning);
+exactly one inside → picked; zero or ≥2 inside → today's ambiguous hold. SEAM to put to gary/Oracle: a single decode FAR
+from the taught spot — pick it but note "not where you taught it" vs hold. (3) B3 — click a decoded barcode on the page
+overlay instead of drawing (the inventory has the boxes). Size ≈ engine 40 lines + Review ⊕/read-back 30 + wizard 10 + pins.
+
 ## 2026-08-27 — Chris round 6 leftovers (owner-vet; the fixed cards are in `docs/CHRIS_FULL_APP_REVIEW_2026-08-26.md` TRIAGE)
 - **Card 1 residuals (gary's named seams; the letterhead-scope arc `template_buyer_issued_letterhead_scope` is BUILT
   DARK):** (1) **the mark seam** — only PO-ref types are ever `buyer_issued` (`templates.markBuyerIssued`), so the

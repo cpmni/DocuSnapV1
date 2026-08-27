@@ -200,6 +200,11 @@
   /* Declared absent for this layout ("Never — stop looking for it"): hollow ring, not a state
      of THIS document but a durable statement about the sender's paperwork. */
   .dot.hide{background:transparent;border:2px solid var(--muted);box-sizing:border-box}
+  /* On the type but nothing to draw (List: collected by its label; Barcode: read from the decode) —
+     shown muted with the reason instead of vanishing from the rail (owner 2026-08-27). */
+  .fieldrow.auto{cursor:default}
+  .dot.auto{background:transparent;border:2px dashed var(--muted);box-sizing:border-box}
+  .auto-why{font-size:12px}
   /* (.readback is gone — 2026-08-11 flow rework; the question zone is .rg-top in the banner.) */
   .warn{color:var(--warn);font-size:13px;margin-top:8px}
   .err{color:var(--err);font-size:13px;margin-top:8px}

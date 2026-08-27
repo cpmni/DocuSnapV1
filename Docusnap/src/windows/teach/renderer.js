@@ -1172,6 +1172,21 @@ function renderFieldRail(){
     };
     list.appendChild(row);
   });
+  // LIST / BARCODE fields are on the type but have NOTHING TO DRAW (the caption scan / the decode is
+  // their only writer). They used to vanish from this rail with a 4-second toast — the owner (2026-08-27)
+  // created a List field in Settings, opened Teach and "didn't see the new field". Show them, muted and
+  // unclickable, with the reason, so the type's field list here matches Settings.
+  for (const f of (state.listFields || [])) {
+    const row=document.createElement('div'); row.className='fieldrow auto';
+    const why = f.auto === 'barcode'
+      ? 'read from the barcode printed on the page — nothing to draw'
+      : 'collected automatically wherever its label appears — nothing to draw';
+    row.title = f.auto === 'barcode'
+      ? 'A Barcode field is filled from the decoded symbol; teaching a box would never be used.'
+      : 'A List field is collected by finding its label everywhere on the page; teaching a box would never be used. Adjust its label in Settings → Learning if the paperwork prints a different caption.';
+    row.innerHTML=`<span class="dot auto"></span><span class="muted">${esc(f.label)}</span><span class="muted auto-why"> — ${why}</span>`;
+    list.appendChild(row);
+  }
   renderFooter();
 }
 // ── Teach-time WORD-SNAP of the drawn value box (owner GO 2026-08-04; gary design, the
