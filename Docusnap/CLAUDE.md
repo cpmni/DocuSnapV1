@@ -21,9 +21,16 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-27 NIGHT: **READ `HANDOVER_2026-08-27_NIGHT.md` FIRST**
-Branch `feat/teach-side-overnight`, commits **`48de395`** + **`5b4bf27`** (+ docs), NOT pushed. **Live app RUNNING on CDP 9222
-on the PRE-night code (mig 91) — restart to apply mig 92; Chris sandbox 9223 DOWN.** Owner: *"surely ref, date and supplier must
+## ⏭ LATEST — 2026-08-27 NIGHT: **READ `HANDOVER_2026-08-27_NIGHT.md` FIRST — its §7 is the OWNER'S NIGHT PROMPT (export
+feature + memory-inventory rebuild) to run next, after closing the light-text realdoc gate (§3).**
+Branch `feat/teach-side-overnight`, 14 code commits `48de395` … `a62edbd` (+ docs), NOT pushed. **Live app RUNNING on CDP 9222
+on `5b4bf27` (mig 92 applied 20:26; owner turned `ocr_light_text_recovery` ON ~20:45) — the last three main-process fixes need a
+restart; Chris sandbox 9223 DOWN.** Late finds: **Gate-C v2 never saw the sender** (`5f66276`; the gate ran before
+`results._supplier_name` was written → the backed I/1 tolerance never fired in production); **the harness has always run at
+300 DPI while the product runs 200** — at 200 the corpus reads date 96.9 / ref 98.7 with 23 wrong would-files (vs 99.1 / 14
+at 300) → owner decision on `ocr_dpi`; a junk old DATE vs a valid read is a fill, not a "Read differently" (`d2ee3a7`); the
+zero-filed receipt + "being viewed by someone" = the owner (`a62edbd`); the serial pass on the owner's live re-import:
+34/37 → with the slot ladder 36/37 expected. Owner: *"surely ref, date and supplier must
 be required by nature?? continue with the queued items."* **(1) `48de395` THE ROLES ARE REQUIRED BY NATURE** (Oracle S-O-W/COND):
 the shared doc-type editor's CREATE road wrote `required=0` on the identity/ref/date fields it supplied (every seeded type has 1)
 and the edit toggle is LOCKED + `updateField` refuses it — so the evening's "tick required" remedy was IMPOSSIBLE; the SCORER

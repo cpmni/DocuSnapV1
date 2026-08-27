@@ -1,17 +1,24 @@
 # HANDOVER — 2026-08-27 NIGHT (the roles are required by nature · the light-text OCR pass built DARK · Chris's blocker measured through the product code)
 
-**Branch** `feat/teach-side-overnight` · commits tonight: **`48de395`** (structural roles REQUIRED BY NATURE, mig 92) ·
-**`5b4bf27`** (light-text recovery pass, DARK) · (+ the docs commit that carries this file). **NOT pushed** (owner reviews
-then pushes). **Live app: RUNNING on CDP 9222 on the code BEFORE tonight's commits** (mig 91) — a restart applies mig 92 and
-loads the new bridge/Python. **Chris sandbox 9223: DOWN.** Owner's instruction this session: *"surely the main fields ref, date
-and supplier must be required by nature?? Please continue with the queued items."*
+**Branch** `feat/teach-side-overnight` · commits tonight, in order: `48de395` roles required by nature (mig 92) · `5b4bf27`
+light-text pass DARK · `6597b27` four threshold levels · `1cef740` miss-class fixes · `18b87f2` docs · `50da9af` slot ladder ·
+`cddac8a` narrow toolbar · `a6d1ec1` adjacent-duplicate guard + census tooling · `cfef322` activity actions in 3 columns ·
+`c747f12` activity sections · `39eeb9f` design pass + Gate-C note names the page form · `5f66276` Gate-C v2 never saw the sender ·
+`d2ee3a7` junk-date hold rule · `a62edbd` zero-filed receipt + being-viewed-by-you · (+ this docs commit). **NOT pushed**
+(owner reviews then pushes). **Live app: RUNNING on CDP 9222, restarted 20:26 on `5b4bf27` (mig 92 applied; the owner turned
+`ocr_light_text_recovery` ON at ~20:45)** — Python changes since then apply per spawn; the three main-process fixes (`d2ee3a7`,
+`a62edbd`, the `ocr-page-words` env) load at the NEXT restart. **Chris sandbox 9223: DOWN.** Owner's instructions this session:
+*"surely the main fields ref, date and supplier must be required by nature?? continue with the queued items"* → then a live
+test loop on the serial feature (§2b–2f), two Review UI fixes (§2g–2h, 2j), three "this message doesn't make sense" fixes
+(§2i, 2k, 2l), and finally the NIGHT PROMPT (§7).
 
 ## 0. First actions for the next session (in order)
-1. **Owner: restart the live app** (mig 92 heals the 3 `service_worksheet` role rows; a log line says how many) → **Reprocess
-   the held Castellan worksheets** (their overall 81 is baked at extraction — the heal changes the flag, not stored rows).
-2. Read §3 (the light-text gates) — fill/verify the numbers if this file still says PENDING (the runs write to
-   `scratchpad\census_light.*` and `scratchpad\rr_light_{off,on}.*` of session `9ba057d0…`).
-3. Then the FLIP slices for the light pass (§4 — corroboration exclusion + the heal door), or the help plan D1–D11.
+0. **THE OWNER'S NIGHT PROMPT IS §7 — run it** (on the model the owner picked with `/model`; effort max). Before it:
+1. Close the light-text realdoc gate (§3: `diff_rr_light.js` over the scratchpad once `rr_light_done.flag` exists) and put the
+   numbers + the serial deltas in this file's §3. Then `git commit -F` the docs.
+2. Restart the live app when the owner isn't mid-test (the last three main-process fixes — `rereadHolds` junk-date rule, the
+   `being-viewed-by-you` reason, zero-filed never undoable — load only at restart; mig 92 already applied at 20:26).
+3. Then §7. The rest of the queue (§4 flip slices, help plan D1–D11, the field-type registry in `pendingfeatures.md`) waits.
 
 ## 1. "Required by nature?" — YES, and the answer was a BUG, not a setting (`48de395`, Oracle SIGN-OFF-W/COND)
 - **Fact (verified at source):** every reader that matters keys off the ROLE assignment (Confirm gate `validateConfirm`, the
@@ -183,15 +190,33 @@ fixes: `_evaluateSweepDoc` emits `being-viewed-by-you` when every viewer is the 
 see why below"; `reviewEvents._public` never offers Undo on a zero-filed event. Pins: `test_activity_actions_columns.js` §6,
 `test_review_events.js` (zero-filed never undoable). Main-process parts (handler/reviewEvents) load at the next app restart.
 
-## 3. The light-text GATES (Oracle 6–8) — [PENDING at write time; filled below when the runs land]
-- **Realdoc OFF vs ON at `OCR_RENDER_DPI=200`** (the harness NEVER mirrors `_ocrDpiEnv` — Oracle caught it: my first run was at
-  300, killed; `run_rr_light200.cmd` exports + echoes the DPI): M, M_type, would-file, per-template counts, supplier/method/
-  template deltas — `scratchpad\rr_light_off.out` / `rr_light_on.out` + `_dump.jsonl` / `_type.jsonl` / `.jsonl`.
-- **Census (`census_light_text.py`, every scanned page-1, confirmed + needs_review + deferred):** pages with adds, words added,
-  conf/digit histograms, OFF⊂ON violations, light words placed INTO base rows, OFF column breaks lost, `header_band_text`
-  shrank, rung-2-window words, other-supplier names in added lines, footer/date/money-like lines, extra s/page —
-  `scratchpad\census_light.jsonl` / `census_light.out` (summary JSON at the end).
-- **RESULTS:** (to be filled)
+## 3. The light-text GATES (Oracle 6–8) — census DONE, realdoc ON arm RUNNING at hand-over time
+Scratchpad of this session: `C:\Users\cmccu\AppData\Local\Temp\claude\c--GIT-Projects-Docusnap\9ba057d0-eb41-4ae9-9865-83e53e7ddadb\scratchpad\`
+(the frozen DB copies `rr_req_off.db` / `rr_req_on.db`, every probe, every run output). Repo copies of the scripts:
+`TESTING/_measure/light_text_20260827/` (`census_light_text.py`, `analyse_census.py`, `diff_rr_light.js`, `run_rr_light200.cmd`,
+`make_req_copies.js`, the probes).
+- **CENSUS (final code, 669 scanned page-1s, `census_light_final.jsonl`, `analyse_census.py`):** pages with adds **168 (25%)**;
+  words added **2,227** (conf 90+: 2,111 · 80–89: 87 · 70–79: 17 · 60–69: 12; digit-bearing 90+: 484 · 80–89: 59 · 70–79: 9);
+  **`header_band_text` shrank on 0 pages; heading-band pre-gate changed on 0 pages** (8 light words sit in the rung-2 window but
+  ride `light_words`, not `words`); **date-like added lines 0**, money-like 2; footer-like pages 146 (the "Registered in England
+  VAT Reg No…" strips — the `vat_reg_not_amount` dependency); light words placed INTO base rows 87 on 62 pages; OFF column breaks
+  lost on 12 pages (a light word inserted in a gap — the line-level change the Settings copy now admits); **OFF-line violations 11
+  pages: 9 explained (degenerate base slivers replaced — 28 pages had a sliver replaced), 2 UNEXPLAINED by the heuristic (#357,
+  #363 — Pelican footers; look by eye)**; extra **2.4 s/page** with the census running beside the realdoc (≈1.6 s alone).
+  **#331 (a "Castellan" doc) gained the footer `Oakhaven Electrical Wholesale Registered in England VAT Reg No GB 660 1173 45`**
+  → either an Oakhaven page confirmed as Castellan (GT poison) or a genuine mixed page — check the image.
+- **REALDOC at `OCR_RENDER_DPI=200` on the healed copy (`run_rr_light200.cmd`; OFF arm finished 22:39, ON arm started 22:39
+  and takes ~1½ h; `rr_light_done.flag` appears when both are done):** OFF arm (= today's product WITHOUT the pass): type 100 /
+  supplier 99.9 / **ref 98.7 / date 96.9** / total 100; would-file 1557/1637; **23 would auto-file a WRONG value; M_type 0**;
+  75 regressions (36 silent). **THE DPI FINDING:** every earlier realdoc number in every handover was measured at the harness
+  default 300 DPI (date 99.1, 14 wrong) — the owner's live `ocr_dpi = 200` reads **~2 pts worse on dates and +9 wrong
+  would-files** on this corpus. Not the light pass's doing (it is OFF in that arm). Owner decision: `ocr_dpi` back to 300 (speed
+  vs accuracy), or an arc on the 200-DPI date class. From now on run the harness with `OCR_RENDER_DPI=200` exported (or fix
+  `realdoc_regression.js` to mirror `_ocrDpiEnv` — the honest fix).
+  **To close the gate when the ON arm lands:** `ELECTRON_RUN_AS_NODE=1 electron TESTING/_measure/light_text_20260827/
+  diff_rr_light.js <scratchpad>` → pass = WRONG would-file gained 0, M_type 0, would-file not lower, supplier/template/type deltas
+  0 or explained, per-template match counts identical; then read the `serial_number` deltas (the whole point). If the flag never
+  appears (the session ended and took the workers with it), re-run `run_rr_light200.cmd` (paths inside point at this scratchpad).
 
 ## 4. FLIP conditions for the light pass (Oracle 9–11 — NOT built; each its own slice)
 9. **Corroboration exclusion (hard, not census-conditional):** a keyword read that exists ONLY in a light-recovered line is the
@@ -231,3 +256,43 @@ second for nothing). Documented v1 limit: a faint-printed FORM (30 base words, 6
   never a file copy.
 - A synthetic "grey vs black small print" control must be LIGHTER than the generator's rgb(90,90,90): after scanify the base
   PSM-3 pass read my grey serials fine (the control was uninformative).
+- A kill-by-CommandLine filter that names the script you are about to launch matches the launching shell itself → the new run dies
+  at birth (exit 255). Kill and launch in separate commands, or filter on the process NAME (`py.exe`/`python.exe`).
+- The tool's permission classifier refused a CDP `setSetting` call (a settings write through the app bridge) but allowed
+  `reprocessBatch` — do not plan on flipping switches for the owner through CDP; they toggle in Settings.
+- `test_filing_sanity_page_match.py` fed `results['_supplier_name']` by hand and so never saw the production call order — when a
+  pin constructs the very state the product must produce, pin the PRODUCER too (the dead-guard trap, again).
+
+## 7. THE OWNER'S NIGHT PROMPT (given 2026-08-27 ~22:35 — verbatim; run it after §0 steps 1–2)
+> please run the following when this is finished on /model claude-opus4-8 /effort max — Tonight i would like to explore and
+> implement an export feature. Export should exist as a button on the home screen. The premise is that a customer may wish to
+> export certain data for use in a database. There should be the option to select suppliers, types and fields to export. The
+> export should be done as a CSV but I would love an excel export if it was doable with a commercially free to use licensed 3rd
+> party app. Please investigate the beneficial features of such a tool and confer with the agents on what it should be capable
+> of, how it should look and what formats to support.
+>
+> Following that, please investigate how to improve the learned memory inventory in settings. It is currently very difficult to
+> use. you have to exactly type the name of what you want to view and it becomes quite a long list. I would like to be able to
+> click to view but have it set up in a similar fashion to the learning repair view. It needs to be user friendly and intuitive.
+> Please run this by the agents in the same manner as above.
+>
+> Where there is agreement on these features, please go ahead and implement. Where there is disagreement, work to find a
+> resolution and implement. We can revert or fix in the morning if there are any issues.
+
+**How to run it (the standing rules apply):** barry (feature shape, L1–L4, segment fit) + eric (Electron/IPC/file dialogs/
+packaging) + bob (plain-English options + recommendation) + the Chris lens (`customer-experience-review` skill: jargon, decision
+budget, undo) → Oracle LAST on the consensus; agreement → build; disagreement → resolve (bob's recommendation breaks ties) → build;
+every new behaviour behind its own switch/feature flag where it changes existing behaviour (a NEW screen/button can ship visible
+— it changes nothing existing); pins for every surface; `git commit -F <file>` per slice; a morning handover with an exact revert
+per commit. **Facts already checked for the export:** CSV needs no dependency; for Excel `exceljs` (MIT) and SheetJS Community
+Edition (Apache-2.0) both pass `scripts/check-licenses.js` (allowlist MIT/Apache-2.0; `npm run check:licenses` is the gate;
+`gen-third-party-notices.js` re-stamps the notice — a new FAMILY needs its licence text added to section 3). Home button lives in
+`src/windows/main/index.html` + `renderer.js` (the card grid / nav rail); data comes from `documents` + `extractions` (+
+`corrections` for the human's answer) via a NEW read-only service (`src/services/exportService.js`) behind an admin/edit IPC that
+opens the OS save dialog (never write outside the chosen path; the `_allowedOpenRoots` / de-pathing rules); a List field exports
+one column joined `; ` (and, per barry's earlier ask, a long-format option with one row per element). **Memory inventory:** today =
+Settings → Learning → the raw inventory table (`getMemoryInventory`, `learning.js`) + Learning Recovery keyed by an exact typed
+name; the Learning Repair tab (`panel-repair`, `learningScopeService` selector, `repairSuspects.js`) is the model the owner wants
+— a click-to-browse sender → type → field tree with counts, the remembered values per field (dominant / hints / corrections /
+anchors / templates) and the existing forget/rename/put-back doors; `pendingfeatures.md` already carries barry's Oracle-trimmed
+"Learning Repair v2 LATER sections" (the remembered-values editor, the layouts canvas) — reuse that design, don't re-brainstorm.
