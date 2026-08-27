@@ -2141,6 +2141,31 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 91 applied: document_barcodes (barcode inventory; inert until barcode_inventory is on)');
   }
 
+  // Migration 92 (2026-08-27, owner: "surely the main fields ref, date and supplier must be required by
+  // nature"): STRUCTURAL ROLES ARE REQUIRED BY NATURE. The shared doc-type editor's create road never set
+  // `fields.required` on the identity / ref-role / date-role fields it supplied (every SEEDED type has it),
+  // and the edit-mode toggle is locked + updateField refuses the change — so a wizard-made type carried
+  // required=0 on all three roles, the scorer (validator.overall_confidence: required fields, else EVERY
+  // field) fell to every field, and one unread optional field held a whole graduated scope (Castellan
+  // worksheets at overall 81 < 95, 2026-08-27; the Northgate "72% cap" of 07-27 was the same class). The
+  // writers now assert the flag (document_types.assertStructuralRequired at every create / role re-point /
+  // backup-restore road); this heals the rows that already exist. Only ever 0→1 on a ROLE field; idempotent.
+  if (!applied.has(92)) {
+    let n = 0;
+    try { n = require('./modules/document_types').assertStructuralRequired(db) || 0; }
+    catch (e) { console.warn(`  migration 92 (structural roles required): ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (92)').run();
+    console.log(`JS migration 92 applied: structural roles required by nature (${n} role field(s) healed)`);
+  }
+  // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
+  // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
+  // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next
+  // migration. One UPDATE, no-op when nothing needs healing; logs only when it changed something.
+  try {
+    const nh = require('./modules/document_types').assertStructuralRequired(db) || 0;
+    if (nh > 0) console.log(`  structural roles: ${nh} role field(s) re-asserted required at startup`);
+  } catch (e) { console.warn(`  structural roles startup heal: ${e.message}`); }
+
   // Mailbox / approval workflow (Stage 5a): document_routes + documents.workflow_status.
   // A SEPARATE workflow state machine that never rewrites a document's filing status.
   // Ensured UNCONDITIONALLY + idempotently — NOT version-gated and NOT stamped in the

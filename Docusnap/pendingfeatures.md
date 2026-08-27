@@ -6,6 +6,15 @@
 
 ---
 
+## 2026-08-27 — HELP SYSTEM REBUILD (owner-vet: eleven decisions; plan written, NOTHING built)
+Plan: `docs/designs/HELP_SYSTEM_REBUILD_PLAN_2026-08-27.md` (`a9256dd`) — gap map of the 12 current help pages (stale claims with
+file:line, zero-coverage list, dead deep links), a teach-first architecture A0–G3 (teach-then-import is the recommended route), a
+7-step Quick start with a "you'll know it worked when" column, `[SHOT]` markers S1–S15 (S15 = owner), glossary, delivery slices,
+an acceptance checklist. App change asked for: a "User Guide…" item in the Home account menu (`#user-menu`, above "Show welcome
+tour" → `openHelpWindow('home')`; keep the top-bar Help). **Blocked on the owner's answers to D1–D11 (§12 of the plan; D11 first =
+approve the voice on Quick start + Teach before the rest is written).** Facts already corrected at source while planning: the help
+window is NOT modal (`main.js:502`); the Mailbox is LIVE for add-on holders; the sweep/consent bar is ON for every install (mig 80).
+
 ## 2026-08-27 — BARCODE ANCHOR: pick the right code by POSITION (owner: "when a doc has multiple codes I'd like to anchor the correct one to a point on the page so that one is always found" — "add to the list")
 **Today:** the decoder already records every symbol's page box (`x/y/w/h_norm`, the anchor-crop frame; stored in
 `document_barcodes`), but Stage 1.5 (`engine.py` ~7719-7750) picks by COUNT only — one code-like decode → the field @100 +
@@ -118,11 +127,13 @@ overlay instead of drawing (the inventory has the boxes). Size ≈ engine 40 lin
   merge under the existing `_center_in_any` rule, conf ≥ 50), DARK `ocr_light_text_recovery`, oscar/007 → Oracle; gates =
   realdoc OFF==ON + fingerprint-diff census + recovered-words census + the serial exhibit healing + a Chris round. Until then
   a caption teach collects nothing on scanned worksheets.
-  (h) **AN UNREAD OPTIONAL FIELD HOLDS A GRADUATED TYPE:** `validator.overall_confidence` scores EVERY field when the type has no
-  required fields and counts an expected-but-empty one as 0 — adding the List field to Service Worksheet sank every Castellan
-  worksheet to overall 81 < floor 95 (realdoc: 96/96 would-file → held; `rr_ids_consensus2.jsonl`). Owner remedy now: mark the
-  three structural roles *required* on that type. System fix (Oracle): when nothing is required, score the structural roles;
-  never score an optional List field's absence (its collector is fail-toward-empty by design).
+  (h) **BUILT 2026-08-27 (night) — structural roles are REQUIRED BY NATURE** (owner: "surely the main fields ref, date and supplier
+  must be required by nature"): the real mechanism was not the scorer but the WRITER — the shared doc-type editor's create road
+  (`seedCreate` → `create-doc-type-with-fields`) wrote `required=0` on the identity + ref/date fields it supplied (every SEEDED
+  type has `=1`), the edit-mode toggle is LOCKED ("always required") and `updateField` refuses the change, so the "tick
+  required" remedy was impossible in the UI. `document_types.assertStructuralRequired` now asserts the flag at every create /
+  role re-point / backup-restore road + **migration 92** heals existing installs (live: the 3 `service_worksheet` rows). The
+  scorer is unchanged (the flag is the ONE source); an optional List field is simply not scored unless the operator requires it.
   (i) **within-document shape consensus exhibit** (Chris r8 card 2): `Serial No:    T-8325384` (OCR misread, no "C") sat beside
   `CT-8116138` with no mark — the deferred (c) above now has its exhibit.
   (j) "Never on these documents?" link copy reads as a riddle (Chris r8 card 5) → "This field isn't on these documents — hide it".

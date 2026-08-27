@@ -263,6 +263,11 @@ function applyBackup(db, payload) {
     };
 
     replaceChildren('fields', 'document_type_id', typeMap);
+    // Structural roles are required by nature (migration 92): a backup taken before that heal carries
+    // required=0 on a wizard-made type's identity / ref / date fields — assert the flag on every type
+    // after the restore so a restore can never re-plant the "score every field" state. Best-effort:
+    // a minimal fixture may lack the column.
+    try { require('../../database/modules/document_types').assertStructuralRequired(db); } catch {}
     for (const ct of ['template_fields', 'template_field_mappings', 'template_landmarks', 'template_logo_hashes']) {
       replaceChildren(ct, 'template_id', tmplMap);
     }

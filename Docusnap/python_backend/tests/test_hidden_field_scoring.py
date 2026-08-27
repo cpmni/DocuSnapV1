@@ -53,7 +53,10 @@ def check(label: str, cond: bool) -> bool:
 
 fails = 0
 
-# ── The live schema shape: 6 fields, none required (worksheet type) ───────────────────────
+# ── The 07-27 live schema shape: 6 fields, none required (a wizard-made worksheet type). Since
+#    2026-08-27 (mig 92 + document_types.assertStructuralRequired) NO writer produces this state
+#    any more — the identity + ref/date roles are always required=1 — but the "every field"
+#    fallback stays for fixtures like this one, so these pins keep guarding it. ───────────────
 WS = [{"key": k, "required": False} for k in
       ("supplier_name", "reference_number", "date", "customer", "item", "serial_no")]
 FOUR = {

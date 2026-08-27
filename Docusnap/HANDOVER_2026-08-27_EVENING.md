@@ -10,8 +10,9 @@ start the app first then write a handover"* — app started, this is the handove
 
 ## 0. First actions for the next session (in order)
 1. Read this file, then `HANDOVER_2026-08-27_DAY.md` "RESULTS — LIST REVIEW SLICE" (the evening gates in full).
-2. **Owner action (cheap, undoes the held-worksheet pile):** Settings → Document Types → Service Worksheet → tick *required* on
-   Document Issuer / Date / Reference. Reason in §3.
+2. ~~Owner action: tick *required* on Document Issuer / Date / Reference~~ — **IMPOSSIBLE (the toggle is locked on a structural
+   field) and SUPERSEDED the same night by migration 92** (the roles are required by nature; see the next handover). Owner step
+   now: restart the app, then Reprocess the held worksheets.
 3. **Build the OCR light-text recovery arc (§2)** — oscar (recipe) + 007 (merge frame) → Oracle → DARK switch → gates. It is the
    thing between Chris's "No for now" and his "yes, gladly".
 4. Then the help-system plan: get the owner's answers to D1–D11 (`docs/designs/HELP_SYSTEM_REBUILD_PLAN_2026-08-27.md` §12), D11 first.
@@ -70,9 +71,10 @@ counts an expected-but-empty field as 0. Service Worksheet has no required field
 live DB with the new `RR_IDS` harness filter, `scratchpad\rr_ids_consensus2.jsonl`; 96/96 Castellan would-file → held on the
 full run; the 2 DOCUMENT SOLUTIONS flips are your correction today → 'recent-correction' floor 100). Not list-specific: any
 optional field the engine cannot read does this on a type with no required fields — the List field is just the first optional
-field you put on a graduated type. **Remedy now:** tick *required* on the three structural roles for that type. **System fix
-(queued, Oracle):** when nothing is required, score the structural roles; never score an optional List field's absence (its
-collector is fail-toward-empty by design). `pendingfeatures.md` (h).
+field you put on a graduated type. ~~**Remedy now:** tick *required* on the three structural roles for that type.~~ **CORRECTED the same night: the Required
+toggle is LOCKED on a structural field (`doctype-editor.js`) and `updateField` refuses it — the remedy was impossible. The real
+mechanism: the editor's CREATE road wrote `required=0` on the roles it supplied (every seeded type has 1). FIXED by migration 92
++ `document_types.assertStructuralRequired` at every writer (Oracle SIGN-OFF-W/COND); the scorer is unchanged.** `pendingfeatures.md` (h).
 
 ## 4. What shipped tonight (all in `38d5af2`; details `HANDOVER_2026-08-27_DAY.md` §"LIST field — REVIEW PILLS" + RESULTS)
 Pills over the hidden store input (edit / ✕ + ↺ / "+ One it missed" = the ⊕ caption teach with merge rule

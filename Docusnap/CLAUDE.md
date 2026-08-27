@@ -31,7 +31,7 @@ measured:** scanned worksheets' grey 7.5-pt "Serial No: …" lines are NOT recog
 (`probe_ocr_loss.py`) but a **threshold-200 pass recovers them at conf 90–93** (`probe_contrast.py`, `band_scan_200.png`) →
 **NEXT ARC = a light-text supplementary pass in `reconstruct_page_text` (DARK switch, oscar/007 → Oracle, gates in the
 handover §2).** Also: Service Worksheet has NO required fields, so the unread List field scores 0 and every Castellan
-worksheet HOLDS at overall 81 < 95 — **owner remedy: tick *required* on Issuer/Date/Reference** (system fix queued).
+worksheet HOLDS at overall 81 < 95 — **FIXED the same night (mig 92): the roles are required by nature — the editor's create road never set the flag and the toggle is LOCKED, so "tick required" was impossible; the writers now assert it + a startup heal. Owner: restart, then Reprocess the 96.**
 Help-system rebuild PLAN written (`docs/designs/HELP_SYSTEM_REBUILD_PLAN_2026-08-27.md`; eleven owner decisions, D11 first;
 the help window is NOT modal; the Mailbox is live). New harness lever: `RR_IDS=…` reprocesses only those confirmed docs on the
 untouched live DB. **Traps:** the shell guard refuses any command containing `Remove-Item` + a quoted spaced path (the whole
@@ -863,6 +863,14 @@ retyped — but the per-document VALUE stays editable (correcting a mis-read fee
 `is_structural` annotated per field (getWithFields/getAllWithFieldsAll) for the Settings UI (locked
 toggle, no delete, 🔒); `updateField`/`deleteField` enforce it server-side; `create-doc-type-with-
 fields` injects a Company field if omitted. Guarded by `test_structural_fields.js`.
+**The roles are REQUIRED BY NATURE (mig 92, 2026-08-27):** `fields.required` is what the SCORER reads
+(`validator.overall_confidence` = the required fields, ELSE every field, an unread one = 0), plus
+`needs_review` + `scopeTrust`'s verifiability loop — the Confirm gate / queue marker / auto-file predicate
+key off the ROLE assignment instead. The editor's create road wrote `required=0` on the roles it supplied
+(every seeded type has 1) and the edit toggle is LOCKED, so a wizard-made type scored every optional
+field and one unread field held a graduated scope (Castellan 81 < 95). `document_types.
+assertStructuralRequired` now asserts the flag at every create / role re-point / backup-restore road;
+mig 92 healed existing rows. Never tell an operator to "tick required" on a role.
 
 **DANGLING STRUCTURAL ROLE — self-heal + Confirm resilience** (2026-07): a `ref_field_key`/
 `date_field_key` can point at a field that no longer exists (Reference field deleted, or a type made

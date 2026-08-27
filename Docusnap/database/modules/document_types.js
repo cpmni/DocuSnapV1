@@ -425,8 +425,13 @@ function updateType(db, id, changes) {
     .map(k => `${k} = @${k}`)
     .join(', ');
   if (!sets) return;
-  return db.prepare(`UPDATE document_types SET ${sets} WHERE id = @id`)
+  const res = db.prepare(`UPDATE document_types SET ${sets} WHERE id = @id`)
     .run({ ...changes, id });
+  // A newly designated ref/date role is required by nature — assert the flag on its field. The
+  // PREVIOUS role field is no longer structural and is left as the operator had it (they may
+  // untick it now). A dropped (dangling) role never reaches here: it was deleted from `changes`.
+  if (changes.ref_field_key || changes.date_field_key) assertStructuralRequired(db, id);
+  return res;
 }
 
 // Force the structural ID fields to EXIST + be protected on a doc type. Idempotent;
@@ -459,6 +464,38 @@ function ensureStructuralRoles(db, typeId) {
     }
     updateType(db, typeId, { date_field_key: 'date' });
   }
+  assertStructuralRequired(db, typeId);   // the roles are required by nature — make the flag say so
+}
+
+// STRUCTURAL ROLES ARE REQUIRED BY NATURE (2026-08-27, owner: "surely ref, date and supplier must
+// be required by nature"). The Confirm gate, the queue's "missing" marker and the auto-file
+// predicate all key off the ROLE assignment — but `fields.required` is what the SCORER reads
+// (validator.overall_confidence: the required fields, ELSE every field, an expected-but-empty one
+// = 0), plus validator.needs_review and scopeTrust's graduation-verifiability loop. Every SEEDED
+// type sets required=1 on its roles; the shared doc-type editor's create road (seedCreate →
+// create-doc-type-with-fields) never did, so a wizard/editor-made type carried required=0 on all
+// three roles: the scorer fell to "every field" and any optional field the engine could not read
+// (a List serial, a customer) counted 0 — a whole graduated scope held at overall 81 < 95
+// (Castellan worksheets, 2026-08-27; the Northgate "72% cap" of 07-27 was the same class). The
+// edit-mode editor LOCKS the Required toggle ("Structural field — always required") and
+// updateField refuses the change, so the operator could not even tick it: the promise was
+// asserted by the guards and written by nobody. This is the ONE writer that makes it true —
+// asserts required=1 on the identity + the ASSIGNED ref/date roles of one type (or every type
+// when typeId is null: migration 92, backup restore). Idempotent; only ever 0→1 on a ROLE field;
+// never touches a non-role field; never creates or assigns a role (Reference stays optional to
+// DESIGNATE — the no-ref dead-end rule above is untouched). Returns the number of rows healed.
+function assertStructuralRequired(db, typeId = null) {
+  const ph = COMPANY_KEYS.map(() => '?').join(',');
+  const scope = typeId == null ? '' : 'AND dt.id = ?';
+  const args = typeId == null ? [...COMPANY_KEYS] : [...COMPANY_KEYS, typeId];
+  return db.prepare(`
+    UPDATE fields SET required = 1
+     WHERE COALESCE(required, 0) <> 1
+       AND id IN (
+         SELECT f.id FROM fields f JOIN document_types dt ON dt.id = f.document_type_id
+          WHERE (f.key IN (${ph}) OR f.key = dt.ref_field_key OR f.key = dt.date_field_key)
+            ${scope})
+  `).run(...args).changes;
 }
 
 // Migration 44 core (idempotent + reusable): UNLINK customer_name from identity. For every type
@@ -822,6 +859,7 @@ module.exports = {
   seedPresetTitleAliases,
   seedBuiltInTypes, getAll, getWithFields, getAllWithFields, getAllWithFieldsAll,
   addType, updateType, addField, updateField, deleteField, ensureStructuralRoles,
+  assertStructuralRequired,
   reshapeCustomerIdentityTypes, cleanupStaleCustomerLearning,
   COMPANY_KEYS, isStructuralKey, normaliseTitleAliases,
   PRESET_CATALOG, presetSlug, getPresetCatalog, addPresetTypes,
