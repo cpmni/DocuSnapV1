@@ -3539,7 +3539,15 @@ function register(ctx) {
     const trust = require('../../../database/modules/trust');
     const { evaluateSweepConsistency, extractionsFingerprint } = require('../../services/sweepPredicate');
     const presence = require('../../services/presenceService').shared();
-    if (presence.viewers(doc.id).length) return { excluded: { docId: doc.id, reason: 'being-viewed' } };
+    // A document someone has open is never filed under them. When that someone is the ACTOR (the owner had
+    // #1742 open in Review while the pass ran — 2026-08-27) the receipt must say so instead of "someone":
+    // reason 'being-viewed-by-you' → "you have it open in Review — confirm it from there".
+    const _viewers = presence.viewers(doc.id);
+    if (_viewers.length) {
+      const _me = String((getCurrentUser() || {}).username || '').trim().toLowerCase();
+      const _onlyMe = !!_me && _viewers.every(v => String(v.username || '').trim().toLowerCase() === _me);
+      return { excluded: { docId: doc.id, reason: _onlyMe ? 'being-viewed-by-you' : 'being-viewed' } };
+    }
     const rows = db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(doc.id);
     const fingerprint = extractionsFingerprint(rows);
 

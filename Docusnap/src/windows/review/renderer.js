@@ -692,7 +692,9 @@ function _asLine(ev) {
   switch (ev.kind) {
     case 'auto_filed': return `${n} document${s} filed automatically — every field read clean (matched 100 %)`;
     case 'self_filed': return `${n} document${s}${sup ? ` from <b>${sup}</b>` : ''} filed themselves — they matched what you've confirmed`;
-    case 'approved':   return ev.bulk ? `You filed ${n} in one go` : `You filed ${n}${sup ? ` from <b>${sup}</b>` : ''} in one go`;
+    // A zero-filed pass is a receipt for WHY nothing filed, not "You filed 0 … in one go" (owner 2026-08-27).
+    case 'approved':   return n === 0 ? `Nothing filed${sup ? ` from <b>${sup}</b>` : ''} — see why below`
+                            : ev.bulk ? `You filed ${n} in one go` : `You filed ${n}${sup ? ` from <b>${sup}</b>` : ''} in one go`;
     case 'class_fix':  return `${n} ${sup ? `<b>${sup}</b> ` : ''}document${s} ${n === 1 ? 'was' : 'were'} corrected to match your fix`;
     case 'issuer_fill': return `${sup ? `<b>${sup}</b> filled in on ` : 'The sender was filled in on '}${n} more document${s} with this same letterhead — File All Ready now offers ${n === 1 ? 'it' : 'them'}`;
     case 'put_back':   return `${n} ${sup ? `<b>${sup}</b> ` : ''}document${s} ${n === 1 ? 'was' : 'were'} put back in Review — the filed copies stay in your folder until you file them again`;
@@ -6984,7 +6986,8 @@ const _sweepDismissed = new Set();          // per-scope "Not now" (session-only
 let _sweepFilterIds = null;                 // "Review them" queue filter (Set<docId> | null)
 
 const _SWEEP_REASON_COPY = {
-  'being-viewed':        'being viewed by someone',
+  'being-viewed':        'being viewed by someone else',
+  'being-viewed-by-you': 'you have it open in Review — confirm it from there',   // owner 2026-08-27: "someone" was the owner
   'changed':             'its fields changed after the offer',
   'not-queued':          'it was handled in the meantime',
   'workflow-locked':     'it is in an approval workflow',

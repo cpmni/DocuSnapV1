@@ -48,5 +48,13 @@ check('4. kept-back is an amber-barred note', /\.ap-kept \{[^}]*border-left: 2px
 check('4. the row markup is time / body(line, chips, kept) / actions', /<div class="ap-row"><div class="ap-when">[\s\S]*?<\/div><div class="ap-body"><div class="ap-line">\$\{line\}<\/div>\$\{by\}\$\{kept\}<\/div><span class="ap-actions">/.test(js));
 check('4. no theme-foreign colour literals in the panel styles', !/\.ap-(row|when|line|what|why|chip|kept|sub) \{[^}]*#[0-9a-f]{3,6}/i.test(html));
 
+console.log('\n6. the zero-filed receipt (owner: "what is this notification? it doesn\'t make sense")');
+check("6. a zero-filed 'approved' row says Nothing filed, never 'You filed 0 … in one go'", /case 'approved':\s+return n === 0 \? `Nothing filed\$\{sup \? ` from <b>\$\{sup\}<\/b>` : ''\} — see why below`/.test(js));
+check("6. the kept-back reason names YOU when the viewer is the actor", /'being-viewed-by-you': 'you have it open in Review — confirm it from there'/.test(html + js) && /'being-viewed':\s+'being viewed by someone else'/.test(js));
+const handlerSrc = norm(fs.readFileSync(path.join(__dirname, '..', '..', 'modules', 'processing', 'handler.js'), 'utf8'));
+check("6. the sweep emits 'being-viewed-by-you' when every viewer is the current user", /reason: _onlyMe \? 'being-viewed-by-you' : 'being-viewed'/.test(handlerSrc) && /_viewers\.every\(v => String\(v\.username \|\| ''\)\.trim\(\)\.toLowerCase\(\) === _me\)/.test(handlerSrc));
+const evSrc = norm(fs.readFileSync(path.join(__dirname, '..', '..', 'lib', 'reviewEvents.js'), 'utf8'));
+check('6. a zero-filed event is never undoable (no Put back for nothing)', /undoable: n > 0 && _undoable\(ev\)/.test(evSrc));
+
 console.log(fails ? `\n${fails} FAILED` : '\nAll activity-actions column pins passed');
 process.exit(fails ? 1 : 0);

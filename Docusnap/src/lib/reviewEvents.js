@@ -97,7 +97,10 @@ function create(deps = {}) {
   function _public(ev) {
     // the renderer never receives the id list (C5): counts + breakdown + the event id only
     const { ids, ...rest } = ev;
-    return { ...rest, count: Array.isArray(ids) ? ids.length : 0, undoable: _undoable(ev) };
+    // A zero-filed event has nothing to put back — never offer Undo on it (owner 2026-08-27: a "Put back"
+    // button beside "You filed 0 … in one go").
+    const n = Array.isArray(ids) ? ids.length : 0;
+    return { ...rest, count: n, undoable: n > 0 && _undoable(ev) };
   }
   function _undoable(ev) {
     return !!(ev && ev.undo && ev.undo.type && (now() - Number(ev.at || 0)) <= undoWindowMs);

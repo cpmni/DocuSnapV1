@@ -176,6 +176,13 @@ date as empty and applies the via's confirm-once hold ("Read again at your reque
 the sentence fires on a junk baseline (Oracle P1 C1, 2026-08-23) was rewritten to the owner's rule; a control pins that a VALID
 old date vs a different valid new date still fires with the offer. Ref roles unchanged (no validity predicate).
 
+## 2l. "You filed 0 from Castellan in one go · kept back — being viewed by someone (#1742) · [Put back]" (owner: "doesn't make sense")
+The scope-local File-All pass skipped #1742 because a viewer had it open — the viewer was the OWNER (Review window). Three
+fixes: `_evaluateSweepDoc` emits `being-viewed-by-you` when every viewer is the current user → copy "you have it open in Review
+— confirm it from there" ("being viewed by someone else" otherwise); a zero-filed `approved` row reads "Nothing filed from X —
+see why below"; `reviewEvents._public` never offers Undo on a zero-filed event. Pins: `test_activity_actions_columns.js` §6,
+`test_review_events.js` (zero-filed never undoable). Main-process parts (handler/reviewEvents) load at the next app restart.
+
 ## 3. The light-text GATES (Oracle 6–8) — [PENDING at write time; filled below when the runs land]
 - **Realdoc OFF vs ON at `OCR_RENDER_DPI=200`** (the harness NEVER mirrors `_ocrDpiEnv` — Oracle caught it: my first run was at
   300, killed; `run_rr_light200.cmd` exports + echoes the DPI): M, M_type, would-file, per-template counts, supplier/method/

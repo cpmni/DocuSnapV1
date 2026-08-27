@@ -160,6 +160,13 @@ check('…and the stored event no longer offers undo', L.list(db)[0].id === mu.i
 check('…put_back_ids / put_back_refused recorded', JSON.stringify(L.get(db, mu.id).put_back_ids) === '[5001,5002]' && JSON.stringify(L.get(db, mu.id).put_back_refused) === '[5003]');
 check('unknown id → null', L.markUndone(db, 999999, { undone: [1] }) === null);
 
+console.log('\nzero-filed receipt (owner 2026-08-27: a "Put back" beside "You filed 0 … in one go"):');
+tick(61_000);
+const z = L.record(db, { kind: 'approved', ids: [], scope: { supplier: 'Castellan', typeSlug: 'service_worksheet' }, undo: { type: 'sweep' }, dropped: [{ docId: 1742, reason: 'being-viewed-by-you' }] });
+check('a pass that filed nothing but kept one back is still recorded (the receipt)', !!z && L.list(db)[0].count === 0 && L.list(db)[0].dropped.length === 1);
+check('…and is NEVER undoable — there is nothing to put back', L.list(db)[0].undoable === false);
+check('…while a filed event of the same kind stays undoable', (L.record(db, { kind: 'approved', ids: [7001], scope: { supplier: 'Pelican', typeSlug: 'invoice' }, undo: { type: 'sweep' } }), L.list(db).find(e => e.count === 1 && e.kind === 'approved').undoable === true));
+
 console.log('\nprotected setting (Oracle C3):');
 check("'review_events' is refused by the generic set-setting door and excluded from backups", isProtectedSettingKey(SETTING_KEY) === true);
 
