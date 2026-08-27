@@ -116,7 +116,13 @@ overlay instead of drawing (the inventory has the boxes). Size ≈ engine 40 lin
   Oracle-flagged); (e) the receipt never names the caption (the stored row carries no verified caption —
   `extractions.anchor_label` is never set for a keyword read); (f) search/export per element (barry).
   **Found by the evening gates + Chris r8 (2026-08-27) — NOT built, owner vet queue:**
-  (g) **OCR TEXT-LOSS ARC (blocks the serial feature on SCANS):** the stored page text of the scanned Castellan worksheets has NO
+  (g) **BUILT DARK 2026-08-27 (night) — `ocr_light_text_recovery` / `OCR_LIGHT_TEXT_RECOVERY`** (oscar recipe + 007 geometry;
+  recipe sweep: a FIXED global threshold 200 recovers all four serial words with 0 debris on 9 controls while every mean-offset
+  adaptive variant misses or garbles a serial and the paper-relative fallback finds 1 word; rows-first placement with a frozen
+  `med_h`; exhibit through the product code: 0 OFF lines lost, `Serial No: CT-8051702` its own line). FLIP conditions live in
+  the night handover: the corroboration common-mode exclusion (a light-line keyword read is not an independent family), the
+  `documents.ocr_text` Reprocess cache (a flip heals nothing until re-OCR), the VAT-reg footer relying on `VAT_REG_NOT_AMOUNT`.
+  Original finding kept below for the record. **OCR TEXT-LOSS ARC (blocks the serial feature on SCANS):** the stored page text of the scanned Castellan worksheets has NO
   "Serial No: …" lines (live docs 11/13/1504; sandbox doc 217 vs the born-digital doc 2 of the SAME PDF, which has both) — the
   OCR / visual-row rebuild (`ocr/tesseract.py`) drops the small lines under each item row (only "i"/"cd" debris survives). Same
   class as the 08-22 "type banner dropped from page text on 105/416" census. **MEASURED (evening):** Tesseract returns ZERO

@@ -147,6 +147,8 @@ const BRIDGES = [
   ['verification-doubt-clear-toggle', 'corrob_verification_doubt_clear', 'CORROB_VERIFICATION_DOUBT_CLEAR'],
   // Barcodes (2026-08-26, barry → gary design): the page inventory (mig 91 store + search) and the
   // 'barcode' field type (Stage 1.5, decode-only writer). Both DEFAULT OFF.
+  // Light-text recovery (2026-08-27): the threshold supplementary OCR pass (ocr/tesseract.py). DARK.
+  ['light-text-recovery-toggle', 'ocr_light_text_recovery', 'OCR_LIGHT_TEXT_RECOVERY'],
   ['barcode-inventory-toggle', 'barcode_inventory', 'BARCODE_INVENTORY'],
   ['barcode-field-toggle', 'barcode_field', 'BARCODE_FIELD'],
   // ── Corroboration-driven auto-file resolution (2026-08-15 held-queue arc, mig 69). Five

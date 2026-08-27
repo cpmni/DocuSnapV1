@@ -85,6 +85,146 @@ def _center_in_any(word, boxes) -> bool:
     return False
 
 
+# ── LIGHT-TEXT RECOVERY (2026-08-27; oscar recipe + 007 geometry → Oracle; DARK) ─────────────────────
+# Small light-grey print — a 7.5-pt "Serial No: CT-…" sub-line under an item row, a footer, a "Reg No"
+# strip — is INVISIBLE to Tesseract's own binarisation on a scan: at the app's 200 DPI, PSM 3/6/11 all
+# return ZERO words for it while the pixels are plainly there. A global threshold at 200 → PSM 3 reads the
+# same line at conf 90–93 (measured on the Castellan exhibit: 200 beat 215, a paper-relative level and
+# every mean-offset adaptive variant — those missed one or both serials and garbled — with 0 debris on
+# nine control pages; probe_light_recipe.py). This is a THIRD supplementary source under the existing
+# empty-region merge rule: a recovered word is kept ONLY where the PSM-3 + PSM-6 passes left nothing, so a
+# page's existing reads never change — the pass can only ADD, and its survivors are placed INTO the base
+# rows (see _group_words_into_lines_with_light). Scanned pages only (born-digital never reaches here).
+# Switch: OCR_LIGHT_TEXT_RECOVERY (bridged from the `ocr_light_text_recovery` setting by
+# processing/handler.js _reconcileEnv); OFF = the pass is not run — byte-identical text, no extra call.
+# The level is env-tunable for census work only (OCR_LIGHT_TEXT_THRESHOLD, default 200).
+# SEAMS (named for the flip, not the build): a recovered word is the SAME pixels as a crop read under
+# another binarisation — never an independent corroboration family; the app's Reprocess reuses the cached
+# page text (documents.ocr_text), so a flip heals nothing until a page is re-OCR'd; a recovered light
+# footer can reach the letterhead band / a heading verdict — the realdoc + fingerprint censuses gate it.
+_LIGHT_TEXT_ENV    = "OCR_LIGHT_TEXT_RECOVERY"
+_LIGHT_CONFIG      = "--oem 3 --psm 3"
+_LIGHT_MIN_CONF    = 60      # above the PSM-6 floor: a hard-binarised read over-states its confidence (the I/1 lesson)
+_LIGHT_MIN_CONF_DIGIT = 80   # Oracle C2: every garble the sweep produced was a CODE at 61–74 ("CT-9813265"@66) and the
+                             #   keyword stage has no per-word confidence — a digit-bearing token is admitted only at ≥ 80
+_LIGHT_IOA_MAX     = 0.2     # intersection over the light word's OWN area vs any base box: a drifted re-read of a base word
+_LIGHT_H_MIN       = 0.4     # height band vs the base median word height (the exhibit's serials sit at 0.75–0.88)
+_LIGHT_H_MAX       = 2.0
+_LIGHT_INK_MIN     = 0.08    # ink density inside the box on the binarised image: below = speckle,
+_LIGHT_INK_MAX     = 0.6     #   above = a tinted band that became a solid slab (Tesseract emits confident fragments)
+_LIGHT_CAP_ABS     = 40      # more survivors than max(40, 0.35 × base words) ⇒ a noise page ⇒ keep NONE (fail-safe)
+_LIGHT_CAP_FRAC    = 0.35
+
+
+def _light_text_enabled() -> bool:
+    return os.environ.get(_LIGHT_TEXT_ENV, "0") != "0"
+
+
+def _light_threshold() -> int:
+    try:
+        v = int(os.environ.get("OCR_LIGHT_TEXT_THRESHOLD", "200") or 200)
+    except (TypeError, ValueError):
+        return 200
+    return v if 100 <= v <= 250 else 200
+
+
+def _is_binary_image(g) -> bool:
+    """True when the grayscale page carries NO mid-grey mass — it was already thresholded upstream (OCR
+    Enhance with `threshold` on), so a second threshold would be an identity re-read of the same pixels."""
+    try:
+        hist = g.histogram()
+        return sum(hist[60:221]) == 0
+    except Exception:
+        return False
+
+
+def _ioa(a, b) -> float:
+    """Intersection over the FIRST box's OWN area (not IoU): how much of `a` lies inside `b`."""
+    iw = max(0, min(a[0] + a[2], b[0] + b[2]) - max(a[0], b[0]))
+    ih = max(0, min(a[1] + a[3], b[1] + b[3]) - max(a[1], b[1]))
+    return (iw * ih) / float(max(1, a[2] * a[3]))
+
+
+def _ink_density(bin_img, box) -> float:
+    """Fraction of BLACK pixels inside `box` on a binarised L-mode image."""
+    l, t, w, h = box
+    if w <= 0 or h <= 0:
+        return 0.0
+    try:
+        return bin_img.crop((l, t, l + w, t + h)).histogram()[0] / float(w * h)
+    except Exception:
+        return 0.0
+
+
+def _light_survivors(light, base, med_h, page_w, bin_img) -> list:
+    """The reconciled filter set (oscar + 007, ranked): conf ≥ 60 · ≥2 alnum (a lone glyph only at ≥ 90) ·
+    alnum ratio ≥ 0.5 · height 0.4–2.0 × med_h and ≥ 6 px · width ≤ 0.6 × page · repetition ("iiii") ·
+    centre OUTSIDE every base word box (the load-bearing dedupe — a thresholded box is a superset of the
+    grey-level box, so a re-read of a base word lands inside it) · IoA ≤ 0.2 (the drifted-box escape) ·
+    ink density 0.08–0.6 (speckle / slab) · the lone-word rule (no same-row neighbour ⇒ ≥ 4 alnum or conf
+    ≥ 80) · the page cap (a noise page keeps nothing)."""
+    boxes = [(w[0], w[1], w[2], w[3]) for w in base]
+    kept = []
+    for lw in light:
+        l, t, w, h, txt, conf = lw
+        if conf < _LIGHT_MIN_CONF:
+            continue
+        if conf < _LIGHT_MIN_CONF_DIGIT and any(ch.isdigit() for ch in txt):
+            continue
+        aln = sum(1 for ch in txt if ch.isalnum())
+        if aln == 0 or (aln < 2 and conf < 90):
+            continue
+        if aln / float(max(1, len(txt))) < 0.5:
+            continue
+        if h < 6 or h < _LIGHT_H_MIN * med_h or h > _LIGHT_H_MAX * med_h:
+            continue
+        if w > 0.6 * page_w:
+            continue
+        a = [ch for ch in txt if ch.isalnum()]
+        if len(a) >= 4 and len(set(a)) < 2:
+            continue
+        if _center_in_any(lw, boxes):
+            continue
+        if any(_ioa((l, t, w, h), b) > _LIGHT_IOA_MAX for b in boxes):
+            continue
+        dens = _ink_density(bin_img, (l, t, w, h))
+        if dens < _LIGHT_INK_MIN or dens > _LIGHT_INK_MAX:
+            continue
+        kept.append(lw)
+    _, _, band = _row_params(med_h)
+    def _row_mate(s):
+        cy = s[1] + s[3] / 2.0
+        for o in base:
+            if abs((o[1] + o[3] / 2.0) - cy) <= band:
+                return True
+        for o in kept:
+            if o is not s and abs((o[1] + o[3] / 2.0) - cy) <= band:
+                return True
+        return False
+    kept = [s for s in kept if _row_mate(s) or sum(1 for ch in s[4] if ch.isalnum()) >= 4 or s[5] >= 80]
+    if len(kept) > max(_LIGHT_CAP_ABS, _LIGHT_CAP_FRAC * len(base)):
+        return []
+    return kept
+
+
+def _light_text_pass(img, base, med_h, dpi=None) -> list:
+    """Run the threshold pass on the SAME page bitmap and return its surviving words (the base 6-tuple
+    shape). Skips: an already-binary input; a frame mismatch (the merge is only valid in one pixel frame)."""
+    g = img if getattr(img, "mode", "") == "L" else ImageOps.grayscale(img)
+    if _is_binary_image(g):
+        return []
+    level = _light_threshold()
+    light_img = g.point(lambda p: 0 if p < level else 255)
+    if light_img.size != img.size:
+        return []
+    data = pytesseract.image_to_data(light_img, config=_with_dpi(_LIGHT_CONFIG, dpi),
+                                     output_type=pytesseract.Output.DICT)
+    light = _words_from_data(data)
+    if not light:
+        return []
+    return _light_survivors(light, base, med_h, img.size[0], light_img)
+
+
 def _with_dpi(cfg: str, dpi) -> str:
     """Append '--dpi N' to a Tesseract config when the render DPI is known. A rendered bitmap
     carries NO DPI metadata, so Tesseract GUESSES (~70) and mis-scales its page analysis — at 300
@@ -115,42 +255,69 @@ def _group_words_into_lines(words, med_h, rows_out=None) -> list:
     instead of losing it to a nearer line below. med_h-relative → DPI-stable. Guarded by test_ocr_engine.py."""
     if not words:
         return []
+    return _rows_to_lines(_build_rows(words, med_h), med_h, rows_out=rows_out)
+
+
+# The row build was split into _row_params / _row_eligible / _build_rows / _place_in_rows / _rows_to_lines
+# (2026-08-27, light-text recovery — 007's placement condition): the LIGHT pass must put its recovered
+# words INTO the rows the base words already formed, not re-run the seeding over the union (a light word
+# that seeded its own anchor could steal a tall base word in PASS 2 and move a base line). The logic of
+# every piece is the old single function's, unchanged — pinned byte-identical in tests/test_light_text_recovery.py.
+_ROW_OV = 0.3                          # box-overlap fraction that counts as "significant" (same line)
+
+def _row_params(med_h):
+    """The three DPI-stable row constants: (col_gap, cap, band)."""
     col_gap = max(med_h * 1.5, 12)    # x-gap wide enough to be a column break (4-space)
     cap     = max(med_h * 1.2, 10)    # centres farther than this = DIFFERENT rows (hard backstop)
     band    = max(med_h * 0.6, 6)     # within this of a row's FROZEN centre = same row (OR clause)
-    OV      = 0.3                      # box-overlap fraction that counts as "significant" (same line)
+    return col_gap, cap, band
+
+
+def _row_eligible(wd, a, band, cap):
+    top_w, bot_w = wd[1], wd[1] + wd[3]
+    overlap = min(bot_w, a["bot"]) - max(top_w, a["top"])
+    shorter = min(wd[3], a["bot"] - a["top"]) or 1
+    d = abs((wd[1] + wd[3] / 2.0) - a["yc"])
+    sig = overlap >= _ROW_OV * shorter
+    return ((sig or d <= band) and d <= cap), sig, overlap, d
+
+
+def _place_in_rows(rows, wd, band, cap):
+    """Assign ONE word to its BEST row (overlap-first; centre only as tie-break) or open a new row
+    (pathological rounding only — never lose a word)."""
+    best, best_key = None, None
+    for r in rows:
+        ok, sig, overlap, d = _row_eligible(wd, r, band, cap)
+        if not ok:
+            continue
+        key = (1 if sig else 0, overlap, -d)
+        if best is None or key > best_key:
+            best, best_key = r, key
+    if best is None:
+        rows.append({"top": wd[1], "bot": wd[1] + wd[3], "yc": wd[1] + wd[3] / 2.0, "words": [wd]})
+    else:
+        best["words"].append(wd)
+
+
+def _build_rows(words, med_h):
+    """PASS 1 — discover the anchor SET (the frozen seeding rule); PASS 2 — assign EVERY word to its best
+    anchor over the FULL set (removes the visit-order bias). Returns the non-empty rows top-to-bottom."""
+    _, cap, band = _row_params(med_h)
     sw = sorted(words, key=lambda w: w[1] + w[3] / 2.0)         # deterministic top-to-bottom
-
-    def _eligible(wd, a):
-        top_w, bot_w = wd[1], wd[1] + wd[3]
-        overlap = min(bot_w, a["bot"]) - max(top_w, a["top"])
-        shorter = min(wd[3], a["bot"] - a["top"]) or 1
-        d = abs((wd[1] + wd[3] / 2.0) - a["yc"])
-        sig = overlap >= OV * shorter
-        return ((sig or d <= band) and d <= cap), sig, overlap, d
-
-    # PASS 1 — discover the anchor SET (identical seeding rule to the old single pass → same rows).
     anchors = []
     for wd in sw:
-        if not any(_eligible(wd, a)[0] for a in anchors):
+        if not any(_row_eligible(wd, a, band, cap)[0] for a in anchors):
             anchors.append({"top": wd[1], "bot": wd[1] + wd[3], "yc": wd[1] + wd[3] / 2.0})
-    # PASS 2 — assign EVERY word to its BEST anchor over the FULL set (removes the visit-order bias).
     rows = [{"top": a["top"], "bot": a["bot"], "yc": a["yc"], "words": []} for a in anchors]
     for wd in sw:
-        best, best_key = None, None
-        for r in rows:
-            ok, sig, overlap, d = _eligible(wd, r)
-            if not ok:
-                continue
-            key = (1 if sig else 0, overlap, -d)               # overlap-first; centre only as tie-break
-            if best is None or key > best_key:
-                best, best_key = r, key
-        if best is None:                                        # pathological rounding only — never lose a word
-            rows.append({"top": wd[1], "bot": wd[1] + wd[3], "yc": wd[1] + wd[3] / 2.0, "words": [wd]})
-        else:
-            best["words"].append(wd)
+        _place_in_rows(rows, wd, band, cap)
     rows = [r for r in rows if r["words"]]                      # drop any anchor that ended up empty
     rows.sort(key=lambda r: r["yc"])
+    return rows
+
+
+def _rows_to_lines(rows, med_h, rows_out=None):
+    col_gap, _, _ = _row_params(med_h)
     lines = []
     for r in rows:
         row_ws = sorted(r["words"], key=lambda w: w[0])         # left-to-right within the row
@@ -167,6 +334,20 @@ def _group_words_into_lines(words, med_h, rows_out=None) -> list:
             out.append(b[4])
         lines.append("".join(out))
     return lines
+
+
+def _group_words_into_lines_with_light(base, light, med_h, rows_out=None):
+    """ROWS-FIRST placement of the light-text survivors (007, 2026-08-27): the base rows are built EXACTLY
+    as _group_words_into_lines builds them (same words, same frozen med_h), then each recovered word joins
+    its best EXISTING row by the same eligibility key or opens its own. A base row can only ever GAIN a
+    word (inserted in x order) — never lose one, never re-split — so every OFF line is a subsequence of
+    its ON line and a page that recovers nothing is byte-identical."""
+    rows = _build_rows(base, med_h)
+    _, cap, band = _row_params(med_h)
+    for lw in sorted(light, key=lambda w: w[1] + w[3] / 2.0):
+        _place_in_rows(rows, lw, band, cap)
+    rows.sort(key=lambda r: r["yc"])
+    return _rows_to_lines(rows, med_h, rows_out=rows_out)
 
 
 def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3", dpi=None,
@@ -259,7 +440,20 @@ def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3", dpi
     heights = sorted(wd[3] for wd in words if wd[3] > 0)
     med_h = heights[len(heights) // 2] if heights else 10
     _rows = [] if words_out is not None else None
-    lines = _group_words_into_lines(words, med_h, rows_out=_rows)
+    # LIGHT-TEXT RECOVERY (DARK — see _light_text_pass). Runs AFTER the PSM-6 merge so it dedupes against
+    # BOTH base passes, against the FROZEN base med_h, and its survivors are placed INTO the base rows
+    # rather than re-clustered with them (007's three placement conditions). Additive-only and best-effort:
+    # any failure leaves the base result exactly as it was.
+    light_kept = []
+    if _light_text_enabled():
+        try:
+            light_kept = _light_text_pass(img, words, med_h, dpi=dpi)
+        except Exception:
+            light_kept = []
+    if light_kept:
+        lines = _group_words_into_lines_with_light(words, light_kept, med_h, rows_out=_rows)
+    else:
+        lines = _group_words_into_lines(words, med_h, rows_out=_rows)
     # GEOMETRY HAND-OFF (2026-07-20). Everything above computes per-word boxes, per-word confidence
     # and the page's MEDIAN WORD HEIGHT — and the join below has always thrown all of it away, so
     # everything downstream reasons over a bare string. That is why "the biggest text at the top of
@@ -274,11 +468,16 @@ def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3", dpi
     # convention this module produces. Do NOT hand these to anchor space, which is CENTRE-based and
     # normalised: mixing the two is a documented source of drift bugs in this project.
     if words_out is not None:
-        words_out["words"] = words          # [(left, top, w, h, text, conf)]
-        words_out["med_h"] = med_h          # the DPI-invariant scale reference: compare RATIOS to it
+        words_out["words"] = words          # BASE words only [(left, top, w, h, text, conf)] — the geometry CONTRACT
+                                            # (Oracle C1 2026-08-27): the heading-band pre-gate ranks `words` by height
+                                            # in the top band, so a light word there must never become a banner candidate
+        words_out["med_h"] = med_h          # the DPI-invariant scale reference (BASE words only — frozen): compare RATIOS to it
         words_out["lines"] = lines          # the same visual rows the returned text is built from
-        words_out["rows"] = _rows           # per-row word tuples, PARALLEL to `lines` (rows_out)
+        words_out["rows"] = _rows           # per-row word tuples, PARALLEL to `lines` (rows_out) — light words included
         words_out["size"] = getattr(img, "size", None)
+        if light_kept:                      # provenance of the light-text pass (absent when OFF / nothing recovered)
+            words_out["light_words"] = list(light_kept)                          # the recovered 6-tuples
+            words_out["light_boxes"] = [(w[0], w[1], w[2], w[3]) for w in light_kept]
     return "\n".join(lines)
 
 

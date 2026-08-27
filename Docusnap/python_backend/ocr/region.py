@@ -120,7 +120,10 @@ def main():
             from ocr.tesseract import reconstruct_page_text
             wo = {}
             reconstruct_page_text(img, words_out=wo)
-            for wd in (wo.get('words') or []):
+            # BASE words + the light-text pass's recovered words (present only when that switch is on
+            # and something was recovered — Oracle C1 2026-08-27: `words` stays the base-only contract;
+            # a typed light-printed value must still be findable by the teach wizard).
+            for wd in (wo.get('words') or []) + (wo.get('light_words') or []):
                 # words_out rows are (left, top, w, h, text, conf) in the image's own pixels.
                 l, t, w, h, txt, conf = wd[0], wd[1], wd[2], wd[3], wd[4], wd[5]
                 if not (w > 0 and h > 0):

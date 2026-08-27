@@ -406,6 +406,15 @@ function _reconcileEnv(db) {
         && learning.getSetting(db, 'corrob_note_recompute_fc', 'false') === 'true') {
       env.CORROB_VERIFICATION_DOUBT_CLEAR = '1';
     }
+    // LIGHT-TEXT RECOVERY (2026-08-27, oscar recipe + 007 geometry → Oracle; DARK, byte-identical off):
+    //   a third supplementary full-page OCR source in ocr/tesseract.py reconstruct_page_text — grayscale →
+    //   global threshold (measured: 200) → PSM 3 — merged ONLY into regions the PSM-3 + PSM-6 passes left
+    //   empty, so small light-grey print (serial sub-lines, footers, reg strips) Tesseract's own binarisation
+    //   drops on scans reaches the page text. Scanned pages only; one extra tesseract call per page.
+    //   Env wins both ways for harness arms.
+    if (env.OCR_LIGHT_TEXT_RECOVERY == null && learning.getSetting(db, 'ocr_light_text_recovery', 'false') === 'true') {
+      env.OCR_LIGHT_TEXT_RECOVERY = '1';
+    }
     // BARCODES (2026-08-26, barry → gary design; both DEFAULT OFF, byte-identical off):
     //   barcode_inventory — decode every symbol on the OCR-rendered pages (ocr/barcodes.py) and
     //     persist them (document_barcodes, mig 91) for full-text search; no customer UI.
@@ -4572,9 +4581,15 @@ function register(ctx) {
     fs.writeFileSync(tmpFile, Buffer.from(base64png, 'base64'));
     const script = ctx.resourcePath('python_backend', 'ocr', 'region.py');
     const py = pythonExe();
+    // Same OCR configuration as the pipeline (Oracle C3, light-text arc 2026-08-27): the render DPI and the
+    // reconcile switches (incl. OCR_LIGHT_TEXT_RECOVERY) ride the spawn env exactly as on an import, so a
+    // typed value printed in faint grey is findable here on the same scans the pipeline reads it from.
+    let _pwEnv = {};
+    try { const _db = getDb(); _pwEnv = { ..._ocrDpiEnv(_db), ..._reconcileEnv(_db) }; } catch { _pwEnv = {}; }
     return new Promise((resolve) => {
       const proc = spawn(py, pythonArgs(script,
-        '--image-file', tmpFile, '--tesseract', tesseractPath(), '--page-words'), { windowsHide: true });
+        '--image-file', tmpFile, '--tesseract', tesseractPath(), '--page-words'),
+        { windowsHide: true, env: { ...process.env, ..._pwEnv } });
       let out = '', err = '';
       proc.stdout.on('data', d => { out += d.toString(); });
       proc.stderr.on('data', d => { err += d.toString(); });

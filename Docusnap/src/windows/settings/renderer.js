@@ -712,6 +712,9 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // Class F (gary audit 2026-08-26): verification-doubt note clear + field
                          // lift on two-distinct-page-family agreement + learned-shape pass.
                          ['verification-doubt-clear-toggle', 'corrob_verification_doubt_clear'],
+                         // Light-text recovery (2026-08-27, oscar + 007 → Oracle): the threshold-200 supplementary
+                         // full-page pass that recovers small light-grey print into the page text (DARK).
+                         ['light-text-recovery-toggle', 'ocr_light_text_recovery'],
                          // Barcodes (2026-08-26, barry → gary design): the page inventory and the field type.
                          ['barcode-inventory-toggle', 'barcode_inventory'],
                          ['barcode-field-toggle', 'barcode_field'],
