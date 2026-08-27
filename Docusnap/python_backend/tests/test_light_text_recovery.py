@@ -67,16 +67,20 @@ def to_data(words):
 
 
 class Scripted:
-    """PSM-6 config → supp; an L-mode BINARY image (the light pass) → light; else → main. Counts calls."""
+    """PSM-6 config → supp; the FIRST PSM-3 call → main; every LATER PSM-3 call → a light LEVEL. `light` is one word
+    list (every level reads the same) or a list of lists (one per light call, cycling). Counts calls."""
     def __init__(self, main, supp=(), light=()):
-        self.main, self.supp, self.light, self.calls = list(main), list(supp), list(light), []
+        self.main, self.supp, self.light, self.calls, self.nlight = list(main), list(supp), light, [], 0
 
     def __call__(self, img, config="", output_type=None):
-        # The FIRST PSM-3 call is always the main pass (whatever the input looks like); a LATER PSM-3 call
-        # can only be the light pass (the product hands it the binarised L copy).
         kind = "supp" if "--psm 6" in config else ("light" if "main" in self.calls else "main")
         self.calls.append(kind)
-        return to_data({"main": self.main, "supp": self.supp, "light": self.light}[kind])
+        if kind == "light":
+            L = self.light
+            lst = L[self.nlight % len(L)] if (L and isinstance(L[0], list)) else list(L)
+            self.nlight += 1
+            return to_data(lst)
+        return to_data({"main": self.main, "supp": self.supp}[kind])
 
 
 def page(size=(1655, 2339), stripes=(), slabs=()):
@@ -197,7 +201,7 @@ img3 = page(stripes=stripes)
 light3 = [grown(w) for w in BASE] + SERIAL           # the threshold pass re-reads EVERY base word (grown boxes) + the serial line
 t_on, wo_on, calls3 = run(img3, BASE, light=light3, on=True)
 on_lines = t_on.split("\n"); off_lines = t_off.split("\n")
-check("ON: three image_to_data calls (PSM-3, PSM-6, light)", calls3 == ["main", "supp", "light"], str(calls3))
+check("ON: PSM-3 + PSM-6 + one light call per level (four)", calls3 == ["main", "supp"] + ["light"] * 4, str(calls3))
 check("ON: the serial line is its OWN line and reads exactly 'Serial No: CT-8051702'", "Serial No: CT-8051702" in on_lines, repr(on_lines))
 _si = on_lines.index("Serial No: CT-8051702")
 check("ON: it sits BETWEEN the two item lines", _si == on_lines.index("1 16 Channel NVR") + 1 and _si + 1 == on_lines.index("2 Dome Camera"), repr(on_lines))
@@ -219,6 +223,39 @@ check("…but never enters words_out.words", not any(w[4] == "BIGLIGHT" for w in
 check("find_prominent_heading_band(geom) identical OFF vs ON", find_prominent_heading_band(wo3b) == find_prominent_heading_band(wo_off) == None)
 check("positive control: the same word INSIDE `words` WOULD open a band (the pin is not vacuous)",
       find_prominent_heading_band({**wo3b, "words": wo3b["words"] + wo3b["light_words"]}) is not None)
+
+print("\n§3d LEVELS: a digit string needs two agreeing levels; an alpha word may stand on one; the best-supported string wins")
+L1  = (120, 1300, 110, 14, "CT-8024188", 90)   # the TRUE string, read at levels 1 and 2 (conf 90 / 78)
+L1b = (120, 1300, 110, 14, "CT-8024188", 78)
+L1g = (120, 1300, 110, 14, "CT-8024168", 80)   # the one-level GARBLE on the same spot (the doc-13 exhibit)
+L2  = (120, 1350, 110, 14, "CT-5555555", 95)   # a digit string read at ONE level only
+L3  = (120, 1400,  80, 14, "Registered", 88)   # an alpha word read at one level
+L4  = (120, 1450, 110, 14, "CT-7777777", 78)   # read at two levels but never ≥ 80
+img3d = page(stripes=[L1[:4], L2[:4], L3[:4], L4[:4]])
+per_call = [
+    [grown(w) for w in BASE] + [L1, L2, L4],
+    [grown(w) for w in BASE] + [L1b, L4],
+    [grown(w) for w in BASE] + [L1g, L3],
+    [grown(w) for w in BASE],
+]
+t3d, wo3d, calls3d = run(img3d, BASE, light=per_call, on=True)
+got3d = {w[4]: w for w in wo3d.get("light_words", [])}
+check("four light calls (the default level set)", calls3d.count("light") == 4, str(calls3d))
+check("the true string read at two levels is kept at its best conf (90)", "CT-8024188" in got3d and got3d["CT-8024188"][5] == 90, str(got3d))
+check("the one-level garble on the same spot loses to it", "CT-8024168" not in got3d)
+check("a digit string read at ONE level only is dropped", "CT-5555555" not in got3d)
+check("an alpha word read at one level is kept", "Registered" in got3d)
+check("two agreeing levels but never ≥ 80 → dropped (the floor applies to the winner)", "CT-7777777" not in got3d)
+check("the merged serial line still reads on its own row", any(l.strip() == "CT-8024188" for l in t3d.split("\n")), repr(t3d))
+os.environ.pop("OCR_LIGHT_TEXT_LEVELS", None); os.environ.pop("OCR_LIGHT_TEXT_THRESHOLD", None)
+check("level set: unset ⇒ [200, 210, 220, 230]", T._light_levels() == [200, 210, 220, 230])
+os.environ["OCR_LIGHT_TEXT_LEVELS"] = "230,200,999"
+check("level set: env list is sorted, de-duplicated and clamped", T._light_levels() == [200, 230])
+os.environ["OCR_LIGHT_TEXT_LEVELS"] = "abc"
+check("level set: a garbage list falls back to the default", T._light_levels() == [200, 210, 220, 230])
+os.environ.pop("OCR_LIGHT_TEXT_LEVELS", None); os.environ["OCR_LIGHT_TEXT_THRESHOLD"] = "180"
+check("level set: a bare THRESHOLD pins ONE level", T._light_levels() == [180])
+os.environ.pop("OCR_LIGHT_TEXT_THRESHOLD", None)
 
 print("\n§3c the threshold level: fixed 200, env-tunable within 100–250 only")
 os.environ.pop("OCR_LIGHT_TEXT_THRESHOLD", None)

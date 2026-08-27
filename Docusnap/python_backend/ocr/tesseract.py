@@ -156,7 +156,7 @@ def _ink_density(bin_img, box) -> float:
         return 0.0
 
 
-def _light_survivors(light, base, med_h, page_w, bin_img) -> list:
+def _light_survivors(light, base, med_h, page_w, bin_img, min_conf=None, min_conf_digit=None) -> list:
     """The reconciled filter set (oscar + 007, ranked): conf ≥ 60 · ≥2 alnum (a lone glyph only at ≥ 90) ·
     alnum ratio ≥ 0.5 · height 0.4–2.0 × med_h and ≥ 6 px · width ≤ 0.6 × page · repetition ("iiii") ·
     centre OUTSIDE every base word box (the load-bearing dedupe — a thresholded box is a superset of the
@@ -164,12 +164,14 @@ def _light_survivors(light, base, med_h, page_w, bin_img) -> list:
     ink density 0.08–0.6 (speckle / slab) · the lone-word rule (no same-row neighbour ⇒ ≥ 4 alnum or conf
     ≥ 80) · the page cap (a noise page keeps nothing)."""
     boxes = [(w[0], w[1], w[2], w[3]) for w in base]
+    mc  = _LIGHT_MIN_CONF if min_conf is None else min_conf
+    mcd = _LIGHT_MIN_CONF_DIGIT if min_conf_digit is None else min_conf_digit
     kept = []
     for lw in light:
         l, t, w, h, txt, conf = lw
-        if conf < _LIGHT_MIN_CONF:
+        if conf < mc:
             continue
-        if conf < _LIGHT_MIN_CONF_DIGIT and any(ch.isdigit() for ch in txt):
+        if conf < mcd and any(ch.isdigit() for ch in txt):
             continue
         aln = sum(1 for ch in txt if ch.isalnum())
         if aln == 0 or (aln < 2 and conf < 90):
@@ -202,27 +204,101 @@ def _light_survivors(light, base, med_h, page_w, bin_img) -> list:
                 return True
         return False
     kept = [s for s in kept if _row_mate(s) or sum(1 for ch in s[4] if ch.isalnum()) >= 4 or s[5] >= 80]
-    if len(kept) > max(_LIGHT_CAP_ABS, _LIGHT_CAP_FRAC * len(base)):
-        return []
+    # the page cap is applied by the caller on the MERGED set (one level's noise must not blank the others)
     return kept
 
 
+# THE LEVELS (measured 2026-08-27 on FOUR exhibits — three of the owner's own scans + the sandbox one): NO single
+# level reads every serial. A page's faint ink sits 15–45 luminance units under its paper mode, and a thin stroke
+# breaks at one level and holds at the next — one value's confidence swung 8 → 90 → 64 → 92 across 200/205/215/220
+# on the SAME page; another page read at 200 only, another at 215 only. The UNION of {200, 210, 220, 230} read all
+# ten values on all four pages at ≥ 80, and every TRUE string was read by ≥ 2 of the levels while the one garble
+# ("CT-8024168" for "CT-8024188", conf 80) appeared at ONE level only — so a digit-bearing string is accepted only
+# with two agreeing levels. Cost: one tesseract call per level per scanned page (state it in the flip note).
+_LIGHT_LEVELS_DEFAULT = (200, 210, 220, 230)
+
+
+def _light_levels() -> list:
+    """OCR_LIGHT_TEXT_LEVELS ("200,210,220,230") overrides for census work; a bare OCR_LIGHT_TEXT_THRESHOLD pins ONE
+    level; else the measured default set. Each level clamped to 100–250, at most six."""
+    raw = os.environ.get("OCR_LIGHT_TEXT_LEVELS")
+    if raw:
+        try:
+            lv = sorted({int(x) for x in raw.split(",") if x.strip()})
+            lv = [v for v in lv if 100 <= v <= 250][:6]
+            if lv:
+                return lv
+        except (TypeError, ValueError):
+            pass
+    if os.environ.get("OCR_LIGHT_TEXT_THRESHOLD"):
+        return [_light_threshold()]
+    return list(_LIGHT_LEVELS_DEFAULT)
+
+
+def _merge_light_levels(per_level) -> list:
+    """per_level = [(level, candidate words)] → ONE word list. Candidates from different levels on the same spot are
+    ONE word (centre inside / IoA > 0.5 either way). Per spot the STRING read by the most levels wins (tie → the
+    higher best confidence) and its best-confidence tuple is returned. A DIGIT-bearing string needs ≥ 2 agreeing
+    levels (a hard-binarised misread at one level can carry conf 80 — the I/1 lesson); an alpha-only word may stand
+    on one level. The confidence floors are applied to the WINNER here (the per-level candidates come in unfloored
+    so a level that read the right string at 78 still counts as agreement)."""
+    groups = []
+    for level, words in per_level:
+        for w in words:
+            box = (w[0], w[1], w[2], w[3])
+            home = None
+            for g in groups:
+                b = g["box"]
+                if _center_in_any(w, [b]) or _ioa(box, b) > 0.5 or _ioa(b, box) > 0.5:
+                    home = g
+                    break
+            if home is None:
+                groups.append({"box": box, "cands": [(level, w)]})
+            else:
+                home["cands"].append((level, w))
+    out = []
+    for g in groups:
+        by_str = {}
+        for level, w in g["cands"]:
+            key = w[4].strip()
+            e = by_str.setdefault(key, {"levels": set(), "best": w})
+            e["levels"].add(level)
+            if w[5] > e["best"][5]:
+                e["best"] = w
+        key, e = max(by_str.items(), key=lambda kv: (len(kv[1]["levels"]), kv[1]["best"][5]))
+        digits = any(ch.isdigit() for ch in key)
+        if digits and len(e["levels"]) < 2:
+            continue
+        if e["best"][5] < (_LIGHT_MIN_CONF_DIGIT if digits else _LIGHT_MIN_CONF):
+            continue
+        out.append(e["best"])
+    return out
+
+
 def _light_text_pass(img, base, med_h, dpi=None) -> list:
-    """Run the threshold pass on the SAME page bitmap and return its surviving words (the base 6-tuple
-    shape). Skips: an already-binary input; a frame mismatch (the merge is only valid in one pixel frame)."""
+    """Run the threshold pass at every level on the SAME page bitmap and return the merged surviving words (the base
+    6-tuple shape). Skips: an already-binary input; a frame mismatch (the merge is only valid in one pixel frame)."""
     g = img if getattr(img, "mode", "") == "L" else ImageOps.grayscale(img)
     if _is_binary_image(g):
         return []
-    level = _light_threshold()
-    light_img = g.point(lambda p: 0 if p < level else 255)
-    if light_img.size != img.size:
+    per_level = []
+    for level in _light_levels():
+        light_img = g.point(lambda p, L=level: 0 if p < L else 255)
+        if light_img.size != img.size:
+            return []
+        data = pytesseract.image_to_data(light_img, config=_with_dpi(_LIGHT_CONFIG, dpi),
+                                         output_type=pytesseract.Output.DICT)
+        light = _words_from_data(data)
+        if not light:
+            continue
+        # unfloored here: the merge counts a sub-floor read of the SAME string as agreement, then floors the winner
+        per_level.append((level, _light_survivors(light, base, med_h, img.size[0], light_img, min_conf=0, min_conf_digit=0)))
+    if not per_level:
         return []
-    data = pytesseract.image_to_data(light_img, config=_with_dpi(_LIGHT_CONFIG, dpi),
-                                     output_type=pytesseract.Output.DICT)
-    light = _words_from_data(data)
-    if not light:
+    kept = _merge_light_levels(per_level)
+    if len(kept) > max(_LIGHT_CAP_ABS, _LIGHT_CAP_FRAC * len(base)):
         return []
-    return _light_survivors(light, base, med_h, img.size[0], light_img)
+    return kept
 
 
 def _with_dpi(cfg: str, dpi) -> str:
