@@ -107,6 +107,7 @@ _LIGHT_CONFIG      = "--oem 3 --psm 3"
 _LIGHT_MIN_CONF    = 60      # above the PSM-6 floor: a hard-binarised read over-states its confidence (the I/1 lesson)
 _LIGHT_MIN_CONF_DIGIT = 80   # Oracle C2: every garble the sweep produced was a CODE at 61–74 ("CT-9813265"@66) and the
                              #   keyword stage has no per-word confidence — a digit-bearing token is admitted only at ≥ 80
+_LIGHT_MIN_CONF_DIGIT_AGREED = 70   # …unless THREE OR MORE levels read the same string (see _merge_light_levels)
 _LIGHT_IOA_MAX     = 0.2     # intersection over the light word's OWN area vs any base box: a drifted re-read of a base word
 _LIGHT_H_MIN       = 0.4     # height band vs the base median word height (the exhibit's serials sit at 0.75–0.88)
 _LIGHT_H_MAX       = 2.0
@@ -163,7 +164,11 @@ def _light_survivors(light, base, med_h, page_w, bin_img, min_conf=None, min_con
     grey-level box, so a re-read of a base word lands inside it) · IoA ≤ 0.2 (the drifted-box escape) ·
     ink density 0.08–0.6 (speckle / slab) · the lone-word rule (no same-row neighbour ⇒ ≥ 4 alnum or conf
     ≥ 80) · the page cap (a noise page keeps nothing)."""
-    boxes = [(w[0], w[1], w[2], w[3]) for w in base]
+    # Dedupe against REAL base words only: a base box shorter than the page's own word floor (a 5-px sliver PSM-6
+    # read as 'CT-832884' at conf 87 on a real scan) is debris by the same rule the light words must pass — it must
+    # not "own" the spot and block the three-level light read of 'CT-8328847' beneath it (doc 1706, 2026-08-27).
+    _h_floor = max(6, _LIGHT_H_MIN * med_h)
+    boxes = [(w[0], w[1], w[2], w[3]) for w in base if w[3] >= _h_floor]
     mc  = _LIGHT_MIN_CONF if min_conf is None else min_conf
     mcd = _LIGHT_MIN_CONF_DIGIT if min_conf_digit is None else min_conf_digit
     kept = []
@@ -260,19 +265,46 @@ def _merge_light_levels(per_level) -> list:
     for g in groups:
         by_str = {}
         for level, w in g["cands"]:
-            key = w[4].strip()
+            # AGREEMENT KEY (owner's live batch 2026-08-27): the same code read as 'CT-9999544' / 'cT-9999544' /
+            # 'CT-9999544_' at three levels is ONE string — case and edge punctuation are binarisation noise, not
+            # evidence of a different value. Interior characters (the digits, the '-') must still agree exactly.
+            key = _light_agree_key(w[4])
+            if not key:
+                continue
             e = by_str.setdefault(key, {"levels": set(), "best": w})
             e["levels"].add(level)
             if w[5] > e["best"][5]:
                 e["best"] = w
+        if not by_str:
+            continue
         key, e = max(by_str.items(), key=lambda kv: (len(kv[1]["levels"]), kv[1]["best"][5]))
         digits = any(ch.isdigit() for ch in key)
-        if digits and len(e["levels"]) < 2:
+        support = len(e["levels"])
+        if digits and support < 2:
             continue
-        if e["best"][5] < (_LIGHT_MIN_CONF_DIGIT if digits else _LIGHT_MIN_CONF):
+        # SUPPORT-SCALED FLOOR: a digit string agreed by THREE OR MORE levels may stand at ≥ 70 (doc 1707's second
+        # serial read 'CT-2903961' at 73 / 77 / 78 on three levels and was lost to the flat 80); two levels still
+        # need 80 (the one-level garble class carried 80–86, and a two-level pair at 61/70 was genuinely ambiguous).
+        floor = (_LIGHT_MIN_CONF_DIGIT if support < 3 else _LIGHT_MIN_CONF_DIGIT_AGREED) if digits else _LIGHT_MIN_CONF
+        if e["best"][5] < floor:
             continue
-        out.append(e["best"])
+        best = e["best"]
+        cleaned = _light_clean_text(best[4])
+        out.append(best if cleaned == best[4] else (best[0], best[1], best[2], best[3], cleaned, best[5]))
     return out
+
+
+_LIGHT_EDGE_PUNCT = "_\"'`~*|"      # binarisation debris only — NEVER ':' '.' ',' ';' (real caption characters: 'No:', 'No.', 'Ltd,')
+
+
+def _light_clean_text(txt: str) -> str:
+    """Strip binarisation debris from the EDGES of a recovered token ('CT-9999544_' → 'CT-9999544', '"Serial' →
+    'Serial'); interior characters and real punctuation ('No:') are never touched."""
+    return str(txt or "").strip().strip(_LIGHT_EDGE_PUNCT)
+
+
+def _light_agree_key(txt: str) -> str:
+    return _light_clean_text(txt).casefold()
 
 
 def _light_text_pass(img, base, med_h, dpi=None) -> list:
@@ -420,8 +452,26 @@ def _group_words_into_lines_with_light(base, light, med_h, rows_out=None):
     its ON line and a page that recovers nothing is byte-identical."""
     rows = _build_rows(base, med_h)
     _, cap, band = _row_params(med_h)
-    for lw in sorted(light, key=lambda w: w[1] + w[3] / 2.0):
-        _place_in_rows(rows, lw, band, cap)
+    # Light words are placed as LINES, not one word at a time (owner's live batch 2026-08-27, doc 1721): a lone base
+    # qty '1' whose box sat 11 px above the serial line captured the light 'Serial' (box overlap) but not 'No:' or the
+    # code (centre distance past the band) — the caption split from its value across two rows and the collector read
+    # nothing. The light words first form their OWN rows (the same seeding rule); each light row then joins the best
+    # base row as a unit, judged by the row's union box, or opens a new row.
+    for lr in _build_rows(light, med_h):
+        top = min(w[1] for w in lr["words"]); bot = max(w[1] + w[3] for w in lr["words"])
+        pseudo = (0, top, 0, bot - top)
+        best, best_key = None, None
+        for r in rows:
+            ok, sig, overlap, d = _row_eligible(pseudo, r, band, cap)
+            if not ok:
+                continue
+            key = (1 if sig else 0, overlap, -d)
+            if best is None or key > best_key:
+                best, best_key = r, key
+        if best is None:
+            rows.append({"top": top, "bot": bot, "yc": (top + bot) / 2.0, "words": list(lr["words"])})
+        else:
+            best["words"].extend(lr["words"])
     rows.sort(key=lambda r: r["yc"])
     return _rows_to_lines(rows, med_h, rows_out=rows_out)
 
@@ -526,7 +576,21 @@ def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3", dpi
             light_kept = _light_text_pass(img, words, med_h, dpi=dpi)
         except Exception:
             light_kept = []
+    light_replaced = []
     if light_kept:
+        # A DEGENERATE base word (shorter than the page's own word floor — a 5-px sliver the PSM-6 pass read as a
+        # code at conf 87) that a recovered light word sits on is debris by the same rule the light words must pass:
+        # it leaves the row so the recovered word is not doubled by it ('CT-8328847 CT-832884'). The ONLY case a base
+        # word ever yields to the light pass; reported in words_out["light_replaced"].
+        _h_floor = max(6, _LIGHT_H_MIN * med_h)
+        for w in words:
+            if w[3] < _h_floor:
+                b = (w[0], w[1], w[2], w[3])
+                if any(_center_in_any(lw, [b]) or _ioa(b, (lw[0], lw[1], lw[2], lw[3])) > 0.5 for lw in light_kept):
+                    light_replaced.append(w)
+        if light_replaced:
+            _rep = set(light_replaced)
+            words = [w for w in words if w not in _rep]
         lines = _group_words_into_lines_with_light(words, light_kept, med_h, rows_out=_rows)
     else:
         lines = _group_words_into_lines(words, med_h, rows_out=_rows)
@@ -554,6 +618,8 @@ def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3", dpi
         if light_kept:                      # provenance of the light-text pass (absent when OFF / nothing recovered)
             words_out["light_words"] = list(light_kept)                          # the recovered 6-tuples
             words_out["light_boxes"] = [(w[0], w[1], w[2], w[3]) for w in light_kept]
+            if light_replaced:
+                words_out["light_replaced"] = list(light_replaced)               # degenerate base slivers that yielded
     return "\n".join(lines)
 
 

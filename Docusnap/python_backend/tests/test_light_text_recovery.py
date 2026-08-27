@@ -257,6 +257,46 @@ os.environ.pop("OCR_LIGHT_TEXT_LEVELS", None); os.environ["OCR_LIGHT_TEXT_THRESH
 check("level set: a bare THRESHOLD pins ONE level", T._light_levels() == [180])
 os.environ.pop("OCR_LIGHT_TEXT_THRESHOLD", None)
 
+print("\n§3e the owner's live batch (2026-08-27): support-scaled floor, agreement-key normalisation, degenerate base slivers, line-group placement")
+# (A) doc 1707: the same code at THREE levels, all under 80 → kept at ≥ 70; at TWO levels under 80 → still dropped
+A1 = (120, 1300, 110, 14, "CT-2903961", 73); A2 = (120, 1300, 110, 14, "CT-2903961", 77); A3 = (120, 1300, 110, 14, "CT-2903961", 78)
+B1 = (120, 1350, 110, 14, "CT-9802341", 78); B2 = (120, 1350, 110, 14, "CT-9802341", 29)
+# (B) doc 1721: 'CT-9999544' / 'cT-9999544' / 'CT-9999544_' are ONE string; the best-conf tuple's text is cleaned
+C1 = (120, 1400, 110, 14, "cT-9999544", 81); C2 = (120, 1400, 110, 14, "CT-9999544", 88); C3 = (120, 1400, 112, 14, "CT-9999544_", 44)
+imgE = page(stripes=[A1[:4], B1[:4], C1[:4]])
+per_callE = [
+    [grown(w) for w in BASE] + [A1, B1, C1],
+    [grown(w) for w in BASE] + [A2, B2, C2],
+    [grown(w) for w in BASE] + [A3, C3],
+    [grown(w) for w in BASE],
+]
+tE, woE, _ = run(imgE, BASE, light=per_callE, on=True)
+gotE = {w[4]: w for w in woE.get("light_words", [])}
+check("(A) three agreeing levels at 73/77/78 → kept at its best (78 ≥ 70)", "CT-2903961" in gotE and gotE["CT-2903961"][5] == 78, str(gotE))
+check("(A) two agreeing levels at 78/29 → still dropped (two levels need 80)", "CT-9802341" not in gotE)
+check("(B) case + edge-punctuation variants are ONE string; output = the best tuple, cleaned", "CT-9999544" in gotE and gotE["CT-9999544"][5] == 88 and "cT-9999544" not in gotE and "CT-9999544_" not in gotE, str(gotE))
+check("clean/agree helpers", T._light_clean_text("CT-9999544_") == "CT-9999544" and T._light_agree_key("cT-9999544") == "ct-9999544" and T._light_clean_text("'No:'") == "No:")
+check("real caption punctuation survives the clean ('No:' 'No.' 'Ltd,' keep their mark)", T._light_clean_text("No:") == "No:" and T._light_clean_text("No.") == "No." and T._light_clean_text("Ltd,") == "Ltd," and T._light_clean_text('"Serial') == "Serial")
+check("the exhibit caption keeps its colon in the ON text", "Serial No: CT-8051702" in t_on)
+# (C) doc 1706: a 5-px base sliver 'CT-832884' on the serial spot no longer blocks the three-level 'CT-8328847', and leaves the row
+SLIVER = (333, 1015, 79, 5, "CT-832884", 87)
+BASE_C = BASE + [(167, 1011, 72, 14, "Serial", 95), (255, 1012, 33, 13, "No:", 93), SLIVER]
+D1 = (303, 1011, 122, 15, "CT-8328847", 87)
+imgC = page(stripes=[D1[:4]])
+tC, woC, _ = run(imgC, BASE_C, light=[grown(w) for w in BASE_C if w is not SLIVER] + [D1], on=True)
+check("(C) the light code beneath a degenerate base sliver is kept", any(w[4] == "CT-8328847" for w in woC.get("light_words", [])), str(woC.get("light_words")))
+check("(C) the sliver yields (light_replaced) and the row reads the recovered code once", woC.get("light_replaced") == [SLIVER] and any(l == "Serial No: CT-8328847" for l in tC.split("\n")), repr(tC))
+check("(C) OFF still carries the sliver (the base pass is untouched when the switch is off)", any("CT-832884" in l for l in run(imgC, BASE_C, on=False)[0].split("\n")))
+check("(C) a NORMAL-height base word is never replaced", "light_replaced" not in wo_on)
+# (D) doc 1721: a lone base qty '1' 11 px above the serial line must not split 'Serial' from 'No: <code>'
+BASE_D = [(134, 886, 88, 21, "Keypad", 96), (240, 888, 56, 16, "Prox", 96), (313, 889, 88, 17, "Reader", 96), (1519, 911, 9, 16, "1", 96),
+          (134, 960, 116, 16, "Intruder", 96), (266, 961, 75, 17, "Alarm", 96)]
+LD = [(172, 922, 72, 14, "Serial", 96), (259, 924, 33, 14, "No:", 93), (309, 924, 123, 16, "CT-9999544", 88)]
+imgD = page(stripes=[w[:4] for w in LD])
+tD, woD, _ = run(imgD, BASE_D, light=[grown(w) for w in BASE_D] + LD, on=True)
+check("(D) the light line stays together on ONE row (with or without the qty '1')", any(l.startswith("Serial No: CT-9999544") for l in tD.split("\n")), repr(tD))
+check("(D) base rows unchanged (Keypad… / Intruder… intact)", all(any(l.startswith(s) for l in tD.split("\n")) for s in ("Keypad Prox Reader", "Intruder Alarm")))
+
 print("\n§3c the threshold level: fixed 200, env-tunable within 100–250 only")
 os.environ.pop("OCR_LIGHT_TEXT_THRESHOLD", None)
 check("unset ⇒ 200", T._light_threshold() == 200)
@@ -282,16 +322,18 @@ cands = {
     "slab":    (120, 1670, 60, 14, "SLAB", 95),           # solid box → ink 1.0 → dropped
     "ratio":   (120, 1720, 40, 14, "a---", 90),           # alnum ratio 0.25 → dropped
     "lowconf": (120, 1770, 40, 14, "LOW1", 55),           # conf 55 < 60 → dropped
-    "digit75": (120, 1820, 60, 14, "CT-1234", 75),        # digit-bearing @75 < 80 → dropped (Oracle C2)
+    "digit65": (120, 1820, 60, 14, "CT-1234", 65),        # digit-bearing @65 at every level → dropped (< 70 even when agreed)
+    "digit75": (120, 1970, 60, 14, "CT-1236", 75),        # digit-bearing @75 at every level (support 4) → kept (agreed floor 70)
     "digit85": (120, 1870, 60, 14, "CT-1235", 85),        # digit-bearing @85 → kept
     "alpha65": (120, 1920, 80, 14, "Registered", 65),     # alpha-only @65 → kept (the 60 floor stands for words)
 }
-keep_stripes = [cands[k][:4] for k in ("ioa", "small_ov", "tiny", "tall", "lone_l", "lone_ab70", "lone_ab85", "lone_abcd", "repeat", "ratio", "lowconf", "digit75", "digit85", "alpha65")]
+keep_stripes = [cands[k][:4] for k in ("ioa", "small_ov", "tiny", "tall", "lone_l", "lone_ab70", "lone_ab85", "lone_abcd", "repeat", "ratio", "lowconf", "digit65", "digit75", "digit85", "alpha65")]
 img4 = page(stripes=keep_stripes, slabs=[cands["slab"][:4]])
 light4 = [grown(w) for w in BASE] + list(cands.values())
 t4, wo4, _ = run(img4, BASE, light=light4, on=True)
 got = set(w[4] for w in wo4.get("light_words", []))
-check("digit-bearing token @75 dropped (< 80)", "CT-1234" not in got)
+check("digit-bearing token @65 dropped even when every level agrees (< 70)", "CT-1234" not in got)
+check("digit-bearing token @75 kept when every level agrees (support ≥ 3 ⇒ floor 70)", "CT-1236" in got)
 check("digit-bearing token @85 kept", "CT-1235" in got)
 check("alpha-only token @65 kept (the 60 floor stands for words)", "Registered" in got)
 check("centre-inside re-read dropped", "Channel" not in got or t4.count("Channel") == 1)
