@@ -21,7 +21,24 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-27 DAY (Chris round 6 fixes): **READ `HANDOVER_2026-08-27_DAY.md` FIRST**
+## ⏭ LATEST — 2026-08-27 EVENING: **READ `HANDOVER_2026-08-27_EVENING.md` FIRST**
+Branch `feat/teach-side-overnight`, **HEAD `cab9fbc`** (code `38d5af2`; 17 commits ahead, NOT pushed). **Live app RUNNING on
+CDP 9222 on this code; Chris sandbox on 9223.** Shipped: the List-field Review PILLS slice (Oracle SIGN-OFF-W/COND, all ten
+conditions; pins 27+41+8 green; census debris 478→0) + **Chris r8's TOP card fixed the same evening** (the ⊕ label picker's
+nearest token "No" became a doc-type keyword and filed the JOB SHEET number as the serial → ONE `cleanCaption` shared by
+⊕/wizard/IPC; a generic tail is EXTENDED to the page phrase "Serial No" or REFUSED on all three roads). **THE REAL BLOCKER,
+measured:** scanned worksheets' grey 7.5-pt "Serial No: …" lines are NOT recognised by Tesseract at 200/300 DPI in any PSM
+(`probe_ocr_loss.py`) but a **threshold-200 pass recovers them at conf 90–93** (`probe_contrast.py`, `band_scan_200.png`) →
+**NEXT ARC = a light-text supplementary pass in `reconstruct_page_text` (DARK switch, oscar/007 → Oracle, gates in the
+handover §2).** Also: Service Worksheet has NO required fields, so the unread List field scores 0 and every Castellan
+worksheet HOLDS at overall 81 < 95 — **owner remedy: tick *required* on Issuer/Date/Reference** (system fix queued).
+Help-system rebuild PLAN written (`docs/designs/HELP_SYSTEM_REBUILD_PLAN_2026-08-27.md`; eleven owner decisions, D11 first;
+the help window is NOT modal; the Mailbox is live). New harness lever: `RR_IDS=…` reprocesses only those confirmed docs on the
+untouched live DB. **Traps:** the shell guard refuses any command containing `Remove-Item` + a quoted spaced path (the whole
+command never runs); `git commit -F <file>` only; Electron-as-Node argv[2]; never "focus" the realdoc harness by demoting docs
+on a copy (un-graduates every scope).
+
+## (previous) 2026-08-27 DAY (Chris round 6 fixes): `HANDOVER_2026-08-27_DAY.md`
 Branch `feat/teach-side-overnight`, resumed from `6787291`; **code commit `d6c1f17`** (+ docs commits after it; 8+ commits
 ahead of origin, NOT pushed — owner reviews then pushes).
 Owner: "read the handover and continue … continue with chris's fixes". **Built + pinned (every behaviour change DARK):**

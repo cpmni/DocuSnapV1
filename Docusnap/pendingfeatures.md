@@ -110,8 +110,14 @@ overlay instead of drawing (the inventory has the boxes). Size ≈ engine 40 lin
   (g) **OCR TEXT-LOSS ARC (blocks the serial feature on SCANS):** the stored page text of the scanned Castellan worksheets has NO
   "Serial No: …" lines (live docs 11/13/1504; sandbox doc 217 vs the born-digital doc 2 of the SAME PDF, which has both) — the
   OCR / visual-row rebuild (`ocr/tesseract.py`) drops the small lines under each item row (only "i"/"cd" debris survives). Same
-  class as the 08-22 "type banner dropped from page text on 105/416" census. 007/oscar arc: render the item band, compare raw
-  tesseract vs the rebuilt rows, find where the line dies. Until then a caption teach collects nothing on scanned worksheets.
+  class as the 08-22 "type banner dropped from page text on 105/416" census. **MEASURED (evening):** Tesseract returns ZERO
+  "Serial"/"CT-" words for the scanned page at 200 AND 300 DPI in PSM 3/6/11 — the pixels are plainly there
+  (`TESTING/_measure/list_field_20260827/band_scan_200.png`: 7.5-pt grey rgb(90,90,90) on a tinted row) — while a global
+  threshold at 200 → PSM 3 reads `Serial 93 · No: 93 · CT-8051702 91 · CT-8813265 90` (`probe_contrast.py`). Design + gate in
+  `HANDOVER_2026-08-27_EVENING.md` §2: a third supplementary source in `reconstruct_page_text` (threshold ~200, empty-region
+  merge under the existing `_center_in_any` rule, conf ≥ 50), DARK `ocr_light_text_recovery`, oscar/007 → Oracle; gates =
+  realdoc OFF==ON + fingerprint-diff census + recovered-words census + the serial exhibit healing + a Chris round. Until then
+  a caption teach collects nothing on scanned worksheets.
   (h) **AN UNREAD OPTIONAL FIELD HOLDS A GRADUATED TYPE:** `validator.overall_confidence` scores EVERY field when the type has no
   required fields and counts an expected-but-empty one as 0 — adding the List field to Service Worksheet sank every Castellan
   worksheet to overall 81 < floor 95 (realdoc: 96/96 would-file → held; `rr_ids_consensus2.jsonl`). Owner remedy now: mark the
