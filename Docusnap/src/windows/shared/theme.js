@@ -2,7 +2,7 @@
 // DOMContentLoaded syncs from DB and wires up the IPC listener.
 
 // Dark-FAMILY themes (drive native scrollbars/caret + the logo swap via data-mode).
-const DARK_THEMES = new Set(['dark', 'midnight', 'graphite', 'festive']);
+const DARK_THEMES = new Set(['dark', 'midnight', 'graphite', 'festive', 'spooky']);
 
 function _applyThemeAttrs(theme) {
   theme = theme || 'light';

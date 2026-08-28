@@ -204,6 +204,32 @@ input, textarea,
   color-scheme:dark;
 }
 
+/* ── Festive Light (light family) — bright snowy counterpart to Festive: warm snow shell,
+      holly-RED accent, evergreen "filed" + gold, so it stays unmistakably festive but light ── */
+:root[data-theme="festivelight"] {
+  --bg:#f7f2ec; --surface:#fffdfa; --surface2:#f2e7dd; --surface3:#e9d9c8;
+  --border:#ecdccb; --border2:#dcc4a9;
+  --accent:#c62d2d; --accent2:#a82424; --accent-bg:#f9e6e1; --accent-border:#f0c6bd; --on-accent:#fff;
+  --ok:#1f7a48; --ok-bg:#e4f2ea; --ok-border:#bfe0cd;                 /* evergreen */
+  --err:#b02a37; --err-bg:#f7e3e6; --err-border:#e6bcc4;             /* berry — distinct from the holly-red primary */
+  --text:#33241d; --muted:#7c6a5b; --muted2:#ad9a86; --doc-bg:#f2e7dd;
+  --shadow:0 1px 2px rgba(90,40,30,.07), 0 20px 44px -26px rgba(90,40,30,.22);
+}
+
+/* ── Spooky (dark family) — Halloween: aubergine-black shell, pumpkin-orange accent
+      (near-black --on-accent — white fails AA on orange), moonlight-lilac text ── */
+:root[data-theme="spooky"] {
+  --bg:#141019; --surface:#1c1626; --surface2:#251d33; --surface3:#2f2540;
+  --border:#2c2338; --border2:#3d3150;
+  --accent:#ff7a1a; --accent2:#ff9440; --accent-bg:#2c1605; --accent-border:#5a2f0f; --on-accent:#1a0d02;
+  --ok:#8bc34a; --ok-bg:#182310; --ok-border:#2f4a1a;                /* toxic lime */
+  --warn:#f4c430; --warn-bg:#2a2205; --warn-border:#4a3a12;         /* candy gold */
+  --err:#ff5470; --err-bg:#2c0f18; --err-border:#4a1f2c;
+  --text:#ece7f2; --muted:#9a8db3; --muted2:#655a7d; --doc-bg:#0d0a12;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 18px 40px -24px rgba(0,0,0,.75);
+  color-scheme:dark;
+}
+
 /* ── Subtle background patterns (pure CSS gradients → CSP-safe; shell --bg only,
       never on cards/inputs/previews). color-mix adapts the texture to each theme. ── */
 :root[data-theme="warm"] body {
@@ -236,6 +262,26 @@ input, textarea,
   background-image:
     radial-gradient(120% 90% at 50% -10%, color-mix(in srgb, #e6c34a 12%, transparent) 0%, transparent 55%),
     url('patterns/festive.svg');
+  background-repeat:no-repeat, repeat;
+  background-size:cover, 150px 150px;
+  background-attachment:fixed, fixed;
+}
+/* Festive Light — a faint warm-gold hearth glow OVER the holly tile, tuned for a light shell. */
+:root[data-theme="festivelight"] body {
+  background-color:var(--bg);
+  background-image:
+    radial-gradient(120% 90% at 50% -8%, color-mix(in srgb, #d0a24a 9%, transparent) 0%, transparent 55%),
+    url('patterns/festive-light.svg');
+  background-repeat:no-repeat, repeat;
+  background-size:cover, 150px 150px;
+  background-attachment:fixed, fixed;
+}
+/* Spooky — a pumpkin glow from the upper-right OVER the bats-and-moon tile. */
+:root[data-theme="spooky"] body {
+  background-color:var(--bg);
+  background-image:
+    radial-gradient(120% 90% at 82% -10%, color-mix(in srgb, var(--accent) 12%, transparent) 0%, transparent 55%),
+    url('patterns/spooky.svg');
   background-repeat:no-repeat, repeat;
   background-size:cover, 150px 150px;
   background-attachment:fixed, fixed;

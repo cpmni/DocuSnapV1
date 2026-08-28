@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
+  <!-- Spooky: bats + crescent moon + spider-web corner + sparkles, even half-drop texture (dark-shell tuned) -->
+  <g opacity="0.12" fill="#f4c430">
+    <path d="M100 16 A13 13 0 1 0 100 42 A10 10 0 1 1 100 16 Z"/>
+  </g>
+  <g opacity="0.18" fill="#2a1a3a">
+    <g transform="translate(34 40) scale(1.15)">
+      <ellipse cx="0" cy="0" rx="2.6" ry="3.6"/>
+      <path d="M0 -1 C-4 -7 -10 -7 -14 -2 C-11 -3 -8 -1 -7 2 C-4 -1 -1 0 0 -1 Z"/>
+      <path d="M0 -1 C4 -7 10 -7 14 -2 C11 -3 8 -1 7 2 C4 -1 1 0 0 -1 Z"/>
+    </g>
+    <g transform="translate(78 84) scale(1.3)">
+      <ellipse cx="0" cy="0" rx="2.6" ry="3.6"/>
+      <path d="M0 -1 C-4 -7 -10 -7 -14 -2 C-11 -3 -8 -1 -7 2 C-4 -1 -1 0 0 -1 Z"/>
+      <path d="M0 -1 C4 -7 10 -7 14 -2 C11 -3 8 -1 7 2 C4 -1 1 0 0 -1 Z"/>
+    </g>
+    <g transform="translate(20 92) scale(0.85)">
+      <ellipse cx="0" cy="0" rx="2.6" ry="3.6"/>
+      <path d="M0 -1 C-4 -7 -10 -7 -14 -2 C-11 -3 -8 -1 -7 2 C-4 -1 -1 0 0 -1 Z"/>
+      <path d="M0 -1 C4 -7 10 -7 14 -2 C11 -3 8 -1 7 2 C4 -1 1 0 0 -1 Z"/>
+    </g>
+  </g>
+  <g opacity="0.13" fill="#ff8c1a">
+    <path d="M62 60 l1.4 3.4 3.4 1.4 -3.4 1.4 -1.4 3.4 -1.4 -3.4 -3.4 -1.4 3.4 -1.4 Z"/>
+    <path d="M96 74 l1 2.4 2.4 1 -2.4 1 -1 2.4 -1 -2.4 -2.4 -1 2.4 -1 Z"/>
+    <path d="M14 30 l1 2.4 2.4 1 -2.4 1 -1 2.4 -1 -2.4 -2.4 -1 2.4 -1 Z"/>
+  </g>
+  <g opacity="0.09" stroke="#9a86b8" stroke-width="0.9" fill="none">
+    <path d="M0 120 C10 116 18 108 22 98"/>
+    <path d="M0 104 C8 104 16 110 20 118"/>
+    <path d="M0 112 C7 110 13 106 17 100"/>
+  </g>
+</svg>
