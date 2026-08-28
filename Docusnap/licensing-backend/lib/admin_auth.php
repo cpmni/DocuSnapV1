@@ -532,7 +532,10 @@ function admin_page_open(string $title, bool $showNav = true): void
     color-scheme: light;
     --paper:#f6f1e7; --paper-2:#efe7d6; --surface:#fffdf8; --surface2:#faf5ea;
     --ink:#20180f; --ink-soft:#5b4f41; --muted:#8a7d6b; --line:#e2d7c2; --line-2:#d3c4a8;
-    --accent:#c2521b; --accent-2:#a23f12; --accent-ink:#fff6ee; --teal:#1f5b54;
+    --accent:#c2521b; --accent-2:#a23f12; --on-accent:#fff6ee; --teal:#1f5b54;
+    /* --accent-ink = a DARK accent for text/links on a light surface (pages rely on it,
+       e.g. temp.php's disclosure toggle). Buttons put --on-accent ON the accent fill. */
+    --accent-ink:#a23f12;
     --ok:#2f7d4f; --ok-bg:#e9f4ea; --ok-border:#c2e0c6;
     --warn:#9a5b08; --warn-bg:#fbeeda; --warn-border:#ecd3a2;
     --err:#b23b2e; --err-bg:#fbe7e2; --err-border:#efc3ba;
@@ -592,7 +595,7 @@ function admin_page_open(string $title, bool $showNav = true): void
   input::placeholder { color:#b3a892; }
   input:focus,select:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(194,82,27,.16); }
   .btn { display:inline-flex; align-items:center; justify-content:center; gap:.5rem;
-    background:var(--accent); color:var(--accent-ink); border:1px solid transparent;
+    background:var(--accent); color:var(--on-accent); border:1px solid transparent;
     border-radius:999px; padding:10px 17px; cursor:pointer; font:600 13.5px/1 var(--body);
     box-shadow:0 10px 22px -14px rgba(162,63,18,.8); transition:transform .16s, box-shadow .16s, background .16s; text-decoration:none; }
   .btn:hover { transform:translateY(-2px); background:var(--accent-2); }
