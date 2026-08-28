@@ -58,7 +58,11 @@
       #stamp-place-bar .btn{border:none;border-radius:8px;padding:7px 12px;font-weight:600;cursor:pointer;background:var(--surface2);color:var(--text)}
       #stamp-place-bar .btn.primary{background:var(--accent);color:var(--on-accent,#fff)}
       #stamp-place-bar .btn:disabled{opacity:.5;cursor:not-allowed}
-      #stamp-ghost{position:fixed;z-index:9400;pointer-events:none;border:2px solid var(--sc,#2E7D32);background:color-mix(in srgb, var(--sc,#2E7D32) 14%, transparent);border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--sc,#2E7D32);font-size:13px;letter-spacing:.03em}
+      #stamp-ghost{position:fixed;z-index:9400;pointer-events:none;box-sizing:border-box;border:2px solid var(--sc,#2E7D32);background:color-mix(in srgb, var(--sc,#2E7D32) 14%, transparent);border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--sc,#2E7D32);font-size:13px;letter-spacing:.03em}
+      #stamp-ghost .sg-label{pointer-events:none;padding:0 4px;overflow:hidden;white-space:nowrap}
+      #stamp-ghost.placed{pointer-events:auto;cursor:move;box-shadow:0 0 0 2px #fff,0 0 0 3px var(--sc,#2E7D32)}
+      #stamp-ghost .sg-handle{display:none;position:absolute;right:-7px;bottom:-7px;width:14px;height:14px;background:var(--sc,#2E7D32);border:2px solid #fff;border-radius:3px;cursor:nwse-resize}
+      #stamp-ghost.placed .sg-handle{display:block}
       body.stamp-placing #preview-img{cursor:crosshair}
       /* stamped/original toggle */
       #stamp-view-toggle{display:inline-flex;align-items:center;gap:6px;margin-left:10px;font-size:11px}
@@ -201,59 +205,107 @@
   }
 
   // ── Placement mode ──────────────────────────────────────────────────────────
+  // The stamp follows the cursor; a click DROPS it; once dropped it can be moved (drag the body) or
+  // resized (drag the corner, clamped to MIN_W..MAX_W) or Start over; Place stamp commits exactly ONE
+  // stamp + the one note. Height follows the content server-side (pdfStamp), so only the WIDTH resizes.
+  const MIN_W = 0.12, MAX_W = 0.50;   // stamp width as a fraction of the page width
   function _beginPlacement(type, note) {
     close();
     const img = document.getElementById('preview-img');
-    const area = document.getElementById('preview-img-area');
-    if (!img || !area || !(S().currentPages && S().currentPages.length)) { toast('Open the document first.'); return; }
+    if (!img || !(S().currentPages && S().currentPages.length)) { toast('Open the document first.'); return; }
     document.body.classList.add('stamp-placing');
-    _placing = { type, note, box: null };
-    const ghost = document.createElement('div'); ghost.id = 'stamp-ghost'; ghost.style.display = 'none';
-    ghost.style.setProperty('--sc', type.color || '#2E7D32'); ghost.textContent = type.label;
-    document.body.appendChild(ghost);
-    const bar = document.createElement('div'); bar.id = 'stamp-place-bar';
-    bar.innerHTML = `<span>Click a blank area to drop the <b>${esc(type.label)}</b> stamp.</span>
-      <button class="btn" id="spb-cancel">Cancel</button><button class="btn primary" id="spb-go" disabled>Place stamp</button>`;
-    document.body.appendChild(bar);
+    _placing = true;
+    let mode = 'following';                    // 'following' -> 'placed'
+    let w = 0.28, cx = 0.5, cy = 0.10;         // width + CENTRE (page-normalised) of the ghost
 
-    const W = 0.28;   // stamp width as a fraction of the page; height follows content (server-side)
+    const ghost = document.createElement('div'); ghost.id = 'stamp-ghost'; ghost.style.display = 'none';
+    ghost.style.setProperty('--sc', type.color || '#2E7D32');
+    ghost.innerHTML = `<span class="sg-label">${esc(type.label)}</span><span class="sg-handle" title="Drag to resize"></span>`;
+    document.body.appendChild(ghost);
+
+    const bar = document.createElement('div'); bar.id = 'stamp-place-bar';
+    bar.innerHTML = `<span id="spb-hint">Move the stamp into place, then click to drop it.</span>
+      <button class="btn" id="spb-remove" hidden>Start over</button>
+      <button class="btn" id="spb-cancel">Cancel</button>
+      <button class="btn primary" id="spb-go" disabled>Place stamp</button>`;
+    document.body.appendChild(bar);
+    const hint = bar.querySelector('#spb-hint'), go = bar.querySelector('#spb-go'), removeBtn = bar.querySelector('#spb-remove');
+
+    const rect = () => img.getBoundingClientRect();
     function draw() {
-      if (!_placing.box) { ghost.style.display = 'none'; return; }
-      const r = img.getBoundingClientRect();
-      const w = _placing.box.w * r.width, h = Math.max(28, w * 0.32);
-      ghost.style.display = ''; ghost.style.left = (r.left + _placing.box.x * r.width) + 'px';
-      ghost.style.top = (r.top + _placing.box.y * r.height) + 'px';
-      ghost.style.width = w + 'px'; ghost.style.height = h + 'px';
+      const r = rect();
+      const wpx = Math.max(8, w * r.width), hpx = Math.max(24, wpx * 0.30);
+      let left = r.left + cx * r.width - wpx / 2, top = r.top + cy * r.height - hpx / 2;
+      left = Math.max(r.left, Math.min(r.right - wpx, left));
+      top = Math.max(r.top, Math.min(r.bottom - hpx, top));
+      ghost.style.display = ''; ghost.style.left = left + 'px'; ghost.style.top = top + 'px';
+      ghost.style.width = wpx + 'px'; ghost.style.height = hpx + 'px';
     }
-    function onClick(e) {
-      const r = img.getBoundingClientRect();
+    function currentBox() {
+      const r = rect(), g = ghost.getBoundingClientRect();
+      return { x: Math.max(0, Math.min(1 - w, (g.left - r.left) / r.width)), y: Math.max(0, (g.top - r.top) / r.height), w };
+    }
+
+    // FOLLOW the cursor until a click drops it.
+    function onMove(e) {
+      if (mode !== 'following') return;
+      const r = rect();
+      if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) { ghost.style.display = 'none'; return; }
+      cx = (e.clientX - r.left) / r.width; cy = (e.clientY - r.top) / r.height; draw();
+    }
+    function onDrop(e) {
+      if (mode !== 'following') return;
+      const r = rect();
       if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;
-      let x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
-      x = Math.max(0, Math.min(1 - W, x - W / 2)); y = Math.max(0, Math.min(0.95, y - 0.02));
-      _placing.box = { x, y, w: W, page: (S().currentPage || 0) };
-      draw(); bar.querySelector('#spb-go').disabled = false;
+      cx = (e.clientX - r.left) / r.width; cy = (e.clientY - r.top) / r.height;
+      mode = 'placed'; ghost.classList.add('placed'); draw();
+      hint.textContent = 'Drag to move · drag the corner to resize.'; go.disabled = false; removeBtn.hidden = false;
     }
-    img.addEventListener('click', onClick);
-    window.addEventListener('scroll', draw, true); window.addEventListener('resize', draw);
+    // MOVE (drag body) / RESIZE (drag handle) once dropped.
+    let drag = null;
+    function onDown(e) {
+      if (mode !== 'placed') return; e.preventDefault(); e.stopPropagation();
+      drag = { handle: e.target.classList.contains('sg-handle'), x: e.clientX, y: e.clientY, cx, cy, w };
+    }
+    function onDragMove(e) {
+      if (!drag) return; const r = rect();
+      if (drag.handle) w = Math.max(MIN_W, Math.min(MAX_W, drag.w + (e.clientX - drag.x) / r.width * 2));
+      else { cx = drag.cx + (e.clientX - drag.x) / r.width; cy = drag.cy + (e.clientY - drag.y) / r.height; }
+      draw();
+    }
+    const onUp = () => { drag = null; };
+    const onSync = () => { if (mode === 'placed') draw(); };
+
+    window.addEventListener('mousemove', onMove);
+    img.addEventListener('click', onDrop);
+    ghost.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onDragMove);
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('scroll', onSync, true); window.addEventListener('resize', onSync);
+
     function cleanup() {
       document.body.classList.remove('stamp-placing');
-      img.removeEventListener('click', onClick);
-      window.removeEventListener('scroll', draw, true); window.removeEventListener('resize', draw);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mousemove', onDragMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('scroll', onSync, true); window.removeEventListener('resize', onSync);
+      img.removeEventListener('click', onDrop);
       ghost.remove(); bar.remove(); _placing = null;
     }
+    removeBtn.addEventListener('click', () => {
+      mode = 'following'; ghost.classList.remove('placed'); go.disabled = true; removeBtn.hidden = true;
+      hint.textContent = 'Move the stamp into place, then click to drop it.';
+    });
     bar.querySelector('#spb-cancel').addEventListener('click', cleanup);
-    bar.querySelector('#spb-go').addEventListener('click', async () => {
-      const box = _placing.box; const page = box.page;
-      bar.querySelector('#spb-go').disabled = true; bar.querySelector('#spb-go').textContent = 'Placing…';
+    go.addEventListener('click', async () => {
+      if (mode !== 'placed') return;
+      const box = currentBox(), page = (S().currentPage || 0);
+      go.disabled = true; go.textContent = 'Placing…';
       try {
-        await window.docusnap.stamp.place({ documentId: _doc.id, stampTypeId: type.id, box: { x: box.x, y: box.y, w: box.w }, page, note });
-        cleanup();
-        toast(`${type.label} stamped — recorded against this document.`);
+        await window.docusnap.stamp.place({ documentId: _doc.id, stampTypeId: type.id, box, page, note });
+        cleanup(); toast(`${type.label} stamped — recorded against this document.`);
         await _refreshStampedView(_doc.id);
-      } catch (e) {
-        bar.querySelector('#spb-go').disabled = false; bar.querySelector('#spb-go').textContent = 'Place stamp';
-        toast((e && e.message) || 'Could not stamp.');
-      }
+      } catch (e) { go.disabled = false; go.textContent = 'Place stamp'; toast((e && e.message) || 'Could not stamp.'); }
     });
   }
 
