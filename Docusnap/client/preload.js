@@ -51,6 +51,12 @@ contextBridge.exposeInMainWorld('scanfinder', {
                   ipcRenderer.invoke('client-wf-resolve', { id, decision, comment, version }),
     recall:     (id, version) => ipcRenderer.invoke('client-wf-recall', { id, version }),
     stamped:    (id) => ipcRenderer.invoke('client-wf-stamped', id),
+    // Stamping (Workflow+Stamping redesign 2026-08-28) — all return the raw { status, json }.
+    stampTypes: () => ipcRenderer.invoke('client-wf-stamp-types'),
+    canStamp:   () => ipcRenderer.invoke('client-wf-can-stamp'),
+    stampList:  (id) => ipcRenderer.invoke('client-wf-stamp-list', id),
+    stampPlace: (id, body) => ipcRenderer.invoke('client-wf-stamp-place', { id, body }),
+    stampedDoc: (id) => ipcRenderer.invoke('client-wf-stamped-doc', id),
   },
   review: {
     queue:    () => ipcRenderer.invoke('client-review-queue'),

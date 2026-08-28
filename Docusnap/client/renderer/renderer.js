@@ -13,6 +13,8 @@ const api = window.scanfinder;
 
 let role = null;
 let workflowEntitled = false; // workflow add-on (mailbox/approvals) — licensed separately from search
+let clientCanStamp = false;   // does this user hold the stamp permission (drives the Stamp UI)
+let clientStampTypes = [];    // the stamp catalog (fetched with the entitlement)
 let blocked = false;
 let currentBox = 'inbox';
 let recipientsCache = null;
@@ -304,6 +306,13 @@ $('login-btn').addEventListener('click', async () => {
     // Workflow (mailbox/approvals) is its OWN add-on — only surface the Mailbox nav when
     // it is licensed, so a search-only client shows no mailbox/workflow mention.
     workflowEntitled = !!(ent.json.workflow && ent.json.workflow.entitled);
+    // Stamp permission + catalog (Workflow+Stamping redesign) — only when the workflow add-on is licensed
+    // (the /v1 stamp routes are add-on-gated). Feature-detect: an older core 404s → clientCanStamp stays
+    // false and the Stamp UI simply never appears.
+    if (workflowEntitled) {
+      try { const cs = await api.workflow.canStamp(); clientCanStamp = !!(cs.status === 200 && cs.json && cs.json.canStamp); } catch { clientCanStamp = false; }
+      try { const ct = await api.workflow.stampTypes(); clientStampTypes = (ct.status === 200 && ct.json && ct.json.stampTypes) || []; } catch { clientStampTypes = []; }
+    } else { clientCanStamp = false; clientStampTypes = []; }
     $('nav-mailbox').classList.toggle('hidden', !workflowEntitled);
     const nm = r.user.displayName || r.user.username;
     $('who').textContent = nm;
@@ -1147,6 +1156,143 @@ async function openDocument(id, route) {
   if (!imgs.length) { pagesEl.innerHTML = `<div class="empty">No preview available.</div>`; return; }
   pagesEl.innerHTML = '';
   for (const src of imgs) { const im = document.createElement('img'); im.src = src; pagesEl.appendChild(im); }
+  initDocStamps(id, wrap);   // stamp button (if permitted) + stamped/original toggle + history
+}
+
+// ── Stamping (Workflow+Stamping redesign 2026-08-28) — detached-client parity ────
+// The /v1 stamp routes carry the real gates (permission + document access + entitlement); this UI only
+// sends coords + a stamp type. Mirrors the desktop Search popup, adapted to the client's stacked-page
+// preview (no zoom transform — placement measures straight off the clicked page image).
+function _stampCss() {
+  if (document.getElementById('stamp-css-c')) return;
+  const s = document.createElement('style'); s.id = 'stamp-css-c';
+  s.textContent = `
+    .stamp-toggle-bar{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px}
+    .stamp-toggle-bar .st-badge{background:var(--accent-bg,#e7f0ff);color:var(--accent2,#2f6fe0);border-radius:999px;padding:1px 8px;font-weight:600}
+    .stamp-toggle-bar select{background:var(--surface2,#eef1f7);border:1px solid var(--border2,#d2d8e4);color:var(--text,#1b1f2a);border-radius:6px;font-size:12px;padding:2px 4px}
+    .stamp-toggle-bar .st-help{color:var(--muted,#69728a);font-size:11px}
+    .stamp-hist{margin-top:12px;border-top:1px solid var(--border,#e4e7ef);padding-top:8px}
+    .stamp-hist .sh-head{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#69728a);margin-bottom:6px}
+    .stamp-hist .sh-row{font-size:12px;padding:3px 0;border-bottom:1px solid var(--border,#e4e7ef)}
+    .stamp-hist .sh-n{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;border-radius:50%;background:var(--surface2,#eef1f7);color:var(--muted,#69728a);font-size:10px;font-weight:700;margin-right:6px}
+    .stamp-ov{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center}
+    .stamp-card{width:min(460px,92vw);background:var(--surface,#fff);border:1px solid var(--border2,#d2d8e4);border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.5);padding:16px 18px}
+    .stamp-card .sc-head{display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:600;color:var(--text,#1b1f2a)}
+    .stamp-card .sc-x{border:none;background:transparent;font-size:20px;color:var(--muted,#69728a);cursor:pointer}
+    .stamp-card .sc-lead{font-size:12.5px;color:var(--muted,#69728a);margin:6px 0 10px}
+    .stamp-card .sc-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+    .sc-chip{border:1.5px solid var(--c,#888);color:var(--c,#333);background:transparent;font-weight:700;font-size:12px;padding:6px 12px;border-radius:999px;cursor:pointer}
+    .sc-note{width:100%;background:var(--surface2,#eef1f7);border:1px solid var(--border2,#d2d8e4);color:var(--text,#1b1f2a);border-radius:8px;padding:8px 10px;font-size:12.5px}
+    body.stamp-placing .pages img{cursor:crosshair}
+    .stamp-ghost-c{position:fixed;z-index:9400;pointer-events:none;box-sizing:border-box;border:2px solid var(--c,#2E7D32);background:rgba(46,125,50,.14);border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--c,#2E7D32);font-size:13px}
+    .stamp-place-bar-c{position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:9500;background:var(--surface,#fff);border:1px solid var(--border2,#d2d8e4);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.4);padding:10px 14px;display:flex;gap:12px;align-items:center;font-size:12.5px}
+    .stamp-place-bar-c .pb-cancel{border:none;background:var(--surface2,#eef1f7);border-radius:8px;padding:6px 12px;cursor:pointer}
+    .stamp-toast-c{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:9600;background:var(--text,#1b1f2a);color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+  `;
+  document.head.appendChild(s);
+}
+function stampToast(msg) {
+  _stampCss();
+  const t = document.createElement('div'); t.className = 'stamp-toast-c'; t.textContent = msg;
+  document.body.appendChild(t); setTimeout(() => t.remove(), 3200);
+}
+async function initDocStamps(docId, wrap) {
+  if (!workflowEntitled) return;
+  _stampCss();
+  let stamps = [];
+  try { const r = await api.workflow.stampList(docId); if (r.status === 200) stamps = r.json.stamps || []; } catch { /* */ }
+  const acts = wrap.querySelector('#pv-actions');
+  if (clientCanStamp && acts) {
+    acts.appendChild(mkBtn({ label: 'Stamp', icon: 'check', variant: 'secondary', onClick: () => openStampPanel(docId, wrap) }));
+  }
+  if (stamps.length) {
+    const head = wrap.querySelector('.pv-head');
+    const bar = document.createElement('div'); bar.className = 'stamp-toggle-bar';
+    bar.innerHTML = `<span class="st-badge">🏷 ${stamps.length}</span>
+      <select id="st-view"><option value="stamped">Stamped</option><option value="original">Original</option></select>
+      <span class="st-help">The original is never changed.</span>`;
+    if (head) head.after(bar);
+    bar.querySelector('#st-view').addEventListener('change', (e) => setStampView(docId, wrap, e.target.value));
+    setStampView(docId, wrap, 'stamped');
+    const hist = document.createElement('div'); hist.className = 'stamp-hist';
+    hist.innerHTML = '<div class="sh-head">Stamp history</div>' + stamps.map((s, i) =>
+      `<div class="sh-row"><span class="sh-n">${i + 1}</span><b style="color:${esc(s.color)}">${esc(s.label)}</b> ${esc(s.placedBy || '')} · ${esc(String(s.placedAt || '').slice(0, 16).replace('T', ' '))}${s.note ? ' — “' + esc(s.note) + '”' : ''}</div>`).join('');
+    wrap.appendChild(hist);
+  }
+}
+async function setStampView(docId, wrap, which) {
+  const pagesEl = wrap.querySelector('.pages'); if (!pagesEl) return;
+  let imgs = [];
+  if (which === 'stamped') { try { const r = await api.workflow.stampedDoc(docId); if (r.status === 200 && r.json.pages) imgs = r.json.pages; } catch { /* */ } }
+  if (!imgs.length) { try { const r = await api.getPages(docId); imgs = (r.json && r.json.pages) || []; } catch { /* */ } }
+  pagesEl.innerHTML = '';
+  for (const src of imgs) { const im = document.createElement('img'); im.src = src; pagesEl.appendChild(im); }
+}
+function openStampPanel(docId, wrap) {
+  _stampCss();
+  const ov = document.createElement('div'); ov.className = 'stamp-ov';
+  ov.innerHTML = `<div class="stamp-card">
+    <div class="sc-head"><span>Add a stamp</span><button class="sc-x" title="Close">&times;</button></div>
+    <div class="sc-lead">Pick a stamp, then click a blank area on the document to drop it. A stamp is permanent and shows your name and the time.</div>
+    <div class="sc-chips">${clientStampTypes.map(t => `<button class="sc-chip" data-id="${t.id}" style="--c:${esc(t.color)}">${esc(t.label)}</button>`).join('')}</div>
+    <input class="sc-note" id="sc-note" placeholder="Note (optional)" maxlength="200">
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('.sc-x').addEventListener('click', () => ov.remove());
+  ov.addEventListener('mousedown', (e) => { if (e.target === ov) ov.remove(); });
+  ov.querySelectorAll('.sc-chip').forEach(c => c.addEventListener('click', () => {
+    const type = clientStampTypes.find(t => t.id === Number(c.dataset.id));
+    const note = ov.querySelector('#sc-note').value;
+    ov.remove();
+    if (type) beginClientPlacement(docId, wrap, type, note);
+  }));
+}
+function beginClientPlacement(docId, wrap, type, note) {
+  const imgs = Array.from(wrap.querySelectorAll('.pages img'));
+  if (!imgs.length) { stampToast('No preview to stamp.'); return; }
+  document.body.classList.add('stamp-placing');
+  const ghost = document.createElement('div'); ghost.className = 'stamp-ghost-c';
+  ghost.style.setProperty('--c', type.color || '#2E7D32'); ghost.textContent = type.label; ghost.style.display = 'none';
+  document.body.appendChild(ghost);
+  const bar = document.createElement('div'); bar.className = 'stamp-place-bar-c';
+  bar.innerHTML = `<span>Move onto a blank area, then click to drop <b>${esc(type.label)}</b>.</span><button class="pb-cancel">Cancel</button>`;
+  document.body.appendChild(bar);
+  const W = 0.28;
+  let hover = null;
+  function onMove(e) {
+    hover = null;
+    for (let i = 0; i < imgs.length; i++) {
+      const r = imgs[i].getBoundingClientRect();
+      if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) { hover = { img: imgs[i], page: i, r }; break; }
+    }
+    if (!hover) { ghost.style.display = 'none'; return; }
+    const wpx = W * hover.r.width, hpx = Math.max(24, wpx * 0.3);
+    ghost.style.display = ''; ghost.style.left = (e.clientX - wpx / 2) + 'px'; ghost.style.top = (e.clientY - hpx / 2) + 'px';
+    ghost.style.width = wpx + 'px'; ghost.style.height = hpx + 'px';
+  }
+  async function onClick(e) {
+    if (!hover) return;   // click off a page (e.g. Cancel) → let that handler run
+    e.preventDefault(); e.stopPropagation();
+    const r = hover.img.getBoundingClientRect();
+    let x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+    x = Math.max(0, Math.min(1 - W, x - W / 2)); y = Math.max(0, Math.min(0.95, y - 0.02));
+    const page = hover.page;
+    cleanup();
+    try {
+      const res = await api.workflow.stampPlace(docId, { stampTypeId: type.id, box: { x, y, w: W }, page, note });
+      if (res.status === 200) { stampToast(`${type.label} stamped.`); openDocument(docId); }
+      else stampToast((res.json && res.json.error) || 'Could not stamp.');
+    } catch { stampToast('Could not stamp.'); }
+  }
+  function cleanup() {
+    document.body.classList.remove('stamp-placing');
+    window.removeEventListener('mousemove', onMove);
+    document.removeEventListener('click', onClick, true);
+    ghost.remove(); bar.remove();
+  }
+  window.addEventListener('mousemove', onMove);
+  document.addEventListener('click', onClick, true);
+  bar.querySelector('.pb-cancel').addEventListener('click', (e) => { e.stopPropagation(); cleanup(); });
 }
 
 // Delete (→ bin) / restore / purge a document over /v1, then refresh the active list.
