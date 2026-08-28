@@ -240,7 +240,7 @@ function register(ctx) {
     const fs = require('fs'), path = require('path');
     const pages = await require('../../services/previewService').getDocumentPages(db, {
       docId: Number(documentId), folderPath: path.dirname(cur.path), filename: path.basename(cur.path), exact: true,
-      scale: 3,   // match the Search preview's ~216 DPI so the Stamped/Original toggle looks consistent
+      scale: 6,   // match the Search preview's ~432 DPI so the Stamped/Original toggle stays crisp on zoom
     }, { fs, path, spawn: require('child_process').spawn, pythonExe: ctx.pythonExe, pythonArgs: ctx.pythonArgs,
          renderScript: ctx.resourcePath('python_backend', 'render', 'pages.py') });
     return { ok: true, pages, count: cur.count };

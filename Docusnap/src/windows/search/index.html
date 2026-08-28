@@ -169,7 +169,7 @@
     /* Page navigation bar */
     #page-nav {
       display: flex; align-items: center; justify-content: center; gap: 12px;
-      padding: 7px 12px; background: var(--surface); border-top: 1px solid var(--border);
+      padding: 7px 12px; background: var(--surface); border-bottom: 1px solid var(--border);
       flex-shrink: 0;
     }
     .page-nav-btn {
@@ -407,10 +407,6 @@
 
       <div id="preview-doc" style="display:none">
         <div id="preview-img-col">
-          <div id="preview-img-area" data-help-key="preview-zoom">
-            <span id="preview-img-placeholder">Loading…</span>
-            <div id="preview-img-wrap" style="display:none"><img id="preview-img" alt="Document preview" draggable="false"></div>
-          </div>
           <div id="page-nav" style="display:none">
             <div class="pn-group" data-help-key="preview-zoom">
               <button class="page-nav-btn" id="btn-zoom-out" title="Zoom out" aria-label="Zoom out">&#8722;</button>
@@ -424,6 +420,10 @@
               <span id="page-label" class="page-nav-label">1 / 1</span>
               <button class="page-nav-btn" id="btn-page-next" data-help-key="preview-pages" title="Next page" aria-label="Next page" disabled>&#8250;</button>
             </div>
+          </div>
+          <div id="preview-img-area" data-help-key="preview-zoom">
+            <span id="preview-img-placeholder">Loading…</span>
+            <div id="preview-img-wrap" style="display:none"><img id="preview-img" alt="Document preview" draggable="false"></div>
           </div>
         </div>
 

@@ -95,9 +95,10 @@ function _showPage(idx) {
 // ── Zoom / pan (mirrors the Review viewer: buttons + wheel zoom, right-drag pan) ─
 let previewZoom = 1, panX = 0, panY = 0;
 const ZOOM_MIN = 1, ZOOM_MAX = 4, ZOOM_STEP = 0.25;
-// Render the preview at ~216 DPI (scale 3) so zooming stays reasonably crisp instead of pixelating at
-// the default 108 DPI (scale 1.5). Higher = sharper but heavier; the teach wizard uses 4.0 (288 DPI).
-const SEARCH_RENDER_SCALE = 3;
+// Render the preview at ~432 DPI (scale 6) so it stays crisp when zoomed — the pane rasterises the page
+// (unlike a browser's vector render), so the fix is more source pixels. Born-digital docs render sharp;
+// a scanned doc is limited by its own scan resolution. Heavier per page, but fine for a single-doc pane.
+const SEARCH_RENDER_SCALE = 6;
 
 function _applyTransform() {
   const wrap = document.getElementById('preview-img-wrap');
