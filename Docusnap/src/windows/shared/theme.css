@@ -169,10 +169,10 @@ input, textarea,
 }
 /* Summer — bright sunshine yellow/gold, warm and open (needs dark on-accent) */
 :root[data-theme="summer"] {
-  --bg:#fdf8e6; --surface:#fffdf4; --surface2:#f8f0d4; --surface3:#f0e5bf;
-  --border:#f1e7c6; --border2:#e4d29a;
-  --accent:#f5b300; --accent2:#dd9c00; --accent-bg:#fdf0c2; --accent-border:#f0d98f; --on-accent:#3a2c00;
-  --text:#3a3218; --muted:#7f7038; --muted2:#b3a266; --doc-bg:#f8f0d4;
+  --bg:#fdf6df; --surface:#fffdf4; --surface2:#f7edcf; --surface3:#efe1bd;
+  --border:#f0e6c4; --border2:#e2cf95;
+  --accent:#eda30f; --accent2:#cf8c00; --accent-bg:#fbeecb; --accent-border:#f0d98f; --on-accent:#3a2c00;
+  --text:#3a3016; --muted:#7f7038; --muted2:#b3a266; --doc-bg:#f7edcf;
   --shadow:0 1px 2px rgba(120,90,10,.07), 0 20px 44px -26px rgba(120,90,10,.22);
 }
 /* Autumn — warm amber & pumpkin, toasty cream surfaces */

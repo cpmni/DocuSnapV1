@@ -1,11 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
-  <!-- Autumn: falling leaves, faint amber -->
-  <g opacity="0.07" fill="#b5551d">
-    <path d="M32 16 C45 22 45 42 32 50 C19 42 19 22 32 16 Z"/>
-    <path d="M90 72 C103 78 103 98 90 106 C77 98 77 78 90 72 Z"/>
-  </g>
-  <g opacity="0.05" stroke="#8a3f14" stroke-width="1" fill="none">
-    <path d="M32 18 L32 48"/><path d="M32 30 L26 26 M32 34 L38 30"/>
-    <path d="M90 74 L90 104"/><path d="M90 86 L84 82 M90 90 L96 86"/>
-  </g>
+  <!-- Autumn: falling leaves, amber, two half-drop clusters -->
+  <g opacity="0.09" fill="#b5551d"><path d="M30 20 C42 26 42 44 30 50 C18 44 18 26 30 20 Z"/></g>
+  <g opacity="0.06" stroke="#8a3f14" stroke-width="1" fill="none"><path d="M30 22 L30 50 M30 32 L24 28 M30 36 L36 32"/></g>
+  <g opacity="0.09" fill="#a84518"><path d="M92 30 C104 36 104 50 92 56 C86 50 86 36 92 30 Z"/></g>
+  <g opacity="0.08" fill="#c9812f"><path d="M84 76 c8 0 14 6 14 14 -6 0 -14 -6 -14 -14 Z"/><path d="M98 76 c-8 0 -14 6 -14 14 6 0 14 -6 14 -14 Z"/></g>
+  <g opacity="0.08" fill="#c9812f"><path d="M16 92 c8 0 14 6 14 14 -6 0 -14 -6 -14 -14 Z"/><path d="M30 92 c-8 0 -14 6 -14 14 6 0 14 -6 14 -14 Z"/></g>
+  <g opacity="0.06" stroke="#8a3f14" stroke-width="1" fill="none"><path d="M56 58 l8 6 M60 52 l6 10"/></g>
 </svg>
