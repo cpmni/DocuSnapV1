@@ -95,6 +95,9 @@ function _showPage(idx) {
 // ── Zoom / pan (mirrors the Review viewer: buttons + wheel zoom, right-drag pan) ─
 let previewZoom = 1, panX = 0, panY = 0;
 const ZOOM_MIN = 1, ZOOM_MAX = 4, ZOOM_STEP = 0.25;
+// Render the preview at ~216 DPI (scale 3) so zooming stays reasonably crisp instead of pixelating at
+// the default 108 DPI (scale 1.5). Higher = sharper but heavier; the teach wizard uses 4.0 (288 DPI).
+const SEARCH_RENDER_SCALE = 3;
 
 function _applyTransform() {
   const wrap = document.getElementById('preview-img-wrap');
@@ -179,7 +182,7 @@ async function selectDoc(doc) {
     // DE-PATHED (owner 2026-08-02): rows no longer carry paths; the pages handler always
     // resolved server-side from the doc row anyway (client args were decorative), so fetch
     // by docId alone — an unresolvable file simply yields [].
-    s.currentPages = await window.docusnap.getDocumentPages(doc.id, null, null);
+    s.currentPages = await window.docusnap.getDocumentPages(doc.id, null, null, SEARCH_RENDER_SCALE);
     if (s.selectedDoc !== mine) return;
     s.currentPage = 0;
 
