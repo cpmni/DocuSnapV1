@@ -30,9 +30,10 @@ pushed):** `b04f202` export gains a **Document-date** range beside Date-filed + 
 dates follow **Settings → Processing "Date format (region)"** (`region_date_order`); `6da3f96` audit-log "View" buttons
 right-aligned; `8b3a35d` **HELP SYSTEM rebuild slice 1** — plain-speak SPINE + Check pages (teach-first) + a
 "User Guide…" Home menu item + rebuilt `help-nav.js` manifest + deep-link pin (per
-`docs/designs/HELP_SYSTEM_REBUILD_PLAN_2026-08-27.md`, D1–D11 at recommended defaults). **OWNER MORNING: (1) log back in
-— I accidentally killed the live app with a broad `Stop-Process -Name electron` and RESTARTED it on 9222 (now on this
-code + the 3 pending fixes); (2) OPEN A REAL `.xlsx` IN EXCEL — the hand-rolled writer's pin is a Node unzip that does
+`docs/designs/HELP_SYSTEM_REBUILD_PLAN_2026-08-27.md`, D1–D11 at recommended defaults). **OWNER MORNING: (1) QUIT + RELAUNCH the live app
+(a full restart — I killed it by accident with a broad `Stop-Process -Name electron`, restarted it on 9222 but on an
+EARLIER commit; tonight's main-process changes + the 3 pending fixes load only on a fresh start; the classifier then
+blocked me from restarting again, correctly); (2) OPEN A REAL `.xlsx` IN EXCEL — the hand-rolled writer's pin is a Node unzip that does
 NOT certify Excel; (3) render-smoke export + memory-inventory + help; (4) read the guide's Quick start + Teach and SIGN
 OFF THE VOICE (plan D11) before help slices 2–3.** Deferred (`pendingfeatures.md`): export presets/PDF-copy/long-format;
 Learning Repair v2 editor+canvas; help slices 2–3 + screenshots. Prior:

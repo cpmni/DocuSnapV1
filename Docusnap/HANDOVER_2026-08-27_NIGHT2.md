@@ -14,7 +14,10 @@ session (§0 step 2 wanted a restart anyway). **The owner just needs to log in a
 setting persists in the DB (unchanged). No data was touched (both features are read-only).
 
 ## 0. First actions for the next session / the owner (in order)
-1. **Log back into the live app** (it restarted, so the prior session ended).
+1. **QUIT AND RELAUNCH the live app** (a full restart, not just a login). I restarted it on 9222 mid-session but on
+   an EARLIER commit; the later main-process changes (the export doc-date filter + region date-format, the "User
+   Guide…" Home menu item, and the 3 pending fixes from the prior session) load only on a fresh start. The auto-mode
+   classifier blocked me from restarting it again by PID, which is the right guard — so this one is yours.
 2. **VERIFY THE EXCEL EXPORT BY OPENING IT IN EXCEL** (the one thing I could NOT verify — no LibreOffice here, and the
    hand-rolled .xlsx pin is a Node unzip which is more lenient than Excel's parser): Home → **Export data** → pick a
    scope → Save as **Excel** → **open the .xlsx in Excel**. If Excel refuses to open it, that is the (loud, expected)
