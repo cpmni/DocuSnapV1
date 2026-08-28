@@ -35,8 +35,16 @@ right-aligned; `8b3a35d` **HELP SYSTEM rebuild slice 1** — plain-speak SPINE +
 EARLIER commit; tonight's main-process changes + the 3 pending fixes load only on a fresh start; the classifier then
 blocked me from restarting again, correctly); (2) OPEN A REAL `.xlsx` IN EXCEL — the hand-rolled writer's pin is a Node unzip that does
 NOT certify Excel; (3) render-smoke export + memory-inventory + help; (4) read the guide's Quick start + Teach and SIGN
-OFF THE VOICE (plan D11) before help slices 2–3.** Deferred (`pendingfeatures.md`): export presets/PDF-copy/long-format;
-Learning Repair v2 editor+canvas; help slices 2–3 + screenshots. Prior:
+OFF THE VOICE (plan D11) before help slices 2–3.** **2026-08-28 LIVE session (owner testing): export UI polish
+(`b27c356`/`083c8e8` opt-in defaults + responsive count + even cards; `b04f202` document-date range + region date
+format), audit View right-align (`6da3f96`), and TWO DARK extraction fixes `5430bed` (gary+007→Oracle SIGN-OFF-W/COND)
+for the Pelican `PI`→`P1` confusable class: `ref_prefix_confusable_adopt_length_note` (route the ref-length note to the
+P adopt arm) + `tier_a_date_plausibility` (an implausible authoritative date — a date-shaped ref — loses Tier-A to the
+mapping). FOCUSED gate (157 Pelican docs, 200 DPI): 5 ref + 20 date heals, 0 regressions, +20 wouldFile. OWNER FLIP
+after a restart: set both settings true + Reprocess; the full-corpus M=0 head pass was STOPPED mid-run (duplicate-heavy
+corpus) — `scratchpad/rr_gate_full.cmd` finishes it if wanted. See `HANDOVER_2026-08-27_NIGHT2.md` §5c.** Deferred
+(`pendingfeatures.md`): export presets/PDF-copy/long-format; Learning Repair v2 editor+canvas; help slices 2–3 +
+screenshots; 007's own-reference-collision date guard (next arc). Prior:
 ## (previous) 2026-08-27 NIGHT: **`HANDOVER_2026-08-27_NIGHT.md` — its §7 was the OWNER'S NIGHT PROMPT (export
 feature + memory-inventory rebuild), now BUILT above; §3 light-text realdoc gate still open.**
 Branch `feat/teach-side-overnight`, 14 code commits `48de395` … `a62edbd` (+ docs), NOT pushed. **Live app RUNNING on CDP 9222

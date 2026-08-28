@@ -136,6 +136,51 @@ layouts canvas) — this slice is the read-only browse only.
   has 20 PRE-EXISTING popup-text gaps (search/teach windows) unrelated to this slice — a later copy pass.
   Revert: `git revert 8b3a35d`.
 
+## 5c. 2026-08-28 LIVE session (owner testing the running app; export polish + two extraction fixes)
+Owner logged into the restarted app and drove a hands-on test. Commits (same branch, NOT pushed): `b04f202`
+(export date fields — already in §5b), `6da3f96` (audit View right-align), `8b3a35d` (help slice 1 — §5b),
+`083c8e8` + `b27c356` (export UI), `5430bed` (the two extraction fixes).
+
+**EXPORT UI (`b27c356`, `083c8e8`, `b04f202`) — renderer + main-process:**
+- Opt-in defaults: document types + senders start UNticked; per-type fields OFF; only Document Issuer / Date /
+  Reference columns ticked. **Selection model:** nothing ticked anywhere = 0; once a type OR a sender is ticked, an
+  untouched (empty) list = "all of that dimension" (its filter omitted) — so ticking just types shows those types
+  across all senders (the count responds on the first tick). `gather` treats a present-but-empty array as 0, absent as
+  all. The two top cards are equal height (grid stretch + fixed-height flex cards); the checklist's own border dropped
+  (was a box-in-box). A **Document-date** range beside Date-filed; exported dates follow **Settings → Processing →
+  "Date format (region)"** (`region_date_order`). **The exportService/handler changes are MAIN-PROCESS → need a full
+  restart; the renderer bits (defaults, cards, count model) show on reopening the Export window.**
+
+**TWO EXTRACTION FIXES (`5430bed`, DARK — gary + 007 → Oracle SIGN-OFF-W/COND).** Owner found both on live Pelican
+invoices; the reference `PI/26/NNNN` OCRs `PI`→`P1` (a 1↔I confusable, date-shaped).
+- **Fix #1 `ref_prefix_confusable_adopt_length_note`** (env `REF_PREFIX_CONFUSABLE_ADOPT_LENGTH_NOTE`): the 08-19
+  note-widening never routed the ref-LENGTH-guard note to the P adopt arm, so a `P1/26/1150` with `corrected_to=PI/26/1150`
+  already computed sat held at 69. A 4th P branch (`engine.py` `_resolve_corroborated_notes`) routes both ref-length
+  note forms to `_try_prefix_confusable_adopt` (marks built INTO the notes; witness mark = the LONGER `"references
+  usually have"`, Oracle C1). DEDICATED sub-flag AND-ed with the mig-81-live `REF_PREFIX_CONFUSABLE_ADOPT` (never
+  folded in). No confidence change → value-correct + note-cleared, NOT an auto-file jump.
+- **Fix #2 `tier_a_date_plausibility`** (env `TIER_A_DATE_PLAUSIBILITY`): `invoice_0015-15`'s date filed as `26-01-2361`
+  (year 2361) derived from the confusable ref — the taught (authoritative) date anchor's TEXT-FALLBACK grabbed the
+  leftmost date-token off a merged multi-column row, was certified "located" by construction, and won **Tier-A** (which
+  skips its `_cov_ok` plausibility gate for date fields). The authoritative-side hole Lever Z (excludes authoritative)
+  left open. Wrap the Tier-A win so an authoritative date implausible vs a valid located competitor falls through to the
+  contest (mapping wins). Reuses the binary `_invalid_taught_date_yields` (Oracle: keep Lever Z's coupling; ~3y future
+  bound clears legit post-dating); scoped to `key in date_field_keys`; the pinned Tier-A line kept byte-identical.
+- **GATE (focused, 157 confirmed Pelican docs, base-vs-head, `OCR_RENDER_DPI=200`, on a `db.backup()` copy):**
+  **5 ref heals** (`P1/26/1150`→`PI/26/1150`, held at 69 — no would-file move), **20 date heals** (ref-derived future
+  dates → the correct mapping date, e.g. `26-01-2361`→`16-06-2026`), **0 regressions, +20/−0 wouldFile** (those 20 now
+  file correctly). Pins `test_confusable_ref_date_fix_20260828.py` green; existing `test_taught_date_invalid_yield.py`
+  (line-97 + Z-1/Z-2) + `test_ref_length_outlier.py` green (notes byte-identical, OFF byte-identical).
+- **OWNER TO FLIP (after a restart):** set `ref_prefix_confusable_adopt_length_note` + `tier_a_date_plausibility` = true
+  in the DB, then Reprocess the held Pelican docs. **REMAINING before the flip (owner's call):** the full-corpus
+  (1909-doc, all suppliers) head pass of the collateral M=0 gate — the BASE pass completed, the head pass was STOPPED
+  mid-run at the owner's request (the corpus is duplicate-heavy — the same invoices re-imported — so it adds little
+  over the focused gate). Re-run `scratchpad/rr_gate_full.cmd` + `node scratchpad/rr_diff.js gate_full` to finish it.
+- **FOLLOW-UP ARC (Oracle, in `pendingfeatures.md`):** 007's own-reference-collision guard (a date == a confusable
+  fold of the doc's own reference is not a valid date) closes a silent-misfile residual Fix #2's future-bound cannot
+  (a near-future serial→date). Probe: 0 of 1909 confirmed refs currently fold to a <3y date, so it's the scheduled NEXT
+  arc, not build-now.
+
 ## 6. Traps hit this session
 - **The PowerShell/Bash tool has NO node/coreutils on PATH** — use PowerShell for `node`, and the Write tool (not
   heredocs) for scripts. `ls`/`cat`/`head` fail in the Bash tool.

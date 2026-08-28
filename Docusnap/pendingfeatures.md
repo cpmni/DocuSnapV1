@@ -166,6 +166,14 @@ overlay instead of drawing (the inventory has the boxes). Size ≈ engine 40 lin
   collector is per-line label→value); no count witness; search indexes the joined string (no per-element snippet);
   chips UI + long-format CSV export + repeated `<Value>` XML elements (barry). Tonight shipped only the `;`
   separator refusal at the writer + the renderer split narrowed to `;`.
+- **DATE-from-REFERENCE own-collision guard (007's arc, Oracle-scheduled NEXT after the 2026-08-28 `5430bed` date fix):**
+  a date whose digit-skeleton equals a confusable fold (I↔1 / O↔0 / S↔5) of the doc's OWN resolved reference is not
+  credible AS the date — refuse it. Closes the silent-misfile residual `tier_a_date_plausibility`'s ~3y future-bound
+  CANNOT catch: a near-future serial→date (a ref ending 2026-2029). Needs the reference resolved before the date
+  arbitration (its own ordering seam) + a confusable-skeleton compare. Probe 2026-08-28: 0 of 1909 confirmed refs fold
+  to a <3y date, so it's a rare-sibling follow-up, not build-now. Companion (higher blast radius, separate arc): stop
+  certifying the bare anchor TEXT-FALLBACK as `located` "by construction" (`anchor.py:1472`) + column-bound the
+  merged-row read to the located label's x-span (007's structural root; needs its own full-corpus gate).
 - **HELP SYSTEM rebuild — SLICE 1 BUILT 2026-08-28 (`8b3a35d`; plan `docs/designs/HELP_SYSTEM_REBUILD_PLAN_2026-08-27.md`):**
   the plain-speak SPINE + Check pages (index/quick-start/set-up/teach/import/review/fix-a-detail/files-by-itself) on the
   teach-first route + a "User Guide…" Home menu item + rebuilt `help-nav.js` manifest + pin `test_help_nav.js`. STILL TO
