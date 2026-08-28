@@ -27,8 +27,10 @@ async function init() {
   try { OPT = await api.exportOptions(); }
   catch (e) { $('count-line').innerHTML = `<span class="muted">Could not load export options: ${esc(e.message || e)}</span>`; return; }
 
-  (OPT.types || []).forEach((t) => { fieldsByType.set(t.slug, t.fields || []); state.types.add(t.slug); });
-  (OPT.suppliers || []).forEach((s) => state.sups.add(s.name));
+  // Opt-in defaults (owner 2026-08-28): document types + senders start UNticked; only the
+  // essential columns (Document Issuer / Date / Reference, via each meta's `def`) start ticked.
+  // The user ticks what they want; the live count follows (empty selection = 0, server-side).
+  (OPT.types || []).forEach((t) => { fieldsByType.set(t.slug, t.fields || []); });
   (OPT.meta || []).forEach((m) => { if (m.def) state.meta.add(m.key); });
 
   renderTypes();
@@ -83,7 +85,7 @@ function renderColumns() {
   if (fieldMap.size) {
     html += '<div class="grp-head">Document fields</div>';
     html += [...fieldMap.values()].map((f) => {
-      const on = state.fieldChecked.has(f.key) ? state.fieldChecked.get(f.key) : true;   // new fields default on
+      const on = state.fieldChecked.has(f.key) ? state.fieldChecked.get(f.key) : false;   // fields default OFF (opt-in)
       return `<label class="ck"><input type="checkbox" data-field="${esc(f.key)}" ${on ? 'checked' : ''}>
         <span class="lbl">${esc(f.label)}</span><span class="cnt">${esc(f.type || 'text')}</span></label>`;
     }).join('');
@@ -106,7 +108,7 @@ function buildPayload() {
   const fieldMap = selectedFieldDefs();
   const fields = [];
   for (const f of fieldMap.values()) {
-    const on = state.fieldChecked.has(f.key) ? state.fieldChecked.get(f.key) : true;
+    const on = state.fieldChecked.has(f.key) ? state.fieldChecked.get(f.key) : false;   // fields default OFF (opt-in)
     if (on) fields.push({ key: f.key, label: f.label, type: f.type });
   }
   const filters = {

@@ -57,6 +57,9 @@ check('supplier filter narrows to 1', xp.gather(db, { suppliers: ['Beta Co'] }, 
 check('supplier filter is case-insensitive', xp.gather(db, { suppliers: ['beta co'] }, SEL).count === 1);
 check('type filter honoured', xp.gather(db, { typeSlugs: ['invoice'] }, SEL).count === 2);
 check('bogus type → 0', xp.gather(db, { typeSlugs: ['nope'] }, SEL).count === 0);
+check('empty typeSlugs array = nothing (opt-in default)', xp.gather(db, { typeSlugs: [] }, SEL).count === 0);
+check('empty suppliers array = nothing (opt-in default)', xp.gather(db, { suppliers: [] }, SEL).count === 0);
+check('absent filter still = all confirmed', xp.gather(db, {}, SEL).count === 2);
 check('includeNeedsReview → 3', xp.gather(db, { includeNeedsReview: true }, SEL).count === 3);
 
 console.log('_csvCell — formula neutralise BEFORE quote, numbers exempt:');

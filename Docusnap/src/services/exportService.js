@@ -30,10 +30,10 @@ const EXPORT_ROW_CAP = 10000;
 // row. `def` = ticked by default in the picker. folder_path is opt-in (off).
 const META_COLUMNS = [
   { key: '_supplier',   label: 'Document Issuer', def: true,  from: (d) => d.supplier_name },
-  { key: '_type',       label: 'Document type',   def: true,  from: (d) => d.type_name },
+  { key: '_type',       label: 'Document type',   def: false, from: (d) => d.type_name },
   { key: '_date',       label: 'Date',            def: true,  from: (d) => d.doc_date },
   { key: '_reference',  label: 'Reference',       def: true,  from: (d) => d.reference_number },
-  { key: '_filename',   label: 'File name',       def: true,  from: (d) => d.original_filename },
+  { key: '_filename',   label: 'File name',       def: false, from: (d) => d.original_filename },
   { key: '_confidence', label: 'Confidence',      def: false, from: (d) => (d.overall_confidence == null ? '' : d.overall_confidence) },
   { key: '_filed_at',   label: 'Date filed',      def: false, from: (d) => d.confirmed_at },
   { key: '_folder',     label: 'Filed folder',    def: false, from: (d) => d.folder_path },
@@ -90,15 +90,18 @@ function _buildDocQuery(filters = {}) {
   where.push(`d.status IN (${statuses.map(() => '?').join(',')})`);
   params.push(...statuses);
 
-  const sups = (filters.suppliers || []).map((s) => String(s).trim().toLowerCase()).filter(Boolean);
-  if (sups.length) {
-    where.push(`LOWER(TRIM(COALESCE(d.supplier_name,''))) IN (${sups.map(() => '?').join(',')})`);
-    params.push(...sups);
+  // A PRESENT-but-empty selection array means the user deselected everything → match
+  // NOTHING (so the live count is truthful + responsive). An ABSENT filter = no
+  // constraint (all). The renderer always sends explicit arrays.
+  if (Array.isArray(filters.suppliers)) {
+    const sups = filters.suppliers.map((s) => String(s).trim().toLowerCase()).filter(Boolean);
+    if (sups.length) { where.push(`LOWER(TRIM(COALESCE(d.supplier_name,''))) IN (${sups.map(() => '?').join(',')})`); params.push(...sups); }
+    else where.push('1=0');
   }
-  const slugs = (filters.typeSlugs || []).map((s) => String(s).trim().toLowerCase()).filter(Boolean);
-  if (slugs.length) {
-    where.push(`LOWER(COALESCE(dt.slug,'')) IN (${slugs.map(() => '?').join(',')})`);
-    params.push(...slugs);
+  if (Array.isArray(filters.typeSlugs)) {
+    const slugs = filters.typeSlugs.map((s) => String(s).trim().toLowerCase()).filter(Boolean);
+    if (slugs.length) { where.push(`LOWER(COALESCE(dt.slug,'')) IN (${slugs.map(() => '?').join(',')})`); params.push(...slugs); }
+    else where.push('1=0');
   }
   // "Date filed" = confirmed_at (ISO timestamp). '￿' makes <= cover the whole final day.
   if (filters.filedFrom) { where.push('d.confirmed_at >= ?'); params.push(String(filters.filedFrom)); }

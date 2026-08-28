@@ -19,8 +19,11 @@
   header.exp-head p{color:var(--muted);font-size:13px;margin-top:4px;max-width:70ch}
 
   main.exp-body{flex:1 1 auto;overflow:auto;padding:20px 24px 24px}
-  .exp-cols{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .exp-cols{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:stretch}
   @media (max-width:820px){.exp-cols{grid-template-columns:1fr}}
+  /* the two top cards are equal height; their checklists fill to a common bottom */
+  .exp-cols>.card{display:flex;flex-direction:column;height:300px;margin-bottom:18px}
+  .exp-cols>.card .checklist{flex:1 1 auto;max-height:none;min-height:0}
 
   .card{border:1px solid var(--border);border-radius:var(--r);background:var(--surface);padding:14px 16px;margin-bottom:18px}
   .card h2{font-size:13px;font-weight:650;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
