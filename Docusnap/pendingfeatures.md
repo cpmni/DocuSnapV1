@@ -166,6 +166,13 @@ overlay instead of drawing (the inventory has the boxes). Size ≈ engine 40 lin
   collector is per-line label→value); no count witness; search indexes the joined string (no per-element snippet);
   chips UI + long-format CSV export + repeated `<Value>` XML elements (barry). Tonight shipped only the `;`
   separator refusal at the writer + the renderer split narrowed to `;`.
+- **HELP SYSTEM rebuild — SLICE 1 BUILT 2026-08-28 (`8b3a35d`; plan `docs/designs/HELP_SYSTEM_REBUILD_PLAN_2026-08-27.md`):**
+  the plain-speak SPINE + Check pages (index/quick-start/set-up/teach/import/review/fix-a-detail/files-by-itself) on the
+  teach-first route + a "User Guide…" Home menu item + rebuilt `help-nav.js` manifest + pin `test_help_nav.js`. STILL TO
+  DO (slices 2–3, after the owner signs off the VOICE on Quick start + Teach — plan D11): rewrite document-types, search,
+  settings, admin, learning, troubleshooting, shortcuts, glossary, other-PCs; capture screenshots S1–S14 on the Chris
+  sandbox (owner supplies S15 only); the popup→guide "More in the guide →" links + print/readability polish (slice 4);
+  clear the 20 pre-existing `check:help` popup-text gaps (separate copy pass).
 - **MEMORY INVENTORY click-to-browse — BUILT 2026-08-27 night2 (`d2cf9fe`):** Settings → Learning is now a READ-ONLY
   click-to-browse scope list → detail (reuses `learning-scopes {suspects:false}` + `get-learning-recovery`); the typed
   search + cleanup tools + raw table are preserved under an "Advanced" disclosure; deep-link `rpOpenScope` into Repair.

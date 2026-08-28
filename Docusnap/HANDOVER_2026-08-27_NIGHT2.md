@@ -110,6 +110,29 @@ layouts canvas) — this slice is the read-only browse only.
 - Undo export only: `git revert ce4c7f5`
 - Drop both (nothing else is on top): `git reset --hard e993498`
 
+## 5b. 2026-08-28 follow-ups (owner feedback while reviewing, same branch, NOT pushed)
+- **`b04f202` export date fields** — owner: the single date range read as if it belonged to the
+  include-unconfirmed toggle, and there was no range for the actual document date. Options block regrouped
+  with labels + rules ("Which documents" │ "Date ranges" │ "Save as"); TWO labelled ranges — **Document
+  date** (doc_date) and **Date filed** (confirmed_at); exported + preview dates now follow **Settings →
+  Processing → "Date format (region)"** (`region_date_order` dmy/mdy/ymd; ymd = ISO for a database). doc_date
+  is stored DD-MM-YYYY, filtered by reformatting to sortable YYYY-MM-DD in SQL. Native `<input type="date">`
+  pickers already show in the OS locale. Pin `test_exportservice.js` extended. Revert: `git revert b04f202`.
+- **`6da3f96` audit-log tidy** — owner: right-align the per-row "View" buttons. CSS-only `float:right` on
+  `#panel-audit .aud-view-btn`. Revert: `git revert 6da3f96`.
+- **`8b3a35d` HELP SYSTEM rebuild — slice 1** (owner: "work on auto on the help file system … involve the
+  agents"). Executed `docs/designs/HELP_SYSTEM_REBUILD_PLAN_2026-08-27.md` at its recommended defaults for
+  D1–D11. Delivered the plain-speak SPINE + Check pages (index/A0, quick-start/A1, set-up/A2, teach/B1,
+  import/C1, review/D1, fix-a-detail/D2, files-by-itself/D3) on the teach-first route, a **"User Guide…"**
+  item in the Home account menu, the rebuilt `help-nav.js` manifest (old pages kept + re-mapped so every
+  deep link resolves) and a deep-link pin (`test_help_nav.js`, green). Screenshots are placeholders
+  (text-first). **OWNER: this slice sets the VOICE — read Quick start + Teach and sign off the tone (plan
+  D11) BEFORE the rest is written.** Slices 2–3 (document-types, search, settings, admin, learning,
+  troubleshooting, shortcuts, glossary, other-PCs + real screenshots) are queued, deliberately NOT written
+  tonight so you correct the voice after the spine, not after 19 pages (bob's spine-first call). `check:help`
+  has 20 PRE-EXISTING popup-text gaps (search/teach windows) unrelated to this slice — a later copy pass.
+  Revert: `git revert 8b3a35d`.
+
 ## 6. Traps hit this session
 - **The PowerShell/Bash tool has NO node/coreutils on PATH** — use PowerShell for `node`, and the Write tool (not
   heredocs) for scripts. `ls`/`cat`/`head` fail in the Bash tool.

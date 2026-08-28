@@ -25,11 +25,17 @@ touches that area — read the pointed-to doc BEFORE working in it:
 2 commits `ce4c7f5` (EXPORT: Home "Export data" → CSV/`.xlsx`/JSON of confirmed doc data; new dependency-free
 `src/lib/xlsxWriter.js` so the 4-dep tree + licence gate stay untouched) + `d2cf9fe` (MEMORY INVENTORY: Settings →
 Learning is now READ-ONLY click-to-browse, typed tools preserved under "Advanced"), NOT pushed. barry+bob+eric → Oracle
-SIGN-OFF-W/COND, all conditions applied; 4 pins green. **OWNER MORNING: (1) log back in — I accidentally killed the live
-app with a broad `Stop-Process -Name electron` and RESTARTED it on 9222 (now on this code + the 3 pending fixes);
-(2) OPEN A REAL `.xlsx` IN EXCEL — the hand-rolled writer's pin is a Node unzip that does NOT certify Excel; (3) render-
-smoke both screens (I couldn't drive past the live login).** Deferred (`pendingfeatures.md`): export presets/PDF-copy/
-long-format; the Learning Repair v2 editor+canvas. Prior:
+SIGN-OFF-W/COND, all conditions applied; 4 pins green. **Then 2026-08-28 owner-feedback follow-ups (same branch, NOT
+pushed):** `b04f202` export gains a **Document-date** range beside Date-filed + a clearer Options layout + exported
+dates follow **Settings → Processing "Date format (region)"** (`region_date_order`); `6da3f96` audit-log "View" buttons
+right-aligned; `8b3a35d` **HELP SYSTEM rebuild slice 1** — plain-speak SPINE + Check pages (teach-first) + a
+"User Guide…" Home menu item + rebuilt `help-nav.js` manifest + deep-link pin (per
+`docs/designs/HELP_SYSTEM_REBUILD_PLAN_2026-08-27.md`, D1–D11 at recommended defaults). **OWNER MORNING: (1) log back in
+— I accidentally killed the live app with a broad `Stop-Process -Name electron` and RESTARTED it on 9222 (now on this
+code + the 3 pending fixes); (2) OPEN A REAL `.xlsx` IN EXCEL — the hand-rolled writer's pin is a Node unzip that does
+NOT certify Excel; (3) render-smoke export + memory-inventory + help; (4) read the guide's Quick start + Teach and SIGN
+OFF THE VOICE (plan D11) before help slices 2–3.** Deferred (`pendingfeatures.md`): export presets/PDF-copy/long-format;
+Learning Repair v2 editor+canvas; help slices 2–3 + screenshots. Prior:
 ## (previous) 2026-08-27 NIGHT: **`HANDOVER_2026-08-27_NIGHT.md` — its §7 was the OWNER'S NIGHT PROMPT (export
 feature + memory-inventory rebuild), now BUILT above; §3 light-text realdoc gate still open.**
 Branch `feat/teach-side-overnight`, 14 code commits `48de395` … `a62edbd` (+ docs), NOT pushed. **Live app RUNNING on CDP 9222
