@@ -487,100 +487,163 @@ function h($s): string
 function admin_page_open(string $title, bool $showNav = true): void
 {
     $flash = $showNav ? flash_take() : null;
+
+    // Active sidebar item, derived from the running script (no per-page arg needed).
+    // Detail pages fold onto their section (account->accounts, trial->trials).
+    $cur    = strtolower(basename((string) ($_SERVER['SCRIPT_NAME'] ?? $_SERVER['PHP_SELF'] ?? '')));
+    $alias  = ['account.php' => 'accounts.php', 'trial.php' => 'trials.php'];
+    $active = $alias[$cur] ?? $cur;
+    // Sidebar destinations (the same set the old header admin_nav() carried, now a no-op).
+    // Each entry: [file, label, inline-SVG icon body].
+    $navItems = [
+        ['index.php',         'Dashboard',          '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>'],
+        ['accounts.php',      'Accounts',           '<circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M17 6.5a3 3 0 0 1 0 5.6M18.5 20a5 5 0 0 0-3-4.6"/>'],
+        ['trials.php',        'Trials',             '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'],
+        ['temp.php',          'Temporary licenses', '<path d="M7 3h10M7 21h10M8 3c0 4 8 5 8 9s-8 5-8 9M16 3c0 4-8 5-8 9"/>'],
+        ['subscriptions.php', 'Subscriptions',      '<path d="M21 12a9 9 0 1 1-2.6-6.3M21 4v4h-4"/>'],
+        ['products.php',      'Products',           '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/>'],
+        ['activity.php',      'Activity',           '<path d="M3 12h4l2.5 6 5-13L17 12h4"/>'],
+        ['diagnostics.php',   'Diagnostics',        '<path d="M4.5 4.5v6a5 5 0 0 0 5 5 3 3 0 0 0 3-3v-1"/><path d="M8.5 4.5v6M20 13.5a2.2 2.2 0 1 1-4.4 0 2.2 2.2 0 0 1 4.4 0z"/>'],
+        ['releases.php',      'App releases',       '<path d="M12 3v11M8 10l4 4 4-4M5 20h14"/>'],
+    ];
     ?><!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title><?= h($title) ?> — Licensing Admin</title>
+<title><?= h($title) ?> — Scan Finder Licensing</title>
 <style>
-  /* Bright-only theme — this admin page never uses a dark palette and has no
-     theme toggle. Colors are fixed light values (no prefers-color-scheme). */
+  /* Self-hosted OFL IBM Plex (woff2 in ./fonts) — NO external font CDN (this console
+     must not phone out). Display uses a system serif: the website's Fraunces is not
+     bundled server-side, and Georgia carries the same editorial-serif intent fully
+     offline. Scan Finder "Warm Archive" palette (paper + ink + burnt amber). */
+  @font-face{font-family:'IBM Plex Sans';font-weight:400;font-display:swap;src:url('fonts/IBMPlexSans-400.woff2') format('woff2');}
+  @font-face{font-family:'IBM Plex Sans';font-weight:500;font-display:swap;src:url('fonts/IBMPlexSans-500.woff2') format('woff2');}
+  @font-face{font-family:'IBM Plex Sans';font-weight:600;font-display:swap;src:url('fonts/IBMPlexSans-600.woff2') format('woff2');}
+  @font-face{font-family:'IBM Plex Sans';font-weight:700;font-display:swap;src:url('fonts/IBMPlexSans-700.woff2') format('woff2');}
+  @font-face{font-family:'IBM Plex Mono';font-weight:400;font-display:swap;src:url('fonts/IBMPlexMono-400.woff2') format('woff2');}
+  @font-face{font-family:'IBM Plex Mono';font-weight:500;font-display:swap;src:url('fonts/IBMPlexMono-500.woff2') format('woff2');}
   :root {
     color-scheme: light;
-    --bg:#eef1f7; --surface:#ffffff; --surface2:#f5f8fd;
-    --border:#e2e7f1; --border2:#cfd7e6;
-    --accent:#2f6fed; --accent-weak:#eaf1fe; --accent-ink:#1d4ed8;
-    --text:#1b2333; --muted:#5b6678;
-    --ok:#15803d; --ok-bg:#e9f8ef; --ok-border:#bfe6cd;
-    --warn:#9a5b08; --warn-bg:#fdf2e0; --warn-border:#f1d8aa;
-    --err:#c0392b; --err-bg:#fdecea; --err-border:#f3c5bf;
-    --shadow:0 1px 2px rgba(22,33,60,.04), 0 1px 3px rgba(22,33,60,.08);
-    --shadow-lg:0 4px 12px rgba(22,33,60,.10);
+    --paper:#f6f1e7; --paper-2:#efe7d6; --surface:#fffdf8; --surface2:#faf5ea;
+    --ink:#20180f; --ink-soft:#5b4f41; --muted:#8a7d6b; --line:#e2d7c2; --line-2:#d3c4a8;
+    --accent:#c2521b; --accent-2:#a23f12; --accent-ink:#fff6ee; --teal:#1f5b54;
+    --ok:#2f7d4f; --ok-bg:#e9f4ea; --ok-border:#c2e0c6;
+    --warn:#9a5b08; --warn-bg:#fbeeda; --warn-border:#ecd3a2;
+    --err:#b23b2e; --err-bg:#fbe7e2; --err-border:#efc3ba;
+    --display:Georgia,'Times New Roman',serif;
+    --body:'IBM Plex Sans',system-ui,'Segoe UI',sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,Consolas,monospace;
+    --r:16px; --r-sm:10px;
+    --shadow:0 1px 2px rgba(40,28,14,.05), 0 18px 40px -30px rgba(40,28,14,.5);
+    --shadow-lg:0 24px 48px -30px rgba(40,28,14,.55);
+    --sb-bg:#211812; --sb-line:#33271b; --sb-text:#e8dcc8; --sb-muted:#a3927b;
   }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--text);
-         font:14px/1.55 system-ui,'Segoe UI',Roboto,sans-serif; }
-  header.topbar { display:flex; align-items:center; justify-content:space-between;
-    padding:14px 28px; background:var(--surface); border-bottom:1px solid var(--border); box-shadow:var(--shadow); }
-  header.topbar .brand { font-weight:700; letter-spacing:.01em; color:var(--text); }
-  header.topbar nav a { color:var(--muted); text-decoration:none; margin-left:18px; font-weight:500; }
-  header.topbar nav a:hover { color:var(--accent); }
-  main { max-width:1040px; margin:0 auto; padding:26px 24px 72px; }
-  h1 { font-size:22px; font-weight:700; margin:0 0 6px; letter-spacing:-.01em; }
-  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.09em; color:var(--muted);
-       font-weight:700; margin:30px 0 12px; }
+  body { margin:0; background:var(--paper); color:var(--ink);
+         font:14px/1.55 var(--body); -webkit-font-smoothing:antialiased; }
+  a { color:var(--accent-2); }
+  .admin-shell { display:grid; grid-template-columns:250px 1fr; min-height:100vh; }
+  .admin-shell.noside { grid-template-columns:1fr; }
+
+  /* Sidebar (ink) */
+  .sidebar { background:var(--sb-bg); color:var(--sb-text); border-right:1px solid var(--sb-line);
+    display:flex; flex-direction:column; padding:20px 14px; position:sticky; top:0; height:100vh; }
+  .sidebar .brand { display:flex; align-items:center; gap:11px; padding:6px 8px 18px; border-bottom:1px solid var(--sb-line); }
+  .sidebar .brand img { width:34px; height:34px; flex:none; display:block; }
+  .sidebar .brand .name { font-family:var(--display); font-weight:600; font-size:19px; letter-spacing:-.01em; line-height:1.05; color:#fff; }
+  .sidebar .brand .sub { font-family:var(--mono); font-size:9.5px; letter-spacing:.18em; text-transform:uppercase; color:var(--sb-muted); margin-top:3px; }
+  .sidebar nav { display:flex; flex-direction:column; gap:2px; margin-top:14px; flex:1; }
+  .sidebar nav a { display:flex; align-items:center; gap:11px; padding:9px 11px; border-radius:9px; color:var(--sb-text);
+    text-decoration:none; font-weight:500; font-size:13.5px; border-left:3px solid transparent; transition:background .14s, color .14s; }
+  .sidebar nav a svg { width:17px; height:17px; flex:none; stroke:currentColor; stroke-width:1.7; fill:none; opacity:.85; }
+  .sidebar nav a:hover { background:#2c2116; color:#fff; }
+  .sidebar nav a.active { background:#2f2016; color:#fff; border-left-color:var(--accent); }
+  .sidebar nav a.active svg { color:var(--accent); opacity:1; }
+  .sidebar .spacer { flex:1; }
+  .sidebar .foot { border-top:1px solid var(--sb-line); padding-top:10px; margin-top:10px; display:flex; flex-direction:column; gap:2px; }
+
+  /* Content */
+  .content { max-width:1180px; padding:30px 40px 72px; }
+  .admin-shell.noside .content { max-width:440px; margin:9vh auto 0; padding:0 22px; }
+  h1 { font-family:var(--display); font-size:30px; font-weight:600; margin:0 0 6px; letter-spacing:-.015em; }
+  h2 { font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.11em; color:var(--muted); font-weight:500; margin:30px 0 13px; }
   table { width:100%; border-collapse:separate; border-spacing:0; margin:6px 0 4px;
-    background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; box-shadow:var(--shadow); }
-  th,td { text-align:left; padding:11px 14px; border-bottom:1px solid var(--border); vertical-align:top; }
-  thead th { background:var(--surface2); font-size:11px; text-transform:uppercase;
-    letter-spacing:.06em; color:var(--muted); font-weight:600; }
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--r); overflow:hidden; box-shadow:var(--shadow); }
+  th,td { text-align:left; padding:12px 15px; border-bottom:1px solid var(--line); vertical-align:top; }
+  thead th { background:var(--surface2); font-family:var(--mono); font-size:10.5px; text-transform:uppercase;
+    letter-spacing:.07em; color:var(--muted); font-weight:500; }
   tbody tr:last-child td { border-bottom:none; }
   tbody tr:hover td { background:var(--surface2); }
-  code,.mono { font-family:ui-monospace,Consolas,monospace; font-size:12px; }
-  a { color:var(--accent-ink); }
+  code,.mono { font-family:var(--mono); font-size:12px; }
   .pill { display:inline-block; font-size:11px; font-weight:600; padding:2px 10px; border-radius:999px;
-          border:1px solid var(--border2); background:#f1f4fa; color:var(--muted); }
+          border:1px solid var(--line-2); background:#f2ead9; color:var(--ink-soft); }
   .pill.ok   { color:var(--ok);   background:var(--ok-bg);   border-color:var(--ok-border); }
   .pill.warn { color:var(--warn); background:var(--warn-bg); border-color:var(--warn-border); }
   .pill.err  { color:var(--err);  background:var(--err-bg);  border-color:var(--err-border); }
-  label, .field label { font-size:12px; color:var(--text); font-weight:600; letter-spacing:0; text-transform:none; }
-  input,select { background:#fff; color:var(--text); border:1px solid var(--border2);
-    border-radius:7px; padding:8px 11px; font:inherit; }
-  input::placeholder { color:#9aa3b5; }
-  input:focus,select:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-weak); }
-  .btn { background:var(--accent); color:#fff; border:1px solid var(--accent);
-    border-radius:8px; padding:9px 15px; cursor:pointer; font:inherit; font-weight:600; box-shadow:var(--shadow); }
-  .btn:hover { background:var(--accent-ink); border-color:var(--accent-ink); }
-  .btn.secondary { background:#fff; color:var(--text); border-color:var(--border2); box-shadow:none; }
-  .btn.secondary:hover { border-color:var(--accent); color:var(--accent-ink); background:var(--accent-weak); }
-  .btn.danger { background:#fff; color:var(--err); border-color:var(--err-border); box-shadow:none; }
-  .btn.danger:hover { background:var(--err-bg); border-color:var(--err); }
+  label, .field label { font-size:12px; color:var(--ink); font-weight:600; letter-spacing:0; text-transform:none; }
+  input,select { background:#fff; color:var(--ink); border:1px solid var(--line-2);
+    border-radius:var(--r-sm); padding:9px 12px; font:inherit; }
+  input::placeholder { color:#b3a892; }
+  input:focus,select:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(194,82,27,.16); }
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:.5rem;
+    background:var(--accent); color:var(--accent-ink); border:1px solid transparent;
+    border-radius:999px; padding:10px 17px; cursor:pointer; font:600 13.5px/1 var(--body);
+    box-shadow:0 10px 22px -14px rgba(162,63,18,.8); transition:transform .16s, box-shadow .16s, background .16s; text-decoration:none; }
+  .btn:hover { transform:translateY(-2px); background:var(--accent-2); }
+  .btn.secondary { background:transparent; color:var(--ink); border-color:var(--line-2); box-shadow:none; }
+  .btn.secondary:hover { background:var(--surface); border-color:var(--accent); color:var(--accent-2); transform:none; }
+  .btn.danger { background:transparent; color:var(--err); border-color:var(--err-border); box-shadow:none; }
+  .btn.danger:hover { background:var(--err-bg); border-color:var(--err); transform:none; }
   form.inline { display:inline; }
-  .card { background:var(--surface); border:1px solid var(--border); border-radius:12px;
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:var(--r);
     padding:20px 22px; box-shadow:var(--shadow); }
-  .row { display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; }
+  a.card { text-decoration:none; color:inherit; transition:transform .16s, border-color .16s, box-shadow .16s; }
+  a.card:hover { transform:translateY(-3px); border-color:var(--line-2); box-shadow:var(--shadow-lg); }
+  .row { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
   .field { display:flex; flex-direction:column; gap:5px; }
   .field small { display:block; margin-top:2px; font-size:12px; line-height:1.4; color:var(--muted); font-weight:400; }
-  .flash { padding:12px 16px; border-radius:10px; margin:16px 0; border:1px solid; box-shadow:var(--shadow); }
-  .flash.ok  { background:var(--ok-bg);  border-color:var(--ok-border);  color:#0f5c2e; }
-  .flash.err { background:var(--err-bg); border-color:var(--err-border); color:#992017; }
+  .flash { padding:12px 16px; border-radius:var(--r-sm); margin:0 0 18px; border:1px solid; box-shadow:var(--shadow); }
+  .flash.ok  { background:var(--ok-bg);  border-color:var(--ok-border);  color:#1c5c34; }
+  .flash.err { background:var(--err-bg); border-color:var(--err-border); color:#8f271c; }
   /* One-time key success callout */
   .keynote { background:var(--ok-bg); border:1px solid var(--ok-border); border-left:4px solid var(--ok);
-    border-radius:10px; padding:14px 16px; margin:16px 0; box-shadow:var(--shadow); }
-  .keynote .keynote-title { font-weight:700; color:#0f5c2e; margin-bottom:6px; }
-  .keynote .keynote-key { display:inline-block; font-family:ui-monospace,Consolas,monospace; font-size:16px;
-    font-weight:600; color:#0b3d20; background:#fff; border:1px solid var(--ok-border);
+    border-radius:var(--r-sm); padding:14px 16px; margin:16px 0; box-shadow:var(--shadow); }
+  .keynote .keynote-title { font-weight:700; color:#1c5c34; margin-bottom:6px; }
+  .keynote .keynote-key { display:inline-block; font-family:var(--mono); font-size:16px;
+    font-weight:600; color:#123f24; background:#fff; border:1px solid var(--ok-border);
     border-radius:7px; padding:6px 12px; letter-spacing:.04em; }
   .keynote .keynote-meta { color:var(--muted); font-size:12px; margin-top:8px; }
   .muted { color:var(--muted); }
-  .lead { color:var(--muted); font-size:14px; max-width:70ch; }
+  .lead { color:var(--ink-soft); font-size:14.5px; max-width:74ch; }
   .empty { color:var(--muted); padding:14px 2px; }
 </style>
 </head>
 <body>
+<div class="admin-shell<?= $showNav ? '' : ' noside' ?>">
 <?php if ($showNav): ?>
-<header class="topbar">
-  <span class="brand">Licensing Admin</span>
+<aside class="sidebar">
+  <div class="brand">
+    <img src="assets/logo-mark-dark.svg" alt="Scan Finder" width="34" height="34">
+    <div>
+      <div class="name">Scan Finder</div>
+      <div class="sub">Licensing</div>
+    </div>
+  </div>
   <nav>
-    <a href="index.php">Dashboard</a>
-    <a href="2fa.php">Security</a>
-    <a href="logout.php">Sign out</a>
+    <?php foreach ($navItems as [$navFile, $navLabel, $navIcon]): ?>
+      <a class="<?= $active === $navFile ? 'active' : '' ?>" href="<?= h($navFile) ?>"><svg viewBox="0 0 24 24" aria-hidden="true"><?= $navIcon ?></svg><?= h($navLabel) ?></a>
+    <?php endforeach; ?>
+    <div class="spacer"></div>
+    <div class="foot">
+      <a class="<?= $active === '2fa.php' ? 'active' : '' ?>" href="2fa.php"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>Security</a>
+      <a href="logout.php"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/></svg>Sign out</a>
+    </div>
   </nav>
-</header>
+</aside>
 <?php endif; ?>
-<main>
+<main class="content">
 <?php if ($flash): ?>
   <div class="flash <?= h($flash['type'] === 'ok' ? 'ok' : 'err') ?>"><?= h($flash['msg']) ?></div>
 <?php endif;
@@ -590,6 +653,7 @@ function admin_page_close(): void
 {
     ?>
 </main>
+</div>
 </body>
 </html>
 <?php

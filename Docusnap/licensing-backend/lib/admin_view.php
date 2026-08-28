@@ -54,23 +54,9 @@ HTML;
 // already exist in admin_page_open's CSS). Call right after admin_page_open() on each page.
 function admin_nav(string $current): void
 {
-    // Targets evolve per migration slice: a section still on the dashboard points at
-    // index.php#anchor; once carved into its own page it points at that page.
-    $items = [
-        'index'    => ['index.php',          'Dashboard'],
-        'accounts' => ['accounts.php',       'Accounts'],            // split (Slice 4)
-        'trials'   => ['trials.php',         'Trials'],              // split (Slice 3)
-        'temp'     => ['temp.php',           'Temporary licenses'],  // split (Slice 3)
-        'subs'     => ['subscriptions.php',  'Subscriptions'],       // Polar-managed recurring grants
-        'products' => ['products.php',       'Products'],            // split (Slice 2)
-        'activity' => ['activity.php',       'Activity'],            // split (Slice 2)
-        'diagnostics' => ['diagnostics.php', 'Diagnostics'],         // opt-in app diagnostics feed
-        'releases' => ['releases.php',       'App releases'],        // in-app update banner control
-    ];
-    echo '<nav style="display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 18px;">';
-    foreach ($items as $key => [$href, $label]) {
-        $cls = $key === $current ? 'btn' : 'btn secondary';
-        echo '<a class="' . $cls . '" href="' . $href . '">' . h($label) . '</a>';
-    }
-    echo '</nav>';
+    // NO-OP since the sidebar redesign (2026-08). The section navigation now lives in
+    // the shared chrome (admin_page_open in lib/admin_auth.php) as a left sidebar, with
+    // the active item derived from the running script. Kept as a no-op so the existing
+    // per-page admin_nav('key') calls stay valid; the $current arg is intentionally ignored.
+    unset($current);
 }
