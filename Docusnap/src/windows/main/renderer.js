@@ -790,7 +790,9 @@ folderBox.addEventListener('click', chooseSourceFolder);
 document.getElementById('btn-teach')?.addEventListener('click', () => window.docusnap.openTeachWindow());
 
 // ── Help: user guide + contextual help mode ───────────────────────────────────
-document.getElementById('btn-help-guide')?.addEventListener('click', () => window.docusnap.openHelpWindow('main'));
+// The user guide opens from the account menu ("User Guide…", see #menu-user-guide
+// below); the Home top bar no longer carries a Help button. Other windows keep a
+// Help button in their own title bar.
 
 const HELP_TEXTS = {
   'home':          'Your dashboard: what needs attention, a quick import, and recent activity.',

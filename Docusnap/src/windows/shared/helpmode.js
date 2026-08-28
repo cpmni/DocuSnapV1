@@ -47,8 +47,28 @@
     document.head.appendChild(s);
   }
 
+  // Copy a control's help-mode explanation into its native `title` so the same
+  // description shows on hover, not only via the "?" tool. Fills a gap only — a
+  // control with its own curated title keeps it. Interactive controls only, so a
+  // hover over a whole panel never pops a tooltip. Runs on the static markup at
+  // init; call again after building controls dynamically to cover new ones.
+  const TIP_TAGS = /^(BUTTON|A|INPUT|SELECT|TEXTAREA)$/;
+  window.populateHelpTitles = function (texts, root) {
+    texts = texts || {};
+    try {
+      (root || document).querySelectorAll('[data-help-key]').forEach((el) => {
+        if (el.id === 'help-mode-toggle') return;
+        if (!TIP_TAGS.test(el.tagName)) return;
+        if (el.hasAttribute('title') || el.hasAttribute('aria-label')) return;
+        const t = texts[el.getAttribute('data-help-key')];
+        if (t) el.setAttribute('title', t);
+      });
+    } catch (_e) { /* tooltips are a nicety — never let this break a window */ }
+  };
+
   window.initHelpMode = function (toggleId, texts) {
     texts = texts || {};
+    window.populateHelpTitles(texts);
     const toggle = document.getElementById(toggleId);
     if (!toggle) return;
     let active = false;
