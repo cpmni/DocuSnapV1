@@ -16,7 +16,8 @@ const state = {
   meta: new Set(),                 // selected metadata column keys
   fieldChecked: new Map(),         // field key -> bool (kept across type-list rebuilds)
   needsReview: false,
-  from: '', to: '',
+  from: '', to: '',          // "Date filed" range (confirmed_at)
+  docFrom: '', docTo: '',    // "Document date" range (doc_date)
   format: 'csv',
   lastCount: 0,
 };
@@ -114,6 +115,8 @@ function buildPayload() {
     includeNeedsReview: state.needsReview,
     filedFrom: state.from || null,
     filedTo: state.to || null,
+    docFrom: state.docFrom || null,
+    docTo: state.docTo || null,
   };
   const sel = { metaKeys: [...state.meta], fields, format: state.format };
   return { filters, sel };
@@ -194,9 +197,15 @@ function wire() {
 
   $('sup-filter').addEventListener('input', renderSuppliers);
   $('opt-needsreview').addEventListener('change', (e) => { state.needsReview = e.target.checked; schedulePreview(); });
+  $('opt-doc-from').addEventListener('change', (e) => { state.docFrom = e.target.value; schedulePreview(); });
+  $('opt-doc-to').addEventListener('change', (e) => { state.docTo = e.target.value; schedulePreview(); });
   $('opt-from').addEventListener('change', (e) => { state.from = e.target.value; schedulePreview(); });
   $('opt-to').addEventListener('change', (e) => { state.to = e.target.value; schedulePreview(); });
-  $('opt-dates-clear').addEventListener('click', () => { state.from = ''; state.to = ''; $('opt-from').value = ''; $('opt-to').value = ''; schedulePreview(); });
+  $('opt-dates-clear').addEventListener('click', () => {
+    state.from = ''; state.to = ''; state.docFrom = ''; state.docTo = '';
+    ['opt-from', 'opt-to', 'opt-doc-from', 'opt-doc-to'].forEach((id) => { const el = $(id); if (el) el.value = ''; });
+    schedulePreview();
+  });
   document.querySelectorAll('input[name="fmt"]').forEach((r) => r.addEventListener('change', () => {
     state.format = document.querySelector('input[name="fmt"]:checked').value;
     document.querySelectorAll('.fmt-pill').forEach((p) => p.classList.toggle('on', p.querySelector('input').checked));

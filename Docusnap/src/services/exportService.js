@@ -100,8 +100,16 @@ function _buildDocQuery(filters = {}) {
     where.push(`LOWER(COALESCE(dt.slug,'')) IN (${slugs.map(() => '?').join(',')})`);
     params.push(...slugs);
   }
+  // "Date filed" = confirmed_at (ISO timestamp). '￿' makes <= cover the whole final day.
   if (filters.filedFrom) { where.push('d.confirmed_at >= ?'); params.push(String(filters.filedFrom)); }
   if (filters.filedTo)   { where.push('d.confirmed_at <= ?'); params.push(String(filters.filedTo) + '￿'); }
+  // "Document date" = doc_date, stored canonical DD-MM-YYYY (filing.normaliseDate). Reformat to a
+  // sortable YYYY-MM-DD to compare against the ISO date input; a shape guard means only genuinely
+  // DD-MM-YYYY dates participate (an undated / odd-format doc is excluded when a doc-date range is set).
+  const DOC_DD = "d.doc_date GLOB '[0-9][0-9]-[0-9][0-9]-[0-9][0-9][0-9][0-9]'";
+  const DOC_ISO = "(substr(d.doc_date,7,4)||'-'||substr(d.doc_date,4,2)||'-'||substr(d.doc_date,1,2))";
+  if (filters.docFrom) { where.push(`(${DOC_DD} AND ${DOC_ISO} >= ?)`); params.push(String(filters.docFrom)); }
+  if (filters.docTo)   { where.push(`(${DOC_DD} AND ${DOC_ISO} <= ?)`); params.push(String(filters.docTo)); }
 
   const sql = `
     SELECT d.id, d.supplier_name, d.doc_date, d.reference_number, d.original_filename,
@@ -121,6 +129,30 @@ function countMatches(db, filters = {}) {
   catch { return 0; }
 }
 
+// Format a date VALUE for output per the app's Settings → "Date format (region)"
+// choice (`region_date_order`: dmy | mdy | ymd). String-based (no Date parsing
+// pitfalls), deterministic. `kind` = 'ddmmyyyy' (doc_date / date-type fields, the
+// stored canonical) or 'iso' (confirmed_at timestamp). A value that doesn't match
+// the expected shape is returned unchanged.
+function _fmtDate(value, kind, order) {
+  if (value == null || value === '') return '';
+  let y, mo, da;
+  if (kind === 'iso') {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value));
+    if (!m) return String(value);
+    y = m[1]; mo = m[2]; da = m[3];
+  } else {
+    const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(String(value));
+    if (!m) return String(value);
+    da = m[1]; mo = m[2]; y = m[3];
+  }
+  switch (order) {
+    case 'mdy': return `${mo}/${da}/${y}`;
+    case 'ymd': return `${y}-${mo}-${da}`;
+    default:    return `${da}/${mo}/${y}`;   // dmy (default)
+  }
+}
+
 // ── Gather → { columns, rows, count, truncated } ─────────────────────────────
 // columns: [{ key, label, isField, fieldType }]  rows: [{ [colKey]: value }]
 // metaKeys: which META_COLUMNS to include (in META order). fields: [{key,label,type}]
@@ -129,6 +161,7 @@ function gather(db, filters = {}, sel = {}) {
   const metaKeys = Array.isArray(sel.metaKeys) ? sel.metaKeys : META_COLUMNS.filter((m) => m.def).map((m) => m.key);
   const fields = Array.isArray(sel.fields) ? sel.fields : [];
   const limit = Math.min(sel.limit || EXPORT_ROW_CAP, EXPORT_ROW_CAP);
+  const order = sel.dateOrder || 'dmy';   // Settings → "Date format (region)"
 
   const columns = [];
   for (const m of META_COLUMNS) if (metaKeys.includes(m.key)) columns.push({ key: m.key, label: m.label, isField: false });
@@ -147,11 +180,21 @@ function gather(db, filters = {}, sel = {}) {
   const rows = [];
   for (const d of use) {
     const rec = {};
-    for (const key of metaKeys) { const m = META_BY_KEY.get(key); if (m) rec[key] = m.from(d); }
+    for (const key of metaKeys) {
+      const m = META_BY_KEY.get(key); if (!m) continue;
+      let v = m.from(d);
+      if (key === '_date') v = _fmtDate(v, 'ddmmyyyy', order);       // document date (stored DD-MM-YYYY)
+      else if (key === '_filed_at') v = _fmtDate(v, 'iso', order);   // confirmed_at (ISO timestamp)
+      rec[key] = v;
+    }
     if (seenField.size) {
       const vals = documents.getConfirmedFieldValues(db, d.id) || [];
       const map = new Map(vals.map((v) => [v.field_key, v.value]));
-      for (const f of fields) if (seenField.has(f.key)) rec[f.key] = map.has(f.key) ? map.get(f.key) : '';
+      for (const f of fields) if (seenField.has(f.key)) {
+        let v = map.has(f.key) ? map.get(f.key) : '';
+        if (f.type === 'date') v = _fmtDate(v, 'ddmmyyyy', order);   // a date-type field (normalised DD-MM-YYYY)
+        rec[f.key] = v;
+      }
     }
     rows.push(rec);
   }
@@ -221,6 +264,7 @@ function filterSummary(filters = {}) {
   p.push((filters.suppliers && filters.suppliers.length) ? `${filters.suppliers.length} sender(s)` : 'all senders');
   p.push((filters.typeSlugs && filters.typeSlugs.length) ? `${filters.typeSlugs.length} type(s)` : 'all types');
   if (filters.includeNeedsReview) p.push('incl. in-review');
+  if (filters.docFrom || filters.docTo) p.push(`doc-date ${filters.docFrom || '…'}..${filters.docTo || '…'}`);
   if (filters.filedFrom || filters.filedTo) p.push(`filed ${filters.filedFrom || '…'}..${filters.filedTo || '…'}`);
   return p.join(', ');
 }
@@ -236,5 +280,6 @@ module.exports = {
   toXlsx,
   filterSummary,
   _csvCell,      // exported for the pin test
+  _fmtDate,      // exported for the pin test
   _buildDocQuery,
 };

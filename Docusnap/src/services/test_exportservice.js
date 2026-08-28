@@ -100,6 +100,31 @@ console.log('filterSummary (audit — counts only, never sender values):');
 const fs1 = xp.filterSummary({ suppliers: ['Acme, Ltd', 'Beta Co'], typeSlugs: ['invoice'], includeNeedsReview: true, filedFrom: '2026-01-01' });
 check('names counts not values', fs1.includes('2 sender(s)') && fs1.includes('1 type(s)') && !fs1.includes('Acme'));
 check('all senders / all types when unfiltered', xp.filterSummary({}) === 'all senders, all types');
+check('filterSummary names a doc-date range', xp.filterSummary({ docFrom: '2026-01-01' }).includes('doc-date'));
+
+console.log('document-date range (doc_date DD-MM-YYYY → sortable YYYY-MM-DD):');
+check('docFrom on/after their date includes both June docs', xp.gather(db, { docFrom: '2026-06-01' }, SEL).count === 2);
+check('docTo before their date → 0', xp.gather(db, { docTo: '2026-05-31' }, SEL).count === 0);
+check('same-day range is inclusive', xp.gather(db, { docFrom: '2026-06-01', docTo: '2026-06-01' }, SEL).count === 2);
+// a confirmed doc with an unparseable/empty doc_date participates normally, but is excluded the
+// moment a doc-date RANGE is set (it has no known document date to fall in the range).
+db.prepare(`INSERT INTO documents VALUES (4,'confirmed','Acme, Ltd','','INV-004','f4.pdf','C:/Filing/x',90,'2026-06-13T09:00:00Z',1)`).run();
+check('undated confirmed doc counts with NO doc-date filter', xp.gather(db, {}, SEL).count === 3);
+check('undated confirmed doc EXCLUDED when a doc-date range is set', xp.gather(db, { docFrom: '2026-06-01' }, SEL).count === 2);
+check('filed-date range still works independently', xp.gather(db, { filedFrom: '2026-06-13' }, SEL).count === 1);
+
+console.log('exported dates follow Settings → "Date format (region)" (region_date_order):');
+check('_fmtDate dmy → DD/MM/YYYY', xp._fmtDate('01-06-2026', 'ddmmyyyy', 'dmy') === '01/06/2026');
+check('_fmtDate mdy → MM/DD/YYYY', xp._fmtDate('01-06-2026', 'ddmmyyyy', 'mdy') === '06/01/2026');
+check('_fmtDate ymd → ISO (database-friendly)', xp._fmtDate('01-06-2026', 'ddmmyyyy', 'ymd') === '2026-06-01');
+check('_fmtDate iso timestamp → chosen order', xp._fmtDate('2026-06-13T09:00:00Z', 'iso', 'dmy') === '13/06/2026');
+check('_fmtDate empty stays empty', xp._fmtDate('', 'ddmmyyyy', 'dmy') === '');
+check('_fmtDate non-date left unchanged', xp._fmtDate('N/A', 'ddmmyyyy', 'dmy') === 'N/A');
+const dm = xp.gather(db, {}, { metaKeys: ['_reference', '_date', '_filed_at'], fields: [], dateOrder: 'mdy' }).rows.find(r => r._reference === 'INV-001');
+check('gather formats doc_date per order (mdy)', dm._date === '06/01/2026');
+check('gather formats confirmed_at per order (mdy)', dm._filed_at === '06/10/2026');
+const dy = xp.gather(db, {}, { metaKeys: ['_reference', '_date'], fields: [], dateOrder: 'ymd' }).rows.find(r => r._reference === 'INV-001');
+check('gather honours ymd/ISO for database use', dy._date === '2026-06-01');
 
 console.log(FAILS ? `\n${FAILS} FAILED` : '\nALL PASS');
 process.exit(FAILS ? 1 : 0);

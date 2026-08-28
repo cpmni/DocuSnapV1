@@ -44,8 +44,12 @@
   .grp-head:first-child{border-top:0;margin-top:0}
   .empty-note{color:var(--muted);font-size:12px;padding:14px 8px;text-align:center}
 
-  .opt-row{display:flex;align-items:center;gap:10px;font-size:13px;margin:8px 0}
+  .opt-row{display:flex;align-items:center;gap:10px;font-size:13px;margin:8px 0;flex-wrap:wrap}
   .opt-row label{cursor:pointer}
+  .opt-sub{font-size:11px;font-weight:650;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:2px 0 6px}
+  .opt-hr{border:0;border-top:1px solid var(--border);margin:16px 0}
+  .opt-lab{display:inline-block;min-width:112px;font-weight:550}
+  .opt-hint{color:var(--muted);font-size:11.5px}
   .date-in{padding:5px 8px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface2);
            color:var(--text);font-size:12px}
   .fmt-pills{display:flex;gap:8px}
@@ -115,19 +119,39 @@
     <!-- Options -->
     <section class="card">
       <h2>Options</h2>
+
+      <div class="opt-sub">Which documents</div>
       <div class="opt-row">
         <input type="checkbox" id="opt-needsreview">
-        <label for="opt-needsreview">Also include documents still in Review (not just confirmed ones)</label>
+        <label for="opt-needsreview">Include documents still in Review — not just confirmed ones</label>
+      </div>
+
+      <hr class="opt-hr">
+
+      <div class="opt-sub">Date ranges <span class="opt-hint" style="text-transform:none; letter-spacing:0; font-weight:400;">— optional; leave blank for all dates</span></div>
+      <div class="opt-row">
+        <span class="opt-lab">Document date</span>
+        <input type="date" id="opt-doc-from" class="date-in" aria-label="Document date from">
+        <span>to</span>
+        <input type="date" id="opt-doc-to" class="date-in" aria-label="Document date to">
+        <span class="opt-hint">the date printed on the document</span>
       </div>
       <div class="opt-row">
-        <span>Filed between</span>
-        <input type="date" id="opt-from" class="date-in">
-        <span>and</span>
-        <input type="date" id="opt-to" class="date-in">
-        <button class="mini" id="opt-dates-clear">Clear</button>
+        <span class="opt-lab">Date filed</span>
+        <input type="date" id="opt-from" class="date-in" aria-label="Date filed from">
+        <span>to</span>
+        <input type="date" id="opt-to" class="date-in" aria-label="Date filed to">
+        <span class="opt-hint">when it was confirmed &amp; filed in Scan Finder</span>
       </div>
       <div class="opt-row">
-        <span>Save as</span>
+        <button class="mini" id="opt-dates-clear">Clear dates</button>
+        <span class="opt-hint">Exported dates use your regional format (Settings → Processing → Date format).</span>
+      </div>
+
+      <hr class="opt-hr">
+
+      <div class="opt-sub">Save as</div>
+      <div class="opt-row">
         <div class="fmt-pills" id="fmt-pills">
           <label class="fmt-pill on"><input type="radio" name="fmt" value="csv" checked> CSV <span style="color:var(--muted)">(Excel / database)</span></label>
           <label class="fmt-pill"><input type="radio" name="fmt" value="xlsx"> Excel <span style="color:var(--muted)">(.xlsx)</span></label>

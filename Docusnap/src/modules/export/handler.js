@@ -18,6 +18,9 @@ function register(ctx) {
   const { ipcMain, getDb } = ctx;
   const { requireRole, logAudit } = require('../auth/handler');
   const exportService = require('../../services/exportService');
+  const learning = require('../../../database/modules/learning');
+  // Exported dates follow Settings → Processing → "Date format (region)" (region_date_order).
+  const dateOrder = () => { try { return (learning.getSetting(getDb(), 'region_date_order') || 'dmy').toLowerCase(); } catch { return 'dmy'; } };
 
   // What the Export window needs to build its selectors.
   ipcMain.handle('export-options', () => {
@@ -28,7 +31,7 @@ function register(ctx) {
   // Live preview: total match count + the first rows for the selected scope.
   ipcMain.handle('export-preview', (_e, { filters, sel } = {}) => {
     requireRole('admin');
-    const g = exportService.gather(getDb(), filters || {}, { ...(sel || {}), limit: 50 });
+    const g = exportService.gather(getDb(), filters || {}, { ...(sel || {}), dateOrder: dateOrder(), limit: 50 });
     return { count: g.count, columns: g.columns, rows: g.rows, truncated: g.truncated };
   });
 
@@ -58,7 +61,7 @@ function register(ctx) {
     });
     if (r.canceled || !r.filePath) return { saved: false, canceled: true };
 
-    const g = exportService.gather(getDb(), filters || {}, sel || {});
+    const g = exportService.gather(getDb(), filters || {}, { ...(sel || {}), dateOrder: dateOrder() });
     if (!g.rows.length) return { saved: false, empty: true };
     const trunc = g.truncated ? { exported: g.rows.length, total: g.count } : null;
 
