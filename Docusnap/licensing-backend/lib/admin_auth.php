@@ -114,15 +114,19 @@ function admin_throttle(string $stage): ?int
     }
 }
 
-// ── SEC-01: 2FA is REQUIRED by default for this internet-facing console ───────
-// Password-only sign-in is refused while keys/admin_2fa.json is unprovisioned,
-// UNLESS the break-glass env LICENSING_ADMIN_ALLOW_NO_2FA=1 is set (first-run
-// provisioning path: set the env, sign in, provision 2FA on the Security page,
-// REMOVE the env). Fail-closed per the 2026-07-17 audit adjudication.
+// ── 2FA policy (owner override, 2026-08) ─────────────────────────────────────
+// This deployment runs PASSWORD-ONLY by default: 2FA is OPTIONAL, not mandatory,
+// so a correct password signs in even when keys/admin_2fa.json is unprovisioned.
+// The July audit's fail-closed MANDATORY-2FA posture can be turned back ON with NO
+// further code change by setting the opt-in env LICENSING_ADMIN_REQUIRE_2FA=1.
+// (If admin_2fa.json IS provisioned, the TOTP challenge still runs regardless — this
+// switch only governs whether 2FA is COMPULSORY.) SECURITY NOTE: this console is
+// internet-facing and can mint licence keys; provisioning 2FA under Security is
+// strongly recommended over relying on a password alone.
 function admin_2fa_required(): bool
 {
-    $v = getenv('LICENSING_ADMIN_ALLOW_NO_2FA');
-    return !(is_string($v) && ($v === '1' || strtolower($v) === 'true' || strtolower($v) === 'on'));
+    $v = getenv('LICENSING_ADMIN_REQUIRE_2FA');
+    return is_string($v) && ($v === '1' || strtolower($v) === 'true' || strtolower($v) === 'on');
 }
 
 function admin_is_authed(): bool
