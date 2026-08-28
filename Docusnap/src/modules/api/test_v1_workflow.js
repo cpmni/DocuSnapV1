@@ -39,6 +39,17 @@ async function freshDb() {
       from_username TEXT, to_user_id INTEGER, to_username TEXT, action_required TEXT, state TEXT DEFAULT 'pending',
       comment TEXT, resolution_comment TEXT, claimed_by_id INTEGER, claimed_by_username TEXT, claimed_at TEXT,
       resolved_at TEXT, matched_rule_summary TEXT, version INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')));
+    CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, action TEXT, target_type TEXT,
+      target_id TEXT, details TEXT, action_category TEXT, outcome TEXT, document_id INTEGER, customer_id TEXT,
+      session_id TEXT, source TEXT, metadata_json TEXT, actor_username TEXT, actor_role TEXT,
+      prev_hash TEXT, row_hmac TEXT, created_at TEXT DEFAULT (datetime('now')));
+    CREATE TABLE stamp_types (id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT NOT NULL UNIQUE, label TEXT NOT NULL,
+      color TEXT NOT NULL, category TEXT, built_in INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1,
+      created_by INTEGER, created_at TEXT);
+    CREATE TABLE stamp_events (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, stamp_type_id INTEGER,
+      type_key_snapshot TEXT, type_label_snapshot TEXT, type_color_snapshot TEXT, placed_by_user_id INTEGER,
+      placed_by_username_snapshot TEXT, placed_at TEXT, placement_json TEXT, note TEXT, source_sha256 TEXT,
+      artifact_path TEXT, artifact_sha256 TEXT, route_id INTEGER, content_sha256 TEXT, audit_ref TEXT, created_at TEXT);
   `);
   db.prepare(`INSERT INTO document_types (id,name,slug) VALUES (1,'Invoice','invoice')`).run();
   db.prepare(`INSERT INTO documents (id,supplier_name,document_type_id,status,confirmed_at,processed_at)
@@ -49,6 +60,9 @@ async function freshDb() {
   ins.run(1, 'admin', 'Admin', h, 'admin');
   ins.run(2, 'editor', 'Editor', h, 'edit');
   ins.run(3, 'reader', 'Reader', h, 'readonly');
+  db.prepare(`INSERT INTO stamp_types (key,label,color,built_in,active) VALUES
+    ('paid','PAID','#2E7D32',1,1),('approved','APPROVED','#2E7D32',1,1),('rejected','REJECTED','#C62828',1,1),
+    ('received','RECEIVED','#1565C0',1,1),('on_hold','ON HOLD','#B07816',1,1),('void','VOID','#C62828',1,1)`).run();
   return db;
 }
 
@@ -62,6 +76,14 @@ async function mkClient(baseUrl, username) {
 
 async function main() {
   const db = await freshDb();
+  // Stamp permission (Workflow+Stamping redesign): approve/reject now PLACE a stamp, so the decision
+  // users must hold `can_stamp`. Under RUN_AS_NODE canStamp is fail-closed (no real DPAPI) → inject a
+  // fake safeStorage + set the audit key so a signed grant verifies, then grant editor + admin.
+  require('../../lib/secretStore').__setSafeStorage({ isEncryptionAvailable: () => true, encryptString: s => Buffer.from(s), decryptString: b => String(b) });
+  require('../../../database/modules/auth').setAuditKey(Buffer.alloc(32, 0x5b));
+  const _sp = require('../auth/stampPermission');
+  _sp.grantStamp(db, { userId: 1, username: 'admin', role: 'admin' }, 2);   // editor is a stamper
+  _sp.grantStamp(db, { userId: 1, username: 'admin', role: 'admin' }, 1);   // admin too
   const wfEvents = [];   // Slice 1: the shared notification sink (ctx.notifyWorkflowEvent) spy
   const server = api.createServer({ getDb: () => db, learning: { getDigitsOnlyFields: () => [] }, checkEntitlement: () => ({ entitled: true, feature: 'detached_client', search: { entitled: true, seats: 99 }, workflow: { entitled: true, seats: 99 } }), notifyWorkflowEvent: (ev) => wfEvents.push(ev) });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
@@ -122,13 +144,24 @@ async function main() {
   r = await adminC.workflow.recall(pdRoute.id, pdRoute.version);
   check("refused 'paid' left the version untouched (recall with old version -> 200)", r.status === 200 && r.json.route.state === 'recalled');
 
-  // ── readonly recipient cannot approve ────────────────────────────────────────
+  // ── cannot route FOR APPROVAL to a non-stamper (owner 2026-08-28) ─────────────
+  // reader (readonly) holds no stamp grant, so an approval routed to them is a dead-end — refused at
+  // assign; the /v1 layer surfaces the service's RECIPIENT_CANNOT_STAMP.
   r = await adminC.workflow.assign(1, readerId, 'approve');
-  const roRoute = r.json.route;
-  r = await readerC.workflow.resolve(roRoute.id, 'approve', null, roRoute.version);
-  check('readonly recipient approve -> 403', r.status === 403);
-  r = await adminC.workflow.recall(roRoute.id, roRoute.version);
-  check('sender recalls pending -> 200 recalled', r.status === 200 && r.json.route.state === 'recalled');
+  check('route approval to a non-stamper -> 400 RECIPIENT_CANNOT_STAMP', r.status === 400 && r.json.code === 'RECIPIENT_CANNOT_STAMP');
+
+  // ── STAMPING over /v1 (all under /v1/workflow/*, entitlement-gated) ───────────
+  r = await editorC.workflow.stampTypes();
+  check('stamp catalog over /v1 -> 200 with the 6 defaults', r.status === 200 && Array.isArray(r.json.stampTypes) && r.json.stampTypes.length >= 6);
+  r = await editorC.workflow.canStamp();
+  check('editor (granted) canStamp -> true', r.status === 200 && r.json.canStamp === true);
+  r = await readerC.workflow.canStamp();
+  check('reader (no grant) canStamp -> false', r.status === 200 && r.json.canStamp === false);
+  const _paid = (await editorC.workflow.stampTypes()).json.stampTypes.find(t => t.key === 'paid');
+  r = await readerC.workflow.stampPlace(1, { stampTypeId: _paid.id, box: { x: 0.6, y: 0.05, w: 0.28 }, page: 0 });
+  check('un-permitted user place stamp -> 403 STAMP_FORBIDDEN', r.status === 403 && r.json.code === 'STAMP_FORBIDDEN');
+  r = await readerC.workflow.stampList(1);
+  check('stamp list over /v1 is path-free (array)', r.status === 200 && Array.isArray(r.json.stamps));
 
   // ── 5b: uncommitted (needs_review) documents are routable ────────────────────
   r = await adminC.workflow.assign(2, editorId, 'approve', 'check this review item');

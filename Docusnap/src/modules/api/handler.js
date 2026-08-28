@@ -43,7 +43,7 @@ const certService       = require('../../services/certService');
 const path              = require('path');
 
 // Map a workflowService error code to an HTTP status.
-const WF_HTTP = { FORBIDDEN: 403, NOT_FOUND: 404, CONFLICT: 409 };
+const WF_HTTP = { FORBIDDEN: 403, STAMP_FORBIDDEN: 403, NOT_FOUND: 404, CONFLICT: 409 };
 const wfStatus = (code) => WF_HTTP[code] || 400;
 
 const API_CONTRACT_VERSION = '1.1.0';   // NB: ADDING endpoints (e.g. recycle bin) needs no bump — the
@@ -167,6 +167,12 @@ function createRequestListener(ctx) {
     notifyWorkflow: (ev) => { try { ctx.notifyWorkflowEvent && ctx.notifyWorkflowEvent(ev); } catch { /* best-effort */ } },
   });
   const actorOf = (session) => ({ userId: session.userId, username: session.username, role: session.role });
+  // Stamping over /v1 (Workflow+Stamping redesign 2026-08-28) — the SAME transport-agnostic services the
+  // desktop uses. Routes live under /v1/workflow/* so the WORKFLOW_ROUTE entitlement gate + workflow
+  // sub-seat apply (Oracle gate 2). placeStamp gates permission + document access internally.
+  const stampSvc  = ctx.stampService || require('../../services/stampService').createStampService();
+  const stampPerm = ctx.stampPermission || require('../auth/stampPermission');
+  const stampsDb  = require('../../../database/modules/stamps');
 
   // The SAME transport-agnostic review orchestration the desktop uses (Phase 2). The API injects
   // its own hooks: file immediately (a client holds no host file handle), drain the original best-
@@ -760,6 +766,46 @@ function createRequestListener(ctx) {
         else r = workflow.resolve(getDb(), actor, id, { decision: body.decision, comment: body.comment, expectedVersion: body.version });
         return r.ok ? sendJson(res, 200, { route: dto.projectRoute(r.route) })
                     : sendJson(res, wfStatus(r.code), { error: r.error, code: r.code });
+      }
+
+      // ── STAMPING (Workflow+Stamping redesign 2026-08-28). All under /v1/workflow/* → the WORKFLOW_ROUTE
+      //    entitlement gate + workflow sub-seat already applied above. Path-free DTOs; the placer is the
+      //    authenticated actor (never a body field); read + write gate on canAccessDocument (Oracle C2). ──
+      const _canAccess = (db, session, docId) =>
+        require('../../services/accessService').canAccessDocument(db, { userId: session.userId, role: session.role }, docId).allow;
+
+      if (req.method === 'GET' && pathname === `${API_PREFIX}/workflow/stamp-types`) {
+        const session = requireSession(req, res); if (!session) return;
+        return sendJson(res, 200, { stampTypes: stampsDb.listStampTypes(getDb()) });
+      }
+      if (req.method === 'GET' && pathname === `${API_PREFIX}/workflow/can-stamp`) {
+        const session = requireSession(req, res); if (!session) return;
+        return sendJson(res, 200, { canStamp: stampPerm.canStamp(getDb(), session.userId) });
+      }
+      const wfStampDoc = pathname.match(new RegExp(`^${API_PREFIX}/workflow/documents/(\\d+)/stamps$`));
+      if (wfStampDoc && (req.method === 'GET' || req.method === 'POST')) {
+        const session = requireSession(req, res); if (!session) return;
+        const db = getDb(), docId = Number(wfStampDoc[1]);
+        if (!_canAccess(db, session, docId)) return sendJson(res, 404, { error: 'not found' });   // hide existence
+        if (req.method === 'GET') return sendJson(res, 200, { stamps: stampSvc.stampsForDocument(db, docId) });
+        let body; try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+        const r = await stampSvc.placeStamp(db, actorOf(session),
+          { documentId: docId, stampTypeId: body.stampTypeId, box: body.box, page: body.page, note: body.note });
+        return r.ok ? sendJson(res, 200, { ok: true, stampEventId: r.stampEventId })
+                    : sendJson(res, wfStatus(r.code), { error: r.error, code: r.code });
+      }
+      const wfStampedDoc = pathname.match(new RegExp(`^${API_PREFIX}/workflow/documents/(\\d+)/stamped$`));
+      if (req.method === 'GET' && wfStampedDoc) {
+        const session = requireSession(req, res); if (!session) return;
+        const db = getDb(), docId = Number(wfStampedDoc[1]);
+        if (!_canAccess(db, session, docId)) return sendJson(res, 404, { error: 'not found' });
+        const cur = stampSvc.currentArtifact(db, docId);
+        if (!cur) return sendJson(res, 404, { error: 'no stamp' });
+        const P = ctx.path || require('path');
+        const pages = await previewService.getDocumentPages(db, {
+          docId, folderPath: P.dirname(cur.path), filename: P.basename(cur.path), exact: true, scale: 6,
+        }, pageDeps());
+        return sendJson(res, 200, { pages, count: cur.count });
       }
 
       // ── Auth-required: REVIEW QUEUE + confirm / defer / undefer (Admin/Edit) ───
