@@ -1986,6 +1986,13 @@ async function loadUsers() {
 
   const result = await api.authListUsers();
   allUsers = (result && result.users) || [];
+  // Merge each user's stamp-permission state (Workflow+Stamping redesign) so the Users list can show a
+  // "Can stamp" toggle. Admin-only IPC; on failure the toggle simply shows off.
+  try {
+    const grants = await api.stamp.grants();
+    const m = new Map((grants || []).map(g => [g.id, !!g.canStamp]));
+    allUsers.forEach(u => { u.canStamp = m.get(u.id) || false; });
+  } catch { /* stamp permission unavailable — leave the toggle off */ }
   renderUsersList();
 }
 
@@ -2021,6 +2028,11 @@ function renderUsersList() {
           ${roleOptions}
         </select>
         <button class="btn user-reset" data-id="${u.id}" style="font-size:11px; padding:5px 10px;">Reset password&hellip;</button>
+        <label class="toggle" title="Allow this person to place stamps and to approve / reject documents" style="margin-right:6px;">
+          <span style="font-size:11px;color:var(--muted);margin-right:4px;">Can stamp</span>
+          <input type="checkbox" class="user-stamp-toggle" data-id="${u.id}" ${u.canStamp ? 'checked' : ''}>
+          <span class="toggle-slider"></span>
+        </label>
         <label class="toggle" title="${isSelf ? 'You cannot disable your own account' : (u.is_active ? 'Disable account' : 'Enable account')}">
           <input type="checkbox" class="user-active-toggle" data-id="${u.id}" ${u.is_active ? 'checked' : ''} ${isSelf ? 'disabled' : ''}>
           <span class="toggle-slider"></span>
@@ -2055,6 +2067,16 @@ function renderUsersList() {
       await loadUsers();
     });
 
+    // Can stamp — a distinct per-user permission (NOT role-derived). The server writes a SIGNED grant
+    // event on the audit chain; a failed grant reverts the toggle.
+    const stampToggle = row.querySelector('.user-stamp-toggle');
+    if (stampToggle) stampToggle.addEventListener('change', async () => {
+      const want = stampToggle.checked;
+      try { await api.stamp.grant(u.id, want); }
+      catch (e) { alert((e && e.message) || 'Could not change stamping permission.'); stampToggle.checked = !want; return; }
+      await loadUsers();
+    });
+
     // Reset password — generates a one-time temp password, shown once here
     // (mirrors the login window's "shown once" recovery-code screen).
     row.querySelector('.user-reset').addEventListener('click', async () => {
@@ -2072,6 +2094,53 @@ function renderUsersList() {
 
     list.appendChild(row);
   }
+}
+
+// ── Document stamps catalog (Workflow+Stamping redesign 2026-08-28) ───────────
+const STAMP_COLORS = { green: '#2E7D32', red: '#C62828', amber: '#B07816', blue: '#1565C0', grey: '#546170' };
+let _newStampColor = null;
+async function loadStampCatalog() {
+  const list = document.getElementById('stamp-catalog-list');
+  if (!list) return;
+  let types = [];
+  try { types = await api.stamp.types(); } catch { types = []; }
+  list.innerHTML = types.length
+    ? types.map(t => `<span title="${t.built_in ? 'Built-in' : 'Custom'}" style="border:1.5px solid ${escHtml(t.color)};color:${escHtml(t.color)};border-radius:999px;padding:3px 11px;font-weight:700;font-size:11px;letter-spacing:.03em">${escHtml(t.label)}</span>`).join('')
+    : '<span class="section-desc">No stamps yet.</span>';
+}
+function _syncAddStamp() {
+  const w = document.getElementById('new-stamp-word'), b = document.getElementById('btn-add-stamp');
+  if (w && b) b.disabled = !(w.value.trim() && _newStampColor);
+}
+function initStampCatalog() {
+  const sw = document.getElementById('new-stamp-swatches');
+  if (sw && !sw.dataset.built) {
+    sw.dataset.built = '1';
+    sw.innerHTML = Object.entries(STAMP_COLORS).map(([k, v]) =>
+      `<span class="stamp-sw" data-c="${v}" title="${k}" style="width:22px;height:22px;border-radius:50%;background:${v};display:inline-block;cursor:pointer;border:2px solid transparent"></span>`).join('');
+    sw.querySelectorAll('.stamp-sw').forEach(el => el.addEventListener('click', () => {
+      sw.querySelectorAll('.stamp-sw').forEach(x => { x.style.borderColor = 'transparent'; });
+      el.style.borderColor = 'var(--text)'; _newStampColor = el.dataset.c; _syncAddStamp();
+    }));
+  }
+  const word = document.getElementById('new-stamp-word');
+  if (word && !word.dataset.wired) { word.dataset.wired = '1'; word.addEventListener('input', _syncAddStamp); }
+  const add = document.getElementById('btn-add-stamp');
+  if (add && !add.dataset.wired) {
+    add.dataset.wired = '1';
+    add.addEventListener('click', async () => {
+      const w = document.getElementById('new-stamp-word'), msg = document.getElementById('new-stamp-msg');
+      try {
+        await api.stamp.typeCreate({ label: w.value.trim(), color: _newStampColor });
+        w.value = ''; _newStampColor = null;
+        document.querySelectorAll('#new-stamp-swatches .stamp-sw').forEach(x => { x.style.borderColor = 'transparent'; });
+        _syncAddStamp();
+        if (msg) { msg.textContent = 'Added.'; setTimeout(() => { if (msg) msg.textContent = ''; }, 2000); }
+        await loadStampCatalog();
+      } catch (e) { if (msg) msg.textContent = (e && e.message) || 'Could not add that stamp.'; }
+    });
+  }
+  loadStampCatalog();
 }
 
 // ── Add user ──────────────────────────────────────────────────────────────────
@@ -5613,6 +5682,7 @@ loadDocTypes().then(() => {
 // A doc type created/changed elsewhere (e.g. the Teach wizard) — reload the list.
 api.onDocTypesChanged?.(() => { loadDocTypes().catch(() => {}); });
 loadUsers();
+initStampCatalog();
 loadAuditLog();
 
 // Open the editor on a specific template when launched from Review's "Add to

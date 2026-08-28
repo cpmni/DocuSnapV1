@@ -2436,6 +2436,18 @@
     <!-- ══ USERS ══ -->
     <div class="panel" id="panel-users" data-help-key="tab-users">
 
+      <div class="section" id="stamp-catalog-section">
+        <div class="section-title">Document stamps</div>
+        <p class="section-desc">The stamps people can place on documents to record a decision or a status (PAID, APPROVED, RECEIVED&hellip;). Built-in stamps can't be removed; add your own below. Who is allowed to stamp is set per person in the Users list.</p>
+        <div id="stamp-catalog-list" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+        <div class="row-flex" style="gap:10px;align-items:center;flex-wrap:wrap">
+          <input type="text" id="new-stamp-word" placeholder="New stamp word (e.g. POSTED)" maxlength="16" autocomplete="off" style="text-transform:uppercase;width:200px">
+          <span id="new-stamp-swatches" style="display:inline-flex;gap:8px"></span>
+          <button class="btn primary" id="btn-add-stamp" disabled>Add stamp</button>
+          <span class="section-desc" id="new-stamp-msg"></span>
+        </div>
+      </div>
+
       <div class="section">
         <div class="section-title">Users</div>
         <p class="section-desc">Who can sign in and what they can do. New accounts get a temporary password; the user sets their own on first sign-in.</p>
@@ -2640,43 +2652,9 @@
 
       <!-- Approval stamp placement (owner 2026-08-02: "choose where it goes and resize it to fit a
            blank area"). Shares #wf-section's visibility — the stamp only exists for approvals. -->
-      <div class="section" id="stamp-section" style="display:none;">
-        <div class="section-title">Approval stamp</div>
-        <p class="section-desc">Where the APPROVED / REJECTED stamp is printed on the decision copy. The original document is never changed — the stamp is only ever added to a separate copy. The approver's note is printed on the stamp.</p>
-        <div class="row-flex" style="gap:20px; align-items:flex-start; flex-wrap:wrap;">
-          <div>
-            <div class="threshold-label" style="margin-bottom:6px;">Position</div>
-            <div id="stamp-grid" role="group" aria-label="Stamp position">
-              <button type="button" class="stamp-cell" data-x="0.05" data-y="0.04" title="Top left"></button>
-              <button type="button" class="stamp-cell" data-x="0.35" data-y="0.04" title="Top centre"></button>
-              <button type="button" class="stamp-cell" data-x="0.62" data-y="0.04" title="Top right"></button>
-              <button type="button" class="stamp-cell" data-x="0.05" data-y="0.42" title="Middle left"></button>
-              <button type="button" class="stamp-cell" data-x="0.35" data-y="0.42" title="Centre"></button>
-              <button type="button" class="stamp-cell" data-x="0.62" data-y="0.42" title="Middle right"></button>
-              <button type="button" class="stamp-cell" data-x="0.05" data-y="0.80" title="Bottom left"></button>
-              <button type="button" class="stamp-cell" data-x="0.35" data-y="0.80" title="Bottom centre"></button>
-              <button type="button" class="stamp-cell" data-x="0.62" data-y="0.80" title="Bottom right"></button>
-            </div>
-          </div>
-          <div style="flex:1 1 240px; min-width:220px;">
-            <div class="threshold-label">Size</div>
-            <div class="conf-row">
-              <input type="range" class="conf-slider" id="stamp-size" min="12" max="60" value="30">
-              <span class="conf-val" id="stamp-size-val">30%</span>
-            </div>
-            <span class="section-desc" style="display:block; margin-top:4px;">Percentage of the page width. Larger also enlarges the text, so a bigger stamp stays readable.</span>
-            <div class="row-flex" style="gap:8px; margin-top:10px; align-items:center;">
-              <button class="btn primary" id="stamp-save">Save placement</button>
-              <button class="btn" id="stamp-reset">Use the default corner</button>
-              <span class="section-desc" id="stamp-msg"></span>
-            </div>
-          </div>
-          <div>
-            <div class="threshold-label" style="margin-bottom:6px;">Preview</div>
-            <div id="stamp-preview" aria-hidden="true"><div id="stamp-preview-box">APPROVED</div></div>
-          </div>
-        </div>
-      </div>
+      <!-- The old fixed "Approval stamp" placement card was removed 2026-08-28 — stamps are now placed by
+           clicking on the document, and their types are managed in Settings → Users → Document stamps
+           (Workflow+Stamping redesign). -->
 
       <div class="section" id="seats-section">
         <div class="section-title">Client seats — search &amp; workflow</div>
