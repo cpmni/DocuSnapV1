@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
+  <title>Scan Finder — Teach your documents</title>
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <link rel="stylesheet" href="help.css">
+  <script src="../shared/theme.js"></script>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="tb-title">Scan Finder — User Guide</span>
+    <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+  </div>
+
+  <div id="shell">
+    <nav id="nav">
+      <div class="nav-label">User Guide</div>
+      <div id="nav-links"></div>
+    </nav>
+
+    <div id="content">
+      <div class="doc">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <main>
+          <section id="teach">
+            <p class="use-when">Use this page before your first batch, and whenever a new company's document turns up.</p>
+            <h1>Teach your documents</h1>
+
+            <p class="lead">Teaching is showing Scan Finder one example of a document so it knows what that
+              company's paperwork looks like and where the important details sit. Teach one; it handles the
+              rest from that company by itself.</p>
+
+            <h2 id="which-copy">Pick one good example</h2>
+            <p>For each company you deal with often, choose <b>one</b> scan that is:</p>
+            <ul>
+              <li><b>clean</b> — not faint, marked or crumpled;</li>
+              <li><b>flat and straight</b> — not skewed on the scanner;</li>
+              <li><b>typical</b> — the layout you usually get from them.</li>
+            </ul>
+            <p>Start with your five biggest senders. You don't have to teach everyone at once — teach a new
+              one whenever it first appears.</p>
+
+            <h2 id="which-tool">The six steps</h2>
+            <p>Click <b>Teach</b> (the buttons down the left). The wizard walks you through it:</p>
+            <ol class="qs-steps">
+              <li><b>Welcome.</b> A short explanation of what you're about to do.</li>
+              <li><b>Choose the scan.</b> Pick the example from your scans folder (folder B).</li>
+              <li><b>Say what kind of document it is.</b> Choose a type (Invoice, Delivery Note…) or create a
+                new one if yours isn't listed. See <a href="document-types.html">Kinds of document</a>.</li>
+              <li><b>Point out each detail.</b> For every detail it asks for, <b>draw a box around the value
+                on the page</b> — the actual number, date or name. It reads back what it sees so you can
+                check.</li>
+              <li><b>Review.</b> A list of every detail you pointed out. Change anything that looks off.</li>
+              <li><b>Done.</b> Scan Finder files this document straight away and remembers the layout for
+                next time.</li>
+            </ol>
+            <figure class="shot-fig">
+              <img class="shot" src="img/teach-draw-box.png" alt="Teaching a document: drawing a box around a value and its printed label">
+              <figcaption>Step 4 — drawing a box around a value.</figcaption>
+            </figure>
+
+            <h2 id="labels">The printed label helps it find the value next time</h2>
+            <p>When you box a value, look for the <b>printed label</b> beside it — &ldquo;Invoice No:&rdquo;,
+              &ldquo;Date:&rdquo;, &ldquo;Total:&rdquo;. Box that label too if the wizard asks. The label is
+              how Scan Finder finds that detail on the next document, even if it has moved a little.</p>
+            <p><b>No label?</b> The company name at the top usually has none — box the name on its own.</p>
+            <p><b>Would rather type it?</b> If a value is hard to box, you can type it instead. Boxing is
+              better where you can, because it teaches <i>where</i> to look as well as <i>what</i> it says.</p>
+
+            <h2 id="extras">Crooked scans, several pages, and lists</h2>
+            <ul>
+              <li><b>Crooked scan?</b> Use <b>Straighten</b> before you box anything, so the boxes line up.</li>
+              <li><b>More than one page?</b> You can point out details on any page — move between pages as you
+                teach.</li>
+              <li><b>A list of values</b> (several serial numbers, several line items)? Point out <b>one</b>
+                value and the printed label beside it (for example &ldquo;Serial No&rdquo;). Scan Finder then
+                collects <b>every</b> value with that label on the page. See
+                <a href="fix-a-detail.html">Fixing a detail</a> for editing lists later.</li>
+            </ul>
+
+            <div class="callout note">
+              <div class="callout-title">Advanced: the Template Wizard</div>
+              <p>Most people never need it. The Template Wizard (the &#9875; on the Review tool rail) is a
+                manual way to map a layout box by box. Teaching does the same thing more simply — reach for
+                the wizard only if a layout is unusually awkward.</p>
+            </div>
+
+            <div class="callout tip">
+              <div class="callout-title">What's next</div>
+              <p>Taught your regular senders? Now <a href="import.html">import the rest of your scans</a>.
+                The ones you taught are already filed; the rest wait for a quick check.</p>
+            </div>
+          </section>
+        </main>
+
+        <nav class="page-foot" id="page-foot"></nav>
+      </div>
+    </div>
+  </div>
+
+  <script src="help-nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
+  <title>Scan Finder — Fixing a detail</title>
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <link rel="stylesheet" href="help.css">
+  <script src="../shared/theme.js"></script>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="tb-title">Scan Finder — User Guide</span>
+    <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+  </div>
+
+  <div id="shell">
+    <nav id="nav">
+      <div class="nav-label">User Guide</div>
+      <div id="nav-links"></div>
+    </nav>
+
+    <div id="content">
+      <div class="doc">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <main>
+          <section id="fix-a-detail">
+            <p class="use-when">Use this page when a detail Scan Finder read is wrong or missing.</p>
+            <h1>Fixing a detail</h1>
+
+            <h2 id="type">Type over it</h2>
+            <p>The quickest fix: click the detail on the right and type the correct value. When you file the
+              document, Scan Finder remembers your correction for that sender, so it gets it right next time.</p>
+
+            <h2 id="box">Point at the right value on the page</h2>
+            <p>If it read the wrong part of the page, you can show it where to look instead. Click the
+              <b>&#8853;</b> beside the detail, then <b>draw a box</b> round the correct value on the scan. It
+              reads what's in the box and, from then on, looks there for that sender.</p>
+
+            <h2 id="dates">Dates and amounts</h2>
+            <p>Type a date the way it's written on the page — Scan Finder tidies it into your regional format.
+              (You set day-first, month-first or year-first in <b>Settings &rarr; Processing &rarr; Date
+              format</b>.) If a date won't file, it's usually because it can't be made sense of; retype it
+              clearly. Amounts work the same way — the number is stored plainly whatever grouping your region
+              uses.</p>
+
+            <h2 id="usekeep">&ldquo;Use&rdquo; and &ldquo;Keep&rdquo;</h2>
+            <p>Sometimes a detail shows two buttons — <b>Use &ldquo;…&rdquo;</b> and <b>Keep &ldquo;…&rdquo;</b>.
+              That happens when the value it read and another value it found on the page disagree.
+              <b>Use</b> takes the one from the page; <b>Keep</b> stays with what's shown. Pick whichever
+              matches the document in front of you.</p>
+            <figure class="shot-fig">
+              <img class="shot" src="img/field-usekeep.png" alt="A detail showing Use and Keep buttons for two disagreeing values">
+              <figcaption>Use takes the value from the page; Keep stays with what's shown.</figcaption>
+            </figure>
+
+            <h2 id="lists">A detail that holds several values</h2>
+            <p>Some details are a <b>list</b> — several serial numbers, several line items. Each value shows as
+              its own little box (a <b>pill</b>):</p>
+            <ul>
+              <li>Click a pill to <b>edit</b> that value.</li>
+              <li>Click its <b>&#10005;</b> to remove it; a <b>&#8635;</b> puts it back if you change your mind.</li>
+              <li><b>+ One it missed</b> lets you point out a value it didn't pick up.</li>
+              <li><b>Edit as text</b> shows the whole list in one box for a quick tidy.</li>
+            </ul>
+            <p>Editing a pill changes <b>this document only</b> — a list won't overwrite what it learned for
+              the sender.</p>
+            <figure class="shot-fig">
+              <img class="shot" src="img/list-pills.png" alt="A list detail shown as pills, one removed and greyed with an undo arrow">
+              <figcaption>A list detail, shown as pills.</figcaption>
+            </figure>
+
+            <h2 id="learn">This document only, or learn it?</h2>
+            <p>When you correct the company, date or reference, Scan Finder learns it for that sender and uses
+              it next time. If correcting a <b>reference</b> also fixes the same misread on other documents
+              from that sender, it offers to correct those too — and an <b>Undo</b> if that wasn't what you
+              meant. Editing a <b>list</b> value, by contrast, only ever changes the document in front of you.</p>
+
+            <div class="callout note">
+              <div class="callout-title">Getting it wrong doesn't cost you</div>
+              <p>If a correction taught the wrong thing, you can un-teach it later — see
+                <a href="troubleshooting.html">Troubleshooting</a>.</p>
+            </div>
+          </section>
+        </main>
+
+        <nav class="page-foot" id="page-foot"></nav>
+      </div>
+    </div>
+  </div>
+
+  <script src="help-nav.js"></script>
+</body>
+</html>

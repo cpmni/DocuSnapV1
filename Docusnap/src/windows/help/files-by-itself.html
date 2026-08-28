@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
+  <title>Scan Finder — When it files without asking</title>
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <link rel="stylesheet" href="help.css">
+  <script src="../shared/theme.js"></script>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="tb-title">Scan Finder — User Guide</span>
+    <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+  </div>
+
+  <div id="shell">
+    <nav id="nav">
+      <div class="nav-label">User Guide</div>
+      <div id="nav-links"></div>
+    </nav>
+
+    <div id="content">
+      <div class="doc">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <main>
+          <section id="files-by-itself">
+            <p class="use-when">Use this page when a sender starts filing by itself, or something was filed you didn't see.</p>
+            <h1>When it files without asking — and how to take one back</h1>
+
+            <p class="lead">Once Scan Finder has seen enough correct documents from a sender, it stops asking
+              about that sender and files them for you. This is the point of the whole thing — but it always
+              shows you what it did, and you can undo any of it.</p>
+
+            <h2 id="ladder">How a sender earns it</h2>
+            <p>Every time you confirm a document without changing anything, that's a clean tick for its sender.
+              After enough clean ticks, the sender crosses the <b>pass mark</b> and starts filing by itself.
+              The count beside the sender's name in Review counts down to it.</p>
+            <figure class="diagram">
+              <svg viewBox="0 0 560 96" role="img" aria-label="A sender goes from checking each document, to a few clean confirmations, to filing by itself">
+                <title>How a sender earns trust</title>
+                <rect class="dg-panel2" x="8"   y="26" width="150" height="46" rx="8"/>
+                <rect class="dg-panel2" x="205" y="26" width="150" height="46" rx="8"/>
+                <rect class="dg-accent" x="402" y="26" width="150" height="46" rx="8"/>
+                <g class="dg-flow"><line x1="158" y1="49" x2="203" y2="49"/><line x1="355" y1="49" x2="400" y2="49"/></g>
+                <g class="dg-arrow"><path d="M203 49 l-8 -4 v8 z"/><path d="M400 49 l-8 -4 v8 z"/></g>
+                <text class="dg-text" x="83"  y="46" text-anchor="middle">You check</text>
+                <text class="dg-sub"  x="83"  y="62" text-anchor="middle">each one</text>
+                <text class="dg-text" x="280" y="46" text-anchor="middle">Clean confirms</text>
+                <text class="dg-sub"  x="280" y="62" text-anchor="middle">the count ticks down</text>
+                <text class="dg-text" x="477" y="46" text-anchor="middle">Files by itself</text>
+                <text class="dg-sub"  x="477" y="62" text-anchor="middle">you still see each one</text>
+              </svg>
+              <figcaption>You teach it what &ldquo;right&rdquo; looks like by confirming; it takes over from there.</figcaption>
+            </figure>
+            <p>How sure it must be before it files without asking is a slider in <b>Settings &rarr;
+              Processing</b> — the &ldquo;filing by itself&rdquo; section. Raise it to be more cautious, lower
+              it to file more on its own.</p>
+            <figure class="shot-fig">
+              <img class="shot" src="img/settings-filing-by-itself.png" alt="The Processing settings section that sets how sure it must be to file by itself">
+              <figcaption>Settings &rarr; Processing — the pass mark and clean-confirmation text.</figcaption>
+            </figure>
+
+            <h2 id="bar">&ldquo;N more from this sender — file them?&rdquo;</h2>
+            <p>When you confirm one document, Scan Finder may notice others from the same sender waiting behind
+              it and offer: <b>&ldquo;N more from &lt;sender&gt; — file them?&rdquo;</b> Click <b>Yes</b> and it
+              files those too, the same way it just filed yours. Ignore the bar and nothing else moves.</p>
+
+            <h2 id="see">Seeing what it filed by itself</h2>
+            <p>The Home screen shows <b>&ldquo;N filed by itself&rdquo;</b> — click it to see the list. Nothing
+              is ever hidden from you; a document filed on its own is one click from view.</p>
+
+            <h2 id="putback">Taking one back</h2>
+            <p>Filed under the wrong company, or shouldn't have filed at all? Open it and click <b>Put back</b>.
+              It returns to Review for you to fix, and Scan Finder treats that as a sign to be more careful with
+              that sender. A filed document is never stuck.</p>
+
+            <div class="callout note">
+              <div class="callout-title">Optional extras</div>
+              <p>Two aids are <b>off</b> until you turn them on in Settings: the <b>activity strip</b> (a live
+                line of recent filings across the top of Review) and the <b>Quick check</b> grid (thumbnails of
+                what filed by itself, to skim at a glance). Turn them on if you like to watch filings go by.</p>
+            </div>
+          </section>
+        </main>
+
+        <nav class="page-foot" id="page-foot"></nav>
+      </div>
+    </div>
+  </div>
+
+  <script src="help-nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
+  <title>Scan Finder — Quick start</title>
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <link rel="stylesheet" href="help.css">
+  <script src="../shared/theme.js"></script>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="tb-title">Scan Finder — User Guide</span>
+    <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+  </div>
+
+  <div id="shell">
+    <nav id="nav">
+      <div class="nav-label">User Guide</div>
+      <div id="nav-links"></div>
+    </nav>
+
+    <div id="content">
+      <div class="doc">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <main>
+          <section id="quick-start">
+            <p class="use-when">Use this page on your first day. It gets you from a pile of scans to one tidy, filed document.</p>
+            <h1>Quick start</h1>
+
+            <div class="callout note">
+              <div class="callout-title">Two folders — keep them apart</div>
+              <p><b>Folder A</b> is where filed documents end up. You choose it in step 1.<br>
+                 <b>Folder B</b> is where your fresh scans wait to be brought in (step 2).<br>
+                 <b>Never scan into folder A.</b></p>
+            </div>
+
+            <ol class="qs-steps">
+              <li>
+                <b>Create your login and answer the setup questions.</b> You're the admin. The one that
+                matters: <b>where filed documents go</b> — that's folder A. Don't point it at a folder that
+                already holds scans.
+                <span class="qs-know">You'll know it worked when the Home screen appears.</span>
+              </li>
+              <li>
+                <b>Scan one of each document into folder B.</b> Away from the computer: pick one clean, flat,
+                typical copy of each document you get often — start with your five biggest senders. One
+                document per file.
+                <span class="qs-know">You'll know it worked when folder B holds one file per document.</span>
+              </li>
+              <li>
+                <b>Teach each one.</b> Click <b>Teach</b> (the buttons down the left). Choose a scan from
+                folder B. Say what kind of document it is. Point out each detail it asks for: draw a box round
+                the value; if a printed label sits beside it (&ldquo;Invoice No:&rdquo;) box that too; no
+                label — the company name at the top — box the name on its own. Click <b>Done</b>, and repeat
+                for each sender.
+                <span class="qs-know">You'll know it worked when the taught document is filed straight away, in folder A.</span>
+              </li>
+              <li>
+                <b>Bring in the rest.</b> Click <b>Import</b> &rarr; choose folder B &rarr;
+                <b>Process Documents</b>. Scan Finder makes its own copy of each scan to read — your
+                originals stay in folder B until you file them. A big pile is long enough to make a tea.
+                <span class="qs-know">You'll know it worked when the results table shows &ldquo;Ready to file&rdquo; or &ldquo;Confirm to file&rdquo; beside each one.</span>
+              </li>
+              <li>
+                <b>Check what it wasn't sure about.</b> Click <b>Review</b> — the number is how many are
+                waiting. For a sender you taught, the details are already filled in; fix anything wrong by
+                clicking the detail and typing over it. <b>Confirm &amp; File</b> files the one you're looking
+                at. <b>File All Ready</b> files only the rows marked Ready and leaves the rest. A filed
+                document can always be sent back from Search.
+                <span class="qs-know">You'll know it worked when the number drops by one each time.</span>
+              </li>
+              <li>
+                <b>Let it take over.</b> Keep confirming. After enough correct ones from a sender, it starts
+                filing that sender's documents without asking. Home shows &ldquo;filed by itself&rdquo; — click
+                it to check them. Wrong one? Open it and click <b>Put back</b>.
+                <span class="qs-know">You'll know it worked when the count beside a sender's name reads &ldquo;files by itself&rdquo;.</span>
+              </li>
+              <li>
+                <b>Find anything later.</b> Click <b>Search</b> &rarr; type anything you remember &rarr; open
+                it, or <b>Show in folder</b>. Still waiting in Review? Tick <b>Include unconfirmed</b>.
+                <span class="qs-know">You'll know it worked when the document opens.</span>
+              </li>
+            </ol>
+
+            <div class="callout tip">
+              <div class="callout-title">How you know it all worked</div>
+              <p>Open folder A in Windows Explorer. You'll see it sorted into <b>Company / Year / Month</b>,
+                with one neatly-named file for each document.</p>
+            </div>
+
+            <p>Want more detail on any step? <a href="teach.html">Teach your documents</a>,
+              <a href="import.html">Import a batch</a> and
+              <a href="review.html">Check what it wasn't sure about</a> each walk through one part slowly.</p>
+          </section>
+        </main>
+
+        <nav class="page-foot" id="page-foot"></nav>
+      </div>
+    </div>
+  </div>
+
+  <script src="help-nav.js"></script>
+</body>
+</html>

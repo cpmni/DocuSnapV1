@@ -1658,6 +1658,10 @@ document.getElementById('menu-about')?.addEventListener('click', () => {
   userMenu.classList.remove('open');
   openAbout();
 });
+document.getElementById('menu-user-guide')?.addEventListener('click', () => {
+  userMenu.classList.remove('open');
+  window.docusnap.openHelpWindow('home');   // the guide's Home / path-picker page
+});
 document.getElementById('menu-welcome')?.addEventListener('click', () => {
   userMenu.classList.remove('open');
   window.docusnap.openWelcome?.();
