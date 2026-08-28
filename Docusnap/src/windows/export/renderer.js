@@ -111,15 +111,24 @@ function buildPayload() {
     const on = state.fieldChecked.has(f.key) ? state.fieldChecked.get(f.key) : false;   // fields default OFF (opt-in)
     if (on) fields.push({ key: f.key, label: f.label, type: f.type });
   }
+  const typesSel = [...state.types];
+  const supsSel = [...state.sups];
   const filters = {
-    suppliers: [...state.sups],
-    typeSlugs: [...state.types],
     includeNeedsReview: state.needsReview,
     filedFrom: state.from || null,
     filedTo: state.to || null,
     docFrom: state.docFrom || null,
     docTo: state.docTo || null,
   };
+  // Selection model: nothing ticked anywhere → export nothing (0). Once you tick a type
+  // OR a sender, an UNtouched (empty) list means "all of that dimension" (omitted below),
+  // so ticking just document types shows those types across all senders — and vice versa.
+  if (!typesSel.length && !supsSel.length) {
+    filters.typeSlugs = [];                       // both empty ⇒ nothing selected ⇒ 0
+  } else {
+    if (typesSel.length) filters.typeSlugs = typesSel;   // empty ⇒ omitted ⇒ all types
+    if (supsSel.length) filters.suppliers = supsSel;     // empty ⇒ omitted ⇒ all senders
+  }
   const sel = { metaKeys: [...state.meta], fields, format: state.format };
   return { filters, sel };
 }
