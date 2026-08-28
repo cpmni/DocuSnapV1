@@ -89,10 +89,14 @@ function createStampService(deps = {}) {
     const source_sha256 = sha256File(base);
     const placement = { x: box && box.x, y: box && box.y, w: box && box.w, page };
 
+    // The placement ORDER on this document (1, 2, 3…) — printed on the stamp so overlapping stamps read
+    // in sequence (owner 2026-08-28). Derived from the count so far; the append-only record's order is
+    // authoritative, this just labels the visual.
+    const seq = stampsDb.countStampsForDoc(db, documentId) + 1;
     // Render the stamped COPY (pdf-lib; original untouched). pdfStamp does the origin flip + on-page clamp.
     try {
       await pdfStamp.stampPdf(base, tmpPath, {
-        label: type.label, color: type.color, box: box || null, page,
+        label: type.label, color: type.color, box: box || null, page, seq,
         notes: note || '', userName: actor.username || '', date: placedAt,
       });
     } catch (e) {

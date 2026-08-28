@@ -11,6 +11,7 @@
 
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const toast = (msg) => { try { window.SearchState && window.SearchState.toast ? window.SearchState.toast(msg) : console.log(msg); } catch { /* noop */ } };
+  const _fmtDT = (iso) => String(iso || '').slice(0, 16).replace('T', ' ');   // ISO → "YYYY-MM-DD HH:MM"
 
   // ── one-time CSS (CSP allows inline styles) ─────────────────────────────────
   function _css() {
@@ -45,6 +46,7 @@
       .sp-history{margin-top:14px;border-top:1px solid var(--border);padding-top:10px}
       .sp-hist-head{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
       .sp-hist-row{font-size:12px;color:var(--text);padding:4px 0;border-bottom:1px solid var(--border)}
+      .sp-hist-row .h-seq{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;border-radius:50%;background:var(--surface2);color:var(--muted);font-size:10px;font-weight:700;margin-right:6px}
       .sp-hist-row .h-badge{font-weight:700;margin-right:6px}
       .sp-hist-empty{font-size:12px;color:var(--muted)}
       .sp-err{color:var(--err);font-size:12px;margin-top:6px}
@@ -390,13 +392,17 @@
   async function _renderHistory() {
     const host = document.getElementById('sp-hist-list'); if (!host) return;
     const rows = [];
-    try { (await window.docusnap.stamp.list(_doc.id)).forEach(st => rows.push({ at: st.placedAt, who: st.placedBy, label: st.label, color: st.color, note: st.note })); } catch { /* */ }
+    try {
+      // stamp.list is oldest-first = placement order, so the index is the stamp's number on the doc.
+      (await window.docusnap.stamp.list(_doc.id)).forEach((st, i) =>
+        rows.push({ seq: i + 1, at: st.placedAt, who: st.placedBy, label: st.label, color: st.color, note: st.note }));
+    } catch { /* */ }
     if (S().workflowEntitled) {
       try { (await window.docusnap.workflow.docHistory(_doc.id) || []).forEach(h => rows.push({ at: h.resolved_at || h.created_at, who: h.actor_username || h.from_username, label: (h.state || '').toUpperCase(), color: 'var(--muted)', note: h.resolution_comment || h.comment })); } catch { /* */ }
     }
-    rows.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+    rows.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));   // newest first
     host.innerHTML = rows.length
-      ? rows.map(r => `<div class="sp-hist-row"><span class="h-badge" style="color:${esc(r.color)}">${esc(r.label)}</span>${esc(r.who || '')} · ${esc((r.at || '').slice(0, 10))}${r.note ? ' — “' + esc(r.note) + '”' : ''}</div>`).join('')
+      ? rows.map(r => `<div class="sp-hist-row">${r.seq ? `<span class="h-seq">${r.seq}</span>` : ''}<span class="h-badge" style="color:${esc(r.color)}">${esc(r.label)}</span>${esc(r.who || '')} · ${esc(_fmtDT(r.at))}${r.note ? ' — “' + esc(r.note) + '”' : ''}</div>`).join('')
       : `<div class="sp-hist-empty">Nothing yet.</div>`;
   }
 

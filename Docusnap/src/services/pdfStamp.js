@@ -36,6 +36,14 @@ function fmtDate(d) {
   return `${String(dt.getDate()).padStart(2, '0')} ${MONTHS[dt.getMonth()]} ${dt.getFullYear()}`;
 }
 
+// Date + time — so a stamp is unambiguous when several land on one document.
+function fmtDateTime(d) {
+  const dt = d ? new Date(d) : new Date();
+  if (isNaN(dt.getTime())) return fmtDateTime(new Date());
+  const hh = String(dt.getHours()).padStart(2, '0'), mm = String(dt.getMinutes()).padStart(2, '0');
+  return `${fmtDate(dt)}, ${hh}:${mm}`;
+}
+
 // Greedy word-wrap to a pixel width for the chosen font/size.
 function wrapText(text, font, size, maxWidth) {
   const words = String(text).split(/\s+/).filter(Boolean);
@@ -86,6 +94,9 @@ async function stampPdf(inputPath, outputPath, options = {}) {
     // stamp's width and therefore its scale; the height follows the content. Omit `box` and the
     // legacy corner `position` applies exactly as before.
     box = null, scale = 1,
+    // Placement ORDER on the document (1, 2, 3…) — printed so a reader can tell the sequence when
+    // several stamps land on one page (owner 2026-08-28). Null = don't print a number.
+    seq = null,
   } = options;
   if (String(notes).length > MAX_NOTES) throw new Error(`Notes too long (${String(notes).length} > ${MAX_NOTES}).`);
   const col = hexToRgb(color);
@@ -114,8 +125,10 @@ async function stampPdf(inputPath, outputPath, options = {}) {
   const labelSize = 22 * k, lineSize = Math.max(6, 9 * k), gap = 3 * k;
 
   const meta = [];
-  if (userName) meta.push(`By: ${userName}`);
-  meta.push(`Date: ${fmtDate(date)}`);
+  const line1 = [userName ? `By: ${userName}` : null, (seq != null && seq !== '') ? `No. ${seq}` : null]
+    .filter(Boolean).join('   ·   ');
+  if (line1) meta.push(line1);
+  meta.push(`Date: ${fmtDateTime(date)}`);
   const noteLines = String(notes).trim() ? wrapText(`Notes: ${String(notes).trim()}`, reg, lineSize, boxW) : [];
   const subLines = meta.length + noteLines.length;
   const blockH = labelSize + 8 + subLines * (lineSize + gap) + 8;
