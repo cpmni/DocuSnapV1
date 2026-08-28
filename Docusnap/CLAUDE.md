@@ -21,7 +21,11 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-27 NIGHT2: **READ `HANDOVER_2026-08-27_NIGHT2.md` FIRST.** The owner's §7 night prompt is BUILT —
+## ⏭ LATEST — 2026-08-28: **READ `HANDOVER_2026-08-28.md` FIRST** (current-state + first-actions index; per-feature detail
+in `HANDOVER_2026-08-27_NIGHT2.md`). App RELAUNCHED on the latest code, both Pelican extraction switches ON in the live DB
+(`ref_prefix_confusable_adopt_length_note` + `tier_a_date_plausibility`) — owner's next click is Review → Reprocess the 5
+held Pelican docs. Branch `feat/teach-side-overnight`, commits `ce4c7f5` … `fc5b7ef`, NOT pushed. Session summary follows.
+## (context) 2026-08-27 NIGHT2 → 08-28: **`HANDOVER_2026-08-27_NIGHT2.md`** — the owner's §7 night prompt is BUILT —
 2 commits `ce4c7f5` (EXPORT: Home "Export data" → CSV/`.xlsx`/JSON of confirmed doc data; new dependency-free
 `src/lib/xlsxWriter.js` so the 4-dep tree + licence gate stay untouched) + `d2cf9fe` (MEMORY INVENTORY: Settings →
 Learning is now READ-ONLY click-to-browse, typed tools preserved under "Advanced"), NOT pushed. barry+bob+eric → Oracle
