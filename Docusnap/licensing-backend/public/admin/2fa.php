@@ -126,7 +126,7 @@ $hasQr  = is_file($qrFile);
 
 admin_page_open('Security');
 ?>
-<h1>Two-factor authentication</h1>
+<?php admin_page_head('security', 'Two-factor authentication', 'Protect this console with an authenticator app.'); ?>
 <p class="lead">An authenticator-app code (TOTP) is required on sign-in, in addition to the admin password.</p>
 
 <?php if ($showCodes !== null): ?>

@@ -29,15 +29,13 @@ foreach ($trials as $t) { if ((int) $t['is_active'] === 1) { $trialsActive++; } 
 admin_page_open('Trials');
 admin_nav('trials');
 ?>
-<h1>Trial Licenses
-  <span class="pill ok" style="font-size:12px; vertical-align:middle;"><?= (int) $trialsActive ?> active</span>
-  <span class="pill" style="font-size:12px; vertical-align:middle;"><?= count($trials) ?> total</span>
-</h1>
-<p class="muted">
-  In-app 14-day free trials, one device-bound row each, captured at trial start and
-  resumed (never reset) when the device returns. Active trials are listed first.
-  Click a row to see the trial's full details and whether the device has activated a paid licence.
-</p>
+<?php
+admin_page_head('trials', 'Trial Licenses', 'In-app 14-day free trials, one device-bound row each — resumed (never reset) when the device returns. Click a row for full details.');
+admin_chips([
+    ['n' => (int) $trialsActive, 'l' => 'active', 'tone' => 'ok'],
+    ['n' => count($trials),      'l' => 'total'],
+]);
+?>
 <?php if (!$trials): ?>
   <div class="empty">No trials started yet.</div>
 <?php else: ?>

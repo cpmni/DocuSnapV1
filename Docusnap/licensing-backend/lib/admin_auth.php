@@ -532,7 +532,7 @@ function admin_page_open(string $title, bool $showNav = true): void
     color-scheme: light;
     --paper:#f6f1e7; --paper-2:#efe7d6; --surface:#fffdf8; --surface2:#faf5ea;
     --ink:#20180f; --ink-soft:#5b4f41; --muted:#8a7d6b; --line:#e2d7c2; --line-2:#d3c4a8;
-    --accent:#c2521b; --accent-2:#a23f12; --on-accent:#fff6ee; --teal:#1f5b54;
+    --accent:#c2521b; --accent-2:#a23f12; --on-accent:#fff6ee; --accent-weak:#f6e6d7; --teal:#1f5b54;
     /* --accent-ink = a DARK accent for text/links on a light surface (pages rely on it,
        e.g. temp.php's disclosure toggle). Buttons put --on-accent ON the accent fill. */
     --accent-ink:#a23f12;
@@ -625,6 +625,24 @@ function admin_page_open(string $title, bool $showNav = true): void
   .muted { color:var(--muted); }
   .lead { color:var(--ink-soft); font-size:14.5px; max-width:74ch; }
   .empty { color:var(--muted); padding:14px 2px; }
+  /* Section-page header + context chips + search toolbar (shared, via admin_page_head/admin_chips) */
+  .pagehead { display:flex; align-items:center; gap:14px; margin-bottom:14px; }
+  .pagehead .ic { width:44px; height:44px; border-radius:13px; flex:none; display:grid; place-items:center; background:var(--accent-weak); color:var(--accent); }
+  .pagehead .ic svg { width:23px; height:23px; stroke:currentColor; stroke-width:1.8; fill:none; }
+  .pagehead h1 { font-size:27px; margin:0 0 2px; }
+  .pagehead .sub { color:var(--ink-soft); font-size:13.5px; }
+  .pagehead .spacer { flex:1; }
+  .chips { display:flex; flex-wrap:wrap; gap:9px; margin-bottom:18px; }
+  .cstat { display:inline-flex; align-items:center; gap:8px; padding:7px 13px; border-radius:var(--r-sm); background:var(--surface); border:1px solid var(--line); font-size:13px; box-shadow:var(--shadow); }
+  .cstat .n { font-weight:700; }
+  .cstat .l { color:var(--muted); }
+  .cstat .d { width:8px; height:8px; border-radius:50%; background:var(--muted); }
+  .cstat.ok .d { background:var(--ok); }
+  .cstat.warn .d { background:var(--warn); }
+  .cstat.accent .d { background:var(--accent); }
+  .toolbar { display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap; background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:14px 16px; box-shadow:var(--shadow); margin-bottom:16px; }
+  .toolbar .field { display:flex; flex-direction:column; gap:5px; }
+  .toolbar label { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
 </style>
 </head>
 <body>

@@ -24,7 +24,7 @@ $products = $st->fetchAll();
 admin_page_open('Products');
 admin_nav('products');
 ?>
-<h1>Products</h1>
+<?php admin_page_head('products', 'Products', 'The products and plans a licence can apply to.'); ?>
 <p class="lead">Reference list — each product is an opaque <span class="mono">product_id</span> plus an internal name. (Products are provisioned out-of-band, not from here.)</p>
 <form method="get" action="products.php" class="row" style="margin-bottom:6px;">
   <div class="field">

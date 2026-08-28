@@ -30,7 +30,22 @@ $tempLicenses = $pdo->query(
 admin_page_open('Temporary licenses');
 admin_nav('temp');
 ?>
-<h1>Temporary Licenses</h1>
+<?php
+$tmp_total = count($tempLicenses);
+$tmp_active = 0; $tmp_soon = 0;
+foreach ($tempLicenses as $t) {
+    if ($t['status'] !== 'revoked') {
+        $tl = temp_days_left($t['expires_at']);
+        if ($tl > 0) { $tmp_active++; if ($tl <= 7) $tmp_soon++; }
+    }
+}
+admin_page_head('temp', 'Temporary Licenses', 'Time-limited keys — create one below, then extend or revoke as needed.');
+admin_chips([
+    ['n' => $tmp_total,  'l' => 'total'],
+    ['n' => $tmp_active, 'l' => 'active',      'tone' => 'ok'],
+    ['n' => $tmp_soon,   'l' => 'expiring 7d', 'tone' => 'warn'],
+]);
+?>
 <?php
 // One-time key callout — shown once, immediately after creation, then cleared.
 $issued = $_SESSION['issued_key'] ?? null;

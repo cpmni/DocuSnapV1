@@ -27,7 +27,7 @@ $rows = $pdo->query(
 admin_page_open('Subscriptions');
 admin_nav('subs');
 ?>
-<h1>Subscriptions</h1>
+<?php admin_page_head('subs', 'Subscriptions', 'Polar-managed recurring grants and their status.'); ?>
 <p class="muted" style="max-width:780px;">Accounts with active Polar subscriptions — one row per account. Click an account to see and manage its individual subscriptions. Seats are the sum across the account's subscriptions; change them by editing or cancelling the customer's subscription in Polar (a cancellation revokes the matching rows automatically).</p>
 
 <?php if (!$rows): ?>
