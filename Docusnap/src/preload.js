@@ -352,6 +352,21 @@ contextBridge.exposeInMainWorld('docusnap', {
     ruleDryRun: (p)          => ipcRenderer.invoke('workflow-rule-dry-run', p),
   },
 
+  // ── Stamping (Workflow+Stamping redesign 2026-08-28) ───────────────────────────
+  // Desktop self-stamp is a core capability (permission + access gated in the main process, not the
+  // add-on). The renderer only ever sends coords + a stamp type; the main process resolves the source
+  // and writes the immutable record.
+  stamp: {
+    can:          ()               => ipcRenderer.invoke('stamp-can'),
+    types:        ()               => ipcRenderer.invoke('stamp-types'),
+    place:        (p)              => ipcRenderer.invoke('stamp-place', p),
+    list:         (documentId)     => ipcRenderer.invoke('stamp-list', { documentId }),
+    currentPages: (documentId)     => ipcRenderer.invoke('stamp-current-pages', { documentId }),
+    typeCreate:   (p)              => ipcRenderer.invoke('stamp-type-create', p),
+    grants:       ()               => ipcRenderer.invoke('stamp-grants'),
+    grant:        (userId, grant)  => ipcRenderer.invoke('stamp-grant', { userId, grant }),
+  },
+
   // ── Template Viewer / Anchor Mapping (admin-only, lives in Settings) ────────
   getTemplates:               ()                  => ipcRenderer.invoke('get-templates'),
   getTemplateDetail:          (id)                => ipcRenderer.invoke('get-template-detail', id),

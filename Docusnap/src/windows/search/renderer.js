@@ -87,6 +87,9 @@ async function _init() {
     window.SearchState.workflowEntitled = !!(e && e.workflow && e.workflow.entitled); // workflow add-on
   } catch { window.SearchState.entitled = false; window.SearchState.workflowEntitled = false; }
   try { const u = await window.docusnap.authGetCurrentUser(); window.SearchState.role = u && u.role; } catch { /* ignore */ }
+  // Stamp permission (Workflow+Stamping redesign): drives whether the "Stamp" option is shown at all.
+  // A core capability (not the add-on); the main process re-checks on every place.
+  try { window.SearchState.canStamp = !!(await window.docusnap.stamp.can()).canStamp; } catch { window.SearchState.canStamp = false; }
   // Recycle bin is for the people who can delete (Admin/Edit).
   if (window.SearchState.role === 'admin' || window.SearchState.role === 'edit') {
     const rb = document.getElementById('btn-recycle'); if (rb) rb.style.display = '';

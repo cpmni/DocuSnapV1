@@ -203,6 +203,68 @@ function register(ctx) {
     return { ok: outcome === 'success', reason: outcome };
   });
 
+  // ── STAMPING (Workflow+Stamping redesign 2026-08-28) ──────────────────────────
+  // Desktop self-stamp is a CORE capability — gated on the stamp PERMISSION + document ACCESS
+  // (Oracle gate 5), NOT the workflow add-on, so a standalone owner can stamp. Catalog/grant admin
+  // actions are role-gated. Every real gate lives INSIDE the service; the renderer sends coords + a type.
+  const stampSvc  = require('../../services/stampService').createStampService();
+  const stampPerm = require('../auth/stampPermission');
+  const stampsDb  = require('../../../database/modules/stamps');
+  const _stampAccessOr404 = (db, docId) => {
+    const acc = require('../../services/accessService').canAccessDocument(db, actor(), Number(docId));
+    if (!acc.allow) throw Object.assign(new Error('Document not found.'), { code: 'NOT_FOUND' });
+  };
+  // Does the current user hold the stamp permission? Drives show/hide of the stamp UI (server re-checks).
+  ipcMain.handle('stamp-can', () => { requireLogin(); return { canStamp: stampPerm.canStamp(getDb(), getCurrentUser().id) }; });
+  // The stamp catalog (any logged-in user may READ it; only stampers ever place one).
+  ipcMain.handle('stamp-types', () => { requireLogin(); return stampsDb.listStampTypes(getDb()); });
+  // Place a stamp — coords + type only; the service resolves the source, gates permission + access,
+  // writes the immutable record atomically.
+  ipcMain.handle('stamp-place', async (_e, { documentId, stampTypeId, box, page, note } = {}) => {
+    requireLogin();
+    const r = await stampSvc.placeStamp(getDb(), actor(), { documentId: Number(documentId), stampTypeId: Number(stampTypeId), box, page, note });
+    if (!r.ok) throw Object.assign(new Error(r.error || 'Could not stamp.'), { code: r.code });
+    return r;
+  });
+  // Stamp history for a document (path-stripped).
+  ipcMain.handle('stamp-list', (_e, { documentId } = {}) => {
+    requireLogin(); const db = getDb(); _stampAccessOr404(db, documentId);
+    return stampSvc.stampsForDocument(db, Number(documentId));
+  });
+  // Render the CURRENT stamped artifact to page images (the Search "Stamped" toggle). Path-free — the
+  // artifact is resolved server-side; only images cross to the renderer (the stamped-viewer discipline).
+  ipcMain.handle('stamp-current-pages', async (_e, { documentId } = {}) => {
+    requireLogin(); const db = getDb(); _stampAccessOr404(db, documentId);
+    const cur = stampSvc.currentArtifact(db, Number(documentId));
+    if (!cur) return { ok: false, reason: 'no_stamp' };
+    const fs = require('fs'), path = require('path');
+    const pages = await require('../../services/previewService').getDocumentPages(db, {
+      docId: Number(documentId), folderPath: path.dirname(cur.path), filename: path.basename(cur.path), exact: true,
+    }, { fs, path, spawn: require('child_process').spawn, pythonExe: ctx.pythonExe, pythonArgs: ctx.pythonArgs,
+         renderScript: ctx.resourcePath('python_backend', 'render', 'pages.py') });
+    return { ok: true, pages, count: cur.count };
+  });
+  // ── Catalog + permission ADMIN (Settings) ────────────────────────────────────
+  ipcMain.handle('stamp-type-create', (_e, { label, color, category } = {}) => {
+    requireRole('admin');
+    const r = stampsDb.createStampType(getDb(), { label, color, category, createdBy: getCurrentUser().id });
+    if (!r.ok) throw Object.assign(new Error(r.error), { code: r.code });
+    return r;
+  });
+  // Users + their current stamping grant (the Settings → Users grant list).
+  ipcMain.handle('stamp-grants', () => {
+    requireRole('admin'); const db = getDb();
+    return (dbAuth.getAllUsers(db) || []).map(u => ({ id: u.id, username: u.username, displayName: u.display_name,
+      role: u.role, active: !!u.is_active, canStamp: stampPerm.canStamp(db, u.id) }));
+  });
+  ipcMain.handle('stamp-grant', (_e, { userId, grant } = {}) => {
+    requireRole('admin');
+    const r = grant ? stampPerm.grantStamp(getDb(), actor(), Number(userId))
+                    : stampPerm.revokeStamp(getDb(), actor(), Number(userId));
+    if (!r.ok) throw Object.assign(new Error(r.error), { code: r.code });
+    return r;
+  });
+
   // ── Routing rules — the Workflow settings area (admin + entitled; every mutation audited) ─────
   // Rules are approval OR "for information" (acknowledge) since the FYI non-locking slice
   // (2026-07-19 — the old D1 approval-only pin was DELIBERATELY lifted once acknowledge stopped

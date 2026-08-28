@@ -190,6 +190,9 @@ async function selectDoc(doc) {
       ph.innerHTML = 'No preview available';
       document.getElementById('page-nav').style.display = 'none';
     }
+    // Stamped/original toggle (Workflow+Stamping redesign): shows when the doc carries ≥1 stamp and
+    // defaults the preview to the stamped version. Non-fatal + staleness-guarded inside.
+    if (window.SearchStamp) { try { window.SearchStamp.onDocShown(doc); } catch (e) { console.error('stamp toggle:', e); } }
   } catch (err) {
     if (s.selectedDoc !== mine) return;   // don't overwrite a newer selection's state
     _showPreviewLoadError(ph, doc, err);

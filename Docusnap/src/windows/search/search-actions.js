@@ -85,29 +85,15 @@ function renderActions(doc) {
   // heading. The section starts with just its header child; buttons add more.
   if (docSection.children.length > 1) panel.appendChild(docSection);
 
-  // ── 3. Workflow / approval — ONLY when the workflow add-on is licensed, so an
-  //       unlicensed / search-only install shows no "Workflow" section or mention. ─────
-  if (window.SearchState && window.SearchState.workflowEntitled) {
-    const wfSection = _section('Workflow');
-    let hasWorkflowActions = false;
-    for (const provider of _providers) {
-      try {
-        const acts = provider(doc) || [];
-        for (const act of acts) {
-          if (act.node) wfSection.appendChild(act.node);            // rich panel (decision bar / assign form)
-          else _btn(wfSection, act.label, act.onClick, !!act.primary);
-          hasWorkflowActions = true;
-        }
-      } catch (err) {
-        console.error('SearchActions provider error:', err);
-      }
-    }
-    if (!hasWorkflowActions) {
-      const note = document.createElement('span');
-      note.className   = 'ap-future-note';
-      note.textContent = 'Approval and workflow features will appear here.';
-      wfSection.appendChild(note);
-    }
+  // ── 3. Send or stamp — ONE front door (fixes "is this 1 feature or 2?"). Standalone stamping is a
+  //       core capability; sending needs the workflow add-on. Show the button when EITHER is available;
+  //       the popup (search-stamp.js) shows only the panels the user can use. Deleted/error docs excluded.
+  const canStampNow = !!(window.SearchState && window.SearchState.canStamp);
+  const canSendNow  = !!(window.SearchState && window.SearchState.workflowEntitled) && canEdit;
+  if ((canStampNow || canSendNow) && doc.status !== 'deleted' && doc.status !== 'error') {
+    const wfSection = _section('Approvals & stamps');
+    const label = (canStampNow && canSendNow) ? '🏷 Send or stamp…' : (canStampNow ? '🏷 Stamp…' : '✉ Send…');
+    _btn(wfSection, label, () => { try { window.SearchStamp && window.SearchStamp.open(doc); } catch (e) { console.error('open stamp popup:', e); } }, true);
     panel.appendChild(wfSection);
   }
 }
