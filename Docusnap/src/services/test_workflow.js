@@ -55,7 +55,10 @@ function main() {
   const audits = [];
   // Stub the stamp so the suite stays hermetic (no filesystem / PDF work on resolve).
   const stamps = [];
-  const wf = createWorkflowService({ audit: (e) => audits.push(e), stampDecision: (a) => { stamps.push(a); return Promise.resolve(null); } });
+  // NEW MODEL (2026-08-28): approve/reject are gated by can_stamp (not role) and you can't route FOR
+  // APPROVAL to a non-stamper. Here admin(1) + editor(2) hold the grant; reader(3, readonly) does not.
+  const wf = createWorkflowService({ audit: (e) => audits.push(e), stampDecision: (a) => { stamps.push(a); return Promise.resolve(null); },
+    canStamp: (db, uid) => uid === 1 || uid === 2 });
 
   // ── assign authorization + preconditions ─────────────────────────────────────
   check('readonly cannot assign', wf.assign(db, reader, { documentId: 1, toUserId: 3, actionRequired: 'acknowledge' }).code === 'FORBIDDEN');
@@ -71,17 +74,17 @@ function main() {
   check('inbox shows it for reader', wf.inbox(db, reader).length === 1);
   check('sent shows it for admin', wf.sent(db, admin).length === 1);
 
-  // ── acknowledge path (readonly allowed) + role/decision guards ───────────────
+  // ── acknowledge path (readonly allowed) + decision/permission guards ─────────
   // Approving an acknowledge-request is the WRONG decision for that request type.
   check('wrong decision for request type -> INVALID', wf.resolve(db, reader, a1.route.id, { decision: 'approve' }).code === 'INVALID');
-  // A readonly recipient on an APPROVE-request is blocked by the role gate.
-  const ar = wf.assign(db, admin, { documentId: 1, toUserId: 3, actionRequired: 'approve' });
-  check('readonly recipient cannot approve (role gate)', wf.resolve(db, reader, ar.route.id, { decision: 'approve' }).code === 'FORBIDDEN');
-  wf.recall(db, admin, ar.route.id); // tidy up the pending route
+  // You cannot route FOR APPROVAL to a non-stamper — the approval would be a dead-end (reader = readonly,
+  // no stamp grant). (The STAMP_FORBIDDEN resolve gate itself is pinned in test_stamp_workflow_gate.js.)
+  check('cannot route approval to a non-stamper',
+    wf.assign(db, admin, { documentId: 1, toUserId: 3, actionRequired: 'approve' }).code === 'RECIPIENT_CANNOT_STAMP');
   const ack = wf.resolve(db, reader, a1.route.id, { decision: 'acknowledge' });
   check('reader acknowledges -> acknowledged', ack.ok && ack.route.state === 'acknowledged');
 
-  // ── approve / reject path (admin|edit only) + filing-state invariant ─────────
+  // ── approve / reject path (stampers only) + filing-state invariant ───────────
   const a2 = wf.assign(db, admin, { documentId: 1, toUserId: 2, actionRequired: 'approve' });
   check('editor claims own route', wf.claim(db, editor, a2.route.id).ok);
   check('non-recipient cannot claim', wf.claim(db, reader, a2.route.id).code === 'FORBIDDEN');
@@ -110,13 +113,11 @@ function main() {
     db.prepare('SELECT state FROM document_routes WHERE id=?').get(ap.route.id).state === 'pending');
   check("refused 'paid' leaves workflow_status untouched",
     db.prepare('SELECT workflow_status FROM documents WHERE id=1').get().workflow_status === 'pending');
-  // Readonly + 'paid' now dies at the DECISION check (:130, which precedes the role gate at
-  // :136) -> INVALID, NOT the old FORBIDDEN. Copying the old expectation would green a wrong pin.
-  check("readonly 'paid' -> INVALID (decision check precedes role gate)",
-    wf.resolve(db, reader, wf.assign(db, admin, { documentId: 1, toUserId: 3, actionRequired: 'approve' }).route.id, { decision: 'paid' }).code === 'INVALID');
-  // Role-gate message no longer mentions paid.
-  const roleErr = wf.resolve(db, reader, wf.assign(db, admin, { documentId: 1, toUserId: 3, actionRequired: 'approve' }).route.id, { decision: 'approve' });
-  check('role-gate message mentions no "paid"', roleErr.code === 'FORBIDDEN' && !/paid/i.test(roleErr.error));
+  // Decision-validity precedes the permission gate: a 'paid' decision is INVALID (removed from DECIDE),
+  // not STAMP_FORBIDDEN — the decision check runs first. Routed to a stamper (editor) so only the
+  // decision check is exercised.
+  check("'paid' precedes the stamp gate -> INVALID",
+    wf.resolve(db, editor, wf.assign(db, admin, { documentId: 1, toUserId: 2, actionRequired: 'approve' }).route.id, { decision: 'paid' }).code === 'INVALID');
   // Stamp belt: the PAID preset is gone and the service never attempts a paid stamp.
   check('DECISION_STYLE.paid removed', require('./pdfStamp').DECISION_STYLE.paid === undefined);
   check('no stamp attempted for a refused paid', !stamps.some(s => s.decision === 'paid'));
@@ -178,7 +179,7 @@ function main() {
 
   // ── C1: notifyWorkflow hook (Slice 1 notifications) ───────────────────────────
   const events = [];
-  const wfN = createWorkflowService({ audit: () => {}, stampDecision: () => Promise.resolve(null), notifyWorkflow: (e) => events.push(e) });
+  const wfN = createWorkflowService({ audit: () => {}, stampDecision: () => Promise.resolve(null), notifyWorkflow: (e) => events.push(e), canStamp: () => true });
   const na = wfN.assign(db, admin, { documentId: 1, toUserId: 2, actionRequired: 'approve' });
   check('notify hook fires on assign with {event,route,actor}',
     events.some(e => e.event === 'assigned' && e.route && e.route.id === na.route.id && e.actor === admin));
@@ -308,7 +309,7 @@ function main() {
     const cancelEvents = [];
     const wfC = createWorkflowService({ audit: (e) => audits.push(e),
       stampDecision: (a) => { stamps.push(a); return Promise.resolve(null); },
-      notifyWorkflow: (e) => cancelEvents.push(e) });
+      notifyWorkflow: (e) => cancelEvents.push(e), canStamp: () => true });
 
     // Setup: the 'paid' blocks above DELIBERATELY leave open approve routes on doc 1
     // (refused decisions keep the route pending) — settle them so this battery's

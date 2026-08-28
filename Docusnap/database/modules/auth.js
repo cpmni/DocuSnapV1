@@ -375,6 +375,36 @@ function getAuditLogFiltered(db, f = {}, opts = {}) {
   return result;
 }
 
+// ── Stamp permission grants (Workflow+Stamping redesign 2026-08-28) ─────────────
+// The stamp permission is NOT a flippable column — it is a stream of signed grant/revoke EVENTS that ride
+// the tamper-evident audit hash chain above. A hand-INSERTed grant has no valid row_hmac, so the chain
+// breaks and the check-time verifier (src/modules/auth/stampPermission.js) refuses. `latestStampGrantState`
+// is the raw read (latest event wins); the POLICY (verify chain + require real DPAPI, fail-closed) lives in
+// the main-process module, not here. Admin authorisation is enforced by that caller.
+function addStampGrantEvent(db, { actorUserId = null, actorUsername = null, actorRole = null,
+                                  targetUserId, targetUsername = null, grant } = {}) {
+  addAuditEntry(db, {
+    user_id: actorUserId,
+    action: grant ? 'stamp_permission_granted' : 'stamp_permission_revoked',
+    action_category: 'security',
+    target_type: 'user', target_id: targetUserId,
+    outcome: 'success',
+    actor_username: actorUsername, actor_role: actorRole,
+    metadata: { target_user_id: targetUserId, target_username: targetUsername },
+  });
+}
+// Latest grant/revoke for a user → 'granted' | 'revoked' | null. target_id is stored as TEXT by
+// addAuditEntry, so compare as a string. id DESC = newest event wins (the chain fixes order).
+function latestStampGrantState(db, targetUserId) {
+  if (targetUserId == null) return null;
+  const row = db.prepare(
+    `SELECT action FROM audit_log
+      WHERE action IN ('stamp_permission_granted','stamp_permission_revoked') AND target_id = ?
+      ORDER BY id DESC LIMIT 1`).get(String(targetUserId));
+  if (!row) return null;
+  return row.action === 'stamp_permission_granted' ? 'granted' : 'revoked';
+}
+
 module.exports = {
   VALID_ROLES,
   countUsers, countActiveAdmins,
@@ -384,4 +414,5 @@ module.exports = {
   issueRecoveryCode, findActiveRecoveryCodeByHash, markRecoveryCodeUsed,
   addAuditEntry, getAuditLog, getAuditLogFiltered, sanitiseAuditMeta, categoryFor,
   setAuditKey, verifyAuditChain, verifyAuditChainRows, invalidateAuditColumns,
+  addStampGrantEvent, latestStampGrantState,
 };

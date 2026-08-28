@@ -2269,6 +2269,72 @@ function runJsMigrations(db, applied) {
     )`);
     console.log('Workflow schema: created workflow_route_rules');
   }
+
+  // Stamping (Workflow+Stamping redesign 2026-08-28 — docs/designs/WORKFLOW_STAMPING_REDESIGN_2026-08-28.md).
+  // DARK spine (slice 0): tables only; no live path reads them yet, so OFF == byte-identical. Same
+  // unconditional/idempotent ensure pattern as document_routes/route_decisions above (NOT version-stamped —
+  // a worktree-shared DB stamped past this version would otherwise skip creation). stamp_events is the
+  // APPEND-ONLY record-of-truth for an immutable, attributable stamp; its tamper anchor is a cross-linked
+  // audit_log row (audit_ref), NOT an internal chain (Oracle: the self-chain is over-built). stamp_types is
+  // the mutable catalog; a placed stamp SNAPSHOTS its label/colour so a later rename/delete can't rewrite
+  // history (same principle as workflow.summarizeRule).
+  if (!tableExists(db, 'stamp_types')) {
+    db.exec(`CREATE TABLE stamp_types (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      key        TEXT NOT NULL UNIQUE,          -- stable machine key ('paid')
+      label      TEXT NOT NULL,                 -- display word ('PAID')
+      color      TEXT NOT NULL,                 -- hex ('#2E7D32')
+      category   TEXT,                          -- optional group ('Payment')
+      built_in   INTEGER NOT NULL DEFAULT 0,
+      active     INTEGER NOT NULL DEFAULT 1,
+      created_by INTEGER,                       -- user id (NO FK by design)
+      created_at TEXT
+    )`);
+    const insStampType = db.prepare(`INSERT INTO stamp_types (key,label,color,category,built_in,active,created_at)
+                                     VALUES (@key,@label,@color,@category,1,1,datetime('now'))`);
+    // The 6 shipped defaults (barry's set). Colour language: green=done/positive, red=stop/negative,
+    // amber=pending, blue=process/info. The rest arrive via "Add from catalog…" (slice 3).
+    for (const t of [
+      { key: 'paid',     label: 'PAID',     color: '#2E7D32', category: 'Payment'  },
+      { key: 'approved', label: 'APPROVED', color: '#2E7D32', category: 'Decision' },
+      { key: 'rejected', label: 'REJECTED', color: '#C62828', category: 'Decision' },
+      { key: 'received', label: 'RECEIVED', color: '#1565C0', category: 'Delivery' },
+      { key: 'on_hold',  label: 'ON HOLD',  color: '#B07816', category: 'Status'   },
+      { key: 'void',     label: 'VOID',     color: '#C62828', category: 'Status'   },
+    ]) insStampType.run(t);
+    console.log('Stamp schema: created stamp_types (+6 defaults)');
+  }
+  if (!tableExists(db, 'stamp_events')) {
+    db.exec(`CREATE TABLE stamp_events (
+      id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+      document_id                 INTEGER,      -- denormalised (survives the doc/route delete cascade)
+      stamp_type_id               INTEGER,      -- soft-ref to stamp_types.id (NO FK)
+      type_key_snapshot           TEXT,         -- snapshot: a later rename/delete can't rewrite history
+      type_label_snapshot         TEXT,
+      type_color_snapshot         TEXT,
+      placed_by_user_id           INTEGER,
+      placed_by_username_snapshot TEXT,
+      placed_at                   TEXT,
+      placement_json              TEXT,         -- {x,y,w,page} normalised, top-left origin
+      note                        TEXT,
+      source_sha256               TEXT,         -- hash of the file stamped (detects out-of-band byte edits)
+      artifact_path               TEXT,         -- app-managed, doc-id-keyed (slice 1; NOT a filing sidecar)
+      artifact_sha256             TEXT,
+      route_id                    INTEGER,      -- set for an approve/reject-derived stamp; else NULL
+      content_sha256              TEXT,         -- hash of the canonical record; anchored by the audit row
+      audit_ref                   TEXT,         -- row_hmac of the cross-linked audit_log row (tamper anchor)
+      created_at                  TEXT
+    )`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_stamp_events_doc   ON stamp_events(document_id)`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_stamp_events_route ON stamp_events(route_id)`);
+    // Append-only STRUCTURAL (mirrors route_decisions): a row-level UPDATE/DELETE is blocked; a whole-table
+    // DROP+recreate is still DDL and this ensure-block rebuilds the triggers afterwards.
+    db.exec(`CREATE TRIGGER IF NOT EXISTS stamp_events_noupd BEFORE UPDATE ON stamp_events
+             BEGIN SELECT RAISE(ABORT, 'stamp_events is append-only'); END`);
+    db.exec(`CREATE TRIGGER IF NOT EXISTS stamp_events_nodel BEFORE DELETE ON stamp_events
+             BEGIN SELECT RAISE(ABORT, 'stamp_events is append-only'); END`);
+    console.log('Stamp schema: created stamp_events (append-only)');
+  }
 }
 
 function hasColumn(db, table, column) {

@@ -160,6 +160,13 @@ function createWorkflowService(deps = {}) {
   // Visual derivative of an approve/reject decision (a stamped PDF copy). Best-effort +
   // non-fatal; tests inject a stub so they don't touch the filesystem.
   const stampDecision = deps.stampDecision || require('./pdfStamp').stampWorkflowDecision;
+  // Stamp permission (Workflow+Stamping redesign 2026-08-28): approve/reject PLACE a stamp, so the
+  // resolver must hold can_stamp; and you cannot route FOR APPROVAL to a non-stamper (a dead-end nobody
+  // could action). Both key on the same predicate. Routing itself (the sender) is NOT gated. Injectable
+  // for tests; fail-closed + tamper-evident inside stampPermission.
+  const canStamp = deps.canStamp || ((d, userId) => {
+    try { return require('../modules/auth/stampPermission').canStamp(d, userId); } catch { return false; }
+  });
 
   function _ver(route, expectedVersion) {
     return expectedVersion == null ? route.version : expectedVersion;
@@ -195,6 +202,12 @@ function createWorkflowService(deps = {}) {
     const v = _validateAssignTarget(db, documentId, toUserId);
     if (!v.ok) return v;
     const recipient = v.recipient;
+    // You cannot route FOR APPROVAL to someone who cannot stamp (owner 2026-08-28) — the approval would be
+    // a dead-end. A FYI (acknowledge) route has no such requirement. The SENDER is never gated here.
+    if (actionRequired === 'approve' && !canStamp(db, recipient.id)) {
+      return fail('RECIPIENT_CANNOT_STAMP',
+        `${recipient.username} can't be sent this for approval — they don't have stamping permission.`);
+    }
 
     const route = wf.insertRoute(db, {
       documentId, fromUserId: actor.userId, fromUsername: actor.username,
@@ -223,6 +236,12 @@ function createWorkflowService(deps = {}) {
     const v = _validateAssignTarget(db, documentId, toUserId);
     if (!v.ok) return v;
     const recipient = v.recipient;
+    // You cannot route FOR APPROVAL to someone who cannot stamp (owner 2026-08-28) — the approval would be
+    // a dead-end. A FYI (acknowledge) route has no such requirement. The SENDER is never gated here.
+    if (actionRequired === 'approve' && !canStamp(db, recipient.id)) {
+      return fail('RECIPIENT_CANNOT_STAMP',
+        `${recipient.username} can't be sent this for approval — they don't have stamping permission.`);
+    }
 
     const route = wf.insertRoute(db, {
       documentId, fromUserId: null, fromUsername: 'Auto-filed',
@@ -277,9 +296,10 @@ function createWorkflowService(deps = {}) {
     if (!okForApprove && !okForAck) {
       return fail('INVALID', `Decision "${decision}" is not valid for an "${route.action_required}" request.`);
     }
-    // Least privilege: approve/reject need admin|edit; acknowledge is open to all.
-    if (DECIDE.includes(decision) && !ACTOR_CAN_DECIDE.includes(actor.role)) {
-      return fail('FORBIDDEN', 'Your role cannot approve or reject — only acknowledge.');
+    // Approve/reject PLACE a stamp → gated by can_stamp (owner 2026-08-28), NOT by role. Fail-closed +
+    // tamper-evident (stampPermission). Acknowledge stays open to all. (Was: ACTOR_CAN_DECIDE role check.)
+    if (DECIDE.includes(decision) && !canStamp(db, actor.userId)) {
+      return fail('STAMP_FORBIDDEN', 'You do not have permission to approve/reject (stamp) documents.');
     }
     if (decision === 'reject' && !String(comment || '').trim()) {
       return fail('COMMENT_REQUIRED', 'A reason is required to reject.');
