@@ -255,6 +255,10 @@ function _reconcileEnv(db) {
     //      adopt the scope's ≥0.90-dominant ref prefix over a single-confusable read head, ONLY with
     //      a page witness (wider read / keyword) + both-forms refusal + learned-shape pass.
     if (learning.getSetting(db, 'ref_prefix_confusable_adopt', 'false') === 'true') env.REF_PREFIX_CONFUSABLE_ADOPT = '1';
+    //   Fix #1 (2026-08-28, Oracle S-O-W/C): route the ref-LENGTH-guard note into the P adopt arm
+    //   too (the 08-19 widening missed it; invoice_0016-14 held P1/26/1150 with PI/26/1150 already
+    //   in corrected_to). Dedicated sub-flag AND-ed with P_on in-engine; DARK until the owner flip.
+    if (learning.getSetting(db, 'ref_prefix_confusable_adopt_length_note', 'false') === 'true') env.REF_PREFIX_CONFUSABLE_ADOPT_LENGTH_NOTE = '1';
     //   vacuous-witness suppression (2026-08-16, Chris card 2 → Oracle: SWITCHED, seeded OFF):
     //      a raw-witness "repair landed on the witness" pair no longer emits the unanswerable
     //      self-compare flag when armed (template_mapper._witness_note).
@@ -308,6 +312,11 @@ function _reconcileEnv(db) {
     // Far-future taught date yields (Oracle 2026-08-06): a taught date OCR-misread into an absurdly
     // future year ('2026'->'2096') no longer wins over a valid non-future keyword date; kept flagged.
     if (learning.getSetting(db, 'template_date_future_yield', 'false') === 'true') env.TEMPLATE_DATE_FUTURE_YIELD = '1';
+    //   Fix #2 (2026-08-28, Oracle S-O-W/C): the AUTHORITATIVE-side sibling of Lever Z — an
+    //   authoritative date anchor OCR-misread into an implausible date (a date-shaped confusable
+    //   ref, PI/26/2361->1/26/2361->year 2361) no longer wins Tier-A outright over a valid mapping
+    //   date. Separate flag (NOT folded into the date-yield pair, whose Z-2 pin governs them). DARK.
+    if (learning.getSetting(db, 'tier_a_date_plausibility', 'false') === 'true') env.TIER_A_DATE_PLAUSIBILITY = '1';
     // Pad-window date read (Oracle 2026-08-06 — the date-crop read ROOT fix). A taught DATE box that
     // clips the value's leading glyph commits a silent still-parses misread; a wider row-bounded read
     // cross-checks it and FLAGS a confident disagreement (keeps the value, routes to review). Dates

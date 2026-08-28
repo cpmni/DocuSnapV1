@@ -688,6 +688,11 @@ TEMPLATE_DATE_INVALID_YIELD = os.environ.get('TEMPLATE_DATE_INVALID_YIELD', '0')
 # since the doc was already flagged). OFF = byte-identical; INVALID-on / FUTURE-off = the shipped
 # impossible-only behaviour. Pins: tests/test_taught_date_invalid_yield.py.
 TEMPLATE_DATE_FUTURE_YIELD = os.environ.get('TEMPLATE_DATE_FUTURE_YIELD', '0') != '0'
+# Fix #2 (Oracle 2026-08-28 SIGN-OFF-W/COND): the AUTHORITATIVE-side sibling of Lever Z (which
+# excludes authoritative reads). An authoritative date anchor OCR-misread into an implausible
+# value (a date-shaped confusable reference, e.g. "PI/26/2361"->"1/26/2361"->year 2361) must not
+# win Tier-A OUTRIGHT over a valid located competitor. DARK, default OFF, byte-identical off.
+TIER_A_DATE_PLAUSIBILITY = os.environ.get('TIER_A_DATE_PLAUSIBILITY', '0') != '0'
 # The taught-side FUTURE-YIELD trigger. DELIBERATELY on its own constant, HIGHER than the Stage-4
 # future FLAG (validator._FUTURE_DATE_TOLERANCE_DAYS=366): a YIELD DROPS a valid taught value, so it
 # must clear the whole plausible post-dated-business range (annual pre-billing, warranty/contract end
@@ -1910,6 +1915,13 @@ def _one_confusable_diff(a, b) -> bool:
 # The note tail is the SHARED CONSTANT between the prefix-outlier writer and the P lane's matcher —
 # hoisted so the two can never drift apart (Oracle condition).
 _PREFIX_OUTLIER_NOTE_TAIL = "— likely a one-character misread. Please check."
+# Ref-LENGTH-guard note marks (engine.py:5890-5899). Built INTO the two notes so a reword
+# makes the P-lane matcher go inert (caught loudly by a MARK-in-NOTE pin), per the 1914-1917
+# convention. Oracle 2026-08-28 C1: key the witness form on the LONGER, unambiguous
+# reference-count phrase — NOT the bare pick-the-right-value tail, which is one glyph from the
+# 5697 blind-geom note and the 5967 D1 note (the literals live ONLY in the constants below).
+_REF_LENGTH_NOTE_MARK = "possibly an extra or missing digit"      # plain form (no corrected_to)
+_REF_LENGTH_WITNESS_NOTE_MARK = "references usually have"         # witness form (sets corrected_to)
 
 # The other two note classes the P lane reads (2026-08-19 widening). Each is composed from a
 # hoisted MARK shared with its WRITE site, for the same reason as the tail above: reword the prose
@@ -3644,6 +3656,10 @@ class ExtractionEngine:
         D_on = os.environ.get("SNAP_CONFUSABLE_CLEAN_AUTOFILE", "0") != "0"
         E_on = os.environ.get("NAME_CORROB_SUGGESTION_ADOPT", "0") != "0"
         P_on = os.environ.get("REF_PREFIX_CONFUSABLE_ADOPT", "0") != "0"
+        # Fix #1 (Oracle 2026-08-28 C3): route the ref-LENGTH-guard note into the P adopt arm too.
+        # A DEDICATED sub-flag AND-ed with P_on (never folded into P_on, which is mig-81-live —
+        # folding would auto-arm this un-vetted change on merge). Default OFF, byte-identical off.
+        P_len_on = P_on and os.environ.get("REF_PREFIX_CONFUSABLE_ADOPT_LENGTH_NOTE", "0") != "0"
         # F CORROB_VERIFICATION_DOUBT_CLEAR (gary audit 2026-08-26): ONE general rule for the
         #   "please check/verify" doubt-note family — clear + LIFT to 90 iff >=2 distinct PAGE families
         #   agree with an un-noted witness AND the value passes the learned shape. See the F arm.
@@ -3753,6 +3769,19 @@ class ExtractionEngine:
             # a clip is not a one-glyph substitution, so it never yields a candidate at all.
             if P_on and (template_mapper._PAD_CODE_DISAGREE_MARK in note
                          or _FILING_SANITY_ABSENT_MARK in note):
+                rec_p = ocr_corrector.lookup_prefix(self.prefix_index, key, sup, slug)
+                if self._try_prefix_confusable_adopt(key, data, rec_p, rec, sup, slug, page):
+                    changed = True
+                continue
+
+            # ── P (ref-LENGTH-guard flavour; Fix #1, Oracle 2026-08-28 SIGN-OFF-W/COND) ──
+            # The 08-19 note-widening never routed the ref-length outlier note to the adopt arm,
+            # so a P1->PI ref the length guard (correctly) flags — the witness form even carries
+            # corrected_to=PI (W1) — was never offered to it (invoice_0016-14: P1/26/1150 held at
+            # 69 with PI/26/1150 in corrected_to). Route BOTH note forms; the arm self-selects via
+            # W1/W2/W3 + dominance + both-forms refusal + learned shape (a two-convention scope,
+            # and the doubled-digit/rollover class with no confusable head, are still refused).
+            if P_len_on and (_REF_LENGTH_WITNESS_NOTE_MARK in note or _REF_LENGTH_NOTE_MARK in note):
                 rec_p = ocr_corrector.lookup_prefix(self.prefix_index, key, sup, slug)
                 if self._try_prefix_confusable_adopt(key, data, rec_p, rec, sup, slug, page):
                     changed = True
@@ -5889,13 +5918,13 @@ class ExtractionEngine:
                 data['confidence'] = min(int(data.get('confidence') or 0), 69)
                 data['validation_note'] = (
                     f"this has {'+'.join(str(n) for n in p)} digits where this sender's usually "
-                    f"have {'+'.join(str(n) for n in dom)} — possibly an extra or missing digit. "
+                    f"have {'+'.join(str(n) for n in dom)} — {_REF_LENGTH_NOTE_MARK}. "
                     f"Please check.")
                 if _witness:
                     data['corrected_to'] = _witness['value']
                     data['validation_note'] = (
                         f"read '{val}' here, but another check read '{_witness['value']}' — "
-                        f"this sender's references usually have "
+                        f"this sender's {_REF_LENGTH_WITNESS_NOTE_MARK} "
                         f"{'+'.join(str(n) for n in dom)} digits. Please pick the right value.")
                 self._t('ref_length_flag', field=key, value=str(val), profile=list(p),
                         dominant=list(dom), suggestion=(_witness or {}).get('value'))
@@ -8231,9 +8260,22 @@ class ExtractionEngine:
                     _cpats = (self.patterns.get("validation_patterns") or {}).get(_vt)
                     if _cpats:
                         _cov_ok = anchor._pattern_coverage(data.get("value"), _cpats) >= 0.8
-                if data.get("authoritative") and data.get("value") and data.get("located", True) and _ocr_clean and _cov_ok:
-                    results[key] = data
-                    continue
+                # Fix #2 (Oracle 2026-08-28 SIGN-OFF-W/COND): an AUTHORITATIVE date anchor whose
+                # value is IMPLAUSIBLE against a valid located competitor (a date-shaped confusable
+                # reference read as the date) must NOT win Tier-A outright — fall through to the
+                # contest below, where the credible mapping wins. Reuses the competitor-coupled
+                # _invalid_taught_date_yields (keeps Lever Z's coupling); scoped to the STRUCTURAL
+                # date role so a custom warranty/contract-end date that legitimately reads years
+                # out is untouched. DARK (TIER_A_DATE_PLAUSIBILITY); the Tier-A condition line below
+                # stays byte-identical (pinned by test_taught_date_invalid_yield.py).
+                _tier_a_date_block = (TIER_A_DATE_PLAUSIBILITY and key in date_field_keys
+                                      and data.get("authoritative") and data.get("value")
+                                      and existing and existing.get("value")
+                                      and _invalid_taught_date_yields(data.get("value"), existing.get("value")))
+                if not _tier_a_date_block:
+                    if data.get("authoritative") and data.get("value") and data.get("located", True) and _ocr_clean and _cov_ok:
+                        results[key] = data
+                        continue
                 # ── KEYWORD-ANCHOR CORROBORATION LIFT (fork A; Oracle SIGN-OFF-W/CONDITIONS
                 # 2026-07-23; kill KEYWORD_ANCHOR_CORROB) ── The merge used to DISCARD agreement:
                 # an anchor-family read that normalises-equal to the keyword incumbent but loses
