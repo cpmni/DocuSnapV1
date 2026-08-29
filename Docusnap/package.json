@@ -16,7 +16,11 @@
     "appId": "com.scanfinder.app",
     "productName": "ScanFinder",
     "copyright": "Copyright © 2026 Six Mile Software",
-    "afterPack": "./scripts/afterPack-fuses.js",
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false
+    },
     "win": {
       "target": [
         {

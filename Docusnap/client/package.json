@@ -13,6 +13,11 @@
     "appId": "com.scanfinder.client",
     "productName": "ScanFinder Search Client",
     "copyright": "Copyright © 2026 Six Mile Software",
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false
+    },
     "win": {
       "target": [
         { "target": "nsis", "arch": ["x64"] }
