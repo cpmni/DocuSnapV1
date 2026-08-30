@@ -70,7 +70,15 @@ verdict — and zero unvetted pipeline changes.
 - **2026-08-30 · Warm cross-contamination** (2026-07-29 rig: loading live learning dropped a NEW supplier's ref 58→33 %
   on suppliers sharing nothing with the scanned data) — still open; the Hard Set's warm-scan arm re-measures it.
 - **2026-08-30 · Search perf**: `verifyAuditChain` re-verifies the whole audit log on every Search open (grows with use).
-- **2026-08-30 · Skip the confirm-once when the RAW value was deterministically IMPOSSIBLE (owner's Ironclad
+- **2026-08-30 · Release the wider-reading doubt when the COMMITTED ref IS the dominant form (owner's Pelican
+  `PI/25/3699` exhibit — owner: "history shows PI is always the submitted value, and PI was detected during the
+  run").** The pad-window flag ("A wider reading of this box shows 'P1/25/3699'…", method `_padcodeflag`, capped 70)
+  has no clearing arm when the read is already RIGHT: the P adopt lane + class B only fire when the read is wrong
+  (they decline on an established committed form) — the mirror-image gap. Design: release the note iff committed ==
+  the scope's ≥0.90-dominant prefix (extractable share) AND passes the learned shape AND the alternative differs by
+  exactly ONE confusable glyph AND the committed string is printed VERBATIM elsewhere on the page (the
+  "Please quote … on all remittances" line = the independent leg) AND the alternative form is not itself an
+  established series (refuse the day P1/… becomes real). Value never rewritten. reggie/gary → Oracle → DARK + census.
   statement exhibit):** the straighten retry's changed-field hold fires on `was '42-04-2025' → now '12-04-2025'` —
   but a day-42 date is not a competing reading, it is noise (the format-invalid-witness principle). Design: when
   `was` fails the field's DETERMINISTIC validity (date: parse_date None; money: not strict shape) AND `now` passes,
