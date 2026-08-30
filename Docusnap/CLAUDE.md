@@ -21,10 +21,127 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-28: **READ `HANDOVER_2026-08-28.md` FIRST** (current-state + first-actions index; per-feature detail
-in `HANDOVER_2026-08-27_NIGHT2.md`). App RELAUNCHED on the latest code, both Pelican extraction switches ON in the live DB
-(`ref_prefix_confusable_adopt_length_note` + `tier_a_date_plausibility`) — owner's next click is Review → Reprocess the 5
-held Pelican docs. Branch `feat/teach-side-overnight`, commits `ce4c7f5` … `fc5b7ef`, NOT pushed. Session summary follows.
+## ⏭ LATEST — 2026-08-31 NIGHT (the adversarial-corpus night run): **READ `HANDOVER_2026-08-31_MORNING.md` FIRST.**
+Branch `feat/teach-side-overnight`, night commits `1e1461f` (gen) · `1cbaad3` (scorer) · `1590d03` (scorer fixes +
+score report) · `363dd26` (class cards) · `6ba8782` (Chris) · wrap, **NOT pushed** (owner reviews then pushes).
+**PIPELINE UNTOUCHED — no switch flipped, no live-DB/app/Desktop write; everything ran on a `db.backup()` copy.**
+Built + scored the **Hard Set** (`Desktop\Hard Set\`, 10 classes × 20 × digital+scan, 7 synthetic issuers,
+`stress_test/gen_hard_set.py` + `score_hard_set.js`): **600 doc-arm scores, wrong+would-file = 0 everywhere** —
+every wrong read flagged or EMPTY-held (`below-floor` honest). Chris (fresh sandbox 9223, 60 docs): 0 cold
+auto-files, File All truthfully 0, **teach-heals-boxed-cells CONFIRMED** (one Thornfield lesson → 8 sibling dates,
+3 paper styles, 0 bleed), verdict YES — `docs/CHRIS_FULL_APP_REVIEW_2026-08-31.md`. Three DARK card designs await
+the owner's pick (`docs/designs/HARD_SET_CLASS_CARDS_2026-08-31.md`): **oscar** — boxed label-above-value cells:
+Stage-1's right-leg steals the NEIGHBOUR cell's caption (keyword.py:2062-2139), below leg unreached + column-blind;
+cell-below arm, cap 85; **`ref_role_digit_gate` is the ONLY guard against cold-committing "Date" as ref @95**;
+**reggie** — credit-sign: `£-x` heals (MONEY_SIGN_CAPTURE) but `-£x`/parens/trail/`CR` die at keyword
+`_clean_value` (all flagged; arm 2 dead on keyword reads — `raw_value` never set); **gary** — the 7 warm
+buyer_issued_po "silent-wrong" reads are the **07-12 doctrine working** (issuer = letterhead buyer; GT flaw —
+dual-accept), real residual = warm silence licensed by ANY maturity (convention-licensed-silence design). GT flaws
+to fix before re-use: thermal invoice→receipt, buyer dual-accept, component signs. Scorer traps pinned in
+`docs/HARD_SET_REPORT_2026-08-31.md` (synthetic doc id must be TRUTHY or the would-file lane dies silently;
+EMPTY≠SILENT). NIGHT_RUN.md ledger updated (TONIGHT cleared, 5 DONE entries, 5 new queue items — top: GT fixes,
+"ready" language war, heading-words-in-ref presentation). Sandbox LEFT RUNNING 9223 (PID 36960). **NEEDS OWNER
+(morning): pick which card(s) to build (my ranking oscar → reggie → gary); vet Chris cards 1+2; Receipt preset
+decision; then push.** Prior:
+## (previous) 2026-08-30 NIGHT: **READ `HANDOVER_2026-08-30_NIGHT.md` FIRST.** Branch `feat/teach-side-overnight`,
+**HEAD `91ca11b`** (two commits after `0ff8b42`: `fccaf55` Python arc, `91ca11b` settings/JS/docs), **NOT pushed**
+(owner reviews then pushes). Uncommitted: `CLAUDE.md` only. **THE RE-SLICE ARC IS BUILT, DARK, ORACLE-SIGNED (C1-C14 applied) — but its two premises were FALSIFIED
+by measurement first:** the product ladder reads Nordwind 0023's taught total box as **`29,242.76` @90 (a format-VALID
+garble)**, not `£9 32632.76`; and **DPI is not the lever — vertical headroom is** (pad 0 fails at 200-600 DPI; a padded
+PSM-7 re-read DEGRADES clean zones; **R8 = pad 0.5×h, no upscale, 20 px white border, PSM 6 + in-band line pick = 20/20
+incl. 0023 @92**). So the sweep became a **WITNESS-PRODUCER**: `reslice_witness_sweep` (engine stage 4.7, TOTALS only)
+re-reads the taught zone on a noted, penny-reconciled total and injects an AGREEING read as a `mapping`-family ledger
+candidate so the signed `_demote_recon_total_corroborated_note` can release the note; commits nothing; not review-bound
+(Oracle). Also DARK: `corrob_discount_invalid_witness` (currency-only record hygiene; JS role refusal scans
+`disagree ∪ discounted`), `template_format_fail_yield_strict_money` (**never flip in this arc** — it pre-empts the
+sweep's release path, C10/C11). **Deskew retry dead guard FIXED:** `raw2["_needs_review"]=True` held nothing (`autofile_
+gate_unify` is ON on every mig-93 install) → per-field "Read differently after straightening — was X, now Y — confirm
+once." (+ emptied fields, + `corrected_to`); and the retry NEVER fires on a note-only hold (keys on engine
+`_needs_review`) — its 5/20 heals were a sandbox artefact (empty ref/date). **Gate MET:** Nordwind OFF vs pre-edit baseline
+0/20 diffs; ON = 0023 released, 19 byte-identical; **full realdoc four-arm A/B (off/sweep/discount/all) on ONE PAPER PER
+DOCUMENT × 605 (the owner: "most docs are dupes" — 1,940 files = 618 byte-distinct = 605 papers; `RR_IDS` from
+`_dedup_ids.py`) at 200 DPI with the app env: accuracy + fill identical on every field, M = 7 UNCHANGED (baseline wrong
+would-files — the leading-digit date class + two poisoned GT rows), would-file 570 → 571 (#1840 = 0023), 1 fire, 0 wrong
+releases; discount arm byte-identical (inert on today's reader).** Full Python + JS suites: every red (9 + 20)
+reproduces on `0ff8b42`. **Flip order: sweep → discount → never strict-money.** **OWNER CONVENTION (08-30): repo `NIGHT_RUN.md` = the
+overnight test/check QUEUE + DONE ledger — add anything worth testing/checking as you notice it; at the end of every
+night run move the work to DONE with its result + "repeat only if"; never repeat DONE work unless that condition
+holds. "Going to bed" = start the newest `docs/designs/NIGHT_RUN_*.md` at once.** **⏭ NEXT SESSION'S JOB (owner-queued,
+prompt written): the ADVERSARIAL TEST CORPUS night run — paste `docs/designs/NIGHT_RUN_2026-08-31_ADVERSARIAL_CORPUS.md`
+(build `stress_test/gen_hard_set.py` — 10 classes × digital + scan renditions — score cold/warm with
+`score_hard_set.js`, advisor class cards, `/christest` on the scan set, handover; NO pipeline fixes unless DARK +
+Oracle + realdoc-605 gated).** RESTART
+for mig 94 + the three dev-gated Processing rows. Pre-existing red: `test_settings_wiring.js` stamp-* ids. Traps: the
+`!= '0'` idiom (harness OFF arm = explicit `'0'`); `money_strict_shape` accepts a rejoinable space-split (`£9 242 76`)
+by contract; `git show HEAD:Docusnap/<path>`; `buildTrainingArgs(db, () => cfg).args`. Prior:
+## (previous) 2026-08-30 DAY: **READ `HANDOVER_2026-08-30.md`.** Branch `feat/teach-side-overnight`, **HEAD `0ff8b42`,
+NOT pushed** (owner reviews then pushes). Uncommitted: only `CLAUDE.md`. **Dev app RUNNING** (I relaunched `npm start` on the
+real DB). **NEXT SESSION'S JOB = the CORROBORATION RE-SLICE ARC** (owner APPROVED) — read
+`docs/designs/CORROB_RESLICE_SWEEP_2026-08-30.md`: **fix #1** discount a format-INVALID corroboration witness (small — clears
+the Nordwind-0023 total flag, since keyword already read `2,363.76` + it reconciles), then **fix #2** the owner's capped
+corroboration-gated **re-slice sweep** for total/ref/date (higher-DPI zone RE-RENDER + PSM/binarise/£-strip/straighten ladder,
+STOP on corroboration, adopt only then, ≤~4-6 tries, review-bound). oscar/reggie/007 → Oracle → DARK switch → OFF/ON census.
+**SHIPPED this session (all NOT pushed):** (1) **deskew re-read PIVOTED + shipped `4607cc6`** (DARK `DESKEW_REVIEW_RETRY` /
+setting `deskew_review_retry_enabled`, floor 0.3°): a 200-DPI census FALSIFIED the field-scoped slice arm (fired 0× — the
+garbled names read 88-96%, never *withheld*) so it was REMOVED (`ocr/deskew_reread.py` + its pin gone, `engine.py` back to
+single-pass); replaced by a **review-bound whole-page straighten retry** in `process_docs.py` (after `engine.extract`, only on
+a doc already `_needs_review` + page skew ≥ floor, re-OCR straightened, adopt WHOLE only if `_overall_confidence` strictly
+higher, forced `needs_review` — never auto-files a straightened read, can't demote a clean auto-file). Gate: **5/20 Nordwind
+identities healed, 0 regressions**; pin `test_deskew_review_retry.py` 13/13; withhold path unchanged. (2) **Settings toggle
+`8333023`** (standard visible Processing row) + `deskew_review_retry_enabled` set TRUE on the live DB for testing — **RESTART to
+see the toggle**; behaviour already active (handler reads the setting live at spawn). (3) **Live-DB switch audit:** all **148**
+mig-93 "should be on" switches already ON, `dev_switches_unlocked` already true (dev switches visible in Processing) — nothing
+to flip. **CORRECTED stale claim:** the mid-session "every Nordwind ref/date is empty (template gap)" was a SANDBOX artifact
+(`scratchpad/live_e44gate.db` lacks the owner's live learning) — on the live app they fill; NOT a defect. **Traps:** the
+`!= '0'` switch idiom reads an EMPTY string as ON (a switch-A/B OFF arm must be explicit `'0'`); harness must set
+`OCR_RENDER_DPI=200` (product DPI; harness defaults 300); `git commit -F <file>` ONLY. **The Electron 44 upgrade (PR #12) is
+DONE + VM-confirmed** — no longer the pending job. Prior:
+## (previous) 2026-08-29: **READ `HANDOVER_2026-08-29.md`.** Branch `feat/teach-side-overnight`, **HEAD `59923ed`,
+PUSHED (in sync with origin; git auth now works via GCM/credential-manager)**. Uncommitted: `CLAUDE.md` + **three report
+docs left for owner review**. ⏭ **NEXT SESSION'S PRIMARY JOB = execute the ELECTRON 31.7.7 → 41 UPGRADE** per
+`docs/ELECTRON_41_UPGRADE_PLAN.md` — **Oracle SIGN-OFF-WITH-CONDITIONS** (conditions are the "⚖ Oracle gate" block at the
+top of that doc): a mandatory BLOCKING **gate 5b (in-place DPAPI continuity)** — launch the E41 build against a `db.backup()`
+copy of a real **E31-written** `%APPDATA%\ScanFinder` via `--user-data-dir`, assert `verifyAuditChain` ok + `canStamp` true +
+NO `tamper_detected` + LAN pinned-CA handshake (the audit-HMAC key + LAN TLS keys are the ONLY DPAPI blobs; the licence token
+is a JWS, so the gate can't break it); NEVER run gates against the LIVE profile; diff test-failure SIGNATURES not names;
+worktree only; the `argon2` source-build is the likely gate-1 failure; also bump `client/` + `cert-tool/`. Oracle suggests
+targeting **newest-supported (44) over 41** for runway — owner's call. **SHIPPED THIS SESSION (all pushed):** (1) themes
+**Light Festive + Spooky** + seasonal revisions (`c4d1033`, `589b93e`; core + client; new `patterns/festive-light.svg` +
+`spooky.svg`); (2) **PHP licensing admin console — full redesign** (Warm-Archive left-sidebar chrome `2c54c11` with
+`admin_nav()` neutered; dashboard `40bc2b6`; section-page `admin_page_head()`/`admin_chips()` `59923ed`; `--accent-ink`
+invisible-toggle fix `c094c4d`; **2FA now OPTIONAL by default** `dc178be` — `admin_2fa_required()` reads opt-in
+`LICENSING_ADMIN_REQUIRE_2FA`, the owner's choice to fix a deploy-time lockout; a **KNOWN security downgrade**, see the audit).
+Owner deployed to IONOS. **SECURITY AUDIT** (5 agents + Oracle) → `docs/SECURITY_REVIEW_2026-08-28.md` (UNCOMMITTED, sensitive):
+top item = **no document-level access control** (HIGH; CRITICAL for multi-user/LAN; **single-user desktop SAFE** — app runs as
+the logged-in user; `doctype_grants` scaffold in `accessService.js` unbuilt — one fix across read+enumerate+write, both
+transports); local-DB licence-forgery **impossible**; website login **sound**; **NO LLM → prompt-injection N/A**; A1 = the
+`/v1` client login doesn't enforce the forced temp-password reset the core does. **CHRIS vet** →
+`docs/CHRIS_FULL_APP_REVIEW_2026-08-29.md` (UNCOMMITTED): verdict **YES**, 8 cards (top = first-batch "Sender not identified"
+wall; CHRISBOT is same-buyer-skewed). Chris sandbox LEFT RUNNING: core CDP **9223**, client **9224** (user Sam). **Traps:**
+`git commit -F <file>` only; Electron-as-Node prints nothing unless wrapped; licensing backend is a SEPARATE deploy (owner
+uploads code, NEVER `keys/`); PHP lint `C:\wamp64\bin\php\php8.0.30\php.exe -l`. Prior:
+## (previous) 2026-08-28 NIGHT: **READ `HANDOVER_2026-08-28_NIGHT.md` FIRST.** The **WORKFLOW + STAMPING redesign is BUILT
+end-to-end** (slices 0–4) and live in the core app AND the detached client — design + Oracle conditions in
+`docs/designs/WORKFLOW_STAMPING_REDESIGN_2026-08-28.md` (**§9 authoritative**). Owner smoke-tested it: "works, needs some
+tuning (later)." Branch `feat/teach-side-overnight`, **11 commits `eba2ef2` … `86de7d7`, NOT pushed** (owner reviews then
+pushes), tree clean. Both apps RUNNING on the latest code (dev `npm start` core on the real DB + `electron client`).
+**Stamping =** a per-user `can_stamp` permission that is a SIGNED grant on the DPAPI audit chain (NO flippable column;
+`stampPermission.canStamp` is FAIL-CLOSED + verifies `verifyAuditChain` at check-time; a forged INSERT → refused +
+`tamper_detected`), an append-only `stamp_events` record (source+artifact SHA-256 + a cross-linked signed audit row, original
+PDF never touched, CUMULATIVE, prints No.N + date/time), click-to-place in Search + the client. Approve/reject now need
+`can_stamp`; ROUTING is NOT gated (a standard user sends for approval) but you **can't route FOR APPROVAL to a non-stamper**
+(`RECIPIENT_CANNOT_STAMP`). Residual: tamper-EVIDENT not tamper-PROOF vs the core PC's own admin (accepted). Pins:
+`test_stamp_permission.js`, `test_stamp_service.js`, `test_stamp_workflow_gate.js`, `test_workflow.js`, `test_v1_workflow.js`
+(all green). Also: Search preview zoom pixelation FIXED — root cause was `will-change:transform` cached-layer upscaling +
+`object-fit` (NOT DPI); matched the Review viewer's CSS (`d27ac26`), render scale 6, controls moved to top. **Help voice
+rewrite PARKED** (Quick start + Teach rewritten + voice signed off "perfect"; the rest in `pendingfeatures.md`). **First
+actions:** owner reviews + pushes; owner's client-UI tuning; optional Settings "Integrity check" (Oracle §5.3, deferred);
+resume help. **Traps:** `git commit -F <file>` ONLY (here-string + `<<EOF` heredoc both break); restart mechanic (kill
+dev-start node + electron PIDs individually, relaunch via `Start-Process cmd -ArgumentList '/c','npm start'` +
+`-RedirectStandardOutput`, NOT an embedded `1>` redirect) — full list in the handover. Prior:
+## (previous) 2026-08-28 DAY: **`HANDOVER_2026-08-28.md`** — export (Home → CSV/`.xlsx`/JSON) + memory-inventory + help
+slice 1 + two Pelican extraction fixes (`5430bed`, both `ref_prefix_confusable_adopt_length_note` +
+`tier_a_date_plausibility` flipped ON in the live DB). Superseded by tonight's build.
 ## (context) 2026-08-27 NIGHT2 → 08-28: **`HANDOVER_2026-08-27_NIGHT2.md`** — the owner's §7 night prompt is BUILT —
 2 commits `ce4c7f5` (EXPORT: Home "Export data" → CSV/`.xlsx`/JSON of confirmed doc data; new dependency-free
 `src/lib/xlsxWriter.js` so the 4-dep tree + licence gate stay untouched) + `d2cf9fe` (MEMORY INVENTORY: Settings →

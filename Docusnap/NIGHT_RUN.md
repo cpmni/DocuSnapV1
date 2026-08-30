@@ -6,40 +6,35 @@
 > "repeat only if" condition — so no night repeats work unless it is needed.** Before planning a night, read the
 > DONE ledger first. Keep entries one to three lines; detail lives in the linked report/handover.
 
-## TONIGHT — PENDING (starts when the owner says "going to bed")
-**Prompt:** `docs/designs/NIGHT_RUN_2026-08-31_ADVERSARIAL_CORPUS.md` (paste the `=== PROMPT ===` block, or the armed
-session starts it itself). **Queued 2026-08-30 by the owner:** "generate a set of multi columned documents for testing,
-and examples of other areas you feel may pose problems … create the test docs, run them through their paces and get
-chris to test them." Branch `feat/teach-side-overnight` at `9b16b08`+.
-
-| Phase | Budget | What | Deliverable |
-|---|---|---|---|
-| 0 orient | ≤30 min | read the 08-30 NIGHT handover + the pendingfeatures block; `db.backup()` a fresh live copy; read the three rigs (`gen_demo_digital.py`, `gen_customer_test.py` incl. `scanify()`, `score_demo_digital.js`, `realdoc_regression.js`) | the DB copy under the session scratch |
-| 1 build | ≤3 h | `stress_test/gen_hard_set.py`: 10 classes × ≥3 NEW synthetic issuers × ~20 docs, TWO renditions (digital text-layer + rasterised scan at 150/200 DPI with skew/noise/fade), one `ground_truth.json` (row per file, `class` tag), `--smoke` first + eyeball 10 PNG renders before the full run, `README_PROTOCOL.txt` | `Desktop\Hard Set\{digital,scan}\`, commit `feat(stress): gen_hard_set.py …` |
-| 2 score | ≤2 h | `stress_test/score_hard_set.js` from `score_demo_digital.js`: per class × rendition accuracy (type/supplier/ref/date/total/subtotal/tax), SILENT-wrong list, would-auto-file via `trust.isAutoFileEligible`, "wrong AND would file" per class; arms COLD digital · COLD scan · WARM scan, all at `OCR_RENDER_DPI=200` with the app env mirrored; control docs must score clean first | `docs/HARD_SET_REPORT_2026-08-31.md` + commit |
-| 3 triage | ≤1.5 h | top-3 would-file-wrong classes → the matching advisor (reggie dates/money/signs · oscar small print/degraded · 007 placement/columns · herald type/logo siblings · gary design) → a CLASS CARD each (mechanism · seam · smallest fix · gate); **build nothing** unless trivial + DARK + Oracle + realdoc-605 gated, one at most | cards in the report + `pendingfeatures.md` |
-| 4 Chris | ≤2 h | `/christest` with the scan set copied into the sandbox (never the Desktop original); cold import as a new customer, teach two issuers (⊕ + wizard), File All, then the multi-column / small-print docs in Review — is a wrong total visible and flagged or "Nothing looks wrong"?; warnings truth table; ≤8 cards by harm; implement nothing | `docs/CHRIS_FULL_APP_REVIEW_2026-08-31.md` (verbatim + round header) |
-| 5 wrap | ≤30 min | `HANDOVER_2026-08-31_MORNING.md`, CLAUDE.md LATEST block (demote tonight's, archive to `docs/session-log.md`), memory + `MEMORY.md`, `pendingfeatures.md` cards, **this file: move the done work to the DONE ledger with results + "repeat only if", add the new QUEUE candidates, clear TONIGHT**; sandbox left on 9223 with its PID; commit, no push | the morning handover |
-
-**The ten classes:** `multicol_money` · `table_total` · `small_print` (8/9 pt + an 11 pt control) · `edge_date`
-(flush-edge, `1/12` vs `11/12`, ISO, US, month names) · `buyer_large` · `continental` (+ EU VAT ids; scan matters) ·
-`logo_siblings` · `degraded` (1-3° skew, faint serial, thermal, staple blot, fax header) · `multipage` · `credit_sign`
-(`-£`, `£-`, `(x)`, `x-`, `CR`, dash-leader control).
-**Guard rails:** live app + live DB + `Desktop\Demo Docs` read-only; no new deps; `git commit -F` only; never push;
-the six junctures (esp. #1 look at the whole rendered frame, #6 verify at the source); ≤1 h per class; a class that
-won't render legibly after two attempts is dropped and said so; every phase reports even if partial.
-**Autonomy protocol (owner, 2026-08-30):** runs on auto — never waits for the owner; agents are free (advisors +
-Oracle, in parallel when independent); **Chris ALWAYS sandboxed** (`/christest` instance on 9223, a COPY of the
-corpus, never the live app/DB/Desktop originals; his cards are logged, never implemented tonight); **anything that
-needs the owner's approval is LOGGED under "NEEDS YOUR APPROVAL (morning)" in the handover and skipped** (live flips,
-push, live-DB/app/Desktop writes, non-DARK changes, new deps, licensing/legal/backend/website, deletes outside the
-scratch/sandbox, implementing a Chris card); **anything that looks dangerous goes to the agents first (gary/eric →
-Oracle) and, with no safe route, that item STOPS and the run moves to the next thing** — never improvise around a
-refusal. Full text in the prompt's "Autonomy & safety protocol".
-**Expected morning outcome:** a second corpus shape with scores, a ranked list of what to build next, Chris's
-verdict — and zero unvetted pipeline changes.
+## TONIGHT — none armed
+The 2026-08-31 adversarial-corpus run COMPLETED (see the DONE ledger + `HANDOVER_2026-08-31_MORNING.md`).
+Queue the next night's prompt as a `docs/designs/NIGHT_RUN_*.md` and point this section at it.
+**Standing autonomy protocol (owner, 2026-08-30, applies to every night):** runs on auto — never waits for the
+owner; agents free (advisors + Oracle, parallel when independent); **Chris ALWAYS sandboxed** (a COPY of the
+corpus, never the live app/DB/Desktop originals; cards logged, never implemented that night); **anything needing
+the owner's approval is LOGGED under "NEEDS YOUR APPROVAL (morning)" in the handover and skipped** (live flips,
+push, live-DB/app/Desktop writes, non-DARK changes, new deps, licensing/legal/backend/website, deletes outside
+scratch/sandbox, implementing a Chris card); **anything dangerous goes to the agents first (gary/eric → Oracle)
+and, with no safe route, that item STOPS** — never improvise around a refusal.
 
 ## QUEUE — worth testing or checking (ranked; add freely, date each)
+- **2026-08-31 · Fix the Hard Set GT flaws before any re-use** (safe harness-side edits): thermal GT
+  invoice→receipt (or ship a Receipt row), `buyer_issued_po` dual-accept buyer/vendor per the 07-12
+  doctrine, credit-note component-sign convention (page signs every row, GT signs only the total). Then
+  re-gen + re-score to refresh the baseline.
+- **2026-08-31 · The "ready" language war (Chris card 1)**: three meanings on one screen ("N more ready to
+  file" chips vs File-All's "Nothing is ready"), plus a group-head arithmetic bug candidate (2+5=7 on a
+  6-doc group — check the counter query). Copy semantics + one query. Owner vet first.
+- **2026-08-31 · Bare page-furniture words must not wear ✓/"High" in ref/date boxes** (Chris card 2): a
+  presentational rule (value ∈ caption vocab → never ✓/High styling, honest "looks like a heading" copy);
+  the structural fix is oscar's cell-below card.
+- **2026-08-31 · Taught ref cells re-read garbled on siblings** (Chris card 4: `iwv-s0087` etc., flagged
+  every time): candidate = the R8 padded-re-read recipe (0.5×h pad, white border, PSM 6) applied to taught
+  ZONE re-reads on ref roles — same lesson as the re-slice arc's headroom finding. Census first: how many
+  taught-zone ref re-reads fail `appears-on-page` on the live corpus?
+- **2026-08-31 · Rock-bottom heading-guess issuers ("BILL TO"/"SHIP TO") → route to "Sender not
+  identified" instead of minting a company** (Chris card 5; the issuer note already fires — this is a
+  routing threshold question).
 - **2026-08-30 · The baseline 7 wrong auto-files (M = 7 / 605, 1.2 %) — the leading/garbled-digit DATE class**
   (#953, #1423, #1453, #1649 + the poisoned-GT #364; suppliers #331, #1092). Silent misfiles a customer never sees;
   the biggest remaining extraction risk. Needs: trace each, class card (reggie + 007), a witness-style guard.
@@ -100,6 +95,26 @@ Regenerate after a big import: `TESTING/_measure/reslice_20260830/_build_test_co
 confirm/teach from this folder into the LIVE app.
 
 ## DONE ledger (newest first) — do NOT repeat unless the "repeat if" condition holds
+- **2026-08-31 NIGHT · Hard Set adversarial corpus BUILT + SCORED (3 arms).** Result: 400 PDFs 10 classes
+  (`Desktop\Hard Set\`), 600 doc-arm scores, **wrong+would-file 0 everywhere**; boxed-cell cold gap traced
+  (Stage-1 neighbour-caption steal); credit-sign 4-of-5 notations die at `_clean_value` (sym `£-x` heals);
+  warm buyer_issued = the 07-12 doctrine (GT flaw). `docs/HARD_SET_REPORT_2026-08-31.md`. Repeat if: any
+  extraction change lands (re-run the 3 arms — cheap) or the gen GT flaws are fixed (thermal type,
+  buyer dual-accept, component signs — re-gen + re-score).
+- **2026-08-31 NIGHT · Three advisor class cards** (oscar cell-below arm · reggie parens/CR sign · gary
+  convention-licensed silence) — `docs/designs/HARD_SET_CLASS_CARDS_2026-08-31.md`, all DARK designs
+  awaiting the owner's pick. Repeat: NO — build on approval, per card gates.
+- **2026-08-31 NIGHT · Chris Hard Set round (sandbox 9223).** Result: verdict YES; teach-heals-boxed-cells
+  CONFIRMED end-to-end (8 siblings, 0 bleed); File All truthfully filed 0 of 60 cold; 8 cards (top: "ready"
+  language war; heading-words dressed confident). `docs/CHRIS_FULL_APP_REVIEW_2026-08-31.md`. Repeat if:
+  the ready-copy fix or a card build lands (verify-round).
+- **2026-08-31 NIGHT · Warm cross-contamination re-measured** (was a queue item): the mature install
+  REFUSES unknown issuers (supplier EMPTY-held, fail-safe) rather than bleeding values onto them; the only
+  warm claim was the known-buyer doctrine case. Repeat if: identity/letterhead reading changes.
+- **2026-08-31 NIGHT · edge_date Hard-Set read** (partial cover of the M=7 date-class queue item): 65% cold
+  date accuracy, misses all EMPTY-held (boxed_border + flush_left variants), 0 silent wrong dates in any
+  arm — the M=7 leading-digit class did NOT reproduce as a silent fill on synthetic docs (it shows as
+  flagged date-in-ref steals instead). The realdoc M=7 trace item stays open.
 - **2026-08-30 EVENING · Deduped test corpus BUILT** → `Desktop\ScanFinder Test Corpus` (605 papers: invoice 203 ·
   sales_order 125 · delivery_note 62 · service_worksheet 56 · purchase_order 51 · credit_note 41 · statement 40 ·
   quote 27; 54 MB). Repeat if: a big new live import lands (re-run `_build_test_corpus.py` on a fresh copy).

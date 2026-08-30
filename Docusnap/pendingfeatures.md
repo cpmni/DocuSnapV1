@@ -4652,3 +4652,13 @@ Classes (ranked by measured risk), ~20 docs × ≥3 synthetic suppliers each:
    thermal receipts, a staple over the ref, a fax header above the letterhead). 9. Multi-page (total on page 2,
    "carried forward" that looks like a total). 10. Credit notes + negatives (`-£`, `(160.32)`, `CR`, trailing minus).
 Gate: cold + warm scoring per class; every silent-wrong is a NEW class card for an advisor→Oracle arc.
+
+## 2026-08-31 — Chris Hard Set round UX cards (owner vet; details docs/CHRIS_FULL_APP_REVIEW_2026-08-31.md)
+- "Ready" language war: chips "N more ready to file" vs File-All "Nothing is ready to file yet" on one screen; one word per meaning ("7 filled in - each needs one check"); check the group-head counter arithmetic (2+5=7 on a 6-doc group). [Chris card 1, CONFUSION]
+- Bare page-furniture word ("Date"/"NOTE") in a ref/date box must never wear a tick/"High" - honest "looks like a heading" copy instead. [card 2, CONFUSION; structural fix = oscar cell-below card]
+- Teach-reach chip: after a teach, name the scope ("Applies to Helix Point Diagnostics - Credit Note papers") - a lesson is (field, doc-type)-scoped and nothing on screen says so. [card 3]
+- Taught ref-cell sibling re-reads garbled (iwv-...) - candidate: R8 padded re-read recipe on taught zone re-reads for ref roles; census first. [card 4]
+- Rock-bottom heading-guess issuers (BILL TO/SHIP TO) route to "Sender not identified" instead of minting a company. [card 5]
+- Teach read-back: trim stray cell-edge chars ("| inv-27090"); render the label guess as prominently as the value (a wrong "Rate" label slipped through unseen). [card 6]
+- Credit-note confirm line could echo "Total: -2,178.00 (credit)". [card 7; sign retention verified in code - the gap is extraction, see the sign card]
+- Deferred row: rename "Review" button to "Back to Review", delete = bin icon. [card 8]

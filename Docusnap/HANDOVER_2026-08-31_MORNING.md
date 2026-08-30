@@ -1,0 +1,87 @@
+# HANDOVER — 2026-08-31 MORNING (the adversarial-corpus night run)
+
+**Branch** `feat/teach-side-overnight`, **NOT pushed** (your review-then-push rule). Night commits, in order:
+`1e1461f` (gen_hard_set.py, 400 PDFs) · `1cbaad3` (score_hard_set.js) · `1590d03` (scorer fixes + the score
+report) · `363dd26` (three advisor class cards) · `6ba8782` (Chris's round) · the wrap commit (this file +
+ledgers). **Nothing in the extraction pipeline was changed. No switch was flipped. No live-DB/app/Desktop
+write happened.** The live app was untouched all night; the DB used everywhere was a `db.backup()` copy.
+
+## What ran (the full night, per `docs/designs/NIGHT_RUN_2026-08-31_ADVERSARIAL_CORPUS.md`)
+
+1. **Built the Hard Set** — `Desktop\Hard Set\{digital,scan}\` : 10 adversarial classes × 20 docs × 2
+   renditions (400 PDFs), 7 synthetic issuers, controls embedded, `ground_truth.json`. Generator
+   `stress_test/gen_hard_set.py` (`--smoke`, HARDSET_OUT override).
+2. **Scored it 3 ways** — cold digital, cold scan, warm scan (your real learning read-only) via
+   `stress_test/score_hard_set.js` (app env mirrored, DPI 200, the ONE `isAutoFileEligible` predicate).
+   **Report: `docs/HARD_SET_REPORT_2026-08-31.md`.**
+3. **Three advisor class cards** (gary, reggie, oscar — full text `docs/designs/HARD_SET_CLASS_CARDS_2026-08-31.md`).
+4. **Chris's sandboxed round** on a copy of the scan set — **`docs/CHRIS_FULL_APP_REVIEW_2026-08-31.md`**
+   (verbatim + my triage table).
+
+## The headline numbers
+
+- **600 doc-arm scores, ZERO silent misfiles: wrong+would-file = 0 in every class, every arm.** Every wrong
+  read was flagged or EMPTY-held; every hold's predicate reason was honest (`below-floor`).
+- Chris (fresh install, 60 nastiest docs): **0 auto-filed cold, File All truthfully filed 0**, one Thornfield
+  lesson healed boxed dates on 8 siblings across 3 paper styles with **zero bleed**, credit-note teach kept
+  the drawn minus. **Two-week verdict: YES.**
+- The scoreboard's fill story: plain `Label: value` layouts read ~100% cold even at 9pt/EU formats; **boxed
+  label-above-value cells are the big cold FILL gap** (~0-15%, 6 of 10 classes) — and teach heals them
+  (Chris proved it end-to-end).
+
+## The five findings that matter (mechanisms traced, designs written, NOTHING built)
+
+1. **Boxed meta_row cells (oscar's card):** Stage-1's right-leg steals the NEIGHBOUR cell's caption
+   (`keyword.py:2062-2139`), the below leg is never reached and is column-blind; Stage 2 has a below reader
+   but no cold trigger. Design: a column-aligned cell-below arm, DARK, conf cap 85, five guards.
+   **Corollary: `ref_role_digit_gate` is currently the ONLY thing stopping this layout cold-committing
+   "Date" as a reference @95** on installs with it off.
+2. **Credit-note sign (reggie's card):** measured per notation — `£-x` heals (the shipped
+   `MONEY_SIGN_CAPTURE`), `-£x` / `(£x)` / `x-` / `x CR` all read positive (always flagged). Mint =
+   keyword `_clean_value`; design = parens+CR under DARK sub-flags, trailing minus stays note-only; seams:
+   penny-reconcile sign agreement, the anchor-path twin, the arm-3 mirror. Residual hole: a credit note
+   that MIS-TYPES as invoice gets no sign note at all (arm 2 dead — `raw_value` never set on keyword reads).
+3. **Warm buyer-issued "silent steer" (gary's card): NOT a defect — your 07-12 Oracle doctrine working**
+   (issuer on a buyer-issued PO = the letterhead buyer; my GT wanted the vendor — GT flaw). The real
+   residual: warm silence is licensed by ANY maturity, nothing checks it's convention-backed. Lever-1
+   design (convention-licensed silence, else carry the cold-style both-parties note) is in the cards doc.
+4. **Chris card 1 — the "ready" language contradicts itself on one screen** ("7 more ready to file" chips
+   vs "Nothing is ready to file yet" from the button; 2+5=7 on a 6-doc group). The safety was right every
+   time; the words weren't. Copy/semantics fix + one counter query to check.
+5. **Chris card 2 / heading-words-as-answers:** "Date"/"NOTE" land in ref boxes wearing ✓/"High · 70%" with
+   "Confirm to keep" copy. The digit gate + File All refused them all — but the dressing invites a tired
+   confirm. Small presentational rule (bare page-furniture word never wears ✓/High) + oscar's arm is the
+   real fix.
+
+## NEEDS YOUR APPROVAL (morning) — logged and skipped, per your protocol
+
+- **Choose which class-card builds to green-light** (each then goes DARK → Oracle → pins → Hard Set +
+  realdoc-605 gates): oscar's cell-below arm · reggie's parens/CR sign capture (+ the `raw_value` mini-slice)
+  · gary's convention-licensed-silence note. My ranking: oscar first (biggest fill lever), reggie second
+  (16-doc deterministic exhibit), gary third (Review-honesty, no M-risk).
+- **Chris's 8 cards** — all queued in `pendingfeatures.md`, none implemented. Cards 1+2 are the ones I'd
+  vet first (both copy-level, both trust-facing).
+- **Hard Set GT fixes** (safe harness-side edits I can do next session without approval if you prefer):
+  thermal GT type invoice→receipt (or add Receipt), buyer_issued_po dual-accept per your doctrine,
+  credit-note component-sign convention.
+- **Add the Receipt preset type to the live app?** Thermal till-roll receipts land untyped today because no
+  Receipt type is installed — the catalog has one ready; one tick in Settings → Document Types →
+  "Add from catalog…".
+- **Sandbox left RUNNING** on CDP 9223 (PID 36960, userData under the session job tmp) if you want to poke
+  Chris's end state; kill it whenever — next /christest rebuilds it.
+
+## Corrections to my own first readings (so you don't inherit them)
+
+- The scorer's first run had a dead would-file lane (`isAutoFileEligible` refuses a falsy doc id as
+  'no-type' — I passed `id: 0`) and conflated EMPTY-held with SILENT-wrong; both fixed in `1590d03`,
+  all three arms re-run clean before anything was read.
+- I first called the 7 warm buyer-issued reads "silent-wrong — top card"; gary's trace showed they're your
+  signed doctrine + a GT flaw. The report and cards doc carry the corrected reading.
+
+## Where everything lives
+
+- Corpus: `Desktop\Hard Set\` (400 PDFs + GT + `score_*.md`/`.jsonl` per arm — jsonl is authoritative).
+- Scores/report: `docs/HARD_SET_REPORT_2026-08-31.md` · cards: `docs/designs/HARD_SET_CLASS_CARDS_2026-08-31.md`
+  · Chris: `docs/CHRIS_FULL_APP_REVIEW_2026-08-31.md`.
+- Night ledger updated: `NIGHT_RUN.md` (TONIGHT cleared, DONE entries + repeat-only-if, new queue items).
+- DB copy used: `<job tmp>\live_20260831.db` (session-mortal). Sandbox: `<job tmp>\chris-sandbox\`.
