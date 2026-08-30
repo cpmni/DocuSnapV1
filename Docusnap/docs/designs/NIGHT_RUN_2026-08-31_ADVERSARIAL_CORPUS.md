@@ -63,6 +63,10 @@ dangerous then bring it to the agents and if there is no safe direction stop and
    `stress_test/score_demo_digital.js` (cold/warm scoring), `stress_test/realdoc_regression.js` (`RR_APP_ENV`,
    `RR_DB`, `RR_IDS`, the would-file scoring via `trust.isAutoFileEligible`).
 3. Make the DB copy: `TESTING\_measure\reslice_20260830\_backup_live.js <scratch>\live_20260831.db`.
+4. **Corpus rule (owner):** any run over the owner's own documents uses ONE version of each — `RR_IDS` from
+   `Desktop\ScanFinder Test Corpus\rr_ids.txt` (605 papers; `ground_truth.json` there is the confirmed GT), never
+   the duplicate-heavy raw folders. The Hard Set you build tonight is separate and already duplicate-free by
+   construction.
 
 ## Phase 1 — build the generator `stress_test/gen_hard_set.py` (≤3 h)
 Model it on `gen_customer_test.py` (issuer/layout DSL, deterministic seeds, `ground_truth.json`, `--smoke`) and reuse
