@@ -154,6 +154,77 @@ const PROVEN_ON_DEFAULTS_2 = [
   //   deskew_on_import               standing ruling; it silently disables teach_angle_compose_scan
 ];
 
+// The switches migration 93 turns on (2026-08-30, owner: "default all the toggles apart from straighten
+// to on, gate the ones the customer doesn't need behind SFDEV"). This COMPLETES the promotion ladder
+// (mig 60/67/70/76/77/78): every arc BUILT AFTER mig 70 shipped dark, and its default-off sat only in the
+// owner's hand-flipped live config — so a fresh customer install behaved like a 2025 default (e.g. the VM
+// test showed batch_audit_enabled / Quick check off). This list IS the owner's validated production config
+// (every switch they run true), MINUS the keys that must NEVER be blanket-defaulted for a customer:
+//   deskew_on_import            standing wrong-layer ruling (stays off; it silently disables
+//                               teach_angle_compose_scan, worth +18 issuer / +36 customer)
+//   telemetry_enabled           privacy (stays off)
+//   first_run_completed         INSTALL STATE — defaulting true would SKIP onboarding (no output folder set)
+//   tray_hint_shown             UI state
+//   dev_switches_unlocked       the SFDEV gate itself; customers stay locked
+//   diagnostic_logging          customers keep this OFF (packaged reads the setting; default off)
+//   detached_features_signed / client_api_enabled / detached_search_seats
+//                               entitlement + LAN /v1; set by licensing, not a blanket default — the
+//                               security review says hold the detached-client add-on back by default
+// INSERT OR IGNORE (same ritual as mig 60/67): a fresh install with no row is seeded true; an EXISTING
+// install's own choice — including a deliberate hand-disable — is NEVER overwritten. Idempotent, so it is
+// harmless that some keys were already seeded by an earlier migration. NOTE for review: ocr_light_text_
+// recovery ~triples scanned-page OCR time — it is the owner's shipped choice ("Also read faint small print
+// on scans"); trust_company_key_own_scope and the buyer-issued scopes were memory-flagged but are on in the
+// owner's live production config (they HOLD rather than misfile, so defaulting them is conservative).
+const ALL_ON_DEFAULTS_93 = [
+  'anchor_inline_taught_offset_veto', 'anchor_label_left_clamp', 'anchor_value_right_grow',
+  'auto_rotate_enabled', 'auto_title_enabled', 'autofile_gate_unify', 'barcode_field', 'barcode_inventory',
+  'batch_audit_enabled', 'branding_strip_reg_boilerplate', 'code_separator_structure_guard',
+  'confirm_persist_values', 'confirmed_dominant_adopt', 'corrob_note_recompute_fc',
+  'corrob_verification_doubt_clear', 'corroboration_autofile', 'credit_sign_coherence',
+  'critfield_corrob_floor_relax', 'crosscheck_outlier_reconcile', 'customer_po_labels',
+  'far_lowconf_valued_only', 'filing_sanity_page_match_v2', 'filing_slips_enabled',
+  'filing_value_sanity_flags', 'fingerprint_seed_support_prune', 'format_corrections_dedupe',
+  'generic_fallback_enabled', 'graduation_freeze_issuer', 'heading_absent_reread', 'hint_band_ws_normalize',
+  'identity_scope_post_repair', 'identity_suggest_canonical', 'issuer_near_match_confirm_guard',
+  'issuer_sibling_fill', 'issuer_suggest_on_blank_confirm', 'keep_processed_originals',
+  'keyword_generic_caption_exclusive', 'learning_exclude_docs', 'learning_exclude_machine_confirms',
+  'learning_exclude_rewrite_markers', 'learning_repair_console', 'learning_repair_forget',
+  'letterhead_depth_guard', 'letterhead_fragment_abstain', 'letterhead_issuer', 'letterhead_prefill',
+  'letterhead_stack_abstain', 'list_field_scan', 'logo_detail_veto_single_supplier_immune',
+  'money_sign_capture', 'name_corrob_note_demote', 'name_corrob_suggestion_adopt', 'name_dominant_snap',
+  'name_lexicon_low_distinct', 'name_unclip_reconcile', 'net_misread_total_flag', 'ocr_light_text_recovery',
+  'ocr_parallel_reprocess_enabled', 'position_teach_nudge', 'prefix_garble_adopt', 'printing_enabled',
+  'putback_refile_on_file_all', 'quiet_reread_enabled', 'quiet_reread_first_fill_reliability_hold',
+  'quiet_reread_kw_select', 'quiet_reread_on_layout', 'quiet_reread_on_ready',
+  'quiet_reread_on_ready_templated', 'raw_crop_witness_adopt', 'raw_crop_witness_flag',
+  'raw_witness_vacuous_suppress', 'recon_shadow_attrib_note_demote', 'recon_total_note_demote',
+  'reconcile_shadow_attribution', 'reextract_fast_enabled', 'ref_class_fix_enabled',
+  'ref_dominant_format_note_demote', 'ref_prefix_confusable_adopt', 'ref_prefix_confusable_adopt_length_note',
+  'ref_role_digit_gate', 'reprocess_holds_as_lane', 'reprocess_shadow_stale_drop', 'review_activity_strip',
+  'review_group_by_letterhead', 'role_field_dominant_class', 'scope_sweep_auto_accept', 'scope_sweep_enabled',
+  'snap_confusable_clean_autofile', 'stage05_ref_code_gate', 'struct_code_read', 'supplier_pin_self_discharge',
+  'teach_angle_compose', 'teach_angle_compose_scan', 'teach_identity_near_match_keep',
+  'teach_label_becomes_keyword', 'template_abs_edge_guard', 'template_buyer_issued_letterhead_scope',
+  'template_buyer_issued_type_scope', 'template_clip_commit', 'template_clip_commit_edge_slack',
+  'template_code_edge_clean', 'template_code_frag_clean', 'template_currency_edge_grow',
+  'template_date_clip_gate', 'template_date_future_yield', 'template_date_invalid_yield',
+  'template_drift_row_pitch', 'template_edge_cut_relocate', 'template_fixed_debris_wide',
+  'template_fixed_fragment', 'template_fixed_issuer_repair', 'template_fixed_near_match',
+  'template_fixed_seed_agreement_keep', 'template_fixed_seed_fragment_garble', 'template_fixed_seed_fragment_keep',
+  'template_format_fail_yield', 'template_freeze_issuer_only', 'template_freeze_qualify',
+  'template_hidden_field_drop', 'template_identity_corrob_note_shed', 'template_identity_geom_fragment_shed',
+  'template_identity_geom_fuzzy_graduate', 'template_identity_hold_siblings', 'template_identity_on_page',
+  'template_inline_row_overlap', 'template_issuer_region_presence', 'template_label_digit_exact',
+  'template_name_edge_grow', 'template_pad_window_code', 'template_pad_window_code_labelled',
+  'template_pad_window_read', 'template_reg_arbiter_anchor_evidence', 'template_target_word_snap',
+  'tier_a_date_plausibility', 'trust_company_key_own_scope', 'trust_role_disagreement_refuse',
+  'trust_shadow_row_skip', 'type_ambiguity_ripple', 'type_ambiguity_unsupported_waiver',
+  'type_election_title_first', 'type_title_owner_precedence', 'universal_verify_flag',
+  'universal_verify_numeric', 'universal_verify_restore', 'vacuous_corrected_to_ignore', 'vat_eu_formats',
+  'vat_rate_at_skip', 'vat_reg_not_amount', 'vat_reg_symbol_confusable', 'xcheck_corrob_note_demote',
+];
+
 function runJsMigrations(db, applied) {
   // ── Workflow 'paid' heal — MUST run BEFORE any stamped block (Workflow Slice 1, Oracle
   // condition 1). The half-wired 'paid' route state was removed for v1: it sat in neither
@@ -2157,6 +2228,24 @@ function runJsMigrations(db, applied) {
     db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (92)').run();
     console.log(`JS migration 92 applied: structural roles required by nature (${n} role field(s) healed)`);
   }
+
+  // ── Migration 93: complete the all-on-except-straighten new-install defaults (see ALL_ON_DEFAULTS_93) ──
+  if (!applied.has(93)) {
+    try {
+      const ins = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+      let n = 0;
+      for (const key of ALL_ON_DEFAULTS_93) { if (ins.run(key, 'true').changes) n++; }
+      // learning_exclude_rewrite_markers was seeded 'false' by mig 75 and never promoted, so the
+      // INSERT OR IGNORE above no-ops on it (the row already exists). It is a DARK internal switch with no
+      // Settings UI — a 'false' there is never a deliberate user choice, only the mig-75 seed — and the
+      // rest of its learning-exclusion family is already on, so force it true. (This is the ONLY key the
+      // fresh-DB verify found seeded-off-and-unpromoted; UPDATE touches only its existing row.)
+      db.prepare("UPDATE settings SET value = 'true' WHERE key = 'learning_exclude_rewrite_markers' AND value != 'true'").run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (93)').run();
+      console.log(`JS migration 93 applied: ${n} feature switch(es) defaulted ON for fresh installs (all-on-except-straighten; existing choices + hand-disables untouched)`);
+    } catch (e) { console.warn(`  migration 93 defaults: ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next
