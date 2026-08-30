@@ -90,6 +90,9 @@ async function _init() {
   // Stamp permission (Workflow+Stamping redesign): drives whether the "Stamp" option is shown at all.
   // A core capability (not the add-on); the main process re-checks on every place.
   try { window.SearchState.canStamp = !!(await window.docusnap.stamp.can()).canStamp; } catch { window.SearchState.canStamp = false; }
+  // Printing (Print-Slice 1): read once so renderActions can show/hide the Search Print button. The main
+  // process re-checks printing_enabled on every print, so this is display-only.
+  try { window.SearchState.printAvailable = !!(await window.docusnap.printAvailable?.()); } catch { window.SearchState.printAvailable = false; }
   // Recycle bin is for the people who can delete (Admin/Edit).
   if (window.SearchState.role === 'admin' || window.SearchState.role === 'edit') {
     const rb = document.getElementById('btn-recycle'); if (rb) rb.style.display = '';

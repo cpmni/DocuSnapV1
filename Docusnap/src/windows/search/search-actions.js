@@ -75,6 +75,26 @@ function renderActions(doc) {
       // Edit in Review: admin/edit only — enforced in main.js open-review-window-at handler.
       _btn(docSection, 'Edit in Review', () => window.docusnap.openReviewWindowAt(doc.id), true);
     }
+    // Print (Print-Slice 1): a READ, so any role that can view the doc may print it — NOT canEdit-gated
+    // (unlike Open File/Explorer, which hand back the real path). Shown only when the printing feature is on
+    // and the doc has a resolvable file; the main process re-gates EVERY print (printing_enabled +
+    // canAccessDocument + PDF-only) and audits it. The default flow raises the customer's own driver dialog.
+    if (doc.has_file && window.SearchState && window.SearchState.printAvailable) {
+      _btn(docSection, '🖨 Print', async () => {
+        let r = null;
+        try { r = await window.docusnap.printDocument({ docId: doc.id, source: 'original' }); }
+        catch (e) { r = { ok: false, reason: e && e.message }; }
+        if (!r || !r.ok) {
+          const why = r && r.reason === 'not_pdf'      ? 'Only PDF documents can be printed.'
+                    : r && r.reason === 'disabled'     ? 'Printing is turned off in Settings.'
+                    : r && r.reason === 'forbidden'    ? 'You don’t have access to this document.'
+                    : r && r.reason === 'file_missing' ? 'The document file could not be found.'
+                    : (r && (r.outcome === 'cancelled' || r.outcome === 'closed')) ? null   // user closed the dialog — not an error
+                    : 'Couldn’t print the document.';
+          if (why) _flashNote(docSection, why);
+        }
+      });
+    }
     // Delete → recycle bin (Admin/Edit). Recoverable; the file is kept.
     if (canEdit) _btn(docSection, 'Delete', () => {
       if (confirm('Move this document to the recycle bin? You can restore it later.')) _afterChange(window.docusnap.deleteDocument(doc.id));
