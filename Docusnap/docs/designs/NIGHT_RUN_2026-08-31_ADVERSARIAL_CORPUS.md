@@ -100,6 +100,11 @@ with a dated round header and the sandbox conditions; add the triage to the hand
 vet queue, honest verification state, first actions, traps), replace the CLAUDE.md LATEST block (demote tonight's
 to "(previous)"; archive the outgoing block to `docs/session-log.md`), a memory file + `MEMORY.md` line, and
 `pendingfeatures.md` (the cards). Leave the Chris sandbox running on 9223 and note its PID. Commit docs; do not push.
+**Then update `NIGHT_RUN.md` (owner convention 2026-08-30):** move everything tonight actually did into the DONE
+ledger with its result, the report pointer and a "repeat only if" condition; add every NEW thing worth testing or
+checking that tonight surfaced to the QUEUE (dated, one to three lines, ranked); re-point TONIGHT at nothing (or at
+the next prompt if you wrote one). Before you planned any phase, you should already have read the DONE ledger — no
+night repeats work unless its "repeat if" condition holds.
 
 ## Stop rules / budget
 - Never more than 1 h on one class; if a class won't render legibly after two attempts, drop it, say so, move on.
