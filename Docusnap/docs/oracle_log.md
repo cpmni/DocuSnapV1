@@ -2268,3 +2268,32 @@ realdoc "regression" (96 Castellan worksheets would-file → held) is NOT the co
 with no required fields scores 0 in `overall_confidence` → 81 < floor 95. Owner remedy = mark the roles required; a system
 fix is queued for a separate vet (cond 9 stands — no trust change shipped). (3) The scanned worksheets' page text lacks the
 "Serial No:" lines entirely (OCR/row-rebuild loss; the born-digital twin has them) — an OCR arc, not this slice.
+
+---
+## 2026-08-30 · Slice-level deskew re-read of flagged fields — SIGN OFF WITH CONDITIONS
+Design `docs/designs/DESKEW_SLICE_REREAD_2026-08-30.md` (owner slice refinement + barry + oscar; builds on the
+2026-07 `DESKEW_FIELD_REREAD` sign-off). A field-scoped "straightened second opinion": re-read a flagged value's
+EXPANDED slice on a deskewed crop, adopt into that field ONLY on ≥2 independent PAGE-family corroboration; else
+untouched. Right layer; genuinely discharges the 2026-07 seven vetoes. SIGNED with six pinned conditions (full
+set = design §11):
+- **LOAD-BEARING C1 (the corroboration bucket).** The deskew read must bucket to the EXISTING `crop` family
+  (`_corrob_record_bucket`), NOT a new `deskew` family and NOT an unknown name. A new family lets the raw
+  `anchor_crop` (family `crop` ≠ `deskew`) self-corroborate the same-way garble → 2 families → licensed →
+  **silent wrong file** (doc-561, "same header garbles the same way under any rotation"). None gates the
+  agree-set shut (`engine.py:4447`) → inert. Only `crop` is safe (raw same-family crop SKIPPED at
+  `engine.py:4441`) AND useful (only an independent keyword/mapping can license). Two-direction pin.
+- **R1–R5 (ref/date — the broadening past the 2026-07 name-only sign-off):** fire only on already-flagged
+  ref/date; adopt on ≥2 page families (`_corrobLicensed`, page-family required); silent-file ONLY via the
+  two-leg `critfield_corrob_floor_relax` (`_corrobLicensed` AND `valueMatchesShape`) — never corroboration
+  alone, never learned-shape alone; a type-valid raw the deskew DISAGREES with routes through
+  `rereadHolds.holdChangedReads` S3-C5 two-value "was X, now Y" (not the reassuring note); DATE_FOLD on +
+  `parse_date` gate.
+- **C2** corroboration-record REBUILD (inject the deskew candidate into `_field_candidates[key]` + re-emit
+  before the gate reads it; else fails CLOSED/inert). **C3** class-aware locate+guard (name = label-adjacency
+  relocate, NOT `targeted_reread` similarity-to-garble which returns the CAPTION for a caption-bleed name;
+  kinship-to-garble gate is ref/date-ONLY — inverted for names). **C4** inverse-map must also undo the ×s
+  upscale (÷s) + keep the stored raw w/h. **C5** the manual "Straighten-all" store-worse fix ships as a
+  SEPARATE slice/gate (realdoc doesn't exercise the manual reprocess path).
+- **Gate:** realdoc M=0 proves inertness, not correctness → add a ≥3° skewed census (fired/adopted/filed counts
+  + zero non-two-leg ref/date auto-files) + a negative caption-commit census (the `DESKEW_RAW_CROPS` RED class)
+  + the named pins. DARK until met.
