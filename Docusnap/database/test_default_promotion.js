@@ -58,7 +58,11 @@ console.log('\n2. an existing choice is never overwritten');
 console.log('\n3. the promotion list is a RECORD, not a list of names');
 {
   const src = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
-  const block = src.slice(src.indexOf('const PROVEN_ON_DEFAULTS_2'), src.indexOf('function runJsMigrations'));
+  // Slice PROVEN_ON_DEFAULTS_2 ONLY. It must END at ALL_ON_DEFAULTS_93 (Oracle 2026-08-30): mig 93's list
+  // legitimately CONTAINS some keys mig 67 excluded (name_corrob_note_demote, identity_scope_post_repair —
+  // both promoted to the fresh-install default by mig 70 since 08-15), so a block that spanned it would make
+  // the "genuinely NOT seeded" assertions below pass only by a comma-quote-vs-bracket-quote coincidence.
+  const block = src.slice(src.indexOf('const PROVEN_ON_DEFAULTS_2'), src.indexOf('const ALL_ON_DEFAULTS_93'));
   check('every promoted key carries an annotation of what it bought',
         KEYS.every(k => new RegExp(`'${k}'[^\\n]*\\n?[^\\n]*//`).test(block) || block.includes(`// ${k}`)
                         || new RegExp(`\\['${k}',[^\\]]*\\],\\s*//`).test(block)));
@@ -83,6 +87,29 @@ console.log('\n4. every promoted key is actually read by a consumer (no dead see
   for (const k of [...KEYS, 'graduation_window']) {
     check(`${k} has a live consumer`, readers.includes(`'${k}'`));
   }
+}
+
+console.log('\n5. migration 93 — all-on-except-straighten fresh-install defaults (2026-08-30)');
+{
+  const src = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
+  const listBlock = src.slice(src.indexOf('const ALL_ON_DEFAULTS_93 = ['), src.indexOf('function runJsMigrations'));
+  const on93 = [...listBlock.matchAll(/'([a-z0-9_]+)'/g)].map(m => m[1]);
+  const db = new Database(':memory:');
+  runMigrations(db);
+  check(`ALL_ON_DEFAULTS_93 is a real list (${on93.length} keys)`, on93.length >= 140);
+  const notOn = on93.filter(k => get(db, k) !== 'true');
+  if (notOn.length) console.log('    keys NOT on: ' + notOn.join(', '));
+  check('every ALL_ON_DEFAULTS_93 key is true on a fresh install', notOn.length === 0);
+  const EXCL = ['deskew_on_import', 'telemetry_enabled', 'first_run_completed', 'tray_hint_shown',
+                'dev_switches_unlocked', 'diagnostic_logging', 'detached_features_signed',
+                'client_api_enabled', 'detached_search_seats'];
+  check('no excluded key is seeded true', EXCL.every(k => get(db, k) !== 'true'));
+  check('first_run_completed is unset (onboarding runs on a clean install)', get(db, 'first_run_completed') === undefined);
+  // Oracle 2026-08-30: mig 89 DEFERRED these two as a fresh-install default until their non-owner-corpus
+  // reprocess gate is eyeballed. mig 93 must NOT default them on. Pinning (d) so this decision can't regress.
+  check('name_dominant_snap is NOT defaulted on (mig 89 deferral held)', get(db, 'name_dominant_snap') !== 'true');
+  check('branding_strip_reg_boilerplate is NOT defaulted on (mig 89 deferral held)', get(db, 'branding_strip_reg_boilerplate') !== 'true');
+  db.close();
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

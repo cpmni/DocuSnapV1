@@ -176,10 +176,16 @@ const PROVEN_ON_DEFAULTS_2 = [
 // recovery ~triples scanned-page OCR time — it is the owner's shipped choice ("Also read faint small print
 // on scans"); trust_company_key_own_scope and the buyer-issued scopes were memory-flagged but are on in the
 // owner's live production config (they HOLD rather than misfile, so defaulting them is conservative).
+// DELIBERATELY NOT HERE (Oracle 2026-08-30): name_dominant_snap and branding_strip_reg_boilerplate. mig 89
+// (2026-08-26, index.js above) explicitly DEFERRED these two as a new-install default "until their
+// held/misfiled reprocess gate is eyeballed on a NON-OWNER corpus". They are true only in the owner's live
+// config (flipped on the owner's OWN corpus after the deferral), and both are inert on a fresh install
+// (name_dominant_snap needs ≥5 confirms; branding only matters on a logo collision), so holding them off
+// costs a fresh customer nothing. They ride their OWN promotion migration once that gate is checked.
 const ALL_ON_DEFAULTS_93 = [
   'anchor_inline_taught_offset_veto', 'anchor_label_left_clamp', 'anchor_value_right_grow',
   'auto_rotate_enabled', 'auto_title_enabled', 'autofile_gate_unify', 'barcode_field', 'barcode_inventory',
-  'batch_audit_enabled', 'branding_strip_reg_boilerplate', 'code_separator_structure_guard',
+  'batch_audit_enabled', 'code_separator_structure_guard',
   'confirm_persist_values', 'confirmed_dominant_adopt', 'corrob_note_recompute_fc',
   'corrob_verification_doubt_clear', 'corroboration_autofile', 'credit_sign_coherence',
   'critfield_corrob_floor_relax', 'crosscheck_outlier_reconcile', 'customer_po_labels',
@@ -192,7 +198,7 @@ const ALL_ON_DEFAULTS_93 = [
   'learning_exclude_rewrite_markers', 'learning_repair_console', 'learning_repair_forget',
   'letterhead_depth_guard', 'letterhead_fragment_abstain', 'letterhead_issuer', 'letterhead_prefill',
   'letterhead_stack_abstain', 'list_field_scan', 'logo_detail_veto_single_supplier_immune',
-  'money_sign_capture', 'name_corrob_note_demote', 'name_corrob_suggestion_adopt', 'name_dominant_snap',
+  'money_sign_capture', 'name_corrob_note_demote', 'name_corrob_suggestion_adopt',
   'name_lexicon_low_distinct', 'name_unclip_reconcile', 'net_misread_total_flag', 'ocr_light_text_recovery',
   'ocr_parallel_reprocess_enabled', 'position_teach_nudge', 'prefix_garble_adopt', 'printing_enabled',
   'putback_refile_on_file_all', 'quiet_reread_enabled', 'quiet_reread_first_fill_reliability_hold',
