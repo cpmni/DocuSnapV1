@@ -28,6 +28,14 @@ chris to test them." Branch `feat/teach-side-overnight` at `9b16b08`+.
 **Guard rails:** live app + live DB + `Desktop\Demo Docs` read-only; no new deps; `git commit -F` only; never push;
 the six junctures (esp. #1 look at the whole rendered frame, #6 verify at the source); ≤1 h per class; a class that
 won't render legibly after two attempts is dropped and said so; every phase reports even if partial.
+**Autonomy protocol (owner, 2026-08-30):** runs on auto — never waits for the owner; agents are free (advisors +
+Oracle, in parallel when independent); **Chris ALWAYS sandboxed** (`/christest` instance on 9223, a COPY of the
+corpus, never the live app/DB/Desktop originals; his cards are logged, never implemented tonight); **anything that
+needs the owner's approval is LOGGED under "NEEDS YOUR APPROVAL (morning)" in the handover and skipped** (live flips,
+push, live-DB/app/Desktop writes, non-DARK changes, new deps, licensing/legal/backend/website, deletes outside the
+scratch/sandbox, implementing a Chris card); **anything that looks dangerous goes to the agents first (gary/eric →
+Oracle) and, with no safe route, that item STOPS and the run moves to the next thing** — never improvise around a
+refusal. Full text in the prompt's "Autonomy & safety protocol".
 **Expected morning outcome:** a second corpus shape with scores, a ranked list of what to build next, Chris's
 verdict — and zero unvetted pipeline changes.
 

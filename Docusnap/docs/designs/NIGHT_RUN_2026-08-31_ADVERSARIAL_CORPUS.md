@@ -28,6 +28,34 @@ if a phase is partial. Finish by writing `HANDOVER_2026-08-31_MORNING.md` and re
 - Chris runs ONLY inside the sandbox instance the `/christest` skill builds (port 9223); his findings queue for the
   owner and are implemented by nobody tonight.
 
+## Autonomy & safety protocol (owner's words, 2026-08-30 — binds every phase)
+"Make sure it runs on auto but safely. It is free to spin up the agents and Chris must always run sandboxed. If there
+is anything that requires my approval then log it for the morning and move on. If proceeding with an action looks
+dangerous then bring it to the agents and if there is no safe direction stop and work on something else."
+- **Auto:** never wait for the owner. Decide, record the assumption in the handover, continue. Every phase reports
+  even if partial; a blocked phase is stated as blocked, never silently skipped.
+- **Agents are free:** spawn advisors (reggie / oscar / 007 / gary / herald / eric / iris / bob / barry) and the
+  Oracle whenever a design, a diagnosis or a doubtful action needs a second head — in parallel when independent.
+  Brief each fully (a fresh spawn is cold); relay findings, don't paraphrase their numbers.
+- **Chris ALWAYS sandboxed:** only via the `/christest` skill's isolated instance (own `userData`, own Output, port
+  9223, a COPY of the corpus). Never point him at the live app (the owner's `npm start` instance), the live DB, or a
+  Desktop original. His findings queue for the owner; nothing he says is implemented tonight.
+- **Needs the owner's approval → LOG IT AND MOVE ON.** Keep a running **"## NEEDS YOUR APPROVAL (morning)"** section in
+  `HANDOVER_2026-08-31_MORNING.md`; each entry = what · why it needs you · the exact command/flip to run if approved ·
+  the risk of not doing it. Approval-class actions (never do them tonight): flipping ANY switch on the live DB;
+  `git push`; any write to the live DB / the live app's userData / `Desktop\Demo Docs` / `Customer Doc Test`;
+  restarting or killing the owner's app; a non-DARK behaviour change; a schema migration beyond seeding a DARK switch
+  OFF; a new dependency; anything touching licensing, Terms, the PHP backend, the website; deleting or moving
+  anything outside the session scratch / the Chris sandbox / `stress_test/out`; implementing a Chris card.
+- **Looks dangerous → bring it to the agents; no safe direction → stop THAT item and work on something else.** "Looks
+  dangerous" = a command touching paths outside the scratch/sandbox/`Desktop\Hard Set`, any `Remove-Item -Recurse`
+  on a repo or Desktop path, a force git operation, a process kill not scoped to a PID tree this session started, a
+  harness that would write through to a live table, an OCR/CPU run you cannot bound. Ask gary/eric (mechanism) then
+  the Oracle (blast radius); if they cannot name a safe route, log it under NEEDS YOUR APPROVAL with their reasoning
+  and continue with the next phase/class. Never improvise around a refusal.
+- **Bound the machine:** one harness at a time (8 shards), Chris after scoring finishes; if the owner's app is
+  running, leave it alone (it isn't launched with CDP — do not attach to it).
+
 ## Phase 0 — orient (≤30 min)
 1. `git log --oneline -6` — expect `4c413a9` at the top. `git status` — only `CLAUDE.md` should be modified.
 2. Read `stress_test/gen_demo_digital.py` (the archetype DSL + `ground_truth.json` shape), `stress_test/
