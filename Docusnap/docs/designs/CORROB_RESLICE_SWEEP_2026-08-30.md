@@ -98,7 +98,13 @@
 > C11 flip order sweep → discount → never strict-money in this arc · C12 an emptied field is a change (stub row +
 > put-back) · C13 field-level charter · C14 apply-before-adopt source pin. Nordwind OFF (new code) vs the pre-edit
 > baseline: 0 diffs / 20; ON: 0023 released via `template_mapping_resliced` @92 (R8), value unchanged, 19
-> byte-identical. Full realdoc four-arm A/B (off / sweep / discount / all): `tmp/runs/realdoc_*.md` (see the handover).
+> byte-identical. **Full realdoc four-arm A/B (off / sweep / discount / all) — GATE MET** on one representative per
+> paper × 605 (the confirmed corpus is 1,940 files = 618 byte-distinct = 605 distinct papers; `RR_IDS`) at the
+> product's 200 DPI with the app env mirrored: accuracy and per-field fill identical to OFF on every arm (type 605/605,
+> supplier 603, ref 603, date 598, total 108/108), regressions 11 / 9 silent on every arm, **M = 7 unchanged**
+> (baseline: 5 leading/garbled-digit dates + 2 suppliers, two of them poisoned GT), M_type 0; sweep + all-on: would-file
+> 570 → 571 (#1840 = 0023, 0 lost), 1 witness fire (`£2,363.76` @92 R8), 0 wrong releases; discount arm byte-identical
+> to OFF (safe, inert on today's reader). See `HANDOVER_2026-08-30_NIGHT.md`.
 
 **Status:** design brief, PRE-advisor / PRE-Oracle. Owner-requested. Build in a fresh session:
 oscar (OCR recipes) + reggie (format validation) + 007 (zone geometry) → Oracle → DARK switch → OFF/ON
