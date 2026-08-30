@@ -133,19 +133,47 @@
       <section class="screen on center" data-screen="intro">
         <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg></div>
         <h1>Let's do a practice run</h1>
-        <p class="msg">In a couple of minutes you'll go through the whole loop with three safe sample documents:
-          <b>bring them in</b>, <b>check what Scan Finder read</b>, <b>teach it by drawing a box around a value</b>,
-          and <b>confirm</b> to file them away.</p>
+        <p class="msg">In a couple of minutes you'll go through the whole method with three safe sample documents:
+          <b>teach</b> Scan Finder one document by pointing out its details, <b>import</b> a small batch,
+          then <b>check and correct</b> what it read before it files them away.</p>
         <p class="sub">It's a sandbox — the samples never mix with your own documents, and you can repeat this
           any time from the account menu.</p>
+      </section>
+
+      <!-- Teach (the wizard sim — step 1 of the teach-first route) -->
+      <section class="screen" data-screen="teach">
+        <div class="rvhead">
+          <span class="step" id="th-step">Teach — one document</span>
+          <span class="type" id="th-type">Invoice</span>
+        </div>
+        <div class="banner" id="th-banner"></div>
+        <div class="rv">
+          <div>
+            <div class="pane-title">The document</div>
+            <div class="preview">
+              <div class="docpaper" id="th-doc">
+                <div class="doc-h" id="th-company"></div>
+                <div class="doc-sub" id="th-type-sub"></div>
+                <div class="doc-rows" id="th-rows"></div>
+                <div class="doc-wm">SAMPLE — PRACTICE ONLY</div>
+                <div class="drawlayer" id="th-draw-layer"></div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="pane-title">The details to point out</div>
+            <div class="fields" id="th-fields"></div>
+          </div>
+        </div>
       </section>
 
       <!-- Import -->
       <section class="screen center" data-screen="import">
         <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg></div>
-        <h1>Step 1 — Bring in your documents</h1>
-        <p class="msg">Here are three scanned documents, ready to import. In the real app you'd point Scan Finder
-          at a folder of your scans. Click <b>Process</b> and it reads them.</p>
+        <h1>Step 2 — Bring in your documents</h1>
+        <p class="msg">Now the batch. Here are two more scanned documents, ready to import — one from the sender
+          you just taught, one from a company you haven't. In the real app you'd point Scan Finder at a folder of
+          your scans. Click <b>Process</b> and it reads them.</p>
         <div class="filelist" id="im-list"></div>
       </section>
 
@@ -180,9 +208,10 @@
       <!-- Done -->
       <section class="screen center" data-screen="done">
         <div class="icon" style="background:color-mix(in srgb, var(--ok) 16%, transparent);color:var(--ok)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></div>
-        <h1>That's the whole loop</h1>
-        <p class="msg">You imported, checked, taught and confirmed — and Scan Finder filed each document with a
-          tidy name in the right folder, sorted by company, year and month:</p>
+        <h1>That's the whole method</h1>
+        <p class="msg">You taught one document, imported a batch, corrected one detail and confirmed — and
+          Scan Finder filed each document with a tidy name in the right folder, sorted by company, year and
+          month:</p>
         <div class="done-list" id="done-list"></div>
         <p class="sub" id="done-note">These practice copies sit in a temporary folder that's cleared when you
           close this window — your real files and settings are untouched.</p>
