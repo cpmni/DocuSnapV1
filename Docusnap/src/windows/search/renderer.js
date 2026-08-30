@@ -9,6 +9,8 @@ document.getElementById('btn-close').addEventListener('click', () => window.docu
 document.getElementById('btn-help-guide')?.addEventListener('click', () => window.docusnap.openHelpWindow('search'));
 window.initHelpMode?.('help-mode-toggle', {
   'fulltext':    'Searches inside the documents — the OCR’d text content, not just the filed fields. Use it to find a phrase you remember seeing.',
+  'total-op':    'How to compare the amount — equal to, more than, or less than.',
+  'total':       'Find documents by their total. Commas don’t matter — 1137 finds 1,137.00.',
   'type-filter': 'Limit results to one document type (e.g. only Invoices).',
   'uncommitted': 'When ticked, results also include documents that haven’t been confirmed/filed yet — handy for finding a scan still in the queue.',
   'company':     'Filter by the company (supplier or customer) on the document.',

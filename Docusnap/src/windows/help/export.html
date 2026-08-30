@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
+  <title>Scan Finder — Export to a spreadsheet</title>
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <link rel="stylesheet" href="help.css">
+  <script src="../shared/theme.js"></script>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="tb-title">Scan Finder — User Guide</span>
+    <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+  </div>
+
+  <div id="shell">
+    <nav id="nav">
+      <div class="nav-label">User Guide</div>
+      <div id="nav-links"></div>
+    </nav>
+
+    <div id="content">
+      <div class="doc">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <main>
+          <section id="export">
+            <p class="use-when">Use this page when the accountant wants a list, not the documents — month-end,
+              VAT time, or a quick tally.</p>
+            <h1>Export to a spreadsheet</h1>
+
+            <p class="lead">Export pulls the details of your filed documents — who, when, reference, total —
+              into one file you can open in Excel or hand to your bookkeeper. The documents themselves stay
+              where they are; the export is a list <em>about</em> them.</p>
+
+            <h2 id="export-how">How to run one</h2>
+            <ol class="qs-steps">
+              <li><b>Open it.</b> Click <b>Export</b> in the buttons down the left of the Home screen (or the
+                <b>Export data</b> card). It's there for admins.</li>
+              <li><b>Choose what goes in.</b> Tick the document types and the senders you want — or leave
+                everything ticked. Then tick the columns: date, reference, total, and any detail you've set up.</li>
+              <li><b>Narrow the dates if you like.</b> There are two date ranges: <b>Document date</b> (the
+                date printed on the document) and <b>Date filed</b> (when you confirmed it). Month-end usually
+                wants Document date.</li>
+              <li><b>Pick the format.</b> <b>CSV</b> opens in Excel and imports into most bookkeeping software;
+                <b>Excel (.xlsx)</b> is a ready workbook; <b>JSON</b> is for other software.</li>
+              <li><b>Check the preview, then Export.</b> The row count and sample update live, so you can see
+                what you're getting before you save.</li>
+            </ol>
+            <p>How you know it worked: the saved file opens in Excel with one row per document and the columns
+              you ticked.</p>
+
+            <div class="callout note">
+              <div class="callout-title">Worth knowing</div>
+              <ul>
+                <li>Only <b>confirmed</b> documents are included unless you tick <b>Include documents still in
+                  Review</b>.</li>
+                <li>Exported dates follow your regional date format — set in <b>Settings &rarr; Processing &rarr;
+                  Date format (region)</b>.</li>
+                <li>Nothing leaves this computer; the export is a file you save where you choose.</li>
+              </ul>
+            </div>
+          </section>
+        </main>
+
+        <nav class="page-foot" id="page-foot"></nav>
+      </div>
+    </div>
+  </div>
+
+  <script src="help-nav.js"></script>
+</body>
+</html>

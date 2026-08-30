@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
-  <title>Scan Finder — Search &amp; Filing</title>
+  <title>Scan Finder — Find a document</title>
   <link rel="stylesheet" href="../shared/theme.css" />
   <link rel="stylesheet" href="help.css">
   <script src="../shared/theme.js"></script>
@@ -26,110 +26,67 @@
         <div class="breadcrumb" id="breadcrumb"></div>
 
         <main>
-          <section id="filing">
-            <h1>Search &amp; Filing</h1>
-            <p class="lead">Once you confirm a document, Scan Finder files a clean, neatly-named copy and makes
-              it easy to find again. You never have to remember where you put anything.</p>
-          </section>
-
-          <section id="how-filed">
-            <h2>How documents are filed</h2>
-            <p>When you click <b>Confirm &amp; File</b>, Scan Finder saves a tidy copy in your <b>output folder</b>,
-              organised the way you set it up &mdash; by default, by <b>Document Issuer</b>, year and month, with a
-              clear, consistent file name. You can change this layout any time in <b>Settings &rarr; Output Structure</b>
-              (below).</p>
-            <figure class="diagram">
-              <svg viewBox="0 0 680 200" role="img" aria-label="How filed documents are organised into folders">
-                <title>The filing structure</title>
-                <g class="dg-line">
-                  <path d="M39 38 V58 H53"/><path d="M65 66 V86 H79"/>
-                  <path d="M91 94 V114 H105"/><path d="M117 122 V142 H131 M117 142 V170 H131"/>
-                </g>
-                <g>
-                  <rect class="dg-accent" x="30"  y="20" width="18" height="13" rx="2"/><rect class="dg-accent" x="30"  y="17" width="8" height="4" rx="1"/>
-                  <rect class="dg-accent" x="56"  y="48" width="18" height="13" rx="2"/><rect class="dg-accent" x="56"  y="45" width="8" height="4" rx="1"/>
-                  <rect class="dg-accent" x="82"  y="76" width="18" height="13" rx="2"/><rect class="dg-accent" x="82"  y="73" width="8" height="4" rx="1"/>
-                  <rect class="dg-accent" x="108" y="104" width="18" height="13" rx="2"/><rect class="dg-accent" x="108" y="101" width="8" height="4" rx="1"/>
-                  <rect class="dg-panel"  x="134" y="131" width="14" height="16" rx="2"/>
-                  <rect class="dg-panel"  x="134" y="159" width="14" height="16" rx="2"/>
-                </g>
-                <text class="dg-text" x="56"  y="33">Output folder</text>
-                <text class="dg-text" x="82"  y="61">Acme Supplies Ltd</text>
-                <text class="dg-text" x="108" y="89">2025</text>
-                <text class="dg-text" x="134" y="117">December</text>
-                <text class="dg-mono" x="156" y="144">Invoice.15-12-2025.INV-001.pdf</text>
-                <text class="dg-sub"  x="156" y="172">a matching details file is kept alongside it</text>
-              </svg>
-              <figcaption>The default layout: grouped by Document Issuer, year and month, named <code>Type.Date.Reference</code> &mdash; all adjustable in Output Structure.</figcaption>
-            </figure>
-            <div class="callout note">
-              <div class="callout-title">What happens to the original?</div>
-              <p>Nothing is ever deleted. Once a document is safely filed, Scan Finder keeps its own copy and
-                <b>moves</b> the original scan out of your source folder into a <b>Processed</b> folder &mdash; so you
-                won't accidentally process the same document twice, and the original is still there if you need it.
-                The tidy copy in your output folder is the one to keep.</p>
-            </div>
-          </section>
-
-          <section id="output-structure">
-            <h2>Customise how documents are named and foldered</h2>
-            <p>The layout above is the default, but you can change it in <b>Settings &rarr; Output Structure</b> using
-              two simple builders. Click the blocks you want, and a live preview shows the result.</p>
-            <figure class="shot-fig">
-              <img class="shot" src="img/output-structure.png" alt="The Output Structure screen: folder pattern, building blocks, file-name pattern and a live preview">
-              <figcaption><b>1</b> the folder pattern &mdash; use <code>/</code> to start a new subfolder level &nbsp;&middot;&nbsp;
-                <b>2</b> click a building block to insert it &nbsp;&middot;&nbsp;
-                <b>3</b> the file-name pattern &nbsp;&middot;&nbsp;
-                <b>4</b> a live preview of exactly where a document will be saved.</figcaption>
-            </figure>
-            <ul>
-              <li><b>Building blocks</b> &mdash; Document Issuer, Year, Month, Type, Date and Reference. Click one to add it.</li>
-              <li><b>A &ldquo; / &rdquo; starts a new folder level</b> &mdash; e.g. <code>Document Issuer / Year / Month</code> makes three nested folders.</li>
-              <li><b>Live preview</b> &mdash; shows the finished path before you save, so there are no surprises.</li>
-            </ul>
-          </section>
-
           <section id="search">
-            <h2>Searching for a document</h2>
-            <p>Open <b>Search</b> from the home screen to find anything you've filed.</p>
-            <ol>
-              <li>Type into any of the filters &mdash; <b>company</b>, <b>reference</b>, a <b>date range</b>, or
-                <b>document type</b>. Results update as you type.</li>
-              <li>Select a result to preview it on the right.</li>
-              <li>From the preview you can open the file, show it in your file explorer, or open it back in
-                Review if you need to change something.</li>
-            </ol>
+            <p class="use-when">Use this page when you need a document back — the accountant rang, or you
+              just want to check something was filed.</p>
+            <h1>Find a document</h1>
 
+            <p class="lead">Open <b>Search</b> from the Home screen and type anything you remember — a
+              company, a reference, an amount, part of a date. Results appear as you type; no need to press
+              Enter. Amounts ignore commas, so <code>1137</code> finds £1,137.00.</p>
+
+            <h2 id="filters">Narrowing it down</h2>
+            <ul>
+              <li><b>From / To</b> dates, a <b>total amount</b> (equals, more than, less than), and a
+                <b>document type</b> sit beside the search box.</li>
+              <li><b>Include not-yet-filed</b> adds documents still waiting in Review — they show a
+                <b>Needs Review</b> badge so you can tell them from filed ones.</li>
+              <li>If a document isn't showing up, it's usually still in <a href="review.html">Review</a> —
+                tick that box and there it is.</li>
+            </ul>
             <figure class="shot-fig">
-              <img class="shot" src="img/search-results.png" alt="The Search window: filters at the top, a list of results, and a preview pane">
-              <figcaption>Filter on the left, preview on the right &mdash; then open the document however you like.</figcaption>
+              <img class="shot" src="img/search-results.png" alt="The Search window: search box and filters at the top, results with thumbnails, preview on the right">
+              <figcaption>Type on the left, preview on the right — then open the document however you like.</figcaption>
             </figure>
 
-            <div class="callout note">
-              <div class="callout-title">Selecting results</div>
-              <ul>
-                <li><b>Click</b> a row to preview it.</li>
-                <li><b>Ctrl+click</b> to pick several, or <b>Shift+click</b> to select a whole range &mdash; then act
-                  on them together (for example, delete them in one go).</li>
-                <li><b>Right-click</b> a row for its menu. In the <b>Bin</b>, that's where you <b>Restore</b> a document
-                  or delete it permanently.</li>
-              </ul>
-              <p style="margin:6px 0 0">The full selection and shortcut list is on the
-                <a class="xref" href="shortcuts.html">Keyboard shortcuts</a> page.</p>
+            <h2 id="results">Working with the results</h2>
+            <ul>
+              <li><b>Click</b> a row to preview it — scroll to zoom, drag to move around, turn pages.</li>
+              <li><b>Ctrl+click</b> picks several; <b>Shift+click</b> selects a range — then act on them
+                together.</li>
+              <li><b>Right-click</b> a row for its menu — including <b>Send back to Review</b> on a filed
+                document.</li>
+            </ul>
+
+            <h2 id="actions-doc">What you can do with a found document</h2>
+            <p>The <b>Document Actions</b> panel under the preview:</p>
+            <ul>
+              <li><b>Open File</b> / <b>Open in Explorer</b> — the document itself, or the folder it lives in.</li>
+              <li><b>Print</b> — your printer's own dialog; every print is recorded.</li>
+              <li><b>Send back to Review</b> — for a correction. It stays filed until you re-confirm it, so
+                nothing is ever "un-filed" by accident.</li>
+              <li><b>Edit in Review</b> — jump straight to its details.</li>
+              <li><b>Stamp… / Send…</b> — mark it PAID or pass it to a colleague; see
+                <a href="approvals.html">Stamps, approvals and the Mailbox</a>.</li>
+              <li><b>Delete</b> — to the recycle bin, never straight to gone.</li>
+            </ul>
+
+            <h2 id="bin">The recycle bin</h2>
+            <p>Deleted documents wait in the <b>Recycle bin</b> (a button at the top of Search). From there:</p>
+            <ul>
+              <li><b>Restore</b> one, or <b>Restore all</b> — each goes back to where it was deleted from:
+                the review queue, or its filed folder.</li>
+              <li><b>Delete permanently</b> / <b>Empty bin</b> — the true delete, admin-only, and it says so
+                before it acts.</li>
+            </ul>
+            <p>How you know it worked: restore a document and it reappears in its old place, pages intact.</p>
+
+            <div class="callout tip">
+              <div class="callout-title">Where did it file to?</div>
+              <p>The folder layout and file naming are on <a href="where-things-go.html">Where things go</a> —
+                including how to change them.</p>
             </div>
           </section>
-
-          <section id="retrieval">
-            <h2>Confirmed vs. still-in-progress</h2>
-            <p>Search shows documents you've already <b>confirmed and filed</b>. If a document isn't showing up,
-              it's most likely still waiting in the <a class="xref" href="review.html">Review queue</a> &mdash;
-              confirm it there and it'll appear in Search.</p>
-          </section>
-
-          <div class="callout tip">
-            <div class="callout-title">Next step</div>
-            <p>Want to change the output folder or how documents are filed? See <a class="xref" href="settings.html">Settings &amp; Help</a>.</p>
-          </div>
         </main>
 
         <nav class="page-foot" id="page-foot"></nav>

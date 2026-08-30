@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
+  <title>Scan Finder — When it keeps getting a sender wrong</title>
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <link rel="stylesheet" href="help.css">
+  <script src="../shared/theme.js"></script>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="tb-title">Scan Finder — User Guide</span>
+    <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+  </div>
+
+  <div id="shell">
+    <nav id="nav">
+      <div class="nav-label">User Guide</div>
+      <div id="nav-links"></div>
+    </nav>
+
+    <div id="content">
+      <div class="doc">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <main>
+          <section id="learning-repair">
+            <p class="use-when">Use this page when the same company keeps coming up wrong — a misspelt name
+              that won't go away, or details that land in the wrong box again and again.</p>
+            <h1>When it keeps getting a sender wrong</h1>
+
+            <p class="lead">Scan Finder learns from every document you confirm. That's usually what makes it
+              better — but if a wrong value was confirmed once, it can be learned too. This page is how you
+              see what it has learned, and put it right. Start with the gentlest fix.</p>
+
+            <h2 id="first">First: just correct and confirm</h2>
+            <p>One wrong reading isn't a pattern. Fix the value in Review and confirm — a few correct
+              confirmations usually outweigh a bad one. If the app itself offers "<b>Apply to N &amp;
+              re-read</b>" when you fix a sender's name, take it: that repairs the other waiting documents in
+              one click. Come back here only when the <em>same</em> mistake keeps returning.</p>
+
+            <h2 id="memory">See what it has learned</h2>
+            <p><b>Settings &rarr; Learning</b> holds the <b>Learned memory inventory</b> — a read-only,
+              click-to-browse view of everything Scan Finder remembers, sender by sender: the values, spellings
+              and positions. Nothing here changes anything; it's for looking. If a sender's list contains a
+              wrong spelling or a value that shouldn't be there, move to the next section.</p>
+            <p>In the Review window there's a closer tool: the <b>⚙</b> button's <b>Learning history</b> shows
+              the values learned for one detail, where each came from (with an <b>Open in Review</b> link), and
+              a <b>Fix likely slips</b> helper that spots a value one character off from the rest of its
+              column.</p>
+
+            <h2 id="repair">Learning Repair — send the bad example back</h2>
+            <p>The important thing to know: Scan Finder learns from the documents you have <b>confirmed</b>.
+              So the real fix is to find the wrongly-confirmed document and un-confirm it — not to delete
+              anything.</p>
+            <ol class="qs-steps">
+              <li>Open <b>Settings &rarr; Learning Repair</b> and pick the sender (and kind of document).</li>
+              <li>Look at its list — documents that "might not belong" or whose "data looks off" are flagged
+                for you, with a preview.</li>
+              <li>For a bad one, click <b>Send back to Review</b>. It returns to the queue; fix it there and
+                confirm it properly. For a good one, <b>Looks fine ✓</b>.</li>
+            </ol>
+            <p>How you know it worked: after the corrected document is re-confirmed, the wrong value drops out
+              of the memory inventory, and the next document from that sender reads right.</p>
+            <div class="callout note">
+              <div class="callout-title">The bigger levers (still safe)</div>
+              <ul>
+                <li><b>Start fresh with this sender…</b> — sets a sender's learning aside and begins again
+                  from your next confirmations. There's an <b>Undo start fresh</b>.</li>
+                <li><b>Forget learning for this type</b> — the same, for a whole kind of document. It takes a
+                  backup first.</li>
+              </ul>
+              <p>Nothing in Learning Repair deletes a document.</p>
+            </div>
+
+            <h2 id="overrides">Teach it an extra printed word</h2>
+            <p>If a sender labels a detail unusually — the worksheet prints <i>"Serial No."</i> where you
+              want the Reference — add that wording once under <b>Settings &rarr; Learning &rarr; Keyword
+              Label Overrides</b> and Scan Finder looks for it from then on. (Teaching the document with a
+              drawn box does this for you; the overrides list is where you can see and manage those words.)</p>
+
+            <div class="callout tip">
+              <div class="callout-title">A different problem?</div>
+              <p>If the sender is simply <em>new</em> and everything is blank, that's not repair — teach it
+                once: <a href="teach.html">Teach your documents</a>. If a document filed under the wrong
+                company, see <a href="files-by-itself.html#putback">Put it back</a>.</p>
+            </div>
+          </section>
+        </main>
+
+        <nav class="page-foot" id="page-foot"></nav>
+      </div>
+    </div>
+  </div>
+
+  <script src="help-nav.js"></script>
+</body>
+</html>

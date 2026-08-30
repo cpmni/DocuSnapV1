@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
+  <title>Scan Finder — Where things go</title>
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <link rel="stylesheet" href="help.css">
+  <script src="../shared/theme.js"></script>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="tb-title">Scan Finder — User Guide</span>
+    <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+  </div>
+
+  <div id="shell">
+    <nav id="nav">
+      <div class="nav-label">User Guide</div>
+      <div id="nav-links"></div>
+    </nav>
+
+    <div id="content">
+      <div class="doc">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <main>
+          <section id="where-things-go">
+            <p class="use-when">Use this page when you want to see the files themselves — or change how they're named.</p>
+            <h1>Where things go</h1>
+
+            <p class="lead">When you confirm a document, Scan Finder saves a tidy, clearly-named copy in your
+              output folder. This page shows the layout, what happens to the original scan, and how to change
+              the naming if you'd like it different.</p>
+
+            <h2 id="filing">The folder layout</h2>
+            <figure class="diagram">
+              <svg viewBox="0 0 680 200" role="img" aria-label="How filed documents are organised into folders">
+                <title>The filing structure</title>
+                <g class="dg-line">
+                  <path d="M39 38 V58 H53"/><path d="M65 66 V86 H79"/>
+                  <path d="M91 94 V114 H105"/><path d="M117 122 V142 H131 M117 142 V170 H131"/>
+                </g>
+                <g>
+                  <rect class="dg-accent" x="30"  y="20" width="18" height="13" rx="2"/><rect class="dg-accent" x="30"  y="17" width="8" height="4" rx="1"/>
+                  <rect class="dg-accent" x="56"  y="48" width="18" height="13" rx="2"/><rect class="dg-accent" x="56"  y="45" width="8" height="4" rx="1"/>
+                  <rect class="dg-accent" x="82"  y="76" width="18" height="13" rx="2"/><rect class="dg-accent" x="82"  y="73" width="8" height="4" rx="1"/>
+                  <rect class="dg-accent" x="108" y="104" width="18" height="13" rx="2"/><rect class="dg-accent" x="108" y="101" width="8" height="4" rx="1"/>
+                  <rect class="dg-panel"  x="134" y="131" width="14" height="16" rx="2"/>
+                  <rect class="dg-panel"  x="134" y="159" width="14" height="16" rx="2"/>
+                </g>
+                <text class="dg-text" x="56"  y="33">Output folder</text>
+                <text class="dg-text" x="82"  y="61">Acme Supplies Ltd</text>
+                <text class="dg-text" x="108" y="89">2025</text>
+                <text class="dg-text" x="134" y="117">December</text>
+                <text class="dg-mono" x="156" y="144">Invoice.15-12-2025.INV-001.pdf</text>
+                <text class="dg-sub"  x="156" y="172">a matching details file is kept in a tucked-away .metadata folder</text>
+              </svg>
+              <figcaption>The default layout: a folder per company, then year, then month, and each file named
+                <code>Type.Date.Reference</code>.</figcaption>
+            </figure>
+            <p>Open the output folder any time from the Home screen's <b>Output folder</b> card. Everything in
+              it is a normal PDF — you can copy, email or back it up like any other file.</p>
+
+            <h2 id="original">What happens to the original scan</h2>
+            <p>Nothing is deleted. When you import a folder, Scan Finder makes its own working copy of each
+              scan; once a document is filed, the original is moved into a <b>Processed</b> folder so you can't
+              accidentally import it twice. If you'd rather keep originals somewhere else — or not keep them at
+              all once the filed copy exists — that's the <b>Keep original scans after filing</b> choice in
+              <b>Settings &rarr; Files &amp; filing</b>.</p>
+
+            <h2 id="output-structure">Change how documents are named and foldered</h2>
+            <p>The layout above is only the default. In <b>Settings &rarr; Files &amp; filing</b>, two simple
+              builders control it — click the building blocks you want and a live preview shows the result.</p>
+            <figure class="shot-fig">
+              <img class="shot" src="img/output-structure.png" alt="The folder and file-name builders with a live preview">
+              <figcaption><b>1</b> the folder pattern — a <code>/</code> starts a new subfolder level &nbsp;&middot;&nbsp;
+                <b>2</b> click a building block to insert it &nbsp;&middot;&nbsp;
+                <b>3</b> the file-name pattern &nbsp;&middot;&nbsp;
+                <b>4</b> a live preview of exactly where a document will be saved.</figcaption>
+            </figure>
+            <ul>
+              <li><b>Building blocks</b> — Document Issuer, Year, Month, Type, Date and Reference.</li>
+              <li><b>A &ldquo;/&rdquo; starts a new folder level</b> — <code>Document Issuer / Year / Month</code>
+                makes three nested folders.</li>
+              <li><b>Duplicates</b> — if the same document is filed twice, the second copy gets a label you
+                choose (DUPLICATE, COPY, a number…) on the same tab.</li>
+            </ul>
+            <p>How you know it worked: change something, watch the preview, and file one document — it lands
+              exactly where the preview said.</p>
+
+            <h2 id="backup">The backup file</h2>
+            <p>Your <em>setup</em> — document types, folders, naming, and everything Scan Finder has learned —
+              can be saved to one password-protected file from <b>Settings &rarr; Advanced &rarr; Backup &amp;
+              Restore</b>. The Home screen's <b>Backup</b> card shows when you last did it. The backup does
+              <b>not</b> contain the filed documents themselves; those are ordinary files in your output folder
+              and belong in your normal file backups.</p>
+
+            <div class="callout note">
+              <div class="callout-title">Filing is never final</div>
+              <p>A filed document can always be brought back: find it in <a href="search.html">Search</a> and
+                click <b>Send back to Review</b>. It stays filed until you re-confirm it.</p>
+            </div>
+          </section>
+        </main>
+
+        <nav class="page-foot" id="page-foot"></nav>
+      </div>
+    </div>
+  </div>
+
+  <script src="help-nav.js"></script>
+</body>
+</html>

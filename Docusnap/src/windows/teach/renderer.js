@@ -51,6 +51,9 @@ $('win-close').onclick = () => confirmCancel();
 $('btn-help-guide')?.addEventListener('click', () => D.openHelpWindow('teach'));
 window.initHelpMode?.('help-mode-toggle', {
   'next':      'Move to the next step. On the final step this is what saves the document type, the field map and files the document.',
+  'add-catalog':'Add a ready-made document type from the catalog — it arrives with sensible details already set up.',
+  'teach-straighten':'Straighten the page before you draw. Your boxes are saved against the straightened page, so a crooked scan teaches cleanly.',
+  'teach-pagenav':'Move between the document’s pages. A filled dot marks a page you’ve already taught a detail on.',
   'back':      'Return to the previous step. Nothing is saved until the final step, so going back is always safe.',
   'cancel':    'Stop teaching and close. Nothing is saved unless you reach and complete the final step.',
   'user-guide':'Open the full user guide.',

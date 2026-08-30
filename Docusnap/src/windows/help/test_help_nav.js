@@ -21,9 +21,13 @@ const check = (label, cond) => { if (!cond) FAILS++; console.log(`  ${cond ? 'OK
 // Update this list if a new openHelpWindow('x') call is added anywhere in the app.
 const APP_SENDERS = ['main', 'settings', 'client-cert-setup', 'review', 'which-tool', 'search', 'teach', 'home'];
 
-// The rebuilt spine/Check pages whose primary section anchor must be present.
+// The rebuilt pages whose primary section anchor must be present (2026-08-31: the
+// whole guide is now rebuilt — every page except the two search-client ones).
 const REBUILT = ['index.html', 'quick-start.html', 'set-up.html', 'teach.html', 'import.html',
-                 'review.html', 'fix-a-detail.html', 'files-by-itself.html'];
+                 'review.html', 'fix-a-detail.html', 'files-by-itself.html',
+                 'where-things-go.html', 'search.html', 'export.html', 'approvals.html',
+                 'learning.html', 'admin.html', 'document-types.html', 'settings.html',
+                 'shortcuts.html', 'troubleshooting.html'];
 
 // ── Parse the PAGES manifest (file + section keys) ───────────────────────────
 const pagesBlock = nav.slice(nav.indexOf('const PAGES ='), nav.indexOf('const SEARCH_INDEX'));

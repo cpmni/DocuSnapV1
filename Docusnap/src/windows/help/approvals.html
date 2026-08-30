@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
+  <title>Scan Finder — Stamps, approvals and the Mailbox</title>
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <link rel="stylesheet" href="help.css">
+  <script src="../shared/theme.js"></script>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="tb-title">Scan Finder — User Guide</span>
+    <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+  </div>
+
+  <div id="shell">
+    <nav id="nav">
+      <div class="nav-label">User Guide</div>
+      <div id="nav-links"></div>
+    </nav>
+
+    <div id="content">
+      <div class="doc">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <main>
+          <section id="approvals">
+            <p class="use-when">Use this page when a document needs a PAID stamp, someone's sign-off — or a
+              colleague has sent one to you.</p>
+            <h1>Stamps, approvals and the Mailbox</h1>
+
+            <p class="lead">Once a document is filed, you can mark it the way you'd mark paper: press a stamp
+              on it, or send it to a colleague for their approval. The original PDF is never touched — the
+              stamp goes on a recorded copy, and every stamp and decision is kept with the document's history.</p>
+
+            <h2 id="stamps">Stamp a document yourself</h2>
+            <ol class="qs-steps">
+              <li>Find the document in <a href="search.html">Search</a> and click <b>Stamp…</b> (in Document
+                Actions).</li>
+              <li>Pick a stamp — <b>PAID</b>, <b>APPROVED</b>, <b>RECEIVED</b>… or make your own with
+                <b>+ New stamp</b> (a word and a colour).</li>
+              <li>Move the stamp where you want it on the page, click to drop it, then <b>Place stamp</b>.</li>
+            </ol>
+            <p>How you know it worked: the document shows a stamp badge, and a <b>Stamped / Original</b>
+              switch lets you view either version. Each stamp is numbered and dated, and stamps add up over
+              time — like a paper document passing across desks.</p>
+            <div class="callout note">
+              <div class="callout-title">Who can stamp</div>
+              <p>Stamping is a per-person permission an admin grants in <b>Settings &rarr; Users &amp;
+                activity</b>. If you don't see a Stamp button, you don't have it yet. The stamps themselves
+                (the words and colours on offer) are managed on the same tab.</p>
+            </div>
+
+            <h2 id="send">Send a document to someone</h2>
+            <p>With the office add-on, <b>Send…</b> sits beside Stamp. Choose why you're sending it:</p>
+            <ul>
+              <li><b>Needs their approval</b> — it lands in their Mailbox with Approve / Reject buttons. An
+                approval is permanent and stamped with their name; a rejection asks them for a note saying why.</li>
+              <li><b>Just for information</b> — they read it and press <b>Got it</b>.</li>
+            </ul>
+            <p>You can add a note, see the state ("Sent to Bob — awaiting their approval"), and <b>Cancel
+              route</b> if you change your mind before they act. Only people allowed to stamp can be asked to
+              approve — the recipient list shows who qualifies.</p>
+
+            <h2 id="mailbox">The Mailbox</h2>
+            <p>The <b>Mailbox</b> (a button in Search, and the <b>Waiting on you</b> card on Home) has four
+              boxes: <b>Inbox</b> (waiting on you), <b>Sent</b> (waiting on others), <b>Assigned</b> and
+              <b>Completed</b>. A rejected item comes back to your Sent box with the reason, and a
+              <b>Send again</b> button once you've put it right.</p>
+
+            <h2 id="routing">Automatic routing (rules)</h2>
+            <p>An admin can set rules so documents route themselves: <i>"When an Invoice is filed and it's
+              £500 or more, send it to Alex for approval."</i> Built in <b>Settings &rarr; Users &amp;
+              activity &rarr; Document routing</b> — and <b>Show me what this would do</b> previews a rule
+              against your recent documents before it goes live.</p>
+
+            <div class="callout note">
+              <div class="callout-title">What's recorded</div>
+              <p>Every stamp, send, approval and rejection is written to the document's history and the audit
+                log — who, when, and the note they left. The original file is never altered; the stamped copy
+                is stored alongside it.</p>
+            </div>
+          </section>
+        </main>
+
+        <nav class="page-foot" id="page-foot"></nav>
+      </div>
+    </div>
+  </div>
+
+  <script src="help-nav.js"></script>
+</body>
+</html>

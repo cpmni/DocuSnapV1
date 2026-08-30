@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
-  <title>Scan Finder — Document Types & Fields</title>
+  <title>Scan Finder — Kinds of document and their details</title>
   <link rel="stylesheet" href="../shared/theme.css" />
   <link rel="stylesheet" href="help.css">
   <script src="../shared/theme.js"></script>
@@ -27,118 +27,86 @@
 
         <main>
           <section id="document-types">
-            <h1>Document Types &amp; Fields</h1>
-            <p class="lead">A <b>document type</b> is a kind of paperwork you file &mdash; an Invoice, a Sales Order, a
-              Delivery Note. Each type has its own set of <b>fields</b> (the details to capture). This page is about
-              setting those up.</p>
-            <div class="callout note">
-              <div class="callout-title">Admin only</div>
-              <p>Setting up document types and fields is an admin task, in <b>Settings &rarr; Document Types</b>.
-                Everyone else just sees the results when reviewing documents.</p>
-            </div>
+            <p class="use-when">Use this page when a kind of document — or one of its details — is missing
+              from the app.</p>
+            <h1>Kinds of document and their details</h1>
+
+            <p class="lead">A <b>document type</b> is a kind of paperwork you file — an Invoice, a Delivery
+              Note, a Worksheet. Every supplier's invoice looks different, but they're all still invoices: a
+              small handful of types covers everything you receive. Each type carries the <b>details</b> to
+              capture (the screen calls them <b>Fields</b>). Set both up in <b>Settings &rarr; Document
+              Types</b> — an admin job; everyone else just sees the results.</p>
 
             <figure class="shot-fig">
-              <img class="shot" src="img/document-types.png" alt="The Document Types screen in Settings, with the type list, fields, filing roles and add buttons">
-              <figcaption><b>1</b> your document types &mdash; click one to edit &nbsp;&middot;&nbsp;
-                <b>2</b> its fields, each with a data type and an on/off switch &nbsp;&middot;&nbsp;
-                <b>3</b> the filing roles (which field is the main number, and the date) &nbsp;&middot;&nbsp;
-                <b>4</b> add a ready-made type from the catalog, or start a new one.</figcaption>
+              <img class="shot" src="img/document-types.png" alt="The Document Types screen in Settings, with the type list, fields and add buttons">
+              <figcaption><b>1</b> your document types — click one to edit &nbsp;&middot;&nbsp;
+                <b>2</b> its details, each with a data type and an on/off switch &nbsp;&middot;&nbsp;
+                <b>3</b> add a ready-made type from the catalog, or start a new one.</figcaption>
             </figure>
-          </section>
 
-          <section id="catalog">
-            <h2>Add from catalog</h2>
-            <p>The quickest way to set up a new type. Open <b>Settings &rarr; Document Types &rarr; Add from
-              catalog…</b>, tick the ones you file, and Scan Finder creates each with sensible fields already in
-              place &mdash; no setup needed.</p>
+            <h2 id="catalog">The quickest way: add from the catalog</h2>
+            <p><b>Add from catalog…</b> offers ready-made types — <b>Purchase Invoice</b>, <b>Sales
+              Invoice</b>, <b>Credit Note</b>, <b>Delivery Note</b>, <b>Statement</b>, <b>Receipt</b>,
+              <b>Remittance Advice</b>, <b>Quote</b> — each arriving with sensible details already in place.
+              Tick the ones you file. Adding one twice does nothing, and a catalog type can be removed later.</p>
+
+            <h2 id="locked-fields">The three details every type has</h2>
+            <p>Every type always carries three locked details (the &#128274;):</p>
             <ul>
-              <li>Ready-made types include <b>Purchase Invoice</b>, <b>Sales Invoice</b>, <b>Remittance Advice</b>,
-                <b>Credit Note</b>, <b>Delivery Note</b>, <b>Statement</b>, <b>Receipt</b> and <b>Quote</b>.</li>
-              <li>Adding the same type twice does nothing &mdash; it won't create duplicates.</li>
-              <li>Catalog types are fully removable later if you decide you don't need them.</li>
+              <li><b>Document Issuer</b> — the company the document is from.</li>
+              <li><b>Date</b> — the document's date.</li>
+              <li><b>Reference</b> — its main number (invoice number, order number…).</li>
             </ul>
-          </section>
+            <p>These three drive the folder and file name, and everything Scan Finder learns about a sender —
+              so they can't be deleted or switched off. The <b>value</b> on any one document is always yours
+              to correct; correcting it is what teaches the app.</p>
 
-          <section id="fields">
-            <h2>Your own fields</h2>
-            <p>Beyond the built-in details, you can add any field you care about &mdash; say a <b>PO number</b> or a
-              <b>VAT number</b>. Give it a name, then pick the <b>type</b> so Scan Finder knows what a good value looks
-              like. These are examples of the types available:</p>
+            <h2 id="fields">Your own details</h2>
+            <p>Add anything you care about — a PO number, a VAT number, a serial list. Give it a name and
+              pick its data type, so Scan Finder knows what a good value looks like:</p>
             <table class="refkey">
               <thead><tr><th>Type</th><th>Good for</th></tr></thead>
               <tbody>
                 <tr><td><b>Text</b></td><td>Names, descriptions, anything free-form.</td></tr>
-                <tr><td><b>Date</b></td><td>Any date &mdash; tidied to a consistent format.</td></tr>
+                <tr><td><b>Date</b></td><td>Any date — tidied to a consistent format.</td></tr>
                 <tr><td><b>Currency</b></td><td>Amounts and totals.</td></tr>
                 <tr><td><b>Number</b></td><td>Plain numbers (counts, quantities).</td></tr>
                 <tr><td><b>Reference code</b></td><td>Mixed letter/number references (order, job, account codes).</td></tr>
-                <tr><td><b>Email</b></td><td>Email addresses.</td></tr>
-                <tr><td><b>Website</b></td><td>Web addresses.</td></tr>
-                <tr><td><b>Percentage</b></td><td>Rates and percentages.</td></tr>
-                <tr><td><b>Postcode (UK)</b></td><td>UK postcodes.</td></tr>
-                <tr><td><b>VAT number (GB)</b></td><td>UK VAT registration numbers.</td></tr>
-                <tr><td><b>IBAN</b></td><td>International bank account numbers.</td></tr>
-                <tr><td><b>MAC address</b></td><td>Hardware addresses with colons, e.g. <code>D4:F0:C9:25:9B:64</code>.</td></tr>
-                <tr><td><b>IP address</b></td><td>IPv4 or IPv6 addresses, e.g. <code>192.168.1.200</code>.</td></tr>
+                <tr><td><b>List</b></td><td>A detail with <em>several</em> values on one document — serial
+                  numbers on a worksheet. In Review each value gets its own little box; see
+                  <a href="fix-a-detail.html#lists">Fixing a detail</a>.</td></tr>
+                <tr><td><b>Barcode / QR code</b></td><td>Filled from the barcodes printed on the page — turn on
+                  barcode reading in Settings &rarr; Processing.</td></tr>
+                <tr><td><b>Email / Website / Percentage</b></td><td>Just what they say.</td></tr>
+                <tr><td><b>Postcode (UK) · VAT number (GB) · IBAN</b></td><td>Checked properly, not just
+                  shaped-checked.</td></tr>
+                <tr><td><b>MAC address / IP address</b></td><td>Hardware and network addresses, e.g.
+                  <code>D4:F0:C9:25:9B:64</code>.</td></tr>
               </tbody>
             </table>
-            <p>More types may be available than shown here &mdash; the list in Settings is the full set.</p>
-          </section>
+            <p>The list in Settings is the full, current set. A detail can also be switched off for one
+              sender's paperwork ("never on these documents") from Review.</p>
 
-          <section id="locked-fields">
-            <h2>The three fields every type has</h2>
-            <p>Every document type always has three <b>locked fields (&#128274;)</b>:</p>
-            <ul>
-              <li><b>Document Issuer</b> &mdash; the company the document is from (or the recipient, on your own outgoing documents).</li>
-              <li><b>Date</b> &mdash; the document's date.</li>
-              <li><b>Reference</b> &mdash; its main number (invoice number, order number, and so on).</li>
-            </ul>
-            <p>These three drive how documents are <b>named and foldered</b>, and how Scan Finder <b>learns</b> each
-              supplier &mdash; so the field can't be deleted, disabled or renamed. You can, of course, always correct
-              the <b>value</b> on any document; that's what teaches Scan Finder to read it better next time.</p>
-          </section>
+            <h2 id="renaming">Renaming a detail is safe</h2>
+            <p>Prefer "Customer reference" to "Reference"? Rename it. The label is what <b>you</b> see;
+              behaviour follows the detail's role, so nothing breaks.</p>
 
-          <section id="renaming">
-            <h2>Renaming a field is safe</h2>
-            <p>Prefer "Customer reference" to "Reference"? Rename it. The label is simply what <b>you</b> see &mdash;
-              Scan Finder keeps reading the field correctly because its behaviour is tied to the field's role, not to
-              the words on the label. Rename freely; nothing breaks.</p>
-          </section>
-
-          <section id="recognising">
-            <h2>How Scan Finder recognises a type</h2>
-            <p>When a document arrives, Scan Finder reads the <b>title printed at the top</b> and matches it to one of
-              your types &mdash; a page headed <b>Invoice</b> becomes an Invoice, a page headed <b>Worksheet</b> a
-              Worksheet. The match is to the type's <b>name</b>, so it helps to name a type the way it's actually
-              printed on your documents.</p>
-            <p>If the printed heading differs from the name &mdash; your documents say &ldquo;Work Sheet&rdquo; but the
-              type is &ldquo;Worksheet&rdquo;, or some say &ldquo;Job Sheet&rdquo; &mdash; add those wordings in the type
-              editor's <b>Also appears as</b> box. A page headed with the name <i>or</i> any alias is filed as this
-              type, so you never have to rename anything to match the print.</p>
+            <h2 id="recognising">How a document's type is recognised</h2>
+            <p>Scan Finder reads the <b>title printed at the top</b> of the page and matches it to your types
+              by name. If a sender prints something different — "Work Sheet" for your "Worksheet" — add the
+              printed wording in the type editor's <b>Also appears as</b> box rather than renaming the type.</p>
             <div class="callout note">
-              <div class="callout-title">A few things worth knowing</div>
+              <div class="callout-title">Worth knowing</div>
               <ul>
-                <li>Matching ignores <b>capitals and spacing</b> (&ldquo;WORK SHEET&rdquo; is the same as &ldquo;Work
-                  Sheet&rdquo;) but it's <b>exact, not a guesser</b> &mdash; a short form like &ldquo;W-Sheet&rdquo; only
-                  works if you add it as an alias.</li>
-                <li>An alias can't be the same as another type's name (Scan Finder will tell you), and very short or
-                  number-only aliases are skipped &mdash; they'd match too much else.</li>
-                <li><b>One supplier, several kinds of document?</b> If a supplier sends invoices, statements and
-                  worksheets on the <b>same letterhead</b>, Scan Finder tells them apart by the <b>title on the page</b>
-                  &mdash; so making each type's name (or an alias) match the print is what keeps them filing to the right
-                  place.</li>
-                <li><b>The first one or two may need a tidy-up.</b> A brand-new type is being seen for the first time;
-                  confirm a few and Scan Finder <b>learns the layout</b> and reads that supplier's documents
-                  automatically from then on.</li>
+                <li>Matching ignores capitals and spacing, but it's exact — "W-Sheet" only works as an added
+                  alias.</li>
+                <li>One sender, several kinds of document on the same letterhead? The <b>title on the page</b>
+                  is what tells them apart — make each type's name or alias match the print.</li>
+                <li>A brand-new type's first document or two may need a tidy-up; confirm them and Scan Finder
+                  learns the layout.</li>
               </ul>
             </div>
           </section>
-
-          <div class="callout tip">
-            <div class="callout-title">Next step</div>
-            <p>Once your types are set up, see how documents are named and filed in
-              <a class="xref" href="search.html">Search &amp; Filing</a>.</p>
-          </div>
         </main>
 
         <nav class="page-foot" id="page-foot"></nav>

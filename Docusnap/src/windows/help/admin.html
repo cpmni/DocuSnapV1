@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
+  <title>Scan Finder — Users, licence and safekeeping</title>
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <link rel="stylesheet" href="help.css">
+  <script src="../shared/theme.js"></script>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="tb-title">Scan Finder — User Guide</span>
+    <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+  </div>
+
+  <div id="shell">
+    <nav id="nav">
+      <div class="nav-label">User Guide</div>
+      <div id="nav-links"></div>
+    </nav>
+
+    <div id="content">
+      <div class="doc">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <main>
+          <section id="admin">
+            <p class="use-when">Use this page if you're the person who set Scan Finder up — accounts, the
+              licence, backups and the record of what's been done.</p>
+            <h1>Users, licence and safekeeping</h1>
+
+            <p class="lead">Everything here lives in Settings, below the Administration divider. Day to day
+              you'll rarely visit; it matters when someone joins, something needs signing off, or you're
+              moving computers.</p>
+
+            <h2 id="users">People and what they're allowed to do</h2>
+            <p><b>Settings &rarr; Users &amp; activity</b>:</p>
+            <ul>
+              <li><b>Add a person</b> with one of three roles — <b>Admin</b> (everything), <b>Edit</b>
+                (import, review, file), <b>Read only</b> (search and view). They get a temporary password and
+                choose their own at first sign-in.</li>
+              <li><b>Allowed to stamp</b> is granted per person — it controls both stamping and being asked to
+                approve documents. See <a href="approvals.html">Stamps and approvals</a>.</li>
+              <li><b>Document stamps</b> — the words on offer (PAID, APPROVED…); add your own here.</li>
+              <li><b>Document routing</b> — rules that send a filed document to someone automatically.</li>
+              <li><b>Recent Activity</b> — sign-ins and account changes, read-only.</li>
+            </ul>
+
+            <h2 id="audit">The audit log</h2>
+            <p><b>Settings &rarr; Audit</b> is the full record of what happened — who filed, deleted,
+              restored, printed, stamped or changed what, and when. Filter by person, document or kind of
+              action, and expand a row for the detail. It's a record, not a control: nothing here changes
+              anything, and values are kept free of document contents.</p>
+
+            <h2 id="licensing">Licence and trial</h2>
+            <p><b>Settings &rarr; Licensing</b> shows your current state — trial days left, or the licence and
+              which computer it's tied to — with <b>Activate a licence key</b> when you have one. Scan Finder
+              works fully offline; if the licence screen ever blocks the app, it tells you exactly why and
+              what to do. Client seats for the office add-on are counted on the same tab.</p>
+
+            <h2 id="backup">Backup &amp; Restore</h2>
+            <p><b>Settings &rarr; Advanced</b>. One password-protected file holds your whole setup — document
+              types, folders, naming rules and everything Scan Finder has learned. Export it after any big
+              setup change and keep it (and the password) safe. <b>Restore</b> brings it back after a
+              reinstall or on a new computer. Two honest limits: the backup does <b>not</b> contain your filed
+              documents (they're ordinary files in your output folder) or your user accounts, and restoring
+              <b>overwrites</b> the current setup — it can't be undone.</p>
+
+            <h2 id="diagnostics">Diagnostics and the Terms</h2>
+            <ul>
+              <li><b>Diagnostic logging</b> (Advanced) is off by default. Turn it on only if you're chasing a
+                problem — the log file includes text read from your documents, so treat it accordingly.</li>
+              <li><b>Help improve Scan Finder</b> is a separate, optional choice — anonymous counts only, with
+                a <b>View…</b> button showing exactly what would be sent. Off by default.</li>
+              <li><b>View Terms &amp; Disclaimer…</b> (Advanced, and in the About box) re-opens the terms you
+                accepted at first run.</li>
+              <li><b>Re-run setup wizard…</b> walks the first-run questions again — handy after moving the
+                output folder.</li>
+            </ul>
+
+            <div class="callout note">
+              <div class="callout-title">If someone's locked out</div>
+              <p>An admin can reset any password from the Users list. If the <em>admin</em> is locked out, the
+                sign-in screen accepts the <b>admin recovery code</b> you were shown (and asked to keep) when
+                the account was created.</p>
+            </div>
+          </section>
+        </main>
+
+        <nav class="page-foot" id="page-foot"></nav>
+      </div>
+    </div>
+  </div>
+
+  <script src="help-nav.js"></script>
+</body>
+</html>

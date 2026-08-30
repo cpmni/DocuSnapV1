@@ -27,103 +27,135 @@
 
         <main>
           <section id="troubleshooting">
+            <p class="use-when">Use this page when something looks wrong. Each answer is: what you're seeing
+              &rarr; what to do.</p>
             <h1>Troubleshooting &amp; FAQ</h1>
-            <p class="lead">Quick answers to the things people ask most. Each one is "what you're seeing &rarr;
-              what to check &rarr; what to do".</p>
+            <p class="lead">The one rule underneath every answer here: nothing in Scan Finder is final. A
+              filed document can come back, a deleted one can be restored, and a wrong lesson can be
+              unlearned.</p>
           </section>
 
           <section id="faq">
             <h2>Common questions</h2>
 
-            <h3>A field came out wrong or empty</h3>
+            <h3>It filed under the wrong company</h3>
             <ol>
-              <li>Open the document in the <a class="xref" href="review.html">Review window</a>.</li>
-              <li>Click the field and type the correct value &mdash; or use the pick button to grab it from the scan.</li>
-              <li>If the whole scan reads poorly, try <b>OCR Enhancement</b> and then <b>Reprocess</b>.</li>
+              <li>If it filed <em>itself</em>: the Home screen's "filed by itself" figure (or the strip in
+                Review) lists them — open the document and click <b>Put back</b>. It returns to Review and
+                won't file itself again until you confirm it.</li>
+              <li>If <em>you</em> filed it: find it in <a href="search.html">Search</a> and click
+                <b>Send back to Review</b>, fix the Document Issuer, and confirm.</li>
+              <li>Keeps happening for the same sender? See
+                <a href="learning.html">When it keeps getting a sender wrong</a>.</li>
             </ol>
 
-            <h3>My document isn't showing up in Search</h3>
+            <h3>It filed something without asking me</h3>
             <ol>
-              <li>Search only shows documents you've <b>confirmed and filed</b>.</li>
-              <li>Check the <b>Review queue</b> &mdash; it's probably still there, waiting to be confirmed.</li>
-              <li>Confirm it, and it will appear in Search.</li>
+              <li>That's by design once a sender has earned it — after enough clean confirmations, that
+                sender's documents file themselves, and the Home screen always shows how many.</li>
+              <li>Click the figure to look them over; <b>Put back</b> returns any you want to check.</li>
+              <li>Want it never to happen, or to happen less? The pass-mark slider and the
+                clean-confirmations count are in <b>Settings &rarr; Processing</b>. Full story:
+                <a href="files-by-itself.html">When it files by itself</a>.</li>
+            </ol>
+
+            <h3>A detail came out wrong or empty</h3>
+            <ol>
+              <li>Open the document in <a href="review.html">Review</a>, click the detail and type over it —
+                or draw a box round the right value on the page.</li>
+              <li>A brand-new sender fills in very little by itself — that's normal. Teach it once
+                (<a href="teach.html">Teach your documents</a>) and its next documents arrive read.</li>
+              <li>More ways to fix a stubborn one: <a href="fix-a-detail.html">Fixing a detail</a>.</li>
+            </ol>
+
+            <h3>"N documents couldn't be read"</h3>
+            <ol>
+              <li>The small note after an import means those files were held for retry — not filed, not lost.</li>
+              <li>Click <b>Details</b> to see which files and why (usually a locked, damaged or password-protected
+                PDF), fix the cause, then <b>Try again</b>.</li>
+            </ol>
+
+            <h3>I taught a sender but it still asks me</h3>
+            <ol>
+              <li>Teaching fixes the <em>reading</em>; the <em>trust</em> to file alone is earned by clean
+                confirmations. Freshly-taught documents arrive read but still wait for your OK the first few
+                times — that's the design.</li>
+              <li>Check the details are arriving filled. If one keeps coming out wrong from the taught spot,
+                re-teach that one detail with a slightly bigger box.</li>
+              <li>A document from <em>before</em> the lesson? <b>Reprocess</b> it — lessons apply from the
+                re-read.</li>
             </ol>
 
             <h3>The "Confirm &amp; File" button is greyed out</h3>
             <ol>
-              <li>A required field is missing &mdash; usually the <b>document type</b>, <b>date</b>, or <b>reference</b>.</li>
-              <li>Fill in anything highlighted as required.</li>
-              <li>The button turns on as soon as everything required is present.</li>
+              <li>Something required is missing — usually the <b>document type</b>, the <b>date</b>, or the
+                <b>reference</b>.</li>
+              <li>Fill in whatever is highlighted; the button wakes up as soon as everything required is
+                there.</li>
             </ol>
 
-            <h3>Processing is slow, or a scan won't read</h3>
+            <h3>A value in a list is missing (serial numbers and the like)</h3>
             <ol>
-              <li>Large batches and faint or skewed scans naturally take longer.</li>
-              <li>For a single bad scan, use <b>OCR Enhancement</b> in the Review window, then <b>Reprocess</b>.</li>
-              <li>An admin can raise the number of threads in <a class="xref" href="settings.html">Settings</a> to
-                speed up big imports on a capable computer.</li>
+              <li>On a list detail, each value is its own little box. Click <b>+ One it missed</b> and draw a
+                box round the missed value on the page.</li>
+              <li>That also teaches the printed caption, so future documents collect it themselves.</li>
             </ol>
 
-            <h3>Where did my filed document go?</h3>
+            <h3>The scan is crooked or faint</h3>
             <ol>
-              <li>It's in your <b>output folder</b>, grouped by company, year and month.</li>
-              <li>The file is named <code>Type.Date.Reference</code> &mdash; for example
-                <code>Invoice.15-12-2025.INV-001.pdf</code>.</li>
-              <li>The easiest way to find it is <b>Search</b>, then "show in explorer".</li>
+              <li><b>Straighten</b> (above the page in Review) squares it up; <b>Clean up a hard-to-read
+                scan</b> (the tool rail) re-reads a faint or noisy page.</li>
+              <li>Then <b>Reprocess</b>. Still bad? Re-scan that page — a good scan beats any cleanup.</li>
             </ol>
 
             <h3>One PDF actually contains several documents</h3>
             <ol>
-              <li>Open it in the Review window.</li>
-              <li>Use <b>Split PDF</b> to break it into separate documents (by page range, every page, or every
-                few pages).</li>
-              <li>Review and file each one as normal.</li>
+              <li>Open it in Review and use <b>Split PDF</b> — by page range, one file per page, or every N
+                pages. The parts return to Review as separate documents; note the original PDF is removed by
+                the split (it says so before it acts).</li>
+              <li>For future piles, print <b>separator sheets</b> (on the Import screen) and slot them between
+                documents — the batch then splits itself.</li>
             </ol>
 
-            <h3>Scan Finder keeps reading a layout wrong</h3>
+            <h3>My document isn't showing up in Search</h3>
             <ol>
-              <li>Confirm a few documents from that supplier accurately &mdash; it learns as you go.</li>
-              <li>For a stubborn layout, use <a class="xref" href="templates.html">Teach a document</a> to show it
-                where each field sits.</li>
+              <li>It's probably still in Review — tick <b>Include not-yet-filed</b> in Search, or confirm it
+                in Review and search again.</li>
             </ol>
 
-            <h3>I added a document type from the catalog &mdash; where are its fields?</h3>
+            <h3>A real company name got flagged</h3>
             <ol>
-              <li>Catalog types arrive with sensible fields already set up &mdash; no extra steps.</li>
-              <li>See them under <b>Settings &rarr; Document Types</b>, then click the type to view or add fields.</li>
-              <li>More on this in <a class="xref" href="document-types.html">Document Types &amp; Fields</a>.</li>
+              <li>That's the name check being careful with an unusual-looking name; it never changes the
+                value.</li>
+              <li>If the name is right, just confirm — that teaches it and the flag stops.</li>
             </ol>
 
-            <h3>A real supplier or customer name got flagged for review</h3>
+            <h3>I deleted something by mistake</h3>
             <ol>
-              <li>That's <b>Name checks</b> doing its job &mdash; it flags unusual-looking names so an odd read doesn't
-                slip through. It never changes the value.</li>
-              <li>If the name is correct, just <b>confirm</b> the document &mdash; that's enough to teach it.</li>
-              <li>You can turn Name checks off in <a class="xref" href="settings.html">Settings &rarr; Processing</a>.</li>
+              <li>Nothing deleted in the app skips the <b>Recycle bin</b> — open it in Search and
+                <b>Restore</b>. It returns to wherever it was deleted from.</li>
             </ol>
 
-            <h3>How do I back up my setup before reinstalling?</h3>
+            <h3>Processing is slow</h3>
             <ol>
-              <li>Go to <b>Settings &rarr; Advanced &rarr; Backup &amp; Restore</b> and export to a single
-                password-protected file.</li>
-              <li>Keep that file (and its password) somewhere safe.</li>
-              <li>After reinstalling, use <b>Restore</b> on the same screen to bring everything back.</li>
+              <li>Big batches and faint or crooked scans take longer — that's mostly the reading itself.</li>
+              <li>An admin can raise <b>Documents processed at once</b> in Settings &rarr; Processing on a
+                capable computer, or drop the reading detail a notch.</li>
             </ol>
 
-            <h3>Can colleagues search from another computer?</h3>
+            <h3>How do I move to a new computer?</h3>
             <ol>
-              <li>Yes &mdash; there's an optional networked search add-on that lets other PCs on your network search
-                and view filed documents.</li>
-              <li>It's set up by an admin and isn't needed for normal single-computer use. Ask whoever set up Scan
-                Finder if you'd like it.</li>
+              <li><b>Settings &rarr; Advanced &rarr; Backup &amp; Restore</b>: export the one
+                password-protected setup file, copy your output folder like any other files, install on the
+                new machine, restore. Detail: <a href="admin.html#backup">Backup &amp; Restore</a>.</li>
             </ol>
           </section>
 
           <div class="callout note">
             <div class="callout-title">Still stuck?</div>
-            <p>Use the <b>?</b> help mode on the main window to learn what a specific control does, or revisit the
-              relevant section of this guide. Remember &mdash; everything stays on this computer, so your documents
-              are never lost to an upload or a connection problem.</p>
+            <p>The <b>?</b> help mode explains any single control (click ?, then click the control), and the
+              guide's search box (press <b>/</b>) jumps to any topic. Everything stays on this computer — a
+              connection problem can never lose a document.</p>
           </div>
         </main>
 

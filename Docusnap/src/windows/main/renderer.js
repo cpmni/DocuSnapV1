@@ -796,6 +796,15 @@ document.getElementById('btn-teach')?.addEventListener('click', () => window.doc
 
 const HELP_TEXTS = {
   'home':          'Your dashboard: what needs attention, a quick import, and recent activity.',
+  'export':        'Pull the details of filed documents into a spreadsheet — CSV, Excel or JSON. Admin only.',
+  'quickfind':     'Type here and press Search to look for a filed document.',
+  'workflow':      'Documents colleagues sent you for approval or information. The count is what’s waiting on you.',
+  'autofile':      'How much filed itself lately, and how many senders have earned fully automatic filing.',
+  'tips':          'A rotating tip about a feature you might not have met yet.',
+  'practice':      'A safe walkthrough on sample documents — teach one, import a batch, correct and confirm. Nothing touches your real files.',
+  'storage':       'Free space on the drive that holds your filed documents.',
+  'backup':        'When you last exported the settings backup — and a button to do it now.',
+  'clients':       'Search-client seats in use on your network, and who is connected.',
   'begin-import':  'Pick a folder of scans and process them into the queue.',
   'source-folder': 'The folder Scan Finder imports from. Click to choose a different one.',
   'process':       'Start processing the selected source folder into documents.',

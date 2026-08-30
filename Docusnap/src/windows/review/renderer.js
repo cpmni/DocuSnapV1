@@ -382,6 +382,7 @@ document.getElementById('wiz-help-link')?.addEventListener('click', () => window
 
 const HELP_TEXTS = {
   'review-tab':    'Documents waiting to be checked and confirmed.',
+  'deskew':        'Straighten this document’s pages on screen — a crooked scan often reads better straightened.',
   'deferred-tab':  'Documents you set aside to deal with later.',
   'nav-prev':      'Go to the previous document in the list.',
   'nav-next':      'Go to the next document in the list.',
