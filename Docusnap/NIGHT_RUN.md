@@ -70,6 +70,11 @@ verdict — and zero unvetted pipeline changes.
 - **2026-08-30 · Warm cross-contamination** (2026-07-29 rig: loading live learning dropped a NEW supplier's ref 58→33 %
   on suppliers sharing nothing with the scanned data) — still open; the Hard Set's warm-scan arm re-measures it.
 - **2026-08-30 · Search perf**: `verifyAuditChain` re-verifies the whole audit log on every Search open (grows with use).
+- **2026-08-30 · Toggle hygiene sweep (owner rule):** audit the switch inventory for anything PROVEN bad (failed gate,
+  wrong-value exhibit, Oracle SEND BACK) → remove it or move it to a "DO NOT USE" group under the SFDEV dev-switch
+  section with the reason in its sub-label. Also: the owner's live test showed TWO stacked "— confirm once." sentences
+  on one field (the JS manual-reprocess lane's note + the engine's straighten note) — check one-note-per-field on the
+  reprocess road; cosmetic but noisy.
 
 ## Standing corpus rule (owner, 2026-08-30)
 Test runs use **ONE version of each document — no duplicates**: the durable corpus at
