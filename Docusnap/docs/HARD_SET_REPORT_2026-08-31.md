@@ -44,21 +44,38 @@ which is authoritative — the md mismatch lists truncate).
 1. **Boxed `meta_row` cells hold ref/date cold (the big FILL gap, not a safety gap).** Classes whose
    ref/date print as boxed label-above-value cells (multicol_money, table_total, logo_siblings,
    credit_sign, multipage, buyer_large) read ~0–15% cold and hold EMPTY; classes with plain
-   `Label: value` lines (continental, small_print, edge_date) read 100%. The cold pipeline doesn't
-   climb into bordered cells for the value under a label. Teach should heal it (a mapping zone reads
-   the cell directly) — Chris's round tests that claim.
-2. **Credit-note totals drop the sign in ALL four notations** — `(908.16)`, `908.16-`, `-908.16`,
-   `908.16 CR` all read `908.16` positive (flagged every time, so contained, but the stored total on
-   a manually-confirmed credit note would be sign-wrong). Same on `logo_siblings` sib_credit. 24%
-   accuracy = only the plain controls score. Known family (`project_credit_note_type_family_20260807`)
-   — now deterministically reproducible ×16.
-3. **The buyer-issued steer goes SILENT on a warm install (top card).** Warm arm: all 7
-   `buyer_issued_po` docs read supplier = `Bramblewood Joinery Ltd` with **no flag** (silent), where
-   the cold arm flagged the identical wrong value. Bramblewood is a KNOWN supplier in the live DB
-   (215 confirmed docs, 9 hints, 1 logo fingerprint) — learning legitimises the buyer-as-issuer
-   steer and the identity-conflict flag disappears. Held at overall 31, so it cannot file, but Review
-   presents the wrong issuer with no warning. This is the standing buyer-issued class (vet queue
-   since 08-24) with a new, measured nuance: **maturity removes the flag**.
+   `Label: value` lines (continental, small_print, edge_date) read 100%. Oscar traced it: the
+   glyphs read FINE — Stage-1's right-leg steals the NEIGHBOUR cell's caption on the caption row
+   (`_search_for_label` keyword.py:2062-2139; "Invoice No" → grabs "Date"), the below leg is never
+   reached and is column-blind anyway; Stage 2 has a below-direction reader but zero cold anchors to
+   trigger it. Prior art: `pendingfeatures.md:1067` (Stage-1 is SAME-LINE only — Silverbeck 0020, the
+   live exhibit of this class). His design: a column-aligned cell-below arm, DARK, conf capped 85
+   (< the 88 floor — fills, never auto-files), five precision guards. **Corollary worth its own
+   line: on an install with `ref_role_digit_gate` OFF, this layout does NOT hold — it cold-commits
+   the neighbour caption "Date" as the reference @95.** The digit gate is currently the only guard.
+   Teach should heal the class (mapping zone reads the cell) — Chris's round tests that claim.
+2. **Credit-note totals drop the sign in 4 of 5 notations** — triaged per variant: `£-908.16`
+   (sym_minus) **heals 4/4** (the shipped `MONEY_SIGN_CAPTURE` leg, ON since mig 81, covers exactly
+   that shape); `-£908.16` (lead), `(£908.16)` (parens), `£908.16-` (trail) and `£908.16 CR` all read
+   positive (flagged every time — contained — but a confirming user gets a sign-wrong total unless
+   they retype). Mint = keyword.py `_clean_value` returning the bare match; reggie's card has the
+   full design (parens+CR honoured under DARK sub-flags, trailing minus stays note-only, anchor-path
+   twin required to keep corroboration alive). Known family
+   (`project_credit_note_type_family_20260807`) — now deterministically reproducible ×16. Residual
+   hole reggie found: a credit note that MIS-TYPES as invoice gets no sign note at all (arm 2 is dead
+   on keyword reads — `raw_value` never set).
+3. **The 7 warm `buyer_issued_po` "silent-wrong" reads are DESIGNED behaviour — a GT flaw, not a
+   defect (gary's trace overturned the first reading).** The Oracle-signed 2026-07-12 doctrine says
+   the Document Issuer on a buyer-issued PO IS the letterhead buyer; the vendor under the
+   `SUPPLIER` caption is deliberately suppressed (`engine.py:5556-5585`), and the owner's own
+   corpus (113 confirmed Bramblewood POs, template t8, two prior Oracle rulings) defines Bramblewood
+   as the RIGHT answer. Cold, the letterhead prefill carries a "confirm it's the sender" note @69
+   (flagged); warm, a learned path fills first with no note. The GT should dual-accept
+   buyer-or-vendor here. The genuine residual gary found: **warm silence is licensed by ANY
+   maturity — nothing checks that the silence is convention-backed** (a buyer known only as an
+   invoice issuer would go silent too). His lever-1 design (convention-licensed silence: same-type
+   hint/template evidence or carry the cold-style note naming both parties) is in the cards doc,
+   DARK, review-bound, value unchanged.
 4. **A mature install refuses to invent an unknown issuer** — warm supplier ≈0% with EMPTY-held on
    almost every class where cold read the name fine (e.g. continental 90% cold → 0% warm). Fail-safe
    (nothing wrong committed), and it is the measured mechanism behind "first batch all-hold" friction
@@ -88,6 +105,11 @@ which is authoritative — the md mismatch lists truncate).
 - **Bramblewood as buyer overlaps the owner's real learning** — deliberate for the warm steer
   measurement, but it means the warm arm is NOT a pure "unknown issuers" bleed test. A future pure
   bleed run should use a fresh buyer name.
+- **buyer_issued_po GT wants the vendor, the shipped doctrine says the buyer** (07-12 Oracle ruling,
+  ×2 reaffirmed) — score that variant dual-accept (buyer OR vendor) or relabel; as written it
+  reports designed behaviour as 7 wrong reads.
+- **Credit-note GT signs only the total while the page signs every money row** — pick one
+  convention before gating any sign fix.
 - The scorer's md mismatch lists truncate per class; use the `.jsonl` for full detail.
 
 ## Scorer traps pinned (for future harness authors)
