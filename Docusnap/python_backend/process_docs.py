@@ -41,6 +41,24 @@ def log(text: str, level: str = ""):
     emit({"type": "log", "text": text, "level": level})
 
 
+# ── Review-bound straighten retry (DESKEW_SLICE_REREAD_2026-08-30, revised) ─────
+# Two pure decisions, factored out so the safety invariants are unit-pinned (a future dev can't quietly
+# drop the review-bound gate or loosen the adopt comparison). See the block after engine.extract().
+
+def _deskew_retry_should_run(enabled, needs_review, deskew_pages, reextract, has_pages) -> bool:
+    """Run the straighten retry ONLY on a doc already heading to review — so it can never demote a clean
+    auto-file — and never on an already-deskewed run or a reprocess (--reextract), and never with no pages."""
+    return bool(enabled) and bool(needs_review) and not deskew_pages and not reextract and bool(has_pages)
+
+def _deskew_retry_adopt(base_overall, retry_overall) -> bool:
+    """Adopt the STRAIGHTENED read only if it scores a strictly HIGHER overall confidence. A confident
+    garble reads high, so a tie or a drop keeps the raw read (no regression)."""
+    try:
+        return float(retry_overall or 0) > float(base_overall or 0)
+    except (TypeError, ValueError):
+        return False
+
+
 # ── Per-file watchdog ─────────────────────────────────────────────────────────
 # A single pathological page can hang a native Tesseract/pdfium call that no Python
 # try/except (and, on Windows, no signal) can interrupt. When --file-timeout > 0, a
@@ -963,39 +981,101 @@ def main():
                         if _f.get("key") == _ref_key and (_f.get("type") or "text") in ("text", "", None):
                             _f["type"] = "alphanumeric"
 
-            raw_extractions = engine.extract(
-                ocr_text      = ocr_text,
-                page_images   = page_images,
-                filename      = filepath.name,
-                field_defs    = active_fields,
-                hints         = hints,
-                anchors       = anchors,
-                logos         = logos,
-                templates     = templates,
-                document_type = document_type,
-                document_slug = doc_slug,
-                detected_slug = detected_slug,
-                title_trusted = title_trusted,
+            # Pass-INVARIANT extract kwargs (identical for the raw pass and the straighten retry below):
+            # type/fields/learning/identity + the barcode inventory + born-digital page-0 lines (which come
+            # from the PDF vector text, not the rendered image, so deskew never changes them). The per-PASS
+            # kwargs (ocr_text/page_images/frame witnesses/trace) stay explicit so the retry can override
+            # only those. Splitting them keeps the two calls from drifting.
+            _extract_stable = dict(
+                filename        = filepath.name,
+                field_defs      = active_fields,
+                hints           = hints,
+                anchors         = anchors,
+                logos           = logos,
+                templates       = templates,
+                document_type   = document_type,
+                document_slug   = doc_slug,
+                detected_slug   = detected_slug,
+                title_trusted   = title_trusted,
                 credit_expected = _validator.type_expects_credit(
                     document_type, (type_aliases or {}).get(document_type)),
-                ref_field_key = _ref_key,
-                date_field_key = _date_key,
-                supplier_name = None,
+                ref_field_key   = _ref_key,
+                date_field_key  = _date_key,
+                supplier_name   = None,
                 pinned_supplier = _known_supplier,   # operator Resolve pin (Part B); per-doc via doc_overrides, None on import
                 known_template_id = _kt,
                 pinned_template_id = _pinned_tid,
-                trace         = emit_trace if args.trace else None,
-                slice_dir     = args.slice_dir if args.trace else None,
                 page_text_lines = page_text_lines,
                 page_provenance = _provenance,
                 identity_shadow = args.identity_shadow,
-                raw_page0       = (_raw_pages[0] if _raw_pages else None),
-                page0_geometry  = (_page0_geom or None),   # empty (cached/born-digital p0) ⇒ None
-                cached_text     = global_cached_text,       # raw-frame witness text (deskew reprocess); None ⇒ engine falls back to ocr_text
-                raw_pages       = (_raw_pages or None),     # DESKEW_RAW_CROPS election substrate (Oracle 2026-08-05)
-                deskew_angles   = (_deskew_angles or None), # per-page cap input (C4)
-                barcodes        = _bc,                      # page barcode inventory (None ⇒ no decode ran)
+                barcodes        = _bc,               # page barcode inventory (None ⇒ no decode ran)
             )
+            raw_extractions = engine.extract(
+                ocr_text      = ocr_text,
+                page_images   = page_images,
+                trace         = emit_trace if args.trace else None,
+                slice_dir     = args.slice_dir if args.trace else None,
+                raw_page0     = (_raw_pages[0] if _raw_pages else None),
+                page0_geometry = (_page0_geom or None),   # empty (cached/born-digital p0) ⇒ None
+                cached_text   = global_cached_text,       # raw-frame witness text (deskew reprocess); None ⇒ engine falls back to ocr_text
+                raw_pages     = (_raw_pages or None),     # DESKEW_RAW_CROPS election substrate (Oracle 2026-08-05)
+                deskew_angles = (_deskew_angles or None), # per-page cap input (C4)
+                **_extract_stable,
+            )
+
+            # REVIEW-BOUND WHOLE-PAGE STRAIGHTEN RETRY (kill switch DESKEW_REVIEW_RETRY, DEFAULT OFF; bridged
+            # from the setting `deskew_review_retry_enabled`). The owner's proven mechanism ("Straighten +
+            # Reprocess", measured to heal 6/8 skew-garbled supplier names on the Nordwind corpus at 200 DPI):
+            # a doc that WOULD land in review AND whose page is skewed beyond the floor (default 0.3 deg) is
+            # re-OCR'd STRAIGHTENED; if the straightened read scores a HIGHER overall confidence it is adopted
+            # WHOLE. Safety: only ever runs on a doc ALREADY review-bound (`_needs_review`), so it can never
+            # demote a clean auto-file; the adopted read is FORCED needs_review (a deskewed read is never
+            # silently auto-filed — Oracle's hole was auto-file, not review); skips upright/born-digital pages,
+            # a reprocess (--reextract), and an already-deskewed run. Off ⇒ the whole block is inert.
+            if _deskew_retry_should_run(
+                    os.environ.get("DESKEW_REVIEW_RETRY", "0") != "0",
+                    raw_extractions.get("_needs_review", True),
+                    _deskew_pages, getattr(args, 'reextract', False), page_images):
+                try:
+                    _rmin = max(0.2, min(5.0, float(os.environ.get("DESKEW_REVIEW_MIN_ANGLE", "0.3") or 0.3)))
+                    from ocr.tesseract import detect_skew_angle as _detect_skew
+                    _max_skew = 0.0
+                    for _pi, _img in enumerate(page_images):
+                        if _provenance and _pi < len(_provenance) and _provenance[_pi] != 'ocr':
+                            continue                       # born-digital page — no skew to straighten
+                        try:    _max_skew = max(_max_skew, abs(_detect_skew(_img) or 0.0))
+                        except Exception: pass
+                    if _max_skew >= _rmin:
+                        log(f"  Straighten+reread: page skew {_max_skew:.1f} deg >= {_rmin} — re-reading straightened")
+                        _rp2, _da2, _prov2, _pg2 = [], [], [], {}
+                        ocr_text2, page_images2 = extract_text_and_images(
+                            filepath, _enh, born_digital=args.born_digital, engine=ocr_engine,
+                            cached_text=None, auto_rotate=getattr(args, 'auto_rotate', False),
+                            rotations_out=[], provenance_out=_prov2,
+                            deskew_pages=True, deskew_min_angle=_rmin, raw_pages_out=_rp2,
+                            page0_words_out=_pg2, deskew_angles_out=_da2)   # deskewed letterhead geometry → identity heals too
+                        if any(_da2) and ocr_text2.strip():
+                            _stable2 = dict(_extract_stable)
+                            _stable2["page_provenance"] = (_prov2 or _provenance)
+                            raw2 = engine.extract(
+                                ocr_text=ocr_text2, page_images=page_images2,
+                                trace=None, slice_dir=None,
+                                raw_page0=(_rp2[0] if _rp2 else None),
+                                page0_geometry=(_pg2 or None), cached_text=None,
+                                raw_pages=(_rp2 or None), deskew_angles=(_da2 or None),
+                                **_stable2)
+                            _oc0 = float(raw_extractions.get("_overall_confidence", 0) or 0)
+                            _oc1 = float(raw2.get("_overall_confidence", 0) or 0)
+                            if _deskew_retry_adopt(_oc0, _oc1):
+                                raw2["_needs_review"] = True   # a straightened read is never silently auto-filed
+                                log(f"  Straighten+reread: ADOPTED (overall {_oc0:.0f} -> {_oc1:.0f})")
+                                raw_extractions = raw2
+                            else:
+                                log(f"  Straighten+reread: kept raw (straightened overall {_oc1:.0f} not higher than {_oc0:.0f})")
+                        else:
+                            log("  Straighten+reread: no page exceeded the floor after render — kept raw")
+                except Exception as _dre:
+                    log(f"  Straighten+reread: skipped ({_dre})", "warn")
 
             # Pull out metadata keys before sanitising
             supplier_name    = raw_extractions.pop("_supplier_name", None)

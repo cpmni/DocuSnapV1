@@ -1,4 +1,33 @@
-# Straightened second opinion — slice-level deskew re-read of flagged fields (2026-08-30)
+# Straightened second opinion — deskew re-read of flagged docs (2026-08-30)
+
+> ## ⏭ REVISED 2026-08-30 (what SHIPPED) — the field-scoped slice design below is SUPERSEDED
+> A product-faithful **200 DPI** census on the owner's Nordwind corpus (the exact docs whose misreads
+> prompted this) **falsified the field-scoped premise:**
+> - The **slice arm fired 0 times** on the real misreads. The garbled supplier names read at 88–96%
+>   confidence (Jordwind / iordwind / …Lt), so they are NOT *withheld* — and the slice arm is a sibling of
+>   `_maybe_gate_reread`, which only runs on a value the format gate WITHHELD. Wrong layer for this class.
+> - The **whole-page** straighten (the existing, Oracle-vetted `--deskew-pages` "Straighten + Reprocess"),
+>   run at min-angle **0.3°**, healed **6 of 8** skew-garbled names (Jordwind→Nordwind, …Lt→…Ltd, one doc
+>   56→97 overall), **0 regressions**. This is the owner's own manual remedy ("a straighten + reprocess
+>   fixes it"), just automatic.
+> - The empty **ref/date** on every Nordwind doc is a **template/first-batch extraction gap, NOT skew**
+>   (present on 0°-skew docs too); straightening does not fill it. Handled as a **separate** task.
+>
+> **SHIPPED mechanism (kill switch `DESKEW_REVIEW_RETRY`, DEFAULT OFF; setting `deskew_review_retry_enabled`;
+> floor `DESKEW_REVIEW_MIN_ANGLE`/`deskew_review_min_angle`, default 0.3°):** in `process_docs.py`, right
+> after the normal `engine.extract`, a doc that **would land in review** (`_needs_review`) AND whose page is
+> skewed ≥ the floor is **re-OCR'd straightened** and re-extracted; the straightened result is **adopted
+> whole ONLY if its `_overall_confidence` is higher**, and the adopted doc is **forced `needs_review`**.
+> Safety: it only ever runs on a doc **already** review-bound, so it can never demote a clean auto-file; a
+> straightened read is **never silently auto-filed** (that was Oracle's 2026-07 SEND-BACK — auto-file, not
+> review); skips upright pages, born-digital pages, `--reextract`, and an already-deskewed run. `engine.py`
+> is back to a single-pass reader (the `_maybe_deskew_reread` hook + `ocr/deskew_reread.py` + its pin were
+> removed). **Still DARK pending the M=0 corpus gate + Oracle ratify before any live flip.**
+>
+> Everything below is the ORIGINAL field-scoped exploration, kept for the reasoning + the measurement that
+> redirected it. It is NOT what shipped.
+
+---
 
 **Status:** design, pre-Oracle. Owner request; barry (product) + oscar (OCR) advised; builds on the
 Oracle-vetted `docs/designs/DESKEW_FIELD_REREAD_2026-07-14.md` (the whole-page version). **This spec

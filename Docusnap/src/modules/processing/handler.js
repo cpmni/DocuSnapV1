@@ -138,12 +138,14 @@ function _reconcileEnv(db) {
     const learning = require('../../../database/modules/learning');
     const env = {};
     if (learning.getSetting(db, 'prefix_garble_adopt', 'false') === 'true') env.PREFIX_GARBLE_ADOPT = '1';
-    // Straightened slice re-read of a flagged field (S1 of DESKEW_SLICE_REREAD_2026-08-30, Oracle SIGN
-    // OFF W/COND). DARK / default OFF: on a skewed (>= 3 deg) page, a withheld value gets one bounded
-    // re-read on a straightened slice; an adopted read is REVIEW-BOUND (never silent — the corroboration-
-    // gated auto-file is S2). Unset => off => byte-identical. Do NOT flip until the M=0 + >= 3 deg census
-    // gate (design section 10) is met.
-    if (learning.getSetting(db, 'deskew_retry_ambiguous_enabled', 'false') === 'true') env.DESKEW_RETRY_AMBIGUOUS = '1';
+    // Review-bound whole-page STRAIGHTEN + REREAD (DESKEW_SLICE_REREAD_2026-08-30, revised). DARK / default
+    // OFF: a doc that would land in review AND whose page is skewed beyond DESKEW_REVIEW_MIN_ANGLE (default
+    // 0.3 deg) is re-OCR'd straightened; the straightened read is adopted WHOLE only if it scores a higher
+    // overall confidence, and it stays needs_review (never silently auto-filed). Only ever touches a doc
+    // already review-bound, so it cannot demote a clean auto-file. Unset => off => byte-identical. Measured
+    // to heal 6/8 skew-garbled supplier names on the Nordwind corpus at 200 DPI.
+    if (learning.getSetting(db, 'deskew_review_retry_enabled', 'false') === 'true') env.DESKEW_REVIEW_RETRY = '1';
+    { const a = learning.getSetting(db, 'deskew_review_min_angle', ''); if (a) env.DESKEW_REVIEW_MIN_ANGLE = String(a); }
     // Reconcile shadow-attribution (gary → Oracle W/COND ×5, 2026-08-12): a corroborated total is
     // no longer capped when the ONLY disagreeing operands are invisible shadow reads.
     if (learning.getSetting(db, 'reconcile_shadow_attribution', 'false') === 'true') env.RECONCILE_SHADOW_ATTRIBUTION = '1';
