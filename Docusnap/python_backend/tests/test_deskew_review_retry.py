@@ -7,7 +7,8 @@ Pure-function pins only (no OCR); the corpus heal rate is proven by the Nordwind
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from process_docs import (_deskew_retry_should_run, _deskew_retry_adopt,
-                          _deskew_retry_changed_fields, _deskew_retry_apply_holds, _DESKEW_CHANGED_NOTE)
+                          _deskew_retry_changed_fields, _deskew_retry_apply_holds, _DESKEW_CHANGED_NOTE,
+                          _put_back_offerable)
 
 fails = []
 def check(name, cond):
@@ -45,12 +46,35 @@ _str_e = {"_overall_confidence": 90}
 check("C12: a raw value the straightened read LOST counts as a change (was 'PO-77', now '')",
       _deskew_retry_changed_fields(_raw_e, _str_e) == [("po_ref", "PO-77", "")])
 _deskew_retry_apply_holds(_raw_e, _str_e)
-check("C12: the emptied field gets a STUB row with the note + corrected_to = the raw value (one-click put-back)",
+check("C12: the emptied field gets a STUB row with the note + corrected_to = the raw value (plausible -> one-click put-back)",
       _str_e.get("po_ref", {}).get("value") == "" and "was 'PO-77', now '(empty)'" in _str_e["po_ref"]["validation_note"]
       and _str_e["po_ref"]["corrected_to"] == "PO-77" and _str_e["po_ref"]["validation_note"].endswith("— confirm once."))
 # Oracle C13: the charter is FIELD-level — a same-value confidence lift is NOT a change and gets no note
 check("C13: same value at a higher confidence -> no note (files through the normal predicate)",
       _deskew_retry_changed_fields({"a": {"value": "NRQ-1", "confidence": 60}}, {"a": {"value": "NRQ-1", "confidence": 95}}) == [])
+# THE LIVE EXHIBIT (owner, 2026-08-30 20:15): skew garbled the raw date to '42-04-2025'; the straightened
+# read fixed it to '12-04-2025' — and the hold offered `Use "42-04-2025"` (a day-42 date) as a one-click
+# button. The put-back may NEVER offer a type-implausible value (rereadHolds C1 / the normaliseDate rule).
+check("put-back: a garbled raw DATE ('42-04-2025' vs now '12-04-2025') gets NO button",
+      not _put_back_offerable("42-04-2025", "12-04-2025"))
+check("put-back: a VALID raw date does", _put_back_offerable("11-04-2025", "12-04-2025"))
+check("put-back: garbled raw MONEY ('£9 32632.76' vs now '2,363.76') gets NO button",
+      not _put_back_offerable("£9 32632.76", "2,363.76"))
+check("put-back: valid raw money does", _put_back_offerable("2,463.76", "2,363.76"))
+check("put-back: free text offers any non-empty old", _put_back_offerable("Jordwind Ltd", "Nordwind Ltd")
+      and not _put_back_offerable("", "Nordwind Ltd"))
+check("put-back: the USEFUL inverse (new is garbage, old valid) still offers the old",
+      _put_back_offerable("12-04-2025", "42-04-2025"))
+_raw_g = {"statement_date": {"value": "42-04-2025", "confidence": 88}}
+_str_g = {"statement_date": {"value": "12-04-2025", "confidence": 96}}
+_deskew_retry_apply_holds(_raw_g, _str_g)
+check("apply: the exhibit — note names the garble, but corrected_to is ABSENT (no Use button)",
+      "was '42-04-2025', now '12-04-2025'" in _str_g["statement_date"]["validation_note"]
+      and not str(_str_g["statement_date"].get("corrected_to") or "").strip())
+_raw_v = {"invoice_date": {"value": "11-04-2025", "confidence": 88}}
+_str_v = {"invoice_date": {"value": "12-04-2025", "confidence": 96}}
+_deskew_retry_apply_holds(_raw_v, _str_v)
+check("apply: a plausible raw date still gets the one-click put-back", _str_v["invoice_date"].get("corrected_to") == "11-04-2025")
 # Oracle C14: the holds are applied BEFORE the adopt assignment, inside the retry block, so the note reaches
 # the emitted extractions (and trust.js's `flagged` refusal) — a helper-only pin would be a vacuous guard.
 _src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "process_docs.py"), encoding="utf-8").read()
@@ -80,4 +104,4 @@ check("garbage -> keep raw",  _deskew_retry_adopt("x", "y") is False)
 
 if fails:
     print("FAIL:", ", ".join(fails)); sys.exit(1)
-print("test_deskew_review_retry: 27/27 OK")
+print("test_deskew_review_retry: 36/36 OK")

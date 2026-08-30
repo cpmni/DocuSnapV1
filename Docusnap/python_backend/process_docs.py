@@ -96,11 +96,37 @@ def _deskew_retry_changed_fields(raw_results, straightened_results):
     return out
 
 
+def _put_back_offerable(was, now) -> bool:
+    """May the one-click put-back OFFER the raw (pre-straighten) value? The Review UI renders
+    `corrected_to` as a `Use "X"` button, and the codebase's pinned rule (rereadHolds C1; the 2026-08-25
+    normaliseDate ruling) is that a button never offers a TYPE-IMPLAUSIBLE value — the 2026-08-30 live
+    exhibit was `Use "42-04-2025"` on a statement date (skew garbles 1↔4; the raw read was the garble the
+    straighten fixed). The NEW read declares the field's shape family; the OLD must match it:
+      · new parses as a calendar date  → old must too ('42-04-2025' never gets a button);
+      · new is a strict money shape    → old must be too;
+      · otherwise                      → any non-empty old may be offered.
+    The NOTE still names the old value either way — provenance without an adoption button. Fail toward
+    NO button."""
+    try:
+        w, n = str(was or "").strip(), str(now or "").strip()
+        if not w:
+            return False
+        from extraction import validator as _v, number_format as _nf
+        if n and _v.parse_date(n) is not None:
+            return _v.parse_date(w) is not None
+        if n and _nf.money_strict_shape(n):
+            return _nf.money_strict_shape(w)
+        return True
+    except Exception:
+        return False
+
+
 def _deskew_retry_apply_holds(raw_results, straightened_results):
     """Stamp the changed-field note onto the STRAIGHTENED results (in place) for every field
     `_deskew_retry_changed_fields` lists that does not already carry a note (one note per field — an
-    existing writer's note stands). An EMPTIED field (C12) gets a stub row carrying the note (value '',
-    `corrected_to` = the raw value so the one-click put-back exists). Returns the changed list."""
+    existing writer's note stands). An EMPTIED field (C12) gets a stub row carrying the note.
+    `corrected_to` (the one-click put-back of the raw read) is set ONLY when `_put_back_offerable` —
+    never a type-implausible garble (the `Use "42-04-2025"` exhibit). Returns the changed list."""
     changed = _deskew_retry_changed_fields(raw_results, straightened_results)
     for key, was, now in changed:
         d = straightened_results.get(key)
@@ -108,8 +134,8 @@ def _deskew_retry_apply_holds(raw_results, straightened_results):
             d = straightened_results[key] = {"value": "", "confidence": 0, "method": "deskew_retry_lost"}
         if not str(d.get("validation_note") or "").strip():
             d["validation_note"] = _DESKEW_CHANGED_NOTE.format(was=was or "(empty)", now=now or "(empty)")
-            if was and not str(d.get("corrected_to") or "").strip():
-                d["corrected_to"] = was          # the raw read, one click away (Oracle's optional polish)
+            if not str(d.get("corrected_to") or "").strip() and _put_back_offerable(was, now):
+                d["corrected_to"] = was          # the raw read, one click away — only when plausible
     return changed
 
 
