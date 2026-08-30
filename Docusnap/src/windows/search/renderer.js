@@ -76,6 +76,19 @@ async function _loadDocTypes() {
 
 async function _init() {
   await _loadDocTypes();
+  // POPULATE RESULTS FIRST — they depend only on the query, not on entitlement/stamp/print (which only
+  // gate the action buttons). doSearch used to run AFTER getEntitlement + authGetCurrentUser + stamp.can
+  // (→ verifyAuditChain, whose cost grows with the audit log) + printAvailable, so on a busy install the
+  // results list took a while to populate. Init the inputs/rail, pre-fill, and search NOW; the permission
+  // checks below then run without holding up the list.
+  window.SearchPreview.initPageNav();
+  window.SearchQuery.initInputs();
+  window.SearchResults.initRail();
+  try {
+    const q0 = await window.docusnap.getSearchTarget();
+    if (q0) { const el = document.getElementById('inp-fulltext'); if (el) el.value = q0; }
+  } catch { /* no target */ }
+  window.SearchQuery.doSearch();
   // Entitlements drive the experience, and SEARCH and WORKFLOW are SEPARATE add-ons:
   //  • search   → the enhanced Search surface (confidence signatures, validation notes);
   //  • workflow → the mailbox + approval actions. The workflow UI appears ONLY when the
@@ -122,15 +135,9 @@ async function _init() {
       }, 400);
     });
   }
-  window.SearchPreview.initPageNav();
-  window.SearchQuery.initInputs();
-  window.SearchResults.initRail();
-  // Pre-fill from the Home "Quick find" card (full-text — the broadest match) before searching.
-  try {
-    const q = await window.docusnap.getSearchTarget();
-    if (q) { const el = document.getElementById('inp-fulltext'); if (el) el.value = q; }
-  } catch { /* no target */ }
-  window.SearchQuery.doSearch();
+  // The permission checks above may have resolved after a doc was already selected (results populate
+  // first now) — re-render its action panel so Stamp / Print / recycle appear once known.
+  if (window.SearchState.selectedDoc) { try { window.SearchActions.renderActions(window.SearchState.selectedDoc); } catch {} }
 
   // Deep-link: Home's "Open Mailbox" asks the Search window to LAND on the mailbox view.
   // Consumed once on load (after doSearch, so the mailbox list wins the results pane).
@@ -150,5 +157,27 @@ window.docusnap.onSearchSetQuery?.((q) => {
 window.docusnap.onSearchGoto?.((v) => {
   if (v === 'mailbox') window.SearchMailbox?.open?.();
 });
+
+// Refresh results when the window regains focus. A confirm / auto-file ("filed themselves") in Review or
+// the main window changes the confirmed set, but Search gets NO push signal for it (review-count-changed
+// reaches only main + review) — so a just-confirmed doc looked missing until Search was reopened. Re-run
+// the CURRENT search when the user returns to this window, but ONLY when the results list is idle: never
+// while typing a query, never in the mailbox view, and never while a document is selected/previewed (so it
+// can't yank a doc you are reading). Debounced.
+let _refocusT = null;
+function _refreshResultsOnReturn() {
+  clearTimeout(_refocusT);
+  _refocusT = setTimeout(() => {
+    try {
+      const ae = document.activeElement;
+      if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) return;   // mid-typing
+      if (document.body.classList.contains('mailbox-mode')) return;              // mailbox view owns the pane
+      if (window.SearchState && window.SearchState.selectedDoc) return;          // viewing a doc — don't reset
+      window.SearchQuery.doSearch();
+    } catch { /* best-effort */ }
+  }, 200);
+}
+window.addEventListener('focus', _refreshResultsOnReturn);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) _refreshResultsOnReturn(); });
 
 _init();
