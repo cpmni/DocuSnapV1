@@ -3076,7 +3076,10 @@ def _read_lines_full(img, psm):
                     "top": g["y0"] if g["y0"] is not None else 0,
                     "height": max(0, (g["y1"] or 0) - (g["y0"] or 0)),
                     "mean_conf": lmean,
-                    "min_conf": min(g["sc"]) if g["sc"] else lmean})
+                    "min_conf": min(g["sc"]) if g["sc"] else lmean,
+                    # per-word (text, conf) in line order (2026-08-30, additive — the re-slice witness
+                    # reads the money TOKEN's own confidence, not the caption-diluted line mean; Oracle C4)
+                    "words": list(zip(g["w"], g["c"]))})
     return text, mean, min_conf, out
 
 

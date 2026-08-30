@@ -59,6 +59,60 @@ def _deskew_retry_adopt(base_overall, retry_overall) -> bool:
         return False
 
 
+# The hold the ADOPTED straightened read carries (2026-08-30, the dead-guard correction). `raw2["_needs_review"]
+# = True` was the retry's only review bind, but the handler consults `msg.needs_review` ONLY when
+# `autofile_gate_unify` is OFF (handler.js _maybeAutoFile) — and it is ON on every mig-93 install — so a
+# straightened read that scored clean AUTO-FILED, contradicting the retry's "never silently auto-files a
+# straightened read" charter. The honest bind is a per-field NOTE (isAutoFileEligible refuses any note at
+# every floor), placed on exactly the fields straightening CHANGED and saying what it changed — a member of
+# the "— confirm once." lane-hold family (handler._isLaneHoldNote), so it survives a reprocess merge. Fields
+# whose value is unchanged get no note (nothing new to check; a confidence rise alone is not a change).
+_DESKEW_CHANGED_NOTE = "Read differently after straightening — was '{was}', now '{now}' — confirm once."
+
+
+def _deskew_retry_changed_fields(raw_results, straightened_results):
+    """[(key, was, now)] for every non-metadata field whose VALUE differs between the raw and the
+    straightened read (whitespace-insensitive, case-sensitive — a case change IS a change for a code).
+    Counts BOTH directions (Oracle C12): a field only the straightened read filled (was '') AND a field the
+    straightened read EMPTIED (now '' — a raw value lost on adopt is a change the operator must see, not a
+    silent drop; for an optional field nothing else would catch it). Same value at a higher confidence is
+    NOT a change (C13: the charter is field-level — "never silently auto-files a straightening-CHANGED
+    value" — a same-value lift files through the normal predicate like any other read). Pure."""
+    out = []
+    keys = []
+    for src in (straightened_results or {}), (raw_results or {}):
+        for key in src:
+            if not str(key).startswith("_") and key not in keys:
+                keys.append(key)
+    for key in keys:
+        cur = (straightened_results or {}).get(key)
+        prev = (raw_results or {}).get(key)
+        now = str(cur.get("value") or "").strip() if isinstance(cur, dict) else ""
+        was = str(prev.get("value") or "").strip() if isinstance(prev, dict) else ""
+        if not now and not was:
+            continue
+        if " ".join(now.split()) != " ".join(was.split()):
+            out.append((key, was, now))
+    return out
+
+
+def _deskew_retry_apply_holds(raw_results, straightened_results):
+    """Stamp the changed-field note onto the STRAIGHTENED results (in place) for every field
+    `_deskew_retry_changed_fields` lists that does not already carry a note (one note per field — an
+    existing writer's note stands). An EMPTIED field (C12) gets a stub row carrying the note (value '',
+    `corrected_to` = the raw value so the one-click put-back exists). Returns the changed list."""
+    changed = _deskew_retry_changed_fields(raw_results, straightened_results)
+    for key, was, now in changed:
+        d = straightened_results.get(key)
+        if not isinstance(d, dict):
+            d = straightened_results[key] = {"value": "", "confidence": 0, "method": "deskew_retry_lost"}
+        if not str(d.get("validation_note") or "").strip():
+            d["validation_note"] = _DESKEW_CHANGED_NOTE.format(was=was or "(empty)", now=now or "(empty)")
+            if was and not str(d.get("corrected_to") or "").strip():
+                d["corrected_to"] = was          # the raw read, one click away (Oracle's optional polish)
+    return changed
+
+
 # ── Per-file watchdog ─────────────────────────────────────────────────────────
 # A single pathological page can hang a native Tesseract/pdfium call that no Python
 # try/except (and, on Windows, no signal) can interrupt. When --file-timeout > 0, a
@@ -1067,8 +1121,13 @@ def main():
                             _oc0 = float(raw_extractions.get("_overall_confidence", 0) or 0)
                             _oc1 = float(raw2.get("_overall_confidence", 0) or 0)
                             if _deskew_retry_adopt(_oc0, _oc1):
-                                raw2["_needs_review"] = True   # a straightened read is never silently auto-filed
-                                log(f"  Straighten+reread: ADOPTED (overall {_oc0:.0f} -> {_oc1:.0f})")
+                                raw2["_needs_review"] = True   # engine-side flag (the handler honours it only with gate-unify OFF)
+                                # The REAL review bind (2026-08-30): a "— confirm once." note on every field
+                                # straightening CHANGED — isAutoFileEligible refuses a noted field at every floor.
+                                _chg = _deskew_retry_apply_holds(raw_extractions, raw2)
+                                log(f"  Straighten+reread: ADOPTED (overall {_oc0:.0f} -> {_oc1:.0f}); "
+                                    f"{len(_chg)} field(s) read differently — held to confirm once"
+                                    + (": " + ", ".join(k for k, _w, _n in _chg) if _chg else ""))
                                 raw_extractions = raw2
                             else:
                                 log(f"  Straighten+reread: kept raw (straightened overall {_oc1:.0f} not higher than {_oc0:.0f})")

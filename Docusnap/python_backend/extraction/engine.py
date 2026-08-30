@@ -2879,11 +2879,14 @@ def _stage05_format_fails(value, key, val_type, field_patterns, validation_patte
         A clipped-but-code-shaped '24511'/'19979' still PASSES here (format-valid, wrong value) —
         that is a READ-layer error (taught box shifted), OUT of scope, accepted residual.
 
-      • CURRENCY — a strict validity check the lenient substring credibility let through. Uses the
-        pipeline's `parse_amount` + a strict leading-glyph guard (NOT a hand-rolled anglo regex)
-        so '-£662.18'/'£-662.18'/continental/swiss PASS while 'L922.14'/'-3 5982.70' FAIL. A
-        format-VALID net/bare total ('2', '£978.20') PASSES → left to NET_MISREAD_TOTAL_FLAG /
-        accepted magnitude residual (out of scope — not a FORMAT failure).
+      • CURRENCY — a validity check the lenient substring credibility let through. LEGACY leg:
+        `parse_amount` + a leading-glyph guard — '-£662.18'/'£-662.18'/continental/swiss PASS,
+        'L922.14' FAILS. CORRECTED 2026-08-30: the legacy leg does NOT fail a space-bearing amount
+        ('-3 5982.70', '£9 32632.76') — `parse_amount` is a SEARCH and reads the first digit run
+        (9.0), so such garbles pass it. The STRICT leg (TEMPLATE_FORMAT_FAIL_YIELD_STRICT_MONEY,
+        default OFF) replaces it with the whole-string `number_format.money_strict_shape`, which
+        fails them. A format-VALID net/bare total ('2', '£978.20') PASSES either leg → left to
+        NET_MISREAD_TOTAL_FLAG / accepted magnitude residual (out of scope — not a FORMAT failure).
 
     NO learned-shape veto and NO `_shapewarn`-tag trust (both dropped): the check is now purely a
     function of the VALUE's content nature — the CLAUDE.md-sanctioned category for applying a
@@ -2905,6 +2908,17 @@ def _stage05_format_fails(value, key, val_type, field_patterns, validation_patte
             return True
         return False
     if val_type == "currency" or (field_patterns or {}).get(key, {}).get("validation") == "currency":
+        # STRICT MONEY LEG (2026-08-30, TEMPLATE_FORMAT_FAIL_YIELD_STRICT_MONEY, DEFAULT OFF — reggie):
+        # the leading-glyph + parse_amount test below is a SEARCH, so a garbled zone read like
+        # '£9 32632.76' "passes" as 9.0 and the arm's docstring claim that '-3 5982.70' fails is FALSE
+        # (measured; no pin asserted it). The strict whole-string shape (number_format.money_strict_shape:
+        # region cleaners first, then sign/symbol/code stripped, then canonical grouping) judges the
+        # VALUE's content nature — exactly this arm's charter. Sub-flag AND-ed with the live parent at
+        # the call site (never folded into TEMPLATE_FORMAT_FAIL_YIELD, which is mig-70 ON): off ⇒ the
+        # legacy legs below, byte-identical.
+        if _FORMAT_FAIL_STRICT_MONEY_ON:
+            from extraction import number_format as _nf
+            return not _nf.money_strict_shape(v)
         # leading glyph: optional symbol and/or sign then a DIGIT (rejects 'L922.14' the substring let by)
         if not re.match(r"^[£$€¥]?\s*[-–]?\s*[£$€¥]?\s*\d", v):
             return True
@@ -2912,6 +2926,82 @@ def _stage05_format_fails(value, key, val_type, field_patterns, validation_patte
             return True
         return False
     return False   # unknown structured field → no swap (fail-safe)
+
+
+# Sub-flag of TEMPLATE_FORMAT_FAIL_YIELD (see _stage05_format_fails' currency leg). Read at call time so
+# a harness can arm it per process; the call site ANDs it with the live parent.
+_FORMAT_FAIL_STRICT_MONEY_ON = os.environ.get("TEMPLATE_FORMAT_FAIL_YIELD_STRICT_MONEY", "0") != "0"
+
+
+def _penny_reconciles(total_value, results) -> bool:
+    """PENNY-EXACT reconcile of `total_value` against the money ROLES read from the page (the re-slice
+    witness sweep's trigger leg). `validator.total_reconciles`' ±2 % is a FLAG tolerance — under it a
+    one-digit-wrong total (2,383.76 vs 2,363.76) "reconciles" — so it is never an adoption licence
+    (reggie / the class-C demoter precedent). Same formula family as total_reconciles (shipping and
+    discount tried IN and OUT of the subtotal), but |delta| must be ZERO cents, and the committed
+    total's SIGN must agree with the subtotal's (validator._is_negative_value, raw-string based —
+    parse_amount is sign-blind). None-subtotal ⇒ False (unknown is not reconciled)."""
+    try:
+        from extraction import validator as _v, number_format as _nf
+        tc = _nf.money_cents(total_value)
+        if tc is None:
+            return False
+        comp = _v._reconcile_components(results)
+        sub = comp.get('subtotal')
+        if not sub or sub <= 0:
+            return False
+        # Oracle C2: the tax must have been READ (0.00 is fine) — with tax unread `subtotal + 0 == total`
+        # is the exact false balance of the 2026-08-06 SEND BACK (a net-as-gross total "reconciles").
+        if comp.get('tax') is None:
+            return False
+        tax = comp.get('tax') or 0.0
+        ship = comp.get('shipping') or 0.0
+        disc = comp.get('discount') or 0.0
+        tcents = tc[0]
+        for s in (0, 1):
+            for d in (0, 1):
+                exp = round((sub + tax + s * ship - d * disc) * 100)
+                if exp == tcents:
+                    # sign agreement with the subtotal row's raw string
+                    sub_neg = False
+                    for k in ('subtotal', *keyword.ROLE_KEY_ALIASES.get('subtotal', ())):
+                        dd = results.get(k)
+                        if isinstance(dd, dict) and dd.get('value'):
+                            sub_neg = _v._is_negative_value(str(dd.get('value')))
+                            break
+                    return bool(tc[1]) == bool(sub_neg)
+        return False
+    except Exception:
+        return False
+
+
+# ── FORMAT-INVALID WITNESS (2026-08-30, reggie design; DARK `CORROB_DISCOUNT_INVALID_WITNESS`) ──
+# A corroboration WITNESS whose value is DETERMINISTICALLY invalid for its field's type is OCR noise,
+# not a dissent. The owner's live DB carried 8 such money dissents ('C9,262.76', '£2.205.60', '£0/2.0U'
+# — older-vintage zone reads of clean totals) out of 10 money dissents in total; each blocked
+# `_corrob_licensed` (any non-empty `disagree` refuses) for no evidential reason. Deterministic ONLY:
+#   currency → number_format.money_strict_shape (region cleaners first; whole-string grouping);
+#   date     → validator.salvage_date_detail finds NO date anywhere in the string (a junk-wrapped or
+#              OCR-spaced VALID date keeps its dissent power — precision-first for a discount);
+#   codes    → NEVER (the only deterministic ref rules are narrow and a learned shape is statistical —
+#              a wrong-but-code-shaped ref stays a live dissent).
+# Consumed by _build_corroboration_emit: an invalid witness lands in an additive `discounted` list,
+# never in `disagree` (and can never `agree` — the value differs). Record-only; the JS twin reads the
+# same record. Pinned in tests/test_money_strict_shape.py.
+def format_invalid_witness(value, val_type, key=None) -> bool:
+    v = str(value or "").strip()
+    if not v:
+        return False
+    vt = str(val_type or "").lower()
+    if vt == "currency":
+        from extraction import number_format as _nf
+        return not _nf.money_strict_shape(v)
+    if vt == "date":
+        try:
+            return validator.salvage_date_detail(v)[0] is None
+        except Exception:
+            return False
+    return False
 
 
 class ExtractionEngine:
@@ -4372,6 +4462,126 @@ class ExtractionEngine:
             demoted = True
         return demoted
 
+    def _reslice_witness_sweep(self, results, field_defs=None):
+        """RE-SLICE WITNESS SWEEP (2026-08-30, owner arc; oscar recipe + 007 geometry + reggie STOP →
+        Oracle). DARK: RESLICE_WITNESS_SWEEP, default OFF ⇒ returns 0, byte-identical.
+
+        The owner's ask: "if there's a note AND the straighten didn't fix it, re-slice using different
+        parameters until we get corroboration, up to a max number of tries." Measured on the faithful
+        replay of Nordwind 0023: the taught total box reads `29,242.76` @90 (a format-VALID garble); the
+        keyword reads `2,363.76`; the reconciliation pick swaps to the keyword value with its "please
+        verify" note; the signed demoter that could release it (_demote_recon_total_corroborated_note)
+        needs a CROP-SIDE penny-exact witness — and the only crop-side read is the garble.
+
+        THIS IS A WITNESS-PRODUCER, NOT A DECIDER. v1 = TOTALS ONLY. Trigger (all of):
+          (1) the total role field carries a validation_note;
+          (2) its committed value is a strict money shape AND penny-reconciles (sign-agreeing) against
+              separately read components — the arithmetic leg that is already true of the committed
+              value (the sweep never manufactures it);
+          (3) a Stage-0.5 mapping exists for the field on a page in hand;
+          (4) the zone's own ledger read is ABSENT or cents-DIFFERENT (a same-value read needs no witness).
+        Then extraction.reslice.read_money_witness runs the measured ladder (R8, R7 — pad, no upscale,
+        white border, PSM 6, in-band line pick) on the box the mapper actually read and STOPS at the first
+        rung whose read is strict-shape AND cents-equal AND sign-equal to the COMMITTED value. That read is
+        injected as ONE un-noted ledger candidate (method 'template_mapping_resliced' → the existing
+        `mapping` family through the `template` prefix; never a new family — deskew Oracle C1) before the
+        corroboration record is built. The existing signed arms then decide under their own rails; a
+        disagreeing re-read is NEVER injected (a wrong padded read can neither add nor suppress a dissent).
+        Commits nothing. Exhausted → nothing changes. Cost: ≤ RESLICE_MAX_TRIES (default 2) small-crop
+        Tesseract calls on ONE field, only on a noted total. Census: RESLICE_CENSUS_DIR (declines too)."""
+        if os.environ.get("RESLICE_WITNESS_SWEEP", "0") == "0":
+            return 0
+        try:
+            from extraction import reslice as _rs, number_format as _nf, validator as _v
+            pages = getattr(self, "_s05_pages", None)
+            mappings = getattr(self, "_s05_mappings", None) or []
+            if not pages or not mappings:
+                return 0
+            total_key = None
+            for k in ('total_amount', *keyword.ROLE_KEY_ALIASES.get('total_amount', ())):
+                d = results.get(k)
+                if isinstance(d, dict) and d.get('value'):
+                    total_key = k
+                    break
+            if not total_key:
+                return 0
+            data = results[total_key]
+            note = str(data.get('validation_note') or '').strip()
+            committed = str(data.get('value') or '')
+            decline = None
+            cc = _nf.money_cents(committed) if committed else None
+            # Oracle C1: ONE producer, ONE consumer — the trigger is the reconciliation pick's note EXACTLY
+            # (the demoter's own C3 posture). Any other note (shadow-attribution, net-misread, format yield,
+            # credit sign…) declines: those notes have their own arms and rails, and the witness must not
+            # licence them through the record by the back door (the class-C seam).
+            if not note:
+                decline = 'no_note'
+            elif note != RECON_TOTAL_ADJUSTED_NOTE:
+                decline = 'not_recon_note'
+            elif cc is None:
+                decline = 'committed_not_strict_money'
+            elif not _penny_reconciles(committed, results):
+                decline = 'committed_not_penny_reconciled'
+            mapping = next((m for m in mappings if m.get('field_key') == total_key), None)
+            page_idx = int((mapping or {}).get('page_number') or 0)
+            if decline is None and (mapping is None or page_idx < 0 or page_idx >= len(pages)
+                                    or pages[page_idx] is None):
+                decline = 'no_mapping_zone'
+            if decline is None:
+                for c in (self._field_candidates.get(total_key) or []):
+                    if str(c.get('stage') or '') == '0.5_mapping' and _nf.money_cents(c.get('value')) == cc:
+                        decline = 'zone_read_already_agrees'
+                        break
+            witness = None
+            if decline is None:
+                geom = (getattr(self, '_s05_read_geom', None) or {}).get(total_key)
+                box = ({'x_norm': geom[0], 'y_norm': geom[1], 'w_norm': geom[2], 'h_norm': geom[3]}
+                       if geom and len(geom) == 4 else template_mapper._norm_box(mapping, 'target'))
+                if not box:
+                    decline = 'no_box'
+                else:
+                    witness = _rs.read_money_witness(pages[page_idx], box, committed)
+                    if witness is None:
+                        decline = 'no_agreeing_rung'
+            _cdir = os.environ.get("RESLICE_CENSUS_DIR")
+            if _cdir:
+                try:
+                    import json as _json
+                    with open(os.path.join(_cdir, "reslice_census.jsonl"), "a", encoding="utf-8") as _f:
+                        _f.write(_json.dumps({"field": total_key, "committed": committed, "note": note[:60],
+                                              "decline": decline, "witness": witness}) + "\n")
+                except Exception:
+                    pass
+            if witness is None:
+                self._t('reslice_witness', field=total_key, decision='decline', reason=decline)
+                return 0
+            self._field_candidates.setdefault(total_key, []).append({
+                'value':         witness['value'],
+                'method':        'template_mapping_resliced',
+                'confidence':    int(witness.get('confidence') or 0),
+                'stage':         '4.7_reslice',
+                'authoritative': False,
+                'located':       False,
+                'box':           None,
+                'noted':         False,
+            })
+            self._reslice_witness[total_key] = {
+                'value': witness['value'], 'confidence': int(witness.get('confidence') or 0),
+                'rung': witness.get('rung'), 'line': witness.get('line'),
+            }
+            self.log(f"  Re-slice witness: {total_key} '{committed}' — the taught zone re-read "
+                     f"'{witness['value']}' @{witness.get('confidence')} ({witness.get('rung')}) agrees "
+                     f"with the committed value (witness recorded; the arms decide)")
+            self._t('reslice_witness', field=total_key, decision='witness', value=witness['value'],
+                    confidence=witness.get('confidence'), rung=witness.get('rung'))
+            return 1
+        except Exception as _e:
+            try:
+                self._t('reslice_witness', decision='error', error=str(_e)[:120])
+            except Exception:
+                pass
+            return 0   # a witness aid — must never break extraction
+
     def _build_corroboration_emit(self, results):
         """OWNER PRINCIPLE (2026-08-11): "the rungs should CORROBORATE, not merely compete."
         Per committed field, which INDEPENDENT method families read the same value — a derived,
@@ -4411,6 +4621,12 @@ class ExtractionEngine:
         # the same lens; logic unchanged).
         _anchor_as_kw = os.environ.get('CORROB_ANCHOR_AS_KEYWORD', '1') != '0'
         _corrob_bucket = _corrob_record_bucket
+        # FORMAT-INVALID WITNESS DISCOUNT (2026-08-30, DARK): a deterministically type-invalid candidate
+        # is routed to an additive `discounted` list instead of `disagree`. Field types come from
+        # `self._val_types` (set once per extract(); absent on a bare unit-test self ⇒ no types ⇒ the
+        # predicate never fires ⇒ byte-identical record).
+        _discount_on = os.environ.get('CORROB_DISCOUNT_INVALID_WITNESS', '0') != '0'
+        _val_types = getattr(self, '_val_types', None) or {}
 
         out = {}
         for key, data in results.items():
@@ -4423,6 +4639,13 @@ class ExtractionEngine:
             method = str(data.get('method') or '')
             win_bucket = _corrob_bucket(None, method)
             win_family = win_bucket[0] if win_bucket else _method_family(method)
+            # Oracle C7 (2026-08-30): CURRENCY-ONLY in v1 — a total's record has no JS filing consumer, a
+            # ROLE's (date) does (`trust_role_disagreement_refuse`, corroboration auto-file); the date leg
+            # stays in the predicate (pinned) and is routed only after its own census.
+            _vt = _val_types.get(key) if _discount_on else None
+            if _vt != 'currency':
+                _vt = None
+            discounted = []
             # agree_strong = agreeing families whose agreement comes from a candidate OTHER than a
             # reclassified bare `anchor`. Oracle 2026-08-23 (the r19-unmask seam): a bare-anchor LINE
             # read is the same pixels as the keyword REGEX, so a bare-anchor agreement must NOT SUPPRESS a
@@ -4447,6 +4670,8 @@ class ExtractionEngine:
                         agree.add(fam)
                         if not (_anchor_as_kw and str(c.get('method') or '') == 'anchor'):
                             agree_strong.add(fam)   # a genuine (non-bare-anchor) read agrees
+                elif _vt and format_invalid_witness(cv, _vt, key):
+                    discounted.append({'family': fam, 'value': str(cv), 'reason': f'{_vt}_format_invalid'})
                 else:
                     disagree.setdefault(fam, str(cv))
             out[key] = {
@@ -4460,6 +4685,8 @@ class ExtractionEngine:
                              for f, v in sorted(disagree.items()) if f not in agree_strong],
                 'independent_agree': bool(agree),
             }
+            if discounted:
+                out[key]['discounted'] = discounted   # additive; absent when nothing was discounted
         return out
 
     def _resolve_candidates(self, results, field_defs, supplier_name, document_slug):
@@ -7079,6 +7306,13 @@ class ExtractionEngine:
                                       # anchor rejection recorder (slice-3 B1); D1 evidence + census
         self._list_field_keys = set()  # per-run; filled at Stage 1 when LIST_FIELD_SCAN is armed
         self._barcode_field_keys = set()  # per-run; filled at Stage 1.5 when BARCODE_FIELD is armed
+        # RE-SLICE WITNESS SWEEP inputs (2026-08-30): the Stage-0.5 mappings as READ (composed, in-memory —
+        # never the DB rows), the pages they were read from, and the box each mapping result actually read
+        # (`_read_geom`, popped off the result at the merge). Per run; all inert unless the sweep is armed.
+        self._s05_mappings = []
+        self._s05_pages = None
+        self._s05_read_geom = {}
+        self._reslice_witness = {}
         results      = {}
         field_keys   = [f["key"] for f in field_defs]
         # Straighten-arc frame election (C1: computed ONCE, the SAME list feeds every crop
@@ -7089,6 +7323,17 @@ class ExtractionEngine:
         # gated by their real type instead of loose free-text. The keyword config
         # still wins where it carries a richer entry. See _seed_field_patterns.
         field_patterns = _seed_field_patterns(self.patterns.get("field_patterns", {}), field_defs)
+        # Per-run field VALIDATION types (key -> 'currency'|'date'|'alphanumeric'|…): the field def's own
+        # type, else the seeded pattern's validation. Read by the corroboration record's invalid-witness
+        # discount and the re-slice witness sweep (2026-08-30). Purely descriptive — no consumer writes it.
+        self._val_types = {}
+        for _fd in (field_defs or []):
+            _fk = _fd.get("key")
+            if _fk:
+                self._val_types[_fk] = str(_fd.get("type") or "").lower() or None
+        for _fk, _fp in (field_patterns or {}).items():
+            if isinstance(_fp, dict) and _fp.get("validation") and not self._val_types.get(_fk):
+                self._val_types[_fk] = str(_fp.get("validation")).lower()
         # Date-typed fields get a merge guard: a candidate that doesn't parse as
         # a real date must never displace one that does (e.g. a mis-cropped
         # taught anchor returning a bare "March" overriding a valid full date).
@@ -7402,7 +7647,11 @@ class ExtractionEngine:
                         slice_capture=(self._capture_slice if (self._trace and self._slice_dir) else None),
                         template_landmarks=_landmarks,
                         registration_enabled=self.registration_enabled,
+                        read_geoms_out=self._s05_read_geom,   # the box each rung actually read (re-slice witness)
                     )
+                    # RE-SLICE WITNESS inputs: the mappings + pages AS READ (composed, in-memory).
+                    self._s05_mappings = list(tmpl_mappings or [])
+                    self._s05_pages = crop_pages
                     applied = 0
                     _pre_s05 = self._snap(results)
                     self._remember_candidates('0.5_mapping', mapping_results)
@@ -10387,7 +10636,16 @@ class ExtractionEngine:
         # name value and rewrites this record for that field in the same step (memory family,
         # independent_agree False, dead value retained) — the final trace + persisted emit then
         # describe the ADOPTED state truthfully.
+        # RE-SLICE WITNESS SWEEP (2026-08-30, DARK): a noted, arithmetic-corroborated total whose taught
+        # zone read disagrees gets its zone RE-READ under the measured pad/PSM-6 recipe; an agreeing read
+        # is injected into the ledger HERE — before the record is built and before the signed demoters
+        # read it — so `_demote_recon_total_corroborated_note` sees the crop-side witness it requires.
+        # Commits nothing; off ⇒ returns 0 ⇒ byte-identical.
+        self._reslice_witness_sweep(results, field_defs)
         _corrob = self._build_corroboration_emit(results)
+        for _rk, _rw in (getattr(self, '_reslice_witness', None) or {}).items():
+            if isinstance(_corrob.get(_rk), dict):
+                _corrob[_rk]['reslice_witness'] = dict(_rw)   # additive provenance (census / inspector)
 
         # CONFIRMED_DOMINANT_ADOPT (Oracle B5 placement: AFTER the corrob build — so the record's
         # pre-adoption disagreement is captured — and BEFORE the final trace, so the inspector's

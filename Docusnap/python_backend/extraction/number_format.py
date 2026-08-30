@@ -84,6 +84,82 @@ def normalise_currency_spacing(value):
     return out
 
 
+# ── STRICT money shape (2026-08-30, reggie design; hoisted from template_mapper._MONEY_WELLFORMED_RE) ──
+# The pipeline's `validator.parse_amount` / `validation_patterns.currency` are SEARCHES: a garbled zone
+# read like '£9 32632.76' "parses" as 9.0 and passes every loose gate. This is the WHOLE-STRING
+# discipline — sign / currency symbol / code / accounting parens stripped, then the bare literal must be
+# a canonically grouped amount. Region-aware by construction: the value is first pushed through the same
+# two cleaners the keyword and crop paths already apply (`canonical` + `normalise_currency_spacing`, both
+# idempotent), so a continental '2.363,76' under a continental install is judged as '2363.76'. Internal
+# whitespace is deliberately NOT stripped afterwards — after the respacing pass it IS the invalidity
+# signal ('9 32632.76' survives respacing: the 3-digit-group lookahead never fires on '32632').
+# Consumers: the corroboration record's format-invalid-witness discount, the Stage-0.5 format-fail
+# yield's strict currency leg, the re-slice witness STOP predicate. Pinned in
+# tests/test_money_strict_shape.py. `template_mapper._money_wellformed` is an alias of
+# `money_wellformed` (its truth table — incl. the deliberately-accepted clipped '0,603.44' — is pinned
+# in tests/test_money_snap_proof.py and unchanged).
+MONEY_STRICT_RE        = re.compile(r"(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?")
+MONEY_STRICT_INDIAN_RE = re.compile(r"\d{1,2}(?:,\d{2})*,\d{3}(?:\.\d{1,2})?")     # lakh grouping, region-gated
+_CODE_STRIP_RE = re.compile(r"(?<![A-Za-z])(?:GBP|USD|EUR|JPY|INR|CAD|AUD|NZD|CHF|CNY|ZAR)(?![A-Za-z])", re.I)
+_CR_STRIP_RE   = re.compile(r"(?<![A-Za-z])CR(?![A-Za-z])", re.I)                  # accounting credit marker
+_NEG_HINT_RES  = (re.compile(r"^\s*[(\[]"),                                          # (160.32)
+                  re.compile(r"^\s*[£$€¥₹]?\s*[-–—]\s*[£$€¥₹]?\s*\d"),               # -£1.00 / £-1.00
+                  re.compile(r"\d\s*[-–—]\s*$"),                                     # 160.32-
+                  re.compile(r"(?<![A-Za-z])CR(?![A-Za-z])", re.I))                  # 160.32 CR
+
+
+def money_wellformed(bare):
+    """True when the WHOLE string (bare of sign/currency/parens/space) is a canonically grouped amount.
+    The ORIGINAL template_mapper predicate, verbatim (moved here so one regex serves every consumer)."""
+    if not bare:
+        return False
+    s = str(bare).strip()
+    s = re.sub(r"^[\s(\[]*[-–—+]?\s*[£$€]?\s*", "", s)
+    s = re.sub(r"\s*(?:GBP|USD|EUR|JPY)?[\s)\]]*$", "", s, flags=re.I)
+    return bool(s) and MONEY_STRICT_RE.fullmatch(s) is not None
+
+
+def _money_bare(value):
+    """The amount literal with every non-amount decoration removed (sign, symbol, code, parens,
+    accounting minus, CR). Returns '' for a non-money string. Region cleaners run first."""
+    s = normalise_currency_spacing(canonical(str(value or "").strip()))
+    s = _CR_STRIP_RE.sub("", s)
+    s = _CODE_STRIP_RE.sub("", s)
+    s = re.sub(r"[£$€¥₹]", "", s)
+    s = re.sub(r"^[\s(\[]*[-–—+]?\s*", "", s)          # leading paren / sign
+    s = re.sub(r"\s*[-–—]?[\s)\]]*$", "", s)           # trailing paren / accounting minus
+    return s.strip()
+
+
+def money_strict_shape(value) -> bool:
+    """Deterministic whole-string money validity (see the block comment above). False for '', for a
+    space-bearing amount that respacing could not rejoin ('9 32632.76'), for a double-dot ('2.205.60'),
+    for mis-grouped thousands ('1,2345.67'), for any non-digit debris ('L922.14', 'O.00', prose)."""
+    s = _money_bare(value)
+    if not s:
+        return False
+    if MONEY_STRICT_RE.fullmatch(s) is not None:
+        return True
+    return get_format() == "indian" and MONEY_STRICT_INDIAN_RE.fullmatch(s) is not None
+
+
+def money_cents(value):
+    """(cents:int, negative:bool) for a strict-shape amount, else None. Integer cents (never float,
+    never the sign-blind parse_amount) — the corroboration fold's comparison key. The sign is read
+    from the RAW string (validator._NEG_MARKERS' forms: leading '-', symbol-then-minus, accounting
+    trailing minus, parens, CR)."""
+    if not money_strict_shape(value):
+        return None
+    raw = str(value or "")
+    neg = any(r.search(raw) for r in _NEG_HINT_RES)
+    s = _money_bare(value).replace(",", "")
+    ip, _, fp = s.partition(".")
+    try:
+        return int(ip or "0") * 100 + int((fp + "00")[:2]), neg
+    except ValueError:
+        return None
+
+
 def set_format(fmt):
     """Set the process-wide region number format: anglo|continental|french|swiss|indian."""
     global _NUMBER_FORMAT

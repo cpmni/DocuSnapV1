@@ -789,7 +789,7 @@ def extract_with_mappings(page_images, mappings, field_patterns=None,
                           ocr_lines_fn=None, ocr_text_fn=None, slice_capture=None,
                           validation_patterns=None, format_lookup=None,
                           template_landmarks=None, registration_enabled=False,
-                          provisional_lookup=None):
+                          provisional_lookup=None, read_geoms_out=None):
     """
     Run every enabled mapping against `page_images` and return resolved fields.
 
@@ -869,6 +869,12 @@ def extract_with_mappings(page_images, mappings, field_patterns=None,
                                format_lookup=format_lookup, line_cache=line_cache,
                                provisional_lookup=provisional_lookup)
         if outcome:
+            # The rung's private read box (2026-08-30): handed out through `read_geoms_out` and POPPED
+            # here, so the returned result dicts are byte-identical to before (no new key reaches the
+            # engine merge, the ledger, the trace or the persisted row).
+            _rg = outcome.pop("_read_geom", None) if isinstance(outcome, dict) else None
+            if read_geoms_out is not None and _rg:
+                read_geoms_out[field_key] = _rg
             results[field_key] = outcome
     return results
 
@@ -1742,12 +1748,14 @@ def _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
                                             provisional_lookup=provisional_lookup)
             if picked is not None:
                 return picked
-        return _mapping_result(
+        _gr = _mapping_result(
             text,
             located.get("matched_text") is not None and bool(mapping.get("anchor_text")),
             expanded, salvaged, mapping.get("anchor_text") or field_key,
             shape_warn=shapewarn, ocr_conf=_d_meta.get('conf'), val_type=val_type,
             geom=_box_list(derived_target) if slice_capture else None)
+        _gr["_read_geom"] = _box_list(_expand_box(derived_target, expansion) if expanded else derived_target)
+        return _gr
 
     def _inline():
         # INLINE HARVEST off the located label's OWN line (no extra OCR — the line was
@@ -1790,11 +1798,14 @@ def _relocate_and_read(page, mapping, anchor_box, target_box, located, val_type,
                 pass                # dev-only; never disrupt extraction
         # _ft_fallthrough_cap: this rung has NO ocr_conf to give _mapping_result, so a free-text
         # value would otherwise commit at the synthetic 90 (see _FT_FALLTHROUGH_CAP_ON).
-        return _ft_fallthrough_cap(_mapping_result(
+        _ir = _ft_fallthrough_cap(_mapping_result(
             hv, located.get("matched_text") is not None and bool(mapping.get("anchor_text")),
             False, iv_salvaged, mapping.get("anchor_text") or field_key,
             shape_warn=iv_shapewarn, val_type=val_type,
             geom=_box_list(ib) if (slice_capture and ib) else None), val_type)
+        if ib:
+            _ir["_read_geom"] = _box_list(ib)
+        return _ir
 
     # RIGID OFFSET PRIMARY (the operator's model): when the mapping stored a label→value
     # offset, the value box follows the located label by that EXACT offset + drawn
@@ -1863,6 +1874,7 @@ def _read_registration(page, mapping, target_box, val_type, ocr_text_fn, expansi
     }
     if slice_capture:                       # diagnostic: the registered box this rung read
         result["target_geom"] = _box_list(reg_box)
+    result["_read_geom"] = _box_list(_expand_box(reg_box, expansion) if r_expanded else reg_box)
     if r_shapewarn:
         result["confidence"] = min(result["confidence"], 70)
         result["method"] += "_shapewarn"
@@ -2433,6 +2445,10 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
                              mapping.get("anchor_text") or field_key,
                              ocr_conf=_abs_meta.get('conf'), val_type=val_type,
                              geom=_box_list(target_box) if slice_capture else None)
+        # PRIVATE read box (2026-08-30, re-slice witness sweep — 007): the rectangle this rung actually
+        # OCR'd, carried on a `_`-key the engine POPS at the Stage-0.5 merge (never persisted, never in
+        # the ledger, never in a result the trace serialises). `target_geom` stays trace-only.
+        _r["_read_geom"] = _box_list(_expand_box(target_box, expansion) if abs_expanded else target_box)
         # RAW-CROP WITNESS surface (Oracle C2, 2026-08-12 — see anchor._raw_witness_read block).
         # FLAG tier: the ladder kept today's value and stashed the one-glyph ambiguity in meta;
         # attach the honest choice (note + corrected_to) and cap BELOW the 88 critical auto-file
@@ -2805,17 +2821,10 @@ def _snap_box_to_words(page, seated_box, val_type, ocr_lines_fn, line_cache, lab
 # money literal?" — `validation_patterns.currency` and `validator.parse_amount` both use `re.search`,
 # so '3.765.72' passes them via the substring '765.72' (measured). Anglo convention, matching
 # `number_format`'s default: comma thousands, dot decimal, at most two decimal places.
-_MONEY_WELLFORMED_RE = re.compile(r'(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?')
-
-
-def _money_wellformed(text):
-    """True when the WHOLE string (bare of sign/currency/parens/space) is a valid amount."""
-    if not text:
-        return False
-    s = str(text).strip()
-    s = re.sub(r'^[\s(\[]*[-–—+]?\s*[£$€]?\s*', '', s)
-    s = re.sub(r'\s*(?:GBP|USD|EUR|JPY)?[\s)\]]*$', '', s, flags=re.I)
-    return bool(s) and _MONEY_WELLFORMED_RE.fullmatch(s) is not None
+# Hoisted to number_format (2026-08-30) so ONE strict money regex serves the snap proof, the
+# corroboration record's invalid-witness discount, the format-fail yield's strict leg and the
+# re-slice witness STOP. Both names stay bound here: the snap-proof truth table is pinned on them.
+from extraction.number_format import MONEY_STRICT_RE as _MONEY_WELLFORMED_RE, money_wellformed as _money_wellformed
 
 
 def _money_snap_proof(page, unsnapped_box, snapped_box, snapped_text, val_type, field_key,
