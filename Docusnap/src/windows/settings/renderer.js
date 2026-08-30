@@ -956,7 +956,10 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // Put-back re-file via File All Ready (2026-08-23, DARK).
                          ['putback-refile-toggle', 'putback_refile_on_file_all'],
                          // Detail-veto single-supplier immunity (2026-08-23, DARK) — RESTART to load (Python env bridge).
-                         ['logo-detail-immune-toggle', 'logo_detail_veto_single_supplier_immune']]) {
+                         ['logo-detail-immune-toggle', 'logo_detail_veto_single_supplier_immune'],
+                         // Review-bound straighten + reread (2026-08-30) — RESTART to load (Python env bridge).
+                         // Exposed as a STANDARD row for now (owner testing); gate behind DEV_SWITCH_IDS later.
+                         ['deskew-review-retry-toggle', 'deskew_review_retry_enabled']]) {
   (async () => {
     try {
       const v = await api.getSetting(key);
