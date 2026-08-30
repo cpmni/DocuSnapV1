@@ -70,6 +70,14 @@ verdict — and zero unvetted pipeline changes.
 - **2026-08-30 · Warm cross-contamination** (2026-07-29 rig: loading live learning dropped a NEW supplier's ref 58→33 %
   on suppliers sharing nothing with the scanned data) — still open; the Hard Set's warm-scan arm re-measures it.
 - **2026-08-30 · Search perf**: `verifyAuditChain` re-verifies the whole audit log on every Search open (grows with use).
+- **2026-08-30 · Skip the confirm-once when the RAW value was deterministically IMPOSSIBLE (owner's Ironclad
+  statement exhibit):** the straighten retry's changed-field hold fires on `was '42-04-2025' → now '12-04-2025'` —
+  but a day-42 date is not a competing reading, it is noise (the format-invalid-witness principle). Design: when
+  `was` fails the field's DETERMINISTIC validity (date: parse_date None; money: not strict shape) AND `now` passes,
+  skip the note (noise→value, nothing real changed). RELAXES Oracle C13 → needs a census (how many changed-field
+  holds have an impossible `was`? the Hard Set's edge_date/degraded classes generate these) + Oracle sign-off.
+  NOTE the independence rule stands: a raw-vs-straightened agreement of the SAME box is never corroboration
+  (doc-561: a garble agrees with itself under rotation).
 - **2026-08-30 · Toggle hygiene sweep (owner rule):** audit the switch inventory for anything PROVEN bad (failed gate,
   wrong-value exhibit, Oracle SEND BACK) → remove it or move it to a "DO NOT USE" group under the SFDEV dev-switch
   section with the reason in its sub-label. Also: the owner's live test showed TWO stacked "— confirm once." sentences
