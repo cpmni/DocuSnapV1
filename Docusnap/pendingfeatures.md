@@ -4632,3 +4632,23 @@ Context: `docs/designs/CORROB_RESLICE_SWEEP_2026-08-30.md` (REVISED banner), `HA
 - **Settings wiring pin pre-existing red:** `test_settings_wiring.js` reports MISSING `stamp-section, stamp-preview-box,
   stamp-preview, stamp-msg, stamp-size, stamp-size-val, stamp-save, stamp-reset` — HEAD's renderer.js addresses them,
   HEAD's index.html lacks them (the 08-28 stamping move). Not this arc's; tidy separately.
+
+---
+
+## 2026-08-30 NIGHT — OWNER-QUEUED NEXT ARC: an ADVERSARIAL test corpus (multi-column + the known weak spots)
+Owner (after the re-slice arc): "generate a set of multi columned documents for testing, and examples of other areas you
+feel may pose problems." Build on the EXISTING rig `stress_test/gen_demo_digital.py` (reportlab; 6 archetypes; per-doc
+`ground_truth.json`) + `stress_test/score_demo_digital.js` (cold/warm) — but render each archetype TWICE: the born-digital
+PDF (skips OCR → isolates layout) AND a rasterised SCAN of it (200 + 150 DPI, 1-3° skew, noise, thermal fade) so the
+same truth scores the OCR path — the multi-column failures (row rebuild, column bleed) only exist on rasters.
+Classes (ranked by measured risk), ~20 docs × ≥3 synthetic suppliers each:
+1. Multi-column money rows (`Net | VAT | Gross` on one line; two totals blocks side by side; right-aligned column beside
+   a caption column; narrow gaps). 2. Line-item tables with a total INSIDE the table + a repeated footer "Total due"
+   (net-as-total / wrong-row). 3. Small print — 8-9 pt totals/refs at 200 DPI (the class R8 was judged unsafe on as a
+   primary read). 4. Leading-digit dates flush to an edge/border, `1/12` vs `11/12`, ISO/US orders, month names (the
+   baseline M=7 class). 5. Two-column address blocks with the BUYER's name larger than the issuer's (identity +
+   buyer-issued steer). 6. Continental/French/Swiss numbers + EU VAT ids on RASTERS. 7. Same-logo siblings
+   (invoice/credit/statement) + look-alike logos across suppliers. 8. Degraded scans (skew, faint grey serials,
+   thermal receipts, a staple over the ref, a fax header above the letterhead). 9. Multi-page (total on page 2,
+   "carried forward" that looks like a total). 10. Credit notes + negatives (`-£`, `(160.32)`, `CR`, trailing minus).
+Gate: cold + warm scoring per class; every silent-wrong is a NEW class card for an advisor→Oracle arc.
