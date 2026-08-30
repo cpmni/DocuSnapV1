@@ -134,28 +134,42 @@ function runShards(folder, args, files, env) {
     if (!m) { (mism[cls] || (mism[cls] = [])).push(`${r._base}: NO RESULT`); if (r.control) { a.cbad++; controlBad++; } continue; }
     const detSlug = nameToSlug[m.document_type] || null;
     const rk = (roles[r.type_slug] || {}).ref, dk = (roles[r.type_slug] || {}).date;
-    const gotTotal = ef(m, 'total_amount') ?? ef(m, 'total');
+    // TOTAL is scored ONLY where the GT type actually DEFINES a total-ish field (the 2026-07-29 rig's
+    // lesson, re-learned on the first run's controls: the installed types mostly have NO total field, so
+    // the engine never extracts one — scoring it marked every clean control "wrong").
+    const ftypes = fieldTypesBySlug[r.type_slug] || {};
+    const totalKey = ['total_amount', 'total', 'balance_due', 'amount_due'].find(k => k in ftypes) || null;
+    const gotTotal = totalKey ? (ef(m, totalKey) ?? ef(m, 'total_amount') ?? ef(m, 'total')) : null;
     const s = {
       type: detSlug === r.type_slug,
       supplier: normSupplier(m.supplier_name) === normSupplier(r.issuer),
       ref: r.ref != null && rk ? normRef(ef(m, rk)) === normRef(r.ref) : null,
       date: r.date != null && dk ? normDate(ef(m, dk)) === normDate(r.date) : null,
-      total: r.total != null ? normMoney(gotTotal) === normMoney(r.total) : null,
+      total: r.total != null && totalKey ? normMoney(gotTotal) === normMoney(r.total) : null,
     };
     for (const f of F) if (s[f] !== null) { a.scored[f]++; if (s[f]) a.ok[f]++; }
-    // silent-wrong: a wrong filing-critical value with NO note and conf >= 70 (the realdoc rule)
-    let silent = false;
+    // A wrong field splits THREE ways (the first run conflated them): EMPTY (a miss — the app committed
+    // nothing, the doc holds: safe), FLAGGED wrong (a wrong value with a note / sub-70 conf: caught), and
+    // SILENT wrong (a non-empty wrong value, no note, conf >= 70 — the only dangerous kind).
+    let silent = false, miss = false;
     const flaggedInfo = {};
-    for (const [f, key, want] of [['supplier', 'supplier_name', r.issuer], ['ref', rk, r.ref], ['date', dk, r.date], ['total', 'total_amount', r.total]]) {
+    for (const [f, key, want] of [['supplier', 'supplier_name', r.issuer], ['ref', rk, r.ref], ['date', dk, r.date], ['total', totalKey, r.total]]) {
       if (s[f] !== false) continue;
-      const e = key && m.extractions && (m.extractions[key] || (f === 'total' ? m.extractions.total : null));
+      const got = f === 'supplier' ? m.supplier_name : (f === 'total' ? gotTotal : ef(m, key));
+      const e = key && m.extractions && m.extractions[key];
+      if (got == null || String(got).trim() === '') {
+        miss = true;
+        flaggedInfo[f] = 'empty';
+        (mism[cls] || (mism[cls] = [])).push(`${r._base} [${r.variant}${r.control ? ' CONTROL' : ''}] ${f}: want '${want}' got EMPTY [held]`);
+        continue;
+      }
       const flagged = !!(e && (String(e.validation_note || '').trim() || (e.confidence != null && e.confidence < 70)));
       flaggedInfo[f] = flagged;
       if (!flagged) silent = true;
-      const got = f === 'supplier' ? m.supplier_name : (f === 'total' ? gotTotal : ef(m, key));
       (mism[cls] || (mism[cls] = [])).push(`${r._base} [${r.variant}${r.control ? ' CONTROL' : ''}] ${f}: want '${want}' got '${got}'${flagged ? ' [flagged]' : ' [SILENT]'}`);
     }
     if (silent) a.silent++;
+    if (miss) a.miss = (a.miss || 0) + 1;
     // would-auto-file through the ONE predicate
     let wouldFile = false, afReason = null;
     const detId = slugToId[detSlug];
@@ -166,12 +180,16 @@ function runShards(folder, args, files, env) {
         validation_note: (e && e.validation_note) || null, corrected_to: (e && e.corrected_to) || null,
         corroboration: (e && typeof e === 'object') ? (e.corroboration ?? null) : null,
       }));
-      const fake = { id: 0, supplier_name: m.supplier_name, document_type_id: detId, overall_confidence: m.overall_confidence };
+      // id must be TRUTHY: isAutoFileEligible refuses `!doc.id` as 'no-type' (trust.js:983) — the first
+      // run passed 0 and disabled the whole would-file lane.
+      const fake = { id: 999999, supplier_name: m.supplier_name, document_type_id: detId, overall_confidence: m.overall_confidence };
       try { const v = trust.isAutoFileEligible(db, fake, { extractions: rex }); wouldFile = v.eligible; afReason = v.reason; } catch {}
     }
     if (wouldFile) a.wouldFile++;
     if (wouldFile && F.some(f => s[f] === false)) a.wrongWouldFile++;
-    if (r.control && F.some(f => s[f] === false)) { a.cbad++; controlBad++; }
+    // a CONTROL is bad only on a SILENT wrong value or a wrong TYPE — an empty/flagged field on a
+    // control is a held doc, which is a finding, not a broken harness
+    if (r.control && (silent || s.type === false)) { a.cbad++; controlBad++; }
     jl.push({ file: r._base, cls, variant: r.variant, control: !!r.control, type_ok: s.type, supplier_ok: s.supplier,
       ref_ok: s.ref, date_ok: s.date, total_ok: s.total, wouldFile, afReason, overall: m.overall_confidence,
       got: { type: detSlug, supplier: m.supplier_name, ref: rk ? ef(m, rk) : null, date: dk ? ef(m, dk) : null, total: gotTotal },
@@ -182,11 +200,11 @@ function runShards(folder, args, files, env) {
 
   const pct = (o, n) => n ? (100 * o / n).toFixed(0) + '%' : '-';
   const out = [`# Hard Set score — ${REND} ${ARM} (${rows.length} docs, DPI ${process.env.OCR_RENDER_DPI || 200}, app env mirrored)`, ''];
-  out.push('| class | n | type | supplier | ref | date | total | SILENT-wrong docs | would-file | wrong+would-file | controls bad |');
-  out.push('|---|---|---|---|---|---|---|---|---|---|---|');
+  out.push('| class | n | type | supplier | ref | date | total | EMPTY-held docs | SILENT-wrong docs | would-file | wrong+would-file | controls bad |');
+  out.push('|---|---|---|---|---|---|---|---|---|---|---|---|');
   for (const cls of Object.keys(agg).sort()) {
     const a = agg[cls];
-    out.push(`| ${cls} | ${a.n} | ${pct(a.ok.type, a.scored.type)} | ${pct(a.ok.supplier, a.scored.supplier)} | ${pct(a.ok.ref, a.scored.ref)} | ${pct(a.ok.date, a.scored.date)} | ${pct(a.ok.total, a.scored.total)} | ${a.silent} | ${a.wouldFile} | ${a.wrongWouldFile} | ${a.cbad}/${a.cn} |`);
+    out.push(`| ${cls} | ${a.n} | ${pct(a.ok.type, a.scored.type)} | ${pct(a.ok.supplier, a.scored.supplier)} | ${pct(a.ok.ref, a.scored.ref)} | ${pct(a.ok.date, a.scored.date)} | ${pct(a.ok.total, a.scored.total)} | ${a.miss || 0} | ${a.silent} | ${a.wouldFile} | ${a.wrongWouldFile} | ${a.cbad}/${a.cn} |`);
   }
   out.push('');
   for (const cls of Object.keys(mism).sort()) {
