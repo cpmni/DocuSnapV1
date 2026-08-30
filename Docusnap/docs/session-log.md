@@ -3057,3 +3057,29 @@ live in `HANDOVER_2026-08-20_EVENING.md` + `memory/project_*_20260819.md`.
 
 ## (archived from CLAUDE.md on 2026-08-27) 2026-08-26 NIGHT (identifier-registry arc + Chris R5 cards + switch inventory/flip): HANDOVER_2026-08-26_NIGHT.md
 Branch feat/teach-side-overnight, HEAD f2349f9, commits LOCAL/NOT pushed. THE FRESH SESSION IS TO BUILD THREE FEATURES: (1) CLASS F — one general "corroboration clears a verification-doubt note" rule (gary-AUDITED, NOT built; edge-cut 31901 exhibit; the rule must LIFT the field to 90 not just pop the note; allowlist + >=2-distinct-family + shape-pass + deny-by-default seam; pendingfeatures.md:51); (2) LANDMARK BOX SNAP — BUILT, UNCOMMITTED in settings/renderer.js addLandmarkFromRect — add a pin + commit; (3) TARGETED FIELD RE-SLICE after a teach — DESIGN-STAGE (needs advisor+Oracle). Shipped: Chris R5 cards 1-6 (position_teach_nudge + issuer_suggest_on_blank_confirm DEFAULT-ON via mig 89), row-badge->classify(), quiet-lane 2 workers, the supplier hard-identifier registry slices 1a+1b DARK (identifier_registry — Oracle SIGN-OFF-W/COND, do NOT flip until a REAL-customer-VAT corpus + M=0 + Oracle ratify). Switch inventory: only 6 DARK remain. d811cce=features, f2349f9=mig 89.
+
+---
+# Archived from CLAUDE.md at the 2026-08-30 NIGHT wrap (verbatim)
+## (previous) 2026-08-30 DAY: **READ `HANDOVER_2026-08-30.md`.** Branch `feat/teach-side-overnight`, **HEAD `0ff8b42`,
+NOT pushed** (owner reviews then pushes). Uncommitted: only `CLAUDE.md`. **Dev app RUNNING** (I relaunched `npm start` on the
+real DB). **NEXT SESSION'S JOB = the CORROBORATION RE-SLICE ARC** (owner APPROVED) â€” read
+`docs/designs/CORROB_RESLICE_SWEEP_2026-08-30.md`: **fix #1** discount a format-INVALID corroboration witness (small â€” clears
+the Nordwind-0023 total flag, since keyword already read `2,363.76` + it reconciles), then **fix #2** the owner's capped
+corroboration-gated **re-slice sweep** for total/ref/date (higher-DPI zone RE-RENDER + PSM/binarise/Â£-strip/straighten ladder,
+STOP on corroboration, adopt only then, â‰¤~4-6 tries, review-bound). oscar/reggie/007 â†’ Oracle â†’ DARK switch â†’ OFF/ON census.
+**SHIPPED this session (all NOT pushed):** (1) **deskew re-read PIVOTED + shipped `4607cc6`** (DARK `DESKEW_REVIEW_RETRY` /
+setting `deskew_review_retry_enabled`, floor 0.3Â°): a 200-DPI census FALSIFIED the field-scoped slice arm (fired 0Ã— â€” the
+garbled names read 88-96%, never *withheld*) so it was REMOVED (`ocr/deskew_reread.py` + its pin gone, `engine.py` back to
+single-pass); replaced by a **review-bound whole-page straighten retry** in `process_docs.py` (after `engine.extract`, only on
+a doc already `_needs_review` + page skew â‰¥ floor, re-OCR straightened, adopt WHOLE only if `_overall_confidence` strictly
+higher, forced `needs_review` â€” never auto-files a straightened read, can't demote a clean auto-file). Gate: **5/20 Nordwind
+identities healed, 0 regressions**; pin `test_deskew_review_retry.py` 13/13; withhold path unchanged. (2) **Settings toggle
+`8333023`** (standard visible Processing row) + `deskew_review_retry_enabled` set TRUE on the live DB for testing â€” **RESTART to
+see the toggle**; behaviour already active (handler reads the setting live at spawn). (3) **Live-DB switch audit:** all **148**
+mig-93 "should be on" switches already ON, `dev_switches_unlocked` already true (dev switches visible in Processing) â€” nothing
+to flip. **CORRECTED stale claim:** the mid-session "every Nordwind ref/date is empty (template gap)" was a SANDBOX artifact
+(`scratchpad/live_e44gate.db` lacks the owner's live learning) â€” on the live app they fill; NOT a defect. **Traps:** the
+`!= '0'` switch idiom reads an EMPTY string as ON (a switch-A/B OFF arm must be explicit `'0'`); harness must set
+`OCR_RENDER_DPI=200` (product DPI; harness defaults 300); `git commit -F <file>` ONLY. **The Electron 44 upgrade (PR #12) is
+DONE + VM-confirmed** â€” no longer the pending job. Prior:
+
