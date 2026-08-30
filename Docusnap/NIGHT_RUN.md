@@ -6,10 +6,30 @@
 > "repeat only if" condition — so no night repeats work unless it is needed.** Before planning a night, read the
 > DONE ledger first. Keep entries one to three lines; detail lives in the linked report/handover.
 
-## TONIGHT (the active prompt)
-- `docs/designs/NIGHT_RUN_2026-08-31_ADVERSARIAL_CORPUS.md` — build the Hard Set (10 classes × digital + scan), score
-  cold/warm, advisor class cards for the top-3 would-file-wrong classes, `/christest` on the scan set, morning
-  handover. Fixes only DARK + Oracle + realdoc-605 gated.
+## TONIGHT — PENDING (starts when the owner says "going to bed")
+**Prompt:** `docs/designs/NIGHT_RUN_2026-08-31_ADVERSARIAL_CORPUS.md` (paste the `=== PROMPT ===` block, or the armed
+session starts it itself). **Queued 2026-08-30 by the owner:** "generate a set of multi columned documents for testing,
+and examples of other areas you feel may pose problems … create the test docs, run them through their paces and get
+chris to test them." Branch `feat/teach-side-overnight` at `9b16b08`+.
+
+| Phase | Budget | What | Deliverable |
+|---|---|---|---|
+| 0 orient | ≤30 min | read the 08-30 NIGHT handover + the pendingfeatures block; `db.backup()` a fresh live copy; read the three rigs (`gen_demo_digital.py`, `gen_customer_test.py` incl. `scanify()`, `score_demo_digital.js`, `realdoc_regression.js`) | the DB copy under the session scratch |
+| 1 build | ≤3 h | `stress_test/gen_hard_set.py`: 10 classes × ≥3 NEW synthetic issuers × ~20 docs, TWO renditions (digital text-layer + rasterised scan at 150/200 DPI with skew/noise/fade), one `ground_truth.json` (row per file, `class` tag), `--smoke` first + eyeball 10 PNG renders before the full run, `README_PROTOCOL.txt` | `Desktop\Hard Set\{digital,scan}\`, commit `feat(stress): gen_hard_set.py …` |
+| 2 score | ≤2 h | `stress_test/score_hard_set.js` from `score_demo_digital.js`: per class × rendition accuracy (type/supplier/ref/date/total/subtotal/tax), SILENT-wrong list, would-auto-file via `trust.isAutoFileEligible`, "wrong AND would file" per class; arms COLD digital · COLD scan · WARM scan, all at `OCR_RENDER_DPI=200` with the app env mirrored; control docs must score clean first | `docs/HARD_SET_REPORT_2026-08-31.md` + commit |
+| 3 triage | ≤1.5 h | top-3 would-file-wrong classes → the matching advisor (reggie dates/money/signs · oscar small print/degraded · 007 placement/columns · herald type/logo siblings · gary design) → a CLASS CARD each (mechanism · seam · smallest fix · gate); **build nothing** unless trivial + DARK + Oracle + realdoc-605 gated, one at most | cards in the report + `pendingfeatures.md` |
+| 4 Chris | ≤2 h | `/christest` with the scan set copied into the sandbox (never the Desktop original); cold import as a new customer, teach two issuers (⊕ + wizard), File All, then the multi-column / small-print docs in Review — is a wrong total visible and flagged or "Nothing looks wrong"?; warnings truth table; ≤8 cards by harm; implement nothing | `docs/CHRIS_FULL_APP_REVIEW_2026-08-31.md` (verbatim + round header) |
+| 5 wrap | ≤30 min | `HANDOVER_2026-08-31_MORNING.md`, CLAUDE.md LATEST block (demote tonight's, archive to `docs/session-log.md`), memory + `MEMORY.md`, `pendingfeatures.md` cards, **this file: move the done work to the DONE ledger with results + "repeat only if", add the new QUEUE candidates, clear TONIGHT**; sandbox left on 9223 with its PID; commit, no push | the morning handover |
+
+**The ten classes:** `multicol_money` · `table_total` · `small_print` (8/9 pt + an 11 pt control) · `edge_date`
+(flush-edge, `1/12` vs `11/12`, ISO, US, month names) · `buyer_large` · `continental` (+ EU VAT ids; scan matters) ·
+`logo_siblings` · `degraded` (1-3° skew, faint serial, thermal, staple blot, fax header) · `multipage` · `credit_sign`
+(`-£`, `£-`, `(x)`, `x-`, `CR`, dash-leader control).
+**Guard rails:** live app + live DB + `Desktop\Demo Docs` read-only; no new deps; `git commit -F` only; never push;
+the six junctures (esp. #1 look at the whole rendered frame, #6 verify at the source); ≤1 h per class; a class that
+won't render legibly after two attempts is dropped and said so; every phase reports even if partial.
+**Expected morning outcome:** a second corpus shape with scores, a ranked list of what to build next, Chris's
+verdict — and zero unvetted pipeline changes.
 
 ## QUEUE — worth testing or checking (ranked; add freely, date each)
 - **2026-08-30 · The baseline 7 wrong auto-files (M = 7 / 605, 1.2 %) — the leading/garbled-digit DATE class**
