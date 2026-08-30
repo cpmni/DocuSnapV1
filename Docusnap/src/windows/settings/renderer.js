@@ -715,6 +715,15 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // Light-text recovery (2026-08-27, oscar + 007 → Oracle): the threshold-200 supplementary
                          // full-page pass that recovers small light-grey print into the page text (DARK).
                          ['light-text-recovery-toggle', 'ocr_light_text_recovery'],
+                         // Re-slice witness sweep + the money-format record hygiene (2026-08-30, owner arc;
+                         // oscar/reggie/007 → Oracle): all three DARK. The sweep re-reads a taught TOTAL box
+                         // whose read disagrees with an arithmetic-corroborated committed value and hands an
+                         // AGREEING re-read to the signed demoters as a crop-side witness; the discount keeps a
+                         // format-invalid witness out of `disagree`; the strict-money sub-flag tightens the
+                         // format-fail yield's currency leg (inert unless template_format_fail_yield is on).
+                         ['reslice-witness-toggle', 'reslice_witness_sweep'],
+                         ['corrob-discount-invalid-toggle', 'corrob_discount_invalid_witness'],
+                         ['format-fail-strict-money-toggle', 'template_format_fail_yield_strict_money'],
                          // Barcodes (2026-08-26, barry → gary design): the page inventory and the field type.
                          ['barcode-inventory-toggle', 'barcode_inventory'],
                          ['barcode-field-toggle', 'barcode_field'],
@@ -1035,6 +1044,8 @@ const DEV_SWITCH_IDS = [
   'name-corrob-adopt-toggle', 'corrob-recompute-fc-toggle',
   // 2026-08-16 additions (Oracle S-O-W/C): the P prefix-adopt lane + the vacuous-witness suppression.
   'ref-prefix-confusable-adopt-toggle', 'raw-witness-vacuous-suppress-toggle',
+  // 2026-08-30 re-slice witness arc (all DARK): reading internals, dev-gated like the other corrob switches.
+  'reslice-witness-toggle', 'corrob-discount-invalid-toggle', 'format-fail-strict-money-toggle',
   // Round-7 card-1/card-3 switches (mig 72, all OFF).
   'filing-sanity-page-match-v2-toggle', 'vat-reg-symbol-confusable-toggle', 'money-sign-capture-toggle',
   // The class correction (mig 74, OFF) — dev-gated until the confirm-path harness has run.

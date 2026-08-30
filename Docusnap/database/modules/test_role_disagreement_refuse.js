@@ -28,6 +28,9 @@ const check = (label, cond) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}
 
 const db = new Database(':memory:');
 runMigrations(db);
+// Migration 93 (2026-08-30) seeds `trust_role_disagreement_refuse` ON for a fresh install, so the "OFF
+// (default)" section below must state the OFF arm explicitly — it pins the SWITCH semantics, not the seed.
+learning.setSetting(db, 'trust_role_disagreement_refuse', 'false');
 db.prepare("INSERT INTO document_types (id, name, slug, built_in, ref_field_key, date_field_key) VALUES (1, 'Invoice', 'invoice', 1, 'invoice_number', 'invoice_date')").run();
 for (const [k, req, type] of [['supplier_name', 1, 'text'], ['invoice_number', 1, 'text'], ['invoice_date', 1, 'text'], ['total_amount', 0, 'text']])
   db.prepare("INSERT INTO fields (document_type_id, key, label, type, required, enabled, built_in) VALUES (1, ?, ?, ?, ?, 1, 1)").run(k, k, type, req);
@@ -74,6 +77,15 @@ check("a NON-role field's disagreement does not refuse here (only the filing-cri
 const none = mk(null);
 check('absent record → fail-open (no refusal on this gate)', !/disagreeing-read/.test(trust.isAutoFileEligible(db, row(none)).reason || ''));
 check('_pageFamilyDisagrees parses a string record and names the page family + value', JSON.stringify(trust._pageFamilyDisagrees(DIS)) === '{"family":"keyword","value":"12/10/2026"}' && trust._pageFamilyDisagrees(MEM) === null && trust._pageFamilyDisagrees('not json') === null);
+// Oracle C8 (2026-08-30, the format-invalid witness DISCOUNT): the engine may move a deterministically
+// unreadable candidate from `disagree` into an additive `discounted` list so it stops blocking the LICENCE —
+// but a ROLE whose page read was junk still gets a human look on THIS gate (disagree ∪ discounted).
+const DISC = '{"winner_family":"mapping","agree":[],"disagree":[],"discounted":[{"family":"keyword","value":"17/12/202","reason":"date_format_invalid"}],"independent_agree":false}';
+const disc = mk(DISC);
+check("C8: a DISCOUNTED junk page read on a role still refuses 'disagreeing-read:invoice_date' (disagree ∪ discounted)", trust.isAutoFileEligible(db, row(disc)).reason === 'disagreeing-read:invoice_date');
+check('C8: _pageFamilyDisagrees names the discounted family + value', JSON.stringify(trust._pageFamilyDisagrees(DISC)) === '{"family":"keyword","value":"17/12/202"}');
+check('C8: _corrobLicensed is UNCHANGED by discounted (licence keys on disagree only; this record has no agree → not licensed)', trust._corrobLicensed(DISC) === false
+      && trust._corrobLicensed('{"winner_family":"mapping","agree":["keyword"],"disagree":[],"discounted":[{"family":"crop","value":"x"}],"independent_agree":true}') === true);
 process.env.TRUST_ROLE_DISAGREEMENT_REFUSE = '0';
 check('env 0 → off', trust._roleDisagreementRefuseEnabled(db) === false);
 delete process.env.TRUST_ROLE_DISAGREEMENT_REFUSE;

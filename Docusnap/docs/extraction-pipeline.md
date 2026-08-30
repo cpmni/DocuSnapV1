@@ -1003,3 +1003,65 @@ date/ref is legitimately ABSENT on some layouts will be over-flagged — there's
 
 ---
 
+
+## 2026-08-30 — Re-slice WITNESS sweep (engine stage 4.7) + money-format record hygiene
+Design + measurements: `docs/designs/CORROB_RESLICE_SWEEP_2026-08-30.md` (REVISED banner). Owner ask: "if there's a
+note AND the straighten didn't fix it, re-slice using different parameters until we get corroboration, up to a max
+number of tries." Everything DARK (mig 94 seeds OFF): `RESLICE_WITNESS_SWEEP` / `reslice_witness_sweep`,
+`CORROB_DISCOUNT_INVALID_WITNESS` / `corrob_discount_invalid_witness`, `TEMPLATE_FORMAT_FAIL_YIELD_STRICT_MONEY` /
+`template_format_fail_yield_strict_money` (a sub-flag AND-ed with `template_format_fail_yield` in the bridge).
+
+**The exhibit (faithful replay, product config, 200 DPI).** Nordwind quote 0023: the taught total box reads
+`29,242.76` @90 through the product crop ladder — a FORMAT-VALID garble (the prior session's `£9 32632.76` was a raw
+slice OCR, not the product read). It wins on curated authority over `keyword_override £2,363.76` @93;
+`_reconciliation_pick_total` swaps to `2,363.76` (1,969.80 + 393.96, penny-exact) with `RECON_TOTAL_ADJUSTED_NOTE`;
+the signed demoter `_demote_recon_total_corroborated_note` (ON live) requires a CROP-SIDE penny-exact witness and the
+only crop-side read is the garble — the note can never release. Engine `_needs_review` stays False (a note never sets
+it); the JS `isAutoFileEligible` holds the doc on the note.
+
+**What heals it (measured on the product read path, 20 Nordwind total boxes).** Not DPI (pad 0 fails at 200/300/400/
+600). Not the upscaling preps (`_struct_prep`/`_prep` at any pad: 0023 wrong, and a vertical pad DEGRADES the 19 clean
+zones under PSM 7 — wrong digits at conf 22-70). **R8 = the taught box padded 0.5×h on every side, NO upscale, 20 px
+white border, PSM 6 `image_to_data`, IN-BAND line pick (a line qualifies iff its y-band overlaps the original box band
+by ≥50 % of the line's height; exactly one qualifier else abstain): 20/20 exact incl. 0023 (`£2,363.76` @92), 0
+format-valid wrong reads.** R7 (vertical pad 1.0) also 20/20. That is the shipped `_read_pad_window_date/code`
+recipe minus its ×2 `_prep` upscale (which reads '' on 0023); currency simply had no pad-window reader.
+
+**Stage 4.7 `ExtractionEngine._reslice_witness_sweep` (`extraction/reslice.py` reader).** A WITNESS-PRODUCER, never a
+decider; v1 = TOTALS only. Trigger: the total role field carries a note; its committed value is a strict money shape
+AND penny-reconciles (`_penny_reconciles`: zero-cent delta, shipping/discount in and out, sign agreement with the
+subtotal row — `total_reconciles`' ±2 % is a FLAG tolerance, never an adoption licence); a Stage-0.5 mapping exists
+for it on a page in hand; the zone's own ledger read is absent or cents-different. Then `read_money_witness` runs R8
+then R7 (`RESLICE_MAX_TRIES`, default 2) on the box the mapper ACTUALLY read (`extract_with_mappings(read_geoms_out=)`
+— every rung stamps a private `_read_geom` that the mapper pops before returning, so result dicts are byte-identical)
+and STOPS at the first read that is strict-shape AND cents-equal AND sign-equal to the COMMITTED value. That read is
+injected as ONE un-noted ledger candidate `template_mapping_resliced` (stage `4.7_reslice` → the existing `mapping`
+family via the `template` prefix in `_crosscheck_witness_bucket`; never a new family) BEFORE `_build_corroboration_emit`;
+`reslice_witness` provenance rides on the record. A disagreeing re-read is NEVER injected (it can neither add nor
+suppress a dissent); the sweep commits nothing. The record then shows the mapping family agreeing (the garble is
+suppressed by its own family's agreement — the existing rule), `_corrob_licensed` holds, and the signed demoter
+releases the note under its own rails (crop-side ≥80, penny-exact, sign, arithmetic re-verify, no confidence minted).
+Census: `RESLICE_CENSUS_DIR` records every decline reason. Pins: `tests/test_reslice_witness.py`.
+Dates/refs are NOT in v1: their trigger must be "the zone's own read was ABSENT or format-INVALID" (a valid different
+zone read is a genuine dissent a padded re-read must never out-vote — the `trust_role_disagreement_refuse` seam), and
+the ref crosscheck demoter is Oracle-B2-deferred. Own slice.
+
+**Record hygiene.** `number_format.money_strict_shape` (whole-string amount after the idempotent `canonical` +
+`normalise_currency_spacing` cleaners; sign/symbol/code/parens stripped; `money_cents` = integer cents + raw-string
+sign) is the ONE strict money predicate (`template_mapper._money_wellformed` is now an alias of the hoisted
+`money_wellformed`). `engine.format_invalid_witness` (currency → not strict; date → `salvage_date_detail` finds
+nothing; codes never) routes such a candidate to the record's additive `discounted` list instead of `disagree`
+(`self._val_types` = per-run key → validation type). Measured target: 8 of the 10 money dissents stored in the
+owner's DB (`C9,262.76`, `£2.205.60`, `£0/2.0U` — older-vintage zone reads). Known non-discount by the cleaners'
+contract: a space-split the respacing pass can rejoin (`£9 242 76` → `£9,242.76`) is a VALID shape. The
+`_stage05_format_fails` currency leg was a leading-glyph test + the sign-blind `parse_amount` SEARCH (so `£9 32632.76`
+"passed" as 9.0 and the docstring's `'-3 5982.70'` claim was false); the strict sub-flag replaces it with
+`money_strict_shape`. Pins: `tests/test_money_strict_shape.py`.
+
+**Deskew retry correction (`DESKEW_REVIEW_RETRY`, process_docs).** The retry's `raw2["_needs_review"]=True` was a
+DEAD GUARD live: `_maybeAutoFile` consults `msg.needs_review` only when `autofile_gate_unify` is OFF (mig 93 → ON).
+On ADOPT every field whose VALUE changed between the raw and straightened reads now carries
+`Read differently after straightening — was 'X', now 'Y' — confirm once.` (the `_isLaneHoldNote` family — holds at
+every floor, survives reprocess merges, says what changed); unchanged values get no note. Also noted, not fixed: the
+retry keys on engine `_needs_review` (required-empty OR field<70) so it never fires on a NOTE-only hold (0/20 on the
+Nordwind corpus).

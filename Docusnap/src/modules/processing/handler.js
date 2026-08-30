@@ -432,6 +432,29 @@ function _reconcileEnv(db) {
     if (env.OCR_LIGHT_TEXT_RECOVERY == null && learning.getSetting(db, 'ocr_light_text_recovery', 'false') === 'true') {
       env.OCR_LIGHT_TEXT_RECOVERY = '1';
     }
+    // RE-SLICE WITNESS SWEEP (2026-08-30, owner arc; oscar recipe + 007 geometry + reggie STOP → Oracle; DARK):
+    //   engine stage 4.7, TOTALS only — a noted total whose committed value penny-reconciles but whose taught
+    //   zone read disagrees gets the zone RE-READ (pad, no upscale, white border, PSM 6, in-band line pick);
+    //   an AGREEING re-read is injected into the per-run ledger as a crop-side witness so the signed
+    //   `_demote_recon_total_corroborated_note` can release the "adjusted to the total that balances" note.
+    //   Commits nothing; a disagreeing re-read is never injected. Env wins both ways for harness arms.
+    if (env.RESLICE_WITNESS_SWEEP == null && learning.getSetting(db, 'reslice_witness_sweep', 'false') === 'true') {
+      env.RESLICE_WITNESS_SWEEP = '1';
+    }
+    // FORMAT-INVALID WITNESS DISCOUNT (2026-08-30, reggie; DARK): a deterministically unreadable amount/date
+    //   candidate lands in the record's additive `discounted` list instead of `disagree` (the JS readers
+    //   `_corrobLicensed` / `_pageFamilyDisagrees` read the same record unchanged).
+    if (env.CORROB_DISCOUNT_INVALID_WITNESS == null && learning.getSetting(db, 'corrob_discount_invalid_witness', 'false') === 'true') {
+      env.CORROB_DISCOUNT_INVALID_WITNESS = '1';
+    }
+    // STRICT MONEY sub-flag of TEMPLATE_FORMAT_FAIL_YIELD (2026-08-30, reggie; DARK): the yield's currency
+    //   leg becomes the whole-string `money_strict_shape` (the legacy leg passes '£9 32632.76' as 9.0).
+    //   AND-ed with the parent HERE — a sub-flag armed without its parent bridges nothing.
+    if (env.TEMPLATE_FORMAT_FAIL_YIELD_STRICT_MONEY == null
+        && learning.getSetting(db, 'template_format_fail_yield_strict_money', 'false') === 'true'
+        && learning.getSetting(db, 'template_format_fail_yield', 'false') === 'true') {
+      env.TEMPLATE_FORMAT_FAIL_YIELD_STRICT_MONEY = '1';
+    }
     // BARCODES (2026-08-26, barry → gary design; both DEFAULT OFF, byte-identical off):
     //   barcode_inventory — decode every symbol on the OCR-rendered pages (ocr/barcodes.py) and
     //     persist them (document_barcodes, mig 91) for full-text search; no customer UI.

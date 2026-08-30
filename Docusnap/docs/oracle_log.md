@@ -2297,3 +2297,44 @@ set = design §11):
 - **Gate:** realdoc M=0 proves inertness, not correctness → add a ≥3° skewed census (fired/adopted/filed counts
   + zero non-two-leg ref/date auto-files) + a negative caption-commit census (the `DESKEW_RAW_CROPS` RED class)
   + the named pins. DARK until met.
+
+---
+## 2026-08-30 EVENING · Re-slice WITNESS sweep (totals) + money-format record hygiene + deskew dead guard — SIGN OFF WITH CONDITIONS
+Design `docs/designs/CORROB_RESLICE_SWEEP_2026-08-30.md` (REVISED banner). Advisors oscar (ladder) + reggie (strict
+predicate / STOP) + 007 (frame + which rectangle) → Oracle. Premises measured on a faithful replay: 0023's zone reads
+`29,242.76` @90 (a format-VALID garble, not `£9 32632.76`); the lever is vertical headroom, not DPI; R8 (pad 0.5×h, no
+upscale, white border, PSM 6, in-band pick) 20/20 vs padded PSM-7 15/20 with wrong digits → witness-only.
+- **Item 1 `RESLICE_WITNESS_SWEEP` — SIGN OFF W/COND.** Admissible for the recon demoter's crop leg; NOT review-bound
+  (the demoter's signed posture carries; the census is the flip bar); keep penny-reconcile as the trigger, made
+  non-vacuous. **C1** trigger = `RECON_TOTAL_ADJUSTED_NOTE` EXACTLY (closes the class-C shadow-attribution seam —
+  one producer, one consumer). **C2** `_penny_reconciles` requires the tax to be READ (0.00 ok) — `subtotal + 0 == total`
+  is the 2026-08-06 false balance. **C3** `money_token`: exactly ONE strict amount on the picked line, else abstain (a
+  Net/Gross two-amount line could vouch for the gross from the neighbouring column). **C4** witness confidence = the
+  amount token's OWN word confidence (min with the line mean), never the caption-inflated line mean. **C5** pin
+  PASS-2: total note released, subtotal note survives, doc still held. **C6** pin `prep` non-scaling (band + 20 px) and
+  the 0-based page index.
+- **Item 2 `CORROB_DISCOUNT_INVALID_WITNESS` — SIGN OFF W/COND, CURRENCY-ONLY in v1.** The JS consumers of a ROLE
+  record are LIVE (mig-93 ON set: corroboration_autofile, critfield relax, trust_role_disagreement_refuse). **C7**
+  route `discounted` only for currency; the date leg stays in the predicate + pins. **C8** JS `_pageFamilyDisagrees`
+  scans `disagree ∪ discounted` (a discounted junk ROLE dissent still refuses; `_corrobLicensed` unchanged). **C9**
+  dev-inspector shows `discounted` beside `disagree`.
+- **Item 3 `TEMPLATE_FORMAT_FAIL_YIELD_STRICT_MONEY` — SIGN OFF as DARK code, DO NOT FLIP in this arc.** SEAM: on the
+  format-invalid zone-read class the strict yield pre-empts item 1's release path (mapping yields at the Stage-1 merge
+  with the yield note, capped 88 → the pick early-returns → no RECON note → the sweep never fires → permanently held);
+  it wins only on the NON-reconciling sub-class. **C10** seam pin; **C11** flip-order rule: never flip strict-money
+  before its own census (fires split reconciling / non-reconciling).
+- **Item 4 deskew retry dead guard — SIGN OFF W/COND.** Verified: `_maybeAutoFile` consults `msg.needs_review` only
+  with gate-unify OFF (`handler.js:5633-5637`); `autofile_gate_unify` defaults ON (`database/index.js`). **C12** an
+  EMPTIED field counts as a change (stub row + note). **C13** the charter is now FIELD-level ("never silently
+  auto-files a straightening-CHANGED value"; a same-value lift files normally) — docstring + handover + pin. **C14**
+  wiring pin: holds applied BEFORE `raw_extractions = raw2`, the note reaches the emitted extractions. Premise
+  correction for the owner: the 5/20 heals were measured on a sandbox whose ref/date were EMPTY (the fire
+  condition); live they fill, so the live TRUE setting is mostly inert on note-only holds.
+- **R8 as the PRIMARY money read — NO** (one template / one DPI / one font; no upscale on a 9-pt total is the
+  tight-crop-starves-the-LSTM class). Licensing census: every taught currency mapping across ≥5 templates at 200 AND
+  300 DPI, tight vs R8 vs GT, 0 T→F, 0 new format-valid wrong reads, pad-window suites byte-identical.
+- **Gate before any flip:** Nordwind 20 OFF/ON at 200 DPI (0023 released, value unchanged, 19 byte-identical — MET);
+  full realdoc `RR_APP_ENV=1` on the live copy, each switch alone AND all-on: M=0, 0 new wrong would-file, 0 per-field
+  accuracy drop; `RESLICE_CENSUS_DIR` + `recon_demote_census.jsonl` over the corpus (fires ≥1, released-and-wrong = 0);
+  class-C fire count OFF vs ON identical on non-currency fields. Flip order: sweep → discount → (never in this arc)
+  strict-money.

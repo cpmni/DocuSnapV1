@@ -832,6 +832,27 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Re-read a taught total box when its reading doesn't add up</div>
+                <div class="threshold-sub">When a document's total carries a "please verify" warning even though the amount the app kept adds up exactly from the subtotal and tax, and the taught box read something different, the box is read again with a little more room around the text (up to two tries). If that second look reads the same amount the app kept, it counts as a second independent reading and the warning can be released by the usual rules. A second look that reads anything else is ignored — nothing is ever changed by it. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="reslice-witness-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't count an unreadable amount or date as a disagreement</div>
+                <div class="threshold-sub">When one way of reading the page produced something that cannot be an amount or a date at all (digits with a stray space, two decimal points, letters in the number), it is noise, not a second opinion — it no longer blocks the "two readings agree" checks. A real, well-formed different value still counts as a disagreement. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="corrob-discount-invalid-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Strict amount check for taught boxes (part of "keep the read value when a taught mapping doesn't match the format")</div>
+                <div class="threshold-sub">Tightens the amount test used by the "taught mapping read something that doesn't match this field's format" rule so a garbled amount with a stray space or a second decimal point is treated as unreadable. Only has an effect when that rule is also on. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="format-fail-strict-money-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Straighten a tilted page and read it again when a document needs checking</div>
                 <div class="threshold-sub">When a document is already going to Review and its page is tilted by even a fraction of a degree, ScanFinder re-reads it on a straightened copy and keeps the straightened reading only if it comes out clearer — otherwise the original reading stays. It never files anything by itself from a straightened read, and it only ever touches documents that were already going to Review, so it can't change a document that was filing itself cleanly. Adds a little time on tilted scans. Off by default.</div>
               </div>

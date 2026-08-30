@@ -538,7 +538,13 @@ function _pageFamilyDisagrees(record) {
   let rec = record;
   if (typeof rec === 'string') { try { rec = JSON.parse(rec); } catch { return null; } }
   if (!rec || typeof rec !== 'object' || !Array.isArray(rec.disagree)) return null;
-  const hit = rec.disagree.find(d => d && _CORROB_PAGE_FAMILIES.has(String(d.family || '')));
+  // Oracle C8 (2026-08-30): the ROLE refusal scans `disagree ∪ discounted`. The engine's format-invalid
+  // witness DISCOUNT (CORROB_DISCOUNT_INVALID_WITNESS) moves a deterministically unreadable candidate into
+  // an additive `discounted` list so it stops blocking the LICENCE (`_corrobLicensed` stays on `disagree`
+  // only) — but a role field whose page read was junk still gets a human look here. Conservative by
+  // construction: a future date leg of the discount inherits this without a JS change.
+  const pool = rec.disagree.concat(Array.isArray(rec.discounted) ? rec.discounted : []);
+  const hit = pool.find(d => d && _CORROB_PAGE_FAMILIES.has(String(d.family || '')));
   return hit ? { family: String(hit.family), value: String(hit.value ?? '') } : null;
 }
 function _corrobLicensed(record) {

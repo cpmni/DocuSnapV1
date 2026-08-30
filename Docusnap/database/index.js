@@ -2252,6 +2252,22 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 93 defaults: ${e.message}`); }
   }
 
+  // ── Migration 94: seed the 2026-08-30 re-slice witness arc switches OFF (DARK until their census + Oracle
+  // ratify). INSERT OR IGNORE: an existing choice is never overwritten. reslice_witness_sweep = the taught
+  // total-box re-read witness (engine stage 4.7); corrob_discount_invalid_witness = the record's format-invalid
+  // witness discount; template_format_fail_yield_strict_money = the strict currency leg of the format-fail yield.
+  if (!applied.has(94)) {
+    try {
+      const ins = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+      let n = 0;
+      for (const key of ['reslice_witness_sweep', 'corrob_discount_invalid_witness', 'template_format_fail_yield_strict_money']) {
+        if (ins.run(key, 'false').changes) n++;
+      }
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (94)').run();
+      console.log(`JS migration 94 applied: ${n} re-slice witness arc switch(es) seeded OFF (DARK)`);
+    } catch (e) { console.warn(`  migration 94 (re-slice witness switches): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

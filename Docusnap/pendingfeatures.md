@@ -4602,3 +4602,33 @@ Context: HANDOVER_2026-08-09_CONT.md. This session REDESIGNED `TEMPLATE_FORMAT_F
 - **CUSTOMER_PO_LABELS field-presence gap.** The default Invoice type has no po_number field, so the flag is
   inert there until either the type carries po_number or the dedicated field above lands. Note in any real-world
   recall claim.
+
+---
+
+## 2026-08-30 EVENING — re-slice witness arc: deferred / follow-ups (owner vet)
+Context: `docs/designs/CORROB_RESLICE_SWEEP_2026-08-30.md` (REVISED banner), `HANDOVER_2026-08-30_NIGHT.md`.
+- **Refs/dates in the re-slice sweep (slice 2).** v1 is totals-only. The ref/date trigger must be "the zone's own
+  read was ABSENT or deterministically format-INVALID" — a valid different zone read is a genuine dissent a padded
+  re-read must never out-vote (the `trust_role_disagreement_refuse` seam: an injected agreeing witness would suppress
+  the zone's dissent through the family-agreement rule). Reuse `_read_pad_window_date/code` as rung 1 (oscar);
+  witness = keyword-family equality (date fold / exact `_cmp_norm`, NO confusable tolerance). The ref crosscheck
+  demoter (`_demote_xcheck_corroborated_note`) is DATES ONLY by Oracle B2 ("refs wait for the ladder fix") — 0030's
+  `NRQ-2551` hold (three reads agree, one Stage-2 anchor-crop garble `NRO-2591` rejected) is that class.
+- **R8 as the PRIMARY money mapping read (census first).** R8 (pad 0.5×h, no upscale, white border, PSM 6, in-band
+  pick) read 20/20 Nordwind totals at ~92 incl. the one the shipped ladder garbles; the shipped `_read_pad_window_*`
+  recipe differs only by its ×2 `_prep` upscale. Promoting it to the primary currency read is a broad change to a
+  shipped path on one template / one DPI of evidence — needs a full-DB census (every currency mapping: R8 vs current
+  vs confirmed) + Oracle. Until then it is the witness-only sweep.
+- **Deskew retry trigger misses note-only holds.** `_deskew_retry_should_run` keys on engine `_needs_review`
+  (required-empty OR field<70); a doc held only by a note never fires it (0/20 on Nordwind). Consider "any note"
+  as a trigger (Oracle — cost: every noted doc with skew ≥0.3° re-OCRs).
+- **Money fold in `_corrob_values_agree` — NOT built (no measured target).** `_EDGE_RE` + whitespace collapse
+  already fold `£`/edge symbols; 19/20 Nordwind totals record `agree:['keyword']`. reggie's design (both strict →
+  cents + sign equality; note the sign-flip behaviour change: today `-160.32` ≡ `160.32`) is ready if a census
+  finds separator-only dissents (`_db_census.py` found 0 of 10).
+- **Total-swap class (garbage zone read WON, no keyword read).** The sweep only WITNESSES a committed value; when the
+  garble itself is committed and only the re-read reconciles, nothing swaps (the pick already ran). Would need the
+  re-read injected before `_reconciliation_pick_total` — its own gate (0 stored exhibits in the owner's DB).
+- **Settings wiring pin pre-existing red:** `test_settings_wiring.js` reports MISSING `stamp-section, stamp-preview-box,
+  stamp-preview, stamp-msg, stamp-size, stamp-size-val, stamp-save, stamp-reset` — HEAD's renderer.js addresses them,
+  HEAD's index.html lacks them (the 08-28 stamping move). Not this arc's; tidy separately.

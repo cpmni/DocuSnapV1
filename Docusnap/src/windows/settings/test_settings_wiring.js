@@ -168,6 +168,10 @@ const BRIDGES = [
   ['filing-sanity-page-match-v2-toggle', 'filing_sanity_page_match_v2', 'FILING_SANITY_PAGE_MATCH_V2'],
   ['vat-reg-symbol-confusable-toggle', 'vat_reg_symbol_confusable', 'VAT_REG_SYMBOL_CONFUSABLE'],
   ['money-sign-capture-toggle', 'money_sign_capture', 'MONEY_SIGN_CAPTURE'],
+  // 2026-08-30 re-slice witness arc (oscar/reggie/007 → Oracle; all seeded OFF by migration 94).
+  ['reslice-witness-toggle', 'reslice_witness_sweep', 'RESLICE_WITNESS_SWEEP'],
+  ['corrob-discount-invalid-toggle', 'corrob_discount_invalid_witness', 'CORROB_DISCOUNT_INVALID_WITNESS'],
+  ['format-fail-strict-money-toggle', 'template_format_fail_yield_strict_money', 'TEMPLATE_FORMAT_FAIL_YIELD_STRICT_MONEY'],
 ];
 const handler = (() => {
   try { return fs.readFileSync(path.join(root, 'src/modules/processing/handler.js'), 'utf8'); }

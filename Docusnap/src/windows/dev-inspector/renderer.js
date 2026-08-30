@@ -441,6 +441,17 @@ function renderField(field, m, flagged, open) {
     } else if (cb) {
       corrobLine = `<div class="desc" style="color:var(--muted)">sole witness (${escapeHtml(cb.winner_family || '?')})</div>`;
     }
+    // Oracle C9 (2026-08-30): a DISCOUNTED witness (a deterministically unreadable amount the record no
+    // longer counts as a dissent — CORROB_DISCOUNT_INVALID_WITNESS) is shown beside the verdict so the
+    // census stays auditable; the re-slice witness (RESLICE_WITNESS_SWEEP) likewise names its rung.
+    if (cb && (cb.discounted || []).length) {
+      const d = cb.discounted.map(x => `${x.family}: “${shownVal(x.value)}”`).join(' · ');
+      corrobLine += `<div class="desc" style="color:var(--muted)" title="a candidate that cannot be an amount/date at all — noise, not a second opinion; recorded, never a dissent">∅ discounted (unreadable) — ${escapeHtml(d)}</div>`;
+    }
+    if (cb && cb.reslice_witness && cb.reslice_witness.value != null) {
+      const rw = cb.reslice_witness;
+      corrobLine += `<div class="desc" style="color:var(--muted)" title="the taught zone re-read under a different recipe agreed with the committed value (witness only — the signed arms decide)">↻ re-slice witness ${escapeHtml(String(rw.rung || ''))}: “${escapeHtml(shownVal(rw.value))}” @${escapeHtml(String(rw.confidence ?? '?'))}</div>`;
+    }
     nodes.push(`<div class="node final"><div class="rail"><div class="dot"></div></div>`
       + `<div class="body"><div class="stage-line"><span class="sbadge s2" style="background:rgba(62,207,142,.16);color:var(--final)">★ FINAL</span>`
       + (reviewForced ? `<span class="desc" style="color:var(--warn)">held for review</span>` : '')
