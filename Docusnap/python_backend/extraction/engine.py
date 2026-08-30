@@ -516,6 +516,13 @@ GATE_REREAD_ENABLED = os.environ.get('GATE_REREAD', '1') != '0'   # default ON; 
 _REREAD_CAP = 69
 # =0: every adopted re-read is review-bound again (the pre-2026-07-23 posture) — byte-identical legacy.
 GATE_REREAD_CLEAN_ACCEPT = os.environ.get('GATE_REREAD_CLEAN_ACCEPT', '1') != '0'
+# S1 of DESKEW_SLICE_REREAD_2026-08-30 (Oracle SIGN OFF W/COND). DARK / default OFF: when a value is
+# withheld/flagged AND its page is skewed >= 3 degrees, re-read only that value's STRAIGHTENED slice and
+# adopt a kin+format-clean read REVIEW-BOUND (never silent — the corroboration-gated auto-file is S2). Off
+# => _maybe_deskew_reread returns None immediately => byte-identical. Env bridged from the setting
+# `deskew_retry_ambiguous_enabled`.
+DESKEW_RETRY_ENABLED = os.environ.get('DESKEW_RETRY_AMBIGUOUS', '0') != '0'
+_DESKEW_MIN_ANGLE = 3.0   # below this Tesseract self-tolerates; straightening only risks harm (design section 2)
 
 
 def _reread_is_normalisation_only(garble, adopted, val_type) -> bool:
@@ -7027,6 +7034,78 @@ class ExtractionEngine:
             'reread':          True,
         }
 
+    def _maybe_deskew_reread(self, garble, data, fmt_entry, val_type, label, field_class,
+                             page_images, page_provenance, deskew_angles, cache):
+        """S1 (DARK: DESKEW_RETRY_ENABLED) of DESKEW_SLICE_REREAD_2026-08-30. Sibling of
+        _maybe_gate_reread, tried ONLY when it returns None: on a skewed (>= _DESKEW_MIN_ANGLE) OCR
+        page, re-read the withheld value on a STRAIGHTENED SLICE around its located box and adopt a
+        kin + format-clean read REVIEW-BOUND (cap 69 + note — never silent; the corroboration-gated
+        auto-file is S2). Off => None => byte-identical. Class-aware locate (name = label-adjacency,
+        ref/date = similarity-to-garble; Oracle C3). Frame invariant: the page image_to_data and the
+        slice crop run on the SAME page-image instance. Abstains on: switch off, no images, a
+        born-digital page, below the angle floor, an ambiguous locate, or a not-kin read."""
+        if not DESKEW_RETRY_ENABLED or not page_images or not garble:
+            return None
+        try:
+            from ocr import deskew_reread
+            from ocr.tesseract import detect_skew_angle, _apply_skew_rotation
+            import pytesseract
+            from pytesseract import Output
+            from PIL import Image
+
+            def _page_ok(pidx):
+                return bool(page_provenance) and 0 <= pidx < len(page_provenance) \
+                    and page_provenance[pidx] == 'ocr'
+
+            def _i2d_crop(img):
+                return pytesseract.image_to_data(img, config='--oem 3 --psm 7', output_type=Output.DICT)
+
+            for pidx, page_image in enumerate(page_images):
+                if not _page_ok(pidx):
+                    continue
+                angle = deskew_angles[pidx] if (deskew_angles and pidx < len(deskew_angles)) else None
+                if not angle:
+                    angle = detect_skew_angle(page_image)
+                if abs(angle or 0.0) < _DESKEW_MIN_ANGLE:      # self-tolerated tilt — straightening only risks harm
+                    continue
+                ck = ('deskew_i2d', pidx)
+                if ck not in cache:
+                    cache[ck] = pytesseract.image_to_data(page_image, config='--oem 3 --psm 3',
+                                                          output_type=Output.DICT)
+                box = deskew_reread._locate_on_crop(cache[ck], garble, label, field_class)
+                if box is None:
+                    continue
+                cap_h = int(box[3]) or 20
+
+                def _rotate_crop(crop, ang, _caph=cap_h):
+                    g = crop.convert('L')                       # greyscale (not binarised — design section 3)
+                    s = max(1.0, 30.0 / max(1, _caph))          # upscale so cap height ~>= 30 px (~300-DPI-equiv)
+                    if s > 1.0:
+                        g = g.resize((max(1, int(g.width * s)), max(1, int(g.height * s))), Image.LANCZOS)
+                    return (_apply_skew_rotation(g, ang), s)    # the ONE rotation impl
+
+                out = deskew_reread.slice_reread(
+                    page_image, box, angle, field_class, garble, label, fmt_entry,
+                    page_image.size, cap_h, rotate_crop_fn=_rotate_crop, i2d_fn=_i2d_crop)
+                if out and out.get('value'):
+                    adopted = out['value']
+                    self.log(f"  Stage 4.5: deskew slice re-read '{garble}' -> '{adopted}' "
+                             f"(review-bound, {float(angle):.1f} deg)")
+                    return {
+                        **data,
+                        'value':           adopted,
+                        'display_value':   adopted,
+                        'was_corrected':   True,
+                        'corrected_to':    adopted,
+                        'confidence':      min(data.get('confidence') or 0, _REREAD_CAP),
+                        'validation_note': f'{_REREAD_NOTE_HEAD}{garble}") — please verify',
+                        'reread':          True,
+                        'reread_deskew':   True,
+                    }
+        except Exception:
+            return None
+        return None
+
     def extract(self,
                 ocr_text:      str,
                 page_images:   list,
@@ -9713,6 +9792,15 @@ class ExtractionEngine:
                         _reread = self._maybe_gate_reread(
                             str(val), data, fmt_entry, field_types.get(key), field_labels.get(key),
                             page_images, page_provenance, _reread_cache)
+                        if _reread is None:
+                            # S1 (DARK, DESKEW_RETRY_ENABLED): before withholding, try a STRAIGHTENED
+                            # slice re-read on a skewed page (DESKEW_SLICE_REREAD_2026-08-30). Off =>
+                            # None => byte-identical. name-role fields locate class-aware (label-adjacency).
+                            _reread = self._maybe_deskew_reread(
+                                str(val), data, fmt_entry, field_types.get(key), field_labels.get(key),
+                                ('name' if key in ('supplier_name', 'customer_name')
+                                 else (field_types.get(key) or key)),
+                                page_images, page_provenance, deskew_angles, _reread_cache)
                         if _reread is not None and _reread.pop('reread_clean', False):
                             # Normalisation-only recovery (spacing/separator/case; calendar-equal
                             # for dates): the crop re-read agreed with the original on every
