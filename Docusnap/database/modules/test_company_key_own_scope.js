@@ -72,6 +72,10 @@ check('after 3 Ironbridge confirms the badge says ready AND the gate passes the 
 process.env.TRUST_COMPANY_KEY_OWN_SCOPE = '0';
 check('env 0 → off', trust._companyKeyOwnScopeEnabled(db) === false);
 delete process.env.TRUST_COMPANY_KEY_OWN_SCOPE;
+// mig 93 seeds trust_company_key_own_scope ON, so state the OFF arm explicitly — this pins the
+// switch's OFF semantics (env unset → the setting decides), not the seed. (Same pattern as the
+// reference test_role_disagreement_refuse.js.)
+learning.setSetting(db, 'trust_company_key_own_scope', 'false');
 check('default (no setting) → OFF (DARK)', trust._companyKeyOwnScopeEnabled(db) === false);
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');

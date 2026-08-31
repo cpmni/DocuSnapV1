@@ -152,7 +152,11 @@ async function main() {
 
   // ── E1 admin cancel-route IPCs (docs/designs/WORKFLOW_ADMIN_CANCEL_2026-07-19.md) ──
   session = { id: 1, username: 'admin', role: 'admin' };
-  const e1r = H['workflow-assign']({}, { documentId: 1, toUserId: 3, actionRequired: 'approve' });
+  // 'acknowledge' (not 'approve'): since the 2026-08-28 stamping gate, routing FOR APPROVAL to a
+  // non-stamper is refused (RECIPIENT_CANNOT_STAMP), and this hand-rolled DB has no signed stamp
+  // grant. This E1 section pins admin-cancel / route projection / history — all action-agnostic — so
+  // an acknowledge route is the faithful "open route" here. The approval gate is pinned in test_stamp_workflow_gate.js.
+  const e1r = H['workflow-assign']({}, { documentId: 1, toUserId: 3, actionRequired: 'acknowledge' });
   session = { id: 2, username: 'editor', role: 'edit' };
   fail += !check('admin-cancel rejects a non-admin session', threwCode(() => H['workflow-admin-cancel']({}, { id: e1r.id, version: e1r.version }), 'FORBIDDEN'));
   session = { id: 3, username: 'reader', role: 'readonly' };

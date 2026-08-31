@@ -68,7 +68,10 @@ function freshDb() {
   u.run(1, 'admin', 'Admin', 'admin'); u.run(2, 'editor', 'Editor', 'edit'); u.run(3, 'reader', 'Reader', 'readonly');
   return db;
 }
-const svc = (extra) => createWorkflowService({ audit: () => {}, stampDecision: () => Promise.resolve(null), ...(extra || {}) });
+// canStamp stubbed true: this suite pins the decision SNAPSHOT, not the 2026-08-28 stamping gate
+// (that lives in test_stamp_workflow_gate.js). Without the stub, assign-for-approval now refuses a
+// non-stamper recipient (RECIPIENT_CANNOT_STAMP) and a.route is undefined before any snapshot runs.
+const svc = (extra) => createWorkflowService({ audit: () => {}, stampDecision: () => Promise.resolve(null), canStamp: () => true, ...(extra || {}) });
 const docStatus = (db, id) => db.prepare('SELECT status FROM documents WHERE id=?').get(id).status;
 
 console.log('§1 OFF ⇒ no snapshot (byte-identical) + documents.status untouched');
@@ -134,7 +137,7 @@ console.log('§5 a THROWING recorder never fails the resolve (best-effort via de
   process.env.WORKFLOW_DECISION_SNAPSHOT = '1';
   const db = freshDb();
   const s = createWorkflowService({
-    audit: () => {}, stampDecision: () => Promise.resolve(null),
+    audit: () => {}, stampDecision: () => Promise.resolve(null), canStamp: () => true,
     dbWorkflow: { ...wf, insertRouteDecision() { throw new Error('boom'); } },
   });
   const a = s.assign(db, admin, { documentId: 1, toUserId: 2, actionRequired: 'approve' });

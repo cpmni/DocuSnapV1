@@ -116,6 +116,9 @@ console.log('\nthe end-anchor defect (a stacked suffix escaped every shipped cla
 console.log('\nOFF is inert');
 {
   const db = freshDb(); seq = 0;
+  // mig 93 promotes learning_exclude_rewrite_markers to 'true' (index.js UPDATE at ~line 2276),
+  // overriding mig 75's 'false'. This section pins the OFF/unset arm mig 75 established, so restore it.
+  learning.setSetting(db, 'learning_exclude_rewrite_markers', 'false');
   for (const v of ['PI/26/1001', 'PI/26/1002', 'PI/26/1003']) addConfirmed(db, v, 'template_mapping');
   addConfirmed(db, 'PI/26/2001', 'anchor_crop+snapped');
   process.env.LEARNING_EXCLUDE_REWRITE_MARKERS = '0';

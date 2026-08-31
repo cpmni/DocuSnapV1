@@ -27,6 +27,10 @@ const newDoc = (db, status = 'needs_review') =>
 
 const db = new Database(':memory:');
 runMigrations(db);
+// Migration 93 (2026-08-30) seeds review_group_by_letterhead ON for a fresh install, but the getSetting
+// stub above honours the real DB row for that key — so the "setting unset → byte-identical" OFF section
+// must state the OFF arm explicitly (the ON section INSERT-OR-REPLACEs it true, then DELETEs it).
+db.prepare("INSERT OR REPLACE INTO settings (key,value) VALUES ('review_group_by_letterhead','false')").run();
 // A real document_types row so the denormalised documents.document_type_id (=1) satisfies its FK.
 db.prepare("INSERT INTO document_types (id, name, slug, built_in) VALUES (1, 'Invoice', 'invoice', 1)").run();
 

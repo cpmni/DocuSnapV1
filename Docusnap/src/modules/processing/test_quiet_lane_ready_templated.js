@@ -165,6 +165,9 @@ const run = async (reason) => { staged.length = 0; lane.schedule(db, { supplier:
   process.env.QUIET_REREAD_ON_READY_TEMPLATED = '1';
   check('env 1 → on', handler._readyTemplatedEnabled(db) === true);
   delete process.env.QUIET_REREAD_ON_READY_TEMPLATED;
+  // mig 93 seeds quiet_reread_on_ready_templated ON; state the OFF arm explicitly so the reflection
+  // pins the switch's OFF semantics (env unset → the setting decides), not the seed.
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('quiet_reread_on_ready_templated', 'false')").run();
   check('default (no setting) → OFF (DARK)', handler._readyTemplatedEnabled(db) === false);
   const sh = fs.readFileSync(path.join(ROOT, 'src', 'windows', 'settings', 'index.html'), 'utf8');
   const sr = fs.readFileSync(path.join(ROOT, 'src', 'windows', 'settings', 'renderer.js'), 'utf8');

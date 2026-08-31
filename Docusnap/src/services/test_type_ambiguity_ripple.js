@@ -140,6 +140,9 @@ const lastJobAudit = () => audits.filter(a => a.action === 'quiet_reprocess_job'
     devSliceDir: require('os').tmpdir(), windows: {}, app: null, fs: require('fs'), logger: null, spawn: () => ({ on: () => {}, stdout: { on: () => {} }, stderr: { on: () => {} } }), path });
   db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('quiet_reread_enabled', 'true')").run();
   db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('type_ambiguity_ripple', 'true')").run();
+  // mig 93 seeds type_ambiguity_unsupported_waiver ON; the next pin exercises the waiver-OFF
+  // pre-check (the test flips the waiver ON at the following step), so start it OFF.
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('type_ambiguity_unsupported_waiver', 'false')").run();
   const skipAudit = () => audits.filter(a => a.action === 'type_split_ripple_skipped').slice(-1)[0];
   let r = ph.scheduleTypeSplitReread(db, { supplier: SUP, typeSlug: 'quote', templateId: 10, seedDocId: S1 });
   check("waiver OFF → no job, audited 'waiver_off'", r === false && skipAudit() && /waiver_off/.test(skipAudit().details));

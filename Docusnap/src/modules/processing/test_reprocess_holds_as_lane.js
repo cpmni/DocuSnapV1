@@ -126,6 +126,9 @@ check("a single-doc reprocess first-fill of a required role holds UNCONDITIONALL
 
 console.log('\n§4 the handler wiring (source contract)');
 const ph = read(path.join(__dirname, 'handler.js'));
+// mig 93 seeds reprocess_holds_as_lane ON; state the OFF arm explicitly so this pins the switch's
+// OFF semantics (env unset → the setting decides), not the seed. The env arms below still override it.
+db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('reprocess_holds_as_lane', 'false')").run();
 check('default (no setting) → OFF (DARK)', handler._reprocessHoldsEnabled(db) === false);
 process.env.REPROCESS_HOLDS_AS_LANE = '1'; check('env 1 → on', handler._reprocessHoldsEnabled(db) === true);
 process.env.REPROCESS_HOLDS_AS_LANE = '0'; check('env 0 → off', handler._reprocessHoldsEnabled(db) === false);

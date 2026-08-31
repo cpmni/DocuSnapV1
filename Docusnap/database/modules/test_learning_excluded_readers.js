@@ -218,6 +218,11 @@ const without = (v) => ALL.filter(x => x !== v).join();
 console.log('3. BEHAVIOUR (mig 90 fixture) — positive control, ONE stamp, then ALL');
 const armed = new Database(':memory:');
 runMigrations(armed);
+// mig 93 seeds template_freeze_issuer_only ON, which forces EVERY non-issuer field variable
+// (the nonIssuerBlocked arm in _buildTemplateFields) so `site` could never freeze. Restore the
+// switch's code-default OFF — this suite pins the freeze/unfreeze behaviour when a multi-valued
+// witness leaves learning, not the seed.
+learning.setSetting(armed, 'template_freeze_issuer_only', 'false');
 const S = seedScope(armed);
 {
   const db = armed, s = S;

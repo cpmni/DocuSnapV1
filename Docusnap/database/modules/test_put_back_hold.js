@@ -35,6 +35,9 @@ const read = (p) => fs.readFileSync(p, 'utf8').split(CR + LF).join(LF);
 
 const db = new Database(':memory:');
 runMigrations(db);
+// mig 93 seeds putback_refile_on_file_all ON; the early "OFF is byte-identical" sections pin the
+// switch's OFF arm (the test flips it ON at ~line 123 and back OFF at the end), so start it OFF.
+learning.setSetting(db, 'putback_refile_on_file_all', 'false');
 console.log('migration 86:');
 check('documents.put_back_at exists after migrations', !!db.prepare("SELECT 1 FROM pragma_table_info('documents') WHERE name='put_back_at'").get());
 check('version 86 stamped', !!db.prepare('SELECT 1 FROM migrations WHERE version = 86').get());

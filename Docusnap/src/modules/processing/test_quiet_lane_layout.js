@@ -228,6 +228,9 @@ const finishRun = async () => { shardResolve && shardResolve(); await sleep(80);
   process.env.QUIET_REREAD_ON_LAYOUT = '1';
   check('env 1 → on', handler._layoutRereadEnabled(db) === true);
   delete process.env.QUIET_REREAD_ON_LAYOUT;
+  // mig 93 seeds quiet_reread_on_layout ON; state the OFF arm explicitly so the reflection pins the
+  // switch's OFF semantics (env unset → the setting decides), not the seed.
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('quiet_reread_on_layout', 'false')").run();
   check('default (no setting) → OFF (DARK)', handler._layoutRereadEnabled(db) === false);
   const eng = fs.readFileSync(path.join(ROOT, 'python_backend', 'extraction', 'engine.py'), 'utf8');
   check('SEAM-1 pin comment rewritten: names the vetted doors, no longer claims one call site', /REWRITTEN 2026-08-22, Oracle Q3 C3\.1/.test(eng) && !/has EXACTLY ONE call site\n/.test(eng.slice(eng.indexOf('SEAM-1 PIN'), eng.indexOf('SEAM-1 PIN') + 2500)));

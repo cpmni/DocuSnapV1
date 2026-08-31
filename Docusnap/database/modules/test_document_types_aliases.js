@@ -118,6 +118,9 @@ console.log('\nGarbage tolerance + migration idempotency:');
     sort_order INTEGER NOT NULL DEFAULT 100,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`);
+  // A real v42 DB also carried a settings table; migrations added after 43 (e.g. mig 84's JS block)
+  // read/write it, so the minimal simulation must include it or runMigrations crashes on the way past 43.
+  db.exec(`CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)`);
   const hasCol = () => db.prepare("PRAGMA table_info(document_types)").all().some(c => c.name === 'title_aliases');
   check('pre-check: simulated existing DB has NO title_aliases column', !hasCol());
   runMigrations(db);

@@ -169,7 +169,11 @@ check('getFieldFormats still falls through a falsy corrected_value to display_va
       /const finalValue = \(row\.corrected_value \|\| row\.display_value \|\| ''\)\.trim\(\)/.test(learning));
 check('clearAnchors remains reachable only for a NON-EMPTY corrected_value '
       + '(so a machine clear could never have wiped a taught anchor — Oracle B2c refuted at source)',
-      /if \(corrected_value\) \{[\s\S]{0,1600}?clearAnchors\(db, \{/.test(learning));
+      // Window widened 1600→2600: saveCorrections' single `if (corrected_value)` block grew past 1600
+      // chars (LIST-ownership + global-hint legs) before the ONE guarded clearAnchors call. The invariant
+      // is unchanged — there is exactly one `if (corrected_value)` guard and one clearAnchors CALL in
+      // saveCorrections, and the call is inside the guard; the window only bounds "closely follows".
+      /if \(corrected_value\) \{[\s\S]{0,2600}?clearAnchors\(db, \{/.test(learning));
 
 console.log(fails ? `\n${fails} FAILED` : '\nAll pins passed');
 process.exit(fails ? 1 : 0);

@@ -239,6 +239,9 @@ const fresh = (date, ref = 'INV-1', extra = {}) => ({ extractions: { supplier_na
   process.env.QUIET_REREAD_FF_RELIABILITY = '0'; check('env 0 → off', handler._firstFillReliabilityEnabled(db) === false);
   process.env.QUIET_REREAD_FF_RELIABILITY = '1'; check('env 1 → on', handler._firstFillReliabilityEnabled(db) === true);
   delete process.env.QUIET_REREAD_FF_RELIABILITY;
+  // mig 93 seeds quiet_reread_first_fill_reliability_hold ON; state the OFF arm explicitly so the
+  // reflection pins the switch's OFF semantics (env unset → the setting decides), not the seed.
+  learning.setSetting(db, 'quiet_reread_first_fill_reliability_hold', 'false');
   check('default (no setting) → OFF (DARK)', handler._firstFillReliabilityEnabled(db) === false);
   const sh = fs.readFileSync(path.join(ROOT, 'src', 'windows', 'settings', 'index.html'), 'utf8');
   const sr = fs.readFileSync(path.join(ROOT, 'src', 'windows', 'settings', 'renderer.js'), 'utf8');
