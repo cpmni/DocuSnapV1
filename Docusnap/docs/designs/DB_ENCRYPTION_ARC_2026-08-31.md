@@ -49,15 +49,18 @@ which that model couldn't meet (the key lived in a sidecar `backupService` never
 ## The startup decision table (Oracle C4 — the owner's restore-on-new-PC case)
 `resolveState()` runs first (interrupted migration), then main decides by `.db-key` presence × DB header:
 
-| `.db-key` | DB header | action |
-|---|---|---|
-| absent | plaintext / no DB | fresh/plaintext — today's path, byte-identical |
-| present | encrypted | daily open by the cached code; throw → Unlock window |
-| present | **plaintext** | downgrade tripwire — loud fail (never open) |
-| **absent** | **encrypted** | **RESTORED BACKUP → prompt for the code, open, then cache `.db-key`** |
+| `.db-key` | `.db-migrate-code` | DB header | action |
+|---|---|---|---|
+| absent | absent | plaintext / no DB | fresh/plaintext — today's path, byte-identical |
+| absent | **present** | plaintext | **opt-in ceremony armed → encrypt at boot (fail-toward-plaintext)** |
+| present | * | encrypted | daily open by the cached code; throw → Unlock window |
+| present | * | **plaintext** | downgrade tripwire — loud fail (never open) |
+| **absent** | absent | **encrypted** | **RESTORED BACKUP → prompt for the code, open, then cache `.db-key`** |
 
-Row 4 is the owner's whole requirement; it must be explicit (a null `loadCode()` means BOTH "fresh
-plaintext" and "restored backup" — the DB header disambiguates).
+The restore row is the owner's whole requirement; it must be explicit (a null `loadCode()` means BOTH
+"fresh plaintext" and "restored backup" — the DB header disambiguates). The `.db-migrate-code` arm is a
+DISJOINT file (Oracle integration vet) so `.db-key` never lands beside a plaintext DB — the tripwire row
+stays byte-identical to the pre-arm design; a stale arm on an ENCRYPTED DB is self-healed on every boot.
 
 ## Windows password change vs reset (DPAPI, eric-confirmed)
 - Normal **change** (knows old pw): DPAPI re-wraps → `.db-key` still decrypts → **daily open works.**
@@ -68,19 +71,39 @@ plaintext" and "restored backup" — the DB header disambiguates).
 ## Slices
 - **Slice 0 — dep swap.** ✅ DONE (fork 13.0.3 on E44; cipher pin chacha20 + negative controls; real-DB
   drop-in read; check-licenses green).
-- **Slice 1 — key infra + seam.** ✅ CORE DONE (passphrase model): `dbKey.js` (provision/loadCode/
-  cacheCode/applyKey/applyRekey/normaliseCode, fail-closed, never-regenerate, refuse-clobber),
-  `secretStore.encryptAtRestStrict`, the gated `database/index.js` seam (`setEncryptionKey(code)` →
-  `applyKey` + `temp_store=MEMORY`; inert until a code is set). REMAINING: the whenReady unwrap +
-  the Unlock/Recover window.
+- **Slice 1 — key infra + seam + boot integration.** ✅ DONE (`19432cb`): `dbKey.js` (provision/loadCode/
+  cacheCode/applyKey/applyRekey/normaliseCode + `mintCode`/`armMigration`/`loadMigrateCode`/
+  `clearMigrateCode`), `secretStore.encryptAtRestStrict`, the gated `database/index.js` seam
+  (`setEncryptionKey(code)` → `applyKey` + `temp_store=MEMORY`; inert until a code is set), the **whenReady
+  boot gate** (`main.js`, before the first `getDb()`; routes decide()'s 5 actions), the **Unlock/Recover
+  window** (`src/windows/unlock/`, closes via `app.exit(0)` — the pre-key boot has no tray/before-quit and
+  `getDb()` would throw on the unkeyed DB, so the normal teardown is both absent and dangerous), the
+  **tripwire** (`showErrorBox`+`app.exit(1)`; opening plaintext would defeat the encryption the key
+  implies). eric-lifecycle-reviewed.
 - **Slice 2 — migration.** ✅ DONE: `dbMigrateEncrypt.js` crash-safe state machine (BACKUP cold-copy →
   ENCRYPTING `journal_mode=DELETE`+`applyRekey` → VERIFY integrity+fingerprint+negative-controls →
   crash-ordered SWAP), `test_db_migrate_encrypt.js` (crash matrix + kill-during-rekey + portability),
   the merge-backup keyed VACUUM INTO, `db-crypto-tool.js` (status / export-plain via `rekey=''`).
   REMAINING (owner-machine): perf <10%, a full app session incl. `verifyAuditChain`/`canStamp`//v1,
   the DPAPI-loss + new-PC drills through the Unlock window.
-- **Slice 3 — activation + default-on.** The combined "Keep these safe" dialog + opt-in trigger +
-  default-on fresh + the downgrade tripwire. IN PROGRESS.
+- **Slice 3 — activation.** ✅ DONE (`19432cb`, opt-in): the Settings → Advanced "Database encryption"
+  card + the masked-code ceremony (mint → Show/Copy/Print → typed "I HAVE SAVED IT" → arm → relaunch) +
+  the boot-time encrypt (`dbBootMigrate.run`, fail-toward-plaintext) + the downgrade tripwire (built in
+  slice 1). Migration runs at BOOT (contention-free — never against the live handle; a mid-session
+  close/reopen would EBUSY the rekey renames). **DEFAULT-ON fresh installs = DEFERRED (owner decision);
+  the feature is opt-in only.**
+
+### The disjoint-arm redesign (Oracle 2026-08-31, the integration vet)
+The opt-in migration is armed via a **DISJOINT `.db-migrate-code`** file — NOT the `.db-key` + a co-flag.
+The real `.db-key` is written ONLY AFTER a verified encrypt, so `.db-key` is **never present beside a
+plaintext DB** and the downgrade tripwire keeps its EXACT original meaning (its pin is byte-identical). A
+stale arm on an ENCRYPTED DB is **self-healed** by `decide()` on every boot (Oracle C1) so it can never
+survive to silently re-encrypt a restored old plaintext backup. On ANY migrate failure the DB is left
+plaintext, the arm is cleared, the error is surfaced in Settings (Oracle C3) — no loop, no tripwire, no
+orphan key. `mintCode()` mints without persisting so a cancelled ceremony leaves nothing on disk; main
+stashes the minted code so shown == armed == migrate code (Oracle C6). Pins: `test_db_startup` (migrate
+rows + self-heal + tripwire-still-fires), `test_db_boot_migrate` (disjoint arm, key-only-after-encrypt,
+fail-safe).
 
 ## Owner decisions (logged)
 - **Regenerate the DB code = a full DB re-encrypt** (the code is the key) → **DEFERRED for v1**; the code

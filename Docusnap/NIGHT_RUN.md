@@ -23,17 +23,20 @@ and, with no safe route, that item STOPS** — never improvise around a refusal.
   OCR space ("CAD8 32694"), a partial ladder read, or the short-token inversion? One OCR probe of
   the saved slice settles it and decides whether a read-layer slice 2 (untrimmed containment in
   `_pick_fuller_code`) follows the merge-layer yield.
-- **2026-08-31 · DB-AT-REST ENCRYPTION — OWNER-SUPERVISED slices remain (slice 1 core BUILT DARK `e2a0535`):**
-  `docs/designs/DB_ENCRYPTION_ARC_2026-08-31.md` is the runbook. BUILT + pinned this session:
-  `src/lib/dbKey.js` (fail-closed DPAPI wrap + argon2id recovery key + never-regenerate), `secretStore.
-  encryptAtRestStrict`, the gated `database/index.js` `setEncryptionKey`/hexkey seam (inert), dead
-  `src/database.js` deleted. **NEEDS THE OWNER (destabilising / DB-rewriting — do NOT run autonomously):**
-  slice 0 = the dep alias swap `npm:better-sqlite3-multiple-ciphers@^12` + `npm install` + `install-app-deps`
-  + a PACKAGED build boot + a runtime name/cipher pin (every Electron CLOSED — EBUSY); slice 1 tail =
-  the Unlock/Recover window + `main.js` whenReady `loadKey`→`setEncryptionKey`; slice 2 = the crash-safe
-  hexrekey-on-copy migration + the merge-backup keyed copy (`templates/handler.js:600-607`) + the
-  ritual change (SAME commit); slice 3 = default-on fresh + downgrade tripwire + ceremony. Audit
-  archives keyed last. Production Python never opens the DB (verified).
+- **2026-08-31 · DB-AT-REST ENCRYPTION — the INTEGRATION PASS is now BUILT (`19432cb`, DARK); only
+  OWNER-machine gates remain.** `docs/designs/DB_ENCRYPTION_ARC_2026-08-31.md` is the runbook. The crypto
+  core + the boot/UI integration are done + pinned (eric-lifecycle + Oracle SIGN-OFF-W/COND): the whenReady
+  boot gate (5 actions), the Unlock/Recover window, the tripwire, the opt-in Settings ceremony (a DISJOINT
+  `.db-migrate-code` arm → boot-migrate, fail-toward-plaintext). Pins green under E44 (startup 11,
+  boot-migrate 18). **NEEDS THE OWNER (destabilising / DB-rewriting — do NOT run autonomously):** (1) THE
+  MIGRATION DRILL on a real DB — `db.backup()` first, then Settings → Advanced → "Turn on encryption…" →
+  confirm → relaunch → verify silent open; delete `.db-key` → restart → Unlock recovers by code;
+  `db-crypto-tool export-plain` a copy; (2) the DPAPI-loss + downgrade drills (restore `.pre-encrypt` →
+  must LOUD-tripwire); (3) the PACKAGED-build boot + gate-5b on the merged E44 tree; (4) perf <10% + a full
+  `verifyAuditChain`/`canStamp`//v1 session on the encrypted DB; (5) realdoc-605 OFF byte-identical.
+  **DEFAULT-ON fresh installs is DEFERRED (owner decision) — the feature is opt-in only.** The first click
+  of "Turn on encryption" IS the migration drill — it encrypts the live DB (migrate() is crash-safe: keeps
+  plaintext on any pre-SWAP fault).
 - **2026-08-31 · FLIP GATE for `template_locate_role_qualifier` (BUILT DARK `e65959c`, mig 99 OFF):**
   the realdoc-605 gate is the remaining flip prerequisite — a `db.backup()` copy of the live DB,
   `RR_APP_ENV=1` + `OCR_RENDER_DPI=200`, OFF (`TEMPLATE_LOCATE_ROLE_QUALIFIER=0`) vs ON arm on the
@@ -141,6 +144,17 @@ Regenerate after a big import: `TESTING/_measure/reslice_20260830/_build_test_co
 confirm/teach from this folder into the LIVE app.
 
 ## DONE ledger (newest first) — do NOT repeat unless the "repeat if" condition holds
+- **2026-08-31 · DB ENCRYPTION — the BOOT + UI INTEGRATION PASS BUILT (`19432cb`, DARK).** eric-lifecycle
+  review + Oracle SIGN-OFF-W/COND (a disjoint `.db-migrate-code` redirect that keeps the downgrade tripwire
+  byte-identical). BUILT: the whenReady boot gate (plaintext/open-cached/prompt-code/tripwire/migrate),
+  `src/windows/unlock/` (closes via `app.exit(0)` — eric's strand-headless seam), the tripwire
+  (`showErrorBox`+`app.exit(1)`, never opens plaintext), the sender-scoped `unlock-recover` IPC (read-write
+  verify), the opt-in Settings ceremony (mint→masked code Show/Copy/Print→typed confirm→arm→relaunch),
+  `dbKey.mintCode`/`armMigration`/`loadMigrateCode`/`clearMigrateCode`, `dbStartup` migrate row + C1
+  self-heal, `dbBootMigrate.js` (fail-toward-plaintext, extracted + pinned). Pins green under E44:
+  `test_db_startup` 6→11, `test_db_boot_migrate` 18 (new); existing crypto pins unchanged. Plaintext boot
+  byte-identical; nothing encrypts until the owner clicks. **Repeat if:** never re-build — the remaining
+  work is the OWNER-machine drills/gates (top QUEUE item) + the default-on decision.
 - **2026-08-31 · DB ENCRYPTION PIVOTED to code-as-passphrase + CRYPTO CORE COMPLETE (`684de90`, `+ startup`).**
   Owner requirement (DB backup + printed code resurrects on ANY PC) forced a model change from the
   random-key+sidecar to **code-as-passphrase** (multiple-ciphers passphrase mode, salt-in-header, 125-bit
