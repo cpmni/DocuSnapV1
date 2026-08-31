@@ -2338,3 +2338,37 @@ upscale, white border, PSM 6, in-band pick) 20/20 vs padded PSM-7 15/20 with wro
   accuracy drop; `RESLICE_CENSUS_DIR` + `recon_demote_census.jsonl` over the corpus (fires ≥1, released-and-wrong = 0);
   class-C fire count OFF vs ON identical on non-currency fields. Flip order: sweep → discount → (never in this arc)
   strict-money.
+
+## 2026-08-31 — keyword_cell_below (oscar Card 3 implementation) — SEND BACK → conditions applied → re-pinned
+Verdict: SEND BACK (layer right, wiring clean, guards good for the boxed geometry; the trigger was an
+over-broad proxy firing on two everyday NON-boxed layouts, so "ON = only added fills" failed by
+construction). Ship-blockers: (1) trigger conflated boxed rows with wide-gap same-line values (junk
+adopt/emptying via the next-label continue) and lone stacked captions (88->85 confidence downgrade
+across the critical floor - unpinned because the pins used a blank line/colon); (2) currency ignored
+the right-ONLY directions contract (bare "Total" = every line-items header; first item-row line-total
+adopt @85). Cracks: G4 defeated by one trailing border glyph; G5 bounds-only vs the design's
+alignment guard; row not actually dev-gated; dead 'number' limb.
+CONDITIONS (ALL APPLIED, commit 829afed): C1 three discriminators (>=2 caption segments · no digit
+after the label on its own line · equal segment counts both lines); C2 ref/date only + 'below' must
+be in the label's directions (money = its own future slice with a line-items-header guard); C3 bare
+the candidate of border glyphs both ends before every guard; C4 re-pin ON==OFF INCLUDING confidence
+on stacked/wide-gap/GBP-row/unequal layouts + G4/G3 re-proven on EQUAL-count grids + naive-adopt
+load-bearing proof; C5 toggle added to DEV_SWITCH_IDS; C6 realdoc gate wording = previously-non-empty
+fields byte-identical incl. confidence, diffs strictly empty->filled, M unchanged, would-file +
+corroboration diffs enumerated + adjudicated under the live switch profile, keyword_override-labelled
+cell-below rows surfaced. Post-conditions pin: ALL PASS.
+## 2026-08-31 — MONEY_SIGN_PARENS/CR (reggie Card 2 build) — SIGN OFF WITH CONDITIONS → applied
+SIGN OFF WITH CONDITIONS. Helper + both mints + pin traced correct; seam A verified quiet
+(decline-only, no false note; magnitude-blind reconcile maths protect the signed value from the
+recon pick); seam B verified with a bonus (arm 3 now holds captured mis-typed credit notes with
+the RIGHT value); downstream '-' consumers safe (no filename token, storage/normalise/on-blur
+sign-tolerant, no adopt path). BLOCKING C1: the design's own arm-3 co-residency force (the
+vat_reg pattern) was named but not built — captures armed without CREDIT_SIGN_COHERENCE leave the
+manufactured-minus class (table-rule '(' misread, bled 'CR') silently negative on invoices.
+C2 handoff pin, C3 gate wording (the Hard Set cannot reach mixed-sign penny-reconcile — the unit
+pin test_reslice_witness.py:123 is the sole guard for seam A), C4 fix the sign-blind-record
+rationale in the twin comments. ALL FOUR APPLIED same session: the co-residency force in
+_reconcileEnv + test_money_sign_coupling.js source pin; the arm-3 handoff row in
+test_money_sign_parens_cr.py; twin comments corrected in both mints; gate wording carried into
+the realdoc adjudication. Flip order: captures only with CREDIT_SIGN_COHERENCE (structural via
+the force); parens and CR flip independently of each other.

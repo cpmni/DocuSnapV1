@@ -467,6 +467,15 @@ function _reconcileEnv(db) {
     if (env.MONEY_SIGN_CR == null && learning.getSetting(db, 'money_sign_cr', 'false') === 'true') {
       env.MONEY_SIGN_CR = '1';
     }
+    // Oracle C1 (2026-08-31, BLOCKING co-residency — the vat_reg_not_amount pattern): a capture
+    //   armed without the credit-sign coherence arms leaves the manufactured-minus class (a table
+    //   rule OCR'd as '(', a column-bled 'CR' token) SILENTLY negative on an invoice. Arm 3
+    //   (validator: negative total on a non-credit type → note) must ride along whenever either
+    //   capture is on. Co-residency, not flip order — parens and CR still flip independently of
+    //   each other. Pinned in test_money_sign_coupling.js.
+    if (env.MONEY_SIGN_PARENS === '1' || env.MONEY_SIGN_CR === '1') {
+      env.CREDIT_SIGN_COHERENCE = '1';
+    }
     // STRICT MONEY sub-flag of TEMPLATE_FORMAT_FAIL_YIELD (2026-08-30, reggie; DARK): the yield's currency
     //   leg becomes the whole-string `money_strict_shape` (the legacy leg passes '£9 32632.76' as 9.0).
     //   AND-ed with the parent HERE — a sub-flag armed without its parent bridges nothing.

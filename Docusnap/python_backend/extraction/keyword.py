@@ -2485,10 +2485,13 @@ def _clean_value(value: str, val_type: str | None,
         # MONEY_SIGN_PARENS / MONEY_SIGN_CR (reggie 2026-08-31, DARK): a WHOLE-SEGMENT
         # accounting negative — "(£908.16)" / "£908.16 CR" — keeps its sign at the mint
         # instead of having the marker amputated by the bare-match extraction below. The
-        # anchor twin lives in anchor._clean_text_fallback (without it a sign-fixed keyword
-        # read and a crop read of the same box stop agreeing in money_cents terms). Fullmatch
-        # + money_strict_shape inside the capture: "(10%)", "(see note 3)", "908.16 CREDIT"
-        # and a garbled amount never gain a sign. Bare minus stays note-only by design.
+        # anchor twin lives in anchor._clean_text_fallback. Oracle C4: the corroboration
+        # RECORD's comparator (_cmp_norm) is SIGN-BLIND, so the record still folds AGREE
+        # either way — the twin exists for the sign-INCLUSIVE consumers (reslice
+        # witness_agrees, the sweep's zone_read_already_agrees money_cents check) and for
+        # cross-mint value consistency. Fullmatch + money_strict_shape inside the capture:
+        # "(10%)", "(see note 3)", "908.16 CREDIT" and a garbled amount never gain a sign.
+        # Bare minus stays note-only by design.
         if val_type == "currency":
             _sm = number_format.signed_money_capture(value)
             if _sm is not None:

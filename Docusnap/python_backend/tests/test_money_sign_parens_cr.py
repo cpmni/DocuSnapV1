@@ -108,6 +108,14 @@ check("signed keyword read vs signed anchor read AGREE",
 check("money_strict_shape accepts the captured '-1,753.20'",
       number_format.money_strict_shape("-1,753.20"))
 
+# Oracle C2 — the capture/arm-3 HANDOFF: a captured negative on a NON-credit type must still
+# draw the manufactured-minus note (validator arm 3) — the safety the C1 co-residency force in
+# _reconcileEnv keeps armed. If this row breaks, the capture is minting silent negatives.
+from extraction import validator                                          # noqa: E402
+_signed = number_format.signed_money_capture("(£908.16)")[0]
+check("C2 handoff: arm 3 notes the captured negative on a non-credit type",
+      validator.credit_sign_note(_signed, None, False) is not None)
+
 for f in ("MONEY_SIGN_PARENS", "MONEY_SIGN_CR"):
     setflag(f, None)
 print()
