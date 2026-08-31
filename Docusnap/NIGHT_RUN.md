@@ -18,6 +18,32 @@ scratch/sandbox, implementing a Chris card); **anything dangerous goes to the ag
 and, with no safe route, that item STOPS** — never improvise around a refusal.
 
 ## QUEUE — worth testing or checking (ranked; add freely, date each)
+- **2026-08-31 · Probe Castellan 0005's saved inline-harvest slice** (gary's CAD8 trace): which
+  sub-path truncated 'CAD832694' → 'CAD8' — the `_read_inline_box` one-token trim on a mid-token
+  OCR space ("CAD8 32694"), a partial ladder read, or the short-token inversion? One OCR probe of
+  the saved slice settles it and decides whether a read-layer slice 2 (untrimmed containment in
+  `_pick_fuller_code`) follows the merge-layer yield.
+- **2026-08-31 · DB-AT-REST ENCRYPTION arc (owner ask: the DB is text-editor readable):** eric+gary
+  designs CONVERGED — better-sqlite3-multiple-ciphers as a package alias, ChaCha20 + raw hexkey,
+  DPAPI-wrapped .db-key + a one-time printed RECOVERY KEY on the final setup card (no daily
+  password — login lives inside the DB), gary's crash-safe migration state machine, slices 0-3
+  (dep swap inert → key infra dark → opt-in migrate → default-on fresh). Prior art: the July spike
+  `docs/designs/STAGE6A_ENCRYPTION_SPIKE_2026-07-27.md` + proven `scripts/spike_key_wrap.js`.
+  Oracle round in flight; residuals to rule: audit-archive sqlite files, merge-backup cipher
+  state, alias-vs-named dep, rekey-vs-export. Production Python never opens the DB (verified).
+- **2026-08-31 · Net-Total steal at the LOCATE layer (owner exhibit, Castellan credit note 0008):**
+  the taught/anchor label-locate matched bare 'Total' INSIDE 'Net Total' and derived-offset read
+  1,315.20; reconciliation rescued (-1,578.24 committed, noted). The keyword layer already has the
+  qualification guard (`_total_role_collision`) — the locate layer doesn't. reggie + 007 cards
+  requested (owner: "exclude matches if the preceding word indicates it is something else");
+  Oracle after; census: how many live recon-adjusted-total notes trace to a qualified-label steal?
+- **2026-08-31 · Clipped authoritative mapping beats a correct keyword_override (owner exhibit,
+  Castellan delivery_note_0005):** the taught absolute box clipped to 'CAD8' (shapewarn, capped 70)
+  yet SUPERSEDED the keyword_override's full 'CAD832694' @93 — held honestly, but the right value
+  lost on authority. gary tracing: precedence intent, why pad-window-code + format-fail-yield
+  didn't heal, and whether the Oracle-signed DARK `BLIND_GEOM_DISAGREE_RECONCILE` arm is the
+  ready-made fix (flip vs new code). Same family as the Net-Total locate steal — possibly one
+  Oracle round for both.
 - **2026-08-31 · Boxed TOTALS slice (own arc):** the cell-below arm is ref/date-only by Oracle C2
   (money labels ship right-only; a bare "Total" is every line-items header). A money leg needs a
   line-items-header guard + its own census. The Hard Set table_total class already reads totals

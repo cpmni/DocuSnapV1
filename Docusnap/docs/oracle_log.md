@@ -2389,3 +2389,72 @@ pins: _is_verification_doubt_note False for both wordings + a functional demoter
 with F armed; C4 honest arithmetic — "up to three human confirms per company+type; machine-swept
 scopes earn nothing until a human confirms" (hook comment + owner report corrected). Flip only
 after the stripped-copy all-7-noted arm (MET same session) and the realdoc enumeration.
+## 2026-08-31 — Taught-total occurrence selection (TEMPLATE_LOCATE_ROLE_QUALIFIER, DARK) — SIGN OFF WITH CONDITIONS (design stage; build awaits owner go)
+Premise verified at the pixels and the code: _label_score's space-boundary 1.0 makes 'total' a
+perfect hit on "Net Total" (template_mapper.py:3629-3650), the floated totals block (two taught
+rows 0.035 apart) makes proximity the wrong arbiter, and oracle_log 08-06 had already ruled
+taught totals have zero net-vs-gross discipline with only the FLAG shipped. Design = reggie's
+shipped stop-vocabulary (reuse keyword._total_role_collision verbatim; 007's any-preceding-word
+rule REJECTED — it demotes Grand/Invoice Total, no-ops the fix on the "Net Total / VAT / Invoice
+Total" footer, and splits the locator from keyword's own role logic) + 007's placement inside
+_locate_anchor with the local-all-qualified→page-wide leg. DEMOTE never veto; all-qualified pages
+byte-identical. Two consensus gaps found and conditioned: the confirm_value CARRIERS override
+(anchor.py:677-693 passes the drifted rigid money read; carriers at template_mapper.py:3471-3476
+would re-select the Net line above the preference — an armed needle's all-qualified carrier set
+must fall back to the preferred floor set) and the born-digital twin's missing page-wide leg
+(anchor.py:2316-2317). Reslice-sweep seam verified safe by construction (engine.py:4517-4545
+requires an agreeing witness on the exact recon note). Gate: RED-first end-to-end Castellan pin
+(-1,578.24, sign intact, no note, drift+veto path, app env), divergence pin, carriers pin, twin
+pin, vocab-identity pin, Hard Set dual-rendition classes, realdoc-605 OFF==ON byte-identical +
+ON-arm full enumeration (would-files, corrob flips, landmark diffs, 0 new wrong totals, M=7),
+combined-arm census with the sweep; flag+reconciliation documented as the retained backstop.
+Flip order: joins AFTER sweep/discount; never justified by flipping strict-money.
+## 2026-08-31 — DB-at-rest encryption (eric+gary consensus) — SIGN OFF WITH CONDITIONS (design stage; slices await owner go)
+Premise sound (owner's passphrase ask rightly converted to DPAPI-wrapped key + printed recovery
+key; the "identical vs malware" claim slightly overstated — record the honest passphrase
+differentiator in pendingfeatures). Divergences settled: hexrekey-on-copy primary, ATTACH+export
+deleted; the package ALIAS accepted with packaged-build proof + a runtime name/cipher pin; audit
+archives keyed this arc as the final slice (named residual until then); the merge-backup site is
+a BLOCKING gate (expected plaintext output — replace with a keyed copy); the recovery ceremony
+needs regenerate + explicit ack + a persistent nudge (re-show correctly impossible — no copy is
+stored). Ship-blockers found at the seams: secretStore's by-design FAIL-OPEN WRITE would silently
+mint a plaintext DB keyfile (the DB key inverts auditKey's availability-over-secrecy calculus —
+require a fail-closed write mode, pinned); an empty/short key makes every migration gate pass on
+a plaintext output (assert 32 bytes + a negative-control open-WITHOUT-key must fail + header
+magic absent); no downgrade tripwire (key present + plaintext sniff + no manifest = loud fail,
+never a silent open); the night-run/reset rituals must change IN THE SAME COMMIT as slice 2
+(RUN_AS_NODE cannot unwrap DPAPI — an undocumented ritual change bricks the next autonomous run).
+Third DPAPI secret → the E44 gate-5b continuity checklist + the stale "only DPAPI blobs" doc
+lines corrected. Gates: slice-0 = suites + realdoc-605 byte-identical on the fork + check-licenses
++ a PACKAGED build boot (alias/ABI proof); slice-2 = the full crash-injection matrix (incl.
+kill-during-rekey + EBUSY storm) + C2 negative controls + the backup-cipher pin + a DPAPI-loss
+drill through the Unlock/Recover window + perf on the owner's real DB + a full app session on an
+encrypted copy incl. verifyAuditChain, canStamp and the /v1 client; slice-3 = fresh-install E2E
++ ceremony-nudge + downgrade-tripwire pins. Existing installs migrate ONLY behind the completed
+ceremony — never auto-migrate on update. src/database.js confirmed dead — delete this arc.
+## 2026-08-31 — TEMPLATE_FRAGMENT_CONTAINMENT_YIELD (Castellan CAD8 ⊂ CAD832694 — the sanctioned successor to the 08-09 Q2 rejection) — SIGN OFF WITH CONDITIONS (design stage; build awaits owner go)
+SIGN OFF W/COND (C1-C8). Forks: (A) the 08-09 "can't bolt it on" pin EXISTS
+(test_stage05_format_yield.py:22-24/:79-82) but is HELPER-level — this merge leg never calls
+_stage05_format_fails on the incumbent, so the pin stays green and would manufacture false
+confidence; amend its docstring + trade-off labels to name this switch (helper checks stay
+byte-identical), and the arc's own pin carries the mechanical guard. (B) v1 PREFIX-ONLY: the
+proven truncation source is _read_inline_box's split()[0] (mapper :1457-1458) which can only emit
+prefixes; the endswith mirror has no exhibit + digit-tail collision exposure — pinned trade-off.
+(C) NO page-witness leg: the challenger IS a page read (tautological) and "outside the taught
+zone" INVERTS the discrimination; v1 = neutral both-values note + review-bound, v2 strengthener =
+challenger-token geometry overlap of the taught zone. Premises verified (precedence :8176/:8261;
+rb_531 unconditional shape_warn at mapper :1586-1593; 'CAD8' passes the hard reference_code so
+format-fail-yield's decline is correct-by-design). Corrections: BLIND_GEOM_DISAGREE_RECONCILE
+defaults '1' since 08-01 (the CLAUDE.md "DARK" line was stale — fixed 655f915); the 08-09
+prohibition was prose+helper pins only. THE SEAM CAUGHT HERE: "review-bound by construction"
+rests entirely on the class-F deny-by-default allowlist — the new note is un-sweepable today but
+nothing pinned it; C3 mandates the note NEVER enters _verification_doubt_note_marks (pin
+_is_verification_doubt_note(new)==False + a comment at the allowlist), else a future doubt-clear
+flip silently auto-files values the taught mapping disputed. Neutral wording mandated (no causal
+"cut short" — false in the same-page-longer-code residual, which adopts WRONG-but-noted and is
+accepted + named). Currency exclusion ROLE-wise à la class F C2 + the C10/C11 comment. Gates: pin
+(exhibit heals; the three 08-09 regression strings never adopt; currency/date/low-conf/short-core
+untouched; OFF byte-identical; pin proven to FAIL with the leg deleted); realdoc-605 OFF
+byte-identical / ON M=7 unchanged, zero accuracy drop, hold-set leavers enumerated + eyeballed;
+Castellan five as fixtures; a clipped-code class into gen_hard_set. Hold-with-fragment becomes
+hold-with-full-value; no new silent file on any traced path.
