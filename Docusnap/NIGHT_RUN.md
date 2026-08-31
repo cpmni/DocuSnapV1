@@ -31,12 +31,14 @@ and, with no safe route, that item STOPS** — never improvise around a refusal.
   `docs/designs/STAGE6A_ENCRYPTION_SPIKE_2026-07-27.md` + proven `scripts/spike_key_wrap.js`.
   Oracle round in flight; residuals to rule: audit-archive sqlite files, merge-backup cipher
   state, alias-vs-named dep, rekey-vs-export. Production Python never opens the DB (verified).
-- **2026-08-31 · Net-Total steal at the LOCATE layer (owner exhibit, Castellan credit note 0008):**
-  the taught/anchor label-locate matched bare 'Total' INSIDE 'Net Total' and derived-offset read
-  1,315.20; reconciliation rescued (-1,578.24 committed, noted). The keyword layer already has the
-  qualification guard (`_total_role_collision`) — the locate layer doesn't. reggie + 007 cards
-  requested (owner: "exclude matches if the preceding word indicates it is something else");
-  Oracle after; census: how many live recon-adjusted-total notes trace to a qualified-label steal?
+- **2026-08-31 · FLIP GATE for `template_locate_role_qualifier` (BUILT DARK `e65959c`, mig 99 OFF):**
+  the realdoc-605 gate is the remaining flip prerequisite — a `db.backup()` copy of the live DB,
+  `RR_APP_ENV=1` + `OCR_RENDER_DPI=200`, OFF (`TEMPLATE_LOCATE_ROLE_QUALIFIER=0`) vs ON arm on the
+  dedup `RR_IDS`: assert OFF==ON byte-identical EXCEPT the enumerated total-row heals (would-file
+  deltas, corrob agree↔disagree flips, landmark diffs, **0 new wrong totals, M=7 unchanged**), plus
+  a combined-arm census WITH the reslice sweep (Nordwind 20 incl. 0023). Then the Hard Set
+  dual-rendition floated/role-qualified-total class into `gen_hard_set.py`. Flip order joins AFTER
+  sweep/discount; never via strict-money. Pins already green (`test_locate_role_qualifier.py`).
 - **2026-08-31 · Clipped authoritative mapping beats a correct keyword_override (owner exhibit,
   Castellan delivery_note_0005):** the taught absolute box clipped to 'CAD8' (shapewarn, capped 70)
   yet SUPERSEDED the keyword_override's full 'CAD832694' @93 — held honestly, but the right value
@@ -136,6 +138,13 @@ Regenerate after a big import: `TESTING/_measure/reslice_20260830/_build_test_co
 confirm/teach from this folder into the LIVE app.
 
 ## DONE ledger (newest first) — do NOT repeat unless the "repeat if" condition holds
+- **2026-08-31 · TEMPLATE_LOCATE_ROLE_QUALIFIER BUILT DARK + Oracle-cycled + pinned (`e65959c`, mig 99 OFF).**
+  The Net-Total locate steal (Castellan credit_note_0008): the locate now DEMOTES role-qualified 'Total'
+  occurrences (`keyword._total_role_collision`, verbatim) inside `_locate_anchor` + the born-digital twin
+  `_locate_in_text_lines` (+ its own page-wide leg); all-qualified LOCAL → page-wide, all-qualified PAGE
+  keeps today's pick; carriers-override fallback. `test_locate_role_qualifier.py` green (RED-first + Oracle
+  cases + end-to-end drift). Flag OFF byte-identical across mapper/anchor/totals/keyword suites. Repeat if:
+  a flip is requested — run the realdoc-605 OFF==ON + Hard Set class gate first (the top QUEUE item).
 - **2026-08-31 DAY-2 · ALL THREE Hard Set class cards BUILT DARK + Oracle-cycled + GATED**
   (`docs/designs/DARK_ARCS_GATES_2026-08-31.md`): cell-below (SEND BACK → C1-C6 applied; Hard Set
   +240/+253 fills, realdoc byte-identical) · money-sign parens/CR (S-O-W/COND; credit totals
