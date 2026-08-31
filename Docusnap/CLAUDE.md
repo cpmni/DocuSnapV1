@@ -833,7 +833,7 @@ and anywhere a business identity is needed:
 ## Stack
 | Layer | Tech |
 |---|---|
-| Desktop shell | Electron 31, Node.js, better-sqlite3 |
+| Desktop shell | Electron 44 (merged from `chore/electron-44` 2026-08-31; Node 24), better-sqlite3 (aliased to `better-sqlite3-multiple-ciphers@^13` for DB-at-rest encryption — see the encryption arc) |
 | UI | Vanilla HTML/CSS/JS; **native OS window frames**; shared light/dark theme (`src/windows/shared/theme.css`) |
 | LAN add-on | TLS `/v1` API (Node `https`) + detached Electron search client; certs via node-forge (`src/services/certService.js`) — see Detached search client |
 | OCR | Tesseract 5 via pytesseract + pypdfium2 |

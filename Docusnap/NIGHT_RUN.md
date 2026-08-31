@@ -141,6 +141,16 @@ Regenerate after a big import: `TESTING/_measure/reslice_20260830/_build_test_co
 confirm/teach from this folder into the LIVE app.
 
 ## DONE ledger (newest first) — do NOT repeat unless the "repeat if" condition holds
+- **2026-08-31 · ELECTRON 31.7.7 → 44.0.0 MERGED (`0ed6f20`, from `chore/electron-44`) + pushed.** Merge
+  conflicts (package.json/lock) resolved: E44's electron 44 / electron-builder 26 / argon2 0.45.1 / Rung-A/B
+  fuses + the encryption dep reconciled to the ciphers fork **^13** (better-sqlite3-multiple-ciphers@13.0.3,
+  Node 24). `install-app-deps` rebuilt native for the E44 ABI. Re-gated on E44: test_db_cipher (9),
+  test_dbkey (17), test_secretstore (14), test_db_migrate_encrypt (16) — ALL GREEN; real-DB read smoke
+  identical (667 docs). **NEEDS THE OWNER (interactive/VM, could not run here):** `npm start` on the merged
+  tree, a packaged build boot, and the E44 gate-5b DPAPI continuity on a real E31-written profile (the E44
+  branch was VM-confirmed 08-29, but re-confirm the MERGED tree before shipping a build). `client/` +
+  `cert-tool/` also bumped electron (their node_modules need `npm install` if built). Repeat if: never
+  re-merge — do the owner interactive gates + ship.
 - **2026-08-31 · DB-at-rest encryption SLICES 0 + 2 BUILT + PINNED (`603b52e` dep swap, `783b7f3` migration).**
   Slice 0: `better-sqlite3` aliased to `better-sqlite3-multiple-ciphers@^12` (12.11.1 — spans Node 20 AND
   22, so E44 needs only an ABI rebuild, NOT a fork bump); cipher pin `test_db_cipher.js` (9, chacha20 +
