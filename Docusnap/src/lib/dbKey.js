@@ -152,11 +152,67 @@ function provision() {
   return { recoveryCode: displayCode };
 }
 
+/**
+ * Mint a fresh 125-bit DISPLAY recovery code WITHOUT persisting anything (no `.db-key`, no arm). The
+ * opt-in Settings ceremony shows this code, gets a typed confirm, THEN arms the migration
+ * (`armMigration`) — so a cancelled ceremony leaves NOTHING on disk (the crucial difference from
+ * `provision()`, which caches immediately). The SAME minted code must be the one armed and the one the
+ * DB is encrypted under (Oracle C6): keep it in ONE place (main stashes it; armMigration writes it;
+ * the boot handler reads it back via loadMigrateCode) so shown == armed == migrate code by construction.
+ */
+function mintCode() { return _makeCode(); }
+
+// ── The DISJOINT one-time migration arm (Oracle 2026-08-31, code-as-passphrase) ─────────────────
+// `.db-migrate-code` is a SEPARATE DPAPI-wrapped file from `.db-key`. The ceremony writes THIS (never
+// `.db-key`), and the boot-migrate handler writes the real `.db-key` only AFTER the encrypt succeeds.
+// Consequence: `.db-key` is NEVER present beside a PLAINTEXT DB, so the downgrade tripwire
+// (plaintext + hasKey) keeps its exact original meaning — no state overloading, the tripwire pin is
+// byte-identical. decide() self-heals a stale arm on any encrypted boot (C1) so it can never survive
+// to disarm a future downgrade.
+const MIGRATE_FILE = '.db-migrate-code';
+function _migPath() { return path.join(_resolveDir(), MIGRATE_FILE); }
+
+/** True when a one-time boot migration is armed on this machine. */
+function hasMigrateCode() { return fs.existsSync(_migPath()); }
+
+/** Arm the one-time boot migration: `.db-migrate-code` = DPAPI(normalised code). FAIL-CLOSED (writes
+ *  nothing if DPAPI is unavailable). REFUSES to clobber an existing arm. Does NOT touch `.db-key`. */
+function armMigration(code) {
+  const norm = normaliseCode(code);
+  if (!isValidNormalised(norm)) throw new Error('dbKey.armMigration: invalid recovery code');
+  if (hasMigrateCode()) throw new Error('dbKey.armMigration: a migration is already armed — refusing to overwrite');
+  fs.writeFileSync(_migPath(), secret.encryptAtRestStrict(norm), { encoding: 'utf8', mode: 0o600 });
+}
+
+/** Read the armed migration code (NORMALISED). THROWS 'DBKEY_UNDECRYPTABLE' if absent/undecryptable —
+ *  the boot handler treats that as "couldn't turn on encryption, keep the plaintext DB" (Oracle C3),
+ *  NEVER the encrypted-DB Unlock route. */
+function loadMigrateCode({ logger } = {}) {
+  if (!hasMigrateCode()) throw _undecryptable('dbKey: no migration armed');
+  let stored;
+  try { stored = fs.readFileSync(_migPath(), 'utf8').trim(); }
+  catch (e) { throw _undecryptable('dbKey: migrate-code present but unreadable: ' + (e && e.message)); }
+  if (!secret.isEncrypted(stored)) throw _undecryptable('dbKey: migrate-code is not DPAPI-wrapped — refusing');
+  let norm;
+  try { norm = secret.decryptAtRest(stored); }
+  catch (e) {
+    try { logger && logger.warn && logger.warn('dbKey: migrate-code undecryptable (DPAPI) — keeping plaintext: ' + (e && e.message)); } catch { /* noop */ }
+    throw _undecryptable('dbKey: migrate-code undecryptable');
+  }
+  if (!isValidNormalised(norm)) throw _undecryptable('dbKey: armed code failed validation');
+  return norm;
+}
+
+/** Disarm — remove `.db-migrate-code` (best-effort). Called after a successful migrate AND by
+ *  decide()'s self-heal on any encrypted-DB boot (Oracle C1). */
+function clearMigrateCode() { try { if (fs.existsSync(_migPath())) fs.unlinkSync(_migPath()); } catch { /* noop */ } }
+
 // Test-only.
 function __setDirForTest(dir) { _dir = dir; }
 
 module.exports = {
-  KEY_FILE, CIPHER, KDF_ITER,
+  KEY_FILE, CIPHER, KDF_ITER, MIGRATE_FILE,
   hasKey, provision, loadCode, cacheCode, applyKey, applyRekey, normaliseCode, isValidNormalised,
+  mintCode, hasMigrateCode, armMigration, loadMigrateCode, clearMigrateCode,
   __setDirForTest,
 };

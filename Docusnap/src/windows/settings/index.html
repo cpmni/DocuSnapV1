@@ -2865,6 +2865,34 @@
              style="display:none; font-family:var(--mono); font-size:11px; margin-top:8px;"></div>
       </div>
 
+      <div class="section" id="dbenc-section" data-help-key="db-encryption">
+        <div class="section-title">Database encryption</div>
+        <p class="section-desc">
+          Locks the database file so its contents — the text read from your documents and the
+          values you've confirmed — are unreadable if the file is ever copied off this PC. Your
+          scanned document files and the folders they're filed into are not changed; use full-disk
+          encryption (BitLocker) if you need those covered too.
+        </p>
+        <details class="info-disclose" style="margin-bottom:10px;"><summary class="disclose">How it works &amp; what to keep safe</summary>
+          <p class="section-desc" style="margin-top:8px;">
+            When you turn this on, ScanFinder shows a one-time <strong>recovery code</strong> and
+            locks the database with it. Day to day the app opens on its own — you won't be asked for
+            the code. You only need it if you move to a new PC or restore the database from a backup.
+            <strong>Write the code down or print it and keep it somewhere safe.</strong> There is no
+            way to unlock the data without it — not even us.
+          </p>
+        </details>
+        <div class="threshold-row">
+          <div>
+            <div class="threshold-label">Status</div>
+            <div class="threshold-sub" id="dbenc-status">Checking…</div>
+          </div>
+          <button class="btn" id="dbenc-encrypt" disabled>Turn on encryption…</button>
+        </div>
+        <div id="dbenc-msg" class="section-desc"
+             style="display:none; font-family:var(--mono); font-size:11px; margin-top:8px;"></div>
+      </div>
+
       <div class="section">
         <div class="section-title">Diagnostic Logging</div>
         <p class="section-desc">

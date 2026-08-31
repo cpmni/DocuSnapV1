@@ -2345,6 +2345,154 @@ function showTypedConfirmDialog({ title, warningHtml, requiredText, confirmLabel
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// DATABASE ENCRYPTION (opt-in) — Settings → Advanced
+// ══════════════════════════════════════════════════════════════════════════════
+// Turns on whole-DB-at-rest encryption. The one-time recovery code is MINTED (nothing on disk
+// yet), shown MASKED behind a Show button, and only after a typed confirm does main arm the
+// encrypt-at-boot and relaunch. main is the only decider; this renderer never touches the DB.
+async function loadDbEncryptionStatus() {
+  const statusEl = document.getElementById('dbenc-status');
+  const btn = document.getElementById('dbenc-encrypt');
+  if (!statusEl || !btn) return;
+  try {
+    const s = await api.dbEncryptStatus();
+    if (s && s.encrypted) {
+      statusEl.textContent = 'On — the database is encrypted on this PC.';
+      btn.textContent = 'Encryption is on';
+      btn.disabled = true;
+    } else if (s && s.canEncrypt) {
+      statusEl.textContent = 'Off — the database file can be read if it is copied off this PC.';
+      btn.textContent = 'Turn on encryption…';
+      btn.disabled = false;
+      if (s.lastError) {
+        const m = document.getElementById('dbenc-msg');
+        if (m) { m.style.display = 'block'; m.style.color = 'var(--warn)';
+          m.textContent = 'The last attempt to turn on encryption didn’t finish — your data is safe and unencrypted. You can try again.'; }
+      }
+    } else {
+      statusEl.textContent = (s && s.reason) || 'Not available on this install.';
+      btn.disabled = true;
+    }
+  } catch {
+    statusEl.textContent = 'Not available.';
+    btn.disabled = true;
+  }
+}
+loadDbEncryptionStatus();
+
+document.getElementById('dbenc-encrypt')?.addEventListener('click', async () => {
+  const msg = document.getElementById('dbenc-msg');
+  const show = (t, cls) => { if (msg) { msg.style.display = 'block'; msg.style.color = cls === 'err' ? 'var(--err)' : 'var(--muted)'; msg.textContent = t; } };
+  // Mint the one-time code (writes NOTHING to disk — a clean cancel below leaves the DB untouched).
+  let code;
+  try {
+    const res = await api.dbEncryptProvision();
+    if (!res || !res.ok || !res.recoveryCode) { show((res && res.reason) || 'Could not start encryption.', 'err'); return; }
+    code = res.recoveryCode;
+  } catch { show('Could not start encryption.', 'err'); return; }
+  // Show it (masked) + Copy/Print + the typed "I HAVE SAVED IT" confirm.
+  const saved = await showDbCodeCeremony(code);
+  if (!saved) { show('Cancelled — the database was not changed.', 'muted'); return; }
+  // Arm the encrypt-at-boot; main relaunches on success.
+  show('Encrypting and restarting ScanFinder…', 'muted');
+  try {
+    const res = await api.dbEncryptMigrate(code);
+    if (!res || !res.ok) show((res && res.reason) || 'Encryption could not be armed.', 'err');
+    // on ok, main relaunches — nothing more to do here.
+  } catch { show('Encryption could not be armed.', 'err'); }
+});
+
+// The masked one-time-code dialog with a typed confirm. Resolves true only when the user types
+// the exact phrase and confirms; cancel / backdrop-Escape resolve false. Mirrors the
+// showSecretDialog / showTypedConfirmDialog conventions (data-help-ignore + repairModalInputFocus).
+function showDbCodeCeremony(code) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed; inset:0; z-index:9998; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center;';
+    overlay.setAttribute('data-help-ignore', '1');
+    const masked = code.replace(/[^-]/g, '•');
+    const REQUIRED = 'I HAVE SAVED IT';
+    overlay.innerHTML = `
+      <div style="width:400px; background:var(--surface); border:1px solid var(--border2); border-radius:10px;
+                  padding:18px; display:flex; flex-direction:column; gap:12px; font-family:var(--sans); color:var(--text);">
+        <div style="font-size:13px; font-weight:500;">Save your database recovery code</div>
+        <div style="font-size:11px; color:var(--muted); line-height:1.6;">
+          This is the <strong>only</strong> key to your encrypted database. Write it down or print it and keep
+          it somewhere safe and offline. Reveal it only when no one can see your screen. If it is lost, the
+          data cannot be recovered — not even by us.
+        </div>
+        <div id="dbc-code" style="font-family:var(--mono); font-size:16px; letter-spacing:.08em; text-align:center;
+                    padding:14px; border-radius:8px; background:var(--bg); border:1px solid var(--accent-border);
+                    color:var(--accent2); user-select:text;">${escHtml(masked)}</div>
+        <div style="display:flex; gap:8px;">
+          <button id="dbc-show" style="flex:1; padding:8px; border-radius:6px; border:1px solid var(--border2); background:transparent; color:var(--text); font-family:inherit; font-size:12px; cursor:pointer;">Show</button>
+          <button id="dbc-copy" style="flex:1; padding:8px; border-radius:6px; border:1px solid var(--border2); background:transparent; color:var(--text); font-family:inherit; font-size:12px; cursor:pointer;">Copy</button>
+          <button id="dbc-print" style="flex:1; padding:8px; border-radius:6px; border:1px solid var(--border2); background:transparent; color:var(--text); font-family:inherit; font-size:12px; cursor:pointer;">Print…</button>
+        </div>
+        <div style="font-size:11px; color:var(--muted);">Type <strong style="color:var(--text); font-family:var(--mono);">${REQUIRED}</strong> to turn on encryption:</div>
+        <input id="dbc-input" type="text" spellcheck="false" autocomplete="off" style="padding:9px; border-radius:6px; border:1px solid var(--border2); background:var(--bg); color:var(--text); font-family:var(--mono); font-size:13px;">
+        <div style="display:flex; gap:8px;">
+          <button id="dbc-cancel" style="flex:1; padding:9px; border-radius:6px; border:1px solid var(--border2); background:transparent; color:var(--muted); font-family:inherit; font-size:12px; cursor:pointer;">Cancel</button>
+          <button id="dbc-ok" disabled style="flex:1; padding:9px; border-radius:6px; border:none; background:var(--accent); color:#fff; font-family:inherit; font-size:12px; font-weight:500; cursor:pointer; opacity:.45;">Turn on encryption</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const codeEl = overlay.querySelector('#dbc-code');
+    const input  = overlay.querySelector('#dbc-input');
+    const btnOk  = overlay.querySelector('#dbc-ok');
+    let revealed = false;
+    const close   = (r) => { overlay.remove(); document.removeEventListener('keydown', onKey); resolve(r); };
+    const matches = () => input.value.trim().toUpperCase() === REQUIRED;
+    const sync    = () => { btnOk.disabled = !matches(); btnOk.style.opacity = matches() ? '1' : '.45'; };
+    const onKey   = (e) => { if (e.key === 'Escape') close(false); else if (e.key === 'Enter' && matches()) close(true); };
+    overlay.querySelector('#dbc-show').addEventListener('click', (e) => {
+      revealed = !revealed; codeEl.textContent = revealed ? code : masked; e.target.textContent = revealed ? 'Hide' : 'Show';
+    });
+    overlay.querySelector('#dbc-copy').addEventListener('click', async (e) => {
+      try { await navigator.clipboard.writeText(code); e.target.textContent = 'Copied ✓'; }
+      catch { e.target.textContent = 'Copy failed'; }
+      setTimeout(() => { e.target.textContent = 'Copy'; }, 2000);
+    });
+    overlay.querySelector('#dbc-print').addEventListener('click', () => printDbCode(code));
+    input.addEventListener('input', sync);
+    overlay.querySelector('#dbc-cancel').addEventListener('click', () => close(false));
+    btnOk.addEventListener('click', () => { if (matches()) close(true); });
+    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(false); });
+    document.addEventListener('keydown', onKey);
+    (window.repairModalInputFocus || ((el) => requestAnimationFrame(() => { el.focus(); el.select(); })))(input);
+  });
+}
+
+// Print ONLY the code sheet (print-scoped stylesheet hides the app chrome), reusing the login
+// recovery-code print pattern — a clean quarter-page note, not a screenshot.
+function printDbCode(code) {
+  let sheet = document.getElementById('dbenc-print-sheet');
+  if (!sheet) {
+    sheet = document.createElement('div');
+    sheet.id = 'dbenc-print-sheet';
+    document.body.appendChild(sheet);
+    const style = document.createElement('style');
+    style.textContent = `
+      #dbenc-print-sheet { display:none; }
+      @media print {
+        body > *:not(#dbenc-print-sheet) { display:none !important; }
+        #dbenc-print-sheet { display:block; font-family:'Segoe UI', sans-serif; color:#000; padding:40px; }
+        #dbenc-print-sheet .rp-code { font-family:Consolas, monospace; font-size:22px; letter-spacing:2px;
+          border:1px solid #000; padding:14px 18px; display:inline-block; margin:16px 0; }
+      }`;
+    document.head.appendChild(style);
+  }
+  sheet.innerHTML = `
+    <h2>ScanFinder — database recovery code</h2>
+    <div class="rp-code"></div>
+    <p>This is the only key to your encrypted ScanFinder database. It is needed to open the database
+    on a new PC or from a backup. If it is lost, the data cannot be recovered. Store this sheet
+    somewhere safe and offline.</p>`;
+  sheet.querySelector('.rp-code').textContent = code;
+  window.print();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // THEME TOGGLE
 // ══════════════════════════════════════════════════════════════════════════════
 

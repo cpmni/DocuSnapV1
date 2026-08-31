@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
+  <title>Unlock database</title>
+  <script src="../shared/theme.js"></script>
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    /* Palette + tokens are centralised in shared/theme.css (light default + matching dark). */
+    html, body { height: 100%; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      display: flex; flex-direction: column; height: 100vh;
+    }
+    .titlebar { height: 36px; -webkit-app-region: drag; display: flex;
+      align-items: center; justify-content: flex-end; padding: 0 8px; }
+    .titlebar button { -webkit-app-region: no-drag; background: none; border: none;
+      color: var(--muted); width: 28px; height: 28px; cursor: pointer; font-size: 15px; }
+    .titlebar button:hover { color: var(--text); }
+    main { flex: 1; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; padding: 24px; text-align: center; gap: 14px; }
+    .lock { font-size: 30px; line-height: 1; }
+    h1 { font-size: 18px; font-weight: 600; }
+    .sub { font-size: 13px; color: var(--muted); max-width: 340px; }
+    .enter { display: flex; flex-direction: column; gap: 8px; width: 100%;
+      max-width: 340px; margin-top: 4px; }
+    .enter label { font-size: 12px; color: var(--muted); text-align: left; }
+    .enter input { background: var(--surface); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text); padding: 10px 12px;
+      font-family: 'Consolas', 'IBM Plex Mono', monospace; font-size: 15px;
+      letter-spacing: 1px; text-align: center; text-transform: uppercase; }
+    .enter input::placeholder { color: var(--muted); letter-spacing: normal; text-transform: none; }
+    button.action { -webkit-app-region: no-drag; background: var(--accent);
+      color: #fff; border: none; border-radius: 6px; padding: 10px 16px;
+      font-size: 13px; cursor: pointer; }
+    button.action.secondary { background: var(--surface); color: var(--text);
+      border: 1px solid var(--border); }
+    button.action:disabled { opacity: .5; cursor: default; }
+    .msg { font-size: 12px; min-height: 16px; }
+    .msg.err { color: var(--err); }
+    .msg.ok { color: #3ecf8e; }
+    .lost { font-size: 11px; color: var(--muted); max-width: 340px; line-height: 1.5; }
+    .row { display: flex; gap: 10px; margin-top: 2px; }
+  </style>
+</head>
+<body>
+  <div class="titlebar"><button id="min">—</button><button id="close">✕</button></div>
+  <main>
+    <div class="lock">🔒</div>
+    <h1 id="title">Unlock your database</h1>
+    <div class="sub" id="sub">Enter your database recovery code to open ScanFinder.</div>
+    <div class="enter">
+      <label for="code">Database recovery code</label>
+      <input id="code" type="text" placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX"
+             autocomplete="off" spellcheck="false" maxlength="40" />
+      <button class="action" id="unlock">Unlock</button>
+      <div class="msg" id="msg"></div>
+    </div>
+    <p class="lost">This is the code shown when database encryption was turned on. Without it
+      the data cannot be opened — there is no back door. Keep looking; a copy may be printed
+      or saved from that day.</p>
+    <div class="row">
+      <button class="action secondary" id="quit">Quit</button>
+    </div>
+  </main>
+  <script src="renderer.js"></script>
+</body>
+</html>

@@ -7,7 +7,7 @@
  * Each module registers its own IPC handlers via module.register(ipcMain, getDb, ...).
  */
 
-const { app, BrowserWindow, ipcMain, screen, shell, Tray, Menu, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell, Tray, Menu, Notification, dialog } = require('electron');
 const path = require('path');
 const fs   = require('fs');
 const { repairKeyboardFocus } = require('./lib/focusRepair');
@@ -163,6 +163,8 @@ function templatesDir() {
 // ── Window management ─────────────────────────────────────────────────────────
 const windows = {};
 let isQuitting = false;   // true only when a real quit is underway (tray Exit / OS) — lets the main window actually close instead of hiding to tray
+let _dbEncryptBootError = null;   // set by the boot-migrate handler if the opt-in encrypt failed (surfaced in Settings; kept plaintext)
+let _pendingEncryptCode = null;   // the minted recovery code held between the provision + migrate IPCs (main memory ONLY, never logged/persisted)
 let tray = null;          // system-tray icon; kept referenced so it isn't garbage-collected
 
 // Doc id to focus when the review window opens via "Edit in Review" from Search.
@@ -184,6 +186,8 @@ let pendingTeachDocId = null;
 const MAIN_WINDOW_OPTIONS    = { width: 1100, height: 750, minWidth: 800, minHeight: 560 };
 const LOGIN_WINDOW_OPTIONS   = { width: 460, height: 660, resizable: false, minimizable: false, maximizable: false };
 const LICENSE_WINDOW_OPTIONS = { width: 460, height: 560, resizable: false, minimizable: false, maximizable: false };
+// DB-at-rest Unlock/Recover window (a pre-key boot gate — encrypted DB whose no-prompt cache can't open it).
+const UNLOCK_WINDOW_OPTIONS  = { width: 460, height: 540, resizable: false, minimizable: false, maximizable: false };
 // The wizard is a FIXED-SIZE window (resizable:false), so its height must fit its TALLEST
 // step, not its average one. Step 1 grows by ~95px the moment "Choose a folder" reveals the
 // processed-scans path row — at 720 that tipped the panel into its own overflow, so a
@@ -382,6 +386,57 @@ function showUpdateLockWindow() {
     win?.on('close', () => { if (!isQuitting && !win._allowClose) { isQuitting = true; app.quit(); } });
   } catch {}
   return win;
+}
+
+// ── DB-at-rest encryption: the Unlock/Recover window + the downgrade tripwire ────────────────
+// Reached ONLY on the pre-key boot paths (an encrypted DB whose no-prompt DPAPI cache can't open
+// it — a restored backup on a new PC, or a lost/undecryptable cache — or a downgrade tripwire).
+// On these paths `_encryptionCode` is still null AND the tray / before-quit / window-control IPC
+// are NOT yet registered, so the normal teardown (window-all-closed → closeToTrayEnabled() →
+// getDb()) would call getDb() on the UNKEYED encrypted DB and throw, stranding a headless process.
+// Therefore every exit here is `app.exit()`, NEVER `app.quit()` — no teardown path ever opens the
+// DB. `unlock` is deliberately not a CHILD or PRIMARY window (no parent-modal, no hide-to-tray).
+// (eric-reviewed 2026-08-31 — the strand-headless + tripwire-opens-plaintext seams.)
+function openUnlockWindow(mode) {
+  try {
+    destroyWindow('splash');
+    const win = createWindow('unlock', UNLOCK_WINDOW_OPTIONS, 'index.html');
+    if (!win) { dialog.showErrorBox('ScanFinder', 'Could not open the unlock screen. The app will close.'); app.exit(1); return; }
+    // Closing the X (or the in-window Quit) exits deterministically — never hide-to-tray (no tray
+    // yet), never fall through to getDb() on the unkeyed DB.
+    win.on('close', () => { if (!win._allowClose) app.exit(0); });
+    const push = () => { try { win.webContents.send('unlock-state', { mode }); } catch {} };
+    if (!win.webContents.isLoading()) push();
+    else win.webContents.once('did-finish-load', push);
+  } catch (e) {
+    try { dialog.showErrorBox('ScanFinder', 'The unlock screen failed to start:\n' + (e && e.message)); } catch {}
+    app.exit(1);
+  }
+}
+
+function showEncryptionTripwire() {
+  // `.db-key` present beside a PLAINTEXT DB = a downgrade / stale-key state. Opening plaintext would
+  // defeat the encryption the key implies, so we refuse — loudly, synchronously, pre-window. `app.exit(1)`
+  // NOT `app.quit()`: quit would run window-all-closed → getDb() and OPEN the very plaintext DB we refuse.
+  try {
+    dialog.showErrorBox('ScanFinder cannot start',
+      'The database looks unprotected, but this PC still holds an encryption key for it.\n\n'
+      + 'To keep your data safe, ScanFinder will not open the database in this state. This can happen if '
+      + 'the database file was replaced with an older, unencrypted copy.\n\n'
+      + 'Restore the encrypted database, or contact support before continuing.');
+  } catch {}
+  app.exit(1);
+}
+
+// The boot-time encrypt (the opt-in ceremony armed a DISJOINT `.db-migrate-code`; Oracle C3/C5). Runs in
+// whenReady, STRICTLY before the first getDb(), so the DB is closed and migrate()'s renames are
+// contention-free (a live better-sqlite3 handle would EBUSY the rename). The fail-toward-plaintext
+// orchestration lives in lib/dbBootMigrate (pinned in isolation). Does NOT early-return: control falls
+// through to the normal boot (encrypted+keyed on success, plaintext on failure); a failure is surfaced
+// in Settings via `_dbEncryptBootError`.
+function _runBootMigration(dbPath) {
+  const res = require('./lib/dbBootMigrate').run({ dbPath, logger });
+  _dbEncryptBootError = res && res.error ? res.error : null;
 }
 
 function showLicenseWindow(gate) {
@@ -1094,6 +1149,120 @@ app.whenReady().then(() => {
     : path.join(__dirname, '..', 'processing.log');
   logger.init(logFile, fs);
   diaglog.init(app);   // deep diagnostic log target (enabled lazily when the flag is on)
+
+  // ── DB-at-rest encryption: the Unlock IPC + the startup unwrap gate (code-as-passphrase) ─────
+  // These IPC handlers are registered HERE, before the gate, because the bulk IPC registration +
+  // the shared window-control handlers live AFTER the gate's early-return (a pre-key Unlock window
+  // has none of them). Sender-scoped to the unlock window only.
+  let _unlockBusy = false;
+  ipcMain.handle('unlock-recover', (e, code) => {
+    if (BrowserWindow.fromWebContents(e.sender) !== windows['unlock']) return { ok: false, reason: 'bad-sender' };
+    const dbKey = require('./lib/dbKey');
+    const norm = dbKey.normaliseCode(code);
+    if (!dbKey.isValidNormalised(norm)) return { ok: false, reason: 'invalid_format' };   // shape-reject before any KDF/open
+    if (_unlockBusy) return { ok: false, reason: 'busy' };                                // serialize in-flight (no paste-loop stacking)
+    _unlockBusy = true;
+    try {
+      const dbPath = path.join(app.getPath('userData'), 'docusnap.db');
+      const Database = require('better-sqlite3');
+      let db = null;
+      try {
+        db = new Database(dbPath);                                 // read-write keyed open — the PROVEN path (test_db_cipher)
+        dbKey.applyKey(db, norm);                                  // cipher + kdf_iter + key (single choke point)
+        db.prepare('SELECT count(*) FROM sqlite_master').get();    // a WRONG code throws here (SQLITE_NOTADB), not on open
+      } finally { if (db) { try { db.close(); } catch {} } }       // never hold the live handle into the relaunch
+      dbKey.cacheCode(norm);                                       // (re)establish the no-prompt DPAPI cache on this PC
+      app.relaunch(); app.exit(0);                                 // clean restart → open-cached (silent)
+      return { ok: true };
+    } catch (err) {
+      try { logger.warn && logger.warn('unlock-recover: code did not open the DB: ' + ((err && err.code) || (err && err.message))); } catch {}
+      return { ok: false, reason: 'bad-code' };
+    } finally { _unlockBusy = false; }
+  });
+  ipcMain.on('unlock-quit', (e) => {
+    if (BrowserWindow.fromWebContents(e.sender) !== windows['unlock']) return;
+    app.exit(0);
+  });
+
+  // ── DB-at-rest encryption: the opt-in ceremony IPCs (admin-only; Settings → Advanced) ────────
+  // provision MINTS a code (main stashes it, so shown == armed == migrate code — Oracle C6); the user
+  // saves it + types a confirm; migrate ARMS the DISJOINT `.db-migrate-code` and relaunches — the boot
+  // gate encrypts on the next start (contention-free, no live handle). Oracle C4: hard-refuse unless the
+  // DB is plaintext AND no key cache exists, so a live key is never clobbered and an encrypted DB is
+  // never re-armed. requireRole('admin') throws FORBIDDEN across the IPC boundary for a non-admin.
+  const _canEncryptNow = () => {
+    try {
+      const dbPath = path.join(app.getPath('userData'), 'docusnap.db');
+      const dbKey = require('./lib/dbKey');
+      return {
+        plaintext: require('./lib/dbMigrateEncrypt')._hasMagic(dbPath),
+        hasKey: dbKey.hasKey(),
+        armed: dbKey.hasMigrateCode(),
+        active: require('../database/index').isEncryptionActive(),
+      };
+    } catch { return { plaintext: false, hasKey: false, armed: false, active: false }; }
+  };
+  ipcMain.handle('db-encrypt-status', () => {
+    authModule.requireRole('admin');
+    const st = _canEncryptNow();
+    return {
+      encrypted: st.active,
+      canEncrypt: !st.active && st.plaintext && !st.hasKey && !st.armed,
+      reason: (!st.active && st.hasKey) ? 'A database key is already present on this PC.' : null,
+      lastError: _dbEncryptBootError || null,
+    };
+  });
+  ipcMain.handle('db-encrypt-provision', () => {
+    authModule.requireRole('admin');
+    const st = _canEncryptNow();
+    if (st.active || !st.plaintext || st.hasKey || st.armed) { _pendingEncryptCode = null; return { ok: false, reason: 'Encryption is already on or armed on this PC.' }; }
+    _pendingEncryptCode = require('./lib/dbKey').mintCode();   // NOTHING on disk yet — a cancel leaves the DB untouched
+    return { ok: true, recoveryCode: _pendingEncryptCode };
+  });
+  ipcMain.handle('db-encrypt-migrate', () => {
+    authModule.requireRole('admin');
+    const st = _canEncryptNow();
+    if (st.active || !st.plaintext || st.hasKey || st.armed) { _pendingEncryptCode = null; return { ok: false, reason: 'Encryption is already on or armed on this PC.' }; }
+    if (!_pendingEncryptCode) return { ok: false, reason: 'No code was set up — please start again.' };
+    const code = _pendingEncryptCode;
+    try {
+      require('./lib/dbKey').armMigration(code);   // write the DISJOINT arm (fail-closed; refuses to clobber)
+    } catch (e) {
+      _pendingEncryptCode = null;
+      try { require('./lib/dbKey').clearMigrateCode(); } catch {}   // never leave a partial arm
+      try { logger.err('db-encrypt-migrate: could not arm the migration: ' + (e && e.message)); } catch {}
+      return { ok: false, reason: 'Could not turn on encryption on this PC.' };
+    }
+    _pendingEncryptCode = null;
+    try { authModule.logAudit(getDb(), { action: 'db_encryption_armed', action_category: 'admin', outcome: 'success' }); } catch {}
+    _dbEncryptBootError = null;                                   // a fresh attempt clears any prior failure note
+    app.relaunch(); app.exit(0);                                  // the boot gate encrypts on the next start
+    return { ok: true };
+  });
+
+  // The gate itself (Oracle C4). Runs BEFORE the first getDb() below, so setEncryptionKey() precedes
+  // the memoized open(). decide() is fs-only (never opens the DB). On a plaintext install (today — no
+  // `.db-key`) this is a byte-identical no-op. The unlock/tripwire paths early-return out of whenReady:
+  // the normal splash→login→shell boot does NOT run, so they own their teardown (app.exit, never getDb).
+  {
+    const dbPath = path.join(app.getPath('userData'), 'docusnap.db');
+    let egate;
+    try { egate = require('./lib/dbStartup').decide({ dbPath }); }
+    catch (e) { try { logger.err('db startup decide failed (assuming plaintext): ' + e.message); } catch {} egate = { action: 'plaintext', reason: 'decide-error' }; }
+    if (egate.action === 'open-cached') {
+      try { require('../database/index').setEncryptionKey(require('./lib/dbKey').loadCode({ logger })); }
+      catch (e) {
+        if (e && e.code === 'DBKEY_UNDECRYPTABLE') { openUnlockWindow('recover'); return; }
+        try { logger.err('db unwrap failed: ' + (e && e.message)); } catch {}
+        destroyWindow('splash');
+        dialog.showErrorBox('ScanFinder cannot start', 'The database key could not be read.\n\n' + ((e && e.message) || ''));
+        app.exit(1); return;
+      }
+    } else if (egate.action === 'prompt-code') { openUnlockWindow('restore'); return; }
+    else if (egate.action === 'tripwire') { destroyWindow('splash'); showEncryptionTripwire(); return; }
+    else if (egate.action === 'migrate') { _runBootMigration(dbPath); }   // opt-in encrypt-at-boot; NO return — falls through (encrypted on success, plaintext on failure)
+    // egate.action === 'plaintext' → fall through (byte-identical to today's boot)
+  }
 
   // ── Diagnostic completeness (owner ask 2026-08-02: "check log → know the problem") ──────
   // Four always-on, zero-behaviour-change taps. Everything below is log-only and guarded.

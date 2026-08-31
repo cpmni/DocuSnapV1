@@ -97,6 +97,12 @@ contextBridge.exposeInMainWorld('docusnap', {
   // cannot self-grant) and receive the blocked-state reason for display.
   licenseEnterApp:    () => ipcRenderer.send('license-enter-app'),
   onLicenseState:     (cb) => ipcRenderer.on('license-state', (_e, s) => cb(s)),
+  // DB-at-rest unlock window (encrypted DB whose no-prompt DPAPI cache can't open it —
+  // restored backup on a new PC, or a lost/undecryptable cache). The renderer submits the
+  // typed recovery code; main verifies it against the DB header, caches it and relaunches.
+  unlockRecover:      (code) => ipcRenderer.invoke('unlock-recover', code),
+  unlockQuit:         () => ipcRenderer.send('unlock-quit'),
+  onUnlockState:      (cb) => ipcRenderer.on('unlock-state', (_e, s) => cb(s)),
 
   // ── Window controls ─────────────────────────────────────────────────────────
   windowMinimise:     () => ipcRenderer.send('window-minimise'),
@@ -421,6 +427,12 @@ contextBridge.exposeInMainWorld('docusnap', {
   backupExport:        (password)        => ipcRenderer.invoke('settings-backup-export', { password }),
   backupPreview:       (password)        => ipcRenderer.invoke('settings-backup-preview', { password }),
   backupApply:         (path, password)  => ipcRenderer.invoke('settings-backup-apply', { path, password }),
+  // DB-at-rest encryption opt-in (admin; Settings → Advanced → Database encryption). Status is
+  // read-only; provision mints the one-time recovery code (nothing on disk yet); migrate arms the
+  // one-time encrypt-at-boot and relaunches. main is the only decider.
+  dbEncryptStatus:     ()      => ipcRenderer.invoke('db-encrypt-status'),
+  dbEncryptProvision:  ()      => ipcRenderer.invoke('db-encrypt-provision'),
+  dbEncryptMigrate:    (code)  => ipcRenderer.invoke('db-encrypt-migrate', code),
   // Runtime flag for renderer dev-gating (e.g. the dev-only "Erase ALL data" tool).
   appIsDev:            ()         => ipcRenderer.invoke('app-is-dev'),
 
