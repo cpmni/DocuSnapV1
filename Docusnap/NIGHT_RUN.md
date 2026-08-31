@@ -34,6 +34,17 @@ and, with no safe route, that item STOPS** — never improvise around a refusal.
   in `client/` and in `cert-tool/`, then a launch smoke-test. No ABI rebuild needed (unlike the core). Not urgent
   (the client talks `/v1` TLS, interoperates regardless of its own Electron version), but do it before the next
   client build — 31.7.7 is old for security patches, and the merge already set the intent.
+- **2026-08-31 · [bug, real install] Quick-check dropdown focus** — on the packaged E44 build, the native
+  `<select>` dropdowns in the "Quick check" grid don't open on click until an OS deactivate→reactivate (the
+  user's Start-menu round-trip healed it). Quick check = the in-page `.ba-modal` in `review/renderer.js`
+  (built ~1052, `_baOpen` ~1187) — and `_baOpen` does NOT run the app's focus-repair on open, unlike the
+  modals that work (`repairModalInputFocus` double-rAF, ~1702/~5273). Likely the intra-frame focus-commit
+  class nudged by the Chromium 31→44 jump; healing signature also matches the OS-input-routing "third failure
+  mode" (memory `project_focus_repair_mechanism`). eric is diagnosing the SAFE fix (respect the landmines:
+  never `win.blur()/win.focus()` — the flash storm; never fire the repair on select-open — "flashes open and
+  shut"; select is excluded from the pointerdown repair). `batch_audit_enabled` is default-ON (mig 93), so a
+  customer can hit it. Workaround for now: click away from the app and back. Fix + a regression pin, then a
+  rebuild before wide rollout.
 - **2026-08-31 · Thorough Chris round (sandboxed `/christest`) — full end-to-end customer vet.** Standing rules:
   sandbox ONLY (a COPY of the corpus, never the live app/DB/Desktop), real screenshots, cards logged and NOT
   implemented that night, a clear YES/NO verdict → `docs/CHRIS_FULL_APP_REVIEW_<date>.md`. Focus the NEWEST surfaces
