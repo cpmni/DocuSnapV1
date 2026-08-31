@@ -141,6 +141,16 @@ Regenerate after a big import: `TESTING/_measure/reslice_20260830/_build_test_co
 confirm/teach from this folder into the LIVE app.
 
 ## DONE ledger (newest first) — do NOT repeat unless the "repeat if" condition holds
+- **2026-08-31 · DB-at-rest encryption SLICES 0 + 2 BUILT + PINNED (`603b52e` dep swap, `783b7f3` migration).**
+  Slice 0: `better-sqlite3` aliased to `better-sqlite3-multiple-ciphers@^12` (12.11.1 — spans Node 20 AND
+  22, so E44 needs only an ABI rebuild, NOT a fork bump); cipher pin `test_db_cipher.js` (9, chacha20 +
+  negative controls) + a real-DB drop-in read + check-licenses green. Slice 2: `dbMigrateEncrypt.js`
+  crash-safe state machine (`test_db_migrate_encrypt.js` 16 — hexrekey encrypt, verify + negative control,
+  crash-ordered swap, every crash → working DB) + the merge-backup keyed VACUUM INTO + `db-crypto-tool.js`
+  (status/export-plain). NOTHING encrypts a live DB (no trigger wired). Repeat if: NEVER re-build — the
+  remaining OWNER-SUPERVISED pieces (slice-1 tail: main.js unwrap + Unlock/Recover window + the opt-in
+  Settings trigger; slice 3: default-on + downgrade tripwire + ceremony) are the QUEUE item; and the
+  slice-0 heavy gates (realdoc-605 on the fork + packaged-build boot) run with the design-1/2 gates.
 - **2026-08-31 · DB-at-rest encryption SLICE 1 CORE BUILT DARK + pinned (`e2a0535`).** `src/lib/dbKey.js`
   (32-byte master key, fail-closed DPAPI `.db-key`, argon2id `.db-recovery`, never-regenerate) +
   `secretStore.encryptAtRestStrict` + the gated `database/index.js` hexkey seam (inert) + dead

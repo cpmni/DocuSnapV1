@@ -46,9 +46,11 @@ ask: "the DB is text-editor readable." Consensus eric+gary → **Oracle SIGN-OFF
 
 ## Slice plan + gates
 - **Slice 0 — dep swap.** ✅ DONE IN DEV (2026-08-31, owner-supervised): alias
-  `npm:better-sqlite3-multiple-ciphers@^12` → **12.11.1** (the same-major line matching Electron 31's
-  Node-20 ABI; the fork's 13.x needs Node ≥22, so it is correct ONLY after an E44 merge — this coupling
-  belongs on the E44 gate-5b checklist), `npm install` + `install-app-deps` clean, `check-licenses` green
+  `npm:better-sqlite3-multiple-ciphers@^12` → **12.11.1**, whose engines are `node 20.x || 22.x || …`,
+  so it spans BOTH Electron 31 (Node 20) AND Electron 44 (Node 22) — an E44 merge needs only an
+  `install-app-deps` ABI rebuild + a re-run of the cipher pin, NOT a fork version bump. (The `.db-key`
+  is a THIRD DPAPI blob for the E44 gate-5b continuity check, but it bites only once an install is
+  encrypted — moot until then.) `npm install` + `install-app-deps` clean, `check-licenses` green
   (MIT auto-passes), the runtime cipher pin green (`src/lib/test_db_cipher.js`: name = the fork, active
   cipher **chacha20**, hexkey round-trip, header-magic-absent, no-cleartext, and the Oracle NEGATIVE
   CONTROLS — open-without-key FAILS, wrong-key FAILS), and a drop-in proof reading the REAL live DB (a
