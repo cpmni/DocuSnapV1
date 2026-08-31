@@ -21,7 +21,26 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-31 NIGHT (the adversarial-corpus night run): **READ `HANDOVER_2026-08-31_MORNING.md` FIRST.**
+## ⏭ LATEST — 2026-08-31 EVENING: **READ `HANDOVER_2026-08-31_EVENING.md` FIRST** (it condenses the WHOLE
+day + carries the three build specs). Branch `feat/teach-side-overnight`, origin at `0ddd268`, local ahead
+`655f915`+`9575883`+wrap (owner pushes). **THE DAY:** the adversarial night run (Hard Set 400 PDFs, 0 wrong
+would-files, Chris YES) → teach-first practice run + 20-page User Guide (Chris r2 YES ×2) → **ALL THREE Hard
+Set cards BUILT+Oracle-cycled+GATED+FLIPPED live, then mig 98 (`0ddd268`) force-defaults the six gated
+switches ON everywhere** (never strict-money) → live import demo 20/20 fills + clean purge → **Terms FINAL**
+(`127ec74`, LEGAL_VERSION 2026-08-31) → installer `dist\ScanFinder Setup 2.0.0-r20260831-1247-0ddd268.exe`
+(owner testing on machine 2) → **three afternoon designs, all Oracle S-O-W/COND, NOTHING BUILT — the next
+session's job on the owner's pick:** (1) `TEMPLATE_LOCATE_ROLE_QUALIFIER` (Net-Total locate steal — demote
+role-qualified 'Total' occurrences via keyword's `_total_role_collision` vocab INSIDE `_locate_anchor` + a
+page-wide leg; carriers-override + born-digital-twin gaps conditioned); (2) `TEMPLATE_FRAGMENT_CONTAINMENT_
+YIELD` (CAD8⊂CAD832694 — a merge leg adopting a ≥85 format-valid keyword read that strictly prefix-contains
+a shapewarn'd mapping fragment; ref-family only, NEVER money, always noted; the sanctioned successor to the
+08-09 Q2 rejection); (3) **DB-at-rest encryption** (mc-fork alias + DPAPI `.db-key` + printed Recovery Key,
+hexrekey-on-copy migration, slices 0-3; four seam ship-blockers conditioned incl. secretStore's fail-open
+write). Verdicts+conditions = the three 08-31 entries at the foot of `docs/oracle_log.md`. **Traps refreshed:**
+builds need EVERY electron closed (EBUSY); NEVER taskkill by cmdline substring (self-match killed the owner's
+app — recovered); Start-Transcript beats Start-Process redirects for detached runners; `@N%` trace badges =
+page-Y not confidence; APPDATA can be empty in electron-as-node children. Prior:
+## (previous) 2026-08-31 NIGHT (the adversarial-corpus night run): **READ `HANDOVER_2026-08-31_MORNING.md` FIRST.**
 Branch `feat/teach-side-overnight`, night commits `1e1461f` (gen) · `1cbaad3` (scorer) · `1590d03` (scorer fixes +
 score report) · `363dd26` (class cards) · `6ba8782` (Chris) · wrap, **NOT pushed** (owner reviews then pushes).
 **PIPELINE UNTOUCHED — no switch flipped, no live-DB/app/Desktop write; everything ran on a `db.backup()` copy.**
