@@ -49,7 +49,19 @@ learning/admin, 5 old-voice rewrites, manifest re-pointed, `check:help` fully gr
 ALL PASS) — **Chris round 2 on sandbox2 (PID 33988, LEFT RUNNING): BOTH VERDICTS YES**, his 4 build-defect
 cards fixed same night (Esc soft-lock, done-row dupe, 3-detail parity, teach-intro label copy), help-mode
 one-shot = owner choice in pendingfeatures; teach/index.html intro now says value-only-label-found-for-you.
-RESTART the live app to load tutorial/tour/help. Prior:
+RESTART the live app to load tutorial/tour/help. **DAY-2 LATE MORNING: ALL THREE CARDS BUILT DARK +
+ORACLE-CYCLED + GATED** (`docs/designs/DARK_ARCS_GATES_2026-08-31.md` = the evidence dossier; verdicts in
+`docs/oracle_log.md`): `keyword_cell_below` (`ece65b1`+`829afed`, SEND BACK→C1-C6; Hard Set boxed ref/date
+0-15→85-100%, realdoc-605 byte-identical) · `money_sign_parens`/`money_sign_cr` (`9dd5139`+`e0fe39d`,
+S-O-W/COND; C1 = either capture FORCES CREDIT_SIGN_COHERENCE in `_reconcileEnv`, pinned
+`test_money_sign_coupling.js`; credit totals 24→65%, realdoc byte-identical) · `buyer_issued_convention_note`
+(`5d1dd84`+`f72eee5`, S-O-W/COND; 'logo' in the tuple; stripped-warm 7/7 noted, live unchanged, 0 unlicensed
+live POs). Migs 95-96-97 seed all OFF; dev-gated rows in DEV_SWITCH_IDS. **TERMS FINAL (`127ec74`)**:
+LEGAL_VERSION 2026-08-31, draft banner gone, product-fit additions (device release, MoR refunds, min-version
+updates, third-party notices, docs-stay-yours, General/assignment). **Installer built:** `dist\ScanFinder Setup
+2.0.0-r20260831-0918-127ec74.exe` (owner testing on a second machine). Traps refreshed: the build needs EVERY
+electron closed (better-sqlite3 EBUSY on the ABI rebuild), and NEVER kill processes matched by command-line
+substring (the query matches your own shell — it took the owner's app down; relaunched, nothing lost). Prior:
 ## (previous) 2026-08-30 NIGHT: **READ `HANDOVER_2026-08-30_NIGHT.md` FIRST.** Branch `feat/teach-side-overnight`,
 **HEAD `91ca11b`** (two commits after `0ff8b42`: `fccaf55` Python arc, `91ca11b` settings/JS/docs), **NOT pushed**
 (owner reviews then pushes). Uncommitted: `CLAUDE.md` only. **THE RE-SLICE ARC IS BUILT, DARK, ORACLE-SIGNED (C1-C14 applied) — but its two premises were FALSIFIED

@@ -18,6 +18,21 @@ scratch/sandbox, implementing a Chris card); **anything dangerous goes to the ag
 and, with no safe route, that item STOPS** — never improvise around a refusal.
 
 ## QUEUE — worth testing or checking (ranked; add freely, date each)
+- **2026-08-31 · Boxed TOTALS slice (own arc):** the cell-below arm is ref/date-only by Oracle C2
+  (money labels ship right-only; a bare "Total" is every line-items header). A money leg needs a
+  line-items-header guard + its own census. The Hard Set table_total class already reads totals
+  100% via the right leg — measure whether a real gap exists before building.
+- **2026-08-31 · Lead-minus (`-£x`) mini-vet:** dies at the right-leg separator strip
+  (keyword.py ~:2071), NOT the mint — fixing it means changing a shipped strip that also serves
+  "Total - 160.32" dash leaders. Needs its own design + census (how many live credit notes print
+  the lead-minus form?). Until then the notation stays note-only (flagged, never silent).
+- **2026-08-31 · `raw_value` on keyword money reads (small slice):** CREDIT_SIGN_COHERENCE arm 2
+  is dead on keyword reads (raw_value never set) — a MIS-typed credit note with an uncaptured
+  notation still gets no sign note. Populating raw_value at the keyword mint arms it. reggie
+  Oracle vet named it; the captures shrink the exposed class to lead/trail only.
+- **2026-08-31 · Bare-"Ref" caption vocab decision (owner):** logo_siblings/table_total refs sit
+  at 35-40% ON because gen prints bare "Ref" — not a shipped invoice_number label (the
+  `_REF_PARTY_STOP` party-guard risk is why). Either add it guarded, or accept and record.
 - **2026-08-31 · Fix the Hard Set GT flaws before any re-use** (safe harness-side edits): thermal GT
   invoice→receipt (or ship a Receipt row), `buyer_issued_po` dual-accept buyer/vendor per the 07-12
   doctrine, credit-note component-sign convention (page signs every row, GT signs only the total). Then
@@ -95,6 +110,17 @@ Regenerate after a big import: `TESTING/_measure/reslice_20260830/_build_test_co
 confirm/teach from this folder into the LIVE app.
 
 ## DONE ledger (newest first) — do NOT repeat unless the "repeat if" condition holds
+- **2026-08-31 DAY-2 · ALL THREE Hard Set class cards BUILT DARK + Oracle-cycled + GATED**
+  (`docs/designs/DARK_ARCS_GATES_2026-08-31.md`): cell-below (SEND BACK → C1-C6 applied; Hard Set
+  +240/+253 fills, realdoc byte-identical) · money-sign parens/CR (S-O-W/COND; credit totals
+  24→65%, realdoc byte-identical, C1 coherence force) · buyer-issued convention note (S-O-W/COND;
+  stripped-copy 7/7 noted, live unchanged, 0 unlicensed live POs). Migs 95-97 seed OFF. Repeat
+  if: a flip is requested (re-run that arc's arms on a fresh copy first) or the boxed-totals /
+  lead-minus / raw_value queue slices get built.
+- **2026-08-31 DAY-2 · Terms finalised + LEGAL_VERSION 2026-08-31 (`127ec74`); installer built
+  `dist\ScanFinder Setup 2.0.0-r20260831-0918-127ec74.exe`.** Repeat if: the solicitor edits the
+  text (bump LEGAL_VERSION again) or a new build is wanted (close every app instance first — the
+  better-sqlite3 EBUSY trap; and never pattern-kill processes by command-line substring).
 - **2026-08-31 DAY-2 · Practice run reworked TEACH-FIRST + full User Guide rebuild + Chris vet of
   both (VERDICTS YES ×2).** Teach sim (3 details) → import → Review-as-correction; 20-page guide,
   every deep link resolves, `check:help` fully green; Chris's 4 build-defect cards fixed same

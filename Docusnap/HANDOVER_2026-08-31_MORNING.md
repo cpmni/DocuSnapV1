@@ -121,3 +121,39 @@ window's empty-install preview check (pendingfeatures).
 practice run + open the User Guide from the account menu to review both. Day-2 commits:
 `3e47cd4` (tutorial rework) - `2a9b4d7` (guide rebuild) - the r2 fixes commit - the wrap commit.
 Restart your live app to load the new tutorial/tour/help (renderer files load at window open).
+---
+
+## DAY-2 ADDENDUM 2 (late morning): ALL THREE CARDS BUILT + ORACLE-CYCLED + GATED · Terms live · installer built
+
+**You said "build oscar's card", then reggie's, then gary's — all three are DONE, DARK, and fully
+gated** (evidence dossier: `docs/designs/DARK_ARCS_GATES_2026-08-31.md`; verdict trail:
+`docs/oracle_log.md`):
+1. `keyword_cell_below` (`ece65b1`+`829afed`) — Oracle SEND BACK -> all six conditions applied +
+   re-pinned. Hard Set: boxed ref/date 0-15% -> 85-100%, +240/+253 correct fills, 0 new wrong.
+   realdoc-605: byte-identical (adds nothing on a taught corpus).
+2. `money_sign_parens`/`money_sign_cr` (`9dd5139`+`e0fe39d`) — Oracle S-O-W/COND applied (the C1
+   co-residency force: either capture arms CREDIT_SIGN_COHERENCE). Hard Set credit totals 24%->65%
+   (lead/trail stay flagged by design). realdoc-605: byte-identical (your corpus prints no
+   parens/CR amounts).
+3. `buyer_issued_convention_note` (`5d1dd84`+`f72eee5`) — Oracle S-O-W/COND applied ('logo' in the
+   tuple; deskew-seam gate arms; demoter-immunity pins). Warm gates: your install unchanged
+   (licensed); the stripped copy flips all 7 silent->flagged. realdoc-605: byte-identical both
+   arms — 0 live POs lack the licence.
+Flip suggestions + residual queue items are in the dossier. Nothing is flipped.
+
+**Terms are LIVE (`127ec74`):** your checked text + the product-fit additions as final language
+(device release/re-activation, MoR refund route, min-supported-version updates, third-party
+notices pointer, documents-stay-yours, General section). LEGAL_VERSION 2026-08-31 — one-time
+re-accept. Ready for your solicitor re-check.
+
+**Installer for your other machine:** `dist\ScanFinder Setup 2.0.0-r20260831-0918-127ec74.exe`
+(315 MB). SmartScreen "Run anyway"; trial needs internet on first run.
+
+**Incident, owned:** my pre-build process sweep pattern-matched its own command line and the
+kill took down YOUR running app and the sandbox along with the harness (the 08-28 class). Your
+app was relaunched on the real DB within minutes (nothing lost — it's up on 9222; migs 95-97
+applied at that boot, all three switches seeded OFF); the sandbox stays down until next needed;
+the realdoc arms were re-run in full. The build then succeeded precisely because the locks were
+clear.
+
+**Gate artifacts** copied durably to `TESTING/_measure/dark_arcs_20260831/`.
