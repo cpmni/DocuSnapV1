@@ -2380,6 +2380,24 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 100 (template_fragment_containment_yield): ${e.message}`); }
   }
 
+  // ── migration 101: PROMOTE the review-bound straighten retry to a fresh-install DEFAULT (2026-08-31,
+  //    owner-approved on the Silverbeck tilted-scan evidence: on held docs the whole-page straighten retry
+  //    recovers otherwise-EMPTY ref/date at ~98%, held for a one-click "confirm once" — it NEVER auto-files
+  //    (forces needs_review) and adopts the straightened read only when overall confidence is strictly
+  //    higher, so it is safe to default. The switch shipped DARK (4607cc6); this is its promotion migration,
+  //    the same ride the other DARK switches take once their gate is met (pin test_deskew_review_retry.py).
+  //    INSERT OR IGNORE: a fresh install (no row) gets 'true'; ANY existing install's own choice — including
+  //    a deliberate hand-disable — is untouched. `deskew_on_import` stays OFF (the standing wrong-layer
+  //    ruling — that one can auto-file a bad straighten; this review-bound retry cannot). ──
+  if (!applied.has(101)) {
+    try {
+      const n = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)')
+        .run('deskew_review_retry_enabled', 'true').changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (101)').run();
+      console.log(`JS migration 101 applied: review-bound straighten retry defaulted ON for fresh installs (${n} row)`);
+    } catch (e) { console.warn(`  migration 101 (deskew_review_retry_enabled default): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next
