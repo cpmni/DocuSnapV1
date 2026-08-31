@@ -39,13 +39,13 @@ and, with no safe route, that item STOPS** — never improvise around a refusal.
   a combined-arm census WITH the reslice sweep (Nordwind 20 incl. 0023). Then the Hard Set
   dual-rendition floated/role-qualified-total class into `gen_hard_set.py`. Flip order joins AFTER
   sweep/discount; never via strict-money. Pins already green (`test_locate_role_qualifier.py`).
-- **2026-08-31 · Clipped authoritative mapping beats a correct keyword_override (owner exhibit,
-  Castellan delivery_note_0005):** the taught absolute box clipped to 'CAD8' (shapewarn, capped 70)
-  yet SUPERSEDED the keyword_override's full 'CAD832694' @93 — held honestly, but the right value
-  lost on authority. gary tracing: precedence intent, why pad-window-code + format-fail-yield
-  didn't heal, and whether the Oracle-signed DARK `BLIND_GEOM_DISAGREE_RECONCILE` arm is the
-  ready-made fix (flip vs new code). Same family as the Net-Total locate steal — possibly one
-  Oracle round for both.
+- **2026-08-31 · FLIP GATE for `template_fragment_containment_yield` (BUILT DARK `2bf7609`, mig 100 OFF):**
+  the CAD8 ⊂ CAD832694 merge-yield. realdoc-605 on a `db.backup()` copy (`RR_APP_ENV=1`,
+  `OCR_RENDER_DPI=200`, dedup `RR_IDS`): OFF byte-identical / ON **M=7 unchanged, zero accuracy drop,
+  hold-set leavers enumerated + eyeballed** (hold-with-fragment → hold-with-full-value, no new silent
+  file). Plus the Castellan five as fixtures (0005 heals, 4 siblings byte-identical) and a clipped-code
+  class into `gen_hard_set.py`. Pins already green (`test_fragment_containment_yield.py`). Queued
+  separately: the one-off OCR probe of 0005's saved inline slice (which split-path truncated the token).
 - **2026-08-31 · Boxed TOTALS slice (own arc):** the cell-below arm is ref/date-only by Oracle C2
   (money labels ship right-only; a bare "Total" is every line-items header). A money leg needs a
   line-items-header guard + its own census. The Hard Set table_total class already reads totals
@@ -138,6 +138,13 @@ Regenerate after a big import: `TESTING/_measure/reslice_20260830/_build_test_co
 confirm/teach from this folder into the LIVE app.
 
 ## DONE ledger (newest first) — do NOT repeat unless the "repeat if" condition holds
+- **2026-08-31 · TEMPLATE_FRAGMENT_CONTAINMENT_YIELD BUILT DARK + Oracle-cycled + pinned (`2bf7609`, mig 100 OFF).**
+  The CAD8 ⊂ CAD832694 merge-yield (Castellan delivery_note_0005) — the sanctioned 08-09 successor. A new
+  Stage-1 sibling leg after format-fail-yield adopts a confident keyword read that STRICTLY prefix-contains
+  a taught template_mapping fragment (ref-family only, NEVER currency/total, cap 88 + neutral both-values
+  note, C3 note-not-doubt). C1 applied: `test_stage05_format_yield.py` prose amended to name the arc.
+  `test_fragment_containment_yield.py` green (mechanical guard proven with the leg excised). Repeat if:
+  a flip is requested — run the realdoc-605 + Castellan-five + Hard-Set-class gate first (the QUEUE item).
 - **2026-08-31 · TEMPLATE_LOCATE_ROLE_QUALIFIER BUILT DARK + Oracle-cycled + pinned (`e65959c`, mig 99 OFF).**
   The Net-Total locate steal (Castellan credit_note_0008): the locate now DEMOTES role-qualified 'Total'
   occurrences (`keyword._total_role_collision`, verbatim) inside `_locate_anchor` + the born-digital twin
