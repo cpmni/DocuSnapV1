@@ -66,12 +66,13 @@ src = open(os.path.join(os.path.dirname(__file__), "..", "extraction", "engine.p
            encoding="utf-8").read()
 i0 = src.find("BUYER-ISSUED CONVENTION NOTE (gary lever 1")
 check("the hook block exists", i0 > -1)
-blk = src[i0:i0 + 3200]
+blk = src[i0:i0 + 5200]   # window sized past the Oracle C1/C4 comment insertions
 check("dark gate: BUYER_ISSUED_CONVENTION_NOTE default '0' (the != '0' idiom)",
       "os.environ.get(\"BUYER_ISSUED_CONVENTION_NOTE\", \"0\") != \"0\"" in blk)
 check("armed only on _buyer_issued", "_buyer_issued)" in blk)
-check("learned-path methods tuple exact (letterhead_prefill excluded — it carries its own note)",
-      "(\"template_fixed\", \"hint_text_match\")" in blk)
+check("learned-path methods tuple exact incl. 'logo' (Oracle C1 — the clean-accept logo fill is "
+      "the harness-unreachable risk cohort; letterhead_prefill excluded, it carries its own note)",
+      "(\"template_fixed\", \"hint_text_match\", \"logo\")" in blk)
 check("skips a row already noted", "not _sn_f.get(\"validation_note\")" in blk)
 check("operator-accepted issuers exempt", "self.accepted_issuers" in blk)
 check("both-parties wording names the suppressed vendor",
@@ -85,6 +86,44 @@ check("the hook sits AFTER the final _overall_confidence write (late, sees the s
       i0 > src.find("results[\"_overall_confidence\"]   = overall_conf"))
 check("the 07-12 vendor DROP is untouched (still pops the caption read)",
       "kw_results.pop(\"supplier_name\", None)" in src)
+
+# ── Oracle C3: the note must never become class-F sweepable (both wordings) ─────────────────────
+print()
+print("C3 — demoter immunity:")
+from extraction import engine as _eng                                     # noqa: E402
+_w1 = ("This purchase order is on Bramblewood Joinery Ltd's letterhead but names "
+       "'Greyburn Plant Services' as the supplier — confirm which company to file under.")
+_w2 = ("A purchase order usually files under the buyer — please confirm "
+       "'Bramblewood Joinery Ltd' is the right company for this one.")
+check("named-vendor wording is NOT a verification-doubt note (class F can never sweep it)",
+      _eng._is_verification_doubt_note(_w1) is False)
+check("generic wording is NOT a verification-doubt note",
+      _eng._is_verification_doubt_note(_w2) is False)
+
+# Functional survival: drive a noted supplier row through _resolve_corroborated_notes with class F
+# ARMED and a licensed-looking corroboration record — the note and the hold must come out intact
+# (F excludes supplier_name outright AND the wording matches no write-site mark). The fake-engine
+# harness mirrors tests/test_corrob_note_resolve.py.
+import types                                                              # noqa: E402
+_res = {"supplier_name": {"value": "Bramblewood Joinery Ltd", "confidence": 95,
+                          "method": "template_fixed", "validation_note": _w1},
+        "_needs_review": True}
+_corrob = {"supplier_name": {"winner_family": "mapping", "independent_agree": True,
+                             "agree": ["mapping", "keyword"], "disagree": []}}
+_fake = types.SimpleNamespace(prefix_index={}, dominant_index={}, confirmed_counts_index={},
+                              _field_candidates={}, format_class_index={},
+                              _trace=False, _t=lambda *a, **k: None, log=lambda *a, **k: None)
+os.environ["CORROB_VERIFICATION_DOUBT_CLEAR"] = "1"
+try:
+    _eng.ExtractionEngine._resolve_corroborated_notes(_fake, _res, {}, _corrob, None, "")
+except Exception as e:
+    check("functional drive ran (%s)" % e, False)
+finally:
+    os.environ.pop("CORROB_VERIFICATION_DOUBT_CLEAR", None)
+check("F armed + licensed record: the note SURVIVES on supplier_name",
+      _res["supplier_name"].get("validation_note") == _w1)
+check("…and the value is untouched",
+      _res["supplier_name"]["value"] == "Bramblewood Joinery Ltd")
 
 print()
 print("FAILED: %d" % fails if fails else "ALL PASS")

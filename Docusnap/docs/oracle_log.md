@@ -2372,3 +2372,20 @@ _reconcileEnv + test_money_sign_coupling.js source pin; the arm-3 handoff row in
 test_money_sign_parens_cr.py; twin comments corrected in both mints; gate wording carried into
 the realdoc adjudication. Flip order: captures only with CREDIT_SIGN_COHERENCE (structural via
 the force); parens and CR flip independently of each other.
+## 2026-08-31 — BUYER_ISSUED_CONVENTION_NOTE (gary lever 1, DARK) — SIGN OFF WITH CONDITIONS → applied
+Traced the hook (engine ~:10227), licence, bridge/mig 97/wiring, pin. The note is structurally
+strip-proof: every demoter keys on foreign note constants/methods, class F excludes supplier_name
+outright and its allowlist is exact write-site marks, and the only _needs_review reset requires no
+note remaining; fill-empty letterhead/identifier/logo-detail paths skip a valued row. Review-bound
+real: isAutoFileEligible refuses any noted field at every floor incl. 100. Hints reach the engine
+unprojected with the document_type SLUG. Rulings: template_fixed_locked exemption RATIFIED; firing
+without _suppressed_issuer RATIFIED (bare "TO:" blocks are the hardest for a human to spot; the
+licence quenches). CONDITIONS (applied): C1 'logo' ADDED to the method tuple — the clean-accept
+logo fill is an un-noted warm path in the design's own risk cohort (buyer known from invoices =
+learned logo) and is harness-unreachable, so no gate can catch it; C2 the hook's _needs_review
+newly ARMS the deskew review retry (setting ON live) — the realdoc gate runs one arm with
+DESKEW_REVIEW_RETRY='0' (provable note-only diff) + one both-ON arm with enumerated diffs; C3
+pins: _is_verification_doubt_note False for both wordings + a functional demoter-survival case
+with F armed; C4 honest arithmetic — "up to three human confirms per company+type; machine-swept
+scopes earn nothing until a human confirms" (hook comment + owner report corrected). Flip only
+after the stripped-copy all-7-noted arm (MET same session) and the realdoc enumeration.

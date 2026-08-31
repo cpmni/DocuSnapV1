@@ -10234,14 +10234,23 @@ class ExtractionEngine:
         # convention evidence (the pure licence above); otherwise the field carries a both-parties
         # note (naming the suppressed vendor when one was recorded) and the doc is review-bound.
         # VALUE NEVER REWRITTEN — the 07-12 drop stands, the letterhead-scope guard untouched, no
-        # learning writes; one human confirm plants the hint that licenses the rest. The cold
-        # letterhead_prefill path carries its own note @69 and is not in the method tuple.
+        # learning writes. Honest arithmetic (Oracle C4): the licence needs hint usage >= 3, so a
+        # young legit convention pays UP TO THREE noted human confirms per (company, type) — and a
+        # machine-swept scope earns nothing until a human confirms (scope_sweep skips
+        # saveCorrections). The cold letterhead_prefill path carries its own note @69 and is not
+        # in the method tuple.
         if (os.environ.get("BUYER_ISSUED_CONVENTION_NOTE", "0") != "0" and _buyer_issued):
             try:
                 _sn_f = results.get("supplier_name")
+                # Oracle C1 (2026-08-31): 'logo' included — the clean-accept logo fill is an
+                # UN-NOTED warm path in the design's own risk cohort (a buyer known only from
+                # invoice confirms = learned logo fingerprints; the buyer's-letterhead PO logo-
+                # matches and the branding gate rightly accepts). The suggest/detail-override
+                # logo flavours carry their own notes, so the no-note check keeps them out.
+                # template_fixed_locked stays exempt (deliberate admin act — the :5379 precedent).
                 if (isinstance(_sn_f, dict) and _sn_f.get("value")
                         and not _sn_f.get("validation_note")
-                        and str(_sn_f.get("method") or "") in ("template_fixed", "hint_text_match")
+                        and str(_sn_f.get("method") or "") in ("template_fixed", "hint_text_match", "logo")
                         and self._accept_norm(_sn_f["value"]) not in (self.accepted_issuers
                                                                       | self.accepted_names)):
                     if not ExtractionEngine._buyer_issued_convention_licensed(
