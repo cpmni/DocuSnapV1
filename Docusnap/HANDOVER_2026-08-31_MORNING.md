@@ -157,3 +157,9 @@ the realdoc arms were re-run in full. The build then succeeded precisely because
 clear.
 
 **Gate artifacts** copied durably to `TESTING/_measure/dark_arcs_20260831/`.
+**FLIPPED LIVE (owner: "flip the switches", ~11:50):** `keyword_cell_below`, `money_sign_parens`,
+`money_sign_cr`, `buyer_issued_convention_note` all `true` on the live DB (verified;
+`credit_sign_coherence` already true — the C1 force covers it regardless). Settings are read at
+each processing spawn, so the arcs are live from the NEXT import/reprocess — no restart needed
+for processing; the Settings toggles show their state on the next panel load. Already-filed docs
+unchanged until re-read.
