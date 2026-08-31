@@ -18,6 +18,22 @@ scratch/sandbox, implementing a Chris card); **anything dangerous goes to the ag
 and, with no safe route, that item STOPS** — never improvise around a refusal.
 
 ## QUEUE — worth testing or checking (ranked; add freely, date each)
+- **2026-08-31 · [HIGH — customer crash] RAM-AWARE + PHYSICAL-CORE concurrency cap + worker-death RESILIENCE.**
+  Full diagnosis in `HANDOVER_2026-08-31_INTEGRATION.md` §2. A friend batch-imported the test docs on a Ryzen 5 /
+  16GB PC → app locked up, crashed, disappeared with no warning. Root cause (from code, NOT yet confirmed vs his
+  crash log): batch import spawns N parallel Python OCR workers with NO RAM awareness, and `os.cpus().length`
+  (`handler.js:1919/1929`) counts LOGICAL threads not physical cores (6c/12t → default 10 workers × ~0.5-1GB > 16GB
+  → paging → OS kills the tree). **Two fixes:** (1) PREVENTION — count physical cores + RAM-aware cap
+  `min(coreCap, floor(freeRAM/perWorkerBudget))`, HARD-ceil even an explicit `processing_concurrency` (fail-safe) +
+  a Settings note; (2) RESILIENCE — the app must SURVIVE a worker OOM/kill (catch child error/exit, degrade + surface
+  a message), never silently close — arguably the bigger trust fix. **Seam (Oracle will flag):** `_reprocessThreadCap`
+  (`handler.js:1945`) derives the Tesseract OMP cap FROM concurrency, so lowering concurrency can shift a boundary glyph
+  on an EXISTING install (the `ACC-2291`/`ACC-229]` class) — weigh fresh-install-only vs accept+document vs decouple.
+  **Owner already approved "design it + gate it, don't just patch."** Advisor gate IN FLIGHT (eric = cores/RAM/crash-
+  lifecycle/determinism seam · oscar = per-worker OCR memory budget) → Oracle next → build smallest fix + a pin
+  (low-RAM/high-core machine caps workers; a determinism note) + gary test strategy. **Also:** get the friend's
+  `%APPDATA%\ScanFinder\processing.log` tail + Event Viewer (Application) OOM/`0xC0000005` line to CONFIRM the OOM
+  before shipping. Immediate workaround already given: Settings → Processing → concurrency 2-3, smaller folders.
 - **2026-08-31 · Probe Castellan 0005's saved inline-harvest slice** (gary's CAD8 trace): which
   sub-path truncated 'CAD832694' → 'CAD8' — the `_read_inline_box` one-token trim on a mid-token
   OCR space ("CAD8 32694"), a partial ladder read, or the short-token inversion? One OCR probe of
