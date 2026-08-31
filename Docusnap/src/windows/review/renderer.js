@@ -1205,6 +1205,15 @@ async function _baOpen(evId) {
   _baIngest(res.rows);
   _baPopulateFilters();
   ov.classList.add('open');
+  // Quick check was the ONLY focus-sensitive modal that armed no focus repair on open. On Electron 44
+  // a show:false/ready-to-show Review window can end up painted-but-not-OS-activated, leaving Blink's
+  // render-widget focus desynced — and a native <select> is EXCLUDED from the preload pointerdown
+  // chokepoint (the flash-open/shut guard), so its popup wouldn't open until a real OS activation
+  // (the user's Start-menu round-trip). Arm the SAME proactive widget edge the working modals use
+  // (new-type modal ~:1699, zone-OCR reconcile ~:5269) at OPEN time — no popup is open yet, so it
+  // cannot trip flash-open/shut, and it routes through repairKeyboardFocus (blurWebView/focusOnWebView,
+  // NEVER win.blur/win.focus → no SetForegroundWindow storm). eric-diagnosed 2026-08-31.
+  try { window.docusnap.markFocusSuspect?.(); window.docusnap.ensureWindowFocus?.(); } catch {}
   _baRender();
   const vis = _baVisibleRows();
   if (vis[0]) _baSelect(vis[0].id);

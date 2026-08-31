@@ -143,6 +143,24 @@ const makeWc = (destroyed = false) => {
         /markFocusSuspect/.test(zoneFill));
   check('runZoneOcr re-asserts the caret via the double-rAF belt (repairModalInputFocus)',
         /repairModalInputFocus/.test(zoneFill));
+
+  // Quick-check (batch-audit) modal focus cure (eric, 2026-08-31): _baOpen was the ONLY focus-sensitive
+  // modal that armed no repair on open, so on Electron 44 its native <select> popups stayed dead until an
+  // OS activation (the user's Start-menu round-trip). It must arm the proactive widget edge
+  // (markFocusSuspect + ensureWindowFocus) AT OPEN — pinned so a cleanup can't quietly drop it. It must
+  // NOT use win.blur/win.focus or fire on a <select> pointerdown (those are the storm/flash-open-shut
+  // regressions guarded above). Scan the _baOpen body (bounded at the Master-render marker after it).
+  const _baStart = renderer.indexOf('async function _baOpen');
+  const _baEnd   = renderer.indexOf('// Master render', _baStart);
+  const baBody   = renderer.slice(_baStart, _baEnd > _baStart ? _baEnd : _baStart + 2000);
+  check('_baOpen (Quick check) drives the proactive focus transition on open (ensureWindowFocus)',
+        /ensureWindowFocus/.test(baBody));
+  check('_baOpen ARMS focus-suspect so the edge does the real repair (markFocusSuspect)',
+        /markFocusSuspect/.test(baBody));
+  check("... and it arms AFTER the overlay is shown (ov.classList.add('open')), so no popup is open yet",
+        baBody.indexOf("classList.add('open')") !== -1
+        && baBody.indexOf('markFocusSuspect') > baBody.indexOf("classList.add('open')"));
+
   const preload = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf8');
   check('preload exposes the ensureWindowFocus bridge',
         /ensureWindowFocus\s*:/.test(preload));
