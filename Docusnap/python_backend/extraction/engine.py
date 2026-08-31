@@ -10849,6 +10849,36 @@ class ExtractionEngine:
         results["_field_candidate_emit"] = self._build_candidate_emit(results, ocr_text)
         results["_corroboration_emit"] = _corrob
 
+        # ── Per-field LEARNED-SHAPE verdict (surfaced for the DESKEW_CORROB_AUTOFILE arc — read by
+        #    process_docs' _deskew_retry_apply_holds for Oracle C3/C4, 2026-08-31). For each field whose
+        #    scope carries a learned SKELETON: True = the value is coarse-consistent (check_value None,
+        #    which for date/currency classes also means it parses) AND matches the exact learned skeleton
+        #    (shape_match_score == 1.0); False = has a skeleton but violates it. A field with NO learned
+        #    skeleton is left ABSENT (the arc treats absent conservatively — see process_docs). Pure
+        #    `_`-metadata, popped before emit; wrapped so a fault can never break extraction (a missing
+        #    verdict fails the arc toward HOLD). Adds no decision here → OFF/inert is byte-identical.
+        try:
+            _s_low = str((results.get("supplier_name") or {}).get("value") or "").lower().strip() \
+                if isinstance(results.get("supplier_name"), dict) else ""
+            _dt_low = (document_slug or "").lower().strip()
+            _shape_ok = {}
+            if _s_low:
+                for _k, _d in results.items():
+                    if str(_k).startswith("_") or not isinstance(_d, dict):
+                        continue
+                    _fe = self.format_class_index.get((_s_low, _dt_low, _k))
+                    if not _fe or not _fe.get("shapes"):
+                        continue
+                    _v = str(_d.get("value") or "").strip()
+                    if not _v:
+                        continue
+                    _shape_ok[_k] = bool(
+                        format_anomaly_checker.check_value(_v, _fe) is None
+                        and format_anomaly_checker.shape_match_score(_v, _fe) == 1.0)
+            results["_shape_ok"] = _shape_ok
+        except Exception:
+            pass
+
         # ── FILING-IDENTITY COHERENCE (IDENTITY_SCOPE_POST_REPAIR, DEFAULT OFF) ──────────────
         # `_supplier_name` is not just telemetry: process_docs.py:956 pops it, emits it at
         # :1065, and processing/handler.js writes it to `documents.supplier_name` — which is

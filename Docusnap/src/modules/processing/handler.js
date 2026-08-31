@@ -146,6 +146,16 @@ function _reconcileEnv(db) {
     // to heal 6/8 skew-garbled supplier names on the Nordwind corpus at 200 DPI.
     if (learning.getSetting(db, 'deskew_review_retry_enabled', 'false') === 'true') env.DESKEW_REVIEW_RETRY = '1';
     { const a = learning.getSetting(db, 'deskew_review_min_angle', ''); if (a) env.DESKEW_REVIEW_MIN_ANGLE = String(a); }
+    // DESKEW_CORROB_AUTOFILE (2026-08-31, owner ask; Oracle SIGN-OFF-WITH-CONDITIONS, DARK). A
+    // straighten-CHANGED field that is a VERIFIED corroborated rescue (raw read not credible, >=2
+    // independent page families incl. a keyword witness agree, matches the learned skeleton) skips the
+    // "confirm once" hold and auto-files. C7: nested UNDER corroboration_autofile so it can never outlive
+    // the master — the env is set only when BOTH are true. Unset => the deskew retry places the note as
+    // before (byte-identical). Do NOT flip without the enumerated-heals census (owner-machine).
+    if (learning.getSetting(db, 'corroboration_autofile', 'false') === 'true'
+        && learning.getSetting(db, 'deskew_corrob_autofile', 'false') === 'true') {
+      env.DESKEW_CORROB_AUTOFILE = '1';
+    }
     // Reconcile shadow-attribution (gary → Oracle W/COND ×5, 2026-08-12): a corroborated total is
     // no longer capped when the ONLY disagreeing operands are invisible shadow reads.
     if (learning.getSetting(db, 'reconcile_shadow_attribution', 'false') === 'true') env.RECONCILE_SHADOW_ATTRIBUTION = '1';

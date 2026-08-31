@@ -121,18 +121,83 @@ def _put_back_offerable(was, now) -> bool:
         return False
 
 
+# ── DESKEW_CORROB_AUTOFILE (2026-08-31, owner ask; Oracle SIGN-OFF-WITH-CONDITIONS C1-C7) ───────────
+# A straighten-CHANGED field is normally HELD ("confirm once") because a straightened re-read is never
+# silently auto-filed. This DARK arc NARROWS that charter to "never auto-files an UNVERIFIED changed
+# value": a change that is a genuine RESCUE (the raw read was not a credible reading), is corroborated
+# by >=2 independent page families incl. a page-text/keyword witness, and matches the field's learned
+# skeleton, may skip the hold and auto-file. Env is bridged ONLY under corroboration_autofile
+# (handler.js _reconcileEnv). Default OFF → byte-identical.  See docs/designs/DESKEW_CORROB_AUTOFILE.
+_DESKEW_CORROB_AUTOFILE = os.environ.get("DESKEW_CORROB_AUTOFILE", "0") != "0"
+
+
+def _corrob_licensed_keyword(rec) -> bool:
+    """C2a: the shared engine._corrob_licensed (>=2 distinct page families {mapping,crop,keyword}, no
+    disagree) AND a KEYWORD (page-text) witness in the agreeing set — a page-text read is a different OCR
+    invocation from a crop re-OCR, closing the mapping+crop common-mode case. Never modify the shared
+    _corrob_licensed (other consumers depend on it). Fail closed."""
+    try:
+        from extraction import engine as _eng
+        if not _eng._corrob_licensed(rec):
+            return False
+        r = rec if isinstance(rec, dict) else {}
+        fams = set()
+        if r.get("winner_family"):
+            fams.add(r.get("winner_family"))
+        for f in (r.get("agree") or []):
+            if f:
+                fams.add(f)
+        return "keyword" in fams
+    except Exception:
+        return False
+
+
+def _deskew_corrob_autofile_ok(key, was, now, field, corrob_rec, now_shape, was_shape) -> bool:
+    """May a straighten-CHANGED field SKIP its hold note and auto-file? Only a genuine VERIFIED rescue.
+    Fail toward False (HOLD) on any doubt. now_shape/was_shape are the engine's per-field learned-skeleton
+    verdicts (True=matches skeleton, False=has a skeleton but violates it, None=no learned skeleton).
+      C2b/C2c/C3  the STRAIGHTENED value matches its learned skeleton (now_shape is True; None/False → hold)
+      C4          raw-credibility: the RAW read was NOT a credible competing reading — `was` empty OR its
+                  skeleton verdict is False; a `was` that is itself skeleton-valid and merely DIFFERS keeps
+                  the note (two credible reads disagree → human)
+      C5          an emptied field (`now` empty) holds
+      C6          never file over a pre-existing note/corrected_to
+      C2a         corroboration LICENSED + a keyword page-text witness"""
+    try:
+        now = str(now or "").strip()
+        was = str(was or "").strip()
+        if not now:                                        # C5
+            return False
+        if str(field.get("corrected_to") or "").strip():   # C6 — a foreign put-back stands
+            return False
+        if now_shape is not True:                          # C2b/C2c/C3 — requires a matched learned skeleton
+            return False
+        if not (not was or was_shape is False):            # C4 — was empty, or was violates its skeleton
+            return False
+        return _corrob_licensed_keyword(corrob_rec)        # C2a
+    except Exception:
+        return False
+
+
 def _deskew_retry_apply_holds(raw_results, straightened_results):
     """Stamp the changed-field note onto the STRAIGHTENED results (in place) for every field
     `_deskew_retry_changed_fields` lists that does not already carry a note (one note per field — an
     existing writer's note stands). An EMPTIED field (C12) gets a stub row carrying the note.
     `corrected_to` (the one-click put-back of the raw read) is set ONLY when `_put_back_offerable` —
-    never a type-implausible garble (the `Use "42-04-2025"` exhibit). Returns the changed list."""
+    never a type-implausible garble (the `Use "42-04-2025"` exhibit). Returns the changed list.
+    DESKEW_CORROB_AUTOFILE (DARK): a verified corroborated rescue skips the hold entirely."""
     changed = _deskew_retry_changed_fields(raw_results, straightened_results)
+    _corrob = (straightened_results or {}).get("_corroboration_emit") or {}
+    _now_shape = (straightened_results or {}).get("_shape_ok") or {}
+    _was_shape = (raw_results or {}).get("_shape_ok") or {}
     for key, was, now in changed:
         d = straightened_results.get(key)
         if not isinstance(d, dict):
             d = straightened_results[key] = {"value": "", "confidence": 0, "method": "deskew_retry_lost"}
         if not str(d.get("validation_note") or "").strip():
+            if _DESKEW_CORROB_AUTOFILE and _deskew_corrob_autofile_ok(
+                    key, was, now, d, _corrob.get(key), _now_shape.get(key), _was_shape.get(key)):
+                continue                          # verified rescue → no note, no corrected_to → auto-files
             d["validation_note"] = _DESKEW_CHANGED_NOTE.format(was=was or "(empty)", now=now or "(empty)")
             if not str(d.get("corrected_to") or "").strip() and _put_back_offerable(was, now):
                 d["corrected_to"] = was          # the raw read, one click away — only when plausible

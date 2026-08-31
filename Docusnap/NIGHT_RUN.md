@@ -216,6 +216,19 @@ Regenerate after a big import: `TESTING/_measure/reslice_20260830/_build_test_co
 confirm/teach from this folder into the LIVE app.
 
 ## DONE ledger (newest first) — do NOT repeat unless the "repeat if" condition holds
+- **2026-08-31 NIGHT2 · [owner ask] CORROBORATED-STRAIGHTEN AUTO-FILE arc BUILT DARK + unit-pinned (Oracle
+  SIGN-OFF-W/COND C1-C7).** `docs/designs/DESKEW_CORROB_AUTOFILE_2026-08-31.md`. A straighten-CHANGED field
+  skips its "confirm once" hold and auto-files ONLY when it is a VERIFIED corroborated rescue: ≥2 independent
+  page families incl. a keyword witness agree (`_corrob_licensed_keyword`), the straightened value matches its
+  learned skeleton (engine `_shape_ok`), AND the RAW read was not a credible competing reading (`was` empty or
+  skeleton-False — Oracle's C4 seam fix, because the straightened corrob record is blind to the raw pass).
+  Files: `engine.py` (`_shape_ok` surface), `process_docs.py` (predicate + skip), `handler.js` (`_reconcileEnv`
+  bridge, nested under `corroboration_autofile`), pin `test_deskew_corrob_autofile.py` (12 green). Default OFF
+  byte-identical (import smoke 14/14; exhibit OFF 0 value diffs). **KEY census finding:** the retry only fires
+  in the WARMING phase — reprocessing the now-warm exhibit (doc 806, both working copy + original scan) at 200
+  DPI reads clean (Pelican learned), so the enumerated-heals census needs the COLD import state, not a reprocess.
+  **Repeat if:** never re-build — the remaining work is the OWNER-MACHINE flip gate (realdoc byte-identical reads
+  + human-verified enumerated heals + M=0, reproduced from the cold state) + the flip decision. Do NOT flip.
 - **2026-08-31 · [HIGH] Batch-import silent-crash fix BUILT + PINNED (eric+oscar → Oracle SIGN-OFF-W/COND, C1-C6
   applied).** `docs/designs/CONCURRENCY_RAM_CAP_2026-08-31.md`; incident `HANDOVER_2026-08-31_INTEGRATION.md` §2.
   TWO defects: (A) RAM-blind, SMT-overcounted worker count (6c/12t→10 workers×~1.5GB>16GB→thrash); (B) `runWorker`
