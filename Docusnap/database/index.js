@@ -18,6 +18,11 @@ function setEncryptionKey(keyBuf) {
   _encryptionKey = keyBuf || null;
 }
 
+// True once the DB is opened encrypted — callers that COPY the DB (e.g. the merge backup) must then take
+// a KEYED copy (db.backup() refuses a keyed source; VACUUM INTO from the keyed connection stays keyed),
+// never a plaintext one.
+function isEncryptionActive() { return !!_encryptionKey; }
+
 // ── Open ──────────────────────────────────────────────────────────────────────
 
 function open() {
@@ -2685,4 +2690,4 @@ function seedDefaults(db) {
   docTypes.seedBuiltInTypes(db);
 }
 
-module.exports = { open, runMigrations, setEncryptionKey };
+module.exports = { open, runMigrations, setEncryptionKey, isEncryptionActive };

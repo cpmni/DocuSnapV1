@@ -1486,7 +1486,13 @@ e.g. `ScanFinder Setup 2.0.0-r20260622-1133-9f158c5.exe`, AND baked into the pac
 to drop the `-r<ver>` for a clean `ScanFinder Setup 2.1.0.exe`).
 
 Delete `%APPDATA%\DocuSnap\docusnap.db` to reset DB during development (also clears users,
-cached license tokens, and the enforcement setting).
+cached license tokens, and the enforcement setting). **DB-AT-REST ENCRYPTION (arc built DARK 2026-08-31,
+NOT yet migrated on any live DB):** `better-sqlite3` is aliased to `better-sqlite3-multiple-ciphers` and
+`database/index.js` issues `PRAGMA hexkey` ONLY when a key is set (none is today → plaintext, byte-identical).
+ONCE an install is migrated (`src/lib/dbMigrateEncrypt.js`), the reset ALSO deletes `.db-key` + `.db-recovery`
+(a fresh DB beside a stale key trips the downgrade tripwire), and a harness needing a readable copy uses
+`db-crypto-tool export-plain --recovery-code <code>` (RUN_AS_NODE can't unwrap DPAPI). Full arc +
+owner-supervised remaining slices: `docs/designs/DB_ENCRYPTION_ARC_2026-08-31.md`.
 Delete `python_backend/**/__pycache__` if Python changes don't take effect.
 Packaged build remembers prior login/trial because that DB persists across reinstalls
 (NSIS `deleteAppDataOnUninstall:false`). Licensing enforcement is ALWAYS ON (no env/setting/

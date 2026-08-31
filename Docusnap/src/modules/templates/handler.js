@@ -596,13 +596,25 @@ function register(ctx) {
   // the cluster merge is destructive, and it takes a DB backup first (Oracle M3 condition).
   const templateMerge = require('../../../database/modules/templateMerge');
 
-  // Online DB backup to a timestamped sibling file (better-sqlite3 .backup handles WAL correctly).
+  // DB backup to a timestamped sibling file. When the DB is ENCRYPTED the backup MUST stay encrypted:
+  // db.backup() REFUSES a keyed source, and a plaintext copy would leak the whole DB (the Oracle
+  // ship-blocker). VACUUM INTO from the keyed connection produces a KEYED copy (proven in
+  // src/lib/test_db_cipher.js's sibling probes); on a plaintext DB the online db.backup() is kept.
   async function _backupDbBeforeMerge(db) {
     const src = db.name;
     if (!src || src === ':memory:') throw new Error('no database file to back up');
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const dest  = path.join(path.dirname(src), `docusnap.db.merge-backup-${stamp}`);
-    await db.backup(dest);
+    let encrypted = false;
+    try { encrypted = require('../../../database/index').isEncryptionActive(); } catch { /* pre-encryption build */ }
+    if (encrypted) {
+      // VACUUM INTO rejects an existing target; ensure a clean path. Blocking, but a merge is an
+      // infrequent admin action and correctness (a keyed backup) beats the online increment here.
+      try { if (fs.existsSync(dest)) fs.unlinkSync(dest); } catch { /* noop */ }
+      db.prepare('VACUUM INTO ?').run(dest);
+    } else {
+      await db.backup(dest);
+    }
     return dest;
   }
 

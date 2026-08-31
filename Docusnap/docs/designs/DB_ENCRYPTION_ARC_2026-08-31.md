@@ -60,13 +60,23 @@ ask: "the DB is text-editor readable." Consensus eric+gary → **Oracle SIGN-OFF
   `setEncryptionKey`/`hexkey` seam in `database/index.js` (inert until a key is set) + the Unlock/Recover
   window (license-window pattern, no equal-weight "start fresh"). **BUILT THIS SESSION** except the
   window UI + main.js whenReady unwrap wiring (owed — must stay a no-op until a `.db-key` exists).
-- **Slice 2 — opt-in migration** (gary's manifest state machine, crash-safe): checkpoint(TRUNCATE) →
-  `db.backup` `.pre-encrypt` → **hexrekey on the copy** (ATTACH+export DELETED) → verify (integrity +
-  sentinel counts + the negative control) → crash-ordered rename swap; every crash state resolves to a
-  working DB, ambiguity → the surviving plaintext. GATES: the full crash-injection matrix (incl.
-  kill-during-rekey + EBUSY storm) + the backup-cipher pin + a DPAPI-loss drill through Unlock/Recover +
-  perf <10% on the owner's real DB + a full app session on an encrypted copy incl. `verifyAuditChain`,
-  `canStamp`, and the /v1 client. Ritual change ships in THIS commit (C7).
+- **Slice 2 — opt-in migration** (gary's manifest state machine, crash-safe). ✅ CORE BUILT + PINNED
+  (2026-08-31): `src/lib/dbMigrateEncrypt.js` — BACKUP (checkpoint(TRUNCATE) + a plaintext `.pre-encrypt`
+  cold copy; `db.backup()` is async AND refuses a keyed source, so a cold `fs.copyFileSync` after a
+  TRUNCATE checkpoint is used) → ENCRYPTING (`fs.copyFileSync` live→`.encrypting`, open unkeyed,
+  **`PRAGMA hexrekey`** raw-key encrypt-in-place — NOT `rekey`, which KDFs the hex; ATTACH+export DELETED)
+  → VERIFY (integrity_check + a row-count fingerprint == live, header-magic-absent, and the NEGATIVE
+  CONTROL: open-without-key must FAIL) → SWAP (crash-ordered rename: live→`.plain-old`, `.encrypting`→live,
+  then the DONE manifest; a rename retry rides the Windows EBUSY lock). `resolveState()` resolves every
+  crash point to a working DB — crash before the swap → rolled-back to the untouched plaintext; crash
+  mid-swap (live missing) → restore `.plain-old`; crash after both renames → recognised as done;
+  **ambiguity → the surviving plaintext**. `src/lib/test_db_migrate_encrypt.js` (16) covers the crash
+  matrix. The merge-backup site (`templates/handler.js`) now takes a KEYED copy via VACUUM INTO when
+  `database.isEncryptionActive()` (else the online `db.backup()`). `scripts/db-crypto-tool.js`
+  (status / export-plain via `hexrekey=''` decrypt, keyed by `--recovery-code`/`--hexkey` — RUN_AS_NODE
+  cannot unwrap DPAPI). REMAINING (owner-machine): the opt-in Settings trigger + Unlock/Recover window +
+  `main.js` whenReady `loadKey`→`setEncryptionKey`; then a DPAPI-loss drill, perf <10% on the owner's real
+  DB, and a full app session on an encrypted copy incl. `verifyAuditChain`, `canStamp`, the /v1 client.
 - **Slice 3 — default-on FRESH installs** + the downgrade tripwire + the ceremony ack/nudge/regenerate.
   Audit archives keyed here (final). `src/database.js` deleted (done this session). GATES: fresh-install
   E2E + ceremony-nudge + downgrade-tripwire pins.
@@ -79,6 +89,19 @@ ask: "the DB is text-editor readable." Consensus eric+gary → **Oracle SIGN-OFF
 - Pins: `src/lib/test_dbkey.js` (17), `src/lib/test_secretstore.js` (+2 strict).
 - **Nothing encrypts yet** — no dep swap, no key is ever set, no DB is rewritten. Everything is scaffolding
   that the owner-supervised slices 0/2/3 light up.
+
+## Reset / harness ritual once the DB is encrypted (Oracle C7 — active only post-migration)
+Today the live DB is still PLAINTEXT (no migration has run), so the current rituals are unchanged. The
+MOMENT an install is migrated, these apply (they ship now so a future autonomous run is never bricked):
+- **Dev reset** = delete `docusnap.db` **and** `docusnap.db-wal` / `-shm` **and** `.db-key` **and**
+  `.db-recovery` (a fresh plaintext DB beside a stale key file would fail the downgrade tripwire). Deleting
+  the whole `%APPDATA%\ScanFinder` DB set is the clean reset.
+- **Harness/inspection copy** of an encrypted live DB: `ELECTRON_RUN_AS_NODE=1 electron
+  scripts/db-crypto-tool.js export-plain --db <live> --out <copy> --recovery-code <code>` (RUN_AS_NODE
+  cannot unwrap the DPAPI `.db-key`, so the printed recovery code is the key source). Never leave the
+  plaintext copy beside an encrypted install.
+- `scripts/db-crypto-tool.js status --db <path>` reports plaintext/encrypted + resolveState + key/recovery
+  presence.
 
 ## Owner-supervised runbook (do NOT run autonomously)
 1. Close every Electron (EBUSY on the ABI rebuild). `npm pkg set dependencies.better-sqlite3='npm:better-sqlite3-multiple-ciphers@^12'`, `npm install`, `npx electron-builder install-app-deps`. `npm run check:licenses`. Boot a PACKAGED build.
