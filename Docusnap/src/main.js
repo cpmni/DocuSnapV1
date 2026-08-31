@@ -204,7 +204,7 @@ function onboardingWindowOptions() {
 }
 const LEGAL_WINDOW_OPTIONS = { width: 720, height: 680, resizable: false, minimizable: false, maximizable: false };
 // Bump this (and LEGAL.txt's "Version:" header) to re-prompt everyone for acceptance.
-const LEGAL_VERSION = '2026-07-01';
+const LEGAL_VERSION = '2026-08-31';
 const WELCOME_WINDOW_OPTIONS = { width: 720, height: 640, resizable: false, minimizable: false, maximizable: false };
 const TUTORIAL_WINDOW_OPTIONS = { width: 980, height: 720, minWidth: 760, minHeight: 560, minimizable: false, maximizable: false };
 const HELP_WINDOW_OPTIONS = { width: 940, height: 700, minWidth: 640, minHeight: 460 };
