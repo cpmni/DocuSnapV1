@@ -21,9 +21,48 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-31 EVENING: **READ `HANDOVER_2026-08-31_EVENING.md` FIRST** (it condenses the WHOLE
-day + carries the three build specs). Branch `feat/teach-side-overnight`, origin at `0ddd268`, local ahead
-`655f915`+`9575883`+wrap (owner pushes). **THE DAY:** the adversarial night run (Hard Set 400 PDFs, 0 wrong
+## ⏭ LATEST — 2026-08-31 (DB-encryption integration pass): **READ `HANDOVER_2026-08-31_NIGHT.md` FIRST.** Branch
+`feat/teach-side-overnight`, **HEAD `2aaf6a3` (code `19432cb` + docs `2aaf6a3`), origin at `c183792` — 5 commits UNPUSHED** (owner pushes).
+**THE DB-ENCRYPTION INTEGRATION PASS IS BUILT (`19432cb`, DARK/inert — plaintext boot byte-identical; do NOT
+rebuild).** eric-lifecycle-reviewed + Oracle SIGN-OFF-W/COND (a DISJOINT `.db-migrate-code` arm keeping the
+downgrade tripwire byte-identical). BUILT: the `main.js` whenReady boot gate (5 actions:
+plaintext/open-cached/prompt-code/tripwire/migrate) before the first `getDb()`; the Unlock/Recover window
+(`src/windows/unlock/`, closes via `app.exit(0)` — the pre-key boot has no tray/before-quit and `getDb()`
+throws on the unkeyed DB); the tripwire (`showErrorBox`+`app.exit(1)`, never opens plaintext); the
+sender-scoped `unlock-recover` IPC (read-write verify); the **opt-in Settings→Advanced ceremony** (mint →
+masked code Show/Copy/Print → typed "I HAVE SAVED IT" → arm → relaunch); `dbKey.mintCode`/`armMigration`/
+`loadMigrateCode`/`clearMigrateCode`; `dbStartup` migrate row + C1 self-heal; `dbBootMigrate.js` (fail-toward-
+plaintext, pinned). Pins green under E44: `test_db_startup` 6→11, `test_db_boot_migrate` 18. **REMAINING =
+OWNER-machine only:** the migration DRILL (`db.backup()` first → click "Turn on encryption" → confirm →
+relaunch → silent open; delete `.db-key` → Unlock by code), the DPAPI-loss + DOWNGRADE drills (restore
+`.pre-encrypt` → must LOUD-tripwire), packaged-boot + gate-5b on E44, perf<10% + verifyAuditChain//v1,
+realdoc-605 OFF byte-identical. **DEFAULT-ON = DEFERRED (owner); opt-in only. The first "Turn on encryption"
+click IS the drill — it encrypts the live DB (crash-safe).** Prior NIGHT (crypto core):
+**Dev app RUNNING on ELECTRON 44** (live PLAINTEXT DB, mig 100). All three EVENING build-specs got built +
+Electron 44 merged + DB encryption pivoted, in one session: **(1)** `TEMPLATE_LOCATE_ROLE_QUALIFIER`
+(`e65959c`, DARK mig 99, the Net-Total locate steal — demote role-qualified 'total' in `_locate_anchor` +
+the born-digital twin; `test_locate_role_qualifier.py`) · **(2)** `TEMPLATE_FRAGMENT_CONTAINMENT_YIELD`
+(`2bf7609`, DARK mig 100, CAD8⊂CAD832694 — a Stage-1 sibling leg adopts a keyword read that strictly
+prefix-contains a taught fragment, ref-family/never-money, cap 88 + neutral note; `test_fragment_
+containment_yield.py`) — **both DARK/OFF, flip gates (realdoc-605) queued.** · **(3) ELECTRON 31.7.7 → 44
+MERGED** (`0ed6f20` from `chore/electron-44`; **Node 24**, better-sqlite3-multiple-ciphers **^13**, argon2
+0.45.1, Rung-A/B fuses) — re-gated (crypto suites + real-DB read) + PUSHED; **owner still owes** a packaged
+boot + gate-5b on the MERGED tree; `client/`+`cert-tool/` need `npm install` if built. · **(4) DB-AT-REST
+ENCRYPTION — pivoted to CODE-AS-PASSPHRASE, crypto core COMPLETE + pinned** (`684de90`+`a683975`): the
+printed 125-bit RECOVERY CODE *is* the key (multiple-ciphers passphrase mode, `cipher=chacha20`, pinned
+`kdf_iter`, salt-in-DB-header) so **a lone `docusnap.db` copy + the code opens on any PC** (the owner's
+requirement, pinned twice). `.db-key` = a no-prompt DPAPI cache of the code only; `.db-recovery`/argon2
+GONE. Files: `dbKey.js` (the `applyKey`/`applyRekey` pragma choke point) · `dbMigrateEncrypt.js`
+(crash-safe, rekey in DELETE mode) · `dbStartup.js` (the decision table, Oracle C4) · seam
+(`setEncryptionKey(code)`+`temp_store=MEMORY`) · `db-crypto-tool.js`. Pins all green under E44 (dbKey 16 ·
+cipher 10 · migration 18 · startup 6 · secretStore 14). `src/database.js` DELETED. **Oracle SIGN-OFF-W/COND
+(10 conditions) at the foot of `docs/oracle_log.md`; full spec `docs/designs/DB_ENCRYPTION_ARC_2026-08-31.md`.**
+**REMAINING = the INTEGRATION pass** (do NOT rebuild the crypto core): the whenReady unwrap gate + the
+Unlock/Recover window + the combined "Keep these safe" dialog (Show/defer/reinforce, admin+DB codes) +
+slice-3 tripwire/default-on + the OWNER migration drill. **Owner decisions logged:** regenerate-code =
+DEFERRED (it's a full re-encrypt); email-the-code OUT; SMTP for non-secret workflow notifications = a
+future barry feature. **DB encryption is INERT** (no key set → plaintext, byte-identical). Prior EVENING:
+**(previous) 2026-08-31 EVENING: `HANDOVER_2026-08-31_EVENING.md`** (the three build specs — now built). **THE DAY:** the adversarial night run (Hard Set 400 PDFs, 0 wrong
 would-files, Chris YES) → teach-first practice run + 20-page User Guide (Chris r2 YES ×2) → **ALL THREE Hard
 Set cards BUILT+Oracle-cycled+GATED+FLIPPED live, then mig 98 (`0ddd268`) force-defaults the six gated
 switches ON everywhere** (never strict-money) → live import demo 20/20 fills + clean purge → **Terms FINAL**
