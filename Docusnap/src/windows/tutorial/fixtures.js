@@ -29,16 +29,16 @@ window.TUTORIAL_FIXTURES = [
     year: '2026', month: 'May',
     filedName: 'Invoice.22-05-2026.INV-2098',
     coach: 'Teach it once — point out each detail by drawing a box around the value on the page.',
-    coachDone: 'All four details taught. Save the lesson and Scan Finder files this document — and remembers where to look on every Riverside document from now on.',
+    coachDone: 'All three details taught. Save the lesson and Scan Finder files this document — and remembers where to look on every Riverside document from now on.',
     fields: [
       { key: 'supplier_name',  label: 'Document Issuer', value: 'Riverside Office Co.', confidence: 98,
         ask: 'Draw a box around the company name at the top — that tells Scan Finder who this layout belongs to.' },
       { key: 'invoice_number', label: 'Reference',       value: 'INV-2098',             confidence: 96,
         ask: 'Now the reference — draw a box around the invoice number.' },
       { key: 'invoice_date',   label: 'Date',            value: '22-05-2026',           confidence: 95,
-        ask: 'The date next — box the date on the page.' },
+        ask: 'Last one — box the date on the page.' },
       { key: 'total_amount',   label: 'Total',           value: '340.00',               confidence: 97,
-        ask: 'Last one — box the total.' },
+        teach: false },   // shows on the page but isn't taught — the REAL Invoice teach asks for three details
     ],
   },
   {

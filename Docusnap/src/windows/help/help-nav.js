@@ -129,6 +129,8 @@
     ['Confirm & File shortcut (Ctrl+Enter)',            'shortcuts.html',       'sc-review',        'Keyboard shortcuts'],
     ['Troubleshooting & FAQ',                           'troubleshooting.html', 'troubleshooting',  'Troubleshooting & FAQ'],
     ['It filed under the wrong company',                'troubleshooting.html', 'faq',              'Troubleshooting & FAQ'],
+    ['A serial number is missing (list details)',       'troubleshooting.html', 'faq',              'Troubleshooting & FAQ'],
+    ['Serial numbers and list details',                 'document-types.html',  'fields',           'Kinds of document'],
     ['It filed something without asking me',            'troubleshooting.html', 'faq',              'Troubleshooting & FAQ'],
     ['“N documents couldn’t be read”', 'troubleshooting.html', 'faq',              'Troubleshooting & FAQ'],
     ['I taught a sender but it still asks me',          'troubleshooting.html', 'faq',              'Troubleshooting & FAQ'],

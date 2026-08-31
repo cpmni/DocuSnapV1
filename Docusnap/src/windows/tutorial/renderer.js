@@ -10,6 +10,10 @@
 const D = window.docusnap;
 const DOCS = window.TUTORIAL_FIXTURES || [];
 const TEACH_DOC = DOCS.find(d => d.teach) || DOCS[0];
+// Only the details the REAL teach wizard would ask for (an Invoice asks for three;
+// a field marked teach:false — the Total — shows on the page but isn't taught).
+// Chris round-2 card 6: the rehearsal must match the real thing.
+const TEACH_FIELDS = (TEACH_DOC.fields || []).filter(f => f.teach !== false);
 const RDOCS = DOCS.filter(d => d !== TEACH_DOC);   // the imported batch
 
 const stage     = document.getElementById('stage');
@@ -97,8 +101,8 @@ function renderTeach() {
   document.getElementById('th-type').textContent = d.docType;
   document.getElementById('th-step').textContent = 'Teach — one ' + d.docType.toLowerCase();
   renderTeachDoc();
-  const doneAll = tIdx >= d.fields.length;
-  document.getElementById('th-fields').innerHTML = d.fields.map((f, i) => {
+  const doneAll = tIdx >= TEACH_FIELDS.length;
+  document.getElementById('th-fields').innerHTML = TEACH_FIELDS.map((f, i) => {
     const st = i < tIdx ? 'done' : i === tIdx ? 'now' : 'todo';
     return `
     <div class="field${st === 'done' ? ' taught' : ''}${st === 'now' ? ' armed' : ''}" data-field="${f.key}">
@@ -115,7 +119,7 @@ function renderTeach() {
     primary.disabled = false;
     disarm();
   } else {
-    const f = d.fields[tIdx];
+    const f = TEACH_FIELDS[tIdx];
     setBannerEl('th-banner', 'draw', f.ask || `Draw a box around the <b>${f.label}</b> on the document — click, drag across the value, and release.`);
     primary.textContent = 'Save and file this one';
     primary.disabled = true;
@@ -138,6 +142,9 @@ function armTeach(key) {
 }
 
 async function teachSave() {
+  // Back-then-Save must not file (or list) the teach document twice — Chris round-2 card 2.
+  if (tSaved) { show('import'); return; }
+  tSaved = true;
   hideToast();
   primary.disabled = true;
   const d = TEACH_DOC;
@@ -315,7 +322,7 @@ window.addEventListener('mouseup', (e) => {
   const hit = area > 250 && cx >= rect.left && cx <= rect.right && cy >= rect.top && cy <= rect.bottom;
   if (!hit) { toast('Draw a box that covers the highlighted value, then release.'); return; }
   if (armed.scope === 'teach') {
-    const f = TEACH_DOC.fields[tIdx];
+    const f = TEACH_FIELDS[tIdx];
     disarm();
     toast('Read “' + f.value + '” from your box.');
     tIdx++;
@@ -368,7 +375,7 @@ function renderDone() {
 // ── Wiring ───────────────────────────────────────────────────────────────────
 primary.addEventListener('click', () => {
   if (screen === 'intro') show('teach');
-  else if (screen === 'teach') { if (tIdx >= TEACH_DOC.fields.length) teachSave(); }
+  else if (screen === 'teach') { if (tIdx >= TEACH_FIELDS.length) teachSave(); }
   else if (screen === 'import') process();
   else if (screen === 'review') confirm();
   else if (screen === 'done') finish('import');
@@ -385,7 +392,21 @@ function finish(action) {
   try { D.tutorialCleanup?.(); } catch {}
   try { D.tutorialDone?.(action); } catch {}
 }
-window.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (armedField) disarm(); else finish('close'); } });
+// Esc — Chris round-2 card 1: mid-drag it must cancel ONLY the rubber-band (the
+// detail stays armed for another go); on the teach screen it never disarms (the
+// current detail is always armed); and it never silently closes the window mid-run —
+// only the intro and done screens treat Esc as "close the practice".
+window.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (dstate) {                                   // cancel the in-flight drag, stay armed
+    if (drawBox) { drawBox.remove(); drawBox = null; }
+    dstate = null;
+    return;
+  }
+  if (screen === 'teach') return;                 // teach keeps its armed detail
+  if (armedField) { disarm(); renderReview(); return; }
+  if (screen === 'intro' || screen === 'done') finish('close');
+});
 
 if (!DOCS.length) { coach.textContent = 'No practice samples found.'; primary.disabled = true; }
 else { renderImportList(); show('intro'); }
