@@ -27,6 +27,13 @@ and, with no safe route, that item STOPS** — never improvise around a refusal.
   OOM hypothesis and validate the 1.5GB per-worker budget. **Also queued separately (own gate):** oscar's
   grayscale-pages-1..N memory lever (accuracy-touching — keep page 0 colour, `BANNER_HEADING_REREAD` reads its red
   channel) — build only if the per-worker budget needs to shrink for large multi-page PDFs.
+- **2026-08-31 · Client + cert-tool Electron 44 upgrade (just `npm install`, no code change).** Both
+  `client/package.json` and `cert-tool/package.json` ALREADY say electron `44.0.0` (bumped in the E44 merge),
+  but `client/node_modules/electron` is still `31.7.7` and `cert-tool/` has no `node_modules` at all. Both are
+  pure-JS + Electron — NO native modules (no better-sqlite3/argon2, zero `.node`), so the upgrade = `npm install`
+  in `client/` and in `cert-tool/`, then a launch smoke-test. No ABI rebuild needed (unlike the core). Not urgent
+  (the client talks `/v1` TLS, interoperates regardless of its own Electron version), but do it before the next
+  client build — 31.7.7 is old for security patches, and the merge already set the intent.
 - **2026-08-31 · Probe Castellan 0005's saved inline-harvest slice** (gary's CAD8 trace): which
   sub-path truncated 'CAD832694' → 'CAD8' — the `_read_inline_box` one-token trim on a mid-token
   OCR space ("CAD8 32694"), a partial ladder read, or the short-token inversion? One OCR probe of
