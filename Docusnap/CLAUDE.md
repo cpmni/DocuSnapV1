@@ -996,7 +996,9 @@ suggestion toast. The `processing_mode` setting + `--mode` plumbing REMAIN for t
   engine re-resolves it once, after every stage, before persisting hints/anchors/logos.
 - Manual/authoritative anchors (⊕ teach, Stage 0.5 mapping, `keyword_override`) win on regex/TYPE alone
   (`shape_mode='ignore'`) and must NOT be vetoed by the learned-shape check; auto tiers keep full type+shape gating.
-  **NARROWED 2026-08-01 (Oracle-signed, S-C, kill `BLIND_GEOM_DISAGREE_RECONCILE` — DARK until owner flip):
+  **NARROWED 2026-08-01 (Oracle-signed, S-C; kill switch `BLIND_GEOM_DISAGREE_RECONCILE` — engine default ON
+  since the 2026-08-01 owner flip; the old "DARK until owner flip" wording here was STALE, caught 2026-08-31;
+  scope = method `anchor_registration` EXACTLY, pinned):
   a REGISTRATION-resolved authoritative read that FAILS its own-supplier learned shape may be reconciled
   against ≥2 distinct-stage witnesses (adopt) / flagged against 1 — anchor_inline/anchor_crop_relocated
   winners stay fully exempt (the 2026-07-26 re-teach fix depends on it; pinned in
