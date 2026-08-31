@@ -42,7 +42,14 @@ to fix before re-use: thermal invoice→receipt, buyer dual-accept, component si
 EMPTY≠SILENT). NIGHT_RUN.md ledger updated (TONIGHT cleared, 5 DONE entries, 5 new queue items — top: GT fixes,
 "ready" language war, heading-words-in-ref presentation). Sandbox LEFT RUNNING 9223 (PID 36960). **NEEDS OWNER
 (morning): pick which card(s) to build (my ranking oscar → reggie → gary); vet Chris cards 1+2; Receipt preset
-decision; then push.** Prior:
+decision; then push.** **DAY-2 (owner asked, then slept): practice run reworked TEACH-FIRST** (`3e47cd4` + r2
+fixes — teach sim of the real 3 Invoice details → import → Review-as-CORRECTION type-over; tour cards 4/5/6
+reframed) **+ the full 20-page USER GUIDE rebuild** (`2a9b4d7` — 5 new pages where-things-go/export/approvals/
+learning/admin, 5 old-voice rewrites, manifest re-pointed, `check:help` fully green 153 keys, `test_help_nav`
+ALL PASS) — **Chris round 2 on sandbox2 (PID 33988, LEFT RUNNING): BOTH VERDICTS YES**, his 4 build-defect
+cards fixed same night (Esc soft-lock, done-row dupe, 3-detail parity, teach-intro label copy), help-mode
+one-shot = owner choice in pendingfeatures; teach/index.html intro now says value-only-label-found-for-you.
+RESTART the live app to load tutorial/tour/help. Prior:
 ## (previous) 2026-08-30 NIGHT: **READ `HANDOVER_2026-08-30_NIGHT.md` FIRST.** Branch `feat/teach-side-overnight`,
 **HEAD `91ca11b`** (two commits after `0ff8b42`: `fccaf55` Python arc, `91ca11b` settings/JS/docs), **NOT pushed**
 (owner reviews then pushes). Uncommitted: `CLAUDE.md` only. **THE RE-SLICE ARC IS BUILT, DARK, ORACLE-SIGNED (C1-C14 applied) — but its two premises were FALSIFIED

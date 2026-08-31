@@ -160,3 +160,38 @@ The **teach-and-watch loop with its own conscience**: one lesson filed one invoi
 Round-level: the heal claim (teach fixes the boxed-cell cold gap) is CONFIRMED on the real app by an
 end-to-end customer flow; File All refused every flagged/held doc on the nastiest corpus so far;
 no cross-supplier bleed after two teaches. Nothing from this round was implemented tonight.
+
+
+---
+
+# CHRIS ROUND 2 — 2026-08-31 (vet of the teach-first practice run + the rebuilt User Guide)
+
+> Round conditions: FRESH sandbox2 (CDP 9223, PID 33988, 0-user seed at mig 94) running tonight's
+> newest code (tutorial rework 3e47cd4 + guide rebuild 2a9b4d7). Mission: vet both deliverables.
+> Verbatim below; the round-2 fixes the main session applied afterwards are noted at the foot.
+
+VERDICTS: practice run YES (teach-first is the spine, Review framed as correcting, every safety
+claim true on disk); User Guide YES ("the first manual I've read that tells you how you'll KNOW
+each thing worked - and when I checked those claims against the running app, the app kept its
+word"). Tour cards 4/5/6 + practice run + guide "tell the SAME story in the same words".
+
+CARDS (6): [1 PRACTICE] Esc mid-draw wrecks the teach step (junk box strands the Total; second Esc
+silently kills the window) - FIXED same night (Esc cancels only the rubber-band, teach keeps its
+armed detail, Esc never closes mid-run). [2 PRACTICE] Back-then-Save listed the taught invoice
+twice on the done screen (display-only; disk had 3 files) - FIXED (tSaved guard). [3 GUIDE] guide
+search "No matches for serial" though the guide covers serial numbers - FIXED (two index rows).
+[4 GUIDE] closing a "?" popup silently switches help mode off - QUEUED for owner (behaviour
+choice; pendingfeatures). [5 GUIDE] the Teach window's intro said "then mark the printed label
+next to it" while the guide + the real flow are value-only-with-label-found-for-you - FIXED
+(intro copy aligned). [6 PRACTICE] the practice taught four details, the real Invoice teach asks
+three - FIXED (Total shows on the page but is no longer taught; copy says three).
+
+TRUTH TABLE highlights (all TRUE): practice files to %TEMP%\scanfinder-practice and clears on
+close; typing INV-1042 flips 54%->99% "Corrected - Scan Finder learns from this too"; a wrong
+typed value does NOT clear the flag; Confirm-early refused with instruction; recycle-bin
+round-trip verified hands-on (delete -> bin -> restore -> back in the queue); quick start's teach
+flow matches the real wizard; review.html five areas + Deferred present. Export page claims all
+present in the real window (live preview untestable on an empty install).
+
+Full verbatim report: session transcript / tasks archive; screenshots
+C:\Users\cmccu\.claude\jobs\a8d11584\tmp\chris-sandbox2\step01-19.

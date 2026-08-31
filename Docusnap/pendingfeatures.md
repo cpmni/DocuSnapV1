@@ -4662,3 +4662,6 @@ Gate: cold + warm scoring per class; every silent-wrong is a NEW class card for 
 - Teach read-back: trim stray cell-edge chars ("| inv-27090"); render the label guess as prominently as the value (a wrong "Rate" label slipped through unseen). [card 6]
 - Credit-note confirm line could echo "Total: -2,178.00 (credit)". [card 7; sign retention verified in code - the gap is extraction, see the sign card]
 - Deferred row: rename "Review" button to "Back to Review", delete = bin icon. [card 8]
+## 2026-08-31 — Chris round-2 cards (practice run + guide vet)
+- Help-mode persistence: closing a "?" popup silently ends help mode; next click fires the real control. Options: keep mode until the "?" is toggled off, or say "Help mode off" on close. [Chris r2 card 4, owner choice - one-shot may be deliberate]
+- Export window: the live preview/row-count did not render on an EMPTY install (0 confirmed docs) - check the empty-state, show "0 rows" rather than nothing. [Chris r2 truth-table, unverified on a populated install]

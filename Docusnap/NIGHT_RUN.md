@@ -95,6 +95,13 @@ Regenerate after a big import: `TESTING/_measure/reslice_20260830/_build_test_co
 confirm/teach from this folder into the LIVE app.
 
 ## DONE ledger (newest first) — do NOT repeat unless the "repeat if" condition holds
+- **2026-08-31 DAY-2 · Practice run reworked TEACH-FIRST + full User Guide rebuild + Chris vet of
+  both (VERDICTS YES ×2).** Teach sim (3 details) → import → Review-as-correction; 20-page guide,
+  every deep link resolves, `check:help` fully green; Chris's 4 build-defect cards fixed same
+  night (Esc soft-lock, done-list dupe, 3-detail parity, teach-intro label copy) + guide-search
+  serial rows; card 4 (help-mode one-shot) = owner choice in pendingfeatures. Repeat if: the teach
+  wizard's step list changes (practice must mirror it), or any window gains a surface with no
+  guide section (re-run the inventory sweep).
 - **2026-08-31 NIGHT · Hard Set adversarial corpus BUILT + SCORED (3 arms).** Result: 400 PDFs 10 classes
   (`Desktop\Hard Set\`), 600 doc-arm scores, **wrong+would-file 0 everywhere**; boxed-cell cold gap traced
   (Stage-1 neighbour-caption steal); credit-sign 4-of-5 notations die at `_clean_value` (sym `£-x` heals);

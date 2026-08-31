@@ -85,3 +85,39 @@ write happened.** The live app was untouched all night; the DB used everywhere w
   · Chris: `docs/CHRIS_FULL_APP_REVIEW_2026-08-31.md`.
 - Night ledger updated: `NIGHT_RUN.md` (TONIGHT cleared, DONE entries + repeat-only-if, new queue items).
 - DB copy used: `<job tmp>\live_20260831.db` (session-mortal). Sandbox: `<job tmp>\chris-sandbox\`.
+
+---
+
+## DAY-2 ADDENDUM (you went back to sleep; "stay on auto, have Chris vet both when done")
+
+**Job A — the practice run now teaches the TEACH-FIRST protocol** (`3e47cd4` + r2 fixes): Step 1 =
+a mini teach-wizard sim (draw a box per detail on the sample invoice - the same THREE details the
+real Invoice teach asks for - then "Save and file this one"); Step 2 = import the two remaining
+docs; Step 3 = Review as CORRECTION (the taught sender's sibling arrives read with one uncertain
+reference you fix by TYPING over it; drawing stays as the secondary road; the untaught sender
+reads cold and points at Teach). Welcome tour cards 4/5/6 reframed ("Teach it first" / "Check and
+correct" / teach-then-import); Home practice-card note updated.
+
+**Job B — the User Guide rebuilt end to end** (`2a9b4d7`): 20 pages in your signed voice - five
+NEW (where-things-go, export, approvals+stamps+mailbox+routing, learning/repair, admin), five
+old-voice pages rewritten (document-types incl. List+Barcode, search incl. recycle bin+send-back,
+settings 11-tab map, shortcuts, troubleshooting question-led), review/set-up/index extended
+(activity strip, Quick check, Deferred, put-back, teach-first practice copy, 2 new path cards).
+help-nav.js manifest = 20 pages, every old deep-link key re-pointed; test_help_nav ALL PASS. All
+20 pre-existing "?"-popup gaps filled - `check:help` fully green (153 keys).
+
+**Chris round 2 (fresh sandbox2, tonight's code): BOTH VERDICTS YES.** "Tonight the app and its
+paperwork finally agree with each other." He verified ~a dozen guide claims hands-on - zero lies
+found. His 6 cards: 4 were defects in tonight's own build and were FIXED the same night (Esc
+soft-lock in the practice draw; Back-then-Save duplicate done-row; 4-vs-3 detail mismatch; the
+Teach window intro's "mark the printed label" overstatement) + the guide-search "serial" gap
+(fixed). Card 4 (closing a "?" popup silently ends help mode) is a BEHAVIOUR CHOICE - queued in
+pendingfeatures for you. Full round summary appended to docs/CHRIS_FULL_APP_REVIEW_2026-08-31.md.
+
+**ADDED TO NEEDS YOUR APPROVAL:** the help-mode persistence choice (Chris r2 card 4); the Export
+window's empty-install preview check (pendingfeatures).
+
+**Sandbox2 LEFT RUNNING** on 9223 (PID 33988, fresh install, tonight's code) - walk the new
+practice run + open the User Guide from the account menu to review both. Day-2 commits:
+`3e47cd4` (tutorial rework) - `2a9b4d7` (guide rebuild) - the r2 fixes commit - the wrap commit.
+Restart your live app to load the new tutorial/tour/help (renderer files load at window open).
