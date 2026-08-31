@@ -2307,6 +2307,25 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 97 (buyer_issued_convention_note): ${e.message}`); }
   }
 
+  // ── migration 98: the 2026-08-31 gated arcs default ON (owner: "make sure all the switches are
+  //    on that need to be", after each passed its Oracle cycle + Hard Set + realdoc-605 gates —
+  //    docs/designs/DARK_ARCS_GATES_2026-08-31.md — and a live import demo). UPSERT-FORCED like the
+  //    mig-70/80/81 arc promotions, so the 95-97 'false' seeds and any pre-rename copy heal too.
+  //    template_format_fail_yield_strict_money is DELIBERATELY absent: Oracle C10/C11 — it pre-empts
+  //    the re-slice sweep's release path and is NEVER flipped in this arc. ──
+  if (!applied.has(98)) {
+    try {
+      const up = db.prepare(`INSERT INTO settings (key, value) VALUES (?, 'true')
+                             ON CONFLICT(key) DO UPDATE SET value='true'`);
+      const keys = ['keyword_cell_below', 'money_sign_parens', 'money_sign_cr',
+                    'buyer_issued_convention_note', 'reslice_witness_sweep',
+                    'corrob_discount_invalid_witness'];
+      for (const key of keys) up.run(key);
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (98)').run();
+      console.log(`JS migration 98 applied: ${keys.length} gated 08-31 arc switch(es) defaulted ON`);
+    } catch (e) { console.warn(`  migration 98 (08-31 arcs ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next
