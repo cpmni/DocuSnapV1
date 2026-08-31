@@ -31,7 +31,7 @@ function open() {
   // With the multiple-ciphers build absent this pragma would throw, which is the intended loud failure
   // for a mis-provisioned encrypted install (never a silent plaintext open).
   if (_encryptionKey) {
-    _db.pragma(`hexkey = "${_encryptionKey.toString('hex')}"`);
+    _db.pragma(`hexkey = '${_encryptionKey.toString('hex')}'`);
   }
   _db.pragma('journal_mode = WAL');
   _db.pragma('foreign_keys = ON');

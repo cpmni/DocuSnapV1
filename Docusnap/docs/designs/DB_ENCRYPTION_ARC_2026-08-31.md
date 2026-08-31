@@ -45,9 +45,17 @@ ask: "the DB is text-editor readable." Consensus eric+gary → **Oracle SIGN-OFF
    "only DPAPI blobs" doc lines.
 
 ## Slice plan + gates
-- **Slice 0 — dep swap alone.** package.json alias + `npm install` + `install-app-deps`. GATES: suites
-  + realdoc-605 byte-identical on the fork + `check-licenses` + a PACKAGED build boot (alias/ABI proof)
-  + the runtime name/cipher pin. *(Owner-machine: a native install/rebuild needs the dev app CLOSED.)*
+- **Slice 0 — dep swap.** ✅ DONE IN DEV (2026-08-31, owner-supervised): alias
+  `npm:better-sqlite3-multiple-ciphers@^12` → **12.11.1** (the same-major line matching Electron 31's
+  Node-20 ABI; the fork's 13.x needs Node ≥22, so it is correct ONLY after an E44 merge — this coupling
+  belongs on the E44 gate-5b checklist), `npm install` + `install-app-deps` clean, `check-licenses` green
+  (MIT auto-passes), the runtime cipher pin green (`src/lib/test_db_cipher.js`: name = the fork, active
+  cipher **chacha20**, hexkey round-trip, header-magic-absent, no-cleartext, and the Oracle NEGATIVE
+  CONTROLS — open-without-key FAILS, wrong-key FAILS), and a drop-in proof reading the REAL live DB (a
+  copy): plaintext header, migrations/documents/extractions/LIKE-search all identical, no key set →
+  transparent plaintext open. REMAINING slice-0 gates (heavy, run with the design-1/2 realdoc gates):
+  realdoc-605 byte-identical on the fork + a PACKAGED build boot proving the alias survives
+  electron-builder's app-deps rebuild in a packaged context.
 - **Slice 1 — key infra, DARK.** `dbKey.js` (fail-closed, never-regenerate, argon2id recovery) +
   `setEncryptionKey`/`hexkey` seam in `database/index.js` (inert until a key is set) + the Unlock/Recover
   window (license-window pattern, no equal-weight "start fresh"). **BUILT THIS SESSION** except the
