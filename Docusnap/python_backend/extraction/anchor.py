@@ -2906,6 +2906,19 @@ def _clean_text_fallback(value: str | None, val_type: str | None,
         # Rejoin an OCR-split thousands separator FIRST, else the contiguous currency
         # pattern truncates "$10 576.31" to "$10" (see _normalise_currency_spacing).
         v = _normalise_currency_spacing(value) if val_type == "currency" else value
+        # MONEY_SIGN_PARENS / MONEY_SIGN_CR (reggie 2026-08-31, DARK): a whole-segment
+        # accounting negative — "(£908.16)" / "£908.16 CR" — keeps its sign at THIS mint too
+        # (the keyword twin is _clean_value's currency branch; without the anchor twin a
+        # sign-fixed keyword read and a crop read of the same box stop agreeing in
+        # money_cents terms and corroboration dies). The strip(" -:;,") below would also eat
+        # a captured sign, so the capture returns before it.
+        if val_type == "currency":
+            _sm = number_format.signed_money_capture(v)
+            if _sm is not None:
+                _amt, _kind = _sm
+                if ((_kind == 'parens' and os.environ.get('MONEY_SIGN_PARENS', '0') != '0')
+                        or (_kind == 'cr' and os.environ.get('MONEY_SIGN_CR', '0') != '0')):
+                    return _amt
         for p in (validation_patterns or {}).get(val_type) or []:
             m = re.search(p, v, re.IGNORECASE)
             if m:

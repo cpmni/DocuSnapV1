@@ -2280,6 +2280,21 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 95 (keyword_cell_below): ${e.message}`); }
   }
 
+  // ── migration 96: the accounting-negative money captures seeded OFF (DARK — reggie design
+  //    2026-08-31: whole-segment "(£908.16)" / "£908.16 CR" keep their sign at both mints;
+  //    trailing/leading bare minus stays note-only) ──
+  if (!applied.has(96)) {
+    try {
+      const ins = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+      let n = 0;
+      for (const key of ['money_sign_parens', 'money_sign_cr']) {
+        if (ins.run(key, 'false').changes) n++;
+      }
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (96)').run();
+      console.log(`JS migration 96 applied: ${n} accounting-negative capture switch(es) seeded OFF (DARK)`);
+    } catch (e) { console.warn(`  migration 96 (money sign parens/cr): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

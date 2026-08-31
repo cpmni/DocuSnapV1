@@ -160,6 +160,30 @@ def money_cents(value):
         return None
 
 
+_PARENS_MONEY_RE = re.compile(r"\(\s*[£$€¥₹]?\s*(\d[\d.,\s]*?)\s*\)")
+_CR_MONEY_RE     = re.compile(r"[£$€¥₹]?\s*(\d[\d.,\s]*?)\s+CR\.?", re.I)
+
+
+def signed_money_capture(value):
+    """A whole-segment ACCOUNTING-NEGATIVE money marker → ('-<bare amount>', kind) else None.
+
+    Two notations only (reggie design 2026-08-31; each behind its own DARK flag at the call
+    sites — MONEY_SIGN_PARENS / MONEY_SIGN_CR): balanced parens '(£908.16)' and a trailing CR
+    marker '£908.16 CR'. FULLMATCH on the stripped segment — '(10%)', '(see note 3)',
+    '908.16 CREDIT', an unbalanced '(£9…' and any embedded prose all return None — and the
+    amount itself must pass money_strict_shape, so a garble never gains a sign. A bare
+    leading/trailing minus stays note-only by design (the scan dash-leader class; the shipped
+    MONEY_SIGN_CAPTURE leg owns the symbol-minus '£-x' shape)."""
+    s = normalise_currency_spacing(canonical(str(value or "").strip()))
+    for _re, _kind in ((_PARENS_MONEY_RE, "parens"), (_CR_MONEY_RE, "cr")):
+        m = _re.fullmatch(s)
+        if m:
+            amt = m.group(1).strip()
+            if money_strict_shape(amt):
+                return "-" + _money_bare(amt), _kind
+    return None
+
+
 def set_format(fmt):
     """Set the process-wide region number format: anglo|continental|french|swiss|indian."""
     global _NUMBER_FORMAT

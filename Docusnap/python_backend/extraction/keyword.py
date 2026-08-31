@@ -2463,6 +2463,20 @@ def _clean_value(value: str, val_type: str | None,
     # "3/6/2026  FREIGHT/CARRIAGE/INSURANCE"). The regex match itself is the
     # actual value — extract just that substring rather than keeping everything.
     if val_type in ("date", "currency") and validation and val_type in validation:
+        # MONEY_SIGN_PARENS / MONEY_SIGN_CR (reggie 2026-08-31, DARK): a WHOLE-SEGMENT
+        # accounting negative — "(£908.16)" / "£908.16 CR" — keeps its sign at the mint
+        # instead of having the marker amputated by the bare-match extraction below. The
+        # anchor twin lives in anchor._clean_text_fallback (without it a sign-fixed keyword
+        # read and a crop read of the same box stop agreeing in money_cents terms). Fullmatch
+        # + money_strict_shape inside the capture: "(10%)", "(see note 3)", "908.16 CREDIT"
+        # and a garbled amount never gain a sign. Bare minus stays note-only by design.
+        if val_type == "currency":
+            _sm = number_format.signed_money_capture(value)
+            if _sm is not None:
+                _amt, _kind = _sm
+                if ((_kind == 'parens' and os.environ.get('MONEY_SIGN_PARENS', '0') != '0')
+                        or (_kind == 'cr' and os.environ.get('MONEY_SIGN_CR', '0') != '0')):
+                    return _amt
         for p in validation[val_type]:
             m = re.search(p, value, re.IGNORECASE)
             if m:

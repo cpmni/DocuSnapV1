@@ -732,6 +732,10 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // Cell-below keyword association (2026-08-31, oscar design): a boxed
                          // label-above-value cell reads the SAME column segment of the next line.
                          ['keyword-cell-below-toggle', 'keyword_cell_below'],
+                         // Accounting-negative money captures (2026-08-31, reggie design):
+                         // "(£908.16)" / "£908.16 CR" keep their minus at both mints.
+                         ['money-sign-parens-toggle', 'money_sign_parens'],
+                         ['money-sign-cr-toggle', 'money_sign_cr'],
                          // Barcodes (2026-08-26, barry → gary design): the page inventory and the field type.
                          ['barcode-inventory-toggle', 'barcode_inventory'],
                          ['barcode-field-toggle', 'barcode_field'],

@@ -456,6 +456,17 @@ function _reconcileEnv(db) {
     if (env.KEYWORD_CELL_BELOW == null && learning.getSetting(db, 'keyword_cell_below', 'false') === 'true') {
       env.KEYWORD_CELL_BELOW = '1';
     }
+    // ACCOUNTING-NEGATIVE money captures (2026-08-31, reggie design; both DARK): a whole-segment
+    //   "(£908.16)" (parens) or "£908.16 CR" keeps its minus at BOTH mints (keyword _clean_value +
+    //   anchor _clean_text_fallback — the twin is what keeps corroboration's money_cents sign
+    //   agreement alive). Bare leading/trailing minus stays note-only; the credit_sign_note arms
+    //   keep flagging what stays uncaptured. Env wins both ways for harness arms.
+    if (env.MONEY_SIGN_PARENS == null && learning.getSetting(db, 'money_sign_parens', 'false') === 'true') {
+      env.MONEY_SIGN_PARENS = '1';
+    }
+    if (env.MONEY_SIGN_CR == null && learning.getSetting(db, 'money_sign_cr', 'false') === 'true') {
+      env.MONEY_SIGN_CR = '1';
+    }
     // STRICT MONEY sub-flag of TEMPLATE_FORMAT_FAIL_YIELD (2026-08-30, reggie; DARK): the yield's currency
     //   leg becomes the whole-string `money_strict_shape` (the legacy leg passes '£9 32632.76' as 9.0).
     //   AND-ed with the parent HERE — a sub-flag armed without its parent bridges nothing.
