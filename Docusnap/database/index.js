@@ -2268,6 +2268,18 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 94 (re-slice witness switches): ${e.message}`); }
   }
 
+  // ── migration 95: the cell-below keyword association seeded OFF (DARK — oscar design
+  //    2026-08-31, the Hard Set boxed meta_row cold fill gap; flip only after the Oracle vet +
+  //    the Hard Set + realdoc-605 gates) ──
+  if (!applied.has(95)) {
+    try {
+      const ins = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+      const n = ins.run('keyword_cell_below', 'false').changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (95)').run();
+      console.log(`JS migration 95 applied: cell-below keyword association seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 95 (keyword_cell_below): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

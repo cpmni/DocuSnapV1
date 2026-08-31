@@ -447,6 +447,15 @@ function _reconcileEnv(db) {
     if (env.CORROB_DISCOUNT_INVALID_WITNESS == null && learning.getSetting(db, 'corrob_discount_invalid_witness', 'false') === 'true') {
       env.CORROB_DISCOUNT_INVALID_WITNESS = '1';
     }
+    // CELL-BELOW keyword association (2026-08-31, oscar design; DARK): a boxed label-above-value
+    //   cell (the caption stands ALONE in its column segment) reads the SAME column segment of the
+    //   next line — five precision guards, confidence capped 85 (under the 88 critical floor so a
+    //   cell-below ref/date FILLS but never auto-files alone). The Hard Set boxed classes' cold
+    //   fill gap (multicol_money/table_total/logo_siblings/credit_sign/multipage/buyer_large read
+    //   0-15% cold). Env wins both ways for harness arms.
+    if (env.KEYWORD_CELL_BELOW == null && learning.getSetting(db, 'keyword_cell_below', 'false') === 'true') {
+      env.KEYWORD_CELL_BELOW = '1';
+    }
     // STRICT MONEY sub-flag of TEMPLATE_FORMAT_FAIL_YIELD (2026-08-30, reggie; DARK): the yield's currency
     //   leg becomes the whole-string `money_strict_shape` (the legacy leg passes '£9 32632.76' as 9.0).
     //   AND-ed with the parent HERE — a sub-flag armed without its parent bridges nothing.

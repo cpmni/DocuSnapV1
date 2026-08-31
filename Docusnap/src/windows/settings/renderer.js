@@ -729,6 +729,9 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          ['reslice-witness-toggle', 'reslice_witness_sweep'],
                          ['corrob-discount-invalid-toggle', 'corrob_discount_invalid_witness'],
                          ['format-fail-strict-money-toggle', 'template_format_fail_yield_strict_money'],
+                         // Cell-below keyword association (2026-08-31, oscar design): a boxed
+                         // label-above-value cell reads the SAME column segment of the next line.
+                         ['keyword-cell-below-toggle', 'keyword_cell_below'],
                          // Barcodes (2026-08-26, barry → gary design): the page inventory and the field type.
                          ['barcode-inventory-toggle', 'barcode_inventory'],
                          ['barcode-field-toggle', 'barcode_field'],

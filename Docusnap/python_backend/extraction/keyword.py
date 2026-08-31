@@ -1483,7 +1483,12 @@ def extract_fields(ocr_text: str, field_keys: list[str],
                 label_dirs = dirs
             found = _search_for_label(lines, label_text, label_dirs, role_caption=role_caption,
                                       caption_guard=_cap_guard, vat_role=(pk == 'vat_tax'),
-                                      trace=trace)
+                                      trace=trace,
+                                      # cell-below arm (KEYWORD_CELL_BELOW): the field's own
+                                      # validation class + the bank, so the arm can PROBE a
+                                      # candidate before adopting it. None-safe: with the switch
+                                      # off (or no bank) the arm never runs — byte-identical.
+                                      val_type=fp.get("validation"), validation=validation)
             if not found:
                 continue
 
@@ -1498,6 +1503,11 @@ def extract_fields(ocr_text: str, field_keys: list[str],
             conf = base_conf
             if direction == "right":
                 conf += 5  # inline values are more reliable
+            elif direction == "cell-below":
+                # KEYWORD_CELL_BELOW cap (oscar 2026-08-31): a brand-new association with no
+                # learned history FILLS but must sit under the pinned 88 critical-field
+                # auto-file floor — one human confirm converts it to learning.
+                conf = min(conf, 85)
 
             results[field_key] = {
                 "value":      value,
@@ -1966,7 +1976,9 @@ def _search_for_label(lines: list[str], label: str,
                       caption_guard: dict | None = None,
                       vat_role: bool = False,
                       trace = None,
-                      collect: bool = False) -> "tuple[str, str] | list | None":
+                      collect: bool = False,
+                      val_type: str | None = None,
+                      validation: dict | None = None) -> "tuple[str, str] | list | None":
     """
     Search lines for a label and return (value, direction) or None.
 
@@ -2014,6 +2026,15 @@ def _search_for_label(lines: list[str], label: str,
     # Inline env read (same idiom as PO_REF_DIGIT_GATE / CUSTOMER_PO_LABELS) so a test can flip it
     # without a module reload. Default OFF -> the `if` below is never entered -> byte-identical.
     _vat_reg_skip = vat_role and os.environ.get('VAT_REG_NOT_AMOUNT', '0') != '0'
+    # CELL-BELOW arming (KEYWORD_CELL_BELOW, DEFAULT OFF — oscar design 2026-08-31, the Hard Set
+    # boxed meta_row class): structured fields only (the caller passes val_type + the validation
+    # bank so the arm can PROBE a candidate before adopting it), scalar path only for now (the
+    # LIST collect path keeps its own caption machinery). Inline env read (the :2014 idiom) so a
+    # test can flip it without a module reload. OFF -> the arm below is never entered.
+    _cell_below = (os.environ.get('KEYWORD_CELL_BELOW', '0') != '0'
+                   and not collect
+                   and validation is not None
+                   and val_type in ('alphanumeric', 'date', 'currency', 'number'))
     for i, line in enumerate(lines):
         line_lower = line.lower()
         m = pattern.search(line_lower)
@@ -2057,6 +2078,51 @@ def _search_for_label(lines: list[str], label: str,
                     trace('vat_reg_skip', label=label, line=line.strip()[:120],
                           tail=line[m.end():].strip()[:60], leg=_leg)
                 continue
+
+        # CELL-BELOW (KEYWORD_CELL_BELOW, DEFAULT OFF — oscar 2026-08-31, Hard Set boxed classes):
+        # a bordered label-above-value cell prints the caption ALONE in its column segment
+        # ("Invoice No | Date | Account" over "INV-73140 | 17-03-2025 | ACC-2291"). Today the
+        # RIGHT leg grabs the NEIGHBOUR cell's caption ("Date") and the below leg is column-blind
+        # (segment 0 only) — the read dies at validation and the field holds EMPTY. When armed and
+        # the caption stands alone in its cell, read the SAME column segment of the NEXT line,
+        # guarded five ways; any guard failing falls through to today's exact behaviour:
+        #   G1 the candidate must pass the field's own validation bank (probe, new-arm only);
+        #   G2 the caller's digit gates run on the returned value unchanged (same return path);
+        #   G3 a label-looking / caption / embedded-"Label:" candidate is refused;
+        #   G4 a DATE-shaped candidate under a non-date caption is refused (the realdoc M=7
+        #      leading-digit class must not gain a new door);
+        #   G5 the value line must CARRY column k (a missing cell shifts segments left — refuse,
+        #      never adopt a neighbour's value); window = the NEXT line only, never past a blank.
+        if _cell_below:
+            segs_l = _col_segments(line)
+            _k = next((idx for idx, (s, e, _t) in enumerate(segs_l) if s <= m.start() < e), None)
+            _tail = line[m.end():segs_l[_k][1]] if _k is not None else None
+            if _tail is not None and re.fullmatch(r'[\s:|\-–.#]*', _tail):
+                _j = i + 1
+                _cand = None
+                if _j < len(lines) and lines[_j].strip():
+                    segs_v = _col_segments(lines[_j])
+                    if _k < len(segs_v):
+                        _cand = segs_v[_k][2].strip()
+                if _cand:
+                    _ok = (not _is_label_line(_cand)
+                           and not re.search(r'[A-Za-z]{2,}\s*:', _cand)
+                           and not _is_caption_fragment(_cand)
+                           and (not caption_guard or not value_is_caption(_cand, caption_guard))
+                           and _validate(_cand, validation.get(val_type) or []))
+                    if _ok and val_type != 'date':
+                        for _p in validation.get('date') or []:
+                            _dm = re.search(_p, _cand, re.IGNORECASE)
+                            if _dm and _dm.group(0).strip() == _cand:
+                                _ok = False          # G4: a date is not a reference/amount
+                                break
+                    if _ok:
+                        if trace:
+                            try:
+                                trace('cell_below', label=label, value=_cand[:60], col=_k)
+                            except Exception:
+                                pass
+                        return _cand, "cell-below"
 
         # Try RIGHT direction — value is on the same line after the label
         if "right" in directions or "inline" in directions:
@@ -2179,6 +2245,24 @@ def _search_for_label(lines: list[str], label: str,
                     return candidate, "above"
 
     return _hits if collect else None
+
+
+def _col_segments(line: str) -> list:
+    """Split a reconstructed reading line into its COLUMN segments with char spans.
+
+    Returns [(start, end, text), ...] — content runs between COLUMN_BREAK gaps, so a
+    regex match position maps to its column index and the SAME index can be read off
+    the next line (the cell-below arm's alignment). A leading gap yields no empty
+    first segment on either line, so indices align by content order.
+    """
+    segs, pos = [], 0
+    for br in _COL_BREAK_RE.finditer(line):
+        if br.start() > pos:
+            segs.append((pos, br.start(), line[pos:br.start()]))
+        pos = br.end()
+    if pos < len(line):
+        segs.append((pos, len(line), line[pos:]))
+    return segs
 
 
 def _is_label_line(text: str) -> bool:
