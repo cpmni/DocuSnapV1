@@ -1,8 +1,29 @@
 # Batch-import silent crash — RAM-aware cap + worker-death resilience (design)
 
-**Status:** DESIGNED (eric + oscar consensus, 2026-08-31). **Oracle gate PENDING**, then build.
-Owner approved "design it + run the gate, don't just patch." Incident diagnosis was in
-`HANDOVER_2026-08-31_INTEGRATION.md` §2; this is the post-advisor design.
+**Status:** **BUILT + PINNED (2026-08-31).** eric + oscar consensus → **Oracle SIGN-OFF-WITH-CONDITIONS**
+(C1-C6, all applied). Owner approved "design it + run the gate, don't just patch." Incident diagnosis was in
+`HANDOVER_2026-08-31_INTEGRATION.md` §2. Pin: `src/modules/processing/test_import_concurrency_cap.js`.
+
+## Oracle conditions — how each was applied
+- **C1 (BLOCKER, false claim):** a failed-to-spawn worker emits no `file_done`, so `_handleFileMessage`
+  (`handler.js:5444`) writes NO DB row — the files are NOT in Review, they stay un-imported in the source
+  folder (un-drained, re-importable — never lost/misfiled). BUILT: after `Promise.all`, re-drive the failed
+  shards ONCE, sequentially, at the configured OMP cap; any that still fail get a truthful "left in your
+  source folder … import again to retry" line. (The design's earlier "stay in Review" wording was wrong.)
+- **C2 (missed seam):** when the RAM cap forces effective concurrency to 1 while the setting is >1, the code
+  took the uncapped single-worker path. BUILT: `importThreadCap = requestedConcurrency<=1 ? 0 :
+  _reprocessThreadCap(db)` is passed on EVERY import path (single + multi + RAM-forced-1).
+- **C3 (soften):** the OMP-decouple is byte-identical ONLY on the full-concurrency common path; a
+  small-final-batch moves the OMP count TOWARD the full-batch/reprocess value (fewer phantom "read
+  differently" holds, not a new reading, not guaranteed identical for a small-batch-habitual install).
+- **C4 (bookkeeping):** a `settled` flag; the `error` handler filters `proc` from `_currentBatchProcs`; the
+  sync-throw catch never pushes an undefined proc; the low-memory retry line is emitted once per batch.
+- **C5 (framing):** the RAM cap is throughput HYGIENE, NOT a complete OOM guard — a large multi-page PDF is
+  page-count-blind and can still exceed the budget; the runWorker resilience (item 6) is the real backstop
+  and does not depend on confirming the incident.
+- **C6 (gate):** the cap-math + OMP-decouple pins are GREEN here; the runtime uncaughtException-doesn't-fire
+  spy + the realdoc-full-concurrency byte-identical arm are the OWNER-MACHINE VM gate (need the real corpus /
+  a low-RAM VM) — logged, not run here.
 
 ## Incident
 A friend batch-imported the test docs on a Ryzen 5 / 16GB Windows PC → the app locked up, crashed,
@@ -52,12 +73,15 @@ and disappeared with NO error dialog. Diagnosed from code; NOT yet confirmed aga
    (`:2747`) gains an `effectiveMax`/`ramCap` field → Settings shows "Your PC's memory limits large
    batches to N workers"; emit ONE `process-progress` line when the runtime clamp reduces below the
    chosen value. Main stays the sole authority.
-6. **Resilience — fix `runWorker`.** Wrap the spawn in try/catch (sync throw) + add `proc.on('error')`
-   (async) that resolves the worker promise with a sentinel non-zero code (guard with a `settled` flag
-   vs a double-resolve with `close`) and surfaces ONE user line ("Couldn't start a processing worker —
-   continuing with N; some documents were left in Review"). The failed shard's docs stay pending →
-   visible in Review, never silently lost; the batch finishes via the existing `Promise.all` (`:2683`).
-   Do NOT make `uncaughtExceptionMonitor` swallow (wrong layer).
+6. **Resilience — fix `runWorker` (the actual silent-crash fix).** Wrap the spawn in try/catch (sync
+   throw) + add `proc.on('error')` (async) that resolves the worker promise with the `SPAWN_FAILED`
+   sentinel (guard with a `settled` flag vs a double-resolve with `close`) and records the shard for
+   re-drive. **Fail-toward (Oracle C1): the failed shard's files are NOT in Review** — a failed-to-spawn
+   worker emits no `file_done`, so no DB row is written (`_handleFileMessage` `:5444`); the files stay
+   un-imported in the SOURCE FOLDER (un-drained, re-importable, never lost/misfiled). The batch re-drives
+   them once (see C1 above) and, if any still fail, shows ONE truthful "left in your source folder … import
+   again to retry" line; the batch finishes via the existing `Promise.all` (`:2683`). Do NOT make
+   `uncaughtExceptionMonitor` swallow (wrong layer).
 7. **Determinism seam (Oracle WILL flag) — DECOUPLE the OMP cap from the RAM cap.** The import OMP thread
    cap (`:2669`) is `floor(cores/shards.length)`; fewer workers → fewer shards → HIGHER threadCap →
    OpenMP thread count changes → LSTM float-accumulation shifts boundary glyphs (`ACC-2291` vs
@@ -90,8 +114,16 @@ Get the friend's `%APPDATA%\ScanFinder\processing.log` tail + Windows Event View
 pypdfium2 — Apache-2.0 OR BSD-3 (bundled PDFium BSD-3); Pillow MIT-CMU/HPND; pytesseract + Tesseract 5 +
 `eng.traineddata` Apache-2.0; NumPy BSD-3.
 
-## Remaining gate
-**Oracle** vets the seams (esp. the OMP-decouple and the hard-ceil-explicit-setting policy), then build
-the smallest correct fix + the pins above (gary-style test strategy). The grayscale-pages lever (item 3)
-is a SEPARATE accuracy-touching arc with its own census/gate — the count cap + resilience (items 1,5,6,7)
-ship first and are pure throughput/robustness (no pixels, no confidence, no read changes by construction).
+## Remaining gate (owner-machine, per Oracle C6)
+The cap-math + OMP-decouple pins are GREEN (`test_import_concurrency_cap.js`). Still owner-machine:
+(1) a runtime spawn-failure survival run on a low-RAM VM — a hundreds-of-PDFs import survives, logs the
+spawn failure, shows the truthful message, and NO `uncaughtException` escapes; (2) a realdoc
+FULL-concurrency batch OFF vs ON, extraction rows byte-identical (proves the OMP-decouple read-neutrality
+on the common path — Oracle traced this by construction; the VM run confirms it); (3) capture the friend's
+`processing.log` `uncaughtException:` line to CONFIRM the OOM hypothesis and validate the 1.5GB budget.
+
+The grayscale-pages lever (item 3) is a SEPARATE accuracy-touching arc with its own census/gate — the count
+cap + resilience (items 1,5,6,7) ship first and are pure throughput/robustness. **Read-neutrality note
+(Oracle C3):** byte-identical ONLY on the full-concurrency common path; a small-final-batch moves the OMP
+count toward the full-batch/reprocess value (fewer phantom holds, not a new reading) — not guaranteed
+byte-identical for an install that habitually imports batches smaller than its concurrency.

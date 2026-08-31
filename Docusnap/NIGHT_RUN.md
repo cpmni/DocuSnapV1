@@ -18,23 +18,15 @@ scratch/sandbox, implementing a Chris card); **anything dangerous goes to the ag
 and, with no safe route, that item STOPS** — never improvise around a refusal.
 
 ## QUEUE — worth testing or checking (ranked; add freely, date each)
-- **2026-08-31 · [HIGH — customer crash] RAM-aware concurrency cap + worker-death RESILIENCE — DESIGNED (eric+oscar),
-  Oracle gate + build PENDING.** Full design: `docs/designs/CONCURRENCY_RAM_CAP_2026-08-31.md`; incident:
-  `HANDOVER_2026-08-31_INTEGRATION.md` §2. Friend batch-imported on a Ryzen 5 / 16GB PC → locked up, crashed,
-  vanished with no dialog. **TWO compounding defects (both in code, incident not yet confirmed vs his log):**
-  (A) RAM-blind worker count — `os.cpus().length` is LOGICAL threads (6c/12t→12→**default 10 workers** ×~1.5GB >
-  16GB budget → thrash); (B) `runWorker` (`handler.js:2532`) is the ONLY batch spawn with **no `error` handler** →
-  a failure-to-spawn under memory pressure → `uncaughtException` → main dies silently (`main.js:1313` monitor only
-  logs) — **this is the "no warning" mechanism.** **Fix (smallest correct):** RAM cap `floor((totalmem − max(3GiB,
-  25%))/1.5GB)` hard-ceiling even an explicit `processing_concurrency` (+ Settings copy + a clamp log line);
-  `runWorker` gets try/catch + `proc.on('error')` → resolve sentinel, batch continues, failed shard's docs stay in
-  Review; **DECOUPLE the OMP cap from the RAM cap** (derive OMP from configured concurrency via `_reprocessThreadCap`,
-  not `shards.length`) so dropping workers doesn't shift boundary-glyph reads (the `ACC-2291`/`ACC-229]` seam). Do NOT
-  chase physical cores (no clean Windows API; `wmic` gone on 24H2) — let RAM bind. Test plan (cap math · spawn-failure
-  survival · determinism invariant · clamp transparency) in the design doc. **SEPARATE sub-arc (own gate):** oscar's
-  grayscale-pages-1..N memory lever (keep page 0 colour — `BANNER_HEADING_REREAD` reads its red channel). **Before
-  ship:** get the friend's `processing.log` tail + Event Viewer OOM/`0xC0000005` line to CONFIRM. Workaround already
-  given: concurrency 2-3, smaller folders. **Next: Oracle → build (owner pre-approved "design + gate, don't patch").**
+- **2026-08-31 · [owner-machine VM gate] Confirm the batch-import crash fix** (BUILT — see the DONE ledger). Three
+  remaining checks need a low-RAM VM / the real corpus / the friend's log (Oracle C6.5): (1) a hundreds-of-PDFs import
+  on a memory-pressured VM survives, logs the spawn failure, shows the truthful "left in your source folder" message,
+  and NO `uncaughtException` escapes; (2) a realdoc FULL-concurrency batch OFF vs ON → extraction rows byte-identical
+  (confirms the OMP-decouple read-neutrality Oracle traced by construction); (3) capture the friend's
+  `%APPDATA%\ScanFinder\processing.log` `uncaughtException:` tail + Event Viewer OOM/`0xC0000005` line to CONFIRM the
+  OOM hypothesis and validate the 1.5GB per-worker budget. **Also queued separately (own gate):** oscar's
+  grayscale-pages-1..N memory lever (accuracy-touching — keep page 0 colour, `BANNER_HEADING_REREAD` reads its red
+  channel) — build only if the per-worker budget needs to shrink for large multi-page PDFs.
 - **2026-08-31 · Probe Castellan 0005's saved inline-harvest slice** (gary's CAD8 trace): which
   sub-path truncated 'CAD832694' → 'CAD8' — the `_read_inline_box` one-token trim on a mid-token
   OCR space ("CAD8 32694"), a partial ladder read, or the short-token inversion? One OCR probe of
@@ -170,6 +162,19 @@ Regenerate after a big import: `TESTING/_measure/reslice_20260830/_build_test_co
 confirm/teach from this folder into the LIVE app.
 
 ## DONE ledger (newest first) — do NOT repeat unless the "repeat if" condition holds
+- **2026-08-31 · [HIGH] Batch-import silent-crash fix BUILT + PINNED (eric+oscar → Oracle SIGN-OFF-W/COND, C1-C6
+  applied).** `docs/designs/CONCURRENCY_RAM_CAP_2026-08-31.md`; incident `HANDOVER_2026-08-31_INTEGRATION.md` §2.
+  TWO defects: (A) RAM-blind, SMT-overcounted worker count (6c/12t→10 workers×~1.5GB>16GB→thrash); (B) `runWorker`
+  was the only batch spawn with no `error` handler → a failure-to-spawn → `uncaughtException` → app died silently.
+  BUILT in `src/modules/processing/handler.js`: a RAM-aware hard ceiling (`_effectiveWorkers` = min(setting, cores,
+  `floor((totalmem−max(3GiB,25%))/1.5GB)`), totalmem-primary + a freemem tripwire) that hard-ceils even an explicit
+  setting; `runWorker` try/catch + `proc.on('error')` + a `settled` flag → resolve a SPAWN_FAILED sentinel; a
+  sequential RE-DRIVE of failed-to-spawn shards + a truthful "left in your source folder" line (Oracle C1 — they get
+  no DB row, are NOT in Review); the OMP cap DECOUPLED from the RAM-capped count (configured-derived via
+  `_reprocessThreadCap`, applied on every path incl. RAM-forced-1); `get-concurrency-info` gains `effectiveMax`/
+  `ramCap`; the pre-pass `sepP` RAM-capped too. Pin `test_import_concurrency_cap.js` (cap math + OMP-decouple +
+  source-contract resilience/decouple guards) GREEN; no regression in the handler pins. **Repeat if:** never
+  re-build — the remaining owner-machine VM checks are the QUEUE item above.
 - **2026-08-31 · Mig-93 test-pin tidy — 14 of 16 greened (`24fe2a1`, test-only, feature branch, NOT pushed).**
   Setup-only fixes (no assertion/expected value touched), verified green under E44-as-node. 9 genuine mig-93 seed
   flips (explicit OFF after `runMigrations`, per `test_role_disagreement_refuse.js`); 4 feature/schema drift

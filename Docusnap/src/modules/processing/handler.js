@@ -1916,8 +1916,7 @@ let _pyHelpers = null;
 // (each worker holds 300-DPI page images). So the cap tracks the detected core count, with a
 // hard ceiling of 10 (past which the single-threaded JS persistence step is the bottleneck
 // regardless of CPU). A modest PC therefore can't oversubscribe; a powerful one can go higher.
-function maxConcurrency() {
-  const cores = os.cpus().length || 1;
+function maxConcurrency(cores = os.cpus().length || 1) {
   return Math.max(1, Math.min(10, cores));
 }
 
@@ -1926,9 +1925,8 @@ function maxConcurrency() {
 // 300-DPI page images. The old hardcoded defaults (runtime 1, wizard 2) left multi-core PCs
 // idle; a user can still pick anything up to maxConcurrency() in Settings.
 // e.g. 2-core -> 1, 4-core -> 2, 6-core -> 4, 8-core -> 6.
-function defaultConcurrency() {
-  const cores = os.cpus().length || 1;
-  return Math.max(1, Math.min(maxConcurrency(), cores - 2));
+function defaultConcurrency(cores = os.cpus().length || 1) {
+  return Math.max(1, Math.min(maxConcurrency(cores), cores - 2));
 }
 
 // ONE Tesseract thread cap for EVERY reprocess read (owner-approved "option 1", 2026-08-11).
@@ -1949,6 +1947,36 @@ function _reprocessThreadCap(db) {
   if (!Number.isFinite(conc)) conc = 1;
   conc = Math.max(1, Math.min(10, conc));
   return Math.max(1, Math.floor(cores / conc));
+}
+
+// Per-worker RAM budget for the import pool (oscar, 2026-08-31): each Python+Tesseract worker holds
+// ALL of a PDF's 200-DPI page rasters at once (~0.5GB for a typical 1-2 page doc, more for a big
+// multi-page scan). 1.5GB is a conservative flat divisor. ⚠ Oracle C5: this is throughput HYGIENE
+// for typical batches, NOT a complete OOM guard — a large multi-page PDF can still exceed it; the
+// runWorker spawn-failure handler (fail-toward-safe) is the real backstop. Design:
+// docs/designs/CONCURRENCY_RAM_CAP_2026-08-31.md.
+const PER_WORKER_BUDGET_BYTES = 1.5 * 1024 * 1024 * 1024;
+
+// RAM-aware ceiling on cross-document import parallelism. The batch spawns N heavy OCR workers with
+// no memory awareness; on a box where cores overcount RAM (a 6c/12t / 16GB PC → default 10 workers)
+// this OOM-crashes. `totalmem()` is the PRIMARY term: it is stable, so the worker-count decision is
+// REPRODUCIBLE (the OMP-decouple below relies on that), and it is a true physical ceiling — a value
+// derived from it can never sit below what the machine supports, which is what makes it defensible to
+// hard-ceil even an explicit user setting. Windows `freemem()` under-reports (excludes the reclaimable
+// standby/cache list), so it is used only as a light secondary tripwire at spawn time, never the
+// primary. Reserve max(3GiB, 25%) for the OS + Electron main/renderers/GPU + margin.
+function ramConcurrencyCap(totalBytes = os.totalmem()) {
+  const reserve = Math.max(3 * 1024 * 1024 * 1024, totalBytes * 0.25);
+  const budget = Math.max(0, totalBytes - reserve);
+  return Math.max(1, Math.floor(budget / PER_WORKER_BUDGET_BYTES));
+}
+
+// The import worker-COUNT decision as ONE pure, testable function: the user/default `setting`,
+// hard-ceiled by the core count (maxConcurrency) AND the RAM cap. The runtime layers a freemem
+// tripwire on top of this. Production and the pin both call this — no drift.
+function _effectiveWorkers(cores, totalBytes, setting) {
+  const requested = Math.max(1, Math.min(maxConcurrency(cores), setting || 1));
+  return Math.max(1, Math.min(requested, ramConcurrencyCap(totalBytes)));
 }
 
 // How many concurrent Python workers the QUIET background re-read lane may use. The lane was ONE
@@ -2463,19 +2491,54 @@ function register(ctx) {
     // Core-aware ceiling (see maxConcurrency): cross-document parallelism only helps up to
     // ~the CPU core count; above that the per-worker Tesseract/threadCap split starves and the
     // batch thrashes rather than speeds up. Default is 1.
-    concurrency = Math.max(1, Math.min(maxConcurrency(), concurrency));
+    const requestedConcurrency = Math.max(1, Math.min(maxConcurrency(), concurrency));
+    // RAM-aware HARD ceiling (2026-08-31, the batch-import OOM crash — Oracle SIGN-OFF-W/COND). A box
+    // physically can't host N heavy OCR workers; the ceiling is totalmem-derived so it never throttles
+    // below what the machine supports (a 32GB box that wants 10 keeps 10; a 16GB box that wants 10 is
+    // capped to 8 — the crash case). It hard-ceils even an explicit setting (fail-safe). _effectiveWorkers
+    // is the ONE pure, pinned decision; the freemem tripwire below is a runtime-only layer on top of it.
+    concurrency = _effectiveWorkers(os.cpus().length || 1, os.totalmem(), requestedConcurrency);
+    // Secondary freemem tripwire (runtime only): drop one more worker when the box is already loaded by
+    // other apps. totalmem stays the primary term (Windows freemem under-reports the reclaimable cache).
+    try { if (concurrency > 1 && os.freemem() < PER_WORKER_BUDGET_BYTES + 1024 * 1024 * 1024) concurrency -= 1; } catch {}
+    // Transparency (Oracle): main is the sole authority; when the runtime clamp actually reduces the
+    // worker count, say so ONCE. The Settings control surfaces the ceiling separately via
+    // get-concurrency-info.effectiveMax.
+    if (concurrency < requestedConcurrency) {
+      mirror(event.sender, 'process-progress', {
+        type: 'log',
+        text: `Using ${concurrency} worker${concurrency === 1 ? '' : 's'} to stay within this PC's available memory.`,
+      });
+    }
 
     _cancelRequested   = false;
     _currentBatchProcs = [];
     let fileCount   = 0;
     const shardFiles = [];   // per-worker --files-file temp paths to clean up
     const pendingFileIo = [];   // deferred per-file working-copy/rotate/drain/auto-file promises
+    // Oracle C1/C4: a worker that FAILS TO SPAWN (EAGAIN/ENOMEM/EMFILE under memory pressure, or an AV
+    // blocking python.exe) previously left its 'error' event unhandled → uncaughtException → the whole
+    // app exited with no dialog (main.js uncaughtExceptionMonitor only logs). runWorker now resolves a
+    // SPAWN_FAILED sentinel instead and records its shard's --files-file here so the batch can re-drive
+    // them; a failed-to-spawn worker emits no file_done, so its files got NO DB row — they simply stay
+    // un-imported in the source folder (un-drained, re-importable), never lost or misfiled.
+    const failedShards = [];   // --files-file paths whose worker failed to SPAWN
+    const SPAWN_FAILED = -777; // sentinel resolve code (non-zero → success:false; distinguishable for re-drive)
 
     // Spawn one Python worker. filesFile=null → it scans the whole folder (the
     // original single-process behaviour). suppressStart hides the worker's own
     // {type:'start'} so a pool can emit ONE aggregate total to the renderer
     // instead of N competing ones (the renderer keys its progress bar off it).
     const runWorker = (filesFile, suppressStart, threadCap = 0) => new Promise((resolve) => {
+      // Oracle C4: 'error' and 'close' are the only async resolve vectors, and a synchronous spawn
+      // throw is mutually exclusive with both, so a single `settled` flag makes resolve idempotent.
+      let settled = false;
+      const settle = (code, spawnFailed) => {
+        if (settled) return;
+        settled = true;
+        if (spawnFailed && filesFile) failedShards.push(filesFile);
+        resolve(code);
+      };
       const py = pythonExe();
       const scriptArgs = [
         '--folder',    folderPath,
@@ -2529,9 +2592,24 @@ function register(ctx) {
         ..._anchorCropEnv(db),
         ..._reconcileEnv(db),
       };
-      const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
-        { windowsHide: true, env });
+      let proc;
+      try {
+        proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
+          { windowsHide: true, env });
+      } catch (e) {
+        // Synchronous spawn failure (e.g. a bad executable path) — fail toward a live batch.
+        logger?.err?.(`Worker spawn threw: ${e && e.message}`);
+        settle(SPAWN_FAILED, true);
+        return;
+      }
       _currentBatchProcs.push(proc);
+      // Async spawn failure (EAGAIN/ENOMEM/EMFILE under memory pressure, or an AV blocking python.exe):
+      // without this handler Node re-raises 'error' as an uncaughtException and the app exits silently.
+      proc.on('error', (e) => {
+        logger?.err?.(`Worker spawn error: ${(e && e.code) || (e && e.message)}`);
+        _currentBatchProcs = _currentBatchProcs.filter(p => p !== proc);
+        settle(SPAWN_FAILED, true);
+      });
       try { _quietLaneImpl && _quietLaneImpl.preempt('import'); } catch {}   // Slice 3: the foreground always wins
       let buf = '';
 
@@ -2588,7 +2666,7 @@ function register(ctx) {
 
       proc.on('close', (code) => {
         _currentBatchProcs = _currentBatchProcs.filter(p => p !== proc);
-        resolve(code);
+        settle(code);
       });
     });
 
@@ -2612,7 +2690,9 @@ function register(ctx) {
       if (templatesFile || slipsOn) {
         // Run detection concurrently (each PDF is independent) so the pre-pass doesn't
         // serialise a Python cold-start per document. Cap at the CPU core count (≤6).
-        const sepP = Math.max(1, Math.min(os.cpus().length || 1, 6));
+        // RAM-capped too (Oracle, same family as the worker cap): the pre-pass spawns its own bounded
+        // Tesseract parallelism, so a low-RAM box must not oversubscribe it either.
+        const sepP = Math.max(1, Math.min(os.cpus().length || 1, 6, ramConcurrencyCap()));
         try {
           const n = await _separateBatchDocuments(folderPath, templatesFile,
             (text, level) => mirror(event.sender, 'process-progress', { type: 'log', text, level: level || '' }),
@@ -2637,13 +2717,23 @@ function register(ctx) {
       return { success: true, stopped: true };
     }
 
+    // OMP thread cap — DECOUPLED from the RAM-capped worker COUNT (Oracle C2/C3, 2026-08-31). Derive it
+    // from the CONFIGURED concurrency (via _reprocessThreadCap), NOT the live shard count, so lowering
+    // the worker count for memory does NOT change Tesseract's OpenMP thread count and therefore cannot
+    // shift a boundary glyph (the LSTM float-accumulation class the owner fought 2026-08-11). On the
+    // full-concurrency common path this is byte-identical to the old floor(cores/shards); a small final
+    // batch moves TOWARD the full-batch/reprocess value (fewer phantom "read differently" holds, not a
+    // new reading). C2: when the RAM cap FORCED concurrency to 1 while the setting is >1, still cap —
+    // never fall into the uncapped single-worker path just because memory shrank the pool. A user who
+    // genuinely configured 1 worker keeps the original uncapped single-proc behaviour.
+    const importThreadCap = requestedConcurrency <= 1 ? 0 : _reprocessThreadCap(db);
     // Build the worker set. concurrency<=1 keeps the EXACT original path (one
     // worker scans the folder; its own start/total flows straight through).
     let workerPromises;
     let batchTotal = 0;              // # files to import (for the Review activity bar; 0 = unknown)
     if (concurrency <= 1) {
       logger?.log(`Batch start: folder="${folderPath}" mode=${procMode} concurrency=1`);
-      workerPromises = [runWorker(null, false)];
+      workerPromises = [runWorker(null, false, importThreadCap)];
     } else {
       let allFiles = [];
       try {
@@ -2657,22 +2747,19 @@ function register(ctx) {
       if (allFiles.length <= 1) {
         // Nothing to parallelize — fall back to the single-worker path.
         logger?.log(`Batch start: folder="${folderPath}" mode=${procMode} concurrency=1 (only ${allFiles.length} file)`);
-        workerPromises = [runWorker(null, false)];
+        workerPromises = [runWorker(null, false, importThreadCap)];
       } else {
         batchTotal = allFiles.length;
         const shards = partitionRoundRobin(allFiles, Math.min(concurrency, allFiles.length));
         logger?.log(`Batch start: folder="${folderPath}" mode=${procMode} concurrency=${concurrency} → ${shards.length} workers, ${allFiles.length} files`);
-        // Per-worker thread cap = cores / workers, so the pool never oversubscribes the
-        // CPU. Caps Tesseract's OpenMP threads (via OMP_THREAD_LIMIT in runWorker —
-        // previously UNCAPPED and the cause of N×cores thread thrash). Single-worker path
-        // passes 0 (no cap → use all cores).
-        const threadCap = Math.max(1, Math.floor((os.cpus().length || 1) / shards.length));
+        // Per-worker OMP cap is importThreadCap (configured-derived, see above) — keeps total Tesseract
+        // threads ≈ cores while staying INDEPENDENT of the RAM-capped shard count so reads don't shift.
         // One aggregate start for the whole batch; per-worker starts suppressed.
         mirror(event.sender, 'process-progress', { type: 'start', total: allFiles.length });
         workerPromises = shards.map(shard => {
           const f = writeTempJson('files', shard);
           shardFiles.push(f);
-          return runWorker(f, true, threadCap);
+          return runWorker(f, true, importThreadCap);
         });
       }
     }
@@ -2681,6 +2768,32 @@ function register(ctx) {
     // throw can't leave the bar stuck; the workers resolve (never reject), so _endActivity always fires.
     _beginActivity('import', batchTotal);
     const codes   = await Promise.all(workerPromises);
+    // Oracle C1: re-drive any shard whose worker FAILED TO SPAWN (memory pressure). Those files got no
+    // file_done → no DB row → they are NOT in Review; they sit un-imported in the source folder. Retry
+    // them ONCE, SEQUENTIALLY (one process = lowest memory), at the configured OMP cap, so a pressured
+    // spawn doesn't silently drop ~1/N of a large import. runWorker is fail-safe, so a repeat failure
+    // just re-records the shard in failedShards (reported truthfully below) — it never crashes.
+    if (failedShards.length && !_cancelRequested) {
+      const retry = failedShards.splice(0);
+      let nRetry = 0;
+      for (const ff of retry) { try { nRetry += JSON.parse(fs.readFileSync(ff, 'utf8')).length; } catch {} }
+      mirror(event.sender, 'process-progress', {
+        type: 'log', level: 'warn',
+        text: `Low memory — retrying ${nRetry} document${nRetry === 1 ? '' : 's'} one at a time…`,
+      });
+      for (const ff of retry) {
+        if (_cancelRequested) { failedShards.push(ff); continue; }
+        await runWorker(ff, true, _reprocessThreadCap(db));   // a repeat spawn-failure re-pushes ff to failedShards
+      }
+    }
+    if (failedShards.length) {
+      let nLeft = 0;
+      for (const ff of failedShards) { try { nLeft += JSON.parse(fs.readFileSync(ff, 'utf8')).length; } catch {} }
+      mirror(event.sender, 'process-progress', {
+        type: 'log', level: 'err',
+        text: `Couldn't start a processing worker for ${nLeft} document${nLeft === 1 ? '' : 's'} — they were left in your source folder and not imported. Import again to retry (or lower the parallel workers in Settings → Processing).`,
+      });
+    }
     const stopped = _cancelRequested;
     _cancelRequested   = false;
     _currentBatchProcs = [];
@@ -2722,7 +2835,9 @@ function register(ctx) {
       notifyMainWindow?.('stuck-count-changed',
         require('../../../database/modules/documents').getStuckCount(db));
     } catch {}
-    const success = !stopped && codes.every(c => c === 0);
+    // A SPAWN_FAILED sentinel that was healed by the re-drive (failedShards now empty) does not count
+    // against success; an unhealed shard (failedShards non-empty) or a real non-zero worker exit does.
+    const success = !stopped && failedShards.length === 0 && codes.every(c => c === 0 || c === SPAWN_FAILED);
     logger?.log(`Batch ${stopped ? 'stopped' : 'complete'}: ${fileCount} files, exit=${codes.join(',')}`);
     return { success, stopped };
   });
@@ -2748,6 +2863,10 @@ function register(ctx) {
     cores: os.cpus().length || 1,
     maxConcurrency: maxConcurrency(),
     recommended: defaultConcurrency(),
+    // RAM-aware ceiling (2026-08-31): the most workers this PC's memory allows, and the effective
+    // max the runtime will actually use. Settings surfaces this so a capped choice isn't a surprise.
+    ramCap: ramConcurrencyCap(),
+    effectiveMax: Math.max(1, Math.min(maxConcurrency(), ramConcurrencyCap())),
   }; });
 
   ipcMain.handle('get-stuck-count', () => { requireLogin();
@@ -5934,6 +6053,9 @@ function killAll() {
 
 module.exports = {
   register,
+  // 2026-08-31 batch-import crash fix — pure cap-math + resilience hooks (test_import_concurrency_cap.js).
+  maxConcurrency, defaultConcurrency, ramConcurrencyCap, _effectiveWorkers, _reprocessThreadCap,
+  PER_WORKER_BUDGET_BYTES,
   recordReviewEvent,   // B1: the activity ledger's one writer (reviewService's class-fix door reaches it through review/handler)
   getReviewEvent,      // batch-audit grid: resolve an event's authoritative id set from review/handler
   // Exposed so other entry points into the same pipeline (e.g. the
