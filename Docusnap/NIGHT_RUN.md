@@ -34,6 +34,17 @@ and, with no safe route, that item STOPS** — never improvise around a refusal.
   in `client/` and in `cert-tool/`, then a launch smoke-test. No ABI rebuild needed (unlike the core). Not urgent
   (the client talks `/v1` TLS, interoperates regardless of its own Electron version), but do it before the next
   client build — 31.7.7 is old for security patches, and the merge already set the intent.
+- **2026-08-31 · Thorough Chris round (sandboxed `/christest`) — full end-to-end customer vet.** Standing rules:
+  sandbox ONLY (a COPY of the corpus, never the live app/DB/Desktop), real screenshots, cards logged and NOT
+  implemented that night, a clear YES/NO verdict → `docs/CHRIS_FULL_APP_REVIEW_<date>.md`. Focus the NEWEST surfaces
+  on top of the usual cold-import / teach / File-All / scary-button battery: (1) the batch-import low-memory copy —
+  does "Using N workers to stay within this PC's available memory" reassure rather than alarm, and does "…left in
+  your source folder — import again to retry" read clearly to a non-tech user; (2) the DB-encryption opt-in ceremony
+  (Settings → Advanced: mint → masked code Show/Copy/Print → typed "I HAVE SAVED IT" → relaunch) + the Unlock/Recover
+  window copy — is it clear, not frightening, and does "keep these safe" land; (3) the open Chris cards still queued
+  ("ready" language war, page-furniture words wearing ✓/High, taught-ref garble on siblings, heading-guess issuers →
+  "Sender not identified"); (4) confirm the orphaned stamp-placement Settings panel shows nothing broken. Verify-round
+  any card fixed since his last run.
 - **2026-08-31 · Probe Castellan 0005's saved inline-harvest slice** (gary's CAD8 trace): which
   sub-path truncated 'CAD832694' → 'CAD8' — the `_read_inline_box` one-token trim on a mid-token
   OCR space ("CAD8 32694"), a partial ladder read, or the short-token inversion? One OCR probe of
